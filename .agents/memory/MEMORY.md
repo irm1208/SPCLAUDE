@@ -1,0 +1,7 @@
+- [Blood test parser ordering rules](blood-test-parser-ordering.md) — NHDL before HDL, VLDL before LDL, ACTB12 before VITB12, CKMB before CK; HDL notWith "non", LDL notWith "vldl", FT3 notWith "total".
+- [Blood test US unit normalization](blood-test-us-units.md) — normalizeUnits() in parsePDF.ts converts ng/dL, pg/mL, mg/dL, g/dL, NGSP% to SI/UK catalog units on import.
+- [Production startup migrations](prod-startup-migrations.md) — How production schema changes work and what goes wrong when columns are missing.
+- [Uzorak bulk import fix](uzorak-import.md) — Uzorak 302-redirects /verify/X.pdf back to SPA hash; bypass via Supabase RPC, not direct download.
+- [protobufjs-blocked](protobufjs-blocked.md) — Replit firewall blocks protobufjs@7.5.4; replaced @google/genai with a local REST shim at lib/google-genai-shim.
+- [Gemini local module](gemini-shim-api-version.md) — pnpm workspace alias for @google/genai is broken; use local src/lib/google-genai.ts (OpenAI-compatible /chat/completions).
+- [Build vs typecheck separation](build-typecheck-separation.md) — build script decoupled from typecheck; recurring zod v4, Express 5 params, and api-zod codegen issues documented.

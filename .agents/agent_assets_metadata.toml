@@ -1,0 +1,85 @@
+uploads = []
+
+[[generated]]
+id = "oibUt70VtbWuRpc4bx7A8"
+uri = "file://Product-Landing-Page/artifacts/mockup-sandbox/public/images/vial-dark-1.png"
+type = "image"
+title = "Sleek dark medical vial"
+
+[[generated]]
+id = "HNuo5CMEduh1bqQkRkPdZ"
+uri = "file://Product-Landing-Page/artifacts/mockup-sandbox/public/images/vial-dark-2.png"
+type = "image"
+title = "Sleek dark medical vial 2"
+
+[[generated]]
+id = "kx2kPihG20LeO4fLW5n8i"
+uri = "file://Product-Landing-Page/artifacts/mockup-sandbox/public/images/vial-dark-3.png"
+type = "image"
+title = "Sleek dark medical vial 3"
+
+[[generated]]
+id = "rMbexQqGCKACQfyQHp1uc"
+uri = "file://Product-Landing-Page/artifacts/mockup-sandbox/public/images/editorial-hero.png"
+type = "image"
+title = "Dark atmospheric scientific editorial photo"
+
+[[outputs]]
+id = "cBFi4nCzSaOgy_Zeek-Ca"
+uri = "file://production_db_export.tar.gz"
+type = "unspecified"
+title = "production_db_export.tar.gz (19 MB)"
+
+[[outputs]]
+id = "mMW1lp32Y4zvoyda3AX5Y"
+uri = "file://.local/security/AUDIT.md"
+type = "text"
+title = "Peps Anonymous — Security Audit Report (May 2026)"
+
+[[outputs]]
+id = "Ap7YbjYueaAFj959WG98F"
+uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_Overview.png"
+type = "image"
+title = "Lab Reports — Overview (heatmap + activity)"
+
+[[outputs]]
+id = "gWX6xs05nk449ViBu2R0x"
+uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_CompoundLeaderboard.png"
+type = "image"
+title = "Lab Reports — Compound Leaderboard (TIRZ-5)"
+
+[[outputs]]
+id = "eo_b6lmQqknPs2ev6F9yd"
+uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_Browse.png"
+type = "image"
+title = "Lab Reports — Browse (desktop preview)"
+
+[[outputs]]
+id = "PSLNSL3Kt_g_75K8nDijX"
+uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_BatchDetail.png"
+type = "image"
+title = "Lab Reports — Batch Detail (desktop preview)"
+
+[[outputs]]
+id = "BWn7tEsBpSjVKnBYKxP1m"
+uri = "file://Product-Landing-Page/.local/peps_anonymous_db_dump.tar.gz"
+type = "unspecified"
+title = "Peps Anonymous — Production DB Dump"
+
+[[outputs]]
+id = "Oeti23iBOa0fRcQVXJbWo"
+uri = "file://peps_anonymous_db_dump.tar.gz"
+type = "unspecified"
+title = "Peps Anonymous — Production DB Dump"
+
+[[outputs]]
+id = "piMfysMGLD9nsf-Hm0j3O"
+uri = "file://peps_dump.tar.gz"
+type = "unspecified"
+title = "peps_dump.tar.gz — PostgreSQL database backup"
+
+[[outputs]]
+id = "q36N7xFZ_qsjAKfm_3BXg"
+uri = "file://peps_anonymous_backup.tar.gz"
+type = "unspecified"
+title = "peps_anonymous.backup (tar.gz)"

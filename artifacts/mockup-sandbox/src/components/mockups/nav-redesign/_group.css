@@ -1,0 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --brand-navy: #1B3A7A;
+  
+  --t-bg: #ffffff;
+  --t-surface: #fafafa;
+  --t-surface-hover: #f1f1f1;
+  --t-border: #eaeaea;
+  
+  --t-text-primary: #111111;
+  --t-text-secondary: #666666;
+  --t-text-muted: #999999;
+  
+  --t-active-bg: #f8fafc;
+  --t-active-text: #1B3A7A;
+  
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+}
+
+.dark {
+  --t-bg: #0a0a0a;
+  --t-surface: #111111;
+  --t-surface-hover: #1a1a1a;
+  --t-border: #222222;
+  
+  --t-text-primary: #ffffff;
+  --t-text-secondary: #a0a0a0;
+  --t-text-muted: #666666;
+  
+  --t-active-bg: #111827;
+  --t-active-text: #93c5fd;
+}
