@@ -7,3 +7,4 @@
 - [Build vs typecheck separation](build-typecheck-separation.md) — build script decoupled from typecheck; recurring zod v4, Express 5 params, and api-zod codegen issues documented.
 - [GitHub push from Replit](github-push-replit.md) — Replit askpass blocks git push; bypass with GIT_ASKPASS="" + token in URL + lfs.locksverify=false. Rebase --continue must go via Project Task.
 - [Lab test preview embeddability](lab-test-preview-embeddability.md) — Janoshik: Cloudflare+SAMEORIGIN → link only. Uzorak: no X-Frame-Options → iframe directly when no snapshot/pdf.
+- [Testing pool mobile overflow](testing-pool-mobile-overflow.md) — TestingPool/GbTestingPool wrap in overflow-x-hidden (clips, not scrolls); long compound labels get cut off → need min-w-0+break-words; use lg:grid-cols-2 not md:.
