@@ -28,6 +28,21 @@ flex item + `break-words` on the text span, or stack items vertically on mobile
 reports here, suspect a long unbroken string overflowing under overflow-x-hidden
 before suspecting the grid.
 
+## Milestone/step cards: grid, not horizontal scroll
+- GbTestingPool's milestone cards were a `flex overflow-x-auto` row with
+  `flex-1 min-w-[155px]` cards + `scroll-snap x mandatory`. On a phone only 2-3 of
+  4 step cards fit; the rest sit off-screen and users don't realize they can scroll
+  sideways → repeated "half the information is cut off" reports even after the
+  legend/grid fixes.
+- Fix: render step cards in a wrapping grid (`grid grid-cols-2 lg:grid-cols-4`) and
+  drop `flex-1`/`min-w`/scroll-snap on the card. All cards visible on mobile (2×2),
+  unchanged 4-in-a-row on desktop. Handles any milestone count via wrapping.
+
+**Why:** Horizontal-scroll rows are a recurring "cut off on mobile" complaint
+source on these pages. Prefer a responsive grid for any fixed-small set of cards.
+TestingPool still uses horizontal scroll for its steps; this is a deliberate
+divergence toward better mobile UX, not a mismatch to "fix."
+
 ## HMR caveat
 The screenshot tool loads `localhost:5000` directly, so Vite HMR shows
 `wss://localhost` failures there regardless — that's expected and not the bug.
