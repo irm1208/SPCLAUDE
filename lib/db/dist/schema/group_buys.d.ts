@@ -2792,6 +2792,59 @@ export declare const gbTestingRoundsTable: import("drizzle-orm/pg-core").PgTable
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        lateOptInPaymentMethods: import("drizzle-orm/pg-core").PgColumn<{
+            name: "late_opt_in_payment_methods";
+            tableName: "gb_testing_rounds";
+            dataType: "json";
+            columnType: "PgJsonb";
+            data: string[];
+            driverParam: unknown;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            $type: string[];
+        }>;
+        maxCompoundVotes: import("drizzle-orm/pg-core").PgColumn<{
+            name: "max_compound_votes";
+            tableName: "gb_testing_rounds";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        maxTestVotes: import("drizzle-orm/pg-core").PgColumn<{
+            name: "max_test_votes";
+            tableName: "gb_testing_rounds";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         janoshikPaymentUrl: import("drizzle-orm/pg-core").PgColumn<{
             name: "janoshik_payment_url";
             tableName: "gb_testing_rounds";
@@ -2826,6 +2879,23 @@ export declare const gbTestingRoundsTable: import("drizzle-orm/pg-core").PgTable
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        labShippingCost: import("drizzle-orm/pg-core").PgColumn<{
+            name: "lab_shipping_cost";
+            tableName: "gb_testing_rounds";
+            dataType: "string";
+            columnType: "PgNumeric";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         voteOptions: import("drizzle-orm/pg-core").PgColumn<{
             name: "vote_options";
             tableName: "gb_testing_rounds";
@@ -2844,6 +2914,25 @@ export declare const gbTestingRoundsTable: import("drizzle-orm/pg-core").PgTable
             generated: undefined;
         }, {}, {
             $type: string[];
+        }>;
+        peptideBatches: import("drizzle-orm/pg-core").PgColumn<{
+            name: "peptide_batches";
+            tableName: "gb_testing_rounds";
+            dataType: "json";
+            columnType: "PgJsonb";
+            data: Record<string, string>;
+            driverParam: unknown;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            $type: Record<string, string>;
         }>;
         testOptions: import("drizzle-orm/pg-core").PgColumn<{
             name: "test_options";
@@ -2911,6 +3000,23 @@ export declare const gbTestingRoundsTable: import("drizzle-orm/pg-core").PgTable
             isAutoincrement: false;
             hasRuntimeDefault: false;
             enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        fundingNote: import("drizzle-orm/pg-core").PgColumn<{
+            name: "funding_note";
+            tableName: "gb_testing_rounds";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
             baseColumn: never;
             identity: undefined;
             generated: undefined;
@@ -3043,6 +3149,25 @@ export declare const gbTestingVotesTable: import("drizzle-orm/pg-core").PgTableW
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        peptideNames: import("drizzle-orm/pg-core").PgColumn<{
+            name: "peptide_names";
+            tableName: "gb_testing_votes";
+            dataType: "json";
+            columnType: "PgJsonb";
+            data: string[];
+            driverParam: unknown;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            $type: string[];
+        }>;
         vialCount: import("drizzle-orm/pg-core").PgColumn<{
             name: "vial_count";
             tableName: "gb_testing_votes";
@@ -3079,6 +3204,23 @@ export declare const gbTestingVotesTable: import("drizzle-orm/pg-core").PgTableW
         }, {}, {
             $type: string[];
         }>;
+        anonymous: import("drizzle-orm/pg-core").PgColumn<{
+            name: "anonymous";
+            tableName: "gb_testing_votes";
+            dataType: "boolean";
+            columnType: "PgBoolean";
+            data: boolean;
+            driverParam: boolean;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         createdAt: import("drizzle-orm/pg-core").PgColumn<{
             name: "created_at";
             tableName: "gb_testing_votes";

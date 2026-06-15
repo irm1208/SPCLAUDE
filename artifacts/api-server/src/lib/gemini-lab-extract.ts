@@ -663,6 +663,31 @@ export async function extractCoADataFromBuffer(buf: Buffer, mimeType: string): P
   return runGeminiExtraction([{ inlineData: { mimeType, data } }]);
 }
 
+/**
+ * Extract CoA data from several in-memory image/PDF buffers at once.
+ * Used by the browser-helper import, where the admin's browser supplies the
+ * already-rendered report image(s) (Cloudflare blocks server-side fetches).
+ * Invalid or oversized buffers are skipped; returns null if none are usable.
+ */
+export async function extractCoADataFromBuffers(
+  files: { buf: Buffer; mimeType: string }[],
+): Promise<ExtractedCoAData | null> {
+  const parts: GeminiPart[] = [];
+  for (const f of files.slice(0, 6)) {
+    if (!ALLOWED_MIME_TYPES.has(f.mimeType)) {
+      console.warn("[gemini-lab-extract] Skipping unsupported MIME for buffer extraction:", f.mimeType);
+      continue;
+    }
+    if (f.buf.length > MAX_FILE_BYTES) {
+      console.warn("[gemini-lab-extract] Skipping oversized buffer:", f.buf.length);
+      continue;
+    }
+    parts.push({ inlineData: { mimeType: f.mimeType, data: f.buf.toString("base64") } });
+  }
+  if (parts.length === 0) return null;
+  return runGeminiExtraction(parts);
+}
+
 // ── Gemini extraction — Janoshik legacy (unchanged behaviour) ─────────────────
 
 export async function extractCoAData(pageUrl: string): Promise<ExtractedCoAData | null> {

@@ -818,6 +818,121 @@ function PendingCard({ test, secret, onAction }: { test: LabTest; secret: string
   );
 }
 
+// ── Janoshik one-click browser helper (bookmarklet) ──────────────────────────
+// Janoshik now sits behind a Cloudflare challenge, so the server can't fetch
+// reports directly. This generates a small "Import to Salt&Peps" button the
+// admin drags to their bookmarks bar. Clicking it while viewing a Janoshik
+// report sends the already-loaded certificate image(s) to the receiver page,
+// which imports them automatically — free, no external services.
+function JanoshikHelperPanel({ secret }: { secret: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const linkRef = useRef<HTMLAnchorElement | null>(null);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const bookmarklet =
+    `(function(){var APP=${JSON.stringify(origin)},S=${JSON.stringify(secret)};` +
+    `function ok(u){if(!u)return false;var l=u.toLowerCase().split("?")[0].split("#")[0];` +
+    `var e=l.endsWith(".png")||l.endsWith(".jpg")||l.endsWith(".jpeg")||l.endsWith(".webp");` +
+    `return e&&(u.toLowerCase().indexOf("janoshik")>-1||u.indexOf(location.origin)===0);}` +
+    `var seen={},list=[];function add(u){if(ok(u)){var k=u.split("?")[0].split("#")[0];if(!seen[k]){seen[k]=1;list.push(u);}}}` +
+    `[].forEach.call(document.images,function(i){add(i.currentSrc||i.src);});` +
+    `[].forEach.call(document.querySelectorAll("a[href]"),function(a){add(a.href);});` +
+    `if(!list.length){alert("No Janoshik report image was found on this page. Open the report so the certificate image is visible, then click again.");return;}` +
+    `Promise.all(list.map(function(u){return fetch(u,{credentials:"include"}).then(function(r){return r.ok?r.blob():null;}).then(function(b){return b?new Promise(function(res){var fr=new FileReader();fr.onload=function(){res(fr.result);};fr.onerror=function(){res(null);};fr.readAsDataURL(b);}):null;}).catch(function(){return null;});})).then(function(arr){` +
+    `var imgs=[];for(var i=0;i<arr.length;i++){if(arr[i])imgs.push(arr[i]);}` +
+    `if(!imgs.length){alert("Could not read the report image. Try opening the certificate image directly, then click again.");return;}` +
+    `var w=window.open(APP+"/sleepingpepisadmin/janoshik-receiver","_blank");` +
+    `if(!w){alert("Please allow pop-ups for janoshik.com, then click the button again.");return;}` +
+    `var sent=false,payload={type:"janoshik-helper-payload",url:location.href,images:imgs,secret:S};` +
+    `function send(){if(sent)return;sent=true;try{w.postMessage(payload,APP);}catch(e){w.postMessage(payload,"*");}}` +
+    `window.addEventListener("message",function(e){if(e&&e.data&&e.data.type==="janoshik-helper-ready")send();});` +
+    `setTimeout(send,2500);}).catch(function(e){alert("Import failed: "+e);});})();`;
+  const href = "javascript:" + encodeURIComponent(bookmarklet);
+
+  // Set the javascript: href directly on the DOM node — React strips javascript:
+  // URLs from rendered href attributes, so a ref is the reliable way.
+  useEffect(() => {
+    if (linkRef.current) linkRef.current.setAttribute("href", href);
+  }, [href]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(99,102,241,0.3)", background: "rgba(99,102,241,0.05)" }}>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
+        <Zap className="w-4 h-4 text-indigo-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-indigo-300">One-Click Janoshik Importer</p>
+          <p className="text-xs text-slate-400">Free browser button — import a Janoshik report in one click, even with their new Cloudflare block.</p>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4">
+          <div className="rounded-lg p-3 text-xs text-slate-300 leading-relaxed" style={{ background: "rgba(0,0,0,0.2)" }}>
+            Janoshik now blocks our server from reading reports automatically. This button works around that for free:
+            it runs inside <span className="font-semibold">your</span> browser (which Janoshik already trusts), grabs the
+            report, and imports it here — no fees, no sign-ups.
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-slate-300 mb-2">Set up once:</p>
+            <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
+              <li>Make sure your browser's bookmarks bar is showing (Ctrl/Cmd + Shift + B).</li>
+              <li>Drag the button below up to your bookmarks bar.</li>
+            </ol>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+              <a
+                ref={linkRef}
+                href="#"
+                draggable
+                onClick={(e) => e.preventDefault()}
+                title="Drag me to your bookmarks bar"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold text-white cursor-grab active:cursor-grabbing select-none"
+                style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)" }}
+              >
+                <Download className="w-4 h-4" /> Import to Salt&amp;Peps
+              </a>
+              <button
+                onClick={copyCode}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-indigo-300 hover:text-white transition-colors"
+                style={{ border: "1px solid rgba(99,102,241,0.4)" }}
+              >
+                {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
+                {copied ? "Copied!" : "Copy link instead"}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then create a new bookmark and paste it as the address.</p>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-slate-300 mb-2">Then, for each report:</p>
+            <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
+              <li>Open the Janoshik report in your browser (so the certificate image shows).</li>
+              <li>Click the <span className="font-semibold text-indigo-300">Import to Salt&amp;Peps</span> bookmark.</li>
+              <li>A new tab opens and imports it automatically. Done!</li>
+            </ol>
+          </div>
+
+          <div className="rounded-lg p-3 flex items-start gap-2 text-[11px] text-amber-300/90" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>This button contains your private admin key. Keep it on your own computer and don't share it. If you ever change your admin secret, re-create the button from here.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Bulk Import Panel ─────────────────────────────────────────────────────────
 function BulkImportPanel({ secret, onImported }: { secret: string; onImported: () => void }) {
   const [open, setOpen] = useState(false);
@@ -1970,6 +2085,9 @@ export function LabTestsTab({ secret }: { secret: string }) {
           </button>
         </div>
       </div>
+
+      {/* Janoshik one-click browser helper */}
+      <JanoshikHelperPanel secret={secret} />
 
       {/* Bulk Import Panel */}
       <BulkImportPanel secret={secret} onImported={load} />

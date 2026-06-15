@@ -743,6 +743,23 @@ export declare const ordersTable: import("drizzle-orm/pg-core").PgTableWithColum
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        reshipperCleared: import("drizzle-orm/pg-core").PgColumn<{
+            name: "reshipper_cleared";
+            tableName: "orders";
+            dataType: "boolean";
+            columnType: "PgBoolean";
+            data: boolean;
+            driverParam: boolean;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         shippingCity: import("drizzle-orm/pg-core").PgColumn<{
             name: "shipping_city";
             tableName: "orders";
@@ -2045,6 +2062,7 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     shippingCountry: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     countryLegId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     reshipperUsername: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+    reshipperCleared: import("zod").ZodOptional<import("zod").ZodBoolean>;
     shippingCity: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     ipAddress: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     shippingPostcode: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2131,6 +2149,7 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     paymentUsdAmount?: string | null | undefined;
     shippingCountry?: string | null | undefined;
     countryLegId?: string | null | undefined;
+    reshipperCleared?: boolean | undefined;
     shippingCity?: string | null | undefined;
     ipAddress?: string | null | undefined;
     shippingPostcode?: string | null | undefined;
@@ -2210,6 +2229,7 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     paymentUsdAmount?: string | null | undefined;
     shippingCountry?: string | null | undefined;
     countryLegId?: string | null | undefined;
+    reshipperCleared?: boolean | undefined;
     shippingCity?: string | null | undefined;
     ipAddress?: string | null | undefined;
     shippingPostcode?: string | null | undefined;

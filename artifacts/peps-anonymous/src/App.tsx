@@ -13,6 +13,7 @@ import Review from "@/pages/Review";
 import Success from "@/pages/Success";
 import Admin from "@/pages/Admin";
 import ProtoypeAdmin from "@/pages/ProtoypeAdmin";
+import JanoshikReceiver from "@/pages/JanoshikReceiver";
 import PrototypeHome from "@/pages/PrototypeHome";
 import PrototypeTestingPools from "@/pages/PrototypeTestingPools";
 import PrototypeProtocols from "@/pages/PrototypeProtocols";
@@ -153,6 +154,7 @@ function Router() {
       <Route path="/reshipper" component={ReshipperPage} />
       <Route path="/reshipper-apply" component={ReshipperApply} />
       <Route path="/wholesale" component={WholesaleOrder} />
+      <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />
       <Route path="/sleepingpepisadmin" component={Admin} />
       <Route path="/prototypeadmin" component={ProtoypeAdmin} />
       <Route path="/prototypehome" component={PrototypeHome} />

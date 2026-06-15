@@ -8,6 +8,7 @@ import type { NewLabTest } from "@workspace/db";
 import {
   extractCoADataFromAnyUrl,
   extractCoADataFromBuffer,
+  extractCoADataFromBuffers,
   isAdminBulkImportUrl,
   isBulkImportAllowedUrl,
   resolvePreviewInfo,
@@ -31,6 +32,17 @@ const upload = multer({
 });
 
 const router = Router();
+
+// Detect the real media type of stored bytes from their magic numbers.
+// Stored blobs may be PDFs (uploads) or PNG/JPEG/WebP images (browser-helper
+// imports), so we must not blindly serve everything as application/pdf.
+function sniffBlobMime(buf: Buffer): string {
+  if (buf.length >= 4 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "application/pdf"; // %PDF
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png"; // ‰PNG
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg"; // JPEG
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return "application/pdf";
+}
 
 // ── Duplicate detection helper ────────────────────────────────────────────────
 // Returns the existing record id if a duplicate is found, null otherwise.
@@ -648,10 +660,12 @@ router.get("/lab-tests/:id/proxy", async (req, res) => {
       return;
     }
 
-    // Serve uploaded PDF blob directly if no external URL
+    // Serve uploaded/imported blob directly if no external URL.
+    // The blob may be a PDF (upload) or an image (browser-helper import), so
+    // detect the real type instead of assuming application/pdf.
     if (!test.url && test.pdfBlob) {
       const buf = Buffer.from(test.pdfBlob, "base64");
-      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Type", sniffBlobMime(buf));
       res.setHeader("Cache-Control", "public, max-age=86400");
       res.setHeader("Content-Disposition", "inline");
       res.end(buf);
@@ -1002,6 +1016,95 @@ router.post("/admin/lab-tests/with-pdf", upload.single("file"), async (req, res)
       console.error("[admin/with-pdf]", e);
       res.status(500).json({ error: "Failed to add test" });
     }
+  }
+});
+
+// ── POST /api/admin/lab-tests/bookmarklet-import — one-click browser-helper import ─
+// Janoshik now sits behind a Cloudflare challenge, so the server can no longer
+// fetch reports directly. Instead the admin's browser (which has passed the
+// challenge) sends the already-rendered report image(s) here via the bookmarklet
+// + receiver page. We extract the data with AI and store the image bytes so the
+// report still previews, exactly like an uploaded file (url stays null).
+router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.length === 0) {
+      res.status(400).json({ error: "No report images received" });
+      return;
+    }
+
+    const sourceUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    const importSupplier = (typeof req.body?.supplier === "string" && req.body.supplier.trim()) || "Uther";
+    const importLabName = (typeof req.body?.labName === "string" && req.body.labName.trim()) || "Janoshik";
+    const isThirdParty = req.body?.isThirdParty === "true" || req.body?.isThirdParty === true;
+
+    // AI extraction across all supplied images
+    const extracted = await extractCoADataFromBuffers(
+      files.map(f => ({ buf: f.buffer, mimeType: f.mimetype })),
+    );
+    if (!extracted) {
+      res.status(422).json({ error: "Could not read the report — the AI found no usable certificate data" });
+      return;
+    }
+
+    const importBatchCode = extracted.batchCode ?? null;
+    const importBlend = Array.isArray(extracted.blendComponents) && extracted.blendComponents.length > 0
+      ? JSON.stringify(extracted.blendComponents) : null;
+    const importName = resolveUtherName(importSupplier, importBatchCode, extracted.compoundName ?? "Unknown");
+
+    // Duplicate check on batch + date + compound (URL isn't stored for these)
+    const dupId = await findLabTestDuplicate(null, importBatchCode, extracted.testDate ?? null, importName);
+    if (dupId !== null) {
+      res.status(409).json({ error: `Already imported — a matching test already exists (id=${dupId})`, duplicateId: dupId });
+      return;
+    }
+
+    // Store the largest image as the preview blob (most reports are one image).
+    const primary = files.reduce((a, b) => (b.buffer.length > a.buffer.length ? b : a), files[0]);
+    const pdfBlob = primary.buffer.toString("base64");
+
+    const newRecord: NewLabTest = {
+      janoshikId: `bm-${Date.now()}`,
+      url: null,
+      pdfBlob,
+      peptideName: importName,
+      supplier: importSupplier,
+      labName: importLabName,
+      isThirdPartyTest: isThirdParty,
+      pending: false,
+      aiExtracted: true,
+      aiExtractedAt: new Date(),
+      purityPct: extracted.purityPct ?? null,
+      endotoxinEuMg: extracted.endotoxinEuMg ?? null,
+      sterilityPass: extracted.sterilityPass ?? null,
+      heavyMetalAs: extracted.heavyMetalAs ?? null,
+      heavyMetalCd: extracted.heavyMetalCd ?? null,
+      heavyMetalPb: extracted.heavyMetalPb ?? null,
+      heavyMetalHg: extracted.heavyMetalHg ?? null,
+      batchCode: importBatchCode,
+      testDate: extracted.testDate ?? null,
+      testType: extracted.testType ?? null,
+      productCategory: extracted.productCategory ?? null,
+      mgAmount: extracted.mgAmount ?? null,
+      massUnit: extracted.massUnit ?? "mg",
+      blendComponents: importBlend,
+      notes: sourceUrl ? `Imported via browser helper from ${sourceUrl}`.slice(0, 1000) : null,
+    };
+
+    const [row] = await db.insert(labTestsTable).values(newRecord).returning();
+    res.json({
+      ok: true,
+      id: row.id,
+      peptideName: row.peptideName,
+      purityPct: row.purityPct,
+      batchCode: row.batchCode,
+      testDate: row.testDate,
+    });
+  } catch (e) {
+    console.error("[admin/bookmarklet-import]", e);
+    res.status(500).json({ error: "Import failed" });
   }
 });
 
