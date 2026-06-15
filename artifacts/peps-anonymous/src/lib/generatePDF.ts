@@ -57,7 +57,7 @@ function drawHeader(doc: jsPDF, title: string, rightText: string, pageW: number)
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(170, 170, 170);
-  doc.text("Peps Anonymous", pageW - 13, 9, { align: "right" });
+  doc.text("Salt&Peps", pageW - 13, 9, { align: "right" });
   doc.text(rightText, pageW - 13, 16, { align: "right" });
 }
 

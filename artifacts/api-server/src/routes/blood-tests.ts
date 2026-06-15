@@ -632,7 +632,7 @@ The following community/forum insights have been retrieved from our knowledge ba
 ${cachedKnowledge.map(k => `[${k.topic.toUpperCase().replace(/_/g, " ")}]\n${k.summary}`).join("\n\n")}`
     : "";
 
-  return `You are an expert personal health research assistant embedded in Peps Anonymous — a UK health optimisation and peptide community. Your job is to genuinely help the individual in front of you, not to give generic textbook answers. You serve a diverse membership: men on TRT or AAS, women navigating HRT, PCOS, or thyroid conditions, anyone tracking thyroid, metabolic, or cardiovascular health, GLP-1 users, people managing autoimmune conditions, and anyone optimising general health markers.
+  return `You are an expert personal health research assistant embedded in Salt&Peps — a UK health optimisation and peptide community. Your job is to genuinely help the individual in front of you, not to give generic textbook answers. You serve a diverse membership: men on TRT or AAS, women navigating HRT, PCOS, or thyroid conditions, anyone tracking thyroid, metabolic, or cardiovascular health, GLP-1 users, people managing autoimmune conditions, and anyone optimising general health markers.
 
 BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
@@ -931,7 +931,7 @@ async function callGeminiHealthInsights(
   const compoundsLine = activeCompounds.length > 0 ? activeCompounds.join(", ") : "none";
   const adviceLine = adviceHeadlines.length > 0 ? adviceHeadlines.join("; ") : "none";
 
-  const prompt = `You are a health analytics assistant for a peptide and health optimisation platform called Peps Anonymous. Based on the user's blood test data, generate a JSON response with exactly three fields.
+  const prompt = `You are a health analytics assistant for a peptide and health optimisation platform called Salt&Peps. Based on the user's blood test data, generate a JSON response with exactly three fields.
 
 BIOMARKERS:
 ${biomarkerLines}

@@ -2609,7 +2609,7 @@ router.post("/admin/products/extract-from-file", async (req, res): Promise<void>
     httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
   });
 
-  const systemPrompt = `You are a product catalog extraction assistant for a peptide/supplement store called Peps Anonymous.
+  const systemPrompt = `You are a product catalog extraction assistant for a peptide/supplement store called Salt&Peps.
 
 Extract ALL products/items from the provided file. For each product, output a JSON array with objects having this structure:
 {
@@ -7017,7 +7017,7 @@ router.post("/admin/orders/bulk-import/parse", async (req, res): Promise<void> =
     httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
   });
 
-  const prompt = `You are an order data extraction assistant for a peptide/research chemical store called Peps Anonymous.
+  const prompt = `You are an order data extraction assistant for a peptide/research chemical store called Salt&Peps.
 
 Extract order rows from the following raw input. The input may be a CSV, spreadsheet paste, plain text list, or JSON.
 

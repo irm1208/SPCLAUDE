@@ -1,6 +1,6 @@
-# Peps Anonymous
+# Salt&Peps
 
-Peps Anonymous is a mobile-first peptide product ordering website functioning as a multi-product order form, allowing customers to order, track, and manage their peptide products.
+Salt&Peps is a mobile-first peptide product ordering website functioning as a multi-product order form, allowing customers to order, track, and manage their peptide products.
 
 ## Run & Operate
 

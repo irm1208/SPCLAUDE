@@ -504,7 +504,7 @@ function TelegramCard() {
                     Open the Telegram bot
                   </a>
                 ) : (
-                  <p className="text-xs" style={{ color: "var(--t-blue)" }}>Open the Peps Anonymous bot on Telegram</p>
+                  <p className="text-xs" style={{ color: "var(--t-blue)" }}>Open the Salt&amp;Peps bot on Telegram</p>
                 )}
 
                 <p className="text-[11px] font-semibold mt-2" style={{ color: "var(--t-blue)" }}>Step 2 — Send this command</p>

@@ -91,7 +91,7 @@ router.post("/admin/ai-chatbot/test", async (req: Request, res: Response): Promi
   const ctx    = (transcript ?? "").trim();
 
   const systemInstruction = [
-    "You are a helpful support assistant for Peps Anonymous, a peptide ordering platform.",
+    "You are a helpful support assistant for Salt&Peps, a peptide ordering platform.",
     "Your job is to answer customer questions concisely and helpfully.",
     ctx
       ? `Use the following Q&A transcript from real customer conversations as your primary knowledge base:\n\n--- TRANSCRIPT ---\n${ctx.slice(0, 40000)}\n--- END TRANSCRIPT ---`

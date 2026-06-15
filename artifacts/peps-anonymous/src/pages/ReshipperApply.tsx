@@ -55,7 +55,7 @@ export default function ReshipperApply() {
                 <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
                   <Truck className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-xs font-bold uppercase tracking-widest text-white/70">Peps Anonymous</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-white/70">Salt&amp;Peps</span>
               </div>
               <h1 className="text-2xl font-display font-bold text-white leading-tight">
                 Become a Reshipper
@@ -114,7 +114,7 @@ export default function ReshipperApply() {
                   You need to be logged in to apply
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--t-muted)" }}>
-                  Sign in to your Peps Anonymous account to submit your reshipper application.
+                  Sign in to your Salt&amp;Peps account to submit your reshipper application.
                 </p>
                 <button
                   onClick={() => setLocation("/login?next=/reshipper-apply")}

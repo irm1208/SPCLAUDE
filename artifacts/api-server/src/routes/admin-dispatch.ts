@@ -964,7 +964,7 @@ router.post("/admin/dispatch/:gbId/ocr-image", async (req, res) => {
       httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
     });
 
-    const prompt = `You are reading a dispatch packing slip photo from an online peptide store called Peps Anonymous (saltandpeps.co.uk).
+    const prompt = `You are reading a dispatch packing slip photo from an online peptide store called Salt&Peps (saltandpeps.co.uk).
 
 The slip layout is:
 1. TOP LINE (large, bold): The ORDER CODE displayed as @NUMBER — e.g. "@10170" or "@9823". This is the ORDER CODE (a number), NOT a Telegram username, even though it starts with @.

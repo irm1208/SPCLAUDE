@@ -476,7 +476,7 @@ function LoginScreen({ onLogin, onToggleTheme, theme }: { onLogin: (s: string) =
           <Lock className="w-8 h-8" style={{ color: "#F24908" }} />
         </div>
         <h1 className="text-2xl font-display font-bold text-center mb-1" style={{ color: "var(--adm-text)" }}>Admin Panel</h1>
-        <p className="text-sm text-center mb-8" style={{ color: "var(--adm-muted)" }}>Peps Anonymous — Backend</p>
+        <p className="text-sm text-center mb-8" style={{ color: "var(--adm-muted)" }}>Salt&amp;Peps — Backend</p>
         <div className="rounded-2xl border p-6" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div className="space-y-2">
@@ -22977,7 +22977,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
 
         <div className="flex-1 min-w-0">
           <h1 className="font-display font-bold text-sm leading-tight" style={{ color: "var(--adm-text)" }}>Admin Panel</h1>
-          <p className="text-[10px]" style={{ color: "var(--adm-muted)" }}>Peps Anonymous</p>
+          <p className="text-[10px]" style={{ color: "var(--adm-muted)" }}>Salt&amp;Peps</p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
