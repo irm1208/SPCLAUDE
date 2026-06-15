@@ -2,6 +2,8 @@ packages:
   - Product-Landing-Page/artifacts/*
   - Product-Landing-Page/lib/*
   - Product-Landing-Page/lib/integrations/*
+  - Product-Landing-Page/lib/protobufjs-stub
+  - Product-Landing-Page/lib/google-genai-shim
   - Product-Landing-Page/scripts
 
 autoInstallPeers: false

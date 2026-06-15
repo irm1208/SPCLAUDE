@@ -1,22 +1,18 @@
 {
   "name": "workspace",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
+    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm install --no-frozen-lockfile && pnpm --filter @workspace/peps-anonymous run build && pnpm --filter @workspace/api-server run build:compile",
     "start": "pnpm --filter @workspace/db run push-force && sh Product-Landing-Page/scripts/prod-seed-data-run.sh && NODE_ENV=production node Product-Landing-Page/artifacts/api-server/dist/index.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@google/genai": "^1.52.0",
-    "drizzle-zod": "^0.8.3",
-    "p-limit": "^7.3.0",
-    "p-retry": "^7.1.1",
-    "pg": "^8.20.0",
-    "zod": "^4.4.3",
-    "zod-validation-error": "^5.0.0"
-  }
+  "description": ""
 }
