@@ -44,6 +44,19 @@ function sniffBlobMime(buf: Buffer): string {
   return "application/pdf";
 }
 
+// Canonicalise a lab report URL for stable dedupe: trim whitespace and drop the
+// hash fragment (fragments never identify a distinct report). Path and query are
+// preserved because they can identify the specific report.
+function canonicalizeLabUrl(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return raw.trim();
+  }
+}
+
 // ── Duplicate detection helper ────────────────────────────────────────────────
 // Returns the existing record id if a duplicate is found, null otherwise.
 // Matches on: (1) identical URL, OR (2) same batch code + test date + peptide name.
@@ -623,9 +636,11 @@ router.get("/lab-tests/:id/preview", async (req, res) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    // If test has an uploaded PDF blob (no external URL), serve it via proxy
-    if (!test.url && test.pdfBlob) {
-      res.json({ type: "pdf", originalUrl: null });
+    // Prefer locally-stored bytes whenever we have them (uploads and
+    // browser-helper imports, which may also keep a source URL for dedupe).
+    // Served via /proxy; "pdf" keeps the iframe renderer working for images too.
+    if (test.pdfBlob) {
+      res.json({ type: "pdf", originalUrl: test.url ?? null });
       return;
     }
     if (!test.url) { res.status(422).json({ error: "This lab test has no external URL" }); return; }
@@ -660,10 +675,9 @@ router.get("/lab-tests/:id/proxy", async (req, res) => {
       return;
     }
 
-    // Serve uploaded/imported blob directly if no external URL.
-    // The blob may be a PDF (upload) or an image (browser-helper import), so
-    // detect the real type instead of assuming application/pdf.
-    if (!test.url && test.pdfBlob) {
+    // Prefer locally-stored bytes whenever present (uploads + browser-helper
+    // imports). The blob may be a PDF or an image, so detect the real type.
+    if (test.pdfBlob) {
       const buf = Buffer.from(test.pdfBlob, "base64");
       res.setHeader("Content-Type", sniffBlobMime(buf));
       res.setHeader("Cache-Control", "public, max-age=86400");
@@ -1036,9 +1050,24 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
     }
 
     const sourceUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    // Only persist the source URL if it's a recognised lab domain; this keeps
+    // dedupe keys clean and avoids storing arbitrary values. Invalid URLs still
+    // import via the uploaded image (stored as a blob), just without URL dedupe.
+    const normalizedUrl = sourceUrl && isBulkImportAllowedUrl(sourceUrl) ? canonicalizeLabUrl(sourceUrl) : null;
     const importSupplier = (typeof req.body?.supplier === "string" && req.body.supplier.trim()) || "Uther";
     const importLabName = (typeof req.body?.labName === "string" && req.body.labName.trim()) || "Janoshik";
     const isThirdParty = req.body?.isThirdParty === "true" || req.body?.isThirdParty === true;
+
+    // Fast duplicate pre-check by source URL — runs BEFORE the AI extraction so
+    // re-running a bulk batch skips already-imported reports without wasting an
+    // AI call on each one.
+    if (normalizedUrl) {
+      const urlDup = await findLabTestDuplicate(normalizedUrl, null, null, null);
+      if (urlDup !== null) {
+        res.status(409).json({ error: `Already imported — this report URL is already on file (id=${urlDup})`, duplicateId: urlDup });
+        return;
+      }
+    }
 
     // AI extraction across all supplied images
     const extracted = await extractCoADataFromBuffers(
@@ -1054,8 +1083,8 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
       ? JSON.stringify(extracted.blendComponents) : null;
     const importName = resolveUtherName(importSupplier, importBatchCode, extracted.compoundName ?? "Unknown");
 
-    // Duplicate check on batch + date + compound (URL isn't stored for these)
-    const dupId = await findLabTestDuplicate(null, importBatchCode, extracted.testDate ?? null, importName);
+    // Duplicate check on source URL OR batch + date + compound
+    const dupId = await findLabTestDuplicate(normalizedUrl, importBatchCode, extracted.testDate ?? null, importName);
     if (dupId !== null) {
       res.status(409).json({ error: `Already imported — a matching test already exists (id=${dupId})`, duplicateId: dupId });
       return;
@@ -1067,7 +1096,7 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
 
     const newRecord: NewLabTest = {
       janoshikId: `bm-${Date.now()}`,
-      url: null,
+      url: normalizedUrl,
       pdfBlob,
       peptideName: importName,
       supplier: importSupplier,

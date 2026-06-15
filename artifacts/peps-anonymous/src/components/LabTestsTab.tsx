@@ -933,6 +933,128 @@ function JanoshikHelperPanel({ secret }: { secret: string }) {
   );
 }
 
+// ── Janoshik BULK browser helper (bookmarklet worker) ────────────────────────
+// Same Cloudflare workaround as the single importer, but for many reports at
+// once. The bookmarklet opens the receiver in "bulk" mode and stays running as
+// a fetch worker: the receiver page (where the admin pastes the list of report
+// links) drives it, asking it to fetch each report's certificate image one at a
+// time so they can be imported with throttling. Free, no external services.
+function JanoshikBulkHelperPanel({ secret }: { secret: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const linkRef = useRef<HTMLAnchorElement | null>(null);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const bookmarklet =
+    `(function(){var APP=${JSON.stringify(origin)},S=${JSON.stringify(secret)};` +
+    `var w=window.open(APP+"/sleepingpepisadmin/janoshik-receiver?mode=bulk","_blank");` +
+    `if(!w){alert("Please allow pop-ups for janoshik.com, then click the button again.");return;}` +
+    `var runId=null;` +
+    `var hello=setInterval(function(){if(runId){clearInterval(hello);return;}try{w.postMessage({type:"janoshik-bulk-hello",secret:S},APP);}catch(e){}},600);` +
+    `setTimeout(function(){clearInterval(hello);},30000);` +
+    `function ok(u){if(!u)return false;var l=u.toLowerCase().split("?")[0].split("#")[0];var e=l.endsWith(".png")||l.endsWith(".jpg")||l.endsWith(".jpeg")||l.endsWith(".webp")||l.endsWith(".gif");return e&&u.toLowerCase().indexOf("janoshik")>-1;}` +
+    `function imgs(html,base){var d=new DOMParser().parseFromString(html,"text/html");var seen={},out=[];function add(raw){if(!raw)return;var abs;try{abs=new URL(raw,base).href;}catch(e){return;}if(!ok(abs)||seen[abs])return;seen[abs]=1;out.push(abs);}` +
+    `[].forEach.call(d.images,function(i){add(i.getAttribute("src"));});` +
+    `[].forEach.call(d.querySelectorAll("a[href]"),function(a){add(a.getAttribute("href"));});` +
+    `[].forEach.call(d.querySelectorAll('meta[property="og:image"],meta[name="twitter:image"]'),function(m){add(m.getAttribute("content"));});` +
+    `var pref=out.filter(function(u){return u.toLowerCase().indexOf("/tests/img/")>-1;});return pref.length?pref:out;}` +
+    `function sig(ms){try{if(typeof AbortSignal!=="undefined"&&AbortSignal.timeout)return AbortSignal.timeout(ms);}catch(e){}var c=new AbortController();setTimeout(function(){try{c.abort();}catch(e){}},ms);return c.signal;}` +
+    `function opts(ms){return {credentials:"include",signal:sig(ms)};}` +
+    `function readBlob(b){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(fr.result);};fr.onerror=function(){rej(new Error("could not read the image"));};fr.readAsDataURL(b);});}` +
+    `function grab(url){var host;try{host=new URL(url).host;}catch(e){return Promise.reject(new Error("That is not a valid link."));}` +
+    `if(host!==location.host){return Promise.reject(new Error("This report is on "+host+" — open that site and run the bulk button there."));}` +
+    `return fetch(url,opts(45000)).then(function(r){if(!r.ok)throw new Error("report page error "+r.status);var fin=r.url||url;return r.text().then(function(t){return {fin:fin,html:t};});})` +
+    `.then(function(o){var list=imgs(o.html,o.fin).slice(0,6);if(!list.length)throw new Error("no certificate image found on the page");` +
+    `return Promise.all(list.map(function(u){return fetch(u,opts(45000)).then(function(r){return r.ok?r.blob():null;}).then(function(b){return b?readBlob(b).catch(function(){return null;}):null;}).catch(function(){return null;});}));})` +
+    `.then(function(arr){var out=[];for(var i=0;i<arr.length;i++){if(arr[i])out.push(arr[i]);}if(!out.length)throw new Error("could not read the certificate image");return out;});}` +
+    `window.addEventListener("message",function(e){if(e.source!==w||e.origin!==APP)return;var d=e.data;if(!d||typeof d.type!=="string")return;` +
+    `if(d.type==="janoshik-bulk-ack"){runId=d.runId;clearInterval(hello);return;}` +
+    `if(d.type==="janoshik-bulk-fetch"&&d.runId===runId){var url=d.url,reqId=d.reqId;grab(url).then(function(arr){try{w.postMessage({type:"janoshik-bulk-image",runId:runId,reqId:reqId,url:url,images:arr},APP);}catch(e){}}).catch(function(err){try{w.postMessage({type:"janoshik-bulk-error",runId:runId,reqId:reqId,url:url,reason:String(err&&err.message||err)},APP);}catch(e){}});}` +
+    `},false);})();`;
+  const href = "javascript:" + encodeURIComponent(bookmarklet);
+
+  useEffect(() => {
+    if (linkRef.current) linkRef.current.setAttribute("href", href);
+  }, [href]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(99,102,241,0.3)", background: "rgba(99,102,241,0.05)" }}>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
+        <Zap className="w-4 h-4 text-indigo-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-indigo-300">Bulk Janoshik Importer</p>
+          <p className="text-xs text-slate-400">Free browser button — paste a list of Janoshik report links and import them all in one go.</p>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4">
+          <div className="rounded-lg p-3 text-xs text-slate-300 leading-relaxed" style={{ background: "rgba(0,0,0,0.2)" }}>
+            For importing many reports at once. It runs inside <span className="font-semibold">your</span> browser
+            (which Janoshik already trusts), works through your list one report at a time, and imports them all here —
+            free, no fees or sign-ups.
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-slate-300 mb-2">Set up once:</p>
+            <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
+              <li>Make sure your browser's bookmarks bar is showing (Ctrl/Cmd + Shift + B).</li>
+              <li>Drag the button below up to your bookmarks bar.</li>
+            </ol>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+              <a
+                ref={linkRef}
+                href="#"
+                draggable
+                onClick={(e) => e.preventDefault()}
+                title="Drag me to your bookmarks bar"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold text-white cursor-grab active:cursor-grabbing select-none"
+                style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)" }}
+              >
+                <Download className="w-4 h-4" /> Bulk import to Salt&amp;Peps
+              </a>
+              <button
+                onClick={copyCode}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-indigo-300 hover:text-white transition-colors"
+                style={{ border: "1px solid rgba(99,102,241,0.4)" }}
+              >
+                {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
+                {copied ? "Copied!" : "Copy link instead"}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then create a new bookmark and paste it as the address.</p>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-slate-300 mb-2">To import a batch:</p>
+            <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
+              <li>Open <span className="font-semibold">janoshik.com</span> in your browser and sign in if needed.</li>
+              <li>Click the <span className="font-semibold text-indigo-300">Bulk import to Salt&amp;Peps</span> bookmark.</li>
+              <li>In the new tab, paste your report links (one per line) and click <span className="font-semibold">Start import</span>.</li>
+              <li>Leave both tabs open while it works. It shows progress and skips anything already imported.</li>
+            </ol>
+          </div>
+
+          <div className="rounded-lg p-3 flex items-start gap-2 text-[11px] text-amber-300/90" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>This button contains your private admin key. Keep it on your own computer and don't share it. If you ever change your admin secret, re-create the button from here. Tip: run it on the same Janoshik site your links point to.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Bulk Import Panel ─────────────────────────────────────────────────────────
 function BulkImportPanel({ secret, onImported }: { secret: string; onImported: () => void }) {
   const [open, setOpen] = useState(false);
@@ -2088,6 +2210,9 @@ export function LabTestsTab({ secret }: { secret: string }) {
 
       {/* Janoshik one-click browser helper */}
       <JanoshikHelperPanel secret={secret} />
+
+      {/* Janoshik bulk browser helper */}
+      <JanoshikBulkHelperPanel secret={secret} />
 
       {/* Bulk Import Panel */}
       <BulkImportPanel secret={secret} onImported={load} />
