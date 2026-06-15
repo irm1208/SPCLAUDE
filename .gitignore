@@ -1,2 +1,18 @@
 zipFile.zip
 peps_dump_*.sql
+
+# Build output
+dist/
+artifacts/*/dist/
+
+# Database dumps & exports
+backup_clean.sql
+*.sql
+exports/
+
+# Large data import files (already imported into DB)
+attached_assets/*.json
+attached_assets/*.csv
+attached_assets/Genetic_Lifehacks_*.pdf
+attached_assets/MyHeritage_*.csv
+attached_assets/23andme_*.txt
