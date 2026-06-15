@@ -260,14 +260,16 @@ router.get("/group-buys/:gbId/testing", async (req, res): Promise<void> => {
   const leading = getLeadingVote(voteRows as { peptideName: string; vialCount: number; testSelections: string[] }[]);
 
   // Use round's testOptions as the ballot; if votes have arrived use vote-derived order,
-  // otherwise fall back to ballot order as-is
+  // otherwise fall back to ballot order as-is.
+  // Always append any ballot options not yet voted for so every configured test appears
+  // as a milestone even before members vote for it.
   const configuredTestOptions = (round.testOptions && Array.isArray(round.testOptions) && round.testOptions.length > 0)
     ? round.testOptions as string[]
     : DEFAULT_TEST_OPTIONS;
 
-  const testOrder = leading.testOrder.length > 0
-    ? leading.testOrder.filter(t => configuredTestOptions.includes(t))
-    : configuredTestOptions;
+  const votedInOrder = leading.testOrder.filter(t => configuredTestOptions.includes(t));
+  const unvoted = configuredTestOptions.filter(t => !votedInOrder.includes(t));
+  const testOrder = [...votedInOrder, ...unvoted];
 
   const { overrides: pubOverrides } = await fetchCatalogPriceOverrides(leading.peptideName);
   const milestones = computeMilestones(leading.peptideName, leading.vialCount, testOrder, pubOverrides);
@@ -794,9 +796,9 @@ router.get("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> =>
     ? round.testOptions as string[]
     : DEFAULT_TEST_OPTIONS;
 
-  const testOrder = leading.testOrder.length > 0
-    ? leading.testOrder.filter(t => configuredTestOptions.includes(t))
-    : configuredTestOptions;
+  const votedInOrderAdmin = leading.testOrder.filter(t => configuredTestOptions.includes(t));
+  const unvotedAdmin = configuredTestOptions.filter(t => !votedInOrderAdmin.includes(t));
+  const testOrder = [...votedInOrderAdmin, ...unvotedAdmin];
 
   const { overrides: adminOverrides, ballotTestPrices } = await fetchCatalogPriceOverrides(leading.peptideName);
   const thresholds = computeThresholds(leading.peptideName, leading.vialCount, adminOverrides);
