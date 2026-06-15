@@ -5617,262 +5617,21 @@ function BtDiscussTab({ sessions, username, prefillInput, onClearPrefill, noBann
   );
 }
 
-// ─── DNA Tab ──────────────────────────────────────────────────────────────────
-
-type DnaFinding = { rsid: string; gene: string; genotype: string; riskLevel: string; category: string; name: string };
-type DnaProfile = { accountId: string; fileFormat: string; snpCount: string; findings: DnaFinding[]; uploadedAt: string };
-
-const RISK_COLOR: Record<string, string> = {
-  high: "#ef4444",
-  moderate: "#f59e0b",
-  protective: "#10b981",
-  low: "#6b7280",
-  neutral: "#6b7280",
-};
-
-const RISK_LABEL: Record<string, string> = {
-  high: "HIGH IMPACT",
-  moderate: "MODERATE",
-  protective: "PROTECTIVE",
-  low: "LOW",
-  neutral: "NEUTRAL",
-};
-
-function DnaVariantCard({ f }: { f: DnaFinding }) {
-  const color = RISK_COLOR[f.riskLevel] ?? "#6b7280";
-  const label = RISK_LABEL[f.riskLevel] ?? f.riskLevel.toUpperCase();
-  return (
-    <div className="rounded-2xl px-4 py-3" style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
-      <div className="flex items-center justify-between gap-3 mb-1">
-        <span className="text-[11px] font-bold" style={{ color: T.text }}>{f.gene}</span>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${color}22`, color }}>
-          {label}
-        </span>
-      </div>
-      <p className="text-[12px] font-medium mb-1" style={{ color: T.text }}>{f.name}</p>
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] font-mono px-1.5 py-0.5 rounded" style={{ background: T.surface, color: T.muted, border: `1px solid ${T.border}` }}>
-          {f.rsid}
-        </span>
-        <span className="text-[11px] font-mono font-bold" style={{ color: T.text }}>{f.genotype}</span>
-      </div>
-    </div>
-  );
-}
-
-function DnaTab({ username }: { username: string }) {
-  const [profile, setProfile] = useState<DnaProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch("/api/dna/profile", { credentials: "include" })
-      .then(r => r.json())
-      .then((d: { exists: boolean; profile?: DnaProfile }) => {
-        if (!cancelled) {
-          setProfile(d.exists ? (d.profile ?? null) : null);
-          setLoading(false);
-        }
-      })
-      .catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [username]);
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setUploadError("");
-    try {
-      const content = await file.text();
-      const res = await fetch("/api/dna/upload", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
-      const data = await res.json() as { ok?: boolean; error?: string; findings?: DnaFinding[]; snpCount?: number; format?: string; matchedCount?: number };
-      if (!res.ok || !data.ok) {
-        setUploadError(data.error ?? "Upload failed");
-      } else {
-        const newProfile: DnaProfile = {
-          accountId: username,
-          fileFormat: data.format ?? "23andme",
-          snpCount: String(data.snpCount ?? ""),
-          findings: data.findings ?? [],
-          uploadedAt: new Date().toISOString(),
-        };
-        setProfile(newProfile);
-      }
-    } catch {
-      setUploadError("Upload failed. Please try again.");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  }
-
-  async function handleDelete() {
-    await fetch("/api/dna/profile", { method: "DELETE", credentials: "include" });
-    setProfile(null);
-    setDeleteConfirm(false);
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="w-7 h-7 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--t-blue)", borderTopColor: "transparent" }} />
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="space-y-5 pt-2">
-        <div className="rounded-3xl p-5 text-center" style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-               style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
-            <Dna className="w-7 h-7 text-white" />
-          </div>
-          <h3 className="text-base font-bold mb-2" style={{ color: T.text }}>Upload Your DNA</h3>
-          <p className="text-sm mb-4" style={{ color: T.muted }}>
-            Upload your raw DNA data from 23andMe or MyHeritage. We'll cross-reference 62 clinically-relevant variants covering methylation, hormones, metabolic health, brain chemistry, and more.
-          </p>
-          <p className="text-xs mb-5 px-2" style={{ color: T.muted }}>
-            Your raw data is processed locally on the server and only matched variants are stored — never your full genome.
-          </p>
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="w-full h-11 rounded-2xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
-            {uploading ? "Processing…" : "Choose DNA File"}
-          </button>
-          {uploadError && <p className="text-xs mt-3 text-red-400">{uploadError}</p>}
-          <input ref={fileRef} type="file" accept=".txt,.csv,.gz" className="hidden" onChange={handleFileChange} />
-          <p className="text-[10px] mt-4" style={{ color: T.muted }}>Accepts .txt and .csv raw data files from 23andMe or MyHeritage</p>
-        </div>
-      </div>
-    );
-  }
-
-  const findings = profile.findings ?? [];
-  const categories = ["All", ...Array.from(new Set(findings.map(f => f.category)))];
-  const filtered = selectedCategory === "All" ? findings : findings.filter(f => f.category === selectedCategory);
-  const highRisk = findings.filter(f => f.riskLevel === "high").length;
-  const moderate = findings.filter(f => f.riskLevel === "moderate").length;
-  const protective = findings.filter(f => f.riskLevel === "protective").length;
-  const uploadDate = profile.uploadedAt ? new Date(profile.uploadedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" }) : "";
-
-  return (
-    <div className="space-y-4 pt-2">
-      {/* Summary card */}
-      <div className="rounded-3xl p-4" style={{ background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)", border: `1px solid #4338ca44` }}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.1)" }}>
-            <Dna className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.5)" }}>
-              {profile.fileFormat === "myheritage" ? "MyHeritage" : "23andMe"} · {profile.snpCount ? `${parseInt(profile.snpCount).toLocaleString()} SNPs scanned` : "DNA uploaded"}
-            </p>
-            <p className="text-sm font-bold text-white">{findings.length} variants matched</p>
-          </div>
-          <button onClick={() => setDeleteConfirm(true)} className="ml-auto w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.1)" }}>
-            <Trash2 className="w-4 h-4" style={{ color: "rgba(255,255,255,0.5)" }} />
-          </button>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "High impact", value: highRisk, color: "#ef4444" },
-            { label: "Moderate", value: moderate, color: "#f59e0b" },
-            { label: "Protective", value: protective, color: "#10b981" },
-          ].map(s => (
-            <div key={s.label} className="rounded-xl p-2 text-center" style={{ background: "rgba(255,255,255,0.07)" }}>
-              <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.5)" }}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-        {uploadDate && <p className="text-[10px] mt-3" style={{ color: "rgba(255,255,255,0.35)" }}>Uploaded {uploadDate}</p>}
-      </div>
-
-      {/* Re-upload */}
-      <button onClick={() => fileRef.current?.click()} disabled={uploading}
-        className="w-full h-9 rounded-2xl text-xs font-bold transition-opacity disabled:opacity-50"
-        style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
-        {uploading ? "Processing…" : "Re-upload DNA file"}
-      </button>
-      {uploadError && <p className="text-xs text-red-400">{uploadError}</p>}
-      <input ref={fileRef} type="file" accept=".txt,.csv,.gz" className="hidden" onChange={handleFileChange} />
-
-      {/* Category filter */}
-      {categories.length > 2 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {categories.map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat)}
-              className="shrink-0 h-7 px-3 rounded-full text-[11px] font-semibold transition-all"
-              style={selectedCategory === cat
-                ? { background: "var(--t-blue)", color: "white" }
-                : { background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
-              {cat}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Variant cards */}
-      {filtered.length === 0 ? (
-        <p className="text-center py-8 text-sm" style={{ color: T.muted }}>No variants in this category</p>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(f => <DnaVariantCard key={f.rsid} f={f} />)}
-        </div>
-      )}
-
-      {/* Delete confirm */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-5" style={{ background: "rgba(0,0,0,0.6)" }}>
-          <div className="w-full max-w-sm rounded-3xl p-6 space-y-4" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-            <h4 className="text-base font-bold" style={{ color: T.text }}>Delete DNA Profile?</h4>
-            <p className="text-sm" style={{ color: T.muted }}>This will remove all your matched genetic variants. You can re-upload at any time.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setDeleteConfirm(false)} className="h-11 rounded-2xl text-sm font-semibold" style={{ background: T.surface2, color: T.text, border: `1px solid ${T.border}` }}>
-                Cancel
-              </button>
-              <button onClick={handleDelete} className="h-11 rounded-2xl text-sm font-bold text-white" style={{ background: "#ef4444" }}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Blood Test Hub: Portal component ─────────────────────────────────────────
 
-type BtPortalTab = "dashboard" | "results" | "add" | "discuss" | "dna";
+type BtPortalTab = "dashboard" | "results" | "add" | "discuss";
 
 const BT_PORTAL_TABS: { id: BtPortalTab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: "dashboard", label: "Dashboard",    icon: LayoutDashboard },
   { id: "results",   label: "Results",      icon: FlaskConical },
   { id: "add",       label: "Add Results",  icon: Plus },
   { id: "discuss",   label: "Discuss",      icon: MessageSquare },
-  { id: "dna",       label: "DNA",          icon: Dna },
 ];
 
 function BloodTestPortalHub({ sessions, username, onTabChange }: { sessions: BloodTestSession[]; username: string; onTabChange?: (tab: BtPortalTab) => void }) {
   const [activeTab, setActiveTab] = useState<BtPortalTab>(() => {
     const bt = new URLSearchParams(window.location.search).get("bt") as BtPortalTab | null;
-    return bt && (["dashboard", "results", "add", "discuss", "dna"] as string[]).includes(bt) ? bt : "dashboard";
+    return bt && (["dashboard", "results", "add", "discuss"] as string[]).includes(bt) ? bt : "dashboard";
   });
   const [discussPrefill, setDiscussPrefill] = useState<string>("");
   const [editSession, setEditSession] = useState<BloodTestSession | null>(null);
@@ -5935,7 +5694,6 @@ function BloodTestPortalHub({ sessions, username, onTabChange }: { sessions: Blo
           {activeTab === "results"   && <BtResultsTab sessions={sessions} onEdit={handleEdit} username={username} />}
           {activeTab === "add"       && <BtAddResultsTab onSaved={handleSaved} editSession={editSession} />}
           {activeTab === "discuss"   && <BtDiscussTab sessions={sessions} username={username} prefillInput={discussPrefill} onClearPrefill={() => setDiscussPrefill("")} noBanner />}
-          {activeTab === "dna"       && <DnaTab username={username} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -5946,7 +5704,7 @@ function BloodTestPortalHub({ sessions, username, onTabChange }: { sessions: Blo
 
 function BloodTestPortalHubWithBanner({ sessions, username, onBack }: { sessions: BloodTestSession[]; username: string; onBack: () => void }) {
   const [btTab, setBtTab] = useState<BtPortalTab>("dashboard");
-  const showBanner = btTab !== "discuss" && btTab !== "dna";
+  const showBanner = btTab !== "discuss";
 
   return (
     <>
