@@ -12,6 +12,9 @@ fi
 echo "[deploy] Installing dependencies..."
 $PNPM install --no-frozen-lockfile
 
+echo "[deploy] Pushing database schema..."
+$PNPM --filter @workspace/db run push-force
+
 echo "[deploy] Compiling API server..."
 NODE_OPTIONS="--max-old-space-size=4096" $PNPM --filter @workspace/api-server run build:compile
 
