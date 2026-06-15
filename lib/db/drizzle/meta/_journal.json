@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1774214197583,
+      "tag": "0000_melodic_old_lace",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774216442621,
+      "tag": "0001_lowly_redwing",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774442401705,
+      "tag": "0002_easy_darkhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775427800692,
+      "tag": "0003_rich_dracula",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775942400000,
+      "tag": "0004_blood_test_session_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776028800000,
+      "tag": "0005_products_vendor",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776258000000,
+      "tag": "0006_group_buys_shipping_options",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1744560000000,
+      "tag": "0009_organiser_role_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1744646400000,
+      "tag": "0010_discuss_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776165600000,
+      "tag": "0012_payment_screenshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776351600000,
+      "tag": "0013_allow_half_kits",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778198400000,
+      "tag": "0016_lock_order_edits_when_closed",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778284800000,
+      "tag": "0017_gb_closed_customer_perms",
+      "breakpoints": true
+    }
+  ]
+}

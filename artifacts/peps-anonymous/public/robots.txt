@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /sleepingpepisadmin
+Disallow: /seller
+Disallow: /members
+Disallow: /review
+Disallow: /success
+Disallow: /lookup
+Allow: /

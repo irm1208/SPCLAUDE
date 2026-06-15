@@ -1,0 +1,1302 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Peps Anonymous Order API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: products
+    description: Product catalog operations
+  - name: delivery
+    description: Delivery method operations
+  - name: orders
+    description: Order management operations
+  - name: config
+    description: Site configuration
+  - name: lab-tests
+    description: Lab test CoA reports — listing, filtering, community submissions, metrics
+  - name: tickets
+    description: Support ticket system — customer submission and admin management
+paths:
+  /lab-tests:
+    get:
+      operationId: listLabTests
+      tags: [lab-tests]
+      summary: List approved lab test reports with optional filtering
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Full-text search across compound name and batch code
+        - in: query
+          name: peptide
+          schema:
+            type: string
+          description: Exact compound name match (normalized)
+        - in: query
+          name: supplier
+          schema:
+            type: string
+          description: Filter by vendor/supplier (case-insensitive)
+        - in: query
+          name: labName
+          schema:
+            type: string
+          description: Filter by lab name (e.g. Janoshik, Uzorak)
+        - in: query
+          name: testType
+          schema:
+            type: string
+            enum: [mass_purity, endotoxin, sterility, heavy_metals, lcms]
+          description: Filter by test type
+        - in: query
+          name: productCategory
+          schema:
+            type: string
+            enum: [peptide, pill, aas, other]
+          description: Filter by product category
+        - in: query
+          name: isThirdParty
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Filter by source (true = 3rd party, false = vendor)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of approved lab test reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LabTest"
+
+  /lab-tests/metrics:
+    get:
+      operationId: getLabTestMetrics
+      tags: [lab-tests]
+      summary: Aggregate statistics across all approved lab tests
+      responses:
+        "200":
+          description: Metrics breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabTestMetrics"
+
+  /lab-tests/filters:
+    get:
+      operationId: getLabTestFilters
+      tags: [lab-tests]
+      summary: Distinct filter values available across approved tests
+      responses:
+        "200":
+          description: Available filter options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  compounds:
+                    type: array
+                    items:
+                      type: string
+                  labs:
+                    type: array
+                    items:
+                      type: string
+                  suppliers:
+                    type: array
+                    items:
+                      type: string
+
+  /lab-tests/submit:
+    post:
+      operationId: submitLabTest
+      tags: [lab-tests]
+      summary: Submit a community lab report for admin review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestSubmitRequest"
+      responses:
+        "200":
+          description: Submission accepted (pending review)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: integer
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /lab-tests/{id}:
+    get:
+      operationId: getLabTest
+      tags: [lab-tests]
+      summary: Get a single lab test record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lab test record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabTest"
+        "404":
+          description: Not found
+
+  /lab-tests/{id}/images:
+    get:
+      operationId: getLabTestImages
+      tags: [lab-tests]
+      summary: Fetch proxied CoA report image URLs for a lab test
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Report image URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  url:
+                    type: string
+                    format: uri
+
+  /admin/lab-tests/pending:
+    get:
+      operationId: getPendingLabTests
+      tags: [lab-tests]
+      summary: List community submissions awaiting admin review
+      security:
+        - adminSecret: []
+      responses:
+        "200":
+          description: Pending lab test submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LabTest"
+
+  /admin/lab-tests/{id}/approve:
+    post:
+      operationId: approveLabTest
+      tags: [lab-tests]
+      summary: Approve a pending community submission
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "404":
+          description: Pending submission not found
+
+  /admin/lab-tests/{id}/reject:
+    delete:
+      operationId: rejectLabTest
+      tags: [lab-tests]
+      summary: Reject and permanently delete a pending community submission
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rejected and deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "404":
+          description: Pending submission not found (or record is already approved)
+
+  /admin/lab-tests:
+    post:
+      operationId: adminAddLabTest
+      tags: [lab-tests]
+      summary: Admin — add a new lab test record directly
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/LabTestSubmitRequest"
+                - type: object
+                  properties:
+                    purityPct:
+                      type: number
+                      nullable: true
+                    endotoxinEuMg:
+                      type: number
+                      nullable: true
+                    sterilityPass:
+                      type: boolean
+                      nullable: true
+                    testDate:
+                      type: string
+                      nullable: true
+                    mgAmount:
+                      type: number
+                      nullable: true
+      responses:
+        "200":
+          description: Created lab test record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabTest"
+
+  /admin/lab-tests/{id}:
+    put:
+      operationId: adminUpdateLabTest
+      tags: [lab-tests]
+      summary: Admin — update CoA values and metadata on a lab test
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                peptideName:
+                  type: string
+                supplier:
+                  type: string
+                labName:
+                  type: string
+                testType:
+                  type: string
+                  nullable: true
+                productCategory:
+                  type: string
+                  nullable: true
+                mgAmount:
+                  type: number
+                  nullable: true
+                batchCode:
+                  type: string
+                  nullable: true
+                purityPct:
+                  type: number
+                  nullable: true
+                endotoxinEuMg:
+                  type: number
+                  nullable: true
+                sterilityPass:
+                  type: boolean
+                  nullable: true
+                testDate:
+                  type: string
+                  nullable: true
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated lab test record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabTest"
+        "404":
+          description: Not found
+    delete:
+      operationId: adminDeleteLabTest
+      tags: [lab-tests]
+      summary: Admin — permanently delete a lab test record
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /products:
+    get:
+      operationId: getProducts
+      tags: [products]
+      summary: List all active products
+      responses:
+        "200":
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+
+  /delivery-methods:
+    get:
+      operationId: getDeliveryMethods
+      tags: [delivery]
+      summary: List all active delivery methods with prices
+      responses:
+        "200":
+          description: List of delivery methods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeliveryMethod"
+
+  /config:
+    get:
+      operationId: getSiteConfig
+      tags: [config]
+      summary: Get site configuration (vendor shipping price, etc.)
+      responses:
+        "200":
+          description: Site config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteConfig"
+
+  /orders:
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create a new order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders/lookup:
+    post:
+      operationId: lookupOrder
+      tags: [orders]
+      summary: Look up an existing order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LookupOrderRequest"
+      responses:
+        "200":
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many failed attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders/{orderId}:
+    put:
+      operationId: updateOrder
+      tags: [orders]
+      summary: Update an existing order
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderRequest"
+      responses:
+        "200":
+          description: Order updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Order cannot be edited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+
+  /account/tickets:
+    post:
+      operationId: createTicket
+      tags: [tickets]
+      summary: Create a new support ticket (JWT auth)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTicketRequest"
+      responses:
+        "201":
+          description: Created ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+    get:
+      operationId: listMyTickets
+      tags: [tickets]
+      summary: List own tickets (JWT auth)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of customer tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tickets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Ticket"
+
+  /account/tickets/{id}:
+    get:
+      operationId: getMyTicket
+      tags: [tickets]
+      summary: Get a single ticket with message thread (JWT auth)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketWithMessages"
+
+  /account/tickets/{id}/messages:
+    post:
+      operationId: postTicketMessage
+      tags: [tickets]
+      summary: Post a reply on a ticket (JWT auth)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostTicketMessageRequest"
+      responses:
+        "201":
+          description: Created message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketMessage"
+
+  /admin/tickets:
+    get:
+      operationId: adminListTickets
+      tags: [tickets]
+      summary: List all tickets with optional filters (admin)
+      security:
+        - adminSecret: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, in_progress, resolved, closed]
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [order_issue, general_support, billing_refund]
+      responses:
+        "200":
+          description: All tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tickets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Ticket"
+
+  /admin/tickets/{id}:
+    get:
+      operationId: adminGetTicket
+      tags: [tickets]
+      summary: Get a ticket with thread (admin)
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketWithMessages"
+
+  /admin/tickets/{id}/status:
+    put:
+      operationId: adminUpdateTicketStatus
+      tags: [tickets]
+      summary: Change ticket status (admin)
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [open, in_progress, resolved, closed]
+              required:
+                - status
+      responses:
+        "200":
+          description: Updated status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  updatedAt:
+                    type: string
+
+  /admin/tickets/{id}/messages:
+    post:
+      operationId: adminPostTicketMessage
+      tags: [tickets]
+      summary: Post an admin reply on a ticket
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostTicketMessageRequest"
+      responses:
+        "201":
+          description: Created message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketMessage"
+
+
+components:
+  securitySchemes:
+    adminSecret:
+      type: apiKey
+      in: header
+      name: x-admin-secret
+      description: Admin secret key passed as x-admin-secret header
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: account_session
+      description: JWT session cookie set on customer login
+
+  schemas:
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+        accountUsername:
+          type: string
+        category:
+          type: string
+          enum: [order_issue, general_support, billing_refund]
+        subject:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, resolved, closed]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - accountUsername
+        - category
+        - subject
+        - status
+        - createdAt
+        - updatedAt
+
+    TicketMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticketId:
+          type: string
+        authorRole:
+          type: string
+          enum: [customer, admin]
+        authorUsername:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - ticketId
+        - authorRole
+        - authorUsername
+        - body
+        - createdAt
+
+    TicketWithMessages:
+      type: object
+      properties:
+        ticket:
+          $ref: "#/components/schemas/Ticket"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketMessage"
+      required:
+        - ticket
+        - messages
+
+    CreateTicketRequest:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [order_issue, general_support, billing_refund]
+        subject:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 4000
+      required:
+        - category
+        - subject
+        - description
+
+    PostTicketMessageRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          maxLength: 4000
+      required:
+        - body
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        active:
+          type: boolean
+        sortOrder:
+          type: ["integer", "null"]
+      required:
+        - id
+        - name
+        - price
+        - active
+
+    DeliveryMethod:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        active:
+          type: boolean
+        sortOrder:
+          type: ["integer", "null"]
+        infoEnabled:
+          type: boolean
+        infoText:
+          type: ["string", "null"]
+      required:
+        - id
+        - name
+        - price
+        - active
+        - infoEnabled
+
+    SiteConfig:
+      type: object
+      properties:
+        vendorShipping:
+          type: number
+        currency:
+          type: string
+      required:
+        - vendorShipping
+        - currency
+
+    OrderLineItem:
+      type: object
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        productName:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+        lineTotal:
+          type: number
+      required:
+        - id
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+        - lineTotal
+
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        telegramUsername:
+          type: string
+        deliveryMethod:
+          type: string
+        deliveryPrice:
+          type: number
+        vendorShipping:
+          type: number
+        productSubtotal:
+          type: number
+        tip:
+          type: number
+        grandTotal:
+          type: number
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineItem"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - code
+        - telegramUsername
+        - deliveryMethod
+        - deliveryPrice
+        - vendorShipping
+        - productSubtotal
+        - tip
+        - grandTotal
+        - status
+        - lineItems
+        - createdAt
+        - updatedAt
+
+    CreateOrderLineItem:
+      type: object
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+        lineTotal:
+          type: number
+      required:
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+        - lineTotal
+
+    CreateOrderRequest:
+      type: object
+      properties:
+        telegramUsername:
+          type: string
+        deliveryMethodId:
+          type: string
+        deliveryMethod:
+          type: string
+        deliveryPrice:
+          type: number
+        vendorShipping:
+          type: number
+        productSubtotal:
+          type: number
+        tip:
+          type: number
+        grandTotal:
+          type: number
+        notes:
+          type: ["string", "null"]
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateOrderLineItem"
+      required:
+        - telegramUsername
+        - deliveryMethodId
+        - deliveryMethod
+        - deliveryPrice
+        - vendorShipping
+        - productSubtotal
+        - tip
+        - grandTotal
+        - lineItems
+
+    UpdateOrderRequest:
+      type: object
+      properties:
+        telegramUsername:
+          type: string
+        code:
+          type: string
+        orderType:
+          type: ["string", "null"]
+        deliveryMethodId:
+          type: ["string", "null"]
+        deliveryMethod:
+          type: string
+        deliveryPrice:
+          type: number
+        vendorShipping:
+          type: number
+        productSubtotal:
+          type: number
+        tip:
+          type: number
+        grandTotal:
+          type: number
+        notes:
+          type: ["string", "null"]
+        shippingName:
+          type: ["string", "null"]
+        shippingPhone:
+          type: ["string", "null"]
+        shippingEmail:
+          type: ["string", "null"]
+        shippingAddress:
+          type: ["string", "null"]
+        shippingCountry:
+          type: ["string", "null"]
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateOrderLineItem"
+      required:
+        - telegramUsername
+        - code
+        - deliveryMethod
+        - deliveryPrice
+        - vendorShipping
+        - productSubtotal
+        - tip
+        - grandTotal
+        - lineItems
+
+    LookupOrderRequest:
+      type: object
+      properties:
+        telegramUsername:
+          type: string
+        code:
+          type: string
+      required:
+        - telegramUsername
+        - code
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    LabTest:
+      type: object
+      properties:
+        id:
+          type: integer
+        janoshikId:
+          type: string
+          nullable: true
+        url:
+          type: string
+        peptideName:
+          type: string
+        mgAmount:
+          type: number
+          nullable: true
+        supplier:
+          type: string
+        batchCode:
+          type: string
+          nullable: true
+        labName:
+          type: string
+        testType:
+          type: string
+          nullable: true
+          enum: [mass_purity, endotoxin, sterility, heavy_metals, lcms]
+        productCategory:
+          type: string
+          nullable: true
+          enum: [peptide, pill, aas, other]
+        purityPct:
+          type: number
+          nullable: true
+        endotoxinEuMg:
+          type: number
+          nullable: true
+        sterilityPass:
+          type: boolean
+          nullable: true
+        testDate:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        isThirdPartyTest:
+          type: boolean
+        pending:
+          type: boolean
+        submittedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - url
+        - peptideName
+        - supplier
+        - labName
+        - isThirdPartyTest
+        - pending
+        - createdAt
+
+    LabTestSubmitRequest:
+      type: object
+      properties:
+        url:
+          type: string
+        peptideName:
+          type: string
+        supplier:
+          type: string
+        labName:
+          type: string
+        testType:
+          type: string
+          nullable: true
+        productCategory:
+          type: string
+          nullable: true
+        isThirdPartyTest:
+          type: boolean
+        batchCode:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        submittedBy:
+          type: string
+          nullable: true
+      required:
+        - url
+        - peptideName
+
+    LabTestMetrics:
+      type: object
+      properties:
+        overall:
+          type: object
+          properties:
+            total:
+              type: integer
+            withPurity:
+              type: integer
+            withEndotoxin:
+              type: integer
+            withSterility:
+              type: integer
+            sterilityPass:
+              type: integer
+            sterilityFail:
+              type: integer
+            avgPurity:
+              type: number
+              nullable: true
+            excellentPurity:
+              type: integer
+            goodPurity:
+              type: integer
+            lowPurity:
+              type: integer
+            thirdParty:
+              type: integer
+            vendorTests:
+              type: integer
+        byLab:
+          type: array
+          items:
+            type: object
+            properties:
+              labName:
+                type: string
+              count:
+                type: integer
+        byTestType:
+          type: array
+          items:
+            type: object
+            properties:
+              testType:
+                type: string
+                nullable: true
+              count:
+                type: integer
+        byCompound:
+          type: array
+          items:
+            type: object
+            properties:
+              peptideName:
+                type: string
+              count:
+                type: integer
+              avgPurity:
+                type: number
+                nullable: true
+        byCategory:
+          type: array
+          items:
+            type: object
+            properties:
+              productCategory:
+                type: string
+                nullable: true
+              count:
+                type: integer

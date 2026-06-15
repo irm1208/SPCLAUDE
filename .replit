@@ -77,27 +77,27 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd Product-Landing-Page && bash start.sh"
+args = "bash start.sh"
 waitForPort = 5000
 
 [[workflows.workflow]]
 name = "artifacts/mockup-sandbox: Component Preview Server"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd Product-Landing-Page && PORT=8081 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run dev"
-waitForPort = 8081
-
 [workflows.workflow.metadata]
 outputType = "console"
 isCanvasWorkflow = true
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8081 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run dev"
+waitForPort = 8081
+
 [postMerge]
-path = "Product-Landing-Page/scripts/post-merge.sh"
+path = "scripts/post-merge.sh"
 timeoutMs = 120000
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["bash", "Product-Landing-Page/scripts/deploy.sh"]
-run = ["bash", "Product-Landing-Page/scripts/start-prod.sh"]
+build = ["bash", "scripts/deploy.sh"]
+run = ["bash", "scripts/start-prod.sh"]

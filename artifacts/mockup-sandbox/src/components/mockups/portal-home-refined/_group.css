@@ -1,0 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root, [data-theme="light"] {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #4B5563;
+  --t-subtle:   #71717A;
+  --t-nav:      #2D6BCC;
+  font-family: 'Inter', sans-serif;
+}

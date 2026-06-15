@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+:root {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #4B5563;
+  --t-subtle:   #71717A;
+  --t-nav:      #2D6BCC;
+  --t-glass:    rgba(255,255,255,0.97);
+  --t-glass2:   rgba(244,244,245,0.98);
+  --t-tag-bg:   rgba(45,107,204,0.08);
+  --t-tag-text: #2D6BCC;
+  --t-tag-border: rgba(45,107,204,0.2);
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+
+  --background: 240 5% 96%;
+  --foreground: 210 11% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 11% 11%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 220 65% 50%;
+  --primary: 220 65% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 210 11% 11%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 220 9% 30%;
+  --accent: 220 65% 50%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 4 86% 57%;
+  --destructive-foreground: 0 0% 100%;
+  --radius: 0.5rem;
+}
+
+* { font-family: 'Inter', sans-serif; }

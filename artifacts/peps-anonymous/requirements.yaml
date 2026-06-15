@@ -1,0 +1,11 @@
+packages:
+  "zustand": "State management for the order draft with localStorage persistence"
+  "framer-motion": "Smooth page transitions and component animations"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for merging Tailwind CSS classes safely"
+  "lucide-react": "Beautiful, consistent icons"
+images: []
+notes:
+  - "Using generated API hooks from @workspace/api-client-react as specified in the environment context."
+  - "Using Zustand with persist middleware to handle the draft autosave requirement."
+  - "Implemented robust client-side validation and duplicate product prevention."

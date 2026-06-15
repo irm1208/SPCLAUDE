@@ -1,0 +1,18 @@
+export const T = {
+  bg:       "var(--t-bg)",
+  surface:  "var(--t-surface)",
+  surface2: "var(--t-surface2)",
+  border:   "var(--t-border)",
+  text:     "var(--t-text)",
+  muted:    "var(--t-muted)",
+  subtle:   "var(--t-subtle)",
+  navActive:"var(--t-nav)",
+  glass:    "var(--t-glass)",
+  glass2:   "var(--t-glass2)",
+  tagBg:    "var(--t-tag-bg)",
+  tagText:  "var(--t-tag-text)",
+  tagBorder:"var(--t-tag-border)",
+  blue:     "var(--t-blue)",
+  blueDeep: "var(--t-blue-deep)",
+  shadow:   "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+} as const;

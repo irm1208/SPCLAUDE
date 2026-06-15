@@ -1,0 +1,11 @@
+{
+  "name": "protobufjs",
+  "version": "7.5.4",
+  "description": "Stub for Replit environment",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./light": "./index.js",
+    "./minimal": "./index.js"
+  }
+}

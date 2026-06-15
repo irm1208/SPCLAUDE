@@ -1,0 +1,1 @@
+{"version":3,"file":"ticketWithMessages.d.ts","sourceRoot":"","sources":["../../../src/generated/types/ticketWithMessages.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,EAAE,MAAM,EAAE,MAAM,UAAU,CAAC;AACvC,OAAO,KAAK,EAAE,aAAa,EAAE,MAAM,iBAAiB,CAAC;AAErD,MAAM,WAAW,kBAAkB;IACjC,MAAM,EAAE,MAAM,CAAC;IACf,QAAQ,EAAE,aAAa,EAAE,CAAC;CAC3B"}

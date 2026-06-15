@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+
+.terminal-theme {
+  --bg-color: #050505;
+  --fg-color: #e0e0e0;
+  --accent-color: #00ff9c;
+  --muted-color: #666666;
+  --border-color: #333333;
+  --alert-color: #ff3366;
+  
+  font-family: 'JetBrains Mono', monospace;
+  background-color: var(--bg-color);
+  color: var(--fg-color);
+}
+
+.terminal-theme .bg-black {
+  background-color: var(--bg-color);
+}
+
+.terminal-theme .text-green {
+  color: var(--accent-color);
+}
+
+.terminal-theme .border-green {
+  border-color: var(--accent-color);
+}
+
+.terminal-theme .bg-green {
+  background-color: var(--accent-color);
+  color: var(--bg-color);
+}
+
+.terminal-theme .text-muted {
+  color: var(--muted-color);
+}
+
+.terminal-theme .border-muted {
+  border-color: var(--border-color);
+}
+
+.terminal-theme ::selection {
+  background-color: var(--accent-color);
+  color: var(--bg-color);
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: "█";
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--accent-color);
+  animation: blink 1s step-end infinite;
+}
+
+.scanline {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0),
+    rgba(255,255,255,0) 50%,
+    rgba(0,0,0,0.2) 50%,
+    rgba(0,0,0,0.2)
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.3;
+}

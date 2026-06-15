@@ -1,0 +1,14 @@
+{
+  "name": "@google/genai",
+  "version": "1.48.0",
+  "description": "REST-based shim for Replit environment (no protobufjs dependency)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "require": "./src/index.cjs"
+    }
+  },
+  "types": "./src/index.d.ts"
+}

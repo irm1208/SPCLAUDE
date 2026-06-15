@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Peps Anonymous"
+version = "1.0.0"
+id = "artifacts/peps-anonymous"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 21503
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/peps-anonymous run dev"
+
+[services.env]
+PORT = "21503"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/peps-anonymous", "run", "build"]
+publicDir = "artifacts/peps-anonymous/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"

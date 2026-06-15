@@ -1,0 +1,30 @@
+{
+  "task": "Task #1 — Home page layout variations (canvas)",
+  "canvasShapes": [
+    {
+      "shapeId": "home-split-hero",
+      "componentName": "A — Split Hero",
+      "componentPath": "home-layouts/SplitHero.tsx",
+      "previewRoute": "/preview/home-layouts/SplitHero",
+      "x": 876, "y": -340, "w": 390, "h": 780,
+      "state": "live"
+    },
+    {
+      "shapeId": "home-quick-grid",
+      "componentName": "B — Quick Launch Grid",
+      "componentPath": "home-layouts/QuickLaunchGrid.tsx",
+      "previewRoute": "/preview/home-layouts/QuickLaunchGrid",
+      "x": 1316, "y": -340, "w": 390, "h": 780,
+      "state": "live"
+    },
+    {
+      "shapeId": "home-collapsed-stack",
+      "componentName": "C — Collapsed Stack",
+      "componentPath": "home-layouts/CollapsedStack.tsx",
+      "previewRoute": "/preview/home-layouts/CollapsedStack",
+      "x": 1756, "y": -340, "w": 390, "h": 780,
+      "state": "live"
+    }
+  ],
+  "layout": "Horizontal row, 50px gutters, 390x780 each. Placed to the right of the main app iframe at x=163."
+}

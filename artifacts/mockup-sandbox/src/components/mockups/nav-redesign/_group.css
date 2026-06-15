@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root, [data-theme="light"] {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #4B5563;
+  --t-subtle:   #71717A;
+  --t-nav:      #2D6BCC;
+  --t-glass:    rgba(255,255,255,0.97);
+  --t-glass2:   rgba(244,244,245,0.98);
+  --t-tag-bg:   rgba(45,107,204,0.08);
+  --t-tag-text: #2D6BCC;
+  --t-tag-border: rgba(45,107,204,0.2);
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --t-bg:       #111113;
+  --t-surface:  #1C1C1E;
+  --t-surface2: #2C2C2E;
+  --t-border:   rgba(255,255,255,0.08);
+  --t-text:     #FAFAFA;
+  --t-muted:    #A1A1AA;
+  --t-subtle:   #71717A;
+  --t-nav:      #4B7BCC;
+  --t-glass:    rgba(17,17,19,0.95);
+  --t-glass2:   rgba(28,28,30,0.97);
+  --t-tag-bg:   rgba(45,107,204,0.15);
+  --t-tag-text: #7099D9;
+  --t-tag-border: rgba(45,107,204,0.3);
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+  color-scheme: dark;
+}
