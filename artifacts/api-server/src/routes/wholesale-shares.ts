@@ -6,6 +6,7 @@ import {
   ordersTable,
   orderLineItemsTable,
   productsTable,
+  accountsTable,
   WHOLESALE_SHARE_SPLIT_MODES,
   MAX_WHOLESALE_SHARE_MEMBERS,
   type WholesaleShareItem,
@@ -63,6 +64,58 @@ function randomPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+// Sentinel thrown inside the cancel transaction when the conditional parent
+// update matches no row (the share was concurrently submitted or cancelled),
+// so the route can roll back and respond 409.
+const NOT_CANCELLABLE = Symbol("share_not_cancellable");
+
+// Sentinel thrown inside the lock transaction when the parent is no longer "open"
+// (a concurrent cancel/lock won the race), so the materialised orders roll back
+// and the route can respond 409 instead of overwriting the new status.
+const LOCK_CONFLICT = Symbol("share_lock_conflict");
+
+// Server-authoritative delivery address. The organiser only chooses WHICH member
+// receives the parcel — the address itself is read from that member's own saved
+// account profile, never trusted from the organiser's request body. Returns null
+// when the member hasn't saved a usable address (needs at least line 1 + country).
+async function deliveryAddressFor(username: string): Promise<{
+  name: string; phone: string | null; email: string | null; address: string; country: string;
+} | null> {
+  const [acct] = await db
+    .select({
+      email: accountsTable.email,
+      country: accountsTable.country,
+      addressLine1: accountsTable.addressLine1,
+      addressLine2: accountsTable.addressLine2,
+      addressCity: accountsTable.addressCity,
+      addressPostcode: accountsTable.addressPostcode,
+      addressPhone: accountsTable.addressPhone,
+      addressPhonePrefix: accountsTable.addressPhonePrefix,
+    })
+    .from(accountsTable)
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
+  if (!acct || !acct.addressLine1 || !acct.country) return null;
+  const cityLine = [acct.addressCity, acct.addressPostcode].filter(Boolean).join(" ").trim();
+  const address = [acct.addressLine1, acct.addressLine2, cityLine].filter(Boolean).join("\n");
+  const phone = [acct.addressPhonePrefix, acct.addressPhone].filter(Boolean).join(" ").trim() || null;
+  return { name: username, phone, email: acct.email ?? null, address, country: acct.country };
+}
+
+// Which member usernames have a usable saved delivery address (line 1 + country).
+async function membersWithAddress(usernames: string[]): Promise<Set<string>> {
+  const lc = usernames.map(u => u.toLowerCase());
+  if (lc.length === 0) return new Set();
+  const rows = await db
+    .select({
+      username: accountsTable.telegramUsername,
+      addressLine1: accountsTable.addressLine1,
+      country: accountsTable.country,
+    })
+    .from(accountsTable)
+    .where(sql`lower(${accountsTable.telegramUsername}) IN (${sql.join(lc.map(u => sql`${u}`), sql`, `)})`);
+  return new Set(rows.filter(r => r.addressLine1 && r.country).map(r => r.username.toLowerCase()));
+}
+
 // Sum of kit quantities across a member's draft items.
 function memberKits(items: WholesaleShareItem[]): number {
   return items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
@@ -93,6 +146,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     const orders = await db.select().from(ordersTable).where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
     for (const o of orders) orderById.set(o.id, o);
   }
+
+  // Which members can be chosen for delivery (have a saved account address).
+  const addressOk = await membersWithAddress(members.map(m => m.username));
 
   const isLocked = share.status !== "open";
   const splitMode = (share.splitMode as WholesaleShareSplitMode) ?? "even";
@@ -153,6 +209,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderCode: order?.code ?? null,
       orderStatus: order?.status ?? null,
       paymentStatus: order?.paymentStatus ?? null,
+      hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
     };
   });
 
@@ -409,25 +466,29 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
   }
   if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
 
-  const body = (req.body ?? {}) as {
-    deliveryUsername?: unknown; name?: unknown; phone?: unknown;
-    email?: unknown; address?: unknown; country?: unknown;
-  };
+  const body = (req.body ?? {}) as { deliveryUsername?: unknown };
   const deliveryUsername = typeof body.deliveryUsername === "string" ? body.deliveryUsername.trim() : "";
   if (!deliveryUsername) { res.status(400).json({ error: "deliveryUsername is required" }); return; }
 
   const deliveryMember = await loadMember(share.id, deliveryUsername);
   if (!deliveryMember) { res.status(400).json({ error: "The delivery member must be a member of this shared order." }); return; }
 
-  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  // The organiser only chooses WHO receives the parcel. The address is read from
+  // that member's own saved account profile — never trusted from the request body.
+  const addr = await deliveryAddressFor(deliveryMember.username);
+  if (!addr) {
+    res.status(400).json({ error: "That member hasn't saved a delivery address yet. Ask them to add their address in their account before choosing them as the delivery member." });
+    return;
+  }
+
   await db.update(wholesaleSharesTable)
     .set({
       deliveryUsername: deliveryMember.username,
-      shippingName: str(body.name, 120) || null,
-      shippingPhone: str(body.phone, 40) || null,
-      shippingEmail: str(body.email, 200) || null,
-      shippingAddress: str(body.address, 500) || null,
-      shippingCountry: str(body.country, 100) || null,
+      shippingName: addr.name,
+      shippingPhone: addr.phone,
+      shippingEmail: addr.email,
+      shippingAddress: addr.address,
+      shippingCountry: addr.country,
     })
     .where(eq(wholesaleSharesTable.id, share.id));
 
@@ -520,7 +581,8 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
 
   // ── Materialise orders atomically ──
   const codeBase = await nextOrderCodeBase();
-  await db.transaction(async (tx) => {
+  try {
+    await db.transaction(async (tx) => {
     for (let i = 0; i < members.length; i++) {
       const m = members[i];
       const items = m.items ?? [];
@@ -574,15 +636,29 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
         .where(eq(wholesaleShareMembersTable.id, m.id));
     }
 
-    await tx.update(wholesaleSharesTable)
-      .set({
-        status: "locked",
-        lockedAt: new Date(),
-        totalVendorShipping: totalShipping.toFixed(2),
-        totalKits: combinedKits.toFixed(2),
-      })
-      .where(eq(wholesaleSharesTable.id, share.id));
-  });
+      // CONDITIONAL parent transition: only lock if still "open". If a concurrent
+      // cancel won the race, no row updates and we roll back the whole batch.
+      const lockedParent = await tx.update(wholesaleSharesTable)
+        .set({
+          status: "locked",
+          lockedAt: new Date(),
+          totalVendorShipping: totalShipping.toFixed(2),
+          totalKits: combinedKits.toFixed(2),
+        })
+        .where(and(
+          eq(wholesaleSharesTable.id, share.id),
+          eq(wholesaleSharesTable.status, "open"),
+        ))
+        .returning({ id: wholesaleSharesTable.id });
+      if (lockedParent.length === 0) throw LOCK_CONFLICT;
+    });
+  } catch (e) {
+    if (e === LOCK_CONFLICT) {
+      res.status(409).json({ error: "This shared order is no longer open and can't be locked." });
+      return;
+    }
+    throw e;
+  }
 
   await writeLog("order", "info", "wholesale_share_locked",
     `Wholesale share ${share.id} locked by ${me} — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
@@ -592,7 +668,9 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
   res.json(await buildShareResponse(updated!, me));
 });
 
-// POST /api/wholesale-shares/:id/cancel — creator cancels while still open
+// POST /api/wholesale-shares/:id/cancel — creator cancels an open OR locked share
+// (e.g. a member never pays after locking), releasing everyone. A share that has
+// already been submitted to the vendor can no longer be cancelled here.
 router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -601,17 +679,57 @@ router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): 
     res.status(403).json({ error: "Only the organiser can cancel the shared order." });
     return;
   }
-  if (share.status !== "open") {
-    res.status(409).json({ error: "Only an open shared order can be cancelled." });
+  if (share.status !== "open" && share.status !== "locked") {
+    res.status(409).json({ error: "This shared order can no longer be cancelled." });
     return;
   }
 
-  await db.update(wholesaleSharesTable)
-    .set({ status: "cancelled", cancelledAt: new Date() })
-    .where(eq(wholesaleSharesTable.id, share.id));
+  // Everything below runs in one transaction. The parent status transition is
+  // CONDITIONAL ("only if still open or locked") so it can't race with the final
+  // payment auto-submitting the order — if another request already flipped it to
+  // "submitted"/"cancelled", no row updates and we abort with 409.
+  let outcome: { wasLocked: boolean; cancelledOrders: number; paidMembersNeedingRefund: string[] } | null = null;
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const updatedParent = await tx.update(wholesaleSharesTable)
+        .set({ status: "cancelled", cancelledAt: new Date() })
+        .where(and(
+          eq(wholesaleSharesTable.id, share.id),
+          sql`${wholesaleSharesTable.status} IN ('open', 'locked')`,
+        ))
+        .returning({ id: wholesaleSharesTable.id });
+      if (updatedParent.length === 0) throw NOT_CANCELLABLE;
+
+      // Release the group: cancel every materialised member order so nobody is left
+      // holding a live order for a combined parcel that will never ship. Flag any
+      // already-paid members for a manual refund follow-up.
+      const members = await tx
+        .select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
+      let paidMembersNeedingRefund: string[] = [];
+      if (orderIds.length > 0) {
+        const orders = await tx.select().from(ordersTable)
+          .where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
+        paidMembersNeedingRefund = orders.filter(o => o.paymentStatus === "confirmed").map(o => o.telegramUsername);
+        await tx.update(ordersTable)
+          .set({ status: "Cancelled" })
+          .where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
+      }
+      return { wasLocked: share.status === "locked", cancelledOrders: orderIds.length, paidMembersNeedingRefund };
+    });
+  } catch (e) {
+    if (e === NOT_CANCELLABLE) {
+      res.status(409).json({ error: "This shared order can no longer be cancelled." });
+      return;
+    }
+    throw e;
+  }
 
   await writeLog("order", "warn", "wholesale_share_cancelled",
-    `Wholesale share ${share.id} cancelled by ${me}`, { shareId: share.id }, req.ip);
+    `Wholesale share ${share.id} cancelled by ${me}${outcome.wasLocked ? ` (was locked; ${outcome.cancelledOrders} member orders cancelled)` : ""}${outcome.paidMembersNeedingRefund.length ? ` — refund needed for: ${outcome.paidMembersNeedingRefund.join(", ")}` : ""}`,
+    { shareId: share.id, wasLocked: outcome.wasLocked, cancelledOrders: outcome.cancelledOrders, paidMembersNeedingRefund: outcome.paidMembersNeedingRefund }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));

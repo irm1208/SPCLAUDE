@@ -80,13 +80,9 @@ export default function WholesaleShared() {
   const [myTip, setMyTip] = useState(0);
   const [itemsDirty, setItemsDirty] = useState(false);
 
-  // Creator-only delivery form
+  // Creator-only delivery picker — organiser chooses WHICH member receives the
+  // parcel; the address itself comes from that member's saved account profile.
   const [delUser, setDelUser] = useState("");
-  const [delName, setDelName] = useState("");
-  const [delPhone, setDelPhone] = useState("");
-  const [delEmail, setDelEmail] = useState("");
-  const [delAddress, setDelAddress] = useState("");
-  const [delCountry, setDelCountry] = useState("");
   const deliverySeeded = useRef(false);
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -117,17 +113,10 @@ export default function WholesaleShared() {
     setMyTip(myMember.tip ?? 0);
   }, [myMember, itemsDirty]);
 
-  // Seed delivery form once from the share
+  // Seed the delivery picker once from the share's current delivery member.
   useEffect(() => {
     if (!share || deliverySeeded.current) return;
-    if (share.isCreator) {
-      setDelUser(share.delivery.username ?? share.currentUsername);
-      setDelName(share.delivery.name ?? "");
-      setDelPhone(share.delivery.phone ?? "");
-      setDelEmail(share.delivery.email ?? "");
-      setDelAddress(share.delivery.address ?? "");
-      setDelCountry(share.delivery.country ?? "");
-    }
+    if (share.isCreator) setDelUser(share.delivery.username ?? "");
     deliverySeeded.current = true;
   }, [share]);
 
@@ -139,14 +128,6 @@ export default function WholesaleShared() {
     () => Object.entries(myItems).reduce((s, [pid, q]) => s + (q > 0 ? q * priceOf(pid) : 0), 0),
     [myItems, products],
   );
-
-  // Build the country dropdown from the vendor's region country lists so the
-  // chosen country always maps to a shipping region.
-  const countryOptions = useMemo(() => {
-    const set = new Set<string>();
-    (share?.vendor?.regions ?? []).forEach(r => (r.countries ?? []).forEach(c => set.add(c)));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [share?.vendor]);
 
   if (accountLoading || (shareLoading && !result)) {
     return (
@@ -243,13 +224,10 @@ export default function WholesaleShared() {
   };
 
   const saveDelivery = async () => {
-    if (!id) return;
+    if (!id || !delUser) return;
     setActionError(""); setBusy("delivery");
     try {
-      await setWholesaleShareDelivery(id, {
-        deliveryUsername: delUser, name: delName, phone: delPhone,
-        email: delEmail, address: delAddress, country: delCountry,
-      });
+      await setWholesaleShareDelivery(id, delUser);
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
@@ -273,7 +251,10 @@ export default function WholesaleShared() {
 
   const doCancel = async () => {
     if (!id) return;
-    if (!window.confirm("Cancel this shared order for everyone? This can't be undone.")) return;
+    const msg = share.status === "locked"
+      ? "Cancel this locked shared order for everyone? Each member's order will be cancelled and anyone who already paid will need a manual refund. This can't be undone."
+      : "Cancel this shared order for everyone? This can't be undone.";
+    if (!window.confirm(msg)) return;
     setActionError(""); setBusy("cancel");
     try { await cancelWholesaleShare(id); invalidate(id); setLocation("/wholesale"); }
     catch (e) { setActionError((e as Error).message); setBusy(null); }
@@ -533,33 +514,35 @@ export default function WholesaleShared() {
                     </div>
                   </div>
 
-                  {/* Delivery member + address */}
+                  {/* Delivery member — organiser picks who receives the parcel;
+                      the address comes from that member's saved account profile. */}
                   <div className="space-y-3 pt-1">
                     <div>
                       <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Deliver the whole parcel to</label>
                       <select value={delUser} onChange={e => setDelUser(e.target.value)} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
                         <option value="">Select a member…</option>
-                        {share.members.map(m => <option key={m.username} value={m.username}>@{m.username.replace(/^@/, "")}{m.isCreator ? " (you)" : ""}</option>)}
+                        {share.members.map(m => (
+                          <option key={m.username} value={m.username} disabled={!m.hasDeliveryAddress}>
+                            @{m.username.replace(/^@/, "")}{m.isCreator ? " (you)" : ""}{m.hasDeliveryAddress ? "" : " — no saved address"}
+                          </option>
+                        ))}
                       </select>
+                      <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>
+                        Only members who've saved a delivery address in their account can be chosen. The parcel ships to their saved address.
+                      </p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input value={delName} onChange={e => setDelName(e.target.value)} placeholder="Full name" className="h-10 px-3 rounded-lg border text-sm bg-transparent outline-none" style={field} />
-                      <input value={delPhone} onChange={e => setDelPhone(e.target.value)} placeholder="Phone" className="h-10 px-3 rounded-lg border text-sm bg-transparent outline-none" style={field} />
-                    </div>
-                    <input value={delEmail} onChange={e => setDelEmail(e.target.value)} placeholder="Email (optional)" className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none" style={field} />
-                    <textarea value={delAddress} onChange={e => setDelAddress(e.target.value)} placeholder="Shipping address" rows={2} className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent outline-none resize-none" style={field} />
-                    {countryOptions.length > 0 ? (
-                      <select value={delCountry} onChange={e => setDelCountry(e.target.value)} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={{ ...field, color: delCountry ? "var(--t-text)" : "var(--t-muted)" }}>
-                        <option value="">Select country…</option>
-                        {countryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    ) : (
-                      <input value={delCountry} onChange={e => setDelCountry(e.target.value)} placeholder="Country" className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none" style={field} />
-                    )}
-                    <button onClick={saveDelivery} disabled={busy === "delivery"} className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+                    <button onClick={saveDelivery} disabled={busy === "delivery" || !delUser} className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
                       {busy === "delivery" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
-                      Save delivery details
+                      Set delivery member
                     </button>
+                    {share.delivery.username && share.delivery.address && (
+                      <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Shipping to @{share.delivery.username.replace(/^@/, "")}</p>
+                        <p className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{share.delivery.address}</p>
+                        {share.delivery.country && <p style={{ color: "var(--t-text)" }}>{share.delivery.country}</p>}
+                        {share.delivery.phone && <p style={{ color: "var(--t-muted)" }}>{share.delivery.phone}</p>}
+                      </div>
+                    )}
                   </div>
 
                   {/* Lock checklist + actions */}
@@ -591,6 +574,30 @@ export default function WholesaleShared() {
                       Locking creates each member's order and stops further edits. Each member then pays their own share.
                     </p>
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Locked: organiser can still cancel if a member never pays */}
+            {share.isCreator && share.status === "locked" && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Controls</p>
+                <div className="rounded-xl p-4 space-y-3" style={card}>
+                  <p className="text-sm" style={{ color: "var(--t-text)" }}>
+                    Waiting for everyone to pay. The combined order is submitted to the vendor automatically once all members have paid.
+                  </p>
+                  <button
+                    onClick={doCancel}
+                    disabled={busy === "cancel"}
+                    className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
+                    style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                  >
+                    {busy === "cancel" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Cancel shared order
+                  </button>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                    Use this if a member never pays. Every member's order is cancelled; anyone who already paid will need a manual refund.
+                  </p>
                 </div>
               </section>
             )}

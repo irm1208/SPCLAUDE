@@ -25,6 +25,7 @@ export interface WholesaleShareMember {
   orderCode: string | null;
   orderStatus: string | null;
   paymentStatus: string | null;
+  hasDeliveryAddress: boolean;
 }
 
 export interface WholesaleShareVendorRegion {
@@ -168,13 +169,12 @@ export function setWholesaleShareItems(
   });
 }
 
-export function setWholesaleShareDelivery(
-  id: string,
-  delivery: { deliveryUsername: string; name: string; phone: string; email?: string; address: string; country: string },
-) {
+// The organiser only picks WHICH member receives the parcel — the server reads
+// that member's saved account address. No address fields are sent from the client.
+export function setWholesaleShareDelivery(id: string, deliveryUsername: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/delivery`, {
     method: "PUT",
-    body: JSON.stringify(delivery),
+    body: JSON.stringify({ deliveryUsername }),
   });
 }
 
