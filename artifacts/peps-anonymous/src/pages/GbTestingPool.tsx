@@ -84,6 +84,7 @@ interface TestingData {
   vialVotes: Record<string, number>;
   pendingContribution: PendingContribution | null;
   peptideOptions: string[];
+  peptideBatches?: Record<string, string>;
   paymentMethods: PaymentMethods;
   endotoxinPrice: number;
   vialPrice: number;
@@ -828,7 +829,7 @@ export default function GbTestingPool() {
   const {
     round, resultsAvailable, poolTotal, contributorCount, totalVotes, votes, testVotes,
     milestones, isOptedIn, isAdminView, hasGbOrder, hasVoted, existingVote,
-    pendingContribution, peptideOptions, publicVotes, paymentMethods,
+    pendingContribution, peptideOptions, publicVotes, paymentMethods, peptideBatches = {},
   } = data;
 
   const isClosed = round.status === "closed" || round.status === "sent_to_lab" || round.status === "results_received";
@@ -1030,7 +1031,16 @@ export default function GbTestingPool() {
                       const barColor = i === 0 ? "rgba(59,130,246,0.7)" : i === 1 ? "rgba(139,92,246,0.55)" : "rgba(148,163,184,0.35)";
                       return (
                         <div key={v.peptideName} className="flex items-center gap-2 mb-[10px]">
-                          <span className="text-[10px] shrink-0 w-28 truncate" style={{ color: "var(--t-muted)" }}>{v.peptideName}</span>
+                          <div className="flex items-center gap-1 shrink-0 w-40 min-w-0">
+                            <span className="text-[10px] truncate min-w-0" style={{ color: "var(--t-muted)" }}>{v.peptideName}</span>
+                            {peptideBatches[v.peptideName] && (
+                              <span className="text-[8px] font-bold leading-none px-1.5 py-0.5 rounded-full shrink-0 tabular-nums"
+                                style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}
+                                title={`Batch ${peptideBatches[v.peptideName]}`}>
+                                {peptideBatches[v.peptideName]}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(148,163,184,0.12)" }}>
                             <motion.div className="h-full rounded-full"
                               style={{ background: barColor }}
