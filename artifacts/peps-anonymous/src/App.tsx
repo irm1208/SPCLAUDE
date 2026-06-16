@@ -54,6 +54,7 @@ import GuestContribution from "@/pages/GuestContribution";
 import ReshipperPage from "@/pages/Reshipper";
 import ReshipperApply from "@/pages/ReshipperApply";
 import WholesaleOrder from "@/pages/WholesaleOrder";
+import WholesaleShared from "@/pages/WholesaleShared";
 import PublicTestingPools from "@/pages/PublicTestingPools";
 
 class ErrorBoundary extends React.Component<
@@ -153,6 +154,7 @@ function Router() {
       <Route path="/pool/:slug" component={TestingPool} />
       <Route path="/reshipper" component={ReshipperPage} />
       <Route path="/reshipper-apply" component={ReshipperApply} />
+      <Route path="/wholesale/shared/:id" component={WholesaleShared} />
       <Route path="/wholesale" component={WholesaleOrder} />
       <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />
       <Route path="/sleepingpepisadmin" component={Admin} />

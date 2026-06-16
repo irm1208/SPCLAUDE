@@ -8,6 +8,7 @@ import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
+import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
 import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
@@ -688,6 +689,7 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
       // covered — compare against Math.ceil(grandTotal) rather than the raw float.
       if (Math.ceil(parseFloat(String(orderRow.grandTotal))) <= deduct && orderRow.paymentStatus !== "confirmed") {
         await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00" }).where(eq(ordersTable.id, orderId));
+        maybeSubmitSharedOrder(orderId).catch(() => {});
       }
     }
   }

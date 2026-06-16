@@ -291,14 +291,21 @@ export interface WholesaleVendor {
   regions: WholesaleVendorRegion[];
 }
 
-async function getVendors(): Promise<WholesaleVendor[]> {
+export async function getVendors(): Promise<WholesaleVendor[]> {
   const raw = await getConfigValue("wholesale_vendors");
   if (!raw) return [];
   try { return JSON.parse(raw) as WholesaleVendor[]; } catch { return []; }
 }
 
-async function getActiveVendorId(): Promise<string | null> {
+export async function getActiveVendorId(): Promise<string | null> {
   return getConfigValue("wholesale_active_vendor");
+}
+
+// Resolve the currently-active wholesale vendor (or null if none configured).
+export async function getActiveWholesaleVendor(): Promise<WholesaleVendor | null> {
+  const [vendors, activeId] = await Promise.all([getVendors(), getActiveVendorId()]);
+  if (!activeId) return null;
+  return vendors.find(v => v.id === activeId) ?? null;
 }
 
 // GET /api/wholesale-vendor — returns active vendor for wholesale customers

@@ -1,0 +1,620 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import {
+  wholesaleSharesTable,
+  wholesaleShareMembersTable,
+  ordersTable,
+  orderLineItemsTable,
+  productsTable,
+  WHOLESALE_SHARE_SPLIT_MODES,
+  MAX_WHOLESALE_SHARE_MEMBERS,
+  type WholesaleShareItem,
+  type WholesaleShareSplitMode,
+} from "@workspace/db";
+import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { requireWholesale } from "../middleware/require-wholesale";
+import { getActiveWholesaleVendor } from "./config";
+import {
+  calcTotalShipping,
+  pickRegionForCountry,
+  splitShipping,
+  type ShippingVendor,
+} from "../lib/wholesale-shipping";
+import { writeLog } from "../lib/audit-log";
+
+const router: IRouter = Router();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const SHARE_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+
+function randomShareCode(len = 6): string {
+  let s = "";
+  for (let i = 0; i < len; i++) {
+    s += SHARE_ID_ALPHABET[Math.floor(Math.random() * SHARE_ID_ALPHABET.length)];
+  }
+  return s;
+}
+
+async function generateUniqueShareId(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const id = randomShareCode();
+    const [existing] = await db
+      .select({ id: wholesaleSharesTable.id })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, id));
+    if (!existing) return id;
+  }
+  // Extremely unlikely fallback
+  return randomShareCode(8);
+}
+
+// Next numeric order code (mirrors generateCode in routes/orders.ts). Returns the
+// integer so the lock loop can assign sequential codes without re-querying.
+async function nextOrderCodeBase(): Promise<number> {
+  const [row] = await db
+    .select({ maxCode: sql<string>`max(cast(code as integer)) filter (where code ~ '^[0-9]+$')` })
+    .from(ordersTable);
+  return Math.max(1000, (parseInt(row?.maxCode ?? "999", 10) || 999) + 1);
+}
+
+function randomPin(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Sum of kit quantities across a member's draft items.
+function memberKits(items: WholesaleShareItem[]): number {
+  return items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+}
+
+function memberSubtotal(items: WholesaleShareItem[]): number {
+  return Number(
+    items.reduce((s, i) => s + Number(((Number(i.quantity) || 0) * (Number(i.unitPrice) || 0)).toFixed(2)), 0).toFixed(2),
+  );
+}
+
+type ShareRow = typeof wholesaleSharesTable.$inferSelect;
+type MemberRow = typeof wholesaleShareMembersTable.$inferSelect;
+
+// Build the full client-facing share payload, computing a live shipping estimate
+// and split preview while the share is open, and reading snapshots once locked.
+async function buildShareResponse(share: ShareRow, currentUsername: string) {
+  const members = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.shareId, share.id))
+    .orderBy(wholesaleShareMembersTable.joinedAt);
+
+  // Pull materialised orders (if locked) so we can surface real payment status.
+  const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
+  const orderById = new Map<string, typeof ordersTable.$inferSelect>();
+  if (orderIds.length > 0) {
+    const orders = await db.select().from(ordersTable).where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
+    for (const o of orders) orderById.set(o.id, o);
+  }
+
+  const isLocked = share.status !== "open";
+  const splitMode = (share.splitMode as WholesaleShareSplitMode) ?? "even";
+
+  const combinedKits = members.reduce((s, m) => s + memberKits(m.items ?? []), 0);
+  const combinedSubtotal = Number(members.reduce((s, m) => s + memberSubtotal(m.items ?? []), 0).toFixed(2));
+
+  // Resolve vendor + delivery region for a live shipping estimate.
+  const vendor = await getActiveWholesaleVendor();
+  let shippingEstimate: number | null = null;
+  let shippingRegion: string | null = null;
+  let estimateCalculable = false;
+
+  if (vendor && share.shippingCountry) {
+    const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry);
+    if (picked) {
+      shippingRegion = picked.region.name;
+      if (combinedKits > 0) {
+        const est = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
+        if (est !== null) {
+          shippingEstimate = est;
+          estimateCalculable = true;
+        }
+      } else {
+        estimateCalculable = !picked.region.customNote && !picked.region.priceNote && !!picked.region.prices;
+      }
+    }
+  }
+
+  // Per-member shipping shares: snapshot when locked, live preview while open.
+  let liveShares: number[] = members.map(() => 0);
+  if (!isLocked && shippingEstimate !== null) {
+    const weights = members.map(m => memberKits(m.items ?? []));
+    liveShares = splitShipping(shippingEstimate, weights, splitMode);
+  }
+
+  const memberPayloads = members.map((m, idx) => {
+    const items = m.items ?? [];
+    const order = m.orderId ? orderById.get(m.orderId) : undefined;
+    const shippingShare = isLocked
+      ? (m.shippingShare != null ? Number(m.shippingShare) : 0)
+      : (shippingEstimate !== null ? liveShares[idx] : null);
+    return {
+      username: m.username,
+      isCreator: m.isCreator,
+      isYou: m.username.toLowerCase() === currentUsername.toLowerCase(),
+      items: items.map(it => ({
+        productId: it.productId,
+        productName: it.productName,
+        quantity: Number(it.quantity),
+        unitPrice: Number(it.unitPrice),
+      })),
+      kits: memberKits(items),
+      subtotal: memberSubtotal(items),
+      tip: Number(m.tip ?? 0),
+      shippingShare,
+      orderId: m.orderId ?? null,
+      orderCode: order?.code ?? null,
+      orderStatus: order?.status ?? null,
+      paymentStatus: order?.paymentStatus ?? null,
+    };
+  });
+
+  const allPaid = isLocked
+    && memberPayloads.length > 0
+    && memberPayloads.every(m => m.paymentStatus === "confirmed");
+
+  const me = members.find(m => m.username.toLowerCase() === currentUsername.toLowerCase());
+
+  return {
+    id: share.id,
+    status: share.status,
+    splitMode,
+    maxMembers: share.maxMembers,
+    vendorId: share.vendorId ?? null,
+    creatorUsername: share.creatorUsername,
+    isCreator: share.creatorUsername.toLowerCase() === currentUsername.toLowerCase(),
+    currentUsername,
+    isMember: !!me,
+    delivery: {
+      username: share.deliveryUsername ?? null,
+      name: share.shippingName ?? null,
+      phone: share.shippingPhone ?? null,
+      email: share.shippingEmail ?? null,
+      address: share.shippingAddress ?? null,
+      country: share.shippingCountry ?? null,
+    },
+    vendor: vendor ? {
+      id: vendor.id,
+      name: vendor.name,
+      tiers: vendor.tiers,
+      tierBounds: vendor.tierBounds,
+      maxKitsPerPackage: vendor.maxKitsPerPackage,
+      regions: vendor.regions,
+    } : null,
+    shippingEstimate,
+    shippingRegion,
+    estimateCalculable,
+    combinedKits,
+    combinedSubtotal,
+    totalVendorShipping: share.totalVendorShipping != null ? Number(share.totalVendorShipping) : null,
+    totalKits: share.totalKits != null ? Number(share.totalKits) : null,
+    members: memberPayloads,
+    memberCount: members.length,
+    allPaid,
+    createdAt: (share.createdAt as Date).toISOString(),
+    lockedAt: share.lockedAt ? (share.lockedAt as Date).toISOString() : null,
+    submittedAt: share.submittedAt ? (share.submittedAt as Date).toISOString() : null,
+    cancelledAt: share.cancelledAt ? (share.cancelledAt as Date).toISOString() : null,
+  };
+}
+
+async function loadShare(id: string): Promise<ShareRow | null> {
+  const [share] = await db.select().from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id, id));
+  return share ?? null;
+}
+
+async function loadMember(shareId: string, username: string): Promise<MemberRow | null> {
+  const [m] = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(and(
+      eq(wholesaleShareMembersTable.shareId, shareId),
+      sql`lower(${wholesaleShareMembersTable.username}) = ${username.toLowerCase()}`,
+    ));
+  return m ?? null;
+}
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+
+// GET /api/wholesale-shares — list shares the current member belongs to
+router.get("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const myMemberships = await db
+    .select({ shareId: wholesaleShareMembersTable.shareId })
+    .from(wholesaleShareMembersTable)
+    .where(sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`);
+
+  const shareIds = myMemberships.map(m => m.shareId);
+  if (shareIds.length === 0) { res.json([]); return; }
+
+  const shares = await db
+    .select()
+    .from(wholesaleSharesTable)
+    .where(sql`${wholesaleSharesTable.id} IN (${sql.join(shareIds.map(id => sql`${id}`), sql`, `)})`)
+    .orderBy(desc(wholesaleSharesTable.createdAt));
+
+  // Member counts per share (single grouped query)
+  const counts = await db
+    .select({ shareId: wholesaleShareMembersTable.shareId, c: sql<number>`count(*)::int` })
+    .from(wholesaleShareMembersTable)
+    .where(sql`${wholesaleShareMembersTable.shareId} IN (${sql.join(shareIds.map(id => sql`${id}`), sql`, `)})`)
+    .groupBy(wholesaleShareMembersTable.shareId);
+  const countMap = new Map(counts.map(c => [c.shareId, c.c]));
+
+  res.json(shares.map(s => ({
+    id: s.id,
+    status: s.status,
+    splitMode: s.splitMode,
+    isCreator: s.creatorUsername.toLowerCase() === me.toLowerCase(),
+    memberCount: countMap.get(s.id) ?? 0,
+    maxMembers: s.maxMembers,
+    createdAt: (s.createdAt as Date).toISOString(),
+  })));
+});
+
+// POST /api/wholesale-shares — create a new shared order; creator becomes first member
+router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const body = (req.body ?? {}) as { splitMode?: string };
+  const splitMode: WholesaleShareSplitMode =
+    body.splitMode && (WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)
+      ? (body.splitMode as WholesaleShareSplitMode)
+      : "even";
+
+  const vendor = await getActiveWholesaleVendor();
+  const id = await generateUniqueShareId();
+
+  await db.insert(wholesaleSharesTable).values({
+    id,
+    creatorUsername: me,
+    status: "open",
+    splitMode,
+    maxMembers: MAX_WHOLESALE_SHARE_MEMBERS,
+    vendorId: vendor?.id ?? null,
+  });
+
+  await db.insert(wholesaleShareMembersTable).values({
+    id: randomUUID(),
+    shareId: id,
+    username: me,
+    isCreator: true,
+    items: [],
+    tip: "0",
+  });
+
+  await writeLog("order", "info", "wholesale_share_created",
+    `Wholesale share ${id} created by ${me}`, { shareId: id, creator: me }, req.ip);
+
+  const share = await loadShare(id);
+  res.status(201).json(await buildShareResponse(share!, me));
+});
+
+// GET /api/wholesale-shares/:id — full detail (members only)
+router.get("/wholesale-shares/:id", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  res.json(await buildShareResponse(share, me));
+});
+
+// POST /api/wholesale-shares/:id/join — join an open shared order (wholesale members only)
+router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is no longer open to join." }); return; }
+
+  const existing = await loadMember(share.id, me);
+  if (existing) { res.json(await buildShareResponse(share, me)); return; }
+
+  const [{ c }] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.shareId, share.id));
+  if (c >= share.maxMembers) {
+    res.status(409).json({ error: `This shared order is full (max ${share.maxMembers} members).` });
+    return;
+  }
+
+  try {
+    await db.insert(wholesaleShareMembersTable).values({
+      id: randomUUID(),
+      shareId: share.id,
+      username: me,
+      isCreator: false,
+      items: [],
+      tip: "0",
+    });
+  } catch {
+    // Unique (shareId, username) — already joined via a race; fall through to response.
+  }
+
+  await writeLog("order", "info", "wholesale_share_joined",
+    `${me} joined wholesale share ${share.id}`, { shareId: share.id, username: me }, req.ip);
+
+  res.json(await buildShareResponse(share, me));
+});
+
+// PUT /api/wholesale-shares/:id/items — set the current member's items + tip
+router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked — items can no longer be changed." }); return; }
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+
+  const body = (req.body ?? {}) as { items?: Array<{ productId?: unknown; quantity?: unknown }>; tip?: unknown };
+  if (!Array.isArray(body.items)) { res.status(400).json({ error: "items must be an array" }); return; }
+
+  // Server-authoritative product lookup: only active, wholesale-enabled global products.
+  const wholesaleProducts = await db
+    .select({
+      id: productsTable.id,
+      name: productsTable.name,
+      price: productsTable.price,
+      wholesalePrice: productsTable.wholesalePrice,
+    })
+    .from(productsTable)
+    .where(and(
+      eq(productsTable.active, true),
+      eq(productsTable.wholesaleEnabled, true),
+      isNull(productsTable.sourceGroupBuyId),
+    ));
+  const productMap = new Map(wholesaleProducts.map(p => [p.id, p]));
+
+  const cleanItems: WholesaleShareItem[] = [];
+  for (const raw of body.items) {
+    const productId = typeof raw.productId === "string" ? raw.productId : null;
+    const quantity = Math.round(Number(raw.quantity));
+    if (!productId || !Number.isFinite(quantity) || quantity <= 0) continue;
+    if (quantity > 1000) { res.status(400).json({ error: "Quantity too large." }); return; }
+    const product = productMap.get(productId);
+    if (!product) { res.status(400).json({ error: `Product ${productId} is not available for wholesale.` }); return; }
+    const unitPrice = product.wholesalePrice != null ? parseFloat(product.wholesalePrice) : parseFloat(product.price);
+    cleanItems.push({ productId, productName: product.name, quantity, unitPrice });
+  }
+
+  let tip = 0;
+  if (body.tip != null) {
+    tip = Number(body.tip);
+    if (!Number.isFinite(tip) || tip < 0) tip = 0;
+    if (tip > 100000) { res.status(400).json({ error: "Tip too large." }); return; }
+  }
+
+  await db.update(wholesaleShareMembersTable)
+    .set({ items: cleanItems, tip: tip.toFixed(2) })
+    .where(eq(wholesaleShareMembersTable.id, member.id));
+
+  res.json(await buildShareResponse(share, me));
+});
+
+// PUT /api/wholesale-shares/:id/delivery — creator sets the delivery member + address
+router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can set the delivery member." });
+    return;
+  }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+
+  const body = (req.body ?? {}) as {
+    deliveryUsername?: unknown; name?: unknown; phone?: unknown;
+    email?: unknown; address?: unknown; country?: unknown;
+  };
+  const deliveryUsername = typeof body.deliveryUsername === "string" ? body.deliveryUsername.trim() : "";
+  if (!deliveryUsername) { res.status(400).json({ error: "deliveryUsername is required" }); return; }
+
+  const deliveryMember = await loadMember(share.id, deliveryUsername);
+  if (!deliveryMember) { res.status(400).json({ error: "The delivery member must be a member of this shared order." }); return; }
+
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  await db.update(wholesaleSharesTable)
+    .set({
+      deliveryUsername: deliveryMember.username,
+      shippingName: str(body.name, 120) || null,
+      shippingPhone: str(body.phone, 40) || null,
+      shippingEmail: str(body.email, 200) || null,
+      shippingAddress: str(body.address, 500) || null,
+      shippingCountry: str(body.country, 100) || null,
+    })
+    .where(eq(wholesaleSharesTable.id, share.id));
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/split — creator sets the shipping split mode
+router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can change the split mode." });
+    return;
+  }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+
+  const body = (req.body ?? {}) as { splitMode?: string };
+  if (!body.splitMode || !(WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)) {
+    res.status(400).json({ error: `splitMode must be one of: ${WHOLESALE_SHARE_SPLIT_MODES.join(", ")}` });
+    return;
+  }
+
+  await db.update(wholesaleSharesTable)
+    .set({ splitMode: body.splitMode })
+    .where(eq(wholesaleSharesTable.id, share.id));
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/wholesale-shares/:id/lock — creator locks: validate + materialise per-member orders
+router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can lock the shared order." });
+    return;
+  }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is already locked." }); return; }
+
+  const members = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.shareId, share.id))
+    .orderBy(wholesaleShareMembersTable.joinedAt);
+
+  // ── Validation ──
+  if (members.length < 2) {
+    res.status(400).json({ error: "A shared order needs at least 2 members before it can be locked." });
+    return;
+  }
+  if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName) {
+    res.status(400).json({ error: "Set the delivery member and their full shipping address before locking." });
+    return;
+  }
+  const deliveryIsMember = members.some(m => m.username.toLowerCase() === share.deliveryUsername!.toLowerCase());
+  if (!deliveryIsMember) {
+    res.status(400).json({ error: "The chosen delivery member is no longer part of this shared order." });
+    return;
+  }
+  const emptyMember = members.find(m => memberKits(m.items ?? []) <= 0);
+  if (emptyMember) {
+    res.status(400).json({ error: `Every member must add at least one item before locking (waiting on ${emptyMember.username}).` });
+    return;
+  }
+
+  // ── Shipping ──
+  const vendor = await getActiveWholesaleVendor();
+  if (!vendor) {
+    res.status(400).json({ error: "No active wholesale vendor is configured. Please contact an admin." });
+    return;
+  }
+  const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry);
+  if (!picked) {
+    res.status(400).json({ error: `No shipping region matches "${share.shippingCountry}" for the current vendor.` });
+    return;
+  }
+  const combinedKits = members.reduce((s, m) => s + memberKits(m.items ?? []), 0);
+  const totalShipping = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
+  if (totalShipping === null) {
+    res.status(400).json({ error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." });
+    return;
+  }
+
+  const weights = members.map(m => memberKits(m.items ?? []));
+  const shares = splitShipping(totalShipping, weights, (share.splitMode as WholesaleShareSplitMode) ?? "even");
+
+  // ── Materialise orders atomically ──
+  const codeBase = await nextOrderCodeBase();
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      const items = m.items ?? [];
+      const shippingShare = shares[i] ?? 0;
+      const tip = Number(m.tip ?? 0);
+      const subtotal = memberSubtotal(items);
+      const grandTotal = Number((subtotal + shippingShare + tip).toFixed(2));
+      const orderId = randomUUID();
+      const code = String(codeBase + i);
+      const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
+
+      await tx.insert(ordersTable).values({
+        id: orderId,
+        code,
+        telegramUsername: memberTg,
+        deliveryMethod: "Vendor Shipping",
+        deliveryPrice: "0",
+        vendorShipping: shippingShare.toFixed(2),
+        productSubtotal: subtotal.toFixed(2),
+        tip: tip.toFixed(2),
+        grandTotal: grandTotal.toFixed(2),
+        status: "Submitted",
+        paymentStatus: "unpaid",
+        pin: randomPin(),
+        orderType: "wholesale_shared",
+        sharedOrderId: share.id,
+        // Whole parcel ships to the chosen delivery member — every member order
+        // carries that same shipping address snapshot.
+        shippingName: share.shippingName,
+        shippingPhone: share.shippingPhone,
+        shippingEmail: share.shippingEmail,
+        shippingAddress: share.shippingAddress,
+        shippingCountry: share.shippingCountry,
+        notes: `Shared wholesale order ${share.id} — delivery to ${share.deliveryUsername} (${picked.region.name})`,
+      });
+
+      if (items.length > 0) {
+        await tx.insert(orderLineItemsTable).values(items.map(it => ({
+          id: randomUUID(),
+          orderId,
+          productId: it.productId,
+          productName: it.productName,
+          quantity: Number(it.quantity).toFixed(2),
+          unitPrice: Number(it.unitPrice).toFixed(2),
+          lineTotal: (Number(it.quantity) * Number(it.unitPrice)).toFixed(2),
+        })));
+      }
+
+      await tx.update(wholesaleShareMembersTable)
+        .set({ orderId, shippingShare: shippingShare.toFixed(2) })
+        .where(eq(wholesaleShareMembersTable.id, m.id));
+    }
+
+    await tx.update(wholesaleSharesTable)
+      .set({
+        status: "locked",
+        lockedAt: new Date(),
+        totalVendorShipping: totalShipping.toFixed(2),
+        totalKits: combinedKits.toFixed(2),
+      })
+      .where(eq(wholesaleSharesTable.id, share.id));
+  });
+
+  await writeLog("order", "info", "wholesale_share_locked",
+    `Wholesale share ${share.id} locked by ${me} — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
+    { shareId: share.id, members: members.length, combinedKits, totalShipping }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/wholesale-shares/:id/cancel — creator cancels while still open
+router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can cancel the shared order." });
+    return;
+  }
+  if (share.status !== "open") {
+    res.status(409).json({ error: "Only an open shared order can be cancelled." });
+    return;
+  }
+
+  await db.update(wholesaleSharesTable)
+    .set({ status: "cancelled", cancelledAt: new Date() })
+    .where(eq(wholesaleSharesTable.id, share.id));
+
+  await writeLog("order", "warn", "wholesale_share_cancelled",
+    `Wholesale share ${share.id} cancelled by ${me}`, { shareId: share.id }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+export default router;

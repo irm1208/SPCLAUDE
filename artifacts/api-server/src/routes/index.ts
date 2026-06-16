@@ -50,6 +50,7 @@ import adminAiChatbotRouter from "./admin-ai-chatbot";
 import adminBtChatRouter from "./admin-bt-chat";
 import adminDispatchRouter from "./admin-dispatch";
 import dnaRouter from "./dna";
+import wholesaleSharesRouter from "./wholesale-shares";
 
 const router: IRouter = Router();
 
@@ -131,6 +132,7 @@ router.use(adminAiChatbotRouter);
 router.use(adminBtChatRouter);
 router.use(adminDispatchRouter);
 router.use(dnaRouter);
+router.use(wholesaleSharesRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────
 // Proxies GBP→USD/EUR rates so the browser avoids CORS restrictions.

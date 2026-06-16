@@ -327,6 +327,52 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS qr_posted boolean NOT NULL DEFAULT false`);
     // accounts — invite code used at signup
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS signup_invite_code text`);
+    // wholesale shared orders — parent + membership tables, and orders link column.
+    // Keep in lockstep with lib/db/src/schema/wholesale_shares.ts + orders.ts.
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shared_order_id text`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS orders_shared_order_id_idx ON orders(shared_order_id)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS wholesale_shares (
+        id text PRIMARY KEY,
+        creator_username text NOT NULL,
+        status text NOT NULL DEFAULT 'open',
+        split_mode text NOT NULL DEFAULT 'even',
+        max_members integer NOT NULL DEFAULT 10,
+        vendor_id text,
+        delivery_username text,
+        shipping_name text,
+        shipping_phone text,
+        shipping_email text,
+        shipping_address text,
+        shipping_country text,
+        total_vendor_shipping numeric(10,2),
+        total_kits numeric(10,2),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        locked_at timestamptz,
+        submitted_at timestamptz,
+        cancelled_at timestamptz,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_creator_idx ON wholesale_shares(creator_username)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_status_idx ON wholesale_shares(status)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS wholesale_share_members (
+        id text PRIMARY KEY,
+        share_id text NOT NULL REFERENCES wholesale_shares(id) ON DELETE CASCADE,
+        username text NOT NULL,
+        is_creator boolean NOT NULL DEFAULT false,
+        items jsonb NOT NULL DEFAULT '[]'::jsonb,
+        tip numeric(10,2) NOT NULL DEFAULT 0,
+        order_id text,
+        shipping_share numeric(10,2),
+        joined_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT wholesale_share_members_unique UNIQUE (share_id, username)
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_share_members_share_idx ON wholesale_share_members(share_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_share_members_username_idx ON wholesale_share_members(username)`);
     // geo_ip_cache — extended fields for richer IP intelligence
     await db.execute(sql`ALTER TABLE geo_ip_cache ADD COLUMN IF NOT EXISTS region text`);
     await db.execute(sql`ALTER TABLE geo_ip_cache ADD COLUMN IF NOT EXISTS isp text`);

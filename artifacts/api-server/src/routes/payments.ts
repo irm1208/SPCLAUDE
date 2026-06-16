@@ -8,6 +8,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
+import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -1215,6 +1216,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   }).catch(err => console.error("[payments] payment_submitted log failed:", err));
 
   firePaymentNotifications(order, "confirmed", "Crypto", result.amountUsdt, cleanHash).catch(() => {});
+  maybeSubmitSharedOrder(order.id).catch(() => {});
 
   res.json({ verified: true, paymentStatus: updated.paymentStatus, amountUsdt: result.amountUsdt });
 });
@@ -1501,6 +1503,7 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
       }).catch(err => console.error("[anonpay-status] activity log failed:", err));
 
       firePaymentNotifications(order, "confirmed", "AnonPay").catch(() => {});
+      maybeSubmitSharedOrder(order.id).catch(() => {});
     }
   }
 
@@ -1661,6 +1664,7 @@ router.patch("/admin/orders/:id/payment-status", async (req, res): Promise<void>
     .set({ paymentStatus })
     .where(eq(ordersTable.id, req.params.id))
     .returning();
+  if (paymentStatus === "confirmed") maybeSubmitSharedOrder(updated.id).catch(() => {});
   res.json({ id: updated.id, paymentStatus: updated.paymentStatus });
 });
 

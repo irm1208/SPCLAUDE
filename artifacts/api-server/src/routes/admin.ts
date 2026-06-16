@@ -51,6 +51,7 @@ import { enrichLogsWithGeo, enrichIps, enrichIpsFromCache } from "../lib/ip-geo"
 import { createAlert } from "../lib/create-alert";
 import { calculateVendorShipping } from "../lib/vendor-shipping";
 import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
+import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { logCustomerActivity } from "../lib/activity-log";
 
 function escapeHtml(str: string): string {
@@ -7551,6 +7552,7 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
       // Use Math.ceil so a $30.99 order correctly requires ≥31 credits (not 30).
       if (Math.ceil(parseFloat(String(targetOrder.grandTotal))) <= newCreditsApplied && targetOrder.paymentStatus !== "confirmed") {
         await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00" }).where(eq(ordersTable.id, orderId));
+        maybeSubmitSharedOrder(orderId).catch(() => {});
       }
     }
   }
