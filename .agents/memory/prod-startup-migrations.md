@@ -17,6 +17,8 @@ When a column is added to `lib/db/schema/*.ts` but no corresponding `ALTER TABLE
 
 **Why:** The error is silently swallowed by bare `} catch {` blocks in many route handlers — the 500 shows in logs but no column name is visible.
 
+**`CREATE TABLE IF NOT EXISTS` trap:** Tables created inside `runStartupMigrations()` via `CREATE TABLE IF NOT EXISTS` do NOT get columns added to the schema *after* the table first existed — the CREATE is skipped on existing DBs, so later-added columns silently never appear. Every column added to a schema table after its initial CREATE needs its own `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` line. (Seen on `gb_testing_votes`: `peptide_names`, `test_selections`, `anonymous` were missing → testing endpoint 500.)
+
 ## Replit Publish diff trap
 
 Replit's Publish flow diffs the DEV database against the PRODUCTION database. If a column was added to production via startup migration but the dev DB hasn't restarted yet (so it's behind), Replit generates a DROP COLUMN migration for production — which would delete real data.

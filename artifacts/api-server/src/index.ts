@@ -73,6 +73,13 @@ async function runStartupMigrations(): Promise<void> {
         CONSTRAINT gb_testing_votes_unique UNIQUE (round_id, order_id)
       )
     `);
+    // Columns added to gbTestingVotesTable after the table was first created.
+    // CREATE TABLE IF NOT EXISTS does NOT backfill these on existing DBs, so the
+    // SELECT in the testing endpoint 500s until they exist. Keep these in lockstep
+    // with lib/db/src/schema/group_buys.ts.
+    await db.execute(sql`ALTER TABLE gb_testing_votes ADD COLUMN IF NOT EXISTS peptide_names jsonb`);
+    await db.execute(sql`ALTER TABLE gb_testing_votes ADD COLUMN IF NOT EXISTS test_selections jsonb NOT NULL DEFAULT '[]'::jsonb`);
+    await db.execute(sql`ALTER TABLE gb_testing_votes ADD COLUMN IF NOT EXISTS anonymous boolean NOT NULL DEFAULT false`);
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS intl_parcel_sizes (
         id text PRIMARY KEY,

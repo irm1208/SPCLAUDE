@@ -851,10 +851,12 @@ function JanoshikHelperPanel({ secret }: { secret: string }) {
   const href = "javascript:" + encodeURIComponent(bookmarklet);
 
   // Set the javascript: href directly on the DOM node — React strips javascript:
-  // URLs from rendered href attributes, so a ref is the reliable way.
+  // URLs from rendered href attributes, so a ref is the reliable way. `open` must
+  // be a dependency: the anchor only mounts once the panel is expanded, so without
+  // re-running on open the href stays "#" and the dragged bookmark does nothing.
   useEffect(() => {
     if (linkRef.current) linkRef.current.setAttribute("href", href);
-  }, [href]);
+  }, [href, open]);
 
   const copyCode = async () => {
     try {
@@ -911,7 +913,7 @@ function JanoshikHelperPanel({ secret }: { secret: string }) {
                 {copied ? "Copied!" : "Copy link instead"}
               </button>
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then create a new bookmark and paste it as the address.</p>
+            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then make a <span className="font-semibold">new bookmark</span> and paste it into the bookmark's web-address (URL) field. Don't paste it into the browser's address bar — it won't run there.</p>
           </div>
 
           <div>
@@ -973,9 +975,12 @@ function JanoshikBulkHelperPanel({ secret }: { secret: string }) {
     `},false);})();`;
   const href = "javascript:" + encodeURIComponent(bookmarklet);
 
+  // `open` must be a dependency: the anchor only mounts once the panel is
+  // expanded, so without re-running on open the href stays "#" and the dragged
+  // bookmark does nothing.
   useEffect(() => {
     if (linkRef.current) linkRef.current.setAttribute("href", href);
-  }, [href]);
+  }, [href, open]);
 
   const copyCode = async () => {
     try {
@@ -1032,7 +1037,7 @@ function JanoshikBulkHelperPanel({ secret }: { secret: string }) {
                 {copied ? "Copied!" : "Copy link instead"}
               </button>
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then create a new bookmark and paste it as the address.</p>
+            <p className="mt-1.5 text-[11px] text-slate-500">Can't drag? Click "Copy link instead", then make a <span className="font-semibold">new bookmark</span> and paste it into the bookmark's web-address (URL) field. Don't paste it into the browser's address bar — it won't run there.</p>
           </div>
 
           <div>
