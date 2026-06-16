@@ -1265,6 +1265,13 @@ export default function GbTestingPool() {
                             <span className="text-[11px] font-semibold shrink-0 truncate max-w-[130px] sm:max-w-[160px]" style={{ color: "var(--t-text)" }}>
                               {v.peptideName}
                             </span>
+                            {peptideBatches[v.peptideName] && (
+                              <span className="text-[10px] font-bold leading-none px-2 py-0.5 rounded-full shrink-0 tabular-nums truncate max-w-[80px]"
+                                style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}
+                                title={`Batch ${peptideBatches[v.peptideName]}`}>
+                                {peptideBatches[v.peptideName]}
+                              </span>
+                            )}
                             <span className="text-[10px] font-bold tabular-nums shrink-0 px-1.5 py-0.5 rounded-full"
                               style={{ background: "rgba(59,130,246,0.08)", color: "var(--t-blue)" }}>
                               {v.vialCount}v
