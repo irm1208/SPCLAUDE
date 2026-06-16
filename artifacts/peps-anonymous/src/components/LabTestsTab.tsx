@@ -4,7 +4,7 @@ import {
   TestTube, Search, Plus, Pencil, Trash2, X, CheckCircle2, XCircle,
   Loader2, ExternalLink, Save, RefreshCw, Clock, ThumbsUp, ShieldCheck,
   Star, Building2, Tag, Sparkles, Zap, StopCircle, AlertCircle,
-  Upload, ChevronDown, ChevronUp, Link2, Download, GitCompare, Eye, FileText,
+  Upload, ChevronDown, ChevronUp, Link2, Download, Minimize2, GitCompare, Eye, FileText,
 } from "lucide-react";
 import { Button, Input, Label, Card } from "@/components/ui";
 import { getCanonicalGroup } from "@/lib/peptide-groups";
@@ -1869,6 +1869,9 @@ export function LabTestsTab({ secret }: { secret: string }) {
   const [showMassApplyPanel, setShowMassApplyPanel] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [recompressing, setRecompressing] = useState(false);
+  const [recompressMsg, setRecompressMsg] = useState<string | null>(null);
+  const recompressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [uploadingCertId, setUploadingCertId] = useState<number | null>(null);
   const certUploadRef = useRef<HTMLInputElement>(null);
   const certUploadTargetId = useRef<number | null>(null);
@@ -2038,6 +2041,43 @@ export function LabTestsTab({ secret }: { secret: string }) {
       setBackfilling(false);
     }
   };
+
+  const pollRecompress = async () => {
+    try {
+      const res = await fetch(apiUrl("/admin/lab-tests/recompress-certs"), { headers: { "x-admin-secret": secret } });
+      const d = await res.json();
+      const savedMb = (d.savedBytes ?? 0) / 1024 / 1024;
+      if (d.status === "running") {
+        setRecompressMsg(`Compressing… ${d.processed}/${d.total} · shrunk ${d.updated} · saved ${savedMb.toFixed(1)}MB`);
+      } else {
+        setRecompressMsg(`Done — shrunk ${d.updated} of ${d.total}, saved ${savedMb.toFixed(1)}MB${d.failed ? ` · ${d.failed} failed` : ""}`);
+        if (recompressPollRef.current) { clearInterval(recompressPollRef.current); recompressPollRef.current = null; }
+        setRecompressing(false);
+        load();
+      }
+    } catch {}
+  };
+
+  const handleRecompressCerts = async () => {
+    setRecompressing(true);
+    setRecompressMsg(null);
+    try {
+      const res = await fetch(apiUrl("/admin/lab-tests/recompress-certs"), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const data = await res.json();
+      if (!res.ok) { setRecompressMsg(data.error ?? "Failed to start"); setRecompressing(false); return; }
+      setRecompressMsg(`Compressing ${data.total} stored certificates…`);
+      if (recompressPollRef.current) clearInterval(recompressPollRef.current);
+      recompressPollRef.current = setInterval(pollRecompress, 2000);
+    } catch {
+      setRecompressMsg("Network error");
+      setRecompressing(false);
+    }
+  };
+
+  useEffect(() => () => { if (recompressPollRef.current) clearInterval(recompressPollRef.current); }, []);
 
   const handleExportCsv = async (type: "lab" | "blood") => {
     setExporting(type);
@@ -2226,8 +2266,8 @@ export function LabTestsTab({ secret }: { secret: string }) {
       <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ border: "1px solid rgba(14,165,233,0.25)", background: "rgba(14,165,233,0.05)" }}>
         <Download className="w-4 h-4 text-sky-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-sky-300">Store Certificates Locally</p>
-          <p className="text-xs text-slate-400">Fetch & store certificate images/PDFs for all tests that don't have one saved yet. Uzorak tests with a snapshot or PDF will be stored automatically. Runs in the background.</p>
+          <p className="text-sm font-bold text-sky-300">Download Missing + Compress</p>
+          <p className="text-xs text-slate-400">Fetch, compress & store certificate images/PDFs for all tests that don't have one saved yet. Images are shrunk to small WebP; PDFs are kept as-is. Uzorak tests with a snapshot or PDF are stored automatically. Runs in the background.</p>
           {backfillResult && <p className="text-xs mt-1 text-sky-400">{backfillResult}</p>}
         </div>
         <button
@@ -2238,6 +2278,25 @@ export function LabTestsTab({ secret }: { secret: string }) {
         >
           {backfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
           {backfilling ? "Starting…" : "Run Backfill"}
+        </button>
+      </div>
+
+      {/* Recompress / shrink stored certificates */}
+      <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ border: "1px solid rgba(168,85,247,0.25)", background: "rgba(168,85,247,0.05)" }}>
+        <Minimize2 className="w-4 h-4 text-purple-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-purple-300">Compress Stored Certificates</p>
+          <p className="text-xs text-slate-400">Re-encode saved certificate images to smaller WebP so the website loads faster and the database stays small. PDFs are left untouched. Safe to re-run. Runs in the background.</p>
+          {recompressMsg && <p className="text-xs mt-1 text-purple-400">{recompressMsg}</p>}
+        </div>
+        <button
+          onClick={handleRecompressCerts}
+          disabled={recompressing}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          style={{ background: "linear-gradient(135deg, #7e22ce, #9333ea)" }}
+        >
+          {recompressing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Minimize2 className="w-3.5 h-3.5" />}
+          {recompressing ? "Compressing…" : "Compress"}
         </button>
       </div>
 

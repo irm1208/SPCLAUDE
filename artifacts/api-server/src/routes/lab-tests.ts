@@ -21,6 +21,7 @@ import {
   resolveUzorakPreviewType,
   resolveUzorakPreviewBytes,
 } from "../lib/gemini-lab-extract";
+import { prepareCertificateBase64, prepareCertificateForStorage } from "../lib/lab-cert-storage";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -446,7 +447,7 @@ router.post("/lab-tests/submit-pdf", upload.single("file"), async (req, res) => 
       return;
     }
 
-    const pdfBlob = file ? file.buffer.toString("base64") : null;
+    const pdfBlob = file ? await prepareCertificateBase64(file.buffer, file.mimetype) : null;
     const resolvedUrl = url ? String(url).trim() : null;
 
     const dupId = await findLabTestDuplicate(resolvedUrl, batchCode, testDate, peptideName);
@@ -972,7 +973,7 @@ router.post("/admin/lab-tests/with-pdf", upload.single("file"), async (req, res)
       return;
     }
 
-    const pdfBlob = file.buffer.toString("base64");
+    const pdfBlob = await prepareCertificateBase64(file.buffer, file.mimetype);
     const resolvedSupplier = supplier ? String(supplier).trim() : "Uther";
     const resolvedBatchCode = batchCode ? String(batchCode).trim() : null;
     const resolvedName = resolveUtherName(resolvedSupplier, resolvedBatchCode, String(peptideName).trim());
@@ -1092,7 +1093,7 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
 
     // Store the largest image as the preview blob (most reports are one image).
     const primary = files.reduce((a, b) => (b.buffer.length > a.buffer.length ? b : a), files[0]);
-    const pdfBlob = primary.buffer.toString("base64");
+    const pdfBlob = await prepareCertificateBase64(primary.buffer, primary.mimetype);
 
     const newRecord: NewLabTest = {
       janoshikId: `bm-${Date.now()}`,
@@ -1152,13 +1153,15 @@ async function tryFetchAndStoreCertificate(id: number, url: string): Promise<voi
       .limit(1);
     if (!existing || existing.pdfBlob) return;
 
-    let blob: string | null = null;
+    let rawBytes: Buffer | null = null;
+    let hintMime: string | undefined;
 
     if (isUzorakUrl(url)) {
       // Uzorak: query their Supabase API — gives us a JPEG snapshot or PDF
       const result = await resolveUzorakPreviewBytes(url);
       if (result) {
-        blob = result.bytes.toString("base64");
+        rawBytes = result.bytes;
+        hintMime = result.mimeType;
       }
     } else {
       // Other labs (Peptidetest, Analiza Bialek etc.) — try a direct image fetch.
@@ -1166,20 +1169,18 @@ async function tryFetchAndStoreCertificate(id: number, url: string): Promise<voi
       const preview = await resolvePreviewInfo(url);
       if (preview.type === "image" && preview.images.length > 0) {
         const imgRes = await fetch(preview.images[0], { signal: AbortSignal.timeout(15000) });
-        if (imgRes.ok) {
-          const buf = Buffer.from(await imgRes.arrayBuffer());
-          blob = buf.toString("base64");
-        }
+        if (imgRes.ok) rawBytes = Buffer.from(await imgRes.arrayBuffer());
       } else if (preview.type === "pdf") {
         const pdfRes = await fetch(preview.url, { signal: AbortSignal.timeout(15000) });
-        if (pdfRes.ok) {
-          const buf = Buffer.from(await pdfRes.arrayBuffer());
-          blob = buf.toString("base64");
-        }
+        if (pdfRes.ok) rawBytes = Buffer.from(await pdfRes.arrayBuffer());
       }
     }
 
-    if (!blob) return;
+    if (!rawBytes) return;
+
+    // Compress (images → WebP) before storing so previews load fast and the DB
+    // stays small. PDFs pass through unchanged.
+    const blob = await prepareCertificateBase64(rawBytes, hintMime);
 
     await db
       .update(labTestsTable)
@@ -1368,7 +1369,7 @@ router.post("/admin/lab-tests/:id/upload-cert", upload.single("file"), async (re
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) { res.status(400).json({ error: "Invalid ID" }); return; }
     if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
-    const blob = req.file.buffer.toString("base64");
+    const blob = await prepareCertificateBase64(req.file.buffer, req.file.mimetype);
     const [row] = await db
       .update(labTestsTable)
       .set({ pdfBlob: blob })
@@ -1775,6 +1776,104 @@ router.post("/admin/lab-tests/bulk-import-stop", (req, res) => {
     bulkImportJob.finishedAt = Date.now();
   }
   res.json({ ok: true, job: bulkImportJob });
+});
+
+// ── Certificate recompression backfill ────────────────────────────────────────
+// Maintenance job: re-encode already-stored image certificates to smaller WebP.
+// Idempotent — a blob is only replaced when the new version is actually smaller,
+// so re-running never degrades quality. PDFs and non-images are skipped.
+interface RecompressJob {
+  status: "idle" | "running" | "done" | "error";
+  total: number;
+  processed: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  savedBytes: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+}
+let recompressJob: RecompressJob = {
+  status: "idle", total: 0, processed: 0, updated: 0, skipped: 0, failed: 0, savedBytes: 0, startedAt: null, finishedAt: null,
+};
+
+// ── POST /api/admin/lab-tests/recompress-certs — shrink stored certificates ───
+router.post("/admin/lab-tests/recompress-certs", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (recompressJob.status === "running") {
+    res.status(409).json({ error: "Recompression already running", job: recompressJob });
+    return;
+  }
+
+  // Only fetch IDs up front; each blob is loaded one at a time to bound memory.
+  const rows = await db
+    .select({ id: labTestsTable.id })
+    .from(labTestsTable)
+    .where(isNotNull(labTestsTable.pdfBlob));
+
+  recompressJob = {
+    status: "running", total: rows.length, processed: 0, updated: 0, skipped: 0, failed: 0, savedBytes: 0,
+    startedAt: Date.now(), finishedAt: null,
+  };
+  res.json({ ok: true, total: rows.length, job: recompressJob });
+
+  (async () => {
+    for (const { id } of rows) {
+      if (recompressJob.status !== "running") break;
+      try {
+        const [row] = await db
+          .select({ pdfBlob: labTestsTable.pdfBlob })
+          .from(labTestsTable)
+          .where(eq(labTestsTable.id, id))
+          .limit(1);
+        if (!row?.pdfBlob) {
+          recompressJob.skipped++;
+        } else {
+          const original = Buffer.from(row.pdfBlob, "base64");
+          const prepared = await prepareCertificateForStorage(original);
+          if (prepared.changed && prepared.storedBytes < prepared.originalBytes) {
+            await db
+              .update(labTestsTable)
+              .set({ pdfBlob: prepared.bytes.toString("base64") })
+              .where(eq(labTestsTable.id, id));
+            recompressJob.updated++;
+            recompressJob.savedBytes += prepared.originalBytes - prepared.storedBytes;
+          } else {
+            recompressJob.skipped++;
+          }
+        }
+      } catch (err) {
+        recompressJob.failed++;
+        console.warn(`[recompress] #${id} failed:`, String(err).slice(0, 120));
+      }
+      recompressJob.processed++;
+      // Yield between rows so request handling is never blocked.
+      await new Promise(r => setImmediate(r));
+    }
+    if (recompressJob.status === "running") recompressJob.status = "done";
+    recompressJob.finishedAt = Date.now();
+    console.log(`[recompress] Done — processed ${recompressJob.processed}, updated ${recompressJob.updated}, saved ${(recompressJob.savedBytes / 1024 / 1024).toFixed(1)}MB`);
+  })().catch(err => {
+    console.error("[recompress]", err);
+    recompressJob.status = "error";
+    recompressJob.finishedAt = Date.now();
+  });
+});
+
+// ── GET /api/admin/lab-tests/recompress-certs — recompression status ──────────
+router.get("/admin/lab-tests/recompress-certs", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(recompressJob);
+});
+
+// ── POST /api/admin/lab-tests/recompress-certs/stop — cancel recompression ────
+router.post("/admin/lab-tests/recompress-certs/stop", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (recompressJob.status === "running") {
+    recompressJob.status = "done";
+    recompressJob.finishedAt = Date.now();
+  }
+  res.json({ ok: true, job: recompressJob });
 });
 
 export default router;
