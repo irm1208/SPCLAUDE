@@ -1,7 +1,8 @@
 // Janoshik peptide analysis prices (USD).
 // EXCLUDED: LCMS (not offered in pool voting).
 // Endotoxin is fixed at $120. Mass/Purity varies by peptide.
-// Variance testing (vials) is $60/vial, max 3 vials.
+// The first vial is included with the Mass/Purity test; each additional vial
+// (variance testing) is $60, up to 3 vials total.
 
 export const ENDOTOXIN_PRICE = 120;
 export const VIAL_PRICE = 60;
@@ -78,7 +79,8 @@ export interface PriceOverrides {
 //
 // Milestones are generated in order:
 //   1. Tests ranked by vote count (most-voted first), each unlocking cumulatively
-//   2. Vial #1, then #2, then #3 (based on leading vial vote)
+//   2. Additional vials (the first is included with Mass/Purity), so vial
+//      milestones begin at Vial #2, then #3 (based on leading vial vote)
 //
 // If testOrder is empty/null we fall back to DEFAULT_TEST_OPTIONS order.
 
@@ -127,9 +129,11 @@ export function computeMilestones(
     });
   }
 
-  // Vials unlock after all tests
+  // Vials unlock after all tests. The first vial is included with the
+  // Mass/Purity test, so only additional vials (variance testing) cost
+  // VIAL_PRICE each.
   const vials = Math.max(1, Math.min(MAX_VIALS, vialCount));
-  for (let v = 1; v <= vials; v++) {
+  for (let v = 2; v <= vials; v++) {
     cumulative += VIAL_PRICE;
     milestones.push({
       label: `Vial #${v}`,
@@ -162,8 +166,10 @@ export function computeThresholds(
 
   const endotoxinPrice = overrides?.testPrices?.["Endotoxin"] ?? ENDOTOXIN_PRICE;
   const tier1 = endotoxinPrice;
+  // First vial is included with the Mass/Purity test; only extra vials are charged.
+  const cappedVials = Math.max(1, Math.min(MAX_VIALS, vialCount));
   const tier2 = peptidePrice !== null && peptidePrice !== undefined
-    ? peptidePrice + endotoxinPrice + Math.max(1, Math.min(MAX_VIALS, vialCount)) * VIAL_PRICE
+    ? peptidePrice + endotoxinPrice + Math.max(0, cappedVials - 1) * VIAL_PRICE
     : null;
   return { tier1, tier2, peptidePrice: peptidePrice ?? null };
 }
