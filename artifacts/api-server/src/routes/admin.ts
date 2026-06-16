@@ -569,7 +569,9 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
         ? (reshipperMap.get(`${o.groupBuyId}::${o.shippingCountry}`) ?? null)
         : null);
     const accountCountry = accountCountryMap.get(o.telegramUsername) ?? null;
-    const isWholesale = o.orderType === "wholesale";
+    // Shared wholesale orders (orderType "wholesale_shared") are wholesale too, so
+    // the whole order surfaces in the FS3 tab + Wholesale order view.
+    const isWholesale = o.orderType === "wholesale" || o.orderType === "wholesale_shared";
     // Compute warning flags
     const missingAddress = !o.shippingAddress && !o.inpostQrCode && !o.royalMailQrCode;
     const hasUnresolvedBalance = parseFloat(String(o.amountDue ?? "0")) > 0 &&
@@ -3630,7 +3632,7 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
     } else if (routingTypeParam === "direct") {
       allOrders = allOrders.filter(o => o.routingType === routingTypeParam);
     } else if (routingTypeParam === "wholesale") {
-      allOrders = allOrders.filter(o => o.orderType === "wholesale");
+      allOrders = allOrders.filter(o => o.orderType === "wholesale" || o.orderType === "wholesale_shared");
     }
   }
 

@@ -53,6 +53,22 @@ snapshot of an already-locked share.
 shipping to their saved account address), but letting the organiser type it would
 re-open the spoofing hole — so editing is restricted to the recipient themselves.
 
+# "wholesale_shared" must be treated as wholesale in admin views
+
+A locked share materialises per-member orders with `orderType="wholesale_shared"`
+(line items attached, `groupBuyId=null`). Any admin code that classifies an order as
+wholesale via `orderType === "wholesale"` must ALSO include `"wholesale_shared"`, or
+shared orders silently vanish from the FS3 tab + the admin "Wholesale" order view and
+land in "GB Orders" instead.
+
+**Why / how to apply:** these wholesale gates are DUPLICATED and drift-prone — at
+least the `isWholesale` flag computed in the `GET /admin/orders` formatter (drives
+the wholesale=true filter + the frontend Wholesale tab) and the `routingType==="wholesale"`
+filter in `GET /admin/fs3-summary`. The FS3 tab list is driven by `/admin/orders` +
+`/admin/fs3-summary`, NOT by the GB-scoped `/admin/group-buys/:gbId/fs3-generate|fs3-submit`
+endpoints (those stay GB-only). No single helper exists yet — consider an
+`isWholesaleOrderType(orderType)` if a third gate appears.
+
 # Known residual (follow-up, non-blocking)
 
 Generic payment-confirm sites (payments.ts, account.ts, admin.ts, organiser.ts,
