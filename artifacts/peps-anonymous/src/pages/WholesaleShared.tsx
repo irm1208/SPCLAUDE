@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   Loader2, Copy, Check, Users, Truck, Lock, Plus, Minus, Search, Crown,
   ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
+  ChevronDown, Info,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
@@ -88,6 +89,7 @@ export default function WholesaleShared() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Gate: wholesale members only
   useEffect(() => {
@@ -321,6 +323,48 @@ export default function WholesaleShared() {
                 </span>
               </div>
             </div>
+
+            {/* How it works (collapsible, minimised by default) */}
+            <section className="rounded-2xl overflow-hidden" style={card}>
+              <button
+                onClick={() => setShowHelp(v => !v)}
+                aria-expanded={showHelp}
+                className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-bold" style={{ color: "var(--t-text)" }}>
+                  <Info className="w-4 h-4" style={{ color: "var(--t-blue)" }} /> How shared orders work
+                </span>
+                <ChevronDown
+                  className="w-4 h-4 shrink-0 transition-transform"
+                  style={{ color: "var(--t-muted)", transform: showHelp ? "rotate(180deg)" : "none" }}
+                />
+              </button>
+              {showHelp && (
+                <div className="px-5 pb-5 space-y-3 text-sm" style={{ color: "var(--t-muted)" }}>
+                  <p>Pool your items with other wholesale members into one parcel and split the vendor shipping — everyone still pays for their own items.</p>
+                  <ol className="space-y-2.5">
+                    {[
+                      { t: "Invite members.", d: `Share the code or invite link above. Up to ${share.maxMembers} members can join.` },
+                      { t: "Add your items.", d: "While the order is Open, each member picks their own products and an optional tip." },
+                      { t: "Set the delivery member.", d: "The organiser picks one member to receive the parcel — the address comes from that member's saved account profile." },
+                      { t: "Lock the order.", d: "Once everyone has items and a delivery member is set, the organiser locks it. Items freeze and each member gets their own order to pay." },
+                      { t: "Everyone pays.", d: "Each member pays their own order. When the last person pays, the parcel is submitted to the vendor automatically." },
+                    ].map((step, i) => (
+                      <li key={i} className="flex gap-2.5">
+                        <span
+                          className="flex-none w-5 h-5 rounded-full text-[11px] font-bold inline-flex items-center justify-center mt-0.5"
+                          style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span><b style={{ color: "var(--t-text)" }}>{step.t}</b> {step.d}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="text-xs">The organiser can cancel the shared order at any time.</p>
+                </div>
+              )}
+            </section>
 
             {/* Status banners */}
             {share.status === "submitted" && (
