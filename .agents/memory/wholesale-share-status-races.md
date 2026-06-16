@@ -25,14 +25,33 @@ clobber the winner's status. Postgres row-lock + recheck on the conditional WHER
 makes whichever transition commits first win; the others match 0 rows instead of
 overwriting.
 
-# Delivery address is server-authoritative
+# Delivery address: organiser picks WHO, recipient sets the ADDRESS
 
-The organiser only picks WHICH member receives the parcel (`deliveryUsername`).
-The address itself is read server-side from that member's own saved account
-profile (`deliveryAddressFor(username)` / `membersWithAddress()` in
-wholesale-shares.ts) — never trusted from the request body. `buildShareResponse`
-exposes `hasDeliveryAddress` per member so the UI can disable members who have no
-saved address.
+The organiser only picks WHICH member receives the parcel (`deliveryUsername`), and
+can NEVER type an address on another member's behalf (anti-spoofing). When the
+organiser changes the receiver, the server seeds the shipping snapshot from that
+member's own saved account profile (`deliveryAddressFor(username)`), or clears it if
+they have none.
+
+The DESIGNATED recipient (and only them) may then set a one-off custom address for
+that parcel via `PUT /wholesale-shares/:id/delivery-address` — it overrides their
+saved account address for this share only, without changing their account. The
+endpoint is receiver-only (`deliveryUsername === me`), validates name+line1+country,
+and validates the country maps to a shippable vendor region (`pickRegionForCountry`)
+both here AND at lock time. `buildShareResponse` exposes `delivery.canEditAddress`
+(true when status=open AND current user is the deliveryUsername) so the UI shows the
+address form. Members WITHOUT a saved address are NO LONGER disabled in the picker —
+they can be chosen and then add an address themselves.
+
+**Both delivery writers also obey the conditional-update rule above:** `PUT /delivery`
+gates on `status='open'`; `PUT /delivery-address` gates on `status='open' AND
+lower(deliveryUsername)=me`. Both use `.returning({id})` and respond 409 on zero rows
+so a concurrent lock/cancel (or a receiver reassignment) can't mutate the shipping
+snapshot of an already-locked share.
+
+**Why:** the address must be enterable by the recipient (people aren't always
+shipping to their saved account address), but letting the organiser type it would
+re-open the spoofing hole — so editing is restricted to the recipient themselves.
 
 # Known residual (follow-up, non-blocking)
 

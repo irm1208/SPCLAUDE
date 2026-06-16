@@ -62,6 +62,7 @@ export interface WholesaleShareDetail {
     email: string | null;
     address: string | null;
     country: string | null;
+    canEditAddress: boolean;
   };
   vendor: WholesaleShareVendor | null;
   shippingEstimate: number | null;
@@ -169,12 +170,34 @@ export function setWholesaleShareItems(
   });
 }
 
-// The organiser only picks WHICH member receives the parcel — the server reads
-// that member's saved account address. No address fields are sent from the client.
+// The organiser only picks WHICH member receives the parcel. The server seeds the
+// address from that member's saved account address (if any); the recipient can then
+// override it with a one-off address via setWholesaleShareDeliveryAddress below.
 export function setWholesaleShareDelivery(id: string, deliveryUsername: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/delivery`, {
     method: "PUT",
     body: JSON.stringify({ deliveryUsername }),
+  });
+}
+
+export interface WholesaleDeliveryAddressInput {
+  name: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city?: string;
+  postcode?: string;
+  country: string;
+  phone?: string;
+  email?: string;
+}
+
+// The designated delivery recipient sets a one-off shipping address for this share
+// only (overriding their saved account address for this parcel, without changing
+// their account). Receiver-only on the server.
+export function setWholesaleShareDeliveryAddress(id: string, addr: WholesaleDeliveryAddressInput) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/delivery-address`, {
+    method: "PUT",
+    body: JSON.stringify(addr),
   });
 }
 

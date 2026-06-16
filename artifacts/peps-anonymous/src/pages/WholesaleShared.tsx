@@ -8,11 +8,13 @@ import {
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
+import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
   joinWholesaleShare,
   setWholesaleShareItems,
   setWholesaleShareDelivery,
+  setWholesaleShareDeliveryAddress,
   setWholesaleShareSplit,
   lockWholesaleShare,
   cancelWholesaleShare,
@@ -81,10 +83,16 @@ export default function WholesaleShared() {
   const [myTip, setMyTip] = useState(0);
   const [itemsDirty, setItemsDirty] = useState(false);
 
-  // Creator-only delivery picker — organiser chooses WHICH member receives the
-  // parcel; the address itself comes from that member's saved account profile.
+  // Creator-only delivery picker — organiser chooses WHICH member receives the parcel.
   const [delUser, setDelUser] = useState("");
   const deliverySeeded = useRef(false);
+
+  // Recipient-only address form — the designated delivery member can enter a one-off
+  // address for this parcel instead of being stuck with their saved account address.
+  const [addr, setAddr] = useState({
+    name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
+  });
+  const addrSeeded = useRef(false);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
@@ -121,6 +129,37 @@ export default function WholesaleShared() {
     if (share.isCreator) setDelUser(share.delivery.username ?? "");
     deliverySeeded.current = true;
   }, [share]);
+
+  // Seed the recipient address form once, when I'm the chosen recipient. Prefer any
+  // address already saved on the share; otherwise fall back to my saved account
+  // address as a convenient starting point (which I can freely edit).
+  useEffect(() => {
+    if (!share || !share.delivery.canEditAddress || addrSeeded.current) return;
+    if (share.delivery.address) {
+      const lines = share.delivery.address.split("\n").map(s => s.trim()).filter(Boolean);
+      let line1 = "", line2 = "", cityLine = "";
+      if (lines.length >= 3) { [line1, line2, cityLine] = lines; }
+      else if (lines.length === 2) { [line1, cityLine] = lines; }
+      else if (lines.length === 1) { [line1] = lines; }
+      setAddr({
+        name: share.delivery.name ?? "",
+        line1, line2, city: cityLine, postcode: "",
+        country: share.delivery.country ?? "United Kingdom",
+        phone: share.delivery.phone ?? "",
+      });
+    } else if (account) {
+      setAddr({
+        name: account.telegramUsername?.replace(/^@/, "") ?? "",
+        line1: account.addressLine1 ?? "",
+        line2: account.addressLine2 ?? "",
+        city: account.addressCity ?? "",
+        postcode: account.addressPostcode ?? "",
+        country: account.country ?? account.addressCountry ?? "United Kingdom",
+        phone: [account.addressPhonePrefix, account.addressPhone].filter(Boolean).join(" "),
+      });
+    }
+    addrSeeded.current = true;
+  }, [share, account]);
 
   const priceOf = (productId: string) => products.find(p => p.id === productId)?.price ?? 0;
   const nameOf = (productId: string) => products.find(p => p.id === productId)?.name ?? productId;
@@ -230,6 +269,25 @@ export default function WholesaleShared() {
     setActionError(""); setBusy("delivery");
     try {
       await setWholesaleShareDelivery(id, delUser);
+      addrSeeded.current = false; // re-seed the address form for the new recipient
+      invalidate(id);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const saveDeliveryAddress = async () => {
+    if (!id) return;
+    setActionError(""); setBusy("delivery-address");
+    try {
+      await setWholesaleShareDeliveryAddress(id, {
+        name: addr.name,
+        addressLine1: addr.line1,
+        addressLine2: addr.line2,
+        city: addr.city,
+        postcode: addr.postcode,
+        country: addr.country,
+        phone: addr.phone,
+      });
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
@@ -346,7 +404,7 @@ export default function WholesaleShared() {
                     {[
                       { t: "Invite members.", d: `Share the code or invite link above. Up to ${share.maxMembers} members can join.` },
                       { t: "Add your items.", d: "While the order is Open, each member picks their own products and an optional tip." },
-                      { t: "Set the delivery member.", d: "The organiser picks one member to receive the parcel — the address comes from that member's saved account profile." },
+                      { t: "Set the delivery member.", d: "The organiser picks one member to receive the parcel. That member then confirms the address — using their saved account address or a different one just for this order." },
                       { t: "Lock the order.", d: "Once everyone has items and a delivery member is set, the organiser locks it. Items freeze and each member gets their own order to pay." },
                       { t: "Everyone pays.", d: "Each member pays their own order. When the last person pays, the parcel is submitted to the vendor automatically." },
                     ].map((step, i) => (
@@ -559,20 +617,20 @@ export default function WholesaleShared() {
                   </div>
 
                   {/* Delivery member — organiser picks who receives the parcel;
-                      the address comes from that member's saved account profile. */}
+                      the chosen recipient then confirms or edits the address below. */}
                   <div className="space-y-3 pt-1">
                     <div>
                       <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Deliver the whole parcel to</label>
                       <select value={delUser} onChange={e => setDelUser(e.target.value)} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
                         <option value="">Select a member…</option>
                         {share.members.map(m => (
-                          <option key={m.username} value={m.username} disabled={!m.hasDeliveryAddress}>
+                          <option key={m.username} value={m.username}>
                             @{m.username.replace(/^@/, "")}{m.isCreator ? " (you)" : ""}{m.hasDeliveryAddress ? "" : " — no saved address"}
                           </option>
                         ))}
                       </select>
                       <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>
-                        Only members who've saved a delivery address in their account can be chosen. The parcel ships to their saved address.
+                        Pick any member to receive the parcel. They can use their saved account address or enter a different one just for this order.
                       </p>
                     </div>
                     <button onClick={saveDelivery} disabled={busy === "delivery" || !delUser} className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
@@ -585,6 +643,12 @@ export default function WholesaleShared() {
                         <p className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{share.delivery.address}</p>
                         {share.delivery.country && <p style={{ color: "var(--t-text)" }}>{share.delivery.country}</p>}
                         {share.delivery.phone && <p style={{ color: "var(--t-muted)" }}>{share.delivery.phone}</p>}
+                      </div>
+                    )}
+                    {share.delivery.username && !share.delivery.address && (
+                      <div className="rounded-lg p-3 text-xs flex items-start gap-2" style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "var(--t-text)" }}>
+                        <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#eab308" }} />
+                        <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address{share.delivery.canEditAddress ? " — that's you, fill it in below" : ""}.</span>
                       </div>
                     )}
                   </div>
@@ -618,6 +682,65 @@ export default function WholesaleShared() {
                       Locking creates each member's order and stops further edits. Each member then pays their own share.
                     </p>
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Delivery address — only the chosen recipient can set a one-off address
+                for this parcel. It overrides their saved account address for this order
+                only and never changes their account. */}
+            {share.delivery.canEditAddress && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Delivery Address</p>
+                <div className="rounded-xl p-4 space-y-3" style={card}>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                    You're receiving this parcel. Confirm or edit where it should go — this address is used for this order only and won't change your account.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
+                    <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
+                    <input value={addr.line1} onChange={e => setAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
+                    <input value={addr.line2} onChange={e => setAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
+                      <input value={addr.city} onChange={e => setAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
+                      <input value={addr.postcode} onChange={e => setAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+                    <select value={addr.country} onChange={e => setAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+                      <option value="">Select country…</option>
+                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>
+                      The vendor must ship to this country, or the order can't be priced or locked.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone (optional)</label>
+                    <input value={addr.phone} onChange={e => setAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <button
+                    onClick={saveDeliveryAddress}
+                    disabled={busy === "delivery-address" || !addr.name.trim() || !addr.line1.trim() || !addr.country}
+                    className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                    style={{ background: "var(--t-blue)" }}
+                  >
+                    {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Save delivery address
+                  </button>
                 </div>
               </section>
             )}

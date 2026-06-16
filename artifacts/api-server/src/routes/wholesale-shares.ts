@@ -236,6 +236,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       email: share.shippingEmail ?? null,
       address: share.shippingAddress ?? null,
       country: share.shippingCountry ?? null,
+      // The designated recipient (and only they) may set a one-off address while open.
+      canEditAddress: share.status === "open"
+        && !!share.deliveryUsername
+        && share.deliveryUsername.toLowerCase() === currentUsername.toLowerCase(),
     },
     vendor: vendor ? {
       id: vendor.id,
@@ -473,24 +477,113 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
   const deliveryMember = await loadMember(share.id, deliveryUsername);
   if (!deliveryMember) { res.status(400).json({ error: "The delivery member must be a member of this shared order." }); return; }
 
-  // The organiser only chooses WHO receives the parcel. The address is read from
-  // that member's own saved account profile — never trusted from the request body.
-  const addr = await deliveryAddressFor(deliveryMember.username);
-  if (!addr) {
-    res.status(400).json({ error: "That member hasn't saved a delivery address yet. Ask them to add their address in their account before choosing them as the delivery member." });
+  // The organiser only chooses WHO receives the parcel — any member can be picked.
+  // When the receiver changes, seed the shipping snapshot from that member's saved
+  // account address if they have one; otherwise leave it blank so the recipient can
+  // add a one-off address themselves (PUT .../delivery-address). The address is
+  // never trusted from THIS request body — the organiser can't type it for someone.
+  const changingReceiver = (share.deliveryUsername ?? "").toLowerCase() !== deliveryMember.username.toLowerCase();
+  if (changingReceiver) {
+    const addr = await deliveryAddressFor(deliveryMember.username);
+    // CONDITIONAL update gated on status='open' — if a concurrent lock/cancel won
+    // the race after our precheck, no row updates and we respond 409 rather than
+    // mutating the shipping snapshot of an already-locked share.
+    const changed = await db.update(wholesaleSharesTable)
+      .set({
+        deliveryUsername: deliveryMember.username,
+        shippingName: addr?.name ?? null,
+        shippingPhone: addr?.phone ?? null,
+        shippingEmail: addr?.email ?? null,
+        shippingAddress: addr?.address ?? null,
+        shippingCountry: addr?.country ?? null,
+      })
+      .where(and(
+        eq(wholesaleSharesTable.id, share.id),
+        eq(wholesaleSharesTable.status, "open"),
+      ))
+      .returning({ id: wholesaleSharesTable.id });
+    if (changed.length === 0) {
+      res.status(409).json({ error: "This shared order is no longer open." });
+      return;
+    }
+  }
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/delivery-address — the DESIGNATED delivery member
+// sets a one-off shipping address for this parcel only. This overrides their saved
+// account address for this share without changing their account. Receiver-only:
+// the organiser picks WHO receives the parcel but can never type an address for
+// someone else (the original anti-spoofing rule still holds for everyone but the
+// recipient themselves).
+router.put("/wholesale-shares/:id/delivery-address", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+  if (!share.deliveryUsername) {
+    res.status(400).json({ error: "The organiser needs to choose the delivery member first." });
+    return;
+  }
+  if (share.deliveryUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the chosen delivery recipient can set the shipping address." });
+    return;
+  }
+  // The recipient must still be a member of this shared order.
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const str = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const name = str(body.name, 120);
+  const line1 = str(body.addressLine1);
+  const line2 = str(body.addressLine2);
+  const city = str(body.city, 120);
+  const postcode = str(body.postcode, 40);
+  const country = str(body.country, 80);
+  const phone = str(body.phone, 60);
+  const email = str(body.email, 160);
+
+  if (!name) { res.status(400).json({ error: "Enter the recipient's name." }); return; }
+  if (!line1) { res.status(400).json({ error: "Enter the first line of the address." }); return; }
+  if (!country) { res.status(400).json({ error: "Choose the destination country." }); return; }
+
+  // The country must map to a shippable vendor region or the parcel can never be
+  // priced or locked — reject early so the recipient gets immediate feedback.
+  const vendor = await getActiveWholesaleVendor();
+  if (!vendor) { res.status(400).json({ error: "No active wholesale vendor is configured. Please contact an admin." }); return; }
+  if (!pickRegionForCountry(vendor as unknown as ShippingVendor, country)) {
+    res.status(400).json({ error: `The current vendor doesn't ship to "${country}". Please choose a different destination.` });
     return;
   }
 
-  await db.update(wholesaleSharesTable)
+  const cityLine = [city, postcode].filter(Boolean).join(" ").trim();
+  const address = [line1, line2, cityLine].filter(Boolean).join("\n");
+
+  // CONDITIONAL update gated on BOTH status='open' AND the recipient still being the
+  // designated delivery member. If a concurrent lock/cancel won the race, or the
+  // organiser reassigned delivery to someone else after our precheck, no row updates
+  // and we respond 409 rather than overwriting the wrong recipient's snapshot.
+  const changed = await db.update(wholesaleSharesTable)
     .set({
-      deliveryUsername: deliveryMember.username,
-      shippingName: addr.name,
-      shippingPhone: addr.phone,
-      shippingEmail: addr.email,
-      shippingAddress: addr.address,
-      shippingCountry: addr.country,
+      shippingName: name,
+      shippingPhone: phone || null,
+      shippingEmail: email || null,
+      shippingAddress: address,
+      shippingCountry: country,
     })
-    .where(eq(wholesaleSharesTable.id, share.id));
+    .where(and(
+      eq(wholesaleSharesTable.id, share.id),
+      eq(wholesaleSharesTable.status, "open"),
+      sql`lower(${wholesaleSharesTable.deliveryUsername}) = ${me.toLowerCase()}`,
+    ))
+    .returning({ id: wholesaleSharesTable.id });
+  if (changed.length === 0) {
+    res.status(409).json({ error: "This shared order is no longer open or you're no longer the chosen recipient." });
+    return;
+  }
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
