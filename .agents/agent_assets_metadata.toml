@@ -83,3 +83,15 @@ id = "q36N7xFZ_qsjAKfm_3BXg"
 uri = "file://peps_anonymous_backup.tar.gz"
 type = "unspecified"
 title = "peps_anonymous.backup (tar.gz)"
+
+[[outputs]]
+id = "KeE3pgkBz0WVfm_Mlba1Y"
+uri = "file://.local/exports/janoshik-com-links.txt"
+type = "text"
+title = "janoshik.com links (416) — run on janoshik.com"
+
+[[outputs]]
+id = "jZvapeGB7K-30VZF35zw1"
+uri = "file://.local/exports/verify-janoshik-com-links.txt"
+type = "text"
+title = "verify.janoshik.com links (328) — run on verify.janoshik.com"
