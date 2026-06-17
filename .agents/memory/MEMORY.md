@@ -11,3 +11,4 @@
 - [Testing pool mobile overflow](testing-pool-mobile-overflow.md) — TestingPool/GbTestingPool wrap in overflow-x-hidden (clips, not scrolls); long compound labels get cut off → need min-w-0+break-words; use lg:grid-cols-2 not md:.
 - [Lab certificate compression](lab-cert-compression.md) — all pdfBlob writes funnel through prepareCertificateForStorage (→WebP q85); compress stored bytes only, extract on originals; idempotent via ≤90% keep rule.
 - [Wholesale share status races](wholesale-share-status-races.md) — lock/cancel/submit/delivery writes each need conditional status-gated updates (→409); only the chosen recipient sets the address.
+- [Workflow topology](workflow-topology.md) — only "Start application" + mockup-sandbox are canonical; api-server/web workflows are duplicates that FAIL on port conflict if restarted alongside it. Restart only "Start application" to reload secrets.
