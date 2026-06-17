@@ -764,11 +764,19 @@ export default function GbTestingPool() {
   const [, setLocation] = useLocation();
   const gbId = params?.gbId ?? "";
 
+  const { isLoggedIn, isLoading: accountLoading } = useAccount();
+
   const [data, setData] = useState<TestingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [gbName, setGbName] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (!accountLoading && !isLoggedIn) {
+      setLocation(`/login?next=/testing/${gbId}`);
+    }
+  }, [accountLoading, isLoggedIn, gbId, setLocation]);
 
   const load = useCallback(async () => {
     try {
@@ -783,13 +791,13 @@ export default function GbTestingPool() {
   }, [gbId]);
 
   useEffect(() => {
-    if (!gbId) return;
+    if (!gbId || !isLoggedIn) return;
     setLoading(true); setError(null);
     load();
     fetch(`/api/group-buys/${gbId}/info`).then(r => r.json()).then(d => {
       if (d?.name) setGbName(d.name);
     }).catch(() => {});
-  }, [gbId, load, refreshKey]);
+  }, [gbId, load, refreshKey, isLoggedIn]);
 
   if (loading) {
     return (
