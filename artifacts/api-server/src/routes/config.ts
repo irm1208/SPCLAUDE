@@ -59,6 +59,7 @@ router.get("/config", async (_req, res): Promise<void> => {
     rawWarning, groupBuysPageMessage, wholesalePageMessage,
     rawWholesaleApproval, rawAdminFeeEnabled, rawAdminFeeAmount,
     rawAdminFeeCountries, rawSignupRequiresInvite, deliveryTips,
+    rawSharedComingSoon, rawSharedComingSoonMessage,
   ] = await Promise.all([
     getConfigValue("vendorShippingWarning"),
     getConfigValue("groupBuysPageMessage"),
@@ -69,6 +70,8 @@ router.get("/config", async (_req, res): Promise<void> => {
     getConfigValue("shipping_admin_fee_countries"),
     getConfigValue("signup_requires_invite"),
     getDeliveryTips(),
+    getConfigValue("wholesale_shared_coming_soon"),
+    getConfigValue("wholesale_shared_coming_soon_message"),
   ]);
 
   const vendorShippingWarning = rawWarning === null ? true : rawWarning === "true";
@@ -92,6 +95,8 @@ router.get("/config", async (_req, res): Promise<void> => {
     shippingAdminFeeAmount,
     shippingAdminFeeCountries,
     signupRequiresInvite,
+    wholesaleSharedComingSoon: rawSharedComingSoon === "true",
+    wholesaleSharedComingSoonMessage: rawSharedComingSoonMessage ?? "Coming soon",
     deliveryTipsEnabled: deliveryTips.enabled,
     deliveryTipsItems: deliveryTips.items,
   });

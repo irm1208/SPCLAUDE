@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { Loader2, ArrowRight, Users, Share2 } from "lucide-react";
+import { Loader2, ArrowRight, Users, Share2, Clock } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
 import { useWholesaleShares, createWholesaleShare } from "@/hooks/use-wholesale-shares";
@@ -13,10 +13,27 @@ export default function WholesaleShareEntry() {
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [comingSoon, setComingSoon] = useState(false);
+  const [comingSoonMsg, setComingSoonMsg] = useState("Coming soon");
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
     if (!accountLoading && (!account || !account.isWholesale)) setLocation("/account");
   }, [accountLoading, account, setLocation]);
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d) return;
+        setComingSoon(d.wholesaleSharedComingSoon === true);
+        if (typeof d.wholesaleSharedComingSoonMessage === "string" && d.wholesaleSharedComingSoonMessage.trim()) {
+          setComingSoonMsg(d.wholesaleSharedComingSoonMessage);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setConfigLoaded(true));
+  }, []);
 
   const activeShares = (shares ?? []).filter(s => s.status !== "cancelled");
 
@@ -61,6 +78,19 @@ export default function WholesaleShareEntry() {
               </p>
             </div>
 
+            {!configLoaded ? (
+              <div className="rounded-xl p-8 flex items-center justify-center" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-subtle)" }} />
+              </div>
+            ) : comingSoon ? (
+              <div className="rounded-xl p-8 flex flex-col items-center text-center gap-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "var(--t-blue-08)" }}>
+                  <Clock className="w-6 h-6" style={{ color: "var(--t-blue)" }} />
+                </div>
+                <p className="text-lg font-bold" style={{ color: "var(--t-text)" }}>{comingSoonMsg}</p>
+                <p className="text-sm" style={{ color: "var(--t-muted)" }}>Shared orders aren’t available just yet — check back soon.</p>
+              </div>
+            ) : (
             <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
               {error && <p className="text-sm" style={{ color: "#ef4444" }}>{error}</p>}
 
@@ -117,6 +147,7 @@ export default function WholesaleShareEntry() {
                 </div>
               )}
             </div>
+            )}
 
           </motion.div>
         </main>
