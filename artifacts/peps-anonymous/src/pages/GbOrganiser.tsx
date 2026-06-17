@@ -4755,7 +4755,7 @@ function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving
         <>
           <SectionCard>
             <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Payments</p>
-            <ToggleRow label="Payments enabled" hint="Allow payment confirmation for orders" value={form.paymentsEnabled} onChange={v => set("paymentsEnabled", v)} />
+            <ToggleRow label="Payments enabled" hint="Shows the on-site payment section so members can pay and confirm their order here. Turn off to hide it — e.g. if you collect payment another way." value={form.paymentsEnabled} onChange={v => set("paymentsEnabled", v)} />
           </SectionCard>
 
           <SectionCard>
@@ -4812,6 +4812,7 @@ function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving
                 {form.vendorShippingEnabled ? "Enabled" : "Disabled"}
               </button>
             </div>
+            <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Vendor shipping is the cost of getting the products from the supplier to you (the hub) — separate from posting them on to members. Turn this on to warn members it's added later, once orders close.</p>
             {form.vendorShippingEnabled ? (
               <div className="space-y-2">
                 <p className="text-xs" style={{ color: "var(--t-subtle)" }}>This notice appears on the order review page to warn members that vendor shipping will be added later.</p>
@@ -5971,12 +5972,16 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
           <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Add Shipping Courier</p>
           <button onClick={addShipping} className="h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1" style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}><Plus className="w-3 h-3" /> Add</button>
         </div>
+        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>The delivery options members can pick at checkout. Give each one a name (e.g. "Standard UK") and its price. The number box is the price in this group buy's currency ({gb.currency}) — e.g. {gb.currency} 5.00.</p>
         {shippingOptions.length === 0 && <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No shipping options — orders will use global delivery methods.</p>}
         {shippingOptions.map((o, i) => (
           <div key={o.id} className="p-3 rounded-xl space-y-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
             <div className="flex gap-2 items-center">
               <input value={o.label} onChange={e => updateShipping(i, "label", e.target.value)} placeholder="Label (e.g. Standard UK)" className="flex-1 min-w-0 px-3 rounded-xl text-xs h-9 font-semibold focus:outline-none" style={inputStyle} />
-              <input value={o.priceStr} onChange={e => updateShipping(i, "priceStr", e.target.value)} placeholder="0.00" inputMode="decimal" className="w-24 shrink-0 px-3 rounded-xl text-xs h-9 focus:outline-none" style={inputStyle} />
+              <div className="w-28 shrink-0 flex items-center gap-1 px-2.5 rounded-xl h-9" style={inputStyle}>
+                <span className="text-xs font-semibold shrink-0" style={{ color: "var(--t-subtle)" }}>{gb.currency}</span>
+                <input value={o.priceStr} onChange={e => updateShipping(i, "priceStr", e.target.value)} placeholder="0.00" inputMode="decimal" className="w-full min-w-0 bg-transparent text-xs focus:outline-none" style={{ color: "var(--t-text)" }} />
+              </div>
               <button onClick={() => removeShipping(i)} className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(220,38,38,0.07)" }}><X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} /></button>
             </div>
             <input
