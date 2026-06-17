@@ -12,3 +12,4 @@
 - [Lab certificate compression](lab-cert-compression.md) — all pdfBlob writes funnel through prepareCertificateForStorage (→WebP q85); compress stored bytes only, extract on originals; idempotent via ≤90% keep rule.
 - [Wholesale share status races](wholesale-share-status-races.md) — lock/cancel/submit/delivery writes each need conditional status-gated updates (→409); only the chosen recipient sets the address.
 - [Workflow topology](workflow-topology.md) — only "Start application" + mockup-sandbox are canonical; api-server/web workflows are duplicates that FAIL on port conflict if restarted alongside it. Restart only "Start application" to reload secrets.
+- [Group-buy visibility gate](gb-visibility-gate.md) — un-hiding a GB to public lists must be server-gated on approvalStatus==='approved' OR admin, else organisers self-publish unapproved GBs; hidden means list-excluded, still joinable by id+PIN.

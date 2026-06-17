@@ -1723,12 +1723,12 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
 
 // ─── Join Group Buy Modal ──────────────────────────────────────────────────────
 
-function JoinModal({ onClose }: { onClose: () => void }) {
+function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: string }) {
   const [gbId, setGbId] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [uniqueId, setUniqueId] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(!!initialId);
+  const [uniqueId, setUniqueId] = useState(initialId ?? "");
   const [idError, setIdError] = useState("");
   const [idPending, setIdPending] = useState(false);
   const [idNeedsPin, setIdNeedsPin] = useState(false);
@@ -6659,11 +6659,27 @@ export default function CustomerPortal() {
   const [portalStockItems, setPortalStockItems] = useState<{ productName: string; qiyunleCode: string; stock: number }[]>([]);
   const [showPortalStockModal, setShowPortalStockModal] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [joinPrefill, setJoinPrefill] = useState<string | null>(null);
+  const lastJoinHandledRef = useRef<string | null>(null);
   const [leaveConfirmGb, setLeaveConfirmGb] = useState<GroupBuySummary | null>(null);
   const leaveGbMut = useLeaveGroupBuy();
   const updateCountryMut = useUpdateCountry();
   const [showCountryPrompt, setShowCountryPrompt] = useState(false);
   const [countryPromptValue, setCountryPromptValue] = useState("");
+
+  // Open the Join modal pre-filled when arriving via an organiser preview link (?join=<gbId>).
+  // Keyed on the search string so navigating to a different preview link within the same
+  // session reopens the modal; the ref guards against reopening for an already-handled link.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const j = new URLSearchParams(search).get("join");
+    if (!j) { lastJoinHandledRef.current = null; return; }
+    if (lastJoinHandledRef.current === j) return;
+    lastJoinHandledRef.current = j;
+    setJoinPrefill(j);
+    setSection("groups");
+    setShowJoin(true);
+  }, [isLoggedIn, search]);
 
   const [organiserGbs, setOrganiserGbs] = useState<{ id: string; status: string }[]>([]);
   useEffect(() => {
@@ -8191,7 +8207,16 @@ export default function CustomerPortal() {
           {parcelsGb && <GBParcelsModal gb={parcelsGb} orders={parcelsOrders} onClose={() => setParcelsGb(null)} />}
         </AnimatePresence>
         <AnimatePresence>
-          {showJoin && <JoinModal onClose={() => setShowJoin(false)} />}
+          {showJoin && <JoinModal initialId={joinPrefill ?? undefined} onClose={() => {
+            setShowJoin(false);
+            setJoinPrefill(null);
+            const params = new URLSearchParams(window.location.search);
+            if (params.has("join")) {
+              params.delete("join");
+              const qs = params.toString();
+              window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+            }
+          }} />}
         </AnimatePresence>
         <AnimatePresence>
           {showPortalStockModal && <PortalStockModal items={portalStockItems} onClose={() => setShowPortalStockModal(false)} />}

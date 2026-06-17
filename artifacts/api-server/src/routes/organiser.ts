@@ -533,7 +533,7 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
   }
 
   const {
-    name, description, status, closeDate, invitePin,
+    name, description, status, closeDate, invitePin, hiddenFromList,
     manufacturer, manufacturerCountry, infoCards, currency,
     labTestSupplier, vendorShippingEnabled, vendorShippingMessage,
     vendorShippingAmount, vendorShippingKits,
@@ -572,11 +572,24 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     if (err) { res.status(400).json({ error: err }); return; }
   }
 
+  // VISIBILITY GATE: organisers may hide a GB (Hidden / Preview) at any time, but may only
+  // un-hide it (allow it into public lists) once an admin has approved it. Public listing also
+  // requires status='active' — but un-hiding is gated here too so an organiser can never surface
+  // an unapproved GB by combining public_requested + active + un-hide.
+  if (hiddenFromList !== undefined && !Boolean(hiddenFromList) && !req.organiser!.isAdmin && existing.approvalStatus !== "approved") {
+    res.status(403).json({
+      error: "This group buy stays in Hidden / Preview until an admin approves it. You can still share the preview link to let people view and join it.",
+      approvalStatus: existing.approvalStatus,
+    });
+    return;
+  }
+
   const updates: Partial<Omit<GroupBuy, "id" | "createdAt" | "updatedAt">> = {};
 
   if (name !== undefined) updates.name = String(name).trim();
   if (description !== undefined) updates.description = description ? String(description).trim() : null;
   if (status !== undefined) updates.status = status;
+  if (hiddenFromList !== undefined) updates.hiddenFromList = Boolean(hiddenFromList);
   if (closeDate !== undefined) updates.closeDate = closeDate ? new Date(closeDate) : null;
   if (manufacturer !== undefined) updates.manufacturer = manufacturer ? String(manufacturer).trim() : null;
   if (manufacturerCountry !== undefined) updates.manufacturerCountry = manufacturerCountry ? String(manufacturerCountry).trim() : null;

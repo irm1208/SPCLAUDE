@@ -11,7 +11,7 @@ import {
   AlertCircle, Globe, Lock, SendHorizonal, Truck,
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Eye, EyeOff,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -4065,9 +4065,10 @@ function OverviewTab({ gbs, loading, profile, onSelect, onNew, onRefresh }: {
 
 // ─── GB Form Tab ─────────────────────────────────────────────────────────────
 
-function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving, availableStatuses }: {
+function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange, statusSaving, availableStatuses }: {
   gb: OrganiserGB | null;
   onSaved: (gb: OrganiserGB) => void;
+  onGbUpdated?: (gb: OrganiserGB) => void;
   onBack: () => void;
   onDelete?: (id: string) => void;
   onStatusChange?: (s: string) => void;
@@ -4247,6 +4248,8 @@ function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving
   const [error, setError] = useState("");
   const [detailsTab, setDetailsTab] = useState<"core" | "members" | "messaging" | "settings">("core");
   const [codeCopied, setCodeCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
 
   const copyCode = () => {
     if (!gb?.id) return;
@@ -4254,6 +4257,40 @@ function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving
       setCodeCopied(true);
       setTimeout(() => setCodeCopied(false), 2000);
     });
+  };
+
+  const previewLink = gb?.id
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/account?s=groups&join=${gb.id}`
+    : "";
+
+  const copyPreviewLink = () => {
+    if (!previewLink) return;
+    navigator.clipboard.writeText(previewLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
+
+  const handleToggleHidden = async (nextHidden: boolean) => {
+    if (!gb?.id || visibilitySaving) return;
+    // Going public requires admin approval — keep it hidden and explain.
+    if (!nextHidden && gb.approvalStatus !== "approved") {
+      setError("This group buy must be approved by an admin before it can appear in public lists. It stays in Hidden / Preview until then — but you can still share the preview link.");
+      return;
+    }
+    setVisibilitySaving(true); setError("");
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiddenFromList: nextHidden }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error || "Failed to update visibility"); return; }
+      onGbUpdated?.(data);
+    } catch { setError("Connection error — please try again"); }
+    finally { setVisibilitySaving(false); }
   };
 
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
@@ -4401,6 +4438,72 @@ function GBFormTab({ gb, onSaved, onBack, onDelete, onStatusChange, statusSaving
                 })}
                 {statusSaving && <Loader2 className="w-3 h-3 animate-spin shrink-0" style={{ color: "var(--t-subtle)" }} />}
               </div>
+            </SectionCard>
+          )}
+
+          {!isNew && gb && (
+            <SectionCard>
+              <div className="flex items-center gap-2 mb-1">
+                {gb.hiddenFromList
+                  ? <EyeOff className="w-3.5 h-3.5" style={{ color: "var(--t-blue-deep)" }} />
+                  : <Eye className="w-3.5 h-3.5" style={{ color: "#16A34A" }} />}
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Visibility &amp; Preview</p>
+                <span style={{
+                  marginLeft: "auto", fontSize: 10, padding: "1px 8px", borderRadius: 20, fontWeight: 600,
+                  ...(gb.hiddenFromList
+                    ? { background: "rgba(27,58,122,0.1)", color: "var(--t-blue-deep)", border: "1px solid rgba(27,58,122,0.2)" }
+                    : { background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }),
+                }}>
+                  {gb.hiddenFromList ? "Hidden / Preview" : "Listed"}
+                </span>
+              </div>
+              <ToggleRow
+                label="Hidden / Preview mode"
+                hint={gb.hiddenFromList
+                  ? "Hidden from all public group-buy lists. Only people with the preview link below (and the PIN, if set) can open and join it."
+                  : "This group buy can appear in the public group-buy list when it is active."}
+                value={gb.hiddenFromList}
+                onChange={handleToggleHidden}
+              />
+              {visibilitySaving && (
+                <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
+                  <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                </p>
+              )}
+              {gb.hiddenFromList && gb.approvalStatus !== "approved" && (
+                <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                  Appearing in public lists still needs admin approval. Until then it stays in Hidden / Preview — but you can already share the link below so members can view and test-join it.
+                </p>
+              )}
+              <div>
+                <p className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Preview link</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 rounded-xl py-2.5 px-3 truncate" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                    <span className="font-mono text-[11px]" style={{ color: "var(--t-text)" }}>{previewLink}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyPreviewLink}
+                    className="h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all"
+                    style={linkCopied
+                      ? { background: "rgba(22,163,74,0.12)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.3)" }
+                      : { background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                  >
+                    {linkCopied ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                  </button>
+                </div>
+                <p className="text-[11px] mt-1.5" style={{ color: "var(--t-muted)" }}>
+                  Opens the group buy exactly as a member sees it — they can view it and test-join from here.
+                </p>
+              </div>
+              {gb.invitePinHash && (
+                <div className="flex items-start gap-2 rounded-xl py-2.5 px-3" style={{ background: "var(--t-surface2)" }}>
+                  <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--t-muted)" }} />
+                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                    A 4-digit invite PIN is set — share it separately from the link, as it&apos;s required to join.
+                  </p>
+                </div>
+              )}
             </SectionCard>
           )}
 
@@ -12377,7 +12480,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-5 pb-8">
         {activeTab === "overview" && <OverviewTab gbs={gbs} loading={loadingGbs} profile={profile} onSelect={handleSelectGb} onNew={handleNewGb} onRefresh={loadGbs} />}
-        {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
+        {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
         {activeTab === "products" && selectedGb && <ProductsTab gb={selectedGb} />}
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
