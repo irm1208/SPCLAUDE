@@ -306,7 +306,11 @@ function BulkReceiver() {
       body: fd,
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) return { status: "imported", detail: data?.peptideName || "" };
+    if (res.ok) {
+      const name = data?.peptideName || "";
+      if (data?.backfilled) return { status: "imported", detail: name ? `Certificate saved · ${name}` : "Certificate saved" };
+      return { status: "imported", detail: name };
+    }
     if (res.status === 409) return { status: "duplicate", detail: data?.error || "Already imported." };
     if (res.status === 401) return { status: "failed", detail: "Admin key rejected — re-create the button." };
     return { status: "failed", detail: data?.error || `Import failed (HTTP ${res.status}).` };

@@ -1034,12 +1034,55 @@ router.post("/admin/lab-tests/with-pdf", upload.single("file"), async (req, res)
   }
 });
 
+// ── Backfill helper for the browser-helper import ────────────────────────────
+// When an import matches a record that ALREADY exists but is MISSING its stored
+// certificate image (pdfBlob), fill in the certificate from the captured image
+// instead of skipping the report. Returns the updated row, or null when the
+// existing record already has a stored certificate (a genuine skip → 409).
+async function backfillDuplicateCertificate(
+  dupId: number,
+  files: Express.Multer.File[],
+  normalizedUrl: string | null,
+): Promise<typeof labTestsTable.$inferSelect | null> {
+  const [existing] = await db
+    .select({ pdfBlob: labTestsTable.pdfBlob, url: labTestsTable.url })
+    .from(labTestsTable)
+    .where(eq(labTestsTable.id, dupId))
+    .limit(1);
+
+  // Already complete (has stored certificate bytes) — nothing to backfill.
+  if (!existing || existing.pdfBlob) return null;
+
+  const primary = files.reduce((a, b) => (b.buffer.length > a.buffer.length ? b : a), files[0]);
+  const pdfBlob = await prepareCertificateBase64(primary.buffer, primary.mimetype);
+
+  const updates: Partial<NewLabTest> = { pdfBlob };
+  // Record the canonical source URL too if the record never had one, so future
+  // runs dedupe it via the fast URL pre-check. Never overwrite an existing url.
+  if (normalizedUrl && !existing.url) updates.url = normalizedUrl;
+
+  // Conditional update guards against a concurrent re-run: if another request
+  // already filled pdf_blob between our read and write, this matches 0 rows and
+  // we return null (caller then reports a genuine 409 skip) instead of clobbering.
+  const [row] = await db
+    .update(labTestsTable)
+    .set(updates)
+    .where(and(eq(labTestsTable.id, dupId), isNull(labTestsTable.pdfBlob)))
+    .returning();
+
+  return row ?? null;
+}
+
 // ── POST /api/admin/lab-tests/bookmarklet-import — one-click browser-helper import ─
 // Janoshik now sits behind a Cloudflare challenge, so the server can no longer
 // fetch reports directly. Instead the admin's browser (which has passed the
 // challenge) sends the already-rendered report image(s) here via the bookmarklet
 // + receiver page. We extract the data with AI and store the image bytes so the
 // report still previews, exactly like an uploaded file (url stays null).
+//
+// Re-running is safe and self-healing: a matching record that is missing its
+// stored certificate image gets the certificate backfilled (HTTP 200), while a
+// record that already has its certificate is skipped (HTTP 409).
 router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
@@ -1065,7 +1108,12 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
     if (normalizedUrl) {
       const urlDup = await findLabTestDuplicate(normalizedUrl, null, null, null);
       if (urlDup !== null) {
-        res.status(409).json({ error: `Already imported — this report URL is already on file (id=${urlDup})`, duplicateId: urlDup });
+        const backfilled = await backfillDuplicateCertificate(urlDup, files, normalizedUrl);
+        if (backfilled) {
+          res.json({ ok: true, backfilled: true, id: backfilled.id, peptideName: backfilled.peptideName, purityPct: backfilled.purityPct, batchCode: backfilled.batchCode, testDate: backfilled.testDate });
+        } else {
+          res.status(409).json({ error: `Already imported — this report URL is already on file (id=${urlDup})`, duplicateId: urlDup });
+        }
         return;
       }
     }
@@ -1087,7 +1135,12 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
     // Duplicate check on source URL OR batch + date + compound
     const dupId = await findLabTestDuplicate(normalizedUrl, importBatchCode, extracted.testDate ?? null, importName);
     if (dupId !== null) {
-      res.status(409).json({ error: `Already imported — a matching test already exists (id=${dupId})`, duplicateId: dupId });
+      const backfilled = await backfillDuplicateCertificate(dupId, files, normalizedUrl);
+      if (backfilled) {
+        res.json({ ok: true, backfilled: true, id: backfilled.id, peptideName: backfilled.peptideName, purityPct: backfilled.purityPct, batchCode: backfilled.batchCode, testDate: backfilled.testDate });
+      } else {
+        res.status(409).json({ error: `Already imported — a matching test already exists (id=${dupId})`, duplicateId: dupId });
+      }
       return;
     }
 

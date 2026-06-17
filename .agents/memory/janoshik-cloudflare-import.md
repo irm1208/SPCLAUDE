@@ -44,6 +44,15 @@ receiver POSTs multipart to `POST /admin/lab-tests/bookmarklet-import`.
   drop hash, keep path/query) and runs a fast url-dup pre-check BEFORE Gemini, plus
   the post-extraction batch+date+name check as a fallback.
 
+**Idempotent / self-healing dedup:** a re-run of the importer no longer blindly
+skips matches. When a dedup gate matches an existing record, the importer checks
+whether that record is missing its stored certificate: missing → it backfills the
+certificate from the captured image and returns 200 (the canonical url is also
+filled if it was null, never overwritten); already present → genuine 409 skip.
+The backfill write is gated on `pdf_blob IS NULL` so concurrent re-runs can't
+clobber each other. This is the supported way to backfill certificates onto old
+records imported before the blob was stored — just re-run the bulk importer.
+
 **How to apply:** if lab-test imports for Janoshik break again, do NOT try to make
 the server fetch janoshik.com — it will 403. The supported path is the browser
 helper. Real end-to-end testing requires a live Janoshik report + the admin

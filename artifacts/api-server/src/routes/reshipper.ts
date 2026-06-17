@@ -750,7 +750,10 @@ router.get("/reshipper/gb/:gbId/parcels", requireReshipper, async (req, res): Pr
   const parcels = await db
     .select()
     .from(gbParcelsTable)
-    .where(eq(gbParcelsTable.groupBuyId, gbId))
+    .where(and(
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ))
     .orderBy(desc(gbParcelsTable.createdAt));
 
   res.json(parcels);
@@ -803,7 +806,11 @@ router.patch("/reshipper/gb/:gbId/parcels/:parcelId", requireReshipper, async (r
   const [existing] = await db
     .select({ id: gbParcelsTable.id })
     .from(gbParcelsTable)
-    .where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, gbId)));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ));
 
   if (!existing) { res.status(404).json({ error: "Parcel not found" }); return; }
 
@@ -827,7 +834,11 @@ router.patch("/reshipper/gb/:gbId/parcels/:parcelId", requireReshipper, async (r
   const [updated] = await db
     .update(gbParcelsTable)
     .set(updates)
-    .where(eq(gbParcelsTable.id, parcelId))
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ))
     .returning();
 
   res.json(updated);
@@ -843,11 +854,19 @@ router.delete("/reshipper/gb/:gbId/parcels/:parcelId", requireReshipper, async (
   const [existing] = await db
     .select({ id: gbParcelsTable.id })
     .from(gbParcelsTable)
-    .where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, gbId)));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ));
 
   if (!existing) { res.status(404).json({ error: "Parcel not found" }); return; }
 
-  await db.delete(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  await db.delete(gbParcelsTable).where(and(
+    eq(gbParcelsTable.id, parcelId),
+    eq(gbParcelsTable.groupBuyId, gbId),
+    eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+  ));
 
   res.json({ ok: true });
 });
@@ -1075,9 +1094,13 @@ async function resolveParcelRecipients(
   const [parcel] = await db
     .select({ items: gbParcelsTable.items })
     .from(gbParcelsTable)
-    .where(eq(gbParcelsTable.id, parcelId));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, reshipperUsername),
+    ));
 
-  if (!parcel) { console.log(`[resolveParcelRecipients] parcel ${parcelId} not found`); return []; }
+  if (!parcel) { console.log(`[resolveParcelRecipients] parcel ${parcelId} not found for reshipper ${reshipperUsername}`); return []; }
 
   const parcelItems = (parcel.items ?? []) as { name: string; qty: number }[];
   const parcelItemNames = new Set(parcelItems.map(i => i.name.trim().toLowerCase()));
@@ -1204,7 +1227,11 @@ router.post("/reshipper/gb/:gbId/parcels/:parcelId/broadcast", requireReshipper,
   if (!assignment) return;
 
   const [parcel] = await db.select().from(gbParcelsTable)
-    .where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, gbId)));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ));
   if (!parcel) { res.status(404).json({ error: "Parcel not found" }); return; }
 
   const { usernames, note } = req.body as { usernames?: string[]; note?: string };
@@ -1271,7 +1298,11 @@ router.post("/reshipper/gb/:gbId/parcels/:parcelId/test-broadcast", requireReshi
   if (!assignment) return;
 
   const [parcel] = await db.select().from(gbParcelsTable)
-    .where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, gbId)));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ));
   if (!parcel) { res.status(404).json({ error: "Parcel not found" }); return; }
 
   const { type = "new", note } = req.body as { type?: "new" | "update"; note?: string };
@@ -1346,7 +1377,11 @@ router.post("/reshipper/gb/:gbId/parcels/:parcelId/force-refresh", requireReship
 
   const [parcel] = await db.select({ id: gbParcelsTable.id, groupBuyId: gbParcelsTable.groupBuyId })
     .from(gbParcelsTable)
-    .where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, gbId)));
+    .where(and(
+      eq(gbParcelsTable.id, parcelId),
+      eq(gbParcelsTable.groupBuyId, gbId),
+      eq(gbParcelsTable.reshipperUsername, assignment.reshipperUsername),
+    ));
   if (!parcel) { res.status(404).json({ error: "Parcel not found" }); return; }
 
   try {
