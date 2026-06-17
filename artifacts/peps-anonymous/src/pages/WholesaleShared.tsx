@@ -29,9 +29,29 @@ interface ProductLite {
   price: number;
   category?: string | null;
   active?: boolean;
+  stock?: number | null;
+  lowStockThreshold?: number | null;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+type StockLevel = "oos" | "low" | "medium" | "high" | "none";
+
+function getStockLevel(stock: number | null | undefined): StockLevel {
+  if (stock == null) return "none";
+  if (stock <= 0) return "oos";
+  if (stock <= 25) return "low";
+  if (stock <= 70) return "medium";
+  return "high";
+}
+
+const STOCK_META: Record<StockLevel, { label: string; color: string }> = {
+  oos: { label: "Out of Stock", color: "#ef4444" },
+  low: { label: "Low Stock", color: "#f97316" },
+  medium: { label: "In Stock", color: "#eab308" },
+  high: { label: "Well Stocked", color: "#22c55e" },
+  none: { label: "—", color: "var(--t-muted)" },
+};
 
 function StatusBadge({ status }: { status: WholesaleShareDetail["status"] }) {
   const meta: Record<string, { label: string; color: string; bg: string }> = {
@@ -515,11 +535,22 @@ export default function WholesaleShared() {
                     )}
                     {visibleProducts.map(p => {
                       const qty = myItems[p.id] ?? 0;
+                      const stockLevel = getStockLevel(p.stock);
+                      const isOos = stockLevel === "oos";
+                      const stockMeta = STOCK_META[stockLevel];
                       return (
-                        <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)" }}>
+                        <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)", opacity: isOos ? 0.6 : 1 }}>
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
-                            <p className="text-xs" style={{ color: "var(--t-muted)" }}>{money(p.price)}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{money(p.price)}</span>
+                              {stockLevel !== "none" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: stockMeta.color }}>
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: stockMeta.color }} />
+                                  {stockMeta.label}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button onClick={() => setQty(p.id, qty - 1)} disabled={qty <= 0} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
