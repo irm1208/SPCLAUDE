@@ -3699,11 +3699,12 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   // Look up vendor from the products table (for non-GB orders)
   const productIds = [...new Set(allLineItems.map((li) => li.productId).filter(Boolean))] as string[];
   const productRecords = productIds.length > 0
-    ? await db.select({ id: productsTable.id, vendor: productsTable.vendor })
+    ? await db.select({ id: productsTable.id, vendor: productsTable.vendor, stock: productsTable.stock, lowStockThreshold: productsTable.lowStockThreshold })
         .from(productsTable)
         .where(inArray(productsTable.id, productIds))
     : [];
   const productVendorMap = new Map(productRecords.map((p) => [p.id, p.vendor ?? null]));
+  const productStockMap = new Map(productRecords.map((p) => [p.id, { stock: p.stock ?? null, lowStockThreshold: p.lowStockThreshold ?? null }]));
 
   // Helper: resolve vendor for a line item (GB manufacturer takes precedence)
   const resolveVendor = (li: { orderId: string; productId: string }) => {
@@ -3741,25 +3742,32 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   // Build product map from vendor-only line items (rows & productSubtotal must not include
   // revenue from other vendors that happen to share an order with a vendor-matched product)
   const productMap = new Map<string, {
-    name: string; groupBuyId: string | null; groupBuyName: string | null;
+    name: string; productId: string | null; groupBuyId: string | null; groupBuyName: string | null;
     vendor: string | null; totalQty: number; totalRevenue: number;
+    stock: number | null; lowStockThreshold: number | null;
   }>();
 
   for (const li of vendorLineItems) {
     const gbId = orderGbMap.get(li.orderId) ?? null;
-    const key = `${li.productName}||${gbId ?? ""}`;
+    // Key by productId when present (so two distinct products that share a name
+    // stay separate, each with its own stock); fall back to name for null-id items.
+    const key = `${li.productId ?? li.productName}||${gbId ?? ""}`;
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
     if (!productMap.has(key)) {
       const gb = gbId ? gbMap.get(gbId) : undefined;
       const vendor = gb?.vendor ?? productVendorMap.get(li.productId) ?? null;
+      const stockInfo = li.productId ? productStockMap.get(li.productId) : undefined;
       productMap.set(key, {
         name: li.productName,
+        productId: li.productId ?? null,
         groupBuyId: gbId,
         groupBuyName: gb?.name ?? null,
         vendor,
         totalQty: 0,
         totalRevenue: 0,
+        stock: stockInfo?.stock ?? null,
+        lowStockThreshold: stockInfo?.lowStockThreshold ?? null,
       });
     }
     const entry = productMap.get(key)!;

@@ -6500,8 +6500,9 @@ function ToggleSwitch({ enabled, onChange, label }: { enabled: boolean; onChange
 
 // ─── FS3 Tab ──────────────────────────────────────────────────
 interface Fs3Row {
-  name: string; totalQty: number; totalRevenue: number;
+  name: string; productId: string | null; totalQty: number; totalRevenue: number;
   groupBuyId: string | null; groupBuyName: string | null; vendor: string | null;
+  stock: number | null; lowStockThreshold: number | null;
 }
 interface Fs3Totals {
   revenue: number; productSubtotal: number; deliveryRevenue: number;
@@ -6509,7 +6510,7 @@ interface Fs3Totals {
 }
 interface Fs3GroupBuy { id: string; name: string; vendorShippingAmount: number | null; vendorShippingKits: number | null; vendorShippingMaxKitsPerPackage: number | null; }
 interface Fs3GbMember { telegramUsername: string; email: string | null; accountStatus: string | null; hasPassword: boolean; hasTelegram: boolean; joinedAt: string | null; tags: string[]; countryLegId: string | null; }
-interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; }
+interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
 
@@ -6621,6 +6622,47 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   // Cost prices (fetched from server — never in the JS bundle)
   const [costs, setCosts] = useState<Fs3CostEntry[]>([]);
   const getCost = useMemo(() => makeCostLookup(costs), [costs]);
+
+  // Product stock levels (so the order sheet shows what's on hand).
+  // Looked up by productId (exact) with product-name as a fallback for legacy/null-id rows.
+  const [stockList, setStockList] = useState<{ id: string; name: string; stock: number | null; low: number | null }[]>([]);
+  useEffect(() => {
+    fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } })
+      .then(r => (r.ok ? r.json() : []))
+      .then((d: any) => setStockList(Array.isArray(d) ? d.map((p: any) => ({ id: String(p.id ?? ""), name: String(p.name ?? ""), stock: p.stock ?? null, low: p.lowStockThreshold ?? null })) : []))
+      .catch(() => setStockList([]));
+  }, [secret]);
+  const stockById = useMemo(() => {
+    const m = new Map<string, { stock: number | null; low: number | null }>();
+    for (const p of stockList) {
+      if (p.id) m.set(p.id, { stock: p.stock, low: p.low });
+    }
+    return m;
+  }, [stockList]);
+  const stockByName = useMemo(() => {
+    const m = new Map<string, { stock: number | null; low: number | null }>();
+    for (const p of stockList) {
+      if (p.name) m.set(p.name.trim().toLowerCase(), { stock: p.stock, low: p.low });
+    }
+    return m;
+  }, [stockList]);
+  const getStock = (productId: string | null | undefined, name: string) => {
+    if (productId) {
+      const byId = stockById.get(productId);
+      if (byId) return byId;
+    }
+    return stockByName.get(name.trim().toLowerCase()) ?? null;
+  };
+  const renderStock = (productId: string | null | undefined, name: string) => {
+    const s = getStock(productId, name);
+    if (!s || s.stock == null) return null;
+    const low = s.low != null && s.stock <= s.low;
+    return (
+      <span className={`text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded shrink-0 ${low ? "text-red-700 bg-red-100" : "text-slate-600 bg-slate-100"}`}>
+        {fmtQty(s.stock)} in stock
+      </span>
+    );
+  };
 
   // Price editor state
   const [showPriceEditor, setShowPriceEditor] = useState(false);
@@ -6946,7 +6988,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
   // ── Combined order rows: merge group orders + personal additions at COST price ──
   const combinedOrderRows = useMemo(() => {
-    const map = new Map<string, { name: string; qty: number; unitCost: number | null; isPersonal: boolean }>();
+    const map = new Map<string, { name: string; productId: string | null; qty: number; unitCost: number | null; isPersonal: boolean }>();
 
     filteredRows.forEach(r => {
       const key = r.name.trim().toLowerCase();
@@ -6956,7 +6998,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         // Same product in multiple group buys — add quantities together
         map.set(key, { ...existing, qty: existing.qty + r.totalQty });
       } else {
-        map.set(key, { name: r.name, qty: r.totalQty, unitCost: cost, isPersonal: false });
+        map.set(key, { name: r.name, productId: r.productId, qty: r.totalQty, unitCost: cost, isPersonal: false });
       }
     });
 
@@ -6966,7 +7008,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       if (existing) {
         map.set(key, { ...existing, qty: existing.qty + p.qty, isPersonal: true });
       } else {
-        map.set(key, { name: p.productName, qty: p.qty, unitCost: p.unitCost, isPersonal: true });
+        map.set(key, { name: p.productName, productId: null, qty: p.qty, unitCost: p.unitCost, isPersonal: true });
       }
     });
 
@@ -7339,14 +7381,14 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const selectionEnrichedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
     const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
-    const productMap = new Map<string, { name: string; qty: number; revenue: number }>();
+    const productMap = new Map<string, { name: string; productId: string | null; qty: number; revenue: number }>();
     for (const order of selected) {
       for (const li of (order.lineItems ?? [])) {
-        const key = li.productName.trim().toLowerCase();
+        const key = li.productId ?? li.productName.trim().toLowerCase();
         const existing = productMap.get(key);
         const revenue = (li.unitPrice ?? 0) * li.quantity;
         if (existing) { existing.qty += li.quantity; existing.revenue += revenue; }
-        else productMap.set(key, { name: li.productName, qty: li.quantity, revenue });
+        else productMap.set(key, { name: li.productName, productId: li.productId ?? null, qty: li.quantity, revenue });
       }
     }
     return [...productMap.values()].map(r => {
@@ -7357,21 +7399,21 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       const unitPrice = r.qty > 0 ? r.revenue / r.qty : 0;
       const unitProfit = cost !== null ? unitPrice - cost : null;
       const unitMargin = unitProfit !== null && unitPrice > 0 ? (unitProfit / unitPrice) * 100 : null;
-      return { name: r.name, totalQty: r.qty, totalRevenue: r.revenue, cost, totalCost, profit, margin, unitPrice, unitProfit, unitMargin, groupBuyId: undefined as string | undefined };
+      return { name: r.name, productId: r.productId, totalQty: r.qty, totalRevenue: r.revenue, cost, totalCost, profit, margin, unitPrice, unitProfit, unitMargin, groupBuyId: undefined as string | undefined };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedOrderIds, displayedRoutingOrders, getCost]);
 
   const selectionCombinedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
     const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
-    const map = new Map<string, { name: string; qty: number; unitCost: number | null; isPersonal: boolean }>();
+    const map = new Map<string, { name: string; productId: string | null; qty: number; unitCost: number | null; isPersonal: boolean }>();
     for (const order of selected) {
       for (const li of (order.lineItems ?? [])) {
         const key = li.productName.trim().toLowerCase();
         const cost = getCost(li.productName);
         const existing = map.get(key);
         if (existing) { existing.qty += li.quantity; }
-        else map.set(key, { name: li.productName, qty: li.quantity, unitCost: cost, isPersonal: false });
+        else map.set(key, { name: li.productName, productId: li.productId ?? null, qty: li.quantity, unitCost: cost, isPersonal: false });
       }
     }
     personalItems.forEach(p => {
@@ -7380,7 +7422,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       if (existing) {
         map.set(key, { ...existing, qty: existing.qty + p.qty, isPersonal: true });
       } else {
-        map.set(key, { name: p.productName, qty: p.qty, unitCost: p.unitCost, isPersonal: true });
+        map.set(key, { name: p.productName, productId: null, qty: p.qty, unitCost: p.unitCost, isPersonal: true });
       }
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -8005,6 +8047,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               <tr className="border-b border-border text-left">
                 <th className="pb-2 font-semibold text-muted-foreground text-xs">Product</th>
                 <th className="pb-2 font-semibold text-muted-foreground text-xs text-right">Qty</th>
+                <th className="pb-2 font-semibold text-muted-foreground text-xs text-right">Stock</th>
                 <th className="pb-2 font-semibold text-muted-foreground text-xs text-right">{profitView === "unit" ? "Unit Price" : "Revenue"}</th>
                 <th className="pb-2 font-semibold text-muted-foreground text-xs text-right">{profitView === "unit" ? "Unit Cost" : "Cost"}</th>
                 <th className="pb-2 font-semibold text-muted-foreground text-xs text-right">Profit</th>
@@ -8020,9 +8063,17 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 const mgn = profitView === "unit" ? r.unitMargin! : r.margin!;
                 const isEditingThis = inlineEditProduct === r.name;
                 return (
-                  <tr key={`${r.name}||${r.groupBuyId ?? ""}`} className="border-b border-border/50 hover:bg-muted/30">
+                  <tr key={`${r.name}||${r.groupBuyId ?? ""}||${r.productId ?? ""}`} className="border-b border-border/50 hover:bg-muted/30">
                     <td className="py-1.5 pr-3 font-sans text-xs max-w-[140px] truncate">{r.name}</td>
                     <td className="py-1.5 text-right text-muted-foreground">{fmtQty(r.totalQty)}</td>
+                    <td className="py-1.5 text-right">
+                      {(() => {
+                        const s = getStock(r.productId, r.name);
+                        if (!s || s.stock == null) return <span className="text-muted-foreground/40">—</span>;
+                        const low = s.low != null && s.stock <= s.low;
+                        return <span className={low ? "text-red-600 font-semibold" : "text-muted-foreground"}>{fmtQty(s.stock)}</span>;
+                      })()}
+                    </td>
                     <td className="py-1.5 text-right">${fmtUsd(rev)}</td>
                     <td className="py-1.5 text-right text-red-500">
                       {isEditingThis ? (
@@ -8063,7 +8114,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               })}
               {profitView === "total" && (
                 <tr className="border-t-2 border-border font-bold">
-                  <td className="py-2 font-sans text-xs" colSpan={2}>Totals (known products)</td>
+                  <td className="py-2 font-sans text-xs" colSpan={3}>Totals (known products)</td>
                   <td className="py-2 text-right">${fmtUsd(activeTotalKnownRevenue)}</td>
                   <td className="py-2 text-right text-red-500">${fmtUsd(activeTotalKnownCost)}</td>
                   <td className={`py-2 text-right ${activeTotalKnownProfit >= 0 ? "text-green-600" : "text-red-600"}`}>${fmtUsd(activeTotalKnownProfit)}</td>
@@ -8084,8 +8135,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 {activeUnknownRows.map(r => {
                   const isEditingThis = inlineEditProduct === r.name;
                   return (
-                    <div key={`${r.name}||${r.groupBuyId ?? ""}`} className="flex items-center justify-between gap-2">
+                    <div key={`${r.name}||${r.groupBuyId ?? ""}||${r.productId ?? ""}`} className="flex items-center justify-between gap-2">
                       <span className="text-muted-foreground flex-1 truncate">{r.name} ×{fmtQty(r.totalQty)}</span>
+                      {renderStock(r.productId, r.name)}
                       {isEditingThis ? (
                         <span className="flex items-center gap-1 shrink-0">
                           <span className="text-muted-foreground">$</span>
@@ -8287,6 +8339,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                   <span className="flex items-center gap-1.5 font-sans text-sm min-w-0">
                     <span className="truncate">{r.name}</span>
                     <span className="text-muted-foreground shrink-0">×{fmtQty(r.qty)}</span>
+                    {renderStock(r.productId, r.name)}
                     {r.isPersonal && (
                       <span className="text-[9px] font-bold tracking-widest text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase shrink-0">+Mine</span>
                     )}
