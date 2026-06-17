@@ -95,3 +95,9 @@ id = "jZvapeGB7K-30VZF35zw1"
 uri = "file://.local/exports/verify-janoshik-com-links.txt"
 type = "text"
 title = "verify.janoshik.com links (328) — run on verify.janoshik.com"
+
+[[outputs]]
+id = "zIVaMG-m4F8oOHidgI3Lk"
+uri = "file://.local/exports/janoshik-links-verify.txt"
+type = "text"
+title = "All Janoshik links (730) — verify.janoshik.com"
