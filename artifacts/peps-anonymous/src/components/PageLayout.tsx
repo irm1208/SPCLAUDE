@@ -278,12 +278,15 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
   // Lab testing pool detail (/pool/:slug) shows the Profile Hub nav on desktop too —
   // but NOT the guest contribution sub-route (/pool/:slug/contribution/:participantId).
   const isLabPool = location.startsWith("/pool/") && !location.includes("/contribution/");
+  // Public testing-pool listing pages (/testing-pools, /community-testing) show the
+  // Profile Hub nav on desktop too, matching the pool detail pages.
+  const isCommunityPools = location === "/testing-pools" || location === "/community-testing";
   // GB testing pool detail (/testing/:gbId and /testing/:gbId/results) shows the
   // Profile Hub (account profile) nav on desktop too, matching the account portal.
   const isGbTesting = location.startsWith("/testing/");
-  const isPortal = location.startsWith("/account") || location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/success") || location.startsWith("/wholesale") || isGbWorkflow || isLabPool || isGbTesting;
+  const isPortal = location.startsWith("/account") || location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/success") || location.startsWith("/wholesale") || isGbWorkflow || isLabPool || isGbTesting || isCommunityPools;
   const activeSection = isPortal
-    ? (isGbTesting ? "gb-testing" : isLabPool ? "community-testing" : isGbWorkflow ? "groups" : location.startsWith("/gborganiser") ? "gborganiser" : location.startsWith("/reshipper") ? "reshipper" : location.startsWith("/wholesale") ? "wholesale" : (new URLSearchParams(search).get("s") ?? "home"))
+    ? (isGbTesting ? "gb-testing" : (isLabPool || isCommunityPools) ? "community-testing" : isGbWorkflow ? "groups" : location.startsWith("/gborganiser") ? "gborganiser" : location.startsWith("/reshipper") ? "reshipper" : location.startsWith("/wholesale") ? "wholesale" : (new URLSearchParams(search).get("s") ?? "home"))
     : null;
 
   const navScrollRef = useRef<HTMLElement>(null);
@@ -989,6 +992,8 @@ export function PageLayout({ children, bare }: PageLayoutProps) {
   // Lab testing pool page (/pool/:slug) uses the Profile Hub bottom nav — but NOT
   // the guest contribution sub-route (/pool/:slug/contribution/:participantId).
   const isLabPool = location.startsWith("/pool/") && !location.includes("/contribution/");
+  // Public testing-pool listing pages also use the Profile Hub bottom nav.
+  const isCommunityPools = location === "/testing-pools" || location === "/community-testing";
 
   // On 16:9+ screens the sidebar stays permanently open; otherwise hover-to-expand.
   // Persist the expanded state across route changes (PageLayout remounts on navigation).
@@ -1036,12 +1041,12 @@ export function PageLayout({ children, bare }: PageLayoutProps) {
         <MobileHeader />
         <DesktopHeader />
         <main
-          className={`flex-1 flex flex-col min-h-0 overflow-y-auto ${location.startsWith("/gborganiser") ? "pb-0" : (location.startsWith("/testing/") || isLabPool) ? "pb-[calc(56px_+_env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0"}`}
+          className={`flex-1 flex flex-col min-h-0 overflow-y-auto ${location.startsWith("/gborganiser") ? "pb-0" : (location.startsWith("/testing/") || isLabPool || isCommunityPools) ? "pb-[calc(56px_+_env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0"}`}
           style={{ overscrollBehaviorY: "contain", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
         >
           {children}
         </main>
-        {location !== "/order" && location !== "/review" && !location.startsWith("/account") && !location.startsWith("/gborganiser") && !location.startsWith("/reshipper") && !location.startsWith("/wholesale") && !location.startsWith("/testing/") && !isLabPool && (
+        {location !== "/order" && location !== "/review" && !location.startsWith("/account") && !location.startsWith("/gborganiser") && !location.startsWith("/reshipper") && !location.startsWith("/wholesale") && !location.startsWith("/testing/") && !isLabPool && !isCommunityPools && (
           <MobileBottomTabs location={location} onMore={() => setMoreOpen(true)} />
         )}
       </div>

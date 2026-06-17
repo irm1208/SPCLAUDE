@@ -8,6 +8,7 @@ import {
   Building2, Hash, Pill,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { HubBottomNav, HubSection } from "@/components/HubBottomNav";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -353,6 +354,14 @@ export default function PublicTestingPools({ bare }: { bare?: boolean } = {}) {
           )}
         </main>
       </div>
+      {!bare && (
+        <HubBottomNav
+          section={"lab-pool" as HubSection}
+          setSection={(s: HubSection) => navigate(`/account?s=${s}`)}
+          hubMoreOpen={false}
+          setHubMoreOpen={() => {}}
+        />
+      )}
     </PageLayout>
   );
 }
