@@ -133,7 +133,7 @@ export function GbPoolLayout({ title, children }: { title?: string; children: Re
     <PageLayout title={title}>
       {children}
       <HubBottomNav
-        section={"lab-pool" as HubSection}
+        section={"gb-testing" as HubSection}
         setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
         hubMoreOpen={false}
         setHubMoreOpen={() => {}}

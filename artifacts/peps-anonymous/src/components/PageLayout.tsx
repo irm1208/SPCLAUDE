@@ -278,9 +278,12 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
   // Lab testing pool detail (/pool/:slug) shows the Profile Hub nav on desktop too —
   // but NOT the guest contribution sub-route (/pool/:slug/contribution/:participantId).
   const isLabPool = location.startsWith("/pool/") && !location.includes("/contribution/");
-  const isPortal = location.startsWith("/account") || location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/success") || location.startsWith("/wholesale") || isGbWorkflow || isLabPool;
+  // GB testing pool detail (/testing/:gbId and /testing/:gbId/results) shows the
+  // Profile Hub (account profile) nav on desktop too, matching the account portal.
+  const isGbTesting = location.startsWith("/testing/");
+  const isPortal = location.startsWith("/account") || location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/success") || location.startsWith("/wholesale") || isGbWorkflow || isLabPool || isGbTesting;
   const activeSection = isPortal
-    ? (isLabPool ? "community-testing" : isGbWorkflow ? "groups" : location.startsWith("/gborganiser") ? "gborganiser" : location.startsWith("/reshipper") ? "reshipper" : location.startsWith("/wholesale") ? "wholesale" : (new URLSearchParams(search).get("s") ?? "home"))
+    ? (isGbTesting ? "gb-testing" : isLabPool ? "community-testing" : isGbWorkflow ? "groups" : location.startsWith("/gborganiser") ? "gborganiser" : location.startsWith("/reshipper") ? "reshipper" : location.startsWith("/wholesale") ? "wholesale" : (new URLSearchParams(search).get("s") ?? "home"))
     : null;
 
   const navScrollRef = useRef<HTMLElement>(null);
@@ -446,13 +449,13 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
       <div className="shrink-0 px-2 pb-3 pt-2" style={{ borderTop: `1px solid ${NAV.divider}` }}>
         {isPortal && (
           <button
-            onClick={() => setLocation(isGbWorkflow ? "/account?s=groups" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "/account" : "/")}
-            title={!expanded ? (isGbWorkflow ? "Back to Group Buys" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "Back to Hub" : "Back to Store") : undefined}
+            onClick={() => setLocation(isGbTesting ? "/account?s=gb-testing" : isGbWorkflow ? "/account?s=groups" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "/account" : "/")}
+            title={!expanded ? (isGbTesting ? "Back to GB Testing" : isGbWorkflow ? "Back to Group Buys" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "Back to Hub" : "Back to Store") : undefined}
             className="nav-row w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] font-medium text-left mb-1"
             style={{ color: NAV.itemText, background: "transparent" }}
           >
             <ChevronLeft className="w-4 h-4 shrink-0" strokeWidth={2} style={{ color: NAV.itemIcon }} />
-            <span style={labelStyle}>{isGbWorkflow ? "Back to Group Buys" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "Back to Hub" : "Back to Store"}</span>
+            <span style={labelStyle}>{isGbTesting ? "Back to GB Testing" : isGbWorkflow ? "Back to Group Buys" : (location.startsWith("/gborganiser") || location.startsWith("/reshipper") || location.startsWith("/wholesale")) ? "Back to Hub" : "Back to Store"}</span>
           </button>
         )}
 
