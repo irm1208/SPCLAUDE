@@ -778,7 +778,7 @@ function PendingCard({ test, secret, onAction }: { test: LabTest; secret: string
             {test.submittedBy && (
               <p className="text-xs text-slate-500 mt-1">Submitted by: <span className="font-semibold">{test.submittedBy}</span></p>
             )}
-            {test.notes && <p className="text-xs text-slate-500 mt-0.5 italic">"{test.notes}"</p>}
+            {test.notes && !test.notes.startsWith("Imported via browser helper") && <p className="text-xs text-slate-500 mt-0.5 italic">"{test.notes}"</p>}
             {test.url && (
               <a href={test.url} target="_blank" rel="noopener noreferrer"
                 className="text-xs text-blue-600 underline flex items-center gap-0.5 mt-1">

@@ -1173,7 +1173,7 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
       mgAmount: extracted.mgAmount ?? null,
       massUnit: extracted.massUnit ?? "mg",
       blendComponents: importBlend,
-      notes: sourceUrl ? `Imported via browser helper from ${sourceUrl}`.slice(0, 1000) : null,
+      notes: null,
     };
 
     const [row] = await db.insert(labTestsTable).values(newRecord).returning();
