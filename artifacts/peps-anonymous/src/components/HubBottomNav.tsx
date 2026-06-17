@@ -230,6 +230,16 @@ export function HubBottomNav({
                     Wholesale
                   </button>
                 )}
+                {isAccount && account?.isWholesale && (
+                  <button
+                    onClick={() => { setOpen(false); setLocation("/wholesale/shared"); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all text-left ${dark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.03]"}`}
+                    style={{ color: dark ? "rgba(255,255,255,0.7)" : "var(--t-muted)", fontWeight: 500 }}
+                  >
+                    <Users className="w-4 h-4 shrink-0" strokeWidth={1.75} style={{ color: dark ? "rgba(255,255,255,0.70)" : "var(--t-subtle)" }} />
+                    Shared Order
+                  </button>
+                )}
                 {/* Community Testing appended to Group Buys section */}
                 {group.label === "Group Buys" && (
                   <button

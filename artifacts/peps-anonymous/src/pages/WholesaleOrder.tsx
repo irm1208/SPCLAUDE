@@ -1,106 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Users, Share2 } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
-import { useWholesaleShares, createWholesaleShare } from "@/hooks/use-wholesale-shares";
-
-function SharedOrderEntry() {
-  const [, setLocation] = useLocation();
-  const { data: shares } = useWholesaleShares();
-  const [joinCode, setJoinCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const activeShares = (shares ?? []).filter(s => s.status !== "cancelled");
-
-  const startShare = async () => {
-    setError(""); setBusy(true);
-    try {
-      const share = await createWholesaleShare("even");
-      setLocation(`/wholesale/shared/${share.id}`);
-    } catch (e) { setError((e as Error).message); setBusy(false); }
-  };
-
-  const joinShare = () => {
-    const code = joinCode.trim().toUpperCase();
-    if (!code) return;
-    setLocation(`/wholesale/shared/${code}`);
-  };
-
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2 px-1">
-        <Users className="w-3.5 h-3.5" style={{ color: "#8A9AAA" }} />
-        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Shared Order</p>
-      </div>
-      <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-        <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-          Pool one parcel with up to 10 members — everyone adds their own items and pays their own share, with vendor shipping split between you.
-        </p>
-
-        {error && <p className="text-sm" style={{ color: "#ef4444" }}>{error}</p>}
-
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={startShare}
-            disabled={busy}
-            className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-60"
-            style={{ background: "var(--t-blue)" }}
-          >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-            Start a shared order
-          </button>
-          <div className="flex gap-2 flex-1">
-            <input
-              value={joinCode}
-              onChange={e => setJoinCode(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") joinShare(); }}
-              placeholder="Enter code"
-              className="flex-1 h-11 px-3 rounded-xl border text-sm font-mono tracking-widest uppercase bg-transparent outline-none"
-              style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
-            />
-            <button
-              onClick={joinShare}
-              disabled={!joinCode.trim()}
-              className="px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
-              style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
-            >
-              Join
-            </button>
-          </div>
-        </div>
-
-        {activeShares.length > 0 && (
-          <div className="pt-2 border-t space-y-1.5" style={{ borderColor: "var(--t-border)" }}>
-            <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Your shared orders</p>
-            {activeShares.map(s => (
-              <button
-                key={s.id}
-                onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
-                className="w-full flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
-                style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
-                  <span style={{ color: "var(--t-muted)" }}>{s.memberCount}/{s.maxMembers} · {s.isCreator ? "organiser" : "member"}</span>
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>
-                  <ArrowRight className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
 
@@ -456,8 +362,6 @@ export default function WholesaleOrder() {
                   : "Select products and quantities, then proceed to review."}
               </p>
             </div>
-
-            <SharedOrderEntry />
 
             {pageMessage && (
               <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", color: "var(--t-text)" }}>

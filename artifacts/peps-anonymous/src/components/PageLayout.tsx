@@ -181,7 +181,8 @@ const PORTAL_NAV_GROUPS: {
       { section: "gborganiser", label: "GB Organiser",  Icon: Store },
       { section: "reshipper",   label: "Reshipper",     Icon: Truck },
       { section: "lab-pool",    label: "Apply as Pool Leader", Icon: FlaskConical },
-      { section: "wholesale",   label: "Wholesale",            Icon: Package, requiresWholesale: true },
+      { section: "wholesale",        label: "Wholesale",    Icon: Package,    requiresWholesale: true },
+      { section: "wholesale-shared", label: "Shared Order", Icon: UsersRound, requiresWholesale: true },
     ],
   },
   {
@@ -360,8 +361,9 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                   const isOrganiserLink = section === "gborganiser";
                   const isReshipperLink = section === "reshipper";
                   const isWholesaleLink = section === "wholesale";
-                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleLink ? "/wholesale" : `/account?s=${section}`);
-                  const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleLink ? location.startsWith("/wholesale") : activeSection === section;
+                  const isWholesaleSharedLink = section === "wholesale-shared";
+                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : `/account?s=${section}`);
+                  const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleSharedLink ? location.startsWith("/wholesale/shared") : isWholesaleLink ? (location.startsWith("/wholesale") && !location.startsWith("/wholesale/shared")) : activeSection === section;
                   return (
                     <button
                       key={section}
