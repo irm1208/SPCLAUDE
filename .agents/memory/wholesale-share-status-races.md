@@ -69,6 +69,22 @@ filter in `GET /admin/fs3-summary`. The FS3 tab list is driven by `/admin/orders
 endpoints (those stay GB-only). No single helper exists yet — consider an
 `isWholesaleOrderType(orderType)` if a third gate appears.
 
+# Per-member draft survives refresh via localStorage, NOT server auto-save
+
+Each member's in-progress contribution on the shared page (`myItems` qty map +
+`myTip`) is local React state, only re-seeded from the server when `!itemsDirty`
+and only committed by the explicit "Save items" button. A pre-save refresh used to
+wipe it. Fix = a localStorage safety net keyed per member+share
+(`peps:ws-share-draft:${id}:${username}`): restore only while status is `open`,
+write whenever `itemsDirty`, delete when saved/cancelled, and reset the per-key
+restore guard when `id` or the signed-in user changes (the component instance can
+be reused across shares).
+
+**Why localStorage and not a debounced server save:** auto-saving a collaborative
+order on every keystroke would (a) make every member's partial edits visible to
+others mid-build and (b) re-introduce the status-race surface above. The manual
+"Save items" call is the intentional commit point — keep it that way.
+
 # Known residual (follow-up, non-blocking)
 
 Generic payment-confirm sites (payments.ts, account.ts, admin.ts, organiser.ts,

@@ -134,14 +134,64 @@ export default function WholesaleShared() {
 
   const myMember = useMemo(() => share?.members.find(m => m.isYou) ?? null, [share]);
 
-  // Seed my items/tip from the server unless I have unsaved local edits
+  // Per-member, per-share localStorage key for this member's unsaved draft. Null
+  // until the account is loaded so we never read/write a non-namespaced key.
+  const draftUser = (account?.telegramUsername ?? "").replace(/^@/, "");
+  const draftKey = id && draftUser ? `peps:ws-share-draft:${id}:${draftUser}` : null;
+  // Whether we've already attempted to restore a locally-saved draft for this key.
+  const localRestored = useRef(false);
+
+  // Reset the local editor state when the share or the signed-in member changes, so
+  // a reused component instance can't carry one share's (or member's) draft into
+  // another. Without this, navigating between shares could leak unsaved items.
+  useEffect(() => {
+    localRestored.current = false;
+    setItemsDirty(false);
+    setMyItems({});
+    setMyTip(0);
+  }, [id, draftUser]);
+
+  // Seed my items/tip from the server unless I have unsaved local edits. On first
+  // load, restore any locally-saved unsaved draft (it survives a page refresh) so a
+  // member can come back to a half-built order without losing their work.
   useEffect(() => {
     if (!myMember || itemsDirty) return;
+
+    if (!localRestored.current && draftKey && share?.status === "open") {
+      localRestored.current = true;
+      try {
+        const raw = localStorage.getItem(draftKey);
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d?.myItems) {
+            setMyItems(d.myItems);
+            setMyTip(typeof d.myTip === "number" ? d.myTip : 0);
+            setItemsDirty(true);
+            return;
+          }
+        }
+      } catch { }
+    }
+
     const q: Record<string, number> = {};
     myMember.items.forEach(it => { q[it.productId] = it.quantity; });
     setMyItems(q);
     setMyTip(myMember.tip ?? 0);
-  }, [myMember, itemsDirty]);
+  }, [myMember, itemsDirty, draftKey, share]);
+
+  // Persist unsaved edits locally so a refresh doesn't wipe them, and clear the
+  // draft once the member saves (itemsDirty resets to false). Gated on
+  // localRestored so we never delete a stored draft before it's been read back.
+  useEffect(() => {
+    if (!draftKey || !localRestored.current) return;
+    try {
+      if (itemsDirty) {
+        localStorage.setItem(draftKey, JSON.stringify({ myItems, myTip }));
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    } catch { }
+  }, [draftKey, itemsDirty, myItems, myTip]);
 
   // Seed the delivery picker once from the share's current delivery member.
   useEffect(() => {
@@ -336,7 +386,12 @@ export default function WholesaleShared() {
       : "Cancel this shared order for everyone? This can't be undone.";
     if (!window.confirm(msg)) return;
     setActionError(""); setBusy("cancel");
-    try { await cancelWholesaleShare(id); invalidate(id); setLocation("/wholesale"); }
+    try {
+      await cancelWholesaleShare(id);
+      if (draftKey) { try { localStorage.removeItem(draftKey); } catch { } }
+      invalidate(id);
+      setLocation("/wholesale");
+    }
     catch (e) { setActionError((e as Error).message); setBusy(null); }
   };
 
