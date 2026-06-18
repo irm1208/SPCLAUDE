@@ -112,6 +112,7 @@ async function runStartupMigrations(): Promise<void> {
       )
     `);
     // group_buys extra columns
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS admin_fee_type text NOT NULL DEFAULT 'fixed'`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS admin_fee_countries text`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS order_page_message text`);
     // accounts address/profile columns
