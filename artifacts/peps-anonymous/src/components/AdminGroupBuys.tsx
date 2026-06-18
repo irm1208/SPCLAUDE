@@ -11057,7 +11057,7 @@ function GBList({ secret, onSelect, onNew }: {
     setLoading(true);
     fetch(apiUrl("/admin/group-buys"), { headers: { "x-admin-secret": secret } })
       .then(r => r.json())
-      .then(setGbs)
+      .then(data => setGbs(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [secret]);
