@@ -8556,7 +8556,7 @@ type AdminFeeCountryEntry = { country: string; amount: number; enabled: boolean 
 
 function AdminFeeCountriesSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy; onUpdate: (gb: GroupBuy) => void }) {
   const [entries, setEntries] = useState<AdminFeeCountryEntry[]>(
-    (gb.adminFeeCountries ?? []).map(e => ({ ...e }))
+    (Array.isArray(gb.adminFeeCountries) ? gb.adminFeeCountries : []).map(e => ({ ...e }))
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);

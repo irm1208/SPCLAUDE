@@ -246,6 +246,8 @@ function shapeGb(gb: Record<string, unknown>, productCount: number) {
     ...gb,
     infoCards: gb["infoCards"] ? (() => { try { return JSON.parse(gb["infoCards"] as string); } catch { return []; } })() : [],
     shippingOptions: gb["shippingOptions"] ? (() => { try { return JSON.parse(gb["shippingOptions"] as string); } catch { return []; } })() : [],
+    adminFeeCountries: gb["adminFeeCountries"] ? (() => { try { return JSON.parse(gb["adminFeeCountries"] as string); } catch { return []; } })() : [],
+    sharedShippingCountries: gb["sharedShippingCountries"] ? (() => { try { return JSON.parse(gb["sharedShippingCountries"] as string); } catch { return []; } })() : [],
     vendorShippingAmount: gb["vendorShippingAmount"] != null ? parseFloat(String(gb["vendorShippingAmount"])) : null,
     adminFeeAmount: gb["adminFeeAmount"] != null ? parseFloat(String(gb["adminFeeAmount"])) : null,
     productCount,

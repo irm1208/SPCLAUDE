@@ -5973,7 +5973,7 @@ const TROCADOR_COINS = [
 
 function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
   const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string }[]>(
-    (gb.shippingOptions ?? []).map((o: { id: string; label: string; price: number; description?: string }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0) }))
+    (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0) }))
   );
   const [payments, setPayments] = useState({
     cryptoCurrency: gb.organiserPayments?.cryptoCurrency ?? "USDT",
@@ -10086,7 +10086,7 @@ function SummaryTab({ gb }: { gb: OrganiserGB }) {
 
 function OrgAdminFeeCountriesTab({ gb, onUpdate }: { gb: OrganiserGB; onUpdate: (updated: OrganiserGB) => void }) {
   type Entry = { country: string; amount: number; enabled: boolean };
-  const [entries, setEntries] = useState<Entry[]>((gb.adminFeeCountries ?? []).map(e => ({ ...e })));
+  const [entries, setEntries] = useState<Entry[]>((Array.isArray(gb.adminFeeCountries) ? gb.adminFeeCountries : []).map(e => ({ ...e })));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
