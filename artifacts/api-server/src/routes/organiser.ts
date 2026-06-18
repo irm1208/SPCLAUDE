@@ -13,6 +13,8 @@ import {
   orderLineItemsTable,
   gbParcelsTable,
   intlShippingRatesTable,
+  testingPoolsTable,
+  poolParticipantsTable,
   type GroupBuy,
 } from "@workspace/db";
 import { eq, and, or, sql, desc, asc, inArray, ilike, isNull, isNotNull, gt } from "drizzle-orm";
@@ -3603,7 +3605,7 @@ router.post("/organiser/group-buys/:gbId/orders/unmark-oos", requireOrganiser, a
 router.post("/organiser/group-buys/:id/broadcast", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const gbId = req.params.id as string;
-  const { message, targetUsernames, paymentStatusFilter, productFilter } = req.body as { message?: string; targetUsernames?: string[]; paymentStatusFilter?: string; productFilter?: string[] };
+  const { message, targetUsernames, paymentStatusFilter, productFilter, audience } = req.body as { message?: string; targetUsernames?: string[]; paymentStatusFilter?: string; productFilter?: string[]; audience?: string };
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "Message is required" });
@@ -3642,7 +3644,45 @@ router.post("/organiser/group-buys/:id/broadcast", requireOrganiser, async (req,
       return true;
     });
 
-  if (hasStatusFilter || hasProductFilter) {
+  if (audience === "pool_non_voters") {
+    // Testing-pool members who opted in but have not cast a vote yet.
+    // Only meaningful for vote-mode pools; skip rejected/refunded contributions.
+    const pools = await db
+      .select({ id: testingPoolsTable.id })
+      .from(testingPoolsTable)
+      .where(and(eq(testingPoolsTable.groupBuyId, gbId), eq(testingPoolsTable.votingMode, "vote")));
+
+    const poolIds = pools.map(p => p.id);
+    if (poolIds.length > 0) {
+      const participants = await db
+        .select({
+          accountUsername: poolParticipantsTable.accountUsername,
+          accountId: poolParticipantsTable.accountId,
+          contactTelegram: poolParticipantsTable.contactTelegram,
+          paymentStatus: poolParticipantsTable.paymentStatus,
+          voteTestIds: poolParticipantsTable.voteTestIds,
+        })
+        .from(poolParticipantsTable)
+        .where(inArray(poolParticipantsTable.poolId, poolIds));
+
+      const nonVoterUsernames = new Set<string>();
+      for (const p of participants) {
+        if (p.paymentStatus === "rejected" || p.paymentStatus === "refunded") continue;
+        const hasVoted = Array.isArray(p.voteTestIds) && p.voteTestIds.length > 0;
+        if (hasVoted) continue;
+        const handle = p.accountUsername ?? p.accountId ?? p.contactTelegram;
+        if (handle) nonVoterUsernames.add(handle.replace(/^@/, "").toLowerCase());
+      }
+
+      if (nonVoterUsernames.size > 0) {
+        const accountRows = await db
+          .select({ telegramUsername: accountsTable.telegramUsername, chatId: accountsTable.telegramChatId })
+          .from(accountsTable)
+          .where(inArray(accountsTable.telegramUsername, Array.from(nonVoterUsernames)));
+        for (const a of accountRows) recipientChatIds.set(a.telegramUsername.toLowerCase(), a.chatId);
+      }
+    }
+  } else if (hasStatusFilter || hasProductFilter) {
     let rows: { telegramUsername: string; paymentStatus: string | null; status: string | null }[];
 
     if (hasProductFilter) {
@@ -3690,7 +3730,7 @@ router.post("/organiser/group-buys/:id/broadcast", requireOrganiser, async (req,
     if (ok) sent++; else skipped++;
   }
 
-  writeLog("change", "info", "organiser_broadcast", `Organiser @${username} broadcast to ${sent}/${recipientChatIds.size} members of GB ${gb.name}`, { gbId, sent, skipped, paymentStatusFilter, productFilter }).catch(() => {});
+  writeLog("change", "info", "organiser_broadcast", `Organiser @${username} broadcast to ${sent}/${recipientChatIds.size} members of GB ${gb.name}`, { gbId, sent, skipped, paymentStatusFilter, productFilter, audience }).catch(() => {});
 
   res.json({ ok: true, sent, skipped, total: recipientChatIds.size });
 });

@@ -10275,6 +10275,7 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
     { value: "submitted", label: "Status: Submitted" },
     { value: "processing", label: "Status: Processing" },
     { value: "dispatched", label: "Status: Dispatched" },
+    { value: "pool_non_voters", label: "Testing pool: opted in, not voted" },
   ];
 
   useEffect(() => {
@@ -10326,6 +10327,8 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
       const body: Record<string, unknown> = { message: msg };
       if (isTargeted) {
         body.targetUsernames = targets;
+      } else if (paymentStatusFilter === "pool_non_voters") {
+        body.audience = "pool_non_voters";
       } else {
         if (paymentStatusFilter !== "all") body.paymentStatusFilter = paymentStatusFilter;
         if (selectedProductNames.size > 0) body.productFilter = Array.from(selectedProductNames);
@@ -10386,11 +10389,16 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {paymentStatusFilter === "pool_non_voters" && (
+              <p className="text-xs mt-1.5" style={{ color: "var(--t-subtle)" }}>
+                Sends only to testing-pool contributors (vote-mode pools) who have opted in but not yet cast a vote.
+              </p>
+            )}
           </div>
         )}
 
         {/* Product filter (when targeting all) */}
-        {targetMode === "all" && products.length > 0 && (
+        {targetMode === "all" && paymentStatusFilter !== "pool_non_voters" && products.length > 0 && (
           <div className="mb-4">
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--t-subtle)" }}>
               Filter by product{selectedProductNames.size > 0 ? ` (${selectedProductNames.size} selected)` : " (optional — leave empty for all)"}
