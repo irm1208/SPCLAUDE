@@ -13,3 +13,4 @@
 - [Wholesale share status races](wholesale-share-status-races.md) — lock/cancel/submit/delivery writes each need conditional status-gated updates (→409); only the chosen recipient sets the address.
 - [Workflow topology](workflow-topology.md) — only "Start application" + mockup-sandbox are canonical; api-server/web workflows are duplicates that FAIL on port conflict if restarted alongside it. Restart only "Start application" to reload secrets.
 - [Group-buy visibility gate](gb-visibility-gate.md) — un-hiding a GB to public lists must be server-gated on approvalStatus==='approved' OR admin, else organisers self-publish unapproved GBs; hidden means list-excluded, still joinable by id+PIN.
+- [Role change side-effects](role-change-side-effects.md) — any path mutating account roles must mirror single-account handler side-effects (organiser audit log + notify + clear organiserApprovedAt on revoke); strictly validate action/role.

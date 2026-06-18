@@ -41,6 +41,7 @@ import {
   routingHistoryTable,
   intlShippingRatesTable,
   fs3SubmissionsTable,
+  organiserAuditLogTable,
 } from "@workspace/db";
 import { eq, inArray, notInArray, desc, asc, and, sql, or, ilike, like, gte, lte, isNotNull, isNull, lt, gt } from "drizzle-orm";
 import { GoogleGenAI } from "../lib/google-genai";
@@ -7403,6 +7404,95 @@ router.put("/admin/accounts/:username/wholesale", async (req, res): Promise<void
     .where(eq(accountsTable.telegramUsername, existing.telegramUsername));
 
   res.json({ ok: true, isWholesale });
+});
+
+// ── POST /admin/accounts/bulk-role — grant/revoke a role for many accounts ──────
+// Body: { usernames: string[], role: "wholesale"|"pool_leader"|"organiser", action: "grant"|"revoke" }
+router.post("/admin/accounts/bulk-role", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const adminUser = getAdminUsername(res);
+  const { usernames, role, action } = req.body as {
+    usernames?: unknown; role?: unknown; action?: unknown;
+  };
+
+  if (!Array.isArray(usernames) || usernames.length === 0 || !usernames.every(u => typeof u === "string")) {
+    res.status(400).json({ error: "usernames must be a non-empty string array" }); return;
+  }
+  const VALID_ROLES = ["wholesale", "pool_leader", "organiser"];
+  if (typeof role !== "string" || !VALID_ROLES.includes(role)) {
+    res.status(400).json({ error: "role must be one of: wholesale, pool_leader, organiser" }); return;
+  }
+  if (action !== "grant" && action !== "revoke") {
+    res.status(400).json({ error: "action must be one of: grant, revoke" }); return;
+  }
+  const act: "grant" | "revoke" = action;
+
+  // Build all username variants (@-prefixed and bare) so matching is robust
+  const variants = new Set<string>();
+  for (const u of usernames as string[]) {
+    const name = u.trim();
+    if (!name) continue;
+    variants.add(name);
+    variants.add(name.startsWith("@") ? name.slice(1) : `@${name}`);
+  }
+  const variantList = Array.from(variants);
+  if (variantList.length === 0) { res.status(400).json({ error: "No valid usernames" }); return; }
+
+  // Resolve the canonical accounts that actually exist
+  const existing = await db
+    .select({ telegramUsername: accountsTable.telegramUsername, organiserStatus: accountsTable.organiserStatus })
+    .from(accountsTable)
+    .where(inArray(accountsTable.telegramUsername, variantList));
+
+  if (existing.length === 0) { res.status(404).json({ error: "No matching accounts found" }); return; }
+  const canonical = existing.map(e => e.telegramUsername);
+
+  if (role === "wholesale") {
+    await db.update(accountsTable)
+      .set({ isWholesale: act === "grant" })
+      .where(inArray(accountsTable.telegramUsername, canonical));
+  } else if (role === "pool_leader") {
+    await db.update(accountsTable)
+      .set({ poolLeaderStatus: act === "grant" ? "approved" : null, updatedAt: new Date() })
+      .where(inArray(accountsTable.telegramUsername, canonical));
+  } else {
+    // organiser
+    await db.update(accountsTable)
+      .set(act === "grant"
+        ? { organiserStatus: "approved", organiserApprovedAt: new Date() }
+        : { organiserStatus: null, organiserApprovedAt: null })
+      .where(inArray(accountsTable.telegramUsername, canonical));
+
+    // Per-account audit log (deterministic) + applicant notification (best-effort)
+    const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
+    await Promise.allSettled(
+      existing.map(acct =>
+        db.insert(organiserAuditLogTable).values({
+          adminUsername: adminUser,
+          organiserUsername: acct.telegramUsername,
+          actionType: "status_change",
+          previousValue: acct.organiserStatus ?? null,
+          newValue: act === "grant" ? "approved" : null,
+        }),
+      ),
+    );
+    if (act === "grant") {
+      for (const acct of existing) {
+        notifyUserFromTemplate(acct.telegramUsername, "role_application", "applicant_organiser_approved", {
+          username: acct.telegramUsername.replace(/^@/, ""),
+          app_url: appUrl,
+        }).catch(() => {});
+      }
+    }
+  }
+
+  writeLog(
+    "change", "info", "bulk_role_change",
+    `Admin ${act === "grant" ? "granted" : "revoked"} ${role} for ${canonical.length} account(s)`,
+    { role, action: act, usernames: canonical, adminUser },
+  ).catch(() => {});
+
+  res.json({ ok: true, updated: canonical.length, role, action: act });
 });
 
 // ─── Category Order ───────────────────────────────────────────

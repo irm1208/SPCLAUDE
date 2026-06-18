@@ -11491,6 +11491,10 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [bulkRole, setBulkRole] = useState<"wholesale" | "pool_leader" | "organiser">("organiser");
+  const [bulkAction, setBulkAction] = useState<"grant" | "revoke">("grant");
+  const [applyingRole, setApplyingRole] = useState(false);
+  const [roleMsg, setRoleMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [kpi, setKpi] = useState<AccountsKpi | null>(null);
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
@@ -11565,6 +11569,36 @@ function UsernamesTab({ secret }: { secret: string }) {
       alert("Failed to delete customers. Please try again.");
     }
     setDeleting(false);
+  };
+
+  const ROLE_LABEL: Record<string, string> = {
+    wholesale: "Wholesale",
+    pool_leader: "Testing Pool",
+    organiser: "GB Organiser",
+  };
+
+  const handleBulkRole = async () => {
+    if (selected.size === 0) return;
+    setApplyingRole(true);
+    setRoleMsg(null);
+    try {
+      const r = await fetch(apiUrl("/admin/accounts/bulk-role"), {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ usernames: Array.from(selected), role: bulkRole, action: bulkAction }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Failed to update roles");
+      setRoleMsg({
+        ok: true,
+        text: `${bulkAction === "grant" ? "Granted" : "Revoked"} ${ROLE_LABEL[bulkRole]} for ${j.updated} member${j.updated !== 1 ? "s" : ""}`,
+      });
+      setSelected(new Set());
+      fetch$();
+    } catch (e) {
+      setRoleMsg({ ok: false, text: e instanceof Error ? e.message : "Failed to update roles" });
+    }
+    setApplyingRole(false);
   };
 
   const STATUS_PILL: Record<string, string> = {
@@ -11789,21 +11823,57 @@ function UsernamesTab({ secret }: { secret: string }) {
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200">
-          <span className="text-sm font-semibold text-red-700">{selected.size} selected</span>
-          <div className="flex-1" />
-          <button
-            onClick={() => setSelected(new Set())}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Deselect all
-          </button>
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete {selected.size}
-          </button>
+        <div className="rounded-xl bg-violet-50 border border-violet-200 p-3 space-y-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-violet-800">{selected.size} selected</span>
+            <div className="flex-1" />
+            <button
+              onClick={() => { setSelected(new Set()); setRoleMsg(null); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Deselect all
+            </button>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete {selected.size}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap border-t border-violet-200 pt-2.5">
+            <span className="text-xs font-semibold text-violet-700">Roles:</span>
+            <select
+              className="h-8 rounded-lg border border-violet-200 bg-white px-2 text-xs font-medium text-foreground"
+              value={bulkRole}
+              onChange={e => { setBulkRole(e.target.value as typeof bulkRole); setRoleMsg(null); }}
+            >
+              <option value="wholesale">Wholesale</option>
+              <option value="pool_leader">Testing Pool</option>
+              <option value="organiser">GB Organiser</option>
+            </select>
+            <select
+              className="h-8 rounded-lg border border-violet-200 bg-white px-2 text-xs font-medium text-foreground"
+              value={bulkAction}
+              onChange={e => { setBulkAction(e.target.value as typeof bulkAction); setRoleMsg(null); }}
+            >
+              <option value="grant">Grant / Approve</option>
+              <option value="revoke">Revoke</option>
+            </select>
+            <button
+              onClick={handleBulkRole}
+              disabled={applyingRole}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+            >
+              {applyingRole ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              Apply to {selected.size}
+            </button>
+            {roleMsg && (
+              <span className={cn("text-xs font-medium", roleMsg.ok ? "text-green-700" : "text-red-600")}>
+                {roleMsg.text}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -11825,7 +11895,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                 key={row.telegramUsername}
                 className={cn(
                   "w-full rounded-xl border transition-colors overflow-hidden",
-                  isSelected ? "border-red-300 bg-red-50/40" : isExpanded ? "border-violet-300 bg-white" : "border-border bg-white"
+                  isSelected ? "border-violet-300 bg-violet-50/40" : isExpanded ? "border-violet-300 bg-white" : "border-border bg-white"
                 )}
               >
                 <div className="flex items-center">
