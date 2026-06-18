@@ -10952,7 +10952,16 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
         )}
 
         {/* TELEGRAM LOGS TAB */}
-        {activeTab === "tglogs" && <TelegramLogTab secret={secret} fixedUsername={username} />}
+        {activeTab === "tglogs" && (
+          <div className="space-y-4">
+            <SendMemberMessage
+              secret={secret}
+              username={username}
+              telegramLinked={!!profile?.account?.telegramChatId}
+            />
+            <TelegramLogTab secret={secret} fixedUsername={username} />
+          </div>
+        )}
 
         {/* TIMELINE TAB */}
         {activeTab === "timeline" && <MemberTimelineTab secret={secret} username={username} />}
@@ -17149,6 +17158,71 @@ function stripHtml(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .trim();
+}
+
+function SendMemberMessage({ secret, username, telegramLinked }: { secret: string; username: string; telegramLinked: boolean }) {
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const send = async () => {
+    const text = message.trim();
+    if (!text) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const r = await fetch(apiUrl(`/admin/customers/${encodeURIComponent(username)}/send-message`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ message: text }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Failed to send message");
+      setMessage("");
+      setResult({ ok: true, text: "Message sent ✓" });
+      setTimeout(() => setResult(null), 4000);
+    } catch (e: unknown) {
+      setResult({ ok: false, text: e instanceof Error ? e.message : "Failed to send message" });
+    }
+    setSending(false);
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <SendHorizonal className="w-4 h-4 text-blue-600" />
+        <h3 className="text-sm font-bold text-slate-800">Send a message via the bot</h3>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Sends a direct Telegram message to this member from the bot.
+        {!telegramLinked && " This member hasn't linked their Telegram yet, so messages can't be delivered."}
+      </p>
+      <textarea
+        value={message}
+        onChange={e => setMessage(e.target.value)}
+        placeholder="Type your message…"
+        rows={3}
+        maxLength={2000}
+        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-y"
+      />
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-[11px] text-slate-400">{message.length}/2000</span>
+        <div className="flex items-center gap-3">
+          {result && (
+            <span className={`text-xs font-semibold ${result.ok ? "text-emerald-600" : "text-red-600"}`}>{result.text}</span>
+          )}
+          <button
+            onClick={send}
+            disabled={sending || !message.trim() || !telegramLinked}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizonal className="w-4 h-4" />}
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TelegramLogTab({ secret, fixedUsername }: { secret: string; fixedUsername?: string }) {

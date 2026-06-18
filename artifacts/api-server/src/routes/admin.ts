@@ -4395,6 +4395,60 @@ router.get("/admin/customers/:username", async (req: any, res: any): Promise<voi
   }
 });
 
+// ─── POST /api/admin/customers/:username/send-message — DM a member via the bot ─
+router.post("/admin/customers/:username/send-message", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const username = decodeURIComponent(req.params.username);
+    const altUsername = username.startsWith("@") ? username.slice(1) : `@${username}`;
+
+    const { message } = req.body as { message?: string };
+    if (!message || typeof message !== "string" || !message.trim()) {
+      res.status(400).json({ error: "Message is required" });
+      return;
+    }
+
+    const [account] = await db
+      .select({ telegramUsername: accountsTable.telegramUsername, telegramChatId: accountsTable.telegramChatId })
+      .from(accountsTable)
+      .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)));
+
+    if (!account) {
+      res.status(404).json({ error: "Member not found" });
+      return;
+    }
+    if (!account.telegramChatId) {
+      res.status(400).json({ error: "Member hasn't linked their Telegram account, so the bot can't message them." });
+      return;
+    }
+
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const text = escapeHtml(message.trim().slice(0, 2000));
+    const fullText = `💬 <b>Message from Salts &amp; Peps Admin</b>\n\n${text}`;
+
+    const ok = await sendTelegramMessage(account.telegramChatId, fullText, "HTML", {
+      recipientType: "user",
+      recipientUsername: account.telegramUsername,
+    });
+
+    if (!ok) {
+      res.status(502).json({ error: "Failed to send message via Telegram. Please try again." });
+      return;
+    }
+
+    writeLog("change", "info", "admin_member_message_sent",
+      `Admin sent a direct message to member @${account.telegramUsername}`,
+      { telegramUsername: account.telegramUsername },
+    ).catch(() => {});
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin/customers/:username/send-message]", err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
 // ─── DELETE /api/admin/customers — bulk delete customers ─────────────────────
 router.delete("/admin/customers", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
