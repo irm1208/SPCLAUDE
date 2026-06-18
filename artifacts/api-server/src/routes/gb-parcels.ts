@@ -3638,10 +3638,12 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
     .from(ordersTable)
     .where(inArray(ordersTable.id, paidOrderIds));
 
-  // Set of reshipper usernames explicitly assigned to this member's orders
+  // Set of reshipper usernames explicitly assigned to this member's orders.
+  // Seed with the member's own username: handles the case where the member IS a GB
+  // reshipper and their parcels are labelled with their own handle.
   const assignedReshippers = new Set(
-    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())
+    [tgBare, ...(paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
+      .map(u => u.replace(/^@/, "").toLowerCase())]
   );
 
   // Also resolve reshippers via country leg — single-reshipper legs don't stamp reshipperUsername

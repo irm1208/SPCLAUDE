@@ -1547,8 +1547,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           if (existing) { existing.qty += qty; } else { gbItemQty.set(key, { name: li.productName.trim(), qty }); }
         }
 
-        // Build set of reshippers this member is assigned to for this GB
+        // Build set of reshippers this member is assigned to for this GB.
+        // Always include the member's own username: handles the case where the member IS
+        // a GB reshipper and their parcels are labelled with their own handle.
         const assignedReshippers = new Set<string>();
+        assignedReshippers.add(trackingUsername);
         for (const order of memberOrders) {
           if (order.reshipperUsername) assignedReshippers.add(order.reshipperUsername.replace(/^@/, "").toLowerCase());
         }

@@ -2966,10 +2966,12 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     .from(ordersTable)
     .where(inArray(ordersTable.id, paidOrderIds));
 
-  // Build set of reshippers explicitly stamped on the customer's orders
+  // Build set of reshippers explicitly stamped on the customer's orders.
+  // Seed with the member's own username: handles the case where the member IS a GB
+  // reshipper and their parcels are labelled with their own handle.
   const assignedReshippers = new Set(
-    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())
+    [tgBare, ...(paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
+      .map(u => u.replace(/^@/, "").toLowerCase())]
   );
 
   // Reshipper-routed orders (excludes direct-shipping orders)
