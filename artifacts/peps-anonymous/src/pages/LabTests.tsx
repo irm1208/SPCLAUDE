@@ -366,7 +366,7 @@ export function ReportModal({
     fetch(apiUrl(`/lab-tests/${test.id}/preview`))
       .then(r => r.json())
       .then(d => {
-        if (d.type === "image" && d.images && d.images.length > 0) {
+        if (d.type === "image") {
           setPreview({ type: "image", url: apiUrl(`/lab-tests/${test.id}/proxy`) });
         } else if (d.type === "pdf") {
           setPreview({ type: "pdf", proxyUrl: apiUrl(`/lab-tests/${test.id}/proxy`), originalUrl: d.originalUrl ?? test.url });
