@@ -248,7 +248,38 @@ router.get("/lab-tests", async (req, res) => {
 
     const where = conditions.length === 1 ? conditions[0] : and(...conditions);
     const rows = await db
-      .select()
+      .select({
+        id: labTestsTable.id,
+        janoshikId: labTestsTable.janoshikId,
+        url: labTestsTable.url,
+        peptideName: labTestsTable.peptideName,
+        mgAmount: labTestsTable.mgAmount,
+        nominalDose: labTestsTable.nominalDose,
+        massUnit: labTestsTable.massUnit,
+        supplier: labTestsTable.supplier,
+        batchCode: labTestsTable.batchCode,
+        labName: labTestsTable.labName,
+        testType: labTestsTable.testType,
+        productCategory: labTestsTable.productCategory,
+        purityPct: labTestsTable.purityPct,
+        endotoxinEuMg: labTestsTable.endotoxinEuMg,
+        sterilityPass: labTestsTable.sterilityPass,
+        testDate: labTestsTable.testDate,
+        notes: labTestsTable.notes,
+        heavyMetalAs: labTestsTable.heavyMetalAs,
+        heavyMetalCd: labTestsTable.heavyMetalCd,
+        heavyMetalPb: labTestsTable.heavyMetalPb,
+        heavyMetalHg: labTestsTable.heavyMetalHg,
+        isThirdPartyTest: labTestsTable.isThirdPartyTest,
+        pending: labTestsTable.pending,
+        submittedBy: labTestsTable.submittedBy,
+        organiserId: labTestsTable.organiserId,
+        groupBuyId: labTestsTable.groupBuyId,
+        blendComponents: labTestsTable.blendComponents,
+        aiExtracted: labTestsTable.aiExtracted,
+        aiExtractedAt: labTestsTable.aiExtractedAt,
+        createdAt: labTestsTable.createdAt,
+      })
       .from(labTestsTable)
       .where(where)
       .orderBy(
@@ -780,7 +811,38 @@ router.get("/lab-tests/:id", async (req, res) => {
 router.get("/admin/lab-tests/pending", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const rows = await db.select().from(labTestsTable)
+    const rows = await db.select({
+      id: labTestsTable.id,
+      janoshikId: labTestsTable.janoshikId,
+      url: labTestsTable.url,
+      peptideName: labTestsTable.peptideName,
+      mgAmount: labTestsTable.mgAmount,
+      nominalDose: labTestsTable.nominalDose,
+      massUnit: labTestsTable.massUnit,
+      supplier: labTestsTable.supplier,
+      batchCode: labTestsTable.batchCode,
+      labName: labTestsTable.labName,
+      testType: labTestsTable.testType,
+      productCategory: labTestsTable.productCategory,
+      purityPct: labTestsTable.purityPct,
+      endotoxinEuMg: labTestsTable.endotoxinEuMg,
+      sterilityPass: labTestsTable.sterilityPass,
+      testDate: labTestsTable.testDate,
+      notes: labTestsTable.notes,
+      heavyMetalAs: labTestsTable.heavyMetalAs,
+      heavyMetalCd: labTestsTable.heavyMetalCd,
+      heavyMetalPb: labTestsTable.heavyMetalPb,
+      heavyMetalHg: labTestsTable.heavyMetalHg,
+      isThirdPartyTest: labTestsTable.isThirdPartyTest,
+      pending: labTestsTable.pending,
+      submittedBy: labTestsTable.submittedBy,
+      organiserId: labTestsTable.organiserId,
+      groupBuyId: labTestsTable.groupBuyId,
+      blendComponents: labTestsTable.blendComponents,
+      aiExtracted: labTestsTable.aiExtracted,
+      aiExtractedAt: labTestsTable.aiExtractedAt,
+      createdAt: labTestsTable.createdAt,
+    }).from(labTestsTable)
       .where(eq(labTestsTable.pending, true))
       .orderBy(desc(labTestsTable.id));
     res.json(rows);
