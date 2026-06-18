@@ -1548,10 +1548,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
 
         // Build set of reshippers this member is assigned to for this GB.
-        // Always include the member's own username: handles the case where the member IS
-        // a GB reshipper and their parcels are labelled with their own handle.
         const assignedReshippers = new Set<string>();
-        assignedReshippers.add(trackingUsername);
         for (const order of memberOrders) {
           if (order.reshipperUsername) assignedReshippers.add(order.reshipperUsername.replace(/^@/, "").toLowerCase());
         }
@@ -1577,18 +1574,29 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           }
         }
 
+        // Also include the member's own username: covers the case where they are a GB
+        // reshipper and their parcels are labelled with their own handle.
+        assignedReshippers.add(trackingUsername);
+
+        // When the member has no routing assignment (no reshipper stamped on order, no
+        // country leg) beyond the self-seed, the organiser hasn't tagged their orders.
+        // In that case drop the reshipper gate and match purely by item names so they
+        // can see all parcels containing their products regardless of which reshipper
+        // batch they were packed in.
+        const hasExplicitReshipperAssignment = memberOrders.some(o => o.reshipperUsername) || nonDirectLegOrders.length > 0;
+
         // Filter parcels to only ones this member should see
         const memberParcels = parcels.filter(p => {
           const parcelItemList = ((p.items ?? []) as { name: string }[]);
-          if (p.reshipperUsername) {
-            if (!assignedReshippers.has(p.reshipperUsername.replace(/^@/, "").toLowerCase())) return false;
-            if (parcelItemList.length === 0) return true;
-            if (gbItemNames.size === 0) return false;
-            return parcelItemList.some(i => gbItemNames.has(i.name.trim().toLowerCase()));
-          }
           if (parcelItemList.length === 0) return false;
           if (gbItemNames.size === 0) return false;
-          return parcelItemList.some(i => gbItemNames.has(i.name.trim().toLowerCase()));
+          // Must contain at least one item this member ordered
+          if (!parcelItemList.some(i => gbItemNames.has(i.name.trim().toLowerCase()))) return false;
+          // Reshipper gate: only apply when the order has an explicit routing assignment
+          if (p.reshipperUsername && hasExplicitReshipperAssignment) {
+            return assignedReshippers.has(p.reshipperUsername.replace(/^@/, "").toLowerCase());
+          }
+          return true;
         });
 
         const [gbRow] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));

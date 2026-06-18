@@ -3639,12 +3639,12 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
     .where(inArray(ordersTable.id, paidOrderIds));
 
   // Set of reshipper usernames explicitly assigned to this member's orders.
-  // Seed with the member's own username: handles the case where the member IS a GB
-  // reshipper and their parcels are labelled with their own handle.
   const assignedReshippers = new Set(
-    [tgBare, ...(paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())]
+    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
+      .map(u => u.replace(/^@/, "").toLowerCase())
   );
+  // Always include member's own handle (they may be a GB reshipper receiving own parcels)
+  assignedReshippers.add(tgBare);
 
   // Also resolve reshippers via country leg — single-reshipper legs don't stamp reshipperUsername
   // on the order row; the order only has countryLegId set. Walk: countryLegId → countryCode →
@@ -3712,6 +3712,11 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
   // Customer is "direct shipping" when none of their paid orders route through a reshipper hub.
   const isDirect = reshipperOrderRows.length === 0;
 
+  // Whether the order data resolved an actual reshipper (beyond the self-seed).
+  // When false the organiser hasn't tagged the order with routing info, so we skip
+  // the reshipper gate and fall back to pure item-name matching.
+  const hasExplicitReshipperAssignment = paidOrderRows.some(o => o.reshipperUsername) || legIds.length > 0;
+
   const rows = await db
     .select()
     .from(gbParcelsTable)
@@ -3724,6 +3729,10 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
 
     // Must contain at least one product the customer ordered
     if (!parcelItems.some(item => orderedNames.has(item.name.trim().toLowerCase()))) return false;
+
+    // When no explicit reshipper routing was resolved, skip the gate entirely —
+    // the member sees every parcel that contains their items.
+    if (!hasExplicitReshipperAssignment) return true;
 
     // Identify this parcel's reshipper: use the explicit field if set, otherwise match
     // the parcel label against all known reshippers for this GB (admin convention).

@@ -2967,12 +2967,12 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     .where(inArray(ordersTable.id, paidOrderIds));
 
   // Build set of reshippers explicitly stamped on the customer's orders.
-  // Seed with the member's own username: handles the case where the member IS a GB
-  // reshipper and their parcels are labelled with their own handle.
   const assignedReshippers = new Set(
-    [tgBare, ...(paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())]
+    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
+      .map(u => u.replace(/^@/, "").toLowerCase())
   );
+  // Always include member's own handle (they may be a GB reshipper receiving own parcels)
+  assignedReshippers.add(tgBare);
 
   // Reshipper-routed orders (excludes direct-shipping orders)
   const reshipperOrderRows = paidOrderRows.filter(o => {
@@ -3003,6 +3003,11 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     }
   }
 
+  // Whether the order data resolved an actual reshipper (beyond the self-seed).
+  // When false the organiser hasn't tagged the order with routing info, so we skip
+  // the reshipper gate and fall back to pure item-name matching.
+  const hasExplicitReshipperAssignment = paidOrderRows.some(o => o.reshipperUsername) || legIds.length > 0;
+
   // All reshipper names for this GB — used to identify "reshipper parcels" by their label
   const allGbReshipperRows = await db
     .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
@@ -3029,7 +3034,7 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     memberQtyMap.set(key, (memberQtyMap.get(key) ?? 0) + (li.quantity ?? 1));
   }
 
-  console.log(`[parcels-debug/acct] tg=${tg} gbId=${gbId} paidOrders=${paidOrders.length} isDirect=${isDirect} assignedReshippers=[${[...assignedReshippers].join(",")}] allReshippers=[${[...allGbReshipperNames].join(",")}]`);
+  console.log(`[parcels-debug/acct] tg=${tg} gbId=${gbId} paidOrders=${paidOrders.length} isDirect=${isDirect} hasExplicit=${hasExplicitReshipperAssignment} assignedReshippers=[${[...assignedReshippers].join(",")}] allReshippers=[${[...allGbReshipperNames].join(",")}]`);
 
   // Fetch all parcels for this group buy then filter to only those the customer can see
   const rows = await db
@@ -3042,6 +3047,10 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     const items = ((p.items ?? []) as { name: string }[]);
     if (items.length === 0) return false;
     if (!items.some(item => orderedNames.has(item.name.trim().toLowerCase()))) return false;
+
+    // When no explicit reshipper routing was resolved, skip the gate entirely —
+    // the member sees every parcel that contains their items.
+    if (!hasExplicitReshipperAssignment) return true;
 
     // Identify parcel's reshipper via explicit field or label matching
     const parcelReshipper = p.reshipperUsername
