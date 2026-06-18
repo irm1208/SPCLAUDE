@@ -70,6 +70,8 @@ export const groupBuysTable = pgTable("group_buys", {
     notes?: string;
   } | null>(), // cost inputs for P&L calculation
   adminFeeEnabled: boolean("admin_fee_enabled").notNull().default(false),
+  // "fixed" = a flat currency amount; "percent" = a percentage of the order's product subtotal.
+  adminFeeType: text("admin_fee_type").notNull().default("fixed"),
   adminFeeAmount: numeric("admin_fee_amount", { precision: 10, scale: 2 }),
   adminFeeLabel: text("admin_fee_label"),
   adminFeeCountries: text("admin_fee_countries"),

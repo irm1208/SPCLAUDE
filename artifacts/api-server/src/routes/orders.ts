@@ -456,6 +456,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   // Admin fee — set inside the GB block below where `gb` is in scope
   let gbAdminFee = 0;
   let gbAdminFeeLabel: string | null = null;
+  let gbAdminFeeEnabled = false;
+  let gbAdminFeeType = "fixed";
+  let gbAdminFeeRaw: number | null = null;
 
   // Validate group buy membership if a groupBuyId is provided
   if (normalizedGroupBuyId) {
@@ -490,6 +493,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         sharedShippingCountries: groupBuysTable.sharedShippingCountries,
         allowExtraOrders: groupBuysTable.allowExtraOrders,
         adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+        adminFeeType: groupBuysTable.adminFeeType,
         adminFeeAmount: groupBuysTable.adminFeeAmount,
         adminFeeLabel: groupBuysTable.adminFeeLabel,
       })
@@ -548,10 +552,13 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    // Capture admin fee while gb is in scope
+    // Capture admin fee config while gb is in scope. The concrete fee amount is
+    // resolved below, once the product subtotal is known (needed for percentage fees).
     if (gb.adminFeeEnabled && gb.adminFeeAmount != null) {
-      gbAdminFee = parseFloat(String(gb.adminFeeAmount));
-      gbAdminFeeLabel = gbAdminFee > 0 ? (gb.adminFeeLabel ?? null) : null;
+      gbAdminFeeEnabled = true;
+      gbAdminFeeType = gb.adminFeeType === "percent" ? "percent" : "fixed";
+      gbAdminFeeRaw = parseFloat(String(gb.adminFeeAmount));
+      gbAdminFeeLabel = gb.adminFeeLabel ?? null;
     }
   } else {
     // Non-GB orders cannot have a testing contribution
@@ -625,6 +632,20 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   // Recalculate grand total using normalized contribution
   const { productSubtotal, grandTotal: baseGrandTotal } = recalculateTotals(clientLineItems, deliveryPrice, vendorShipping, tip, normalizedContribution);
+
+  // Resolve the admin fee now that the product subtotal is known. Percentage fees
+  // are computed against the product subtotal; fixed fees use the configured amount.
+  // Direct-to-home orders never carry the admin fee, so keep both the fee and the
+  // grand total consistent by zeroing it here (the insert below also clears it).
+  if (clientDirectShippingRequested === true) {
+    gbAdminFee = 0;
+    gbAdminFeeLabel = null;
+  } else if (gbAdminFeeEnabled && gbAdminFeeRaw != null) {
+    gbAdminFee = gbAdminFeeType === "percent"
+      ? Number(((productSubtotal * gbAdminFeeRaw) / 100).toFixed(2))
+      : gbAdminFeeRaw;
+    gbAdminFeeLabel = gbAdminFee > 0 ? gbAdminFeeLabel : null;
+  }
 
   // ── Coupon validation ────────────────────────────────────────────────────────
   let appliedCouponCode: string | null = null;
@@ -1521,8 +1542,31 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
   }
 
   const { productSubtotal, grandTotal: baseUpdateTotal } = recalculateTotals(clientLineItems, deliveryPrice, vendorShipping, tip, normalizedUpdateContribution);
-  const existingAdminFee = clientDirectShippingRequested === true ? 0 : parseFloat(String(order.adminFee ?? "0"));
-  const grandTotal = Number(Math.max(0, baseUpdateTotal + existingAdminFee).toFixed(2));
+  // Resolve the admin fee for this edit. Fixed fees keep the amount stored on the order;
+  // percentage fees are recomputed against the new subtotal so the fee tracks line-item changes.
+  const storedAdminFee = parseFloat(String(order.adminFee ?? "0"));
+  let resolvedAdminFee = clientDirectShippingRequested === true ? 0 : storedAdminFee;
+  let recomputedAdminFeeLabel: string | null | undefined =
+    clientDirectShippingRequested === true ? null : undefined;
+  // Only recompute percentage fees for orders that already carry an admin fee, so a percent fee
+  // tracks line-item changes without retroactively adding a fee to orders that never had one
+  // (mirrors the fixed-fee path, which preserves the stored amount).
+  if (clientDirectShippingRequested !== true && order.groupBuyId && storedAdminFee > 0) {
+    const [gbFee] = await db
+      .select({
+        adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+        adminFeeType: groupBuysTable.adminFeeType,
+        adminFeeAmount: groupBuysTable.adminFeeAmount,
+        adminFeeLabel: groupBuysTable.adminFeeLabel,
+      })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, order.groupBuyId));
+    if (gbFee?.adminFeeEnabled && gbFee.adminFeeType === "percent" && gbFee.adminFeeAmount != null) {
+      resolvedAdminFee = Number(((productSubtotal * parseFloat(String(gbFee.adminFeeAmount))) / 100).toFixed(2));
+      recomputedAdminFeeLabel = resolvedAdminFee > 0 ? (gbFee.adminFeeLabel ?? null) : null;
+    }
+  }
+  const grandTotal = Number(Math.max(0, baseUpdateTotal + resolvedAdminFee).toFixed(2));
 
   // Capture old line items for audit log before deleting them
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
@@ -1538,6 +1582,8 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
       tip: tip.toFixed(2),
       testingContribution: normalizedUpdateContribution.toFixed(2),
       grandTotal: grandTotal.toFixed(2),
+      adminFee: resolvedAdminFee.toFixed(2),
+      ...(recomputedAdminFeeLabel !== undefined && { adminFeeLabel: recomputedAdminFeeLabel }),
       notes: notes ? String(notes).trim().slice(0, MAX_NOTES_LENGTH) : null,
       directShippingRequested: clientDirectShippingRequested === true,
       directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null

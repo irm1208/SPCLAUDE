@@ -47,14 +47,27 @@ export default function Review() {
       : draft.vendorShipping > 0
         ? draft.vendorShipping                             // existing, known stored amount
         : null;                                            // existing, TBD → show TBD if enabled
+  // Product subtotal is needed up here to resolve percentage-based admin fees.
+  const productSubtotal = parseFloat(
+    draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
+  );
+  const adminFeeIsPercent = !!(activeGb?.adminFeeEnabled && activeGb?.adminFeeType === "percent" && activeGb?.adminFeeAmount != null);
+  // Percentage fees are recomputed against the product subtotal for new orders, and for existing
+  // orders only when they already carry a fee — matching the backend, which never adds a fee to an
+  // order that never had one. This keeps the displayed total in sync with what gets saved.
+  const recomputePercentFee = adminFeeIsPercent && (isNewOrder || (draft.adminFee ?? 0) > 0);
   const adminFeeAmount = draft.directShippingRequested
     ? 0
-    : isNewOrder
-      ? ((activeGb?.adminFeeEnabled && activeGb?.adminFeeAmount != null) ? activeGb.adminFeeAmount : 0)
-      : (draft.adminFee ?? 0);
-  const adminFeeLabel = isNewOrder
+    : recomputePercentFee
+      ? parseFloat(((productSubtotal * (activeGb!.adminFeeAmount as number)) / 100).toFixed(2))
+      : isNewOrder
+        ? ((activeGb?.adminFeeEnabled && activeGb?.adminFeeAmount != null) ? activeGb.adminFeeAmount : 0)
+        : (draft.adminFee ?? 0);
+  const adminFeeLabel = recomputePercentFee
     ? (activeGb?.adminFeeLabel ?? null)
-    : (draft.adminFeeLabel ?? null);
+    : isNewOrder
+      ? (activeGb?.adminFeeLabel ?? null)
+      : (draft.adminFeeLabel ?? null);
   const vendorShippingIsKnown = isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null);
   const vendorShippingIsTbd = isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null);
   const paymentMessageEnabled = activeGb ? activeGb.paymentMessageEnabled : false;
@@ -109,9 +122,6 @@ export default function Review() {
 
   const isPending = isCreating || isUpdating;
 
-  const productSubtotal = parseFloat(
-    draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
-  );
   const effectiveDeliveryPrice = isTopUp ? 0 : draft.deliveryPrice;
   const effectiveVendorShipping = vendorShippingIsKnown ? vendorShippingAmount! : 0;
   const grandTotal = parseFloat(

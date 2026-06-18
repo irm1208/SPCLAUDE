@@ -285,7 +285,7 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers,
     maxKitsPerCustomer, maxKitsTotal, minKitsPerPerson,
     shippingOptions, organiserPayments, allowedCountries, excludedCountries, blockedAccounts,
-    adminFeeEnabled, adminFeeAmount, adminFeeLabel,
+    adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel,
     allowHalfKits, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage,
     orderPageMessage,
   } = req.body;
@@ -368,6 +368,7 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     excludedCountries: Array.isArray(excludedCountries) ? excludedCountries : undefined,
     blockedAccounts: Array.isArray(blockedAccounts) ? blockedAccounts : undefined,
     adminFeeEnabled: adminFeeEnabled != null ? Boolean(adminFeeEnabled) : false,
+    adminFeeType: adminFeeType === "percent" ? "percent" : "fixed",
     adminFeeAmount: adminFeeAmount != null && adminFeeAmount !== "" ? parseFloat(String(adminFeeAmount)).toFixed(2) as any : undefined,
     adminFeeLabel: adminFeeLabel ? String(adminFeeLabel).trim() : undefined,
     allowHalfKits: allowHalfKits != null ? Boolean(allowHalfKits) : true,
@@ -543,7 +544,7 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, minKitsPerPerson,
     shippingOptions, organiserPayments,
     allowedCountries, excludedCountries, blockedAccounts,
-    adminFeeEnabled, adminFeeAmount, adminFeeLabel, adminFeeCountries,
+    adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel, adminFeeCountries,
     sharedShippingCountries,
     allowHalfKits, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage,
     orderPageMessage, countryLegsEnabled, qrViewerUsernames, testOrderPin,
@@ -642,6 +643,7 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     (updates as Record<string, unknown>)["blockedAccounts"] = Array.isArray(blockedAccounts) ? blockedAccounts : null;
   }
   if (adminFeeEnabled !== undefined) updates.adminFeeEnabled = Boolean(adminFeeEnabled);
+  if (adminFeeType !== undefined) updates.adminFeeType = adminFeeType === "percent" ? "percent" : "fixed";
   if (adminFeeAmount !== undefined) {
     (updates as Record<string, unknown>)["adminFeeAmount"] = adminFeeAmount != null && adminFeeAmount !== "" ? parseFloat(String(adminFeeAmount)).toFixed(2) : null;
   }
@@ -714,6 +716,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
     .select({
       id: groupBuysTable.id,
       adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
       adminFeeAmount: groupBuysTable.adminFeeAmount,
       adminFeeLabel: groupBuysTable.adminFeeLabel,
     })
@@ -728,15 +731,21 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
 
   const feeAmount = parseFloat(String(gb.adminFeeAmount));
   if (feeAmount <= 0) { res.status(400).json({ error: "Admin fee amount must be greater than 0" }); return; }
+  const isPercent = gb.adminFeeType === "percent";
+
+  // Per-order fee: a percentage of that order's product subtotal, or a flat amount.
+  const feeExpr = isPercent
+    ? sql`ROUND(product_subtotal * ${feeAmount}::numeric / 100, 2)`
+    : sql`${feeAmount}::numeric`;
 
   // Update non-deleted, non-direct-to-home orders on this GB that don't already have the fee applied.
   // Direct-to-home orders are excluded — the admin/reshipping fee doesn't apply to them.
   const result = await db.execute(sql`
     UPDATE orders
     SET
-      admin_fee = ${feeAmount}::numeric,
+      admin_fee = ${feeExpr},
       admin_fee_label = ${gb.adminFeeLabel ?? null},
-      grand_total = grand_total + ${feeAmount}::numeric
+      grand_total = grand_total + ${feeExpr}
     WHERE
       group_buy_id = ${id}
       AND deleted_at IS NULL

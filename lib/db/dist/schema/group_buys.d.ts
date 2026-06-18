@@ -801,6 +801,23 @@ export declare const groupBuysTable: import("drizzle-orm/pg-core").PgTableWithCo
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        adminFeeType: import("drizzle-orm/pg-core").PgColumn<{
+            name: "admin_fee_type";
+            tableName: "group_buys";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         adminFeeAmount: import("drizzle-orm/pg-core").PgColumn<{
             name: "admin_fee_amount";
             tableName: "group_buys";

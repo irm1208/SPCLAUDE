@@ -152,6 +152,7 @@ export interface GroupBuySummary {
   hidePricesOnOrderForm?: boolean;
   hideOrderTotalOnOrderForm?: boolean;
   adminFeeEnabled?: boolean;
+  adminFeeType?: string | null;
   adminFeeAmount?: number | null;
   adminFeeLabel?: string | null;
   directShippingPaymentsEnabled?: boolean;

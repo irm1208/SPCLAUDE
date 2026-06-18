@@ -2134,6 +2134,7 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
     .select({
       id: groupBuysTable.id,
       adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
       adminFeeAmount: groupBuysTable.adminFeeAmount,
       adminFeeLabel: groupBuysTable.adminFeeLabel,
     })
@@ -2148,13 +2149,19 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
 
   const feeAmount = parseFloat(String(gb.adminFeeAmount));
   if (feeAmount <= 0) { res.status(400).json({ error: "Admin fee amount must be greater than 0" }); return; }
+  const isPercent = gb.adminFeeType === "percent";
+
+  // Per-order fee: a percentage of that order's product subtotal, or a flat amount.
+  const feeExpr = isPercent
+    ? sql`ROUND(product_subtotal * ${feeAmount}::numeric / 100, 2)`
+    : sql`${feeAmount}::numeric`;
 
   const result = await db.execute(sql`
     UPDATE orders
     SET
-      admin_fee       = ${feeAmount}::numeric,
+      admin_fee       = ${feeExpr},
       admin_fee_label = ${gb.adminFeeLabel ?? null},
-      grand_total     = grand_total + ${feeAmount}::numeric
+      grand_total     = grand_total + ${feeExpr}
     WHERE
       group_buy_id = ${gbId}
       AND deleted_at IS NULL

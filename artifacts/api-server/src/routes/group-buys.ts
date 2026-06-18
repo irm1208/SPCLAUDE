@@ -223,6 +223,7 @@ const GB_SELECT_COLS = {
   hidePricesOnOrderForm: groupBuysTable.hidePricesOnOrderForm,
   hideOrderTotalOnOrderForm: groupBuysTable.hideOrderTotalOnOrderForm,
   adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+  adminFeeType: groupBuysTable.adminFeeType,
   adminFeeAmount: groupBuysTable.adminFeeAmount,
   adminFeeLabel: groupBuysTable.adminFeeLabel,
   directShippingEnabled: groupBuysTable.directShippingEnabled,

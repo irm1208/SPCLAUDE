@@ -102,6 +102,7 @@ interface OrganiserGB {
   excludedCountries: string[] | null;
   blockedAccounts: string[] | null;
   adminFeeEnabled: boolean;
+  adminFeeType: string | null;
   adminFeeAmount: number | null;
   adminFeeLabel: string | null;
   adminFeeCountries: { country: string; amount: number; enabled: boolean }[] | null;
@@ -4109,6 +4110,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
     vendorShippingMessage: gb?.vendorShippingMessage ?? "",
     vendorShippingAmount: gb?.vendorShippingAmount?.toString() ?? "",
     adminFeeEnabled: gb?.adminFeeEnabled ?? false,
+    adminFeeType: gb?.adminFeeType === "percent" ? "percent" : "fixed",
     adminFeeAmount: gb?.adminFeeAmount?.toString() ?? "",
     adminFeeLabel: gb?.adminFeeLabel ?? "",
     allowHalfKits: gb?.allowHalfKits ?? true,
@@ -4325,6 +4327,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         vendorShippingMessage: form.vendorShippingMessage.trim() || null,
         vendorShippingAmount: form.vendorShippingAmount.trim() ? parseFloat(form.vendorShippingAmount) : null,
         adminFeeEnabled: form.adminFeeEnabled,
+        adminFeeType: form.adminFeeType,
         adminFeeAmount: form.adminFeeAmount.trim() ? parseFloat(form.adminFeeAmount) : null,
         adminFeeLabel: form.adminFeeLabel.trim() || null,
         allowHalfKits: form.allowHalfKits,
@@ -4881,9 +4884,34 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
             </div>
             {form.adminFeeEnabled ? (
               <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>A fixed fee that will be added to each order in this group buy.</p>
-                <Field label="Fee amount" icon={DollarSign} hint="Leave blank if not yet determined">
-                  <input value={form.adminFeeAmount} onChange={e => set("adminFeeAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="e.g. 2.50" className={inputCls} style={inputStyle} />
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                  {form.adminFeeType === "percent"
+                    ? "A percentage of each order's product subtotal that will be added to the order in this group buy."
+                    : "A fixed fee that will be added to each order in this group buy."}
+                </p>
+                <Field label="Fee type">
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["fixed", "percent"] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => set("adminFeeType", t)}
+                        className="px-3 py-2 rounded-lg text-xs font-semibold border transition-all"
+                        style={form.adminFeeType === t
+                          ? { background: "rgba(124,58,237,0.08)", borderColor: "#C4B5FD", color: "#5B21B6" }
+                          : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+                      >
+                        {t === "fixed" ? "Fixed amount" : "Percentage"}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                <Field
+                  label={form.adminFeeType === "percent" ? "Fee percentage" : "Fee amount"}
+                  icon={form.adminFeeType === "percent" ? undefined : DollarSign}
+                  hint="Leave blank if not yet determined"
+                >
+                  <input value={form.adminFeeAmount} onChange={e => set("adminFeeAmount", e.target.value)} type="number" min="0" step="0.01" placeholder={form.adminFeeType === "percent" ? "e.g. 10" : "e.g. 2.50"} className={inputCls} style={inputStyle} />
                 </Field>
                 <Field label="Fee label" hint="Optional — shown to customers on their order">
                   <input value={form.adminFeeLabel} onChange={e => set("adminFeeLabel", e.target.value)} type="text" placeholder="e.g. Platform fee, Admin fee" className={inputCls} style={inputStyle} />
@@ -4893,7 +4921,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
                 )}
               </div>
             ) : (
-              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, a fixed admin fee will be added to each order. You can set the amount and label below.</p>
+              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, an admin fee (a fixed amount or a percentage of the product subtotal) will be added to each order. You can set the type, amount and label below.</p>
             )}
           </SectionCard>
 
