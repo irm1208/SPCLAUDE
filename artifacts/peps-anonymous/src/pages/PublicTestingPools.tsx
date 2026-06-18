@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useAccount } from "@/hooks/use-account";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FlaskConical, Search, X, Loader2, Users, CheckCircle2,
@@ -79,6 +80,7 @@ function norm(s: string) { return s.toLowerCase(); }
 
 export default function PublicTestingPools({ bare }: { bare?: boolean } = {}) {
   const [, navigate] = useLocation();
+  const { account } = useAccount();
   const [search, setSearch] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [selectedManufacturers, setSelectedManufacturers] = useState<Set<string>>(new Set());
@@ -360,6 +362,7 @@ export default function PublicTestingPools({ bare }: { bare?: boolean } = {}) {
           setSection={(s: HubSection) => navigate(`/account?s=${s}`)}
           hubMoreOpen={false}
           setHubMoreOpen={() => {}}
+          account={account ?? null}
         />
       )}
     </PageLayout>

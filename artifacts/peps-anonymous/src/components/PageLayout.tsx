@@ -368,7 +368,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                   const isReshipperLink = section === "reshipper";
                   const isWholesaleLink = section === "wholesale";
                   const isWholesaleSharedLink = section === "wholesale-shared";
-                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : `/account?s=${section}`);
+                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : (section === "community-testing" && !isLoggedIn) ? "/community-testing" : `/account?s=${section}`);
                   const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleSharedLink ? location.startsWith("/wholesale/shared") : isWholesaleLink ? (location.startsWith("/wholesale") && !location.startsWith("/wholesale/shared")) : activeSection === section;
                   return (
                     <button
