@@ -243,7 +243,7 @@ export function HubBottomNav({
                 {/* Community Testing appended to Group Buys section */}
                 {group.label === "Group Buys" && (
                   <button
-                    onClick={() => { setOpen(false); setLocation("/account?s=community-testing"); }}
+                    onClick={() => { setOpen(false); setLocation(account ? "/account?s=community-testing" : "/community-testing"); }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all text-left ${dark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.03]"}`}
                     style={{ color: dark ? "rgba(255,255,255,0.7)" : "var(--t-muted)", fontWeight: 500 }}
                   >
