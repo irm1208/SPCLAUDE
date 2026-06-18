@@ -615,7 +615,7 @@ export function ReportModal({
               )}
             </div>
 
-            {test.notes && (
+            {test.notes && !test.notes.startsWith("Imported via browser helper") && (
               <p className="text-xs px-1 italic" style={{ color: "var(--t-subtle)" }}>{test.notes}</p>
             )}
           </div>

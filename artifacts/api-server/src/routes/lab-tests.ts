@@ -670,9 +670,12 @@ router.get("/lab-tests/:id/preview", async (req, res) => {
     }
     // Prefer locally-stored bytes whenever we have them (uploads and
     // browser-helper imports, which may also keep a source URL for dedupe).
-    // Served via /proxy; "pdf" keeps the iframe renderer working for images too.
+    // Detect the real media type so the frontend can choose <img> vs <iframe>.
     if (test.pdfBlob) {
-      res.json({ type: "pdf", originalUrl: test.url ?? null });
+      const buf = Buffer.from(test.pdfBlob, "base64");
+      const mime = sniffBlobMime(buf);
+      const type = mime.startsWith("image/") ? "image" : "pdf";
+      res.json({ type, originalUrl: test.url ?? null });
       return;
     }
     if (!test.url) { res.status(422).json({ error: "This lab test has no external URL" }); return; }
