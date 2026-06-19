@@ -210,8 +210,8 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
       : 0;
 
   // Use the locked USD amount when available (set when customer opens the payment panel).
-  // Fall back to grandTotal, treating it as USD. We apply a generous 15% tolerance so
-  // minor GBP/USD drift doesn't block auto-confirm for GBP-denominated GBs.
+  // Fall back to grandTotal, treating it as USD. The expected amount is the exact coin
+  // amount the buyer was shown, so verification uses the standard ~1% tolerance.
   const grandTotalUsd = lockedUsd ?? grandTotalRaw;
   const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
 
@@ -235,7 +235,7 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
   }
   const expectedAmount = roundCrypto(netUsd / usdPerCoin, currency);
 
-  const result = await verifyTransaction(txHash, walletAddress, expectedAmount, currency, network, 0.15);
+  const result = await verifyTransaction(txHash, walletAddress, expectedAmount, currency, network);
 
   if (!result.verified) {
     if ((result as any).pending) {

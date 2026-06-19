@@ -1190,7 +1190,8 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   // Use the rate that was locked when the payment panel opened (paymentUsdAmount).
   // This prevents verification failing due to FX movement between display and submission.
   // Fall back to a fresh rate fetch only when no lock exists (e.g. legacy orders).
-  // The on-chain check uses 15% tolerance so minor discrepancies don't block payment.
+  // Because the expected amount is now the exact coin amount the buyer was shown,
+  // the on-chain check uses the standard ~1% tolerance (network dust only).
   const lockedUsdTotal = order.paymentUsdAmount ? parseFloat(String(order.paymentUsdAmount)) : null;
   const grandTotalUsd = lockedUsdTotal ?? await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
 
@@ -1209,7 +1210,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   }
   const expectedAmount = roundCrypto(netUsd / usdPerCoin, currency);
 
-  const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network, 0.15);
+  const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network);
 
   if (!result.verified) {
     if (result.underpayment) {
