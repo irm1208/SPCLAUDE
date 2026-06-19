@@ -63,6 +63,17 @@ const BLUE       = "var(--t-blue)";
 const BLUE_BG    = "var(--t-blue-08)";
 const BLUE_BORDER= "var(--t-blue-25)";
 
+function currencySymbol(currency: string): string {
+  const c = (currency ?? "").toUpperCase();
+  if (c === "GBP") return "£";
+  if (c === "EUR") return "€";
+  return "$";
+}
+
+function fmtPrice(price: number, currency: string): string {
+  return `${currencySymbol(currency)}${price.toFixed(2)}`;
+}
+
 function CoaModal({ url, productName, onClose }: { url: string; productName: string; onClose: () => void }) {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,7 +276,7 @@ function MetaField({ label, children }: { label: string; children: React.ReactNo
 
 function ProductCard({ product, onAdd, onBuyNow }: { product: VialProduct; onAdd: () => void; onBuyNow: () => void }) {
   const { items, updateQty, removeItem } = useVialCart();
-  const { format } = useCurrency();
+  useCurrency(); // retained for potential currency toggle side-effects
   const cartItem = items.find(i => i.productId === product.id);
   const inCart = !!cartItem;
   const outOfStock = product.stock <= 0;
@@ -317,7 +328,10 @@ function ProductCard({ product, onAdd, onBuyNow }: { product: VialProduct; onAdd
               />
             )}
             <div className="text-right">
-              <span className="text-2xl font-black" style={{ color: BLUE }}>{format(product.price)}</span>
+              <span className="text-2xl font-black" style={{ color: BLUE }}>{fmtPrice(product.price, product.currency)}</span>
+              {product.currency && product.currency.toUpperCase() !== "GBP" && (
+                <span className="text-[10px] font-bold block" style={{ color: T.subtle }}>{product.currency.toUpperCase()}</span>
+              )}
             </div>
           </div>
         </div>
@@ -446,7 +460,7 @@ function ProductCard({ product, onAdd, onBuyNow }: { product: VialProduct; onAdd
               </button>
             </div>
             <span className="text-sm font-bold shrink-0" style={{ color: BLUE }}>
-              ${(product.price * cartItem.quantity).toFixed(2)}
+              {fmtPrice(product.price * cartItem.quantity, product.currency)}
             </span>
           </div>
         ) : (
