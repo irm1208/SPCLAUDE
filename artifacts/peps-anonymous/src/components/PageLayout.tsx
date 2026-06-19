@@ -19,7 +19,6 @@ import {
   LogIn,
   UsersRound,
   FlaskConical,
-  TestTube,
   Droplet,
   HeartPulse,
   TrendingUp,
@@ -57,8 +56,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "shop",          label: "Lonely Vial",         shortLabel: "Vials",     icon: Droplets,      path: "/shop",           altPaths: ["/shop/checkout"], section: "shop"     },
-  { id: "testingpools",  label: "Testing Pools",      shortLabel: "Pools",      icon: TestTube,      path: "/testing-pools",                                section: "health"   },
-  { id: "community",     label: "Community Testing",  shortLabel: "Community",  icon: UsersRound,    path: "/community-testing",                            section: "health"   },
   { id: "protocols",     label: "Protocols",          shortLabel: "Protocols",  icon: BookMarked,    path: "/protocols",     altPaths: ["/medications", "/medications/", "/trt-aas"], section: "research" },
   { id: "learn",         label: "Learning Hub",       shortLabel: "Learn",      icon: GraduationCap, path: "/learn",          altPaths: ["/learn/"],         section: "research" },
   { id: "lab",           label: "Lab Tests",          shortLabel: "Lab",        icon: ClipboardList, path: "/tests",                                        section: "research" },
@@ -68,7 +65,6 @@ const NAV_ITEMS: NavItem[] = [
 
 const NAV_SECTIONS: { key: NavItem["section"]; label: string }[] = [
   { key: "shop",     label: "Shop"     },
-  { key: "health",   label: "Health"   },
   { key: "research", label: "Research" },
   { key: "tools",    label: "Tools"    },
 ];
@@ -368,7 +364,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                   const isReshipperLink = section === "reshipper";
                   const isWholesaleLink = section === "wholesale";
                   const isWholesaleSharedLink = section === "wholesale-shared";
-                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : `/account?s=${section}`);
+                  const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : (section === "community-testing" && !isLoggedIn) ? "/community-testing" : `/account?s=${section}`);
                   const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleSharedLink ? location.startsWith("/wholesale/shared") : isWholesaleLink ? (location.startsWith("/wholesale") && !location.startsWith("/wholesale/shared")) : activeSection === section;
                   return (
                     <button

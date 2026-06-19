@@ -384,17 +384,6 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE geo_ip_cache ADD COLUMN IF NOT EXISTS is_hosting boolean`);
     // products — per-product half-kit toggle
     await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS half_kit_enabled boolean NOT NULL DEFAULT true`);
-    // dna_profiles — stores parsed SNP findings per account
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS dna_profiles (
-        account_id text PRIMARY KEY,
-        file_format text NOT NULL DEFAULT '23andme',
-        snp_count text,
-        findings jsonb NOT NULL DEFAULT '[]'::jsonb,
-        uploaded_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now()
-      )
-    `);
     // Seed test catalog — compound-specific analysis tests from Janoshik + standalone tests.
     // Prices are always force-updated from seed (admin can override via UI after).
     type SeedTest = { id: string; code: string; name: string; price: string; sort: number; category: string; section: string | null };
