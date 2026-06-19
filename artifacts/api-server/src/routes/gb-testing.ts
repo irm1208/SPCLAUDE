@@ -867,6 +867,7 @@ router.get("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> =>
       contributionAmount: parseFloat(round.contributionAmount as string),
       anyContribution: round.anyContribution ?? false,
       lateOptInEnabled: round.lateOptInEnabled ?? false,
+      optInThresholdPct: (round as any).optInThresholdPct ?? null,
       voteOptions: round.voteOptions ?? null,
       peptideBatches: ((round as any).peptideBatches as Record<string, string> | null) ?? {},
       testOptions: round.testOptions ?? null,
@@ -962,7 +963,7 @@ router.post(
 router.patch("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const { gbId } = req.params;
-  const { status, resultNotes, resultPdfUrl, fundingNote, voteOptions, peptideBatches, testOptions, janoshikPaymentUrl, anyContribution, lateOptInEnabled, lateOptInPaymentMethods, maxCompoundVotes, maxTestVotes, labShippingCost } = req.body;
+  const { status, resultNotes, resultPdfUrl, fundingNote, voteOptions, peptideBatches, testOptions, janoshikPaymentUrl, anyContribution, lateOptInEnabled, lateOptInPaymentMethods, maxCompoundVotes, maxTestVotes, labShippingCost, optInThresholdPct } = req.body;
 
   const [round] = await db
     .select()
@@ -1042,6 +1043,14 @@ router.patch("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> 
     } else {
       const parsed = parseFloat(String(labShippingCost));
       if (!isNaN(parsed) && parsed > 0) updates.labShippingCost = String(parsed);
+    }
+  }
+  if (optInThresholdPct !== undefined) {
+    if (optInThresholdPct === null || optInThresholdPct === "" || optInThresholdPct === 0) {
+      (updates as any).optInThresholdPct = null;
+    } else {
+      const parsed = parseInt(String(optInThresholdPct), 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 100) (updates as any).optInThresholdPct = parsed;
     }
   }
 

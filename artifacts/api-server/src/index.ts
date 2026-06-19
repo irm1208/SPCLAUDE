@@ -234,6 +234,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE gb_testing_rounds ADD COLUMN IF NOT EXISTS vote_options jsonb`);
     await db.execute(sql`ALTER TABLE gb_testing_rounds ADD COLUMN IF NOT EXISTS peptide_batches jsonb`);
     await db.execute(sql`ALTER TABLE gb_testing_rounds ADD COLUMN IF NOT EXISTS test_options jsonb`);
+    await db.execute(sql`ALTER TABLE gb_testing_rounds ADD COLUMN IF NOT EXISTS opt_in_threshold_pct integer`);
     // gb_country_legs table — per-country sub-groups within a GB
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS gb_country_legs (

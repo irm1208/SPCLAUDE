@@ -7599,6 +7599,7 @@ interface TestingRound {
   anyContribution: boolean;
   lateOptInEnabled: boolean;
   lateOptInPaymentMethods: string[] | null;
+  optInThresholdPct: number | null;
   maxCompoundVotes: number;
   maxTestVotes: number;
   voteOptions: string[] | null;
@@ -7660,6 +7661,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   const [editContribAmount, setEditContribAmount] = useState("15");
   const [lateOptIn, setLateOptIn] = useState(false);
   const [latePayMethods, setLatePayMethods] = useState<string[]>([]);
+  const [optInThresholdPct, setOptInThresholdPct] = useState<string>("");
   const [editJanoshikUrl, setEditJanoshikUrl] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -7709,6 +7711,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
         setEditContribAmount(String(d.round.contributionAmount ?? 15));
         setLateOptIn(d.round.lateOptInEnabled ?? false);
         setLatePayMethods(d.round.lateOptInPaymentMethods ?? []);
+        setOptInThresholdPct(d.round.optInThresholdPct != null ? String(d.round.optInThresholdPct) : "");
         setEditJanoshikUrl(d.round.janoshikPaymentUrl ?? "");
         const opts = d.round.voteOptions && d.round.voteOptions.length > 0
           ? d.round.voteOptions
@@ -7763,6 +7766,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
           ...(editAnyContrib ? {} : { contributionAmount: parseFloat(editContribAmount) || 15 }),
           lateOptInEnabled: lateOptIn,
           lateOptInPaymentMethods: lateOptIn ? latePayMethods : [],
+          optInThresholdPct: lateOptIn && optInThresholdPct.trim() !== "" ? parseInt(optInThresholdPct, 10) || null : null,
           janoshikPaymentUrl: editJanoshikUrl.trim() || null,
         }),
       });
@@ -8295,6 +8299,27 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                   {lateOptIn && latePayMethods.length === 0 && availablePaymentMethods.length > 0 && (
                     <p className="text-xs text-orange-500">Select at least one payment method, or no late contributions will be accepted.</p>
                   )}
+
+                  <div className="mt-3 space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      Vote threshold to unlock opt-in <span className="font-normal">(optional)</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={optInThresholdPct}
+                        onChange={e => setOptInThresholdPct(e.target.value)}
+                        placeholder="e.g. 80"
+                        className="w-24 text-xs px-3 py-2 rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Late opt-in shows only after this % of contributors have voted. Leave blank to always show it.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

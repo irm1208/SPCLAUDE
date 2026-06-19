@@ -259,6 +259,7 @@ export const gbTestingRoundsTable = pgTable("gb_testing_rounds", {
   anyContribution: boolean("any_contribution").notNull().default(false),
   lateOptInEnabled: boolean("late_opt_in_enabled").notNull().default(false),
   lateOptInPaymentMethods: jsonb("late_opt_in_payment_methods").$type<string[]>(),
+  optInThresholdPct: integer("opt_in_threshold_pct"),
   maxCompoundVotes: integer("max_compound_votes").notNull().default(1),
   maxTestVotes: integer("max_test_votes").notNull().default(1),
   janoshikPaymentUrl: text("janoshik_payment_url"),

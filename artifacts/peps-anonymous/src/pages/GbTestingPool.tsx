@@ -35,6 +35,7 @@ interface TestingRound {
   voteOptions: string[] | null;
   maxCompoundVotes: number;
   maxTestVotes: number;
+  optInThresholdPct: number | null;
 }
 
 interface VoteSummary {
@@ -1166,7 +1167,7 @@ export default function GbTestingPool() {
             })()}
 
             {/* Late opt-in CTA */}
-            {!isOptedIn && !isAdminView && hasGbOrder && round.lateOptInEnabled && !pendingContribution && !isClosed && contributorCount > 0 && totalVotes >= contributorCount * 0.80 && (
+            {!isOptedIn && !isAdminView && hasGbOrder && round.lateOptInEnabled && !pendingContribution && !isClosed && contributorCount > 0 && (round.optInThresholdPct == null || round.optInThresholdPct === 0 || totalVotes >= contributorCount * (round.optInThresholdPct / 100)) && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                 className="p-4 sm:p-5"
                 style={{ borderRadius: 8, background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
@@ -1186,7 +1187,7 @@ export default function GbTestingPool() {
             )}
 
             {/* Late opt-in locked message — threshold not yet reached */}
-            {!isOptedIn && !isAdminView && hasGbOrder && round.lateOptInEnabled && !pendingContribution && !isClosed && contributorCount > 0 && totalVotes < contributorCount * 0.80 && (
+            {!isOptedIn && !isAdminView && hasGbOrder && round.lateOptInEnabled && !pendingContribution && !isClosed && contributorCount > 0 && round.optInThresholdPct != null && round.optInThresholdPct > 0 && totalVotes < contributorCount * (round.optInThresholdPct / 100) && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                 className="flex items-center gap-3 px-4 py-3"
                 style={{ borderRadius: 8, background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.25)" }}>
@@ -1197,9 +1198,9 @@ export default function GbTestingPool() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-[12px] font-semibold" style={{ color: "#F59E0B" }}>Opt-in unlocks at 80% votes</p>
+                  <p className="text-[12px] font-semibold" style={{ color: "#F59E0B" }}>Opt-in unlocks at {round.optInThresholdPct}% votes</p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                    {totalVotes} of {Math.ceil(contributorCount * 0.80)} votes needed to open late opt-in
+                    {totalVotes} of {Math.ceil(contributorCount * (round.optInThresholdPct / 100))} votes needed to open late opt-in
                   </p>
                 </div>
               </motion.div>
