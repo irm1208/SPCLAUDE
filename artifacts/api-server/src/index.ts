@@ -600,6 +600,13 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE gb_country_legs ADD COLUMN IF NOT EXISTS wholesale_vendor_id text`);
     await db.execute(sql`ALTER TABLE gb_country_legs ADD COLUMN IF NOT EXISTS kit_count_excluded_order_ids jsonb`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS direct_shipping_cost numeric`);
+    // orders — crypto payment lock: coin + USD-per-coin rate locked at checkout
+    // so the displayed amount and the on-chain verified amount stay identical.
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_currency text`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_rate numeric(20,8)`);
+    // vial_orders — locked USD-equivalent total used for crypto display + verification
+    await db.execute(sql`ALTER TABLE vial_orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
     // orders — columns present in schema but never explicitly migrated
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_email text`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_city text`);
