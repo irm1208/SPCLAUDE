@@ -17,3 +17,4 @@
 - [GB admin fee fixed vs percent](gb-admin-fee-percentage.md) — order stores RESOLVED fee; percent applies to product subtotal, resolved only at create/edit/backfill; edits never add a fee to an order that never had one; direct-shipping zeroes it.
 - [Role change side-effects](role-change-side-effects.md) — any path mutating account roles must mirror single-account handler side-effects (organiser audit log + notify + clear organiserApprovedAt on revoke); strictly validate action/role.
 - [Crypto verify tolerance](crypto-verify-tolerance.md) — once crypto amounts are locked-rate converted (display==verify), all verifyTransaction paths must use ~1% default tolerance, never 15%; loose tolerance is a money-integrity risk and gets code-review rejected.
+- [Removed features — DNA/SNP and Health](removed-features.md) — DNA profiles, SNP features, and the Health nav section were permanently removed June 2026; do not restore or reference them.
