@@ -354,7 +354,7 @@ function PackingSlipsTab({
   selectedGb: string;
   headers: Record<string, string>;
 }) {
-  const [scopeType, setScopeType] = useState<"reshipper" | "country" | "">("");
+  const [scopeType, setScopeType] = useState<"reshipper" | "country" | "all" | "">("");
   const [scopeId, setScopeId] = useState("");
   const [scopeOptions, setScopeOptions] = useState<ScopeOptions | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
@@ -423,13 +423,14 @@ function PackingSlipsTab({
 
   // Load parcels when scope + scopeId set
   useEffect(() => {
-    if (!selectedGb || !scopeType || !scopeId) {
+    if (!selectedGb || !scopeType || (scopeType !== "all" && !scopeId)) {
       setParcels([]);
       return;
     }
 
     setParcelsLoading(true);
-    const params = new URLSearchParams({ scopeType, scopeId });
+    const params = new URLSearchParams({ scopeType });
+    if (scopeId) params.set("scopeId", scopeId);
     fetch(apiUrl(`/admin/dispatch/${selectedGb}/parcels?${params}`), { headers, credentials: "omit" })
       .then(r => r.json())
       .then(d => {
@@ -582,8 +583,9 @@ function PackingSlipsTab({
         setComputeResult(null);
         setSelectedOrderIds(new Set());
         // Reload parcels to show updated dispatchedQty
-        if (selectedGb && scopeType && scopeId) {
-          const params = new URLSearchParams({ scopeType, scopeId });
+        if (selectedGb && scopeType && (scopeType === "all" || scopeId)) {
+          const params = new URLSearchParams({ scopeType });
+          if (scopeId) params.set("scopeId", scopeId);
           fetch(apiUrl(`/admin/dispatch/${selectedGb}/parcels?${params}`), { headers, credentials: "omit" })
             .then(r2 => r2.json())
             .then(d2 => setParcels(Array.isArray(d2) ? d2 : []))
@@ -651,7 +653,7 @@ function PackingSlipsTab({
         ) : (
           <div className="space-y-3">
             <div className="flex gap-2">
-              {(["reshipper", "country"] as const).map(t => (
+              {(["reshipper", "country", "all"] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setScopeType(t)}
@@ -661,7 +663,7 @@ function PackingSlipsTab({
                       : "bg-background border-input hover:bg-muted"
                   }`}
                 >
-                  {t === "reshipper" ? "Reshipper" : "Country Leg"}
+                  {t === "reshipper" ? "Reshipper" : t === "country" ? "Country Leg" : "All Orders"}
                 </button>
               ))}
             </div>
@@ -709,12 +711,18 @@ function PackingSlipsTab({
                 </div>
               )
             )}
+
+            {scopeType === "all" && (
+              <p className="text-sm text-muted-foreground">
+                All delivered parcels and orders for this group buy (across every reshipper and country leg).
+              </p>
+            )}
           </div>
         )}
       </Section>
 
       {/* ── Step 2: Parcels ── */}
-      {scopeType && scopeId && (
+      {scopeType && (scopeType === "all" || scopeId) && (
         <Section title="2. Select Delivered Parcels">
           {parcelsLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
