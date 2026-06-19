@@ -10,6 +10,23 @@ import { T } from "@/lib/theme";
 const NAVY = "var(--t-blue-deep)";
 const BLUE = "var(--t-blue)";
 
+function currencySymbol(currency: string): string {
+  const c = (currency ?? "").toUpperCase();
+  if (c === "GBP") return "£";
+  if (c === "EUR") return "€";
+  return "$";
+}
+
+function fmtPrice(price: number, currency: string): string {
+  return `${currencySymbol(currency)}${price.toFixed(2)}`;
+}
+
+function currencyLabel(currency: string): string {
+  const c = (currency ?? "").toUpperCase();
+  if (c === "GBP" || c === "EUR") return c;
+  return c || "USDT";
+}
+
 export function CartDrawer() {
   const [, setLocation] = useLocation();
   const { items, updateQty, removeItem, total, itemCount, cartOpen, setCartOpen } = useVialCart();
@@ -17,6 +34,9 @@ export function CartDrawer() {
   const count = itemCount();
 
   const onClose = () => setCartOpen(false);
+
+  const cartCurrency = items[0]?.currency ?? "USDT";
+  const allSameCurrency = items.every(i => (i.currency ?? "USDT") === cartCurrency);
 
   return (
     <AnimatePresence>
@@ -75,7 +95,7 @@ export function CartDrawer() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{item.productName}</p>
-                      <p className="text-xs font-bold mt-0.5" style={{ color: BLUE }}>${item.price.toFixed(2)} / vial</p>
+                      <p className="text-xs font-bold mt-0.5" style={{ color: BLUE }}>{fmtPrice(item.price, item.currency)} / vial</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
@@ -97,7 +117,7 @@ export function CartDrawer() {
                         <Plus className="w-3 h-3" style={{ color: T.muted }} />
                       </button>
                     </div>
-                    <p className="text-sm font-black shrink-0 w-14 text-right" style={{ color: T.text }}>${(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="text-sm font-black shrink-0 w-14 text-right" style={{ color: T.text }}>{fmtPrice(item.price * item.quantity, item.currency)}</p>
                   </div>
                 ))
               )}
@@ -108,7 +128,10 @@ export function CartDrawer() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: T.muted }}>Subtotal ({count} item{count !== 1 ? "s" : ""})</span>
                   <span className="text-xl font-black" style={{ color: T.text }}>
-                    ${subtotal.toFixed(2)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>USDT</span>
+                    {allSameCurrency
+                      ? <>{fmtPrice(subtotal, cartCurrency)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>{currencyLabel(cartCurrency)}</span></>
+                      : <span className="text-sm font-semibold" style={{ color: T.subtle }}>Mixed currencies</span>
+                    }
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs" style={{ color: T.subtle }}>

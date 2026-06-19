@@ -6,6 +6,7 @@ export interface VialCartItem {
   productId: string;
   productName: string;
   price: number;
+  currency: string;
   quantity: number;
   stock: number;
 }
@@ -14,7 +15,7 @@ interface VialCartState {
   items: VialCartItem[];
   cartOpen: boolean;
   setCartOpen: (open: boolean) => void;
-  addItem: (product: { id: string; name: string; price: number; stock: number }) => void;
+  addItem: (product: { id: string; name: string; price: number; currency: string; stock: number }) => void;
   removeItem: (productId: string) => void;
   updateQty: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -45,7 +46,8 @@ export const useVialCart = create<VialCartState>()(
         return {
           items: [...state.items, {
             id: uid(), productId: product.id, productName: product.name,
-            price: product.price, quantity: 1, stock: product.stock,
+            price: product.price, currency: product.currency ?? "USDT",
+            quantity: 1, stock: product.stock,
           }],
         };
       }),

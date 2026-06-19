@@ -584,13 +584,13 @@ export default function Shop() {
   };
 
   const handleAdd = useCallback((p: VialProduct) => {
-    addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock });
+    addItem({ id: p.id, name: p.name, price: p.price, currency: p.currency, stock: p.stock });
     setToast({ name: p.name });
   }, [addItem]);
 
   const handleBuyNow = useCallback((p: VialProduct) => {
     clearCart();
-    addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock });
+    addItem({ id: p.id, name: p.name, price: p.price, currency: p.currency, stock: p.stock });
     setLocation("/shop/checkout");
   }, [addItem, clearCart, setLocation]);
 

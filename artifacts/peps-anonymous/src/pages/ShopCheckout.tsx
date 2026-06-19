@@ -13,6 +13,23 @@ import { T } from "@/lib/theme";
 
 const ACCENT = "var(--t-blue)";
 
+function currencySymbol(currency: string): string {
+  const c = (currency ?? "").toUpperCase();
+  if (c === "GBP") return "£";
+  if (c === "EUR") return "€";
+  return "$";
+}
+
+function fmtAmt(price: number, currency: string): string {
+  return `${currencySymbol(currency)}${price.toFixed(2)}`;
+}
+
+function currencyLabel(currency: string): string {
+  const c = (currency ?? "").toUpperCase();
+  if (c === "GBP" || c === "EUR") return c;
+  return c || "USDT";
+}
+
 interface DiscountResult {
   id: string; code: string; discountType: string;
   discountValue: number; discountAmount: number; description: string;
@@ -78,12 +95,12 @@ const cardStyle: React.CSSProperties = {
   boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
 };
 
-function SummaryStrip({ total, count, discountCode }: { total: number; count: number; discountCode?: string | null }) {
+function SummaryStrip({ total, count, discountCode, currency }: { total: number; count: number; discountCode?: string | null; currency: string }) {
   return (
     <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: "rgba(27,58,122,0.07)", border: "1px solid rgba(27,58,122,0.15)" }}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.subtle }}>Order total</p>
-        <p className="text-xl font-black" style={{ color: ACCENT }}>${total.toFixed(2)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>USDT</span></p>
+        <p className="text-xl font-black" style={{ color: ACCENT }}>{fmtAmt(total, currency)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>{currencyLabel(currency)}</span></p>
       </div>
       <div className="text-right">
         <p className="text-xs font-semibold" style={{ color: T.muted }}>{count} item{count !== 1 ? "s" : ""}</p>
@@ -124,6 +141,7 @@ export default function ShopCheckout() {
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
 
   const [order, setOrder] = useState<VialOrder | null>(null);
+  const [orderCurrency, setOrderCurrency] = useState("USDT");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [txHash, setTxHash] = useState("");
@@ -146,6 +164,7 @@ export default function ShopCheckout() {
   }, [order]);
 
   const finalTotal = Math.max(0, cartTotal - (discount?.discountAmount ?? 0));
+  const cartCurrency = items[0]?.currency ?? "USDT";
 
   useEffect(() => {
     if (cartCount === 0 && !order) setLocation("/shop");
@@ -201,6 +220,7 @@ export default function ShopCheckout() {
       });
       const data = await res.json();
       if (!res.ok) { setCheckoutError(data.error || "Failed to place order"); return; }
+      setOrderCurrency(cartCurrency);
       setOrder(data);
       clearCart();
       setStep(3);
@@ -278,9 +298,9 @@ export default function ShopCheckout() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{item.productName}</p>
-                        <p className="text-xs mt-0.5" style={{ color: T.subtle }}>{item.quantity} × ${item.price.toFixed(2)}</p>
+                        <p className="text-xs mt-0.5" style={{ color: T.subtle }}>{item.quantity} × {fmtAmt(item.price, item.currency)}</p>
                       </div>
-                      <span className="text-sm font-black shrink-0" style={{ color: ACCENT }}>${(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="text-sm font-black shrink-0" style={{ color: ACCENT }}>{fmtAmt(item.price * item.quantity, item.currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -289,17 +309,17 @@ export default function ShopCheckout() {
                 <div className="px-4 py-3 space-y-2" style={{ borderTop: `1px solid ${T.border}`, background: T.surface2 }}>
                   <div className="flex justify-between text-sm">
                     <span style={{ color: T.muted }}>Subtotal</span>
-                    <span className="font-semibold" style={{ color: T.text }}>${cartTotal.toFixed(2)}</span>
+                    <span className="font-semibold" style={{ color: T.text }}>{fmtAmt(cartTotal, cartCurrency)}</span>
                   </div>
                   {discount && (
                     <div className="flex justify-between text-sm">
                       <span className="text-emerald-600">Discount ({discount.code})</span>
-                      <span className="font-semibold text-emerald-600">−${discount.discountAmount.toFixed(2)}</span>
+                      <span className="font-semibold text-emerald-600">−{fmtAmt(discount.discountAmount, cartCurrency)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-base font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                     <span style={{ color: T.text }}>Total</span>
-                    <span style={{ color: ACCENT }}>${finalTotal.toFixed(2)} USDT</span>
+                    <span style={{ color: ACCENT }}>{fmtAmt(finalTotal, cartCurrency)} {currencyLabel(cartCurrency)}</span>
                   </div>
                 </div>
               </div>
@@ -311,7 +331,7 @@ export default function ShopCheckout() {
                     <Check className="w-4 h-4 text-emerald-500 shrink-0" />
                     <div className="flex-1">
                       <p className="text-sm font-bold text-emerald-600">{discount.code}</p>
-                      <p className="text-xs text-emerald-500/80">{discount.description} · saves ${discount.discountAmount.toFixed(2)}</p>
+                      <p className="text-xs text-emerald-500/80">{discount.description} · saves {fmtAmt(discount.discountAmount, cartCurrency)}</p>
                     </div>
                     <button onClick={() => { setDiscount(null); setCodeInput(""); }} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: T.surface2 }}>
                       <X className="w-3 h-3" style={{ color: T.muted }} />
@@ -375,7 +395,7 @@ export default function ShopCheckout() {
           {/* ─── Step 2: Contact ─── */}
           {step === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-              <SummaryStrip total={finalTotal} count={cartCount} discountCode={discount?.code} />
+              <SummaryStrip total={finalTotal} count={cartCount} discountCode={discount?.code} currency={cartCurrency} />
 
               <div className="rounded-xl overflow-hidden" style={cardStyle}>
                 <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -447,7 +467,7 @@ export default function ShopCheckout() {
               >
                 {checkoutLoading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing order…</>
-                  : <>Place Order · ${finalTotal.toFixed(2)} USDT <ChevronRight className="w-4 h-4" /></>
+                  : <>Place Order · {fmtAmt(finalTotal, cartCurrency)} {currencyLabel(cartCurrency)} <ChevronRight className="w-4 h-4" /></>
                 }
               </button>
 
@@ -750,18 +770,18 @@ export default function ShopCheckout() {
                     {order.items.map((item, i) => (
                       <div key={i} className="flex justify-between text-xs">
                         <span style={{ color: T.muted }}>{item.productName} × {item.quantity}</span>
-                        <span className="font-semibold" style={{ color: T.text }}>${item.lineTotal.toFixed(2)}</span>
+                        <span className="font-semibold" style={{ color: T.text }}>{fmtAmt(item.lineTotal, orderCurrency)}</span>
                       </div>
                     ))}
                     {order.discountAmount > 0 && (
                       <div className="flex justify-between text-xs text-emerald-600">
                         <span>Discount ({order.discountCodeUsed})</span>
-                        <span>−${order.discountAmount.toFixed(2)}</span>
+                        <span>−{fmtAmt(order.discountAmount, orderCurrency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                       <span style={{ color: T.text }}>Total</span>
-                      <span style={{ color: ACCENT }}>${order.paymentUsdAmount.toFixed(2)} USDT</span>
+                      <span style={{ color: ACCENT }}>{fmtAmt(order.total, orderCurrency)} {currencyLabel(orderCurrency)}</span>
                     </div>
                   </div>
                 </>
