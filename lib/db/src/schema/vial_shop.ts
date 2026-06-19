@@ -75,6 +75,9 @@ export const vialOrdersTable = pgTable("vial_orders", {
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   paymentTxHash: text("payment_tx_hash"),
   walletAddress: text("wallet_address"),
+  // USD-equivalent of the fiat total, locked at checkout. Vial shop pays in
+  // USDT (1:1 with USD), so this doubles as the expected USDT coin amount.
+  paymentUsdAmount: numeric("payment_usd_amount", { precision: 10, scale: 2 }),
   adminNotes: text("admin_notes"),
   shippingCountry: text("shipping_country"),
   shippingCity: text("shipping_city"),

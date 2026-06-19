@@ -9,6 +9,7 @@ import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
+import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -247,30 +248,51 @@ async function firePaymentNotifications(
   }
 }
 
-/** Fetch live GBP→USD rate. Falls back to 1.37 if the API is unreachable. */
-async function fetchGbpUsdRate(): Promise<number> {
-  try {
-    const res = await fetch("https://api.frankfurter.app/latest?from=GBP&to=USD", {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return 1.37;
-    const data = await res.json() as { rates?: { USD?: number } };
-    return data.rates?.USD ?? 1.37;
-  } catch {
-    return 1.37;
-  }
-}
-
-/** Convert an amount to USD if the group buy is denominated in GBP. */
+/**
+ * Convert an order amount to USD using the order's actual fiat currency.
+ * Non-GB orders are already priced in USD. GB orders use the group buy's
+ * currency (GBP, EUR, USD, …); any non-USD currency is converted via the live
+ * FX rate (with a safe fallback for fiat). The name is kept for compatibility.
+ */
 export async function toUsdIfGbp(amount: number, groupBuyId: string | null): Promise<number> {
   if (!groupBuyId) return amount;
   const [gb] = await db
     .select({ currency: groupBuysTable.currency })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, groupBuyId));
-  if (!gb || (gb.currency ?? "USD").toUpperCase() !== "GBP") return amount;
-  const rate = await fetchGbpUsdRate();
+  const cur = (gb?.currency ?? "USD").toUpperCase();
+  if (!gb || cur === "USD") return amount;
+  const rate = await fetchFiatToUsd(cur);
   return Math.round(amount * rate * 100) / 100;
+}
+
+/**
+ * Resolve the USD-per-coin rate to use for an order, preferring the rate that
+ * was locked when the payment panel opened. Stablecoins are always 1. For a
+ * volatile coin with no locked rate we fetch live and (optionally) persist it
+ * so display and verification agree. Returns null if a volatile-coin price
+ * cannot be obtained — the caller MUST block the payment in that case.
+ */
+export async function resolveLockedUsdPerCoin(
+  order: { id: string; paymentCryptoCurrency?: string | null; paymentCryptoRate?: string | number | null },
+  currency: string,
+  persist = false,
+): Promise<number | null> {
+  if (isStablecoin(currency)) return 1;
+  const lockedCur = (order.paymentCryptoCurrency ?? "").toUpperCase();
+  const lockedRate = order.paymentCryptoRate != null ? parseFloat(String(order.paymentCryptoRate)) : null;
+  if (lockedCur === currency.toUpperCase() && lockedRate != null && lockedRate > 0) {
+    return lockedRate;
+  }
+  const live = await fetchUsdPerCoin(currency);
+  if (live == null || live <= 0) return null;
+  if (persist) {
+    await db
+      .update(ordersTable)
+      .set({ paymentCryptoCurrency: currency.toUpperCase(), paymentCryptoRate: String(live) })
+      .where(eq(ordersTable.id, order.id));
+  }
+  return live;
 }
 
 /**
@@ -864,27 +886,42 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
 // Called when the payment panel opens so the rate is frozen at a
 // known moment and used consistently for both display and verification.
 router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
-  const [order] = await db
-    .select({ id: ordersTable.id, grandTotal: ordersTable.grandTotal, groupBuyId: ordersTable.groupBuyId, paymentUsdAmount: ordersTable.paymentUsdAmount })
-    .from(ordersTable)
-    .where(eq(ordersTable.id, req.params.id));
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  // Return the already-locked amount if present — prevents rate drift if the user re-opens the panel
-  if (order.paymentUsdAmount) {
-    res.json({ usdAmount: parseFloat(String(order.paymentUsdAmount)) });
+  const { currency, network } = await resolveOrderCrypto(order);
+
+  // Lock the USD total (fiat → USD) once; reuse it if the panel is re-opened.
+  let usdAmount = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
+  if (usdAmount == null) {
+    usdAmount = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
+    await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(eq(ordersTable.id, order.id));
+  }
+
+  // Lock the coin price (USD → coin). Stablecoins are 1:1; for volatile coins we
+  // must have a live price — never guess, or the buyer overpays/underpays.
+  const usdPerCoin = await resolveLockedUsdPerCoin(order, currency, true);
+  if (usdPerCoin == null) {
+    res.status(503).json({
+      error: "Couldn't load the live exchange rate for this coin. Please try again in a moment.",
+      rateUnavailable: true,
+    });
     return;
   }
 
-  const grandTotalRaw = parseFloat(String(order.grandTotal));
-  const usdAmount = await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
+  const stable = isStablecoin(currency);
+  const decimals = cryptoDecimals(currency);
+  const cryptoAmount = roundCrypto(usdAmount / usdPerCoin, currency);
 
-  await db
-    .update(ordersTable)
-    .set({ paymentUsdAmount: String(usdAmount) })
-    .where(eq(ordersTable.id, req.params.id));
-
-  res.json({ usdAmount });
+  res.json({
+    usdAmount,
+    cryptoCurrency: currency,
+    cryptoNetwork: network,
+    usdPerCoin,
+    cryptoAmount,
+    isStable: stable,
+    decimals,
+  });
 });
 
 // ─── PUBLIC: Generate a test payment amount ────────────────────
@@ -994,7 +1031,13 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
     return;
   }
 
-  const expectedAmount = parseFloat(String(order.paymentTestAmount));
+  const testUsd = parseFloat(String(order.paymentTestAmount));
+  const usdPerCoin = await resolveLockedUsdPerCoin(order, currency, true);
+  if (usdPerCoin == null) {
+    res.json({ verified: false, pending: true, reason: "Couldn't load the live exchange rate for this coin. Please wait a moment and try again." });
+    return;
+  }
+  const expectedAmount = roundCrypto(testUsd / usdPerCoin, currency);
   const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network);
 
   if (!result.verified) {
@@ -1019,11 +1062,13 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
     metadata: { code: order.code, txHash: cleanHash, amountUsdt: result.amountUsdt, paymentType: "test_crypto" },
   }).catch(err => console.error("[payments] payment_submitted (test) log failed:", err));
 
-  // Notify admin of test payment received
+  // Notify admin of test payment received. Amounts are shown in the coin the
+  // buyer actually pays in (USD totals converted at the locked rate).
   (() => {
-    const grandTotalNum = parseFloat(String(order.grandTotal));
-    const testAmtNum = parseFloat(String(order.paymentTestAmount));
-    const remainderNum = Math.max(0, grandTotalNum - testAmtNum);
+    const decimals = cryptoDecimals(currency);
+    const lockedUsd = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : parseFloat(String(order.grandTotal));
+    const testCoin = roundCrypto(testUsd / usdPerCoin, currency);
+    const remainderCoin = roundCrypto(Math.max(0, lockedUsd - testUsd) / usdPerCoin, currency);
     const deliveryLabel = order.deliveryMethod ?? "—";
     const code = order.code ?? order.id;
     const username = order.telegramUsername.replace(/^@/, "");
@@ -1038,10 +1083,11 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
       }
       await sendAdminFromTemplate("admin_test_payment_confirmed", {
         code, username, gb_name: gbContext,
-        test_amount: testAmtNum.toFixed(2),
+        test_amount: testCoin.toFixed(decimals),
         txid: cleanHash,
-        remainder: remainderNum.toFixed(2),
+        remainder: remainderCoin.toFixed(decimals),
         delivery: deliveryLabel,
+        coin: currency,
       });
     };
     notify().catch(() => {});
@@ -1150,7 +1196,18 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
 
   // Subtract any credits the customer applied at order time — the payment panel
   // already shows the reduced amount, so the on-chain verification must match.
-  const expectedAmount = parseFloat((Math.max(0, grandTotalUsd - creditsApplied) - testAmount).toFixed(2));
+  const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
+
+  // Convert the USD total to the chosen coin using the rate locked when the
+  // panel opened. For volatile coins with no usable rate we must block — never
+  // verify against a guessed amount.
+  const usdPerCoin = await resolveLockedUsdPerCoin(order, currency, true);
+  if (usdPerCoin == null) {
+    writeLog("payment", "warn", "payment_rate_unavailable", `Live coin rate unavailable for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, currency, network, reason: "coin rate unavailable" }, req.ip).catch(() => {});
+    res.status(503).json({ error: "Couldn't load the live exchange rate for this coin. Please try again in a moment.", rateUnavailable: true });
+    return;
+  }
+  const expectedAmount = roundCrypto(netUsd / usdPerCoin, currency);
 
   const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network, 0.15);
 

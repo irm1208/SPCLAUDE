@@ -11,6 +11,7 @@ import {
   vialManufacturersTable, auditLogsTable,
 } from "@workspace/db";
 import { eq, desc, sql, inArray, and } from "drizzle-orm";
+import { isStablecoin, fetchFiatToUsd } from "../lib/crypto-pricing";
 
 const router: IRouter = Router();
 
@@ -126,6 +127,9 @@ function fmtOrder(o: any, items: any[] = [], { revealWallet = true } = {}, vendo
     orderStatus: o.orderStatus ?? "accepted",
     subtotal: parseFloat(o.subtotal), discountAmount: parseFloat(o.discountAmount),
     total: parseFloat(o.total), discountCodeUsed: o.discountCodeUsed,
+    // USDT amount the buyer must send (fiat total converted to USD ≈ USDT).
+    // Falls back to the fiat total for legacy orders created before conversion.
+    paymentUsdAmount: o.paymentUsdAmount != null ? parseFloat(o.paymentUsdAmount) : parseFloat(o.total),
     paymentStatus: o.paymentStatus, paymentTxHash: o.paymentTxHash,
     walletAddress: (revealWallet && accepted) ? o.walletAddress : null,
     revolutLink: (revealWallet && accepted && vendor?.revolutLink) ? vendor.revolutLink : null,
@@ -275,12 +279,14 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
   if (!telegramUsername || typeof telegramUsername !== "string") { res.status(400).json({ error: "Telegram username required" }); return; }
 
   const validatedItems: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number }[] = [];
+  let orderCurrency = "USDT";
   for (const item of items) {
     const qty = parseInt(item.quantity);
     if (!item.productId || isNaN(qty) || qty <= 0) { res.status(400).json({ error: "Invalid item" }); return; }
     const [p] = await db.select().from(vialProductsTable).where(eq(vialProductsTable.id, String(item.productId)));
     if (!p || !p.active) { res.status(400).json({ error: `Product ${item.productId} not found` }); return; }
     if (p.stock < qty) { res.status(400).json({ error: `Insufficient stock for ${p.name}` }); return; }
+    if (validatedItems.length === 0) orderCurrency = (p.currency ?? "USDT").toUpperCase();
     const unitPrice = parseFloat(p.price);
     validatedItems.push({
       productId: p.id, productName: p.name, quantity: qty,
@@ -310,6 +316,14 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
   }
 
   const total = parseFloat(Math.max(0, subtotal - discountAmount).toFixed(2));
+
+  // The vial shop is paid in USDT (≈1 USD). Convert the fiat total to USD so the
+  // buyer is shown — and verified against — the correct USDT amount. Stablecoin-
+  // priced products need no conversion.
+  const usdTotal = isStablecoin(orderCurrency)
+    ? total
+    : parseFloat((total * await fetchFiatToUsd(orderCurrency)).toFixed(2));
+
   const walletAddress = await getConfig("walletAddress");
 
   let code = genOrderCode();
@@ -336,6 +350,7 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
     discountCodeId, discountCodeUsed,
     paymentStatus: "unpaid",
     walletAddress: walletAddress || null,
+    paymentUsdAmount: usdTotal.toFixed(2),
     shippingPrice: "0.00",
   });
 
@@ -476,7 +491,9 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
   const walletAddress = order.walletAddress || await getConfig("walletAddress");
   if (!walletAddress) { res.status(400).json({ error: "Wallet address not configured" }); return; }
 
-  const expectedAmount = parseFloat(order.total);
+  // Verify against the USDT amount locked at checkout (fiat total → USD). Legacy
+  // orders without a locked amount fall back to the raw total.
+  const expectedAmount = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : parseFloat(order.total);
   const result = await verifyUsdtTransfer(cleanHash, walletAddress, expectedAmount);
 
   if (!result.verified) {

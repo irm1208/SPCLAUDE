@@ -57,6 +57,10 @@ export const ordersTable = pgTable("orders", {
   paymentRejectionReason: text("payment_rejection_reason"),
   paymentScreenshot: text("payment_screenshot"),
   paymentUsdAmount: numeric("payment_usd_amount", { precision: 10, scale: 2 }),
+  // Crypto rate locked when the payment panel opens, so display and on-chain
+  // verification use the same coin amount. paymentCryptoRate = USD per coin.
+  paymentCryptoCurrency: text("payment_crypto_currency"),
+  paymentCryptoRate: numeric("payment_crypto_rate", { precision: 20, scale: 8 }),
   shippingCountry: text("shipping_country"),
   countryLegId: text("country_leg_id").references(() => gbCountryLegsTable.id, { onDelete: "set null" }), // nullable — set for orders in country-legs-enabled GBs
   reshipperUsername: text("reshipper_username"),

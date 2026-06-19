@@ -21,6 +21,7 @@ import {
   isValidEthAddress,
   isValidBtcAddress,
 } from "./payment-verify";
+import { isStablecoin, roundCrypto, fetchUsdPerCoin } from "./crypto-pricing";
 import { registerScheduler } from "./scheduler-registry";
 import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
@@ -126,6 +127,8 @@ type PendingOrder = {
   paymentTestAmount: string | null;
   paymentStatus: string;
   paymentTxHash: string | null;
+  paymentCryptoCurrency: string | null;
+  paymentCryptoRate: string | null;
 };
 
 // ── AnonPay handler ────────────────────────────────────────────
@@ -210,7 +213,27 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
   // Fall back to grandTotal, treating it as USD. We apply a generous 15% tolerance so
   // minor GBP/USD drift doesn't block auto-confirm for GBP-denominated GBs.
   const grandTotalUsd = lockedUsd ?? grandTotalRaw;
-  const expectedAmount = parseFloat((Math.max(0, grandTotalUsd - creditsApplied) - testAmount).toFixed(2));
+  const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
+
+  // Convert USD → coin using the locked rate (falls back to a live fetch for
+  // legacy orders with no locked rate). If a volatile-coin price is unavailable,
+  // skip this cycle and retry later — never verify against a guessed amount.
+  let usdPerCoin: number | null;
+  if (isStablecoin(currency)) {
+    usdPerCoin = 1;
+  } else {
+    const lockedCur = (order.paymentCryptoCurrency ?? "").toUpperCase();
+    const lockedRate = order.paymentCryptoRate != null ? parseFloat(String(order.paymentCryptoRate)) : null;
+    usdPerCoin =
+      lockedCur === currency.toUpperCase() && lockedRate != null && lockedRate > 0
+        ? lockedRate
+        : await fetchUsdPerCoin(currency);
+  }
+  if (usdPerCoin == null || usdPerCoin <= 0) {
+    console.log(`[order-auto-verify] Coin rate unavailable for order ${order.code} (${currency}) — will retry`);
+    return;
+  }
+  const expectedAmount = roundCrypto(netUsd / usdPerCoin, currency);
 
   const result = await verifyTransaction(txHash, walletAddress, expectedAmount, currency, network, 0.15);
 
@@ -310,6 +333,8 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
         paymentTestAmount: ordersTable.paymentTestAmount,
         paymentStatus: ordersTable.paymentStatus,
         paymentTxHash: ordersTable.paymentTxHash,
+        paymentCryptoCurrency: ordersTable.paymentCryptoCurrency,
+        paymentCryptoRate: ordersTable.paymentCryptoRate,
       })
       .from(ordersTable)
       .where(

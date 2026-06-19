@@ -20,6 +20,7 @@ interface DiscountResult {
 
 interface VialOrder {
   id: string; code: string; total: number; subtotal: number;
+  paymentUsdAmount: number;
   discountAmount: number; discountCodeUsed: string | null;
   orderStatus: string; paymentStatus: string; walletAddress: string | null;
   revolutLink: string | null; paypalLink: string | null;
@@ -628,11 +629,11 @@ export default function ShopCheckout() {
                         <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-blue)" }}>Order total</p>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-2xl font-black font-mono" style={{ color: T.text }}>{order.total.toFixed(2)}</span>
+                            <span className="text-2xl font-black font-mono" style={{ color: T.text }}>{order.paymentUsdAmount.toFixed(2)}</span>
                             <span className="text-xs font-bold px-2 py-0.5 rounded-md text-white" style={{ background: "#26A17B" }}>USDT</span>
                           </div>
                           <button
-                            onClick={() => copyText(order.total.toFixed(2), "amount")}
+                            onClick={() => copyText(order.paymentUsdAmount.toFixed(2), "amount")}
                             className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs font-semibold"
                             style={{ background: T.surface2, color: T.muted }}
                           >
@@ -760,7 +761,7 @@ export default function ShopCheckout() {
                     )}
                     <div className="flex justify-between text-sm font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                       <span style={{ color: T.text }}>Total</span>
-                      <span style={{ color: ACCENT }}>${order.total.toFixed(2)} USDT</span>
+                      <span style={{ color: ACCENT }}>${order.paymentUsdAmount.toFixed(2)} USDT</span>
                     </div>
                   </div>
                 </>
