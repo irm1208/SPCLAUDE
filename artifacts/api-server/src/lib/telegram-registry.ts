@@ -218,9 +218,9 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
     audience: "admin",
     prefKey: null,
     description: "Sent to the admin chat when a customer's test (micro) payment is verified on-chain.",
-    placeholders: ["code", "username", "test_amount", "txid", "remainder", "delivery", "gb_name"],
+    placeholders: ["code", "username", "test_amount", "txid", "remainder", "delivery", "gb_name", "coin"],
     defaultTemplate:
-      `🧪 <b>Test Payment Received</b>\nOrder: <code>#{{code}}</code>{{gb_name}}\nFrom: @{{username}}\nTest Amount: {{test_amount}} USDT\nMethod: Crypto\nTXID: <code>{{txid}}</code>\nRemainder Due: {{remainder}} USDT\nDelivery: {{delivery}}`,
+      `🧪 <b>Test Payment Received</b>\nOrder: <code>#{{code}}</code>{{gb_name}}\nFrom: @{{username}}\nTest Amount: {{test_amount}} {{coin}}\nMethod: Crypto\nTXID: <code>{{txid}}</code>\nRemainder Due: {{remainder}} {{coin}}\nDelivery: {{delivery}}`,
   },
   {
     eventKey: "admin_payment_failed",

@@ -709,6 +709,40 @@ export declare const ordersTable: import("drizzle-orm/pg-core").PgTableWithColum
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        paymentCryptoCurrency: import("drizzle-orm/pg-core").PgColumn<{
+            name: "payment_crypto_currency";
+            tableName: "orders";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        paymentCryptoRate: import("drizzle-orm/pg-core").PgColumn<{
+            name: "payment_crypto_rate";
+            tableName: "orders";
+            dataType: "string";
+            columnType: "PgNumeric";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         shippingCountry: import("drizzle-orm/pg-core").PgColumn<{
             name: "shipping_country";
             tableName: "orders";
@@ -2077,6 +2111,8 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     paymentRejectionReason: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     paymentScreenshot: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     paymentUsdAmount: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+    paymentCryptoCurrency: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+    paymentCryptoRate: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     shippingCountry: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     countryLegId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
     reshipperUsername: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2129,18 +2165,15 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     deliveryMethod: string;
     productSubtotal: string;
     grandTotal: string;
-    status?: string | undefined;
-    adminFeeLabel?: string | null | undefined;
-    groupBuyId?: string | null | undefined;
     deliveryMethodId?: string | undefined;
-    reshipperUsername?: string | null | undefined;
-    trackingNumber?: string | null | undefined;
-    notes?: string | null | undefined;
     deliveryPrice?: string | undefined;
     vendorShipping?: string | undefined;
     tip?: string | undefined;
+    notes?: string | null | undefined;
+    status?: string | undefined;
     adminNotes?: string | null | undefined;
     adminMessage?: string | null | undefined;
+    trackingNumber?: string | null | undefined;
     trackingNumbers?: string[] | null | undefined;
     paymentStatus?: string | undefined;
     paymentTxHash?: string | null | undefined;
@@ -2156,6 +2189,7 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     royalMailQrCode?: string | null | undefined;
     qrPosted?: boolean | undefined;
     qrCodes?: Record<string, string> | null | undefined;
+    groupBuyId?: string | null | undefined;
     sharedOrderId?: string | null | undefined;
     testingContribution?: string | undefined;
     testVote?: string | null | undefined;
@@ -2166,8 +2200,12 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     paymentRejectionReason?: string | null | undefined;
     paymentScreenshot?: string | null | undefined;
     paymentUsdAmount?: string | null | undefined;
+    paymentCryptoCurrency?: string | null | undefined;
+    paymentCryptoRate?: string | null | undefined;
     shippingCountry?: string | null | undefined;
+    adminFeeLabel?: string | null | undefined;
     countryLegId?: string | null | undefined;
+    reshipperUsername?: string | null | undefined;
     reshipperCleared?: boolean | undefined;
     shippingCity?: string | null | undefined;
     ipAddress?: string | null | undefined;
@@ -2210,18 +2248,15 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     deliveryMethod: string;
     productSubtotal: string;
     grandTotal: string;
-    status?: string | undefined;
-    adminFeeLabel?: string | null | undefined;
-    groupBuyId?: string | null | undefined;
     deliveryMethodId?: string | undefined;
-    reshipperUsername?: string | null | undefined;
-    trackingNumber?: string | null | undefined;
-    notes?: string | null | undefined;
     deliveryPrice?: string | undefined;
     vendorShipping?: string | undefined;
     tip?: string | undefined;
+    notes?: string | null | undefined;
+    status?: string | undefined;
     adminNotes?: string | null | undefined;
     adminMessage?: string | null | undefined;
+    trackingNumber?: string | null | undefined;
     trackingNumbers?: string[] | null | undefined;
     paymentStatus?: string | undefined;
     paymentTxHash?: string | null | undefined;
@@ -2237,6 +2272,7 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     royalMailQrCode?: string | null | undefined;
     qrPosted?: boolean | undefined;
     qrCodes?: Record<string, string> | null | undefined;
+    groupBuyId?: string | null | undefined;
     sharedOrderId?: string | null | undefined;
     testingContribution?: string | undefined;
     testVote?: string | null | undefined;
@@ -2247,8 +2283,12 @@ export declare const insertOrderSchema: import("zod").ZodObject<Omit<{
     paymentRejectionReason?: string | null | undefined;
     paymentScreenshot?: string | null | undefined;
     paymentUsdAmount?: string | null | undefined;
+    paymentCryptoCurrency?: string | null | undefined;
+    paymentCryptoRate?: string | null | undefined;
     shippingCountry?: string | null | undefined;
+    adminFeeLabel?: string | null | undefined;
     countryLegId?: string | null | undefined;
+    reshipperUsername?: string | null | undefined;
     reshipperCleared?: boolean | undefined;
     shippingCity?: string | null | undefined;
     ipAddress?: string | null | undefined;
@@ -2300,8 +2340,8 @@ export declare const insertOrderLineItemSchema: import("zod").ZodObject<Omit<{
     updatedAt: import("zod").ZodOptional<import("zod").ZodDate>;
 }, "createdAt" | "updatedAt">, "strip", import("zod").ZodTypeAny, {
     id: string;
-    productId: string;
     orderId: string;
+    productId: string;
     productName: string;
     quantity: string;
     unitPrice: string;
@@ -2309,8 +2349,8 @@ export declare const insertOrderLineItemSchema: import("zod").ZodObject<Omit<{
     isOos?: boolean | undefined;
 }, {
     id: string;
-    productId: string;
     orderId: string;
+    productId: string;
     productName: string;
     quantity: string;
     unitPrice: string;

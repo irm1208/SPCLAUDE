@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Copy, Check, Loader2, Send, AlertCircle, ShieldCheck, Clock, FlaskConical, Zap, RefreshCw, ChevronRight, Wallet, ExternalLink, ArrowLeft, ImagePlus, X, Upload, CheckCircle2, Info } from "lucide-react";
 import QRCode from "react-qr-code";
 import { Card, Button, Input } from "@/components/ui";
@@ -77,10 +77,10 @@ function CopyableField({
   );
 }
 
-function CopyableAmount({ amount, label, suffix = "USDT" }: { amount: number; label?: string; suffix?: string }) {
+function CopyableAmount({ amount, label, suffix = "USDT", decimals = 2 }: { amount: number; label?: string; suffix?: string; decimals?: number }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard.writeText(amount.toFixed(2));
+    navigator.clipboard.writeText(amount.toFixed(decimals));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -93,7 +93,7 @@ function CopyableAmount({ amount, label, suffix = "USDT" }: { amount: number; la
     >
       <p className="text-xs font-medium" style={{ color: "var(--crypto-text-body)" }}>{label ?? "Amount to send"}</p>
       <div className="flex items-center gap-1.5">
-        <p className="text-sm font-bold text-foreground">{amount.toFixed(2)} {suffix}</p>
+        <p className="text-sm font-bold text-foreground">{amount.toFixed(decimals)} {suffix}</p>
         {copied
           ? <Check className="w-3 h-3 text-green-600 shrink-0" />
           : <Copy className="w-3 h-3 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -379,19 +379,54 @@ export default function PaymentPanel({
   const [txHash, setTxHash] = useState(initTxHash ?? "");
   const [testAmount, setTestAmount] = useState<number | null>(initTestAmount);
 
-  // GBP→USD conversion: lock the rate server-side so display and verification always agree.
+  // Fiat→USD→coin conversion: the server locks both the USD total and the live
+  // coin price so what the buyer sees always equals what is verified on-chain.
   const isGbp = (currency ?? "").toUpperCase() === "GBP";
   const [lockedUsdTotal, setLockedUsdTotal] = useState<number | null>(null);
-  useEffect(() => {
-    if (!isGbp || !orderId) return;
+  const [usdPerCoin, setUsdPerCoin] = useState<number | null>(null);
+  const [coinDecimals, setCoinDecimals] = useState<number>(2);
+  const [isStableCoin, setIsStableCoin] = useState<boolean>(true);
+  const [rateUnavailable, setRateUnavailable] = useState(false);
+  const [rateLoading, setRateLoading] = useState(false);
+  // True only once the locked rate payload has loaded successfully. Until then we
+  // must never display or send a guessed amount for volatile coins.
+  const [rateReady, setRateReady] = useState(false);
+  const loadRate = useCallback(() => {
+    if (!orderId) return;
+    setRateLoading(true);
+    setRateUnavailable(false);
+    setRateReady(false);
     fetch(`/api/orders/${orderId}/lock-usdt-rate`, { method: "POST" })
-      .then(r => r.json())
-      .then((d: { usdAmount?: number }) => { if (d.usdAmount) setLockedUsdTotal(d.usdAmount); })
-      .catch(() => {});
-  }, [isGbp, orderId]);
-  const usdTotal = isGbp ? (lockedUsdTotal ?? grandTotal) : grandTotal;
-  // Credits are always in USD — deduct from the USD payment side after GBP conversion
+      .then(async r => {
+        // Any non-OK response (503 or otherwise) means we have no trustworthy
+        // rate — block and let the buyer retry rather than guess.
+        if (!r.ok) { setRateUnavailable(true); return null; }
+        return r.json();
+      })
+      .then((d: { usdAmount?: number; usdPerCoin?: number; decimals?: number; isStable?: boolean } | null) => {
+        if (!d) return;
+        if (typeof d.usdAmount === "number") setLockedUsdTotal(d.usdAmount);
+        if (typeof d.usdPerCoin === "number") setUsdPerCoin(d.usdPerCoin);
+        if (typeof d.decimals === "number") setCoinDecimals(d.decimals);
+        if (typeof d.isStable === "boolean") setIsStableCoin(d.isStable);
+        setRateReady(true);
+      })
+      .catch(() => { setRateUnavailable(true); })
+      .finally(() => setRateLoading(false));
+  }, [orderId]);
+  useEffect(() => { loadRate(); }, [loadRate]);
+  const usdTotal = lockedUsdTotal ?? grandTotal;
+  // Credits are always in USD — deduct from the USD payment side after conversion
   const effectiveUsdTotal = Math.max(0, usdTotal - creditsUsd);
+  // Convert a USD amount to the chosen coin using the locked rate. Stablecoins
+  // (and any order with no usable rate yet) stay 1:1 with USD.
+  const usdToCoin = useCallback(
+    (usd: number): number =>
+      isStableCoin || usdPerCoin == null || usdPerCoin <= 0
+        ? parseFloat(usd.toFixed(coinDecimals))
+        : parseFloat((usd / usdPerCoin).toFixed(coinDecimals)),
+    [isStableCoin, usdPerCoin, coinDecimals],
+  );
   // For fiat displays (Revolut/PayPal): for GBP keep original, for USD deduct credits
   const effectiveGrandTotal = isGbp ? grandTotal : Math.max(0, grandTotal - creditsUsd);
   const [confirmations, setConfirmations] = useState<number | null>(null);
@@ -1513,6 +1548,41 @@ export default function PaymentPanel({
     );
   }
 
+  // ── Crypto: rate not yet locked ──────────────────────────────
+  // We must never display or send a guessed amount, so block every crypto step
+  // until the locked rate has loaded. While it's still loading we show a spinner;
+  // if the live price lookup failed we let the buyer retry.
+  if (!rateReady && (step === "choice" || step === "test" || step === "pay")) {
+    return (
+      <Card className="p-5 space-y-4" style={cryptoStyle}>
+        <CollectedByBanner collectedBy={collectedBy} />
+        <div className="flex items-center gap-3">
+          <CryptoIconBadge currency={cryptoCurrency} size={30} />
+          <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
+        </div>
+        {rateUnavailable ? (
+          <>
+            <div className="flex gap-2 items-start p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">
+              <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800">
+                We couldn't load the live {cryptoCurrency} exchange rate just now. To make sure you pay the exact right amount, please try again in a moment.
+              </p>
+            </div>
+            <Button onClick={loadRate} disabled={rateLoading} className="w-full">
+              {rateLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {rateLoading ? "Checking…" : "Try again"}
+            </Button>
+          </>
+        ) : (
+          <div className="flex items-center justify-center gap-2 py-4" style={{ color: "var(--crypto-text-muted)" }}>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Locking in the live {cryptoCurrency} rate…</span>
+          </div>
+        )}
+      </Card>
+    );
+  }
+
   // ── Crypto: choice ───────────────────────────────────────────
 
   if (step === "choice") {
@@ -1534,14 +1604,14 @@ export default function PaymentPanel({
         </div>
 
         <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
-          Send <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{effectiveUsdTotal.toFixed(2)} {cryptoCurrency}</span> on the {cryptoNetwork} network.{" "}
+          Send <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{usdToCoin(effectiveUsdTotal).toFixed(coinDecimals)} {cryptoCurrency}</span> on the {cryptoNetwork} network.{" "}
           {isAutoVerified(cryptoCurrency, cryptoNetwork)
             ? "Your payment will be verified automatically on the blockchain."
             : "Your organiser will confirm your payment manually."}
         </p>
-        {isGbp && (
+        {(isGbp || !isStableCoin) && (
           <p className="text-[10px] mt-1" style={{ color: "var(--crypto-text-muted)" }}>
-            ~${effectiveUsdTotal.toFixed(2)} USD (converted from £{grandTotal.toFixed(2)} GBP{creditsUsd > 0 ? `, −$${creditsUsd.toFixed(2)} credits applied` : ""})
+            ~${effectiveUsdTotal.toFixed(2)} USD{isGbp ? ` (converted from £${grandTotal.toFixed(2)} GBP${creditsUsd > 0 ? `, −$${creditsUsd.toFixed(2)} credits applied` : ""})` : creditsUsd > 0 ? ` (−$${creditsUsd.toFixed(2)} credits applied)` : ""}
           </p>
         )}
 
@@ -1610,18 +1680,19 @@ export default function PaymentPanel({
           <div>
             <p className="font-bold text-sm mb-0.5" style={{ color: "var(--crypto-text-primary)" }}>Test Payment</p>
             <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
-              Send exactly <span className="font-bold">{testAmount?.toFixed(2)} {cryptoCurrency}</span> to the address below. This confirms you're on the correct network.
+              Send exactly <span className="font-bold">{testAmount != null ? usdToCoin(testAmount).toFixed(coinDecimals) : "—"} {cryptoCurrency}</span> to the address below. This confirms you're on the correct network.
+              {testAmount != null && !isStableCoin && <span style={{ color: "var(--crypto-text-muted)" }}> (~${testAmount.toFixed(2)} USD)</span>}
             </p>
           </div>
         </div>
 
-        {walletAddress && testAmount && <QrBlock wallet={walletAddress} amount={testAmount} currency={cryptoCurrency} network={cryptoNetwork} />}
-        {walletAddress && testAmount && <OpenWalletButton wallet={walletAddress} amount={testAmount} currency={cryptoCurrency} network={cryptoNetwork} />}
+        {walletAddress && testAmount != null && <QrBlock wallet={walletAddress} amount={usdToCoin(testAmount)} currency={cryptoCurrency} network={cryptoNetwork} />}
+        {walletAddress && testAmount != null && <OpenWalletButton wallet={walletAddress} amount={usdToCoin(testAmount)} currency={cryptoCurrency} network={cryptoNetwork} />}
         {walletAddress && (
           <CopyableField label={`${cryptoCurrency} ${cryptoNetwork} Wallet`} value={walletAddress} accentColor="#7c3aed" />
         )}
-        {testAmount && (
-          <CopyableAmount amount={testAmount} label="Test amount (tap to copy)" suffix={cryptoCurrency} />
+        {testAmount != null && (
+          <CopyableAmount amount={usdToCoin(testAmount)} label="Test amount (tap to copy)" suffix={cryptoCurrency} decimals={coinDecimals} />
         )}
 
         {submitting ? (
@@ -1655,9 +1726,10 @@ export default function PaymentPanel({
 
   // ── Crypto: full payment ─────────────────────────────────────
 
-  const remainingAmount = (status === "test_confirmed" && testAmount)
-    ? parseFloat((effectiveUsdTotal - testAmount).toFixed(2))
+  const remainingUsd = (status === "test_confirmed" && testAmount)
+    ? Math.max(0, parseFloat((effectiveUsdTotal - testAmount).toFixed(2)))
     : effectiveUsdTotal;
+  const remainingCoin = usdToCoin(remainingUsd);
 
   return (
     <Card className="p-5 space-y-5" style={cryptoStyle}>
@@ -1680,14 +1752,14 @@ export default function PaymentPanel({
                 <div>
                   <p className="text-xs text-green-700 font-medium">Test payment verified — you're on the right network!</p>
                   <p className="text-xs text-green-600 mt-0.5">
-                    {testAmount.toFixed(2)} {cryptoCurrency} test deducted — send <span className="font-bold">{remainingAmount.toFixed(2)} {cryptoCurrency}</span>
+                    {usdToCoin(testAmount).toFixed(coinDecimals)} {cryptoCurrency} test deducted — send <span className="font-bold">{remainingCoin.toFixed(coinDecimals)} {cryptoCurrency}</span>
                   </p>
                 </div>
               </div>
             )}
             <p className="font-bold text-sm mb-0.5" style={{ color: "var(--crypto-text-primary)" }}>Send Full Payment</p>
             <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
-              Send exactly <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{remainingAmount.toFixed(2)} {cryptoCurrency}</span> to the address below.{" "}
+              Send exactly <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{remainingCoin.toFixed(coinDecimals)} {cryptoCurrency}</span> to the address below.{" "}
               {isAutoVerified(cryptoCurrency, cryptoNetwork)
                 ? "Your payment will be verified automatically."
                 : "Your organiser will confirm your payment manually."}
@@ -1696,21 +1768,22 @@ export default function PaymentPanel({
         </div>
       </div>
 
-      {walletAddress && <QrBlock wallet={walletAddress} amount={remainingAmount} currency={cryptoCurrency} network={cryptoNetwork} />}
-      {walletAddress && <OpenWalletButton wallet={walletAddress} amount={remainingAmount} currency={cryptoCurrency} network={cryptoNetwork} />}
+      {walletAddress && <QrBlock wallet={walletAddress} amount={remainingCoin} currency={cryptoCurrency} network={cryptoNetwork} />}
+      {walletAddress && <OpenWalletButton wallet={walletAddress} amount={remainingCoin} currency={cryptoCurrency} network={cryptoNetwork} />}
       {walletAddress && (
         <CopyableField label={`${cryptoCurrency} ${cryptoNetwork} Wallet`} value={walletAddress} accentColor="#7c3aed" />
       )}
       <CopyableAmount
-        amount={remainingAmount}
+        amount={remainingCoin}
         label={status === "test_confirmed" && testAmount
-          ? `Amount to send (${effectiveUsdTotal.toFixed(2)} − ${testAmount.toFixed(2)} test)`
+          ? `Amount to send (${effectiveUsdTotal.toFixed(2)} − ${testAmount.toFixed(2)} USD test)`
           : "Amount to send (tap to copy)"}
         suffix={cryptoCurrency}
+        decimals={coinDecimals}
       />
-      {isGbp && (
+      {(isGbp || !isStableCoin) && (
         <p className="text-[10px] text-center" style={{ color: "var(--crypto-text-muted)" }}>
-          ~${effectiveUsdTotal.toFixed(2)} USD (converted from £{grandTotal.toFixed(2)} GBP{creditsUsd > 0 ? `, −$${creditsUsd.toFixed(2)} credits applied` : ""})
+          ~${remainingUsd.toFixed(2)} USD{isGbp ? ` (converted from £${grandTotal.toFixed(2)} GBP${creditsUsd > 0 ? `, −$${creditsUsd.toFixed(2)} credits applied` : ""})` : creditsUsd > 0 ? ` (−$${creditsUsd.toFixed(2)} credits applied)` : ""}
         </p>
       )}
 
