@@ -140,6 +140,7 @@ export default function ShopCheckout() {
   const [notes, setNotes] = useState("");
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
 
+  const [fxRate, setFxRate] = useState<number | null>(null);
   const [order, setOrder] = useState<VialOrder | null>(null);
   const [orderCurrency, setOrderCurrency] = useState("USDT");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -165,6 +166,17 @@ export default function ShopCheckout() {
 
   const finalTotal = Math.max(0, cartTotal - (discount?.discountAmount ?? 0));
   const cartCurrency = items[0]?.currency ?? "USDT";
+
+  const STABLECOINS = new Set(["USDT", "USDC", "USD", "DAI", "BUSD", "TUSD", "USDP", "FDUSD"]);
+  const needsFxConversion = !STABLECOINS.has(cartCurrency.toUpperCase());
+
+  useEffect(() => {
+    if (!needsFxConversion) { setFxRate(null); return; }
+    fetch(`/api/vial/fx-rate?from=${encodeURIComponent(cartCurrency)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.rate) setFxRate(d.rate); })
+      .catch(() => {});
+  }, [cartCurrency, needsFxConversion]);
 
   useEffect(() => {
     if (cartCount === 0 && !order) setLocation("/shop");
@@ -321,6 +333,14 @@ export default function ShopCheckout() {
                     <span style={{ color: T.text }}>Total</span>
                     <span style={{ color: ACCENT }}>{fmtAmt(finalTotal, cartCurrency)} {currencyLabel(cartCurrency)}</span>
                   </div>
+                  {needsFxConversion && fxRate && (
+                    <div className="flex items-center justify-between pt-1.5 pb-0.5">
+                      <span className="text-xs" style={{ color: T.subtle }}>Crypto payment (approx.)</span>
+                      <span className="text-sm font-black" style={{ color: "#26A17B" }}>
+                        ≈ ${(finalTotal * fxRate).toFixed(2)} <span className="text-xs font-semibold">USDT</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

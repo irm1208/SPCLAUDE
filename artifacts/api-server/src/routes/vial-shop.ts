@@ -240,6 +240,13 @@ router.get("/vial/products/:id", async (req, res): Promise<void> => {
   res.json(fmtProduct(p, vendor));
 });
 
+router.get("/vial/fx-rate", async (req, res): Promise<void> => {
+  const from = String(req.query.from ?? "GBP").toUpperCase().trim();
+  if (isStablecoin(from)) { res.json({ rate: 1, from, to: "USD" }); return; }
+  const rate = await fetchFiatToUsd(from);
+  res.json({ rate, from, to: "USD" });
+});
+
 router.post("/vial/validate-code", async (req, res): Promise<void> => {
   const { code, subtotal } = req.body;
   if (!code || typeof code !== "string") { res.status(400).json({ error: "code required" }); return; }
