@@ -88,7 +88,6 @@ app.use([
   "/api/organiser/products/import-image",
   "/api/organiser/group-buys/:id/import-image",
   "/api/admin/products/extract-from-file",
-  "/api/dna/upload",
 ], express.json({ limit: "30mb" }));
 app.use([
   "/api/orders/:id/payment-screenshot",

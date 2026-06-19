@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable } from "@workspace/db";
-import { dnaProfilesTable } from "@workspace/db";
-import { SNP_MAP } from "@workspace/snp-database";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
@@ -521,7 +519,6 @@ function buildBloodTestSystemPrompt(
   biomarkers: BiomarkerContext[],
   activeCompounds: string[] = [],
   historicalSessions: SessionHistoryContext[] = [],
-  dnaFindings: string = "",
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
@@ -615,15 +612,6 @@ ${trends.join("\n")}`;
     }
   }
 
-  const dnaSection = dnaFindings
-    ? `\n\n═══════════════════════════════════════════
-PATIENT GENETIC PROFILE (DNA — uploaded by user)
-═══════════════════════════════════════════
-The user has uploaded their raw DNA data (23andMe / MyHeritage). The following variants were matched against a curated database. Use this to personalise your interpretation — e.g. MTHFR TT explains why B12/folate supplementation may differ, COMT AA explains dopamine sensitivity, aromatase variants explain E2 tendencies on TRT, Factor V Leiden is critical for clotting risk.
-${dnaFindings}
-Cross-reference these findings with the blood test results where clinically relevant. Do not repeat all findings verbatim — reference only the variants that are directly relevant to the biomarkers or compounds being discussed.`
-    : "";
-
   const knowledgeSection = cachedKnowledge.length > 0
     ? `\n\n═══════════════════════════════════════════
 CACHED COMMUNITY KNOWLEDGE (already researched — incorporate directly, no need to re-search these topics)
@@ -638,7 +626,7 @@ BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsLine}${historicalSection}${persistentTrendsSection}${dnaSection}${knowledgeSection}
+${compoundsLine}${historicalSection}${persistentTrendsSection}${knowledgeSection}
 
 ═══════════════════════════════════════════
 PERSONA & TONE
@@ -778,32 +766,6 @@ FORMAT RULES
   Rules for chips: 2–4 questions; make them highly specific to this user's actual values and the current response — not generic; phrase them as natural things the user would actually say next. If the response is very complete and nothing meaningful follows, output CHIPS_JSON_START[]CHIPS_JSON_END.`;
 }
 
-// ─── DNA summary helper ───────────────────────────────────────────────────────
-
-interface DnaFindingRow { rsid: string; gene: string; genotype: string; riskLevel: string; category: string; name: string }
-
-function buildDnaSummary(findings: DnaFindingRow[]): string {
-  if (!findings || findings.length === 0) return "";
-  const notable = findings.filter(f => f.riskLevel === "high" || f.riskLevel === "moderate");
-  const rows = notable.length > 0 ? notable : findings.slice(0, 10);
-  const entry = (f: DnaFindingRow) => {
-    const snp = SNP_MAP.get(f.rsid.toLowerCase());
-    const notes = snp?.notes ?? "";
-    return `• ${f.gene} (${f.rsid}) — ${f.name} — Genotype: ${f.genotype} [${f.riskLevel.toUpperCase()}]\n  ${notes}`;
-  };
-  const byCategory = new Map<string, DnaFindingRow[]>();
-  for (const f of rows) {
-    const cat = f.category;
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(f);
-  }
-  let out = "";
-  for (const [cat, catFindings] of byCategory) {
-    out += `\n[${cat}]\n${catFindings.map(entry).join("\n")}\n`;
-  }
-  return out;
-}
-
 const CHIPS_RE = /CHIPS_JSON_START(\[[\s\S]*?\])CHIPS_JSON_END/;
 const SOURCES_RE = /SOURCES_JSON_START(\[[\s\S]*?\])SOURCES_JSON_END/;
 const Q_TAG_RE = /\[Q\]([\s\S]*?)\[\/Q\]/g;
@@ -850,10 +812,9 @@ async function callGeminiDiscuss(
   history: HistoryMessage[] = [],
   activeCompounds: string[] = [],
   historicalSessions: SessionHistoryContext[] = [],
-  dnaFindings: string = "",
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, dnaFindings, cachedKnowledge);
+  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge);
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1497,13 +1458,12 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
     return { name: v.biomarkerName, value: val, unit: v.unit, refRangeLow: low, refRangeHigh: high, status: getStatus(val, low, high) };
   });
 
-  const [compoundRows, allSessions, dnaRow] = await Promise.all([
+  const [compoundRows, allSessions] = await Promise.all([
     db.select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
       .from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
     db.select().from(bloodTestSessionsTable)
       .where(eq(bloodTestSessionsTable.telegramUsername, tg))
       .orderBy(desc(bloodTestSessionsTable.testDate)),
-    db.select().from(dnaProfilesTable).where(eq(dnaProfilesTable.accountId, tg)).limit(1),
   ]);
   const activeCompounds = compoundRows.filter(c => !c.endDate).map(c => c.compoundName);
 
@@ -1524,10 +1484,8 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
     })
   );
 
-  const dnaFindings = buildDnaSummary(dnaRow[0]?.findings ?? []);
-
   const sessionDisplayName = session.testName ?? session.labName ?? "Blood Test";
-  const systemPrompt = buildBloodTestSystemPrompt(sessionDisplayName, session.testDate, biomarkers, activeCompounds, historicalSessions, dnaFindings);
+  const systemPrompt = buildBloodTestSystemPrompt(sessionDisplayName, session.testDate, biomarkers, activeCompounds, historicalSessions);
 
   const openingInstruction = `The user has just opened a new chat about their blood test. Generate a smart, personalised opening message that:
 1. Briefly acknowledges the most notable finding(s) — mention specific values and whether they're in/out of range
@@ -1626,14 +1584,13 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   const newCount = updated[0]?.newCount ?? (await getUsedCount());
 
   // Step 3: Build biomarker context for current session + all historical sessions
-  const [values, compoundRows, allSessionsList, dnaRow] = await Promise.all([
+  const [values, compoundRows, allSessionsList] = await Promise.all([
     db.select().from(bloodTestValuesTable).where(eq(bloodTestValuesTable.sessionId, session.id)),
     db.select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
       .from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
     db.select().from(bloodTestSessionsTable)
       .where(eq(bloodTestSessionsTable.telegramUsername, tg))
       .orderBy(desc(bloodTestSessionsTable.testDate)),
-    db.select().from(dnaProfilesTable).where(eq(dnaProfilesTable.accountId, tg)).limit(1),
   ]);
 
   const biomarkers: BiomarkerContext[] = values.map((v) => {
@@ -1676,13 +1633,12 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseChips: string[] = [];
   let responseSources: DiscussSource[] = [];
   try {
-    const dnaFindings = buildDnaSummary(dnaRow[0]?.findings ?? []);
     const cacheTopics = extractTopicsForCache(message, biomarkers);
     const cachedKnowledge = await lookupKnowledgeCache(cacheTopics);
     if (cachedKnowledge.length > 0) {
       console.log(`[discuss] Knowledge cache hit: ${cachedKnowledge.map(k => k.topic).join(", ")}`);
     }
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, dnaFindings, cachedKnowledge);
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge);
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
