@@ -37,6 +37,7 @@ import {
   gbCountryLegsTable,
   geoIpCacheTable,
   groupBuyProductsTable,
+  wholesaleSharesTable,
   ticketsTable,
   routingHistoryTable,
   intlShippingRatesTable,
@@ -503,7 +504,9 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     .select()
     .from(ordersTable)
     .where(whereClause)
-    .orderBy(desc(ordersTable.createdAt))
+    // Secondary keys keep shared-wholesale siblings (same createdAt) deterministically
+    // adjacent so the admin list can merge them into one parent row reliably.
+    .orderBy(desc(ordersTable.createdAt), ordersTable.sharedOrderId, ordersTable.code)
     .limit(pageSize)
     .offset(offset);
 
@@ -541,6 +544,24 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
       .from(gbReshippersTable)
       .where(inArray(gbReshippersTable.gbId, uniqueGbIds));
     for (const r of reshipperRows) reshipperMap.set(`${r.gbId}::${r.country}`, r.reshipperUsername);
+  }
+
+  // Shared-wholesale metadata: map each order's sharedOrderId -> lead (creator) + recipient
+  // username so the admin list can merge a shared order's member rows under its lead.
+  const sharedOrderIds = [...new Set(orders.map(o => o.sharedOrderId).filter(Boolean))] as string[];
+  const shareMetaMap = new Map<string, { creatorUsername: string; deliveryUsername: string | null }>();
+  if (sharedOrderIds.length > 0) {
+    const shareRows = await db
+      .select({
+        id: wholesaleSharesTable.id,
+        creatorUsername: wholesaleSharesTable.creatorUsername,
+        deliveryUsername: wholesaleSharesTable.deliveryUsername,
+      })
+      .from(wholesaleSharesTable)
+      .where(inArray(wholesaleSharesTable.id, sharedOrderIds));
+    for (const s of shareRows) {
+      shareMetaMap.set(s.id, { creatorUsername: s.creatorUsername, deliveryUsername: s.deliveryUsername ?? null });
+    }
   }
 
   const orderUsernames = [...new Set(orders.map(o => o.telegramUsername).filter(Boolean))] as string[];
@@ -582,12 +603,15 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     const needsBalanceDueReview = hasUnresolvedBalance &&
       (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed");
     const hasDraft = !!o.draftLineItems;
+    const shareMeta = o.sharedOrderId ? shareMetaMap.get(o.sharedOrderId) : null;
     return {
       ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []) as unknown as Record<string, any>[]),
       reshipperUsername, accountCountry, isWholesale,
       missingAddress, hasUnresolvedBalance, needsBalanceDueReview, hasDraft,
       draftLineItems: o.draftLineItems ?? null,
       draftLineItemsSavedAt: o.draftLineItemsSavedAt?.toISOString() ?? null,
+      sharedOrderCreator: shareMeta?.creatorUsername ?? null,
+      sharedOrderRecipient: shareMeta?.deliveryUsername ?? null,
     };
   });
 

@@ -130,6 +130,10 @@ interface Order {
   routingType?: string | null;
   batchLocked?: boolean;
   isWholesale?: boolean;
+  orderType?: string | null;
+  sharedOrderId?: string | null;
+  sharedOrderCreator?: string | null;
+  sharedOrderRecipient?: string | null;
   // Server-computed warning flags
   missingAddress?: boolean;
   hasUnresolvedBalance?: boolean;
@@ -632,6 +636,7 @@ function OrdersTab({ secret }: { secret: string }) {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [orderTab, setOrderTab] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -1182,6 +1187,172 @@ function OrdersTab({ secret }: { secret: string }) {
 
   const toggleSelect = (id: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // ── Shared-wholesale grouping ────────────────────────────────────────
+  // Two (or more) wholesale_shared orders that belong to the same share
+  // (same sharedOrderId) are merged into ONE collapsed parent row labelled
+  // with the lead/creator username. Non-shared orders stay as single rows.
+  type SharedGroup = { id: string; lead: string; recipient: string | null; members: Order[] };
+  type OrderRow = { type: "order"; order: Order } | { type: "header"; group: SharedGroup };
+
+  const orderRows = useMemo<OrderRow[]>(() => {
+    const grouping = orderView === "wholesale" || orderView === "all";
+    if (!grouping) return filtered.map(o => ({ type: "order" as const, order: o }));
+    const groups = new Map<string, Order[]>();
+    for (const o of filtered) {
+      if (o.orderType === "wholesale_shared" && o.sharedOrderId) {
+        const arr = groups.get(o.sharedOrderId) ?? [];
+        arr.push(o);
+        groups.set(o.sharedOrderId, arr);
+      }
+    }
+    const emitted = new Set<string>();
+    const rows: OrderRow[] = [];
+    for (const o of filtered) {
+      const sid = o.sharedOrderId;
+      if (o.orderType === "wholesale_shared" && sid && (groups.get(sid)?.length ?? 0) > 1) {
+        if (emitted.has(sid)) continue;
+        emitted.add(sid);
+        const members = groups.get(sid)!;
+        const lead = members[0].sharedOrderCreator ?? members[0].telegramUsername;
+        const recipient = members[0].sharedOrderRecipient ?? null;
+        rows.push({ type: "header", group: { id: sid, lead, recipient, members } });
+      } else {
+        rows.push({ type: "order", order: o });
+      }
+    }
+    return rows;
+  }, [filtered, orderView]);
+
+  const toggleGroup = (id: string) =>
+    setExpandedGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const renderSharedHeader = (
+    group: SharedGroup,
+    renderOrderCard: (order: Order, nested?: boolean) => React.ReactNode,
+  ) => {
+    const { id, lead, recipient, members } = group;
+    const isOpen = expandedGroups.has(id);
+    const memberIds = members.map(m => m.id);
+    const allSel = memberIds.length > 0 && memberIds.every(mid => selected.has(mid));
+    const someSel = memberIds.some(mid => selected.has(mid));
+    const totalKits = members.reduce((s, m) => s + m.lineItems.reduce((ss, li) => ss + li.quantity, 0), 0);
+    const byCurrency: Record<string, number> = {};
+    for (const m of members) {
+      const cur = m.currency ?? "USD";
+      byCurrency[cur] = (byCurrency[cur] ?? 0) + m.grandTotal;
+    }
+    const paidCount = members.filter(m => m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed").length;
+    const unpaidCount = members.filter(m => m.paymentStatus === "unpaid").length;
+    const toggleGroupSelect = () =>
+      setSelected(prev => {
+        const n = new Set(prev);
+        if (allSel) memberIds.forEach(mid => n.delete(mid));
+        else memberIds.forEach(mid => n.add(mid));
+        return n;
+      });
+    return (
+      <Card key={`share-${id}`} className={cn("overflow-hidden transition-colors", someSel && "ring-2 ring-primary/40")}>
+        <div className="flex items-center gap-2 p-4">
+          <input
+            type="checkbox"
+            checked={allSel}
+            ref={el => { if (el) el.indeterminate = !allSel && someSel; }}
+            onChange={toggleGroupSelect}
+            className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0"
+            aria-label="Select all members of shared order"
+          />
+          <button className="flex items-center gap-2 sm:gap-3 text-left flex-1 min-w-0" onClick={() => toggleGroup(id)}>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700 border border-teal-200 inline-flex items-center gap-1 whitespace-nowrap">
+              <Users className="w-2.5 h-2.5" /> Shared
+            </span>
+            <span className="text-sm text-muted-foreground flex-1 flex items-center gap-1 min-w-0">
+              <User className="w-3 h-3 shrink-0 opacity-50" />
+              <span className="truncate font-medium text-foreground">{lead}</span>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 bg-slate-100 text-slate-600 hidden sm:inline-flex whitespace-nowrap">
+                {members.length} members
+              </span>
+            </span>
+            {recipient && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 bg-slate-100 text-slate-600 hidden md:inline-flex items-center gap-1 whitespace-nowrap">
+                <Truck className="w-2.5 h-2.5" />{recipient}
+              </span>
+            )}
+            <div className="flex items-center gap-1 shrink-0">
+              {paidCount > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">{paidCount} paid</span>}
+              {unpaidCount > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">{unpaidCount} unpaid</span>}
+            </div>
+            <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{totalKits}×</span>
+            <span className="text-sm font-semibold shrink-0 whitespace-nowrap">
+              {Object.entries(byCurrency).map(([cur, total], i) => (
+                <span key={cur}>{i > 0 ? " + " : ""}{fmtC(total, cur)}</span>
+              ))}
+            </span>
+            {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+          </button>
+        </div>
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden"
+            >
+              <div className="border-t border-border divide-y divide-border bg-muted/20">
+                {members.map(m => {
+                  const manageOpen = expanded === m.id;
+                  return (
+                    <div key={m.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <User className="w-3 h-3 shrink-0 opacity-50" />
+                          <span className="font-medium text-sm truncate">{m.telegramUsername}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground shrink-0">{m.code}</span>
+                          <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0", PAYMENT_COLORS[m.paymentStatus] ?? "bg-slate-100 text-slate-500")}>
+                            {PAYMENT_LABELS[m.paymentStatus] ?? m.paymentStatus}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setExpanded(manageOpen ? null : m.id)}
+                          className="text-xs text-primary font-semibold hover:underline shrink-0 flex items-center gap-1"
+                        >
+                          {manageOpen ? "Hide" : "Manage"}
+                          {manageOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      </div>
+                      <div className="mt-2 space-y-0.5">
+                        {m.lineItems.map(li => (
+                          <div key={li.id} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground"><span className="font-semibold text-foreground">{li.quantity}×</span> {li.productName}</span>
+                            <span className="tabular-nums text-muted-foreground">{fmtC(li.lineTotal, m.currency)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Shipping Split</span>
+                        <span className="tabular-nums">{fmtC(m.vendorShipping, m.currency)}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-sm font-semibold">
+                        <span>Total</span>
+                        <span className="tabular-nums">{fmtC(m.grandTotal, m.currency)}</span>
+                      </div>
+                      {manageOpen && (
+                        <div className="mt-3">
+                          {renderOrderCard(m, true)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+    );
+  };
 
   const toggleAll = () => {
     if (selectAllPages) {
@@ -2695,13 +2866,14 @@ function OrdersTab({ secret }: { secret: string }) {
         )}
       </div>
       <div className="space-y-2">
-        {filtered.map(order => {
+        {(() => {
+        const renderOrderCard = (order: Order, nested = false) => {
           const isOpen = expanded === order.id;
           const ed = editing[order.id] ?? {};
           const hasChanges = Object.keys(editing[order.id] ?? {}).length > 0;
           const isSelected = selected.has(order.id);
           return (
-            <Card key={order.id} className={cn("overflow-hidden transition-colors", isSelected && "ring-2 ring-primary/40")}>
+            <Card key={order.id} className={cn("overflow-hidden transition-colors", isSelected && "ring-2 ring-primary/40", nested && "border-l-2 border-teal-300")}>
               <div className="flex items-center gap-2 p-4">
                 <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(order.id)}
                   className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0" />
@@ -3959,7 +4131,11 @@ function OrdersTab({ secret }: { secret: string }) {
               </AnimatePresence>
             </Card>
           );
-        })}
+        };
+        return orderRows.map((row) => row.type === "header"
+          ? renderSharedHeader(row.group, renderOrderCard)
+          : renderOrderCard(row.order));
+        })()}
         {loadError && <div className="text-center py-8 text-red-500 font-mono text-sm">Orders failed to load: {loadError}</div>}
         {!loadError && filtered.length === 0 && <div className="text-center py-16 text-muted-foreground">No orders found</div>}
       </div>
