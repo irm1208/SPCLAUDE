@@ -3830,7 +3830,7 @@ function ApplyScreen({ onApplied }: { onApplied: () => void }) {
           { icon: Package, label: "Create & manage Group Buys" },
           { icon: FlaskConical, label: "Submit Janoshik / third-party lab tests" },
           { icon: BarChart3, label: "Track orders, revenue & P&L" },
-          { icon: CreditCard, label: "Accept USDT, Revolut & PayPal payments" },
+          { icon: CreditCard, label: "Accept USDT/USDC, Revolut & PayPal payments" },
         ].map(({ icon: Icon, label }) => (
           <div key={label} className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(27,58,122,0.08)" }}>

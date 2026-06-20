@@ -40,6 +40,7 @@ type Pool = {
   payoutWalletAddress: string | null;
   payoutCurrency: string | null;
   payoutNetwork: string | null;
+  availableCryptoOptions?: { currency: string; network: string }[];
   paymentMethods: PoolPaymentMethod[];
   contributorNamedReportEnabled: boolean;
   namedReportCap: number | null;
@@ -363,10 +364,11 @@ interface PaymentSectionProps {
   namedReportOptIn: boolean;
   namedReportName: string;
   initialMethod?: string | null;
+  initialCryptoCurrency?: string | null;
   onDone: (receipt: ReceiptInfo) => void;
 }
 
-function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedReportName, initialMethod, onDone }: PaymentSectionProps) {
+function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedReportName, initialMethod, initialCryptoCurrency, onDone }: PaymentSectionProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -649,7 +651,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
           {chosenMethod.type === "crypto" && (
             <>
               <p className="text-xs" style={{ color: "var(--t-text)" }}>
-                Send <span className="font-bold">{fmtUsd(parseFloat(amount))} {chosenMethod.currency}</span> on{" "}
+                Send <span className="font-bold">{fmtUsd(parseFloat(amount))} {initialCryptoCurrency || chosenMethod.currency}</span> on{" "}
                 <span className="font-bold">{chosenMethod.network}</span> to:
               </p>
               <div className="flex items-center gap-2 rounded-lg px-3 py-2"
@@ -1349,6 +1351,9 @@ export default function TestingPool() {
 
   // Selected payment method (for pre-opt-in)
   const [selectedMethodType, setSelectedMethodType] = useState<string | null>(null);
+  // Chosen crypto token (USDT/USDC) when the pool's wallet is an ERC-20 rail.
+  // null = pool default (first option). Persisted at opt-in so verification matches.
+  const [selectedCryptoCurrency, setSelectedCryptoCurrency] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<PoolDetail>({
     queryKey: ["/api/testing-pools", slug, refreshKey],
@@ -1402,7 +1407,7 @@ export default function TestingPool() {
     const stored = sessionStorage.getItem(key);
     if (!stored) return;
     try {
-      const s = JSON.parse(stored) as { participantId: string; amount: string; namedReportOptIn: boolean; namedReportName: string; receipt?: ReceiptInfo };
+      const s = JSON.parse(stored) as { participantId: string; amount: string; namedReportOptIn: boolean; namedReportName: string; paymentCurrency?: string | null; receipt?: ReceiptInfo };
       if (!s.participantId) return;
       // Check current status from server
       fetch(`/api/testing-pools/participants/${s.participantId}/status`)
@@ -1413,6 +1418,7 @@ export default function TestingPool() {
           setAmount(s.amount);
           setNamedReportOptIn(s.namedReportOptIn);
           setNamedReportName(s.namedReportName);
+          if (s.paymentCurrency) setSelectedCryptoCurrency(s.paymentCurrency);
           if (s.receipt && (d.paymentStatus === "submitted" || d.paymentStatus === "verified")) {
             setReceipt(s.receipt);
           }
@@ -1425,6 +1431,8 @@ export default function TestingPool() {
     mutationFn: async () => {
       const pool = data!.pool;
       const finalAmount = pool.fixedOptInFeeUsd != null ? String(pool.fixedOptInFeeUsd) : amount;
+      const poolMethods = pool.paymentMethods ?? [];
+      const cryptoChosen = selectedMethodType === "crypto" || (poolMethods.length === 1 && poolMethods[0]?.type === "crypto");
       const r = await fetch(`/api/testing-pools/${slug}/opt-in`, {
         method: "POST",
         credentials: "include",
@@ -1437,6 +1445,8 @@ export default function TestingPool() {
           amountUsd: parseFloat(finalAmount),
           voteTestIds: voteIds.length > 0 ? voteIds : undefined,
           paymentMethod: selectedMethodType || undefined,
+          // Only meaningful for the crypto rail; the server validates + persists it.
+          cryptoCurrency: cryptoChosen ? (selectedCryptoCurrency || undefined) : undefined,
           namedReportOptIn: namedReportOptIn || undefined,
           namedReportName: namedReportOptIn && namedReportName ? namedReportName : undefined,
           canProvideVial: canProvideVial || undefined,
@@ -1455,6 +1465,7 @@ export default function TestingPool() {
         amount: newAmount,
         namedReportOptIn,
         namedReportName,
+        paymentCurrency: selectedCryptoCurrency,
       }));
       toast({ title: "You're in!", description: "Complete your payment below." });
     },
@@ -2273,6 +2284,39 @@ export default function TestingPool() {
                     </div>
                   )}
 
+                  {/* Token choice (USDT/USDC) when the pool's wallet is an ERC-20 rail */}
+                  {(() => {
+                    const cryptoIsChosen = selectedMethodType === "crypto" || (methods.length === 1 && methods[0]?.type === "crypto");
+                    const cryptoOptions = pool.availableCryptoOptions ?? [];
+                    if (!cryptoIsChosen || cryptoOptions.length <= 1) return null;
+                    const activeCur = (selectedCryptoCurrency ?? cryptoOptions[0].currency).toUpperCase();
+                    return (
+                      <div>
+                        <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--t-muted)" }}>Pay with:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {cryptoOptions.map(opt => {
+                            const active = activeCur === opt.currency.toUpperCase();
+                            return (
+                              <button key={opt.currency} type="button"
+                                onClick={() => setSelectedCryptoCurrency(opt.currency)}
+                                className="flex items-center justify-center p-2.5 rounded-xl transition-all"
+                                style={{
+                                  border: `2px solid ${active ? "var(--t-blue)" : "var(--t-border)"}`,
+                                  background: active ? "var(--t-blue)" : "var(--t-surface)",
+                                }}
+                              >
+                                <span className="text-xs font-bold" style={{ color: active ? "#fff" : "var(--t-muted)" }}>{opt.currency}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] mt-1.5" style={{ color: "var(--t-muted)" }}>
+                          Both go to the same wallet on {cryptoOptions[0].network}.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   <button
                     onClick={() => optInMutation.mutate()}
                     disabled={
@@ -2312,6 +2356,7 @@ export default function TestingPool() {
                   namedReportOptIn={namedReportOptIn}
                   namedReportName={namedReportName}
                   initialMethod={selectedMethodType}
+                  initialCryptoCurrency={selectedCryptoCurrency}
                   onDone={(r) => {
                     setReceipt(r);
                     const key = `pool-contrib-${slug}`;

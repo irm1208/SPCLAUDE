@@ -4,10 +4,56 @@
  */
 
 export const ETH_USDT_CONTRACT = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+export const ETH_USDC_CONTRACT = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 export const BSC_USDT_CONTRACT = "0x55d398326f99059ff775485246999027b3197955";
 export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 export const USDT_DECIMALS = 6;
+export const USDC_DECIMALS = 6;
 export const BSC_USDT_DECIMALS = 18;
+
+/**
+ * Stablecoins a customer may choose between on the Ethereum ERC-20 rail. Both
+ * tokens are sent to the SAME wallet address; only the contract differs.
+ */
+export const ERC20_STABLE_CURRENCIES = ["USDT", "USDC"] as const;
+
+/**
+ * True when the resolved payment rail is the Ethereum ERC-20 USDT rail with a
+ * valid EVM wallet — the only rail on which we offer a USDT/USDC choice.
+ * USDC is intentionally NOT offered for BSC/BEP-20, TRON/TRC-20, BTC or native ETH.
+ */
+export function isEthErc20StableRail(
+  currency: string | null | undefined,
+  network: string | null | undefined,
+  wallet: string | null | undefined,
+): boolean {
+  const cur = (currency ?? "").toUpperCase().trim();
+  const net = (network ?? "").toLowerCase().trim();
+  return cur === "USDT" && /erc.?20|ethereum/.test(net) && !!wallet && isValidEthAddress(wallet);
+}
+
+/**
+ * Resolve the currency to actually verify/charge in, honouring a customer's
+ * chosen stablecoin but ONLY when it is a valid option on the ERC-20 rail.
+ * Any other value (or a non-ERC-20 rail) falls back to the server's base currency.
+ * This is the single source of truth — never trust the client's currency directly.
+ */
+export function effectiveStableCurrency(
+  baseCurrency: string,
+  network: string,
+  wallet: string | null | undefined,
+  chosen: string | null | undefined,
+): string {
+  const c = (chosen ?? "").toUpperCase().trim();
+  if (
+    c &&
+    isEthErc20StableRail(baseCurrency, network, wallet) &&
+    (ERC20_STABLE_CURRENCIES as readonly string[]).includes(c)
+  ) {
+    return c;
+  }
+  return baseCurrency;
+}
 
 export const ETH_RPC_ENDPOINTS = [
   "https://eth.llamarpc.com",
@@ -267,6 +313,9 @@ export async function verifyTransaction(
 
   if (cur === "USDT" && /erc.?20|ethereum/.test(net)) {
     return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDT_CONTRACT, USDT_DECIMALS, "Ethereum", tolerancePct);
+  }
+  if (cur === "USDC" && /erc.?20|ethereum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDC_CONTRACT, USDC_DECIMALS, "Ethereum", tolerancePct);
   }
   if (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) {
     return verifyErc20Transfer(txHash, walletAddress, expectedAmount, BSC_RPC_ENDPOINTS, BSC_USDT_CONTRACT, BSC_USDT_DECIMALS, "BSC", tolerancePct);

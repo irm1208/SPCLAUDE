@@ -3238,12 +3238,12 @@ function OrdersTab({ secret }: { secret: string }) {
                             <div className="px-3 py-2 border-t border-border space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-[10px] font-bold text-orange-500">Test Transaction ID</p>
-                                {testAmt != null && <span className="text-[10px] font-semibold text-orange-400">{testAmt.toFixed(2)} USDT</span>}
+                                {testAmt != null && <span className="text-[10px] font-semibold text-orange-400">{testAmt.toFixed(2)} {(order as any).paymentCryptoCurrency || "USDT"}</span>}
                               </div>
                               <p className="font-mono text-xs break-all text-orange-500 select-all">{order.testPaymentTxHash}</p>
                               {testAmt != null && (
                                 <p className="text-[10px] text-amber-700 font-semibold">
-                                  Remainder: {(Number(order.grandTotal) - testAmt).toFixed(2)} USDT
+                                  Remainder: {(Number(order.grandTotal) - testAmt).toFixed(2)} {(order as any).paymentCryptoCurrency || "USDT"}
                                 </p>
                               )}
                             </div>
@@ -3262,7 +3262,7 @@ function OrdersTab({ secret }: { secret: string }) {
                                 <p className="text-[10px] font-bold text-muted-foreground">
                                   {isRemainder ? "Remainder Transaction ID" : "Transaction ID"}
                                 </p>
-                                <span className="text-[10px] font-semibold text-green-700">{displayAmt.toFixed(2)} USDT</span>
+                                <span className="text-[10px] font-semibold text-green-700">{displayAmt.toFixed(2)} {(order as any).paymentCryptoCurrency || "USDT"}</span>
                               </div>
                               {order.paymentConfirmedAt && (
                                 <p className="text-[10px] text-muted-foreground">{fmtDT(order.paymentConfirmedAt)}</p>
@@ -3518,7 +3518,7 @@ function OrdersTab({ secret }: { secret: string }) {
                               })()}
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs text-green-800">Amount Received (USDT)</Label>
+                              <Label className="text-xs text-green-800">Amount Received</Label>
                               <Input type="number" min="0" step="0.01" className="h-10 text-sm bg-white" placeholder="Optional"
                                 value={ed.paymentUsdAmount ?? (order.paymentUsdAmount != null ? String(order.paymentUsdAmount) : "")}
                                 onChange={e => updateEdit(order.id, "paymentUsdAmount", e.target.value)} />
@@ -6329,7 +6329,7 @@ function PaymentsTab({ secret }: { secret: string }) {
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm">Accept Payments</p>
-            <p className="text-xs text-muted-foreground mt-0.5">When enabled, customers see a USDT payment option after ordering</p>
+            <p className="text-xs text-muted-foreground mt-0.5">When enabled, customers see a crypto (USDT or USDC) payment option after ordering</p>
           </div>
           <button
             onClick={togglePayments}
@@ -6358,7 +6358,7 @@ function PaymentsTab({ secret }: { secret: string }) {
       <Card className="p-5 space-y-4">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-primary" />
-          <p className="font-semibold text-sm">USDT ERC-20 Wallet Address</p>
+          <p className="font-semibold text-sm">USDT / USDC ERC-20 Wallet Address</p>
         </div>
 
         {config?.walletAddress ? (
@@ -6536,11 +6536,11 @@ function PaymentsTab({ secret }: { secret: string }) {
               </div>
               {o.paymentTestAmount && o.testPaymentTxHash && (
                 <div className="bg-violet-50 border border-violet-100 rounded-lg p-2">
-                  <p className="text-[10px] text-orange-500 font-semibold mb-0.5">Test Payment ({fmt(o.paymentTestAmount)} USDT)</p>
+                  <p className="text-[10px] text-orange-500 font-semibold mb-0.5">Test Payment ({fmt(o.paymentTestAmount)} {(o as any).paymentCryptoCurrency || "USDT"})</p>
                   <p className="font-mono text-xs break-all text-orange-500">{o.testPaymentTxHash}</p>
                   <a href={`https://etherscan.io/tx/${o.testPaymentTxHash}`} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-orange-500 mt-1 inline-block hover:underline">View on Etherscan →</a>
-                  <p className="text-[10px] font-bold text-amber-700 mt-1.5">Remainder owed: {fmt(Number(o.grandTotal) - Number(o.paymentTestAmount))} USDT</p>
+                  <p className="text-[10px] font-bold text-amber-700 mt-1.5">Remainder owed: {fmt(Number(o.grandTotal) - Number(o.paymentTestAmount))} {(o as any).paymentCryptoCurrency || "USDT"}</p>
                 </div>
               )}
               {o.paymentTxHash && (
@@ -6572,7 +6572,7 @@ function PaymentsTab({ secret }: { secret: string }) {
                   <div className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-[11px] text-violet-700">
                     <span className="font-semibold">Awaiting test TX</span>
                     {o.paymentTestAmount != null && (
-                      <span className="ml-1.5 font-mono font-bold">{fmt(o.paymentTestAmount)} USDT</span>
+                      <span className="ml-1.5 font-mono font-bold">{fmt(o.paymentTestAmount)} {(o as any).paymentCryptoCurrency || "USDT"}</span>
                     )}
                     <span className="text-violet-500 ml-1.5">— member needs to send this test amount first.</span>
                   </div>
@@ -6593,7 +6593,7 @@ function PaymentsTab({ secret }: { secret: string }) {
                   <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-700">
                     <span className="font-semibold">Test payment verified</span>
                     {o.paymentTestAmount != null && (
-                      <span className="ml-1.5">— member now owes remainder of <span className="font-bold font-mono">{fmt(Number(o.grandTotal) - Number(o.paymentTestAmount))} USDT</span></span>
+                      <span className="ml-1.5">— member now owes remainder of <span className="font-bold font-mono">{fmt(Number(o.grandTotal) - Number(o.paymentTestAmount))} {(o as any).paymentCryptoCurrency || "USDT"}</span></span>
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
@@ -18739,7 +18739,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
 
           {/* USDT ERC-20 */}
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDT ERC-20 Wallet Address</label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDT / USDC ERC-20 Wallet Address</label>
             <input
               type="text"
               value={wsUsdtWallet}
@@ -18747,7 +18747,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
               placeholder="0x… (leave blank to disable)"
               className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs font-mono outline-none focus:ring-1 focus:ring-orange-400"
             />
-            <p className="text-[10px] text-muted-foreground">Wholesale customers paying with USDT will be shown this ERC-20 wallet address.</p>
+            <p className="text-[10px] text-muted-foreground">Wholesale customers paying with USDT or USDC will be shown this ERC-20 wallet address.</p>
           </div>
 
           <div className="border-t border-slate-100" />

@@ -12,7 +12,8 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
 import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
-import { resolveOrderCrypto, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
+import { resolveOrderCrypto, getOrderCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
+import { effectiveStableCurrency } from "../lib/payment-verify";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -2243,7 +2244,7 @@ async function loadOwnedOrder(req: any, id: string) {
 // POST /api/account/orders/:id/balance-pay — submit a TX hash for an outstanding balance and auto-verify on-chain
 router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res): Promise<void> => {
   const id = String(req.params["id"]);
-  const { txHash } = req.body;
+  const { txHash, cryptoCurrency } = req.body;
   const cleanHash = typeof txHash === "string" ? txHash.trim() : "";
   if (!cleanHash) {
     writeLog("payment", "warn", "balance_payment_rejected_invalid_hash", `Empty tx hash for balance payment on order ${id}`, { orderId: id, txHash: "", reason: "empty hash" }, req.ip).catch(() => {});
@@ -2289,7 +2290,13 @@ router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res):
     return;
   }
 
-  const { walletAddress, currency, network } = await resolveOrderCrypto(order);
+  const { walletAddress, currency: baseCurrency, network, options } = await getOrderCryptoOptions(order);
+  // Honour a customer-selected stablecoin (USDT/USDC) on the ERC-20 rail, validated
+  // against the order's allowed options. Falls back to the currency locked for the
+  // main payment, then the resolved base currency. Never trusts the client blindly.
+  const requestedCurrency = typeof cryptoCurrency === "string" ? cryptoCurrency.toUpperCase().trim() : "";
+  const currency = options.find(o => o.currency.toUpperCase() === requestedCurrency)?.currency
+    ?? effectiveStableCurrency(baseCurrency, network, walletAddress, (order as any).paymentCryptoCurrency ?? null);
   if (!walletAddress) {
     writeLog("payment", "warn", "balance_payment_rejected_wallet", `Wallet not configured for balance payment on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, currency, network, reason: "wallet not configured" }, req.ip).catch(() => {});
     res.status(400).json({ error: "Wallet address not configured" }); return;

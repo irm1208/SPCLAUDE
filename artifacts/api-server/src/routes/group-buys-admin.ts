@@ -1666,6 +1666,7 @@ router.get("/admin/group-buys/:gbId/orders", async (req, res): Promise<void> => 
       paymentTxHash: txHash,
       testPaymentTxHash: o.testPaymentTxHash ?? null,
       paymentTestAmount: o.paymentTestAmount != null ? parseFloat(String(o.paymentTestAmount)) : null,
+      paymentCryptoCurrency: (o as any).paymentCryptoCurrency ?? null,
       paymentMethod,
       hasPaymentScreenshot: (o.paymentScreenshot ?? null) !== null,
       shippingName: o.shippingName ?? null,

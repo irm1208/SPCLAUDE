@@ -1095,8 +1095,10 @@ function BalanceDueCard({
     anonPayWallet: string | null;
     anonPayTicker: string | null;
     anonPayNetwork: string | null;
+    availableCryptoOptions: { currency: string; network: string }[];
   } | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PayMethod | null>(null);
+  const [selectedCrypto, setSelectedCrypto] = useState<string>("");
   const [copied, setCopied] = useState<string>("");
 
   useEffect(() => {
@@ -1115,8 +1117,10 @@ function BalanceDueCard({
           anonPayWallet: d.anonPayWallet ?? null,
           anonPayTicker: d.anonPayTicker ?? null,
           anonPayNetwork: d.anonPayNetwork ?? null,
+          availableCryptoOptions: Array.isArray(d.availableCryptoOptions) ? d.availableCryptoOptions : [],
         };
         setPayInfo(info);
+        setSelectedCrypto((info.cryptoCurrency || "USDT").toUpperCase());
         const first: PayMethod | null =
           info.cryptoWalletAddress ? "crypto" :
           info.revolutHandle ? "revolut" :
@@ -1190,7 +1194,7 @@ function BalanceDueCard({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash: cleaned }),
+        body: JSON.stringify(selectedCrypto ? { txHash: cleaned, cryptoCurrency: selectedCrypto } : { txHash: cleaned }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1367,15 +1371,46 @@ function BalanceDueCard({
                   })}
                 </div>
 
-                {selectedMethod === "crypto" && payInfo.cryptoWalletAddress && (
+                {selectedMethod === "crypto" && payInfo.cryptoWalletAddress && (() => {
+                  const activeCrypto = (selectedCrypto || payInfo.cryptoCurrency || "USDT").toUpperCase();
+                  const activeNetwork =
+                    payInfo.availableCryptoOptions.find(o => o.currency.toUpperCase() === activeCrypto)?.network
+                    || payInfo.cryptoNetwork || "ERC-20";
+                  return (
                   <>
+                    {payInfo.availableCryptoOptions.length > 1 && (
+                      <div className="mb-3">
+                        <p className="text-[11px] font-semibold mb-1.5 text-white/60 uppercase tracking-wide">Pay with</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {payInfo.availableCryptoOptions.map(opt => {
+                            const cur = opt.currency.toUpperCase();
+                            const active = activeCrypto === cur;
+                            return (
+                              <button
+                                key={cur}
+                                type="button"
+                                onClick={() => { setSelectedCrypto(cur); setVerifyMsg(null); }}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                                style={{
+                                  background: active ? "#F59E0B" : "rgba(255,255,255,0.06)",
+                                  color: active ? "#0a0a0a" : "rgba(255,255,255,0.8)",
+                                  border: `1px solid ${active ? "#F59E0B" : "rgba(255,255,255,0.12)"}`,
+                                }}
+                              >
+                                {cur}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <BalancePayDetail
                       rows={[
-                        { label: "Amount", value: `${fmtC(amountDue, currency)} (in ${payInfo.cryptoCurrency || "USDT"})`, copyValue: String(amountDue) },
-                        { label: "Network", value: payInfo.cryptoNetwork || "ERC-20" },
-                        { label: `${payInfo.cryptoCurrency || "USDT"} wallet`, value: payInfo.cryptoWalletAddress, copyValue: payInfo.cryptoWalletAddress, mono: true },
+                        { label: "Amount", value: `${fmtC(amountDue, currency)} (in ${activeCrypto})`, copyValue: String(amountDue) },
+                        { label: "Network", value: activeNetwork },
+                        { label: `${activeCrypto} wallet`, value: payInfo.cryptoWalletAddress, copyValue: payInfo.cryptoWalletAddress, mono: true },
                       ]}
-                      note={`Only send ${payInfo.cryptoCurrency || "USDT"} on the ${payInfo.cryptoNetwork || "ERC-20"} network. Other chains = lost funds.`}
+                      note={`Only send ${activeCrypto} on the ${activeNetwork} network. Other chains = lost funds.`}
                       copied={copied}
                       onCopy={copy}
                     />
@@ -1420,7 +1455,8 @@ function BalanceDueCard({
                       </div>
                     )}
                   </>
-                )}
+                  );
+                })()}
                 {selectedMethod === "revolut" && payInfo.revolutHandle && (
                   <BalancePayDetail
                     rows={[

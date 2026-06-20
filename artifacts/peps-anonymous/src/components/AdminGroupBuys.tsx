@@ -7134,12 +7134,12 @@ function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                               <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 space-y-1">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-[10px] font-bold text-orange-600">Test Transaction ID</p>
-                                  {testAmt != null && <span className="text-[10px] font-semibold text-orange-500">{testAmt.toFixed(2)} USDT</span>}
+                                  {testAmt != null && <span className="text-[10px] font-semibold text-orange-500">{testAmt.toFixed(2)} {(o as any).paymentCryptoCurrency || gb.currency || "USDT"}</span>}
                                 </div>
                                 <p className="font-mono text-xs break-all text-orange-600 select-all">{o.testPaymentTxHash}</p>
                                 {testAmt != null && (
                                   <p className="text-[10px] font-semibold text-orange-700">
-                                    Remainder: {(o.grandTotal - testAmt).toFixed(2)} USDT
+                                    Remainder: {(o.grandTotal - testAmt).toFixed(2)} {(o as any).paymentCryptoCurrency || gb.currency || "USDT"}
                                   </p>
                                 )}
                               </div>
@@ -7156,7 +7156,7 @@ function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                                   <p className="text-[10px] font-bold text-muted-foreground">
                                     {isRemainder ? "Remainder Transaction ID" : "Transaction ID"}
                                   </p>
-                                  <span className="text-[10px] font-semibold text-green-700">{displayAmt.toFixed(2)} {gb.currency || "USDT"}</span>
+                                  <span className="text-[10px] font-semibold text-green-700">{displayAmt.toFixed(2)} {(o as any).paymentCryptoCurrency || gb.currency || "USDT"}</span>
                                 </div>
                                 {o.paymentConfirmedAt && (
                                   <p className="text-[10px] text-muted-foreground">{fmtDT(o.paymentConfirmedAt)}</p>
@@ -7244,7 +7244,7 @@ function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                               />
                             </div>
                             <div>
-                              <Label className="text-[10px] text-green-800 mb-1 block">Amount (USDT)</Label>
+                              <Label className="text-[10px] text-green-800 mb-1 block">Amount</Label>
                               <Input
                                 type="number" min="0" step="0.01"
                                 value={edit?.paymentUsdAmount ?? ""}
@@ -7730,7 +7730,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
     const methods: { key: string; label: string }[] = [];
     if (op.paypalHandle) methods.push({ key: "paypal", label: "PayPal" });
     if (op.revolutHandle) methods.push({ key: "revolut", label: "Revolut" });
-    if (op.cryptoWalletAddress) methods.push({ key: "crypto", label: `USDT ${op.cryptoNetwork || "ERC-20"}` });
+    if (op.cryptoWalletAddress) methods.push({ key: "crypto", label: `${(op as any).cryptoCurrency || "USDT"} ${op.cryptoNetwork || "ERC-20"}` });
     if (op.anonPayEnabled) methods.push({ key: "anonpay", label: "AnonPay" });
     return methods;
   }, [data?.organiserPayments]);

@@ -18,6 +18,7 @@ import { requireAccount, getJwtSecret, type AccountJwtPayload } from "../middlew
 import { requireAdmin } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { sendAdminFromTemplate, notifyUserFromTemplate, notifyUser } from "../lib/telegram";
+import { isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 
 const router: IRouter = Router();
 
@@ -87,6 +88,15 @@ async function computePoolTotals(poolId: string) {
   };
 }
 
+// Crypto tokens a pool participant may pay in. When the pool's payout wallet is a
+// valid Ethereum ERC-20 address we offer USDC alongside USDT (same wallet, same
+// network); otherwise the only option is the pool's single configured currency.
+function poolCryptoOptions(payoutCurrency: string | null, payoutNetwork: string | null, payoutWalletAddress: string | null) {
+  return isEthErc20StableRail(payoutCurrency, payoutNetwork, payoutWalletAddress)
+    ? ERC20_STABLE_CURRENCIES.map(c => ({ currency: c, network: payoutNetwork as string }))
+    : (payoutCurrency ? [{ currency: payoutCurrency, network: payoutNetwork ?? "" }] : []);
+}
+
 function poolPublicShape(pool: typeof testingPoolsTable.$inferSelect) {
   return {
     id: pool.id,
@@ -102,6 +112,7 @@ function poolPublicShape(pool: typeof testingPoolsTable.$inferSelect) {
     payoutWalletAddress: pool.payoutWalletAddress,
     payoutCurrency: pool.payoutCurrency,
     payoutNetwork: pool.payoutNetwork,
+    availableCryptoOptions: poolCryptoOptions(pool.payoutCurrency, pool.payoutNetwork, pool.payoutWalletAddress),
     paymentMethods: normalizePoolPMs((pool.paymentMethods as unknown[] | null) ?? []),
     contributorNamedReportEnabled: pool.contributorNamedReportEnabled ?? false,
     namedReportCap: pool.namedReportCap ?? null,
@@ -281,7 +292,7 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
 // ── Public: POST /api/testing-pools/:slug/opt-in ──────────────────────────────
 router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
   loadOptionalAccount(req);
-  const { contactEmail, contactTelegram, displayName, amountUsd, voteTestIds, paymentMethod, namedReportOptIn, namedReportName, isPublic, canProvideVial } = req.body ?? {};
+  const { contactEmail, contactTelegram, displayName, amountUsd, voteTestIds, paymentMethod, namedReportOptIn, namedReportName, isPublic, canProvideVial, cryptoCurrency } = req.body ?? {};
 
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
@@ -359,6 +370,14 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
 
   const isPublicFlag = isPublic === true;
 
+  // Crypto rail: offer USDC alongside USDT when the pool's payout wallet is a
+  // valid Ethereum ERC-20 address. Validate the buyer's choice server-side and
+  // persist it so the auto-verifier checks the same token the buyer paid in.
+  const cryptoOptions = poolCryptoOptions(pool.payoutCurrency, pool.payoutNetwork, pool.payoutWalletAddress);
+  const requestedCrypto = typeof cryptoCurrency === "string" ? cryptoCurrency.toUpperCase().trim() : "";
+  const chosenCrypto = cryptoOptions.find(o => o.currency.toUpperCase() === requestedCrypto) ?? cryptoOptions[0] ?? null;
+  const storeCrypto = chosenMethod === "crypto" && chosenCrypto != null;
+
   await db.insert(poolParticipantsTable).values({
     id,
     poolId: pool.id,
@@ -370,6 +389,8 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
     amountUsd: amount.toFixed(2),
     paymentStatus: "pending",
     paymentMethod: chosenMethod,
+    paymentCurrency: storeCrypto ? chosenCrypto!.currency : null,
+    paymentNetwork: storeCrypto ? chosenCrypto!.network : null,
     namedReportOptIn: namedOptIn,
     namedReportName: namedName,
     isPublic: isPublicFlag,
@@ -389,9 +410,10 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
     methodDetails,
     payment: {
       walletAddress: pool.payoutWalletAddress,
-      currency: pool.payoutCurrency,
-      network: pool.payoutNetwork,
+      currency: storeCrypto ? chosenCrypto!.currency : pool.payoutCurrency,
+      network: storeCrypto ? chosenCrypto!.network : pool.payoutNetwork,
       amountUsd: amount,
+      availableCryptoOptions: cryptoOptions,
     },
   });
 });

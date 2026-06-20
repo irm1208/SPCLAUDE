@@ -10,6 +10,7 @@ import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
+import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -228,7 +229,8 @@ async function firePaymentNotifications(
     const delivery = order.deliveryMethod ?? "—";
     const code = order.code ?? order.id;
     const paymentMethod = labelPaymentMethod(null, method);
-    const amountReceived = amountUsdt != null ? `${amountUsdt.toFixed(2)} USDT` : orderTotal;
+    const cryptoLabel = String((order as any).paymentCryptoCurrency || "USDT").toUpperCase();
+    const amountReceived = amountUsdt != null ? `${amountUsdt.toFixed(2)} ${cryptoLabel}` : orderTotal;
     const txidLine = txHash ? `\nTXID: <code>${txHash}</code>` : "";
 
     if (event === "confirmed") {
@@ -375,11 +377,46 @@ export async function resolveOrderCrypto(
   return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
 }
 
+/**
+ * Crypto payment options a customer may choose between for an order.
+ * The first entry is the server's default (base) currency. On the Ethereum
+ * ERC-20 USDT rail we additionally offer USDC (same wallet, different token).
+ * For every other rail the only option is the resolved base currency.
+ */
+export async function getOrderCryptoOptions(
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null }
+): Promise<{ walletAddress: string | null; currency: string; network: string; options: { currency: string; network: string }[] }> {
+  const base = await resolveOrderCrypto(order);
+  if (isEthErc20StableRail(base.currency, base.network, base.walletAddress)) {
+    return {
+      ...base,
+      options: ERC20_STABLE_CURRENCIES.map(c => ({ currency: c, network: base.network })),
+    };
+  }
+  return { ...base, options: [{ currency: base.currency, network: base.network }] };
+}
+
+/**
+ * Resolve the wallet/currency/network to VERIFY against for an order, honouring
+ * the customer's persisted stablecoin choice (order.paymentCryptoCurrency) but
+ * only when it is a valid option on the resolved rail. Never trusts a raw client
+ * value — the choice was validated against getOrderCryptoOptions at rate-lock time.
+ */
+export async function resolveEffectiveOrderCrypto(
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; paymentCryptoCurrency?: string | null }
+): Promise<{ walletAddress: string | null; currency: string; network: string }> {
+  const base = await resolveOrderCrypto(order);
+  const currency = effectiveStableCurrency(base.currency, base.network, base.walletAddress, order.paymentCryptoCurrency ?? null);
+  return { walletAddress: base.walletAddress, currency, network: base.network };
+}
+
 // ─── Blockchain verification ───────────────────────────────────
 const ETH_USDT_CONTRACT = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+const ETH_USDC_CONTRACT = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const BSC_USDT_CONTRACT = "0x55d398326f99059ff775485246999027b3197955";
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const USDT_DECIMALS = 6;
+const USDC_DECIMALS = 6;
 const BSC_USDT_DECIMALS = 18;
 
 const ETH_RPC_ENDPOINTS = [
@@ -453,7 +490,8 @@ async function verifyErc20Transfer(
   contractAddress: string,
   tokenDecimals: number,
   networkLabel: string,
-  tolerancePct = 0.01
+  tolerancePct = 0.01,
+  tokenSymbol = "USDT"
 ): Promise<VerifyResult> {
   // Normalise hash — Revolut/Coinbase often omit the 0x prefix
   const hash = txHash.startsWith("0x") ? txHash : `0x${txHash}`;
@@ -517,7 +555,7 @@ async function verifyErc20Transfer(
         underpayment: true,
         amountPaid: parseFloat(amount.toFixed(2)),
         shortfall,
-        reason: `Underpayment: ${amount.toFixed(2)} USDT received, ${expectedAmount.toFixed(2)} USDT expected. You are short by ${shortfall.toFixed(2)} USDT.`,
+        reason: `Underpayment: ${amount.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} ${tokenSymbol} expected. You are short by ${shortfall.toFixed(2)} ${tokenSymbol}.`,
       };
     }
   }
@@ -667,10 +705,13 @@ export async function verifyTransaction(
   const net = network.toLowerCase().trim();
 
   if (cur === "USDT" && /erc.?20|ethereum/.test(net)) {
-    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDT_CONTRACT, USDT_DECIMALS, "Ethereum", tolerancePct);
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDT_CONTRACT, USDT_DECIMALS, "Ethereum", tolerancePct, "USDT");
+  }
+  if (cur === "USDC" && /erc.?20|ethereum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDC_CONTRACT, USDC_DECIMALS, "Ethereum", tolerancePct, "USDC");
   }
   if (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) {
-    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, BSC_RPC_ENDPOINTS, BSC_USDT_CONTRACT, BSC_USDT_DECIMALS, "BSC", tolerancePct);
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, BSC_RPC_ENDPOINTS, BSC_USDT_CONTRACT, BSC_USDT_DECIMALS, "BSC", tolerancePct, "USDT");
   }
   if (cur === "ETH" && /mainnet|ethereum|erc.?20/.test(net)) {
     if (!isValidEthAddress(walletAddress)) {
@@ -709,6 +750,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   let cryptoCurrency: string | null = null;
   let cryptoNetwork: string | null = null;
   let cryptoWalletAddress: string | null = null;
+  let availableCryptoOptions: { currency: string; network: string }[] = [];
   let anonPayEnabled: boolean = globalAnonPayEnabled;
   let anonPayWallet: string | null = globalAnonPayWallet;
   let anonPayTicker: string | null = globalAnonPayTicker;
@@ -721,12 +763,17 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   const orderId = req.query["orderId"] as string | undefined;
   if (orderId) {
     const [order] = await db
-      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested })
+      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
 
     if (order) {
       orderCode = order.code ?? null;
+
+      // Crypto options the buyer may choose from (e.g. USDT/USDC on the ERC-20 rail).
+      // Computed from the same resolver the verify path uses, so the toggle the
+      // buyer sees always matches what rate-lock + verification will accept.
+      availableCryptoOptions = (await getOrderCryptoOptions(order)).options;
 
       // Wholesale orders: prefer wholesale-specific payment settings
       if (order.orderType === "wholesale") {
@@ -861,6 +908,16 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
         const directShippingPaymentsEnabled = (await getConfig("directShippingPaymentsEnabled")) !== "false";
         if (directShippingPaymentsEnabled) paymentsEnabled = true;
       }
+
+      // Reflect the buyer's previously-chosen token (e.g. USDC) so the panel
+      // re-opens on the same coin after a refresh — but only when it is still a
+      // valid option for this order's rail.
+      const persistedSel = (order.paymentCryptoCurrency ?? "").toUpperCase();
+      const selMatch = availableCryptoOptions.find(o => o.currency.toUpperCase() === persistedSel);
+      if (selMatch) {
+        cryptoCurrency = selMatch.currency;
+        cryptoNetwork = selMatch.network;
+      }
     }
   }
 
@@ -874,6 +931,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
     cryptoCurrency,
     cryptoNetwork,
     cryptoWalletAddress,
+    availableCryptoOptions,
     anonPayEnabled,
     anonPayWallet,
     anonPayTicker,
@@ -889,7 +947,26 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const { currency, network } = await resolveOrderCrypto(order);
+  const { currency: baseCurrency, network, options } = await getOrderCryptoOptions(order);
+
+  // Honour a customer-selected crypto currency, but only when it is a valid
+  // option for this order's rail (e.g. USDC on the ERC-20 USDT rail). When the
+  // client sends nothing, keep the previously-persisted choice so a page refresh
+  // never silently clobbers it. Anything invalid falls back to the server
+  // default — never trust the client blindly.
+  const requested = typeof req.body?.cryptoCurrency === "string" ? req.body.cryptoCurrency.toUpperCase().trim() : "";
+  const persisted = (order.paymentCryptoCurrency ?? "").toUpperCase();
+  const currency =
+    options.find(o => o.currency.toUpperCase() === requested)?.currency
+    ?? options.find(o => o.currency.toUpperCase() === persisted)?.currency
+    ?? baseCurrency;
+
+  // Persist the chosen currency so the verify endpoints + auto-verifiers check
+  // the same token the buyer was shown. Stablecoins stay 1:1, so
+  // resolveLockedUsdPerCoin won't clobber this value.
+  if ((order.paymentCryptoCurrency ?? "").toUpperCase() !== currency.toUpperCase()) {
+    await db.update(ordersTable).set({ paymentCryptoCurrency: currency.toUpperCase() }).where(eq(ordersTable.id, order.id));
+  }
 
   // Lock the USD total (fiat → USD) once; reuse it if the panel is re-opened.
   let usdAmount = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
@@ -921,6 +998,7 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
     cryptoAmount,
     isStable: stable,
     decimals,
+    availableCryptoOptions: options,
   });
 });
 
@@ -1024,7 +1102,7 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
     return;
   }
 
-  const { walletAddress, currency, network } = await resolveOrderCrypto(order);
+  const { walletAddress, currency, network } = await resolveEffectiveOrderCrypto(order);
   if (!walletAddress) {
     writeLog("payment", "warn", "payment_test_rejected_wallet", `Wallet not configured for test payment on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, currency, network, reason: "wallet not configured" }, req.ip).catch(() => {});
     res.status(400).json({ error: "Wallet address not configured" });
@@ -1168,7 +1246,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
     }
   }
 
-  const { walletAddress, currency, network } = await resolveOrderCrypto(order);
+  const { walletAddress, currency, network } = await resolveEffectiveOrderCrypto(order);
   if (!walletAddress) {
     writeLog("payment", "warn", "payment_rejected_wallet", `Wallet not configured for payment on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, currency, network, reason: "wallet not configured" }, req.ip).catch(() => {});
     res.status(400).json({ error: "Wallet address not configured" });
@@ -1687,6 +1765,7 @@ router.get("/admin/payment-orders", async (req, res): Promise<void> => {
       paymentTxHash: ordersTable.paymentTxHash,
       testPaymentTxHash: ordersTable.testPaymentTxHash,
       paymentTestAmount: ordersTable.paymentTestAmount,
+      paymentCryptoCurrency: ordersTable.paymentCryptoCurrency,
       paymentScreenshot: ordersTable.paymentScreenshot,
       status: ordersTable.status,
       createdAt: ordersTable.createdAt,

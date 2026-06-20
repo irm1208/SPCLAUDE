@@ -10,7 +10,7 @@
  */
 import { db, poolParticipantsTable, testingPoolsTable } from "@workspace/db";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { verifyTransaction } from "./payment-verify";
+import { verifyTransaction, effectiveStableCurrency } from "./payment-verify";
 import { registerScheduler } from "./scheduler-registry";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -48,6 +48,7 @@ async function checkCrypto(participant: {
   poolId: string;
   paymentTxHash: string | null;
   amountUsd: string;
+  paymentCurrency: string | null;
 }): Promise<void> {
   const txHash = participant.paymentTxHash ?? "";
   if (!txHash || txHash.startsWith(ANONPAY_PREFIX)) return;
@@ -63,12 +64,21 @@ async function checkCrypto(participant: {
 
   if (!pool?.payoutWalletAddress || !pool.payoutCurrency || !pool.payoutNetwork) return;
 
+  // Honour the participant's chosen stablecoin (USDT/USDC) on the ERC-20 rail;
+  // fall back to the pool's payout currency for every other rail.
+  const currency = effectiveStableCurrency(
+    pool.payoutCurrency,
+    pool.payoutNetwork,
+    pool.payoutWalletAddress,
+    participant.paymentCurrency,
+  );
+
   const amountUsd = parseFloat(String(participant.amountUsd));
   const result = await verifyTransaction(
     txHash,
     pool.payoutWalletAddress,
     amountUsd,
-    pool.payoutCurrency,
+    currency,
     pool.payoutNetwork,
     0.15
   );
@@ -91,6 +101,7 @@ async function runPoolPaymentAutoVerify(): Promise<void> {
         paymentMethod: poolParticipantsTable.paymentMethod,
         paymentTxHash: poolParticipantsTable.paymentTxHash,
         amountUsd: poolParticipantsTable.amountUsd,
+        paymentCurrency: poolParticipantsTable.paymentCurrency,
       })
       .from(poolParticipantsTable)
       .where(

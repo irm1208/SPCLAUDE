@@ -106,6 +106,7 @@ function CopyableAmount({ amount, label, suffix = "USDT", decimals = 2 }: { amou
 // ── Crypto-specific helpers ────────────────────────────────────
 
 const ETH_USDT_CONTRACT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+const ETH_USDC_CONTRACT = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const BSC_USDT_CONTRACT = "0x55d398326f99059ff775485246999027b3197955";
 
 function buildPaymentUri(wallet: string, amount: number, currency: string, network: string): string | null {
@@ -114,6 +115,10 @@ function buildPaymentUri(wallet: string, amount: number, currency: string, netwo
   if (cur === "USDT" && /erc.?20|ethereum/.test(net)) {
     const units = Math.round(amount * 1_000_000);
     return `ethereum:${ETH_USDT_CONTRACT}@1/transfer?address=${wallet}&uint256=${units}`;
+  }
+  if (cur === "USDC" && /erc.?20|ethereum/.test(net)) {
+    const units = Math.round(amount * 1_000_000);
+    return `ethereum:${ETH_USDC_CONTRACT}@1/transfer?address=${wallet}&uint256=${units}`;
   }
   if (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) {
     const units = (BigInt(Math.round(amount * 1_000_000)) * 1_000_000_000_000n).toString();
@@ -134,6 +139,7 @@ function isAutoVerified(currency: string, network: string): boolean {
   const net = network.toLowerCase().trim();
   return (
     (cur === "USDT" && /erc.?20|ethereum/.test(net)) ||
+    (cur === "USDC" && /erc.?20|ethereum/.test(net)) ||
     (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) ||
     (cur === "ETH" && /mainnet|ethereum|erc.?20/.test(net)) ||
     (cur === "BTC" && /mainnet|bitcoin/.test(net))
@@ -165,10 +171,11 @@ function OpenWalletButton({ wallet, amount, currency, network }: { wallet: strin
 
 function QrBlock({ wallet, amount, currency, network }: { wallet: string; amount: number; currency: string; network: string }) {
   const cur = currency.toUpperCase().trim();
-  // For USDT, encode just the wallet address — the full EIP-681 transfer URI causes
-  // wallets like Cake Wallet to display the coin as "ETH" rather than USDT ERC-20.
-  // Plain address QRs are universally recognised; the amount is shown on screen.
-  const uri = cur === "USDT" ? wallet : (buildPaymentUri(wallet, amount, currency, network) ?? wallet);
+  // For ERC-20 stablecoins (USDT/USDC), encode just the wallet address — the full
+  // EIP-681 transfer URI causes wallets like Cake Wallet to display the coin as
+  // "ETH" rather than the token. Plain address QRs are universally recognised; the
+  // amount is shown on screen.
+  const uri = (cur === "USDT" || cur === "USDC") ? wallet : (buildPaymentUri(wallet, amount, currency, network) ?? wallet);
   const isBtc = cur === "BTC";
   return (
     <div className="flex flex-col items-center gap-2">
@@ -350,6 +357,12 @@ export default function PaymentPanel({
   const [orderCode, setOrderCode] = useState<string | null>(null);
   const [cryptoCurrency, setCryptoCurrency] = useState<string>("USDT");
   const [cryptoNetwork, setCryptoNetwork] = useState<string>("ERC-20");
+  // Crypto tokens the buyer may choose between (e.g. USDT/USDC on the ERC-20 rail).
+  const [availableCryptoOptions, setAvailableCryptoOptions] = useState<{ currency: string; network: string }[]>([]);
+  // Only set once the buyer actively switches tokens this session. We send it to
+  // rate-lock so the server persists the choice; until then we send nothing and
+  // let the server keep its previously-persisted currency (survives refreshes).
+  const [pickedCurrency, setPickedCurrency] = useState<string | null>(null);
 
   const [collectedBy, setCollectedBy] = useState<{ type: "admin" | "organiser" | "reshipper"; username?: string } | null>(null);
 
@@ -396,24 +409,35 @@ export default function PaymentPanel({
     setRateLoading(true);
     setRateUnavailable(false);
     setRateReady(false);
-    fetch(`/api/orders/${orderId}/lock-usdt-rate`, { method: "POST" })
+    fetch(`/api/orders/${orderId}/lock-usdt-rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Only send a currency once the buyer has actively switched tokens; otherwise
+      // let the server keep whatever was last persisted for this order.
+      body: JSON.stringify(pickedCurrency ? { cryptoCurrency: pickedCurrency } : {}),
+    })
       .then(async r => {
         // Any non-OK response (503 or otherwise) means we have no trustworthy
         // rate — block and let the buyer retry rather than guess.
         if (!r.ok) { setRateUnavailable(true); return null; }
         return r.json();
       })
-      .then((d: { usdAmount?: number; usdPerCoin?: number; decimals?: number; isStable?: boolean } | null) => {
+      .then((d: { usdAmount?: number; usdPerCoin?: number; decimals?: number; isStable?: boolean; cryptoCurrency?: string; cryptoNetwork?: string; availableCryptoOptions?: { currency: string; network: string }[] } | null) => {
         if (!d) return;
         if (typeof d.usdAmount === "number") setLockedUsdTotal(d.usdAmount);
         if (typeof d.usdPerCoin === "number") setUsdPerCoin(d.usdPerCoin);
         if (typeof d.decimals === "number") setCoinDecimals(d.decimals);
         if (typeof d.isStable === "boolean") setIsStableCoin(d.isStable);
+        // The server returns the EFFECTIVE currency it locked (persisted choice or
+        // base). Mirror it so the panel always shows what verification will accept.
+        if (d.cryptoCurrency) setCryptoCurrency(d.cryptoCurrency);
+        if (d.cryptoNetwork) setCryptoNetwork(d.cryptoNetwork);
+        if (Array.isArray(d.availableCryptoOptions)) setAvailableCryptoOptions(d.availableCryptoOptions);
         setRateReady(true);
       })
       .catch(() => { setRateUnavailable(true); })
       .finally(() => setRateLoading(false));
-  }, [orderId]);
+  }, [orderId, pickedCurrency]);
   useEffect(() => { loadRate(); }, [loadRate]);
   const usdTotal = lockedUsdTotal ?? grandTotal;
   // Credits are always in USD — deduct from the USD payment side after conversion
@@ -497,6 +521,7 @@ export default function PaymentPanel({
         setOrderCode(d.orderCode ?? null);
         if (d.cryptoCurrency) setCryptoCurrency(d.cryptoCurrency);
         if (d.cryptoNetwork) setCryptoNetwork(d.cryptoNetwork);
+        if (Array.isArray(d.availableCryptoOptions)) setAvailableCryptoOptions(d.availableCryptoOptions);
         if (paymentsEnabledProp === undefined) setPaymentsEnabled(d.paymentsEnabled);
 
         // AnonPay
@@ -1603,6 +1628,37 @@ export default function PaymentPanel({
           <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
         </div>
 
+        {availableCryptoOptions.length > 1 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "var(--crypto-text-muted)" }}>Choose your coin</p>
+            <div className="flex gap-2">
+              {availableCryptoOptions.map(opt => {
+                const selected = cryptoCurrency.toUpperCase() === opt.currency.toUpperCase();
+                return (
+                  <button
+                    key={opt.currency}
+                    onClick={() => {
+                      if (selected || rateLoading) return;
+                      setPickedCurrency(opt.currency);
+                      setCryptoCurrency(opt.currency);
+                      setCryptoNetwork(opt.network);
+                      setError("");
+                    }}
+                    disabled={rateLoading}
+                    className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+                    style={selected
+                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
+                      : { background: "var(--crypto-glass-bg)", color: "var(--crypto-text-primary)", border: "1px solid var(--crypto-glass-border)" }}
+                  >
+                    {opt.currency}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] mt-1.5" style={{ color: "var(--crypto-text-muted)" }}>Both are sent to the same wallet on the {cryptoNetwork} network.</p>
+          </div>
+        )}
+
         <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
           Send <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{usdToCoin(effectiveUsdTotal).toFixed(coinDecimals)} {cryptoCurrency}</span> on the {cryptoNetwork} network.{" "}
           {isAutoVerified(cryptoCurrency, cryptoNetwork)
@@ -1712,7 +1768,7 @@ export default function PaymentPanel({
           <div className="flex gap-2 items-start p-2.5 bg-amber-50/80 rounded-lg border border-amber-200/60">
             <AlertCircle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
             <p className="text-xs text-amber-800">
-              Automated on-chain verification supports USDT (ERC-20 & BEP-20), native ETH, and BTC Mainnet. Your organiser has configured <span className="font-semibold">{cryptoCurrency} ({cryptoNetwork})</span> — they will confirm your payment manually.
+              Automated on-chain verification supports USDT &amp; USDC (ERC-20), USDT (BEP-20), native ETH, and BTC Mainnet. Your organiser has configured <span className="font-semibold">{cryptoCurrency} ({cryptoNetwork})</span> — they will confirm your payment manually.
             </p>
           </div>
         )}
@@ -1812,7 +1868,7 @@ export default function PaymentPanel({
         <div className="flex gap-2 items-start p-2.5 bg-amber-50/80 rounded-lg border border-amber-200/60">
           <AlertCircle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
           <p className="text-xs text-amber-800">
-            Automated on-chain verification supports USDT (ERC-20 & BEP-20), native ETH, and BTC Mainnet. Your organiser has configured <span className="font-semibold">{cryptoCurrency} ({cryptoNetwork})</span> — they will confirm your payment manually.
+            Automated on-chain verification supports USDT &amp; USDC (ERC-20), USDT (BEP-20), native ETH, and BTC Mainnet. Your organiser has configured <span className="font-semibold">{cryptoCurrency} ({cryptoNetwork})</span> — they will confirm your payment manually.
           </p>
         </div>
       )}

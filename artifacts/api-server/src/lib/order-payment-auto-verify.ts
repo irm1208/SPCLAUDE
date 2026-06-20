@@ -20,6 +20,7 @@ import {
   verifyTransaction,
   isValidEthAddress,
   isValidBtcAddress,
+  effectiveStableCurrency,
 } from "./payment-verify";
 import { isStablecoin, roundCrypto, fetchUsdPerCoin } from "./crypto-pricing";
 import { registerScheduler } from "./scheduler-registry";
@@ -198,7 +199,12 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
   // Skip AnonPay and fiat payment markers — they are not on-chain hashes
   if (!txHash || txHash.startsWith(ANONPAY_PREFIX) || txHash.startsWith("fiat:")) return;
 
-  const { walletAddress, currency, network } = await resolveOrderCrypto(order);
+  const base = await resolveOrderCrypto(order);
+  const walletAddress = base.walletAddress;
+  const network = base.network;
+  // Authoritative currency is the one the customer locked in (USDT or USDC on the
+  // ERC-20 rail). Falls back to the resolved base currency for every other rail.
+  const currency = effectiveStableCurrency(base.currency, base.network, base.walletAddress, order.paymentCryptoCurrency);
   if (!walletAddress) return;
 
   const grandTotalRaw = parseFloat(String(order.grandTotal));
@@ -267,7 +273,7 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
     metadata: { code: order.code, paymentType: "crypto", txHash, amountUsdt: result.amountUsdt, currency, network },
   }).catch(() => {});
 
-  fireConfirmNotification(order, `Crypto (${currency} ${network})`, result.amountUsdt, txHash).catch(() => {});
+  fireConfirmNotification(order, `Crypto (${currency} ${network})`, result.amountUsdt, txHash, currency).catch(() => {});
 }
 
 // ── Notification ───────────────────────────────────────────────
@@ -277,6 +283,7 @@ async function fireConfirmNotification(
   method: string,
   amountUsdt?: number,
   txHash?: string | null,
+  coin = "USDT",
 ): Promise<void> {
   try {
     const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
@@ -299,7 +306,7 @@ async function fireConfirmNotification(
     const orderTotal = `${sym}${grandTotal.toFixed(2)}`;
     const delivery = order.deliveryMethod ?? "—";
     const code = order.code ?? order.id;
-    const amountReceived = amountUsdt != null ? `${amountUsdt.toFixed(2)} USDT` : orderTotal;
+    const amountReceived = amountUsdt != null ? `${amountUsdt.toFixed(2)} ${coin}` : orderTotal;
     const txidLine = txHash ? `\nTXID: <code>${txHash}</code>` : "";
 
     notifyUserFromTemplate(order.telegramUsername, "payment", "customer_payment_confirmed",
