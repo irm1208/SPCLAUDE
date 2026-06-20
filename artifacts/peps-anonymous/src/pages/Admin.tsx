@@ -7506,41 +7506,37 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       return;
     }
 
-    // ── Direct / wholesale mode: one block per individual order ──────────────
-    const calcGrandTotal = (o: Fs3GbOrder): number => {
-      const items = o.lineItems ?? [];
-      const productTotal = items.reduce((s, li) => {
-        const fs3UnitCost = getCost(li.productName);
-        return s + (fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity));
-      }, 0);
-      const totalKits = items.reduce((s, li) => s + li.quantity, 0);
+    // ── Direct / wholesale / shared mode ─────────────────────────────────────
+    // Shared orders (orders sharing a sharedOrderId) ship to one address, so all
+    // member line items are merged into a SINGLE combined order block (one total,
+    // one package, one address). Standalone direct/wholesale orders keep one block each.
+    const itemPrice = (li: { productName: string; quantity: number; unitPrice?: number; lineTotal?: number }): number => {
+      const fs3UnitCost = getCost(li.productName);
+      return fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity);
+    };
+    const calcPackages = (totalKits: number): number => {
       const maxKits = gb?.vendorShippingMaxKitsPerPackage ?? 0;
-      const numPackages = Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
-      return productTotal + numPackages * PKG_COST;
+      return Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
     };
 
-    const buildOrderBlock = (o: Fs3GbOrder, idx: number): string => {
-      const items = o.lineItems ?? [];
-      const totalKits = items.reduce((s, li) => s + li.quantity, 0);
-      const maxKits = gb?.vendorShippingMaxKitsPerPackage ?? 0;
-      const numPackages = Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
-      const pkgUnitCost = PKG_COST;
-      const packageTotal = numPackages * pkgUnitCost;
+    // Build one block for a set of orders that ship together (1 standalone order,
+    // or every member of a shared order combined into one).
+    const buildOrderBlock = (orders: Fs3GbOrder[], idx: number): { text: string; grandTotal: number; isShared: boolean } => {
+      const items = orders.flatMap(o => o.lineItems ?? []);
       const itemLines = items.map(li => {
         const qty = li.quantity % 1 === 0 ? String(Math.round(li.quantity)) : li.quantity.toFixed(1);
-        const fs3UnitCost = getCost(li.productName);
-        const linePrice = fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity);
-        return `${li.productName} x${qty} = ${fmt(linePrice)}`;
+        return `${li.productName} x${qty} = ${fmt(itemPrice(li))}`;
       });
-      const productTotal = items.reduce((s, li) => {
-        const fs3UnitCost = getCost(li.productName);
-        return s + (fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity));
-      }, 0);
+      const totalKits = items.reduce((s, li) => s + li.quantity, 0);
+      const productTotal = items.reduce((s, li) => s + itemPrice(li), 0);
+      const numPackages = calcPackages(totalKits);
+      const packageTotal = numPackages * PKG_COST;
       const grandTotal = productTotal + packageTotal;
       const qtyDisplay = totalKits % 1 === 0 ? String(Math.round(totalKits)) : totalKits.toFixed(1);
-      const orderRef = o.code ? `Order no. ${o.code} (${o.telegramUsername})` : `Order (${o.telegramUsername})`;
-
-      return [
+      // Shared members all carry the same recipient address; use the first order as the anchor.
+      const anchor = orders[0];
+      const orderRef = anchor.code ? `Order no. ${anchor.code} (${anchor.telegramUsername})` : `Order (${anchor.telegramUsername})`;
+      const text = [
         orderRef,
         `New Order ${idx}:`,
         "",
@@ -7548,24 +7544,39 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         "",
         `Total QTY: ${qtyDisplay}`,
         `Total: ${fmt(productTotal)}`,
-        `Package: ${numPackages} x ${fmt(pkgUnitCost)} = ${fmt(packageTotal)}`,
+        `Package: ${numPackages} x ${fmt(PKG_COST)} = ${fmt(packageTotal)}`,
         `Grand Total: ${fmt(grandTotal)}`,
         "",
         "Address:",
-        o.shippingName?.trim() || o.telegramUsername,
-        o.shippingAddress?.trim() || "",
-        o.shippingCountry?.trim() || "",
-        `Mobile - ${o.shippingPhone?.trim() || "no mobile"}`,
+        anchor.shippingName?.trim() || anchor.telegramUsername,
+        anchor.shippingAddress?.trim() || "",
+        anchor.shippingCountry?.trim() || "",
+        `Mobile - ${anchor.shippingPhone?.trim() || "no mobile"}`,
       ].join("\n");
+      return { text, grandTotal, isShared: !!anchor.sharedOrderId };
     };
 
-    const overallGrandTotal = selected.reduce((s, o) => s + calcGrandTotal(o), 0);
-    const grandTotalParts = selected.map((o, i) => `Order ${i + 1} $${calcGrandTotal(o).toFixed(2)}`).join(" + ");
-    const grandTotalLine = `Grand total for all orders = ${grandTotalParts} = $${overallGrandTotal.toFixed(2)}`;
+    // Group selected orders: shared orders collapse by sharedOrderId; standalone stay alone.
+    const orderGroupKeys: string[] = [];
+    const orderGroupMap = new Map<string, Fs3GbOrder[]>();
+    for (const o of selected) {
+      const key = o.sharedOrderId ? `s:${o.sharedOrderId}` : `o:${o.id}`;
+      if (!orderGroupMap.has(key)) { orderGroupMap.set(key, []); orderGroupKeys.push(key); }
+      orderGroupMap.get(key)!.push(o);
+    }
+    const builtBlocks = orderGroupKeys.map((k, i) => buildOrderBlock(orderGroupMap.get(k)!, i + 1));
 
     const divider = "\n\n" + "-".repeat(32) + "\n\n";
-    const content = selected.map((o, i) => buildOrderBlock(o, i + 1)).join(divider)
-      + "\n\n" + "=".repeat(32) + "\n\n" + grandTotalLine;
+    let content = builtBlocks.map(b => b.text).join(divider);
+    // A single merged shared order is one logical order, so drop the redundant
+    // "Grand total for all orders" footer. Standalone (and multi-order) downloads
+    // keep the footer exactly as before.
+    const suppressFooter = builtBlocks.length === 1 && builtBlocks[0].isShared;
+    if (!suppressFooter) {
+      const overallGrandTotal = builtBlocks.reduce((s, b) => s + b.grandTotal, 0);
+      const grandTotalParts = builtBlocks.map((b, i) => `Order ${i + 1} $${b.grandTotal.toFixed(2)}`).join(" + ");
+      content += "\n\n" + "=".repeat(32) + "\n\n" + `Grand total for all orders = ${grandTotalParts} = $${overallGrandTotal.toFixed(2)}`;
+    }
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
