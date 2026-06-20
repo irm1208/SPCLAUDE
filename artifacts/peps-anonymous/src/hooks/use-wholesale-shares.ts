@@ -230,6 +230,12 @@ export function cancelWholesaleShare(id: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/cancel`, { method: "POST" });
 }
 
+// Organiser reverts a locked share back to "open" so items/delivery can be edited
+// again. Blocked once any member has paid (the server returns 409 in that case).
+export function unlockWholesaleShare(id: string) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/unlock`, { method: "POST" });
+}
+
 export function useInvalidateWholesaleShare() {
   const qc = useQueryClient();
   return (id?: string) => {

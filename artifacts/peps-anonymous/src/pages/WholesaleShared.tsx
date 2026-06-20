@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboa
 import { useLocation, useRoute } from "wouter";
 import { motion } from "framer-motion";
 import {
-  Loader2, Copy, Check, Users, Truck, Lock, Plus, Minus, Search, Crown,
+  Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search, Crown,
   ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   setWholesaleShareSplit,
   lockWholesaleShare,
   cancelWholesaleShare,
+  unlockWholesaleShare,
   useInvalidateWholesaleShare,
   useWholesaleShareMessages,
   postWholesaleShareMessage,
@@ -507,6 +508,15 @@ export default function WholesaleShared() {
     if (!id) return;
     setActionError(""); setBusy("lock");
     try { await lockWholesaleShare(id); invalidate(id); }
+    catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const doUnlock = async () => {
+    if (!id) return;
+    if (!window.confirm("Unlock this order so members can change items and delivery again? Each member's order is removed until you lock again. You can't unlock once a member has started paying.")) return;
+    setActionError(""); setBusy("unlock");
+    try { await unlockWholesaleShare(id); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1016,6 +1026,18 @@ export default function WholesaleShared() {
                 <div className="rounded-xl p-4 space-y-3" style={card}>
                   <p className="text-sm" style={{ color: "var(--t-text)" }}>
                     Waiting for everyone to pay. The combined order is submitted to the vendor automatically once all members have paid.
+                  </p>
+                  <button
+                    onClick={doUnlock}
+                    disabled={busy === "unlock"}
+                    className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
+                    style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", border: "1px solid var(--t-blue)" }}
+                  >
+                    {busy === "unlock" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
+                    Unlock to make changes
+                  </button>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                    Reopens the order so members can edit items and delivery again. Each member's order is removed until you lock again. Not available once a member has started paying.
                   </p>
                   <button
                     onClick={doCancel}

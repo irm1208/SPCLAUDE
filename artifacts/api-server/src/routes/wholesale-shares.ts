@@ -77,6 +77,13 @@ const NOT_CANCELLABLE = Symbol("share_not_cancellable");
 // and the route can respond 409 instead of overwriting the new status.
 const LOCK_CONFLICT = Symbol("share_lock_conflict");
 
+// Thrown inside the unlock transaction when a concurrent cancel/submit already
+// moved the share off "locked", so we abort with 409 instead of reopening it.
+const UNLOCK_CONFLICT = Symbol("share_unlock_conflict");
+// Thrown when unlock is attempted but a member has already started/finished paying
+// — the organiser should cancel (which flags refunds) instead of dropping the order.
+const UNLOCK_HAS_PAID = Symbol("share_unlock_has_paid");
+
 // Server-authoritative delivery address. The organiser only chooses WHICH member
 // receives the parcel — the address itself is read from that member's own saved
 // account profile, never trusted from the organiser's request body. Returns null
@@ -810,6 +817,86 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
   await writeLog("order", "info", "wholesale_share_locked",
     `Wholesale share ${share.id} locked by ${me} — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
     { shareId: share.id, members: members.length, combinedKits, totalShipping }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/wholesale-shares/:id/unlock — creator reverts a locked share back to
+// "open" so items/delivery can be edited again, then re-locked. Only allowed while
+// nobody has paid: the materialised member orders are deleted (their draft items
+// live on the member rows, so editing simply resumes). If anyone has already paid,
+// unlocking is blocked — cancel (which flags refunds) is the right tool then.
+router.post("/wholesale-shares/:id/unlock", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can unlock the shared order." });
+    return;
+  }
+  if (share.status !== "locked") {
+    res.status(409).json({ error: "Only a locked shared order can be unlocked." });
+    return;
+  }
+
+  let removedOrders = 0;
+  try {
+    removedOrders = await db.transaction(async (tx) => {
+      const members = await tx
+        .select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
+
+      // CONDITIONAL parent transition gated on status='locked' so a concurrent
+      // cancel/auto-submit can't be clobbered — if it already moved on, abort 409.
+      const reopened = await tx.update(wholesaleSharesTable)
+        .set({ status: "open", lockedAt: null, totalVendorShipping: null, totalKits: null })
+        .where(and(
+          eq(wholesaleSharesTable.id, share.id),
+          eq(wholesaleSharesTable.status, "locked"),
+        ))
+        .returning({ id: wholesaleSharesTable.id });
+      if (reopened.length === 0) throw UNLOCK_CONFLICT;
+
+      // Atomically delete ONLY the still-pristine ("unpaid") member orders. Gating
+      // the DELETE on payment_status closes the check-then-delete race: if a member
+      // started or finished paying — even concurrently (pending_confirmation,
+      // confirmed, test_ready, test_confirmed, …) — that row won't match, the deleted
+      // count falls short, and we throw to roll the whole unlock back (reopen too).
+      // Dependent line items / messages / dispatch images cascade on delete. Member
+      // draft items live on the member rows (untouched by lock), so editing resumes.
+      if (orderIds.length > 0) {
+        const deleted = await tx.delete(ordersTable)
+          .where(and(
+            inArray(ordersTable.id, orderIds),
+            eq(ordersTable.paymentStatus, "unpaid"),
+          ))
+          .returning({ id: ordersTable.id });
+        if (deleted.length !== orderIds.length) throw UNLOCK_HAS_PAID;
+      }
+      await tx.update(wholesaleShareMembersTable)
+        .set({ orderId: null, shippingShare: null })
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+
+      return orderIds.length;
+    });
+  } catch (e) {
+    if (e === UNLOCK_HAS_PAID) {
+      res.status(409).json({ error: "A member has already started paying, so this order can't be unlocked. Cancel it instead if changes are needed." });
+      return;
+    }
+    if (e === UNLOCK_CONFLICT) {
+      res.status(409).json({ error: "This shared order can no longer be unlocked." });
+      return;
+    }
+    throw e;
+  }
+
+  await writeLog("order", "info", "wholesale_share_unlocked",
+    `Wholesale share ${share.id} unlocked by ${me} — ${removedOrders} member orders removed, reopened for edits`,
+    { shareId: share.id, removedOrders }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));

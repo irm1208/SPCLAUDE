@@ -17,7 +17,34 @@ current status, with `.returning({id})`; if zero rows match, throw a module-leve
 - lock: `WHERE id=? AND status='open'` → sentinel `LOCK_CONFLICT` (rolls back the
   member orders it just inserted).
 - cancel: `WHERE id=? AND status IN ('open','locked')` → sentinel `NOT_CANCELLABLE`.
+- unlock: `WHERE id=? AND status='locked'` → sentinel `UNLOCK_CONFLICT` (see below).
 - submit (`maybeSubmitSharedOrder` in lib/wholesale-submit.ts): `WHERE status='locked'`.
+
+# Unlock reverses lock — race-safe via conditional DELETE on payment_status
+
+`POST /wholesale-shares/:id/unlock` (organiser-only, status must be `locked`) reverts
+a locked share back to `open` so items/delivery can be edited and re-locked. It must
+UNDO everything lock did: revert the parent (status→open, null lockedAt /
+totalVendorShipping / totalKits, conditional on status='locked' → `UNLOCK_CONFLICT`),
+DELETE the materialised per-member orders (children cascade), and null each member's
+`orderId`+`shippingShare`. Member draft `items` live on the member row and are
+untouched by lock, so editing simply resumes.
+
+**Rule:** the order deletion must be a SINGLE atomic conditional statement, NOT a
+check-then-delete: `DELETE ... WHERE id IN (orderIds) AND payment_status='unpaid'
+RETURNING id`, then `if (deleted.length !== orderIds.length) throw UNLOCK_HAS_PAID`
+(→409, which also rolls back the reopen). An earlier SELECT-paid-then-DELETE was a
+TOCTOU race — a payment could confirm between the check and the delete and get
+deleted. Gating the DELETE on `payment_status='unpaid'` lets Postgres re-evaluate the
+predicate against the latest committed row under the row lock, so a concurrently-paid
+order is excluded, the short count aborts the unlock, and no confirmed order is lost.
+
+**Why allowlist `unpaid` only (fail-closed):** order payment states are unpaid,
+pending_confirmation, confirmed, test_ready, test_confirmed, refunded, rejected,
+failed (rejection resets to `unpaid`). Blocking everything except `unpaid` means any
+in-progress payment (even a just-submitted `pending_confirmation`) blocks unlock
+without enumerating states — the organiser must CANCEL instead once anyone starts
+paying.
 
 **Why:** an earlier version ended lock/cancel with an unconditional
 `UPDATE ... WHERE id=?`. Under a concurrent lock+cancel that let the loser's write
