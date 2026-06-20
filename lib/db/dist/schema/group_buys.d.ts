@@ -2828,6 +2828,23 @@ export declare const gbTestingRoundsTable: import("drizzle-orm/pg-core").PgTable
         }, {}, {
             $type: string[];
         }>;
+        optInThresholdPct: import("drizzle-orm/pg-core").PgColumn<{
+            name: "opt_in_threshold_pct";
+            tableName: "gb_testing_rounds";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         maxCompoundVotes: import("drizzle-orm/pg-core").PgColumn<{
             name: "max_compound_votes";
             tableName: "gb_testing_rounds";

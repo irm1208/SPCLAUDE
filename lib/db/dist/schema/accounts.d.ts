@@ -1438,17 +1438,18 @@ export declare const insertAccountSchema: import("zod").ZodObject<Omit<{
 }, "createdAt" | "updatedAt">, "strip", import("zod").ZodTypeAny, {
     telegramUsername: string;
     telegramChatId?: string | null | undefined;
-    passwordHash?: string | null | undefined;
+    country?: string | null | undefined;
+    resetCode?: string | null | undefined;
+    resetCodeExpiresAt?: Date | null | undefined;
     email?: string | null | undefined;
     accountStatus?: string | undefined;
+    passwordHash?: string | null | undefined;
     telegramNotifications?: import("drizzle-zod").Json | undefined;
     telegramLinkToken?: string | null | undefined;
     telegramLinkExpiresAt?: Date | null | undefined;
     healthDataConsent?: boolean | undefined;
     discussCount?: number | undefined;
     discussLimitOverride?: number | null | undefined;
-    resetCode?: string | null | undefined;
-    resetCodeExpiresAt?: Date | null | undefined;
     poolLeaderStatus?: string | null | undefined;
     poolLeaderAppliedAt?: Date | null | undefined;
     poolLeaderApprovedAt?: Date | null | undefined;
@@ -1498,7 +1499,6 @@ export declare const insertAccountSchema: import("zod").ZodObject<Omit<{
         acceptingOrders?: boolean;
         visible?: boolean;
     } | undefined;
-    country?: string | null | undefined;
     addressLine1?: string | null | undefined;
     addressLine2?: string | null | undefined;
     addressCity?: string | null | undefined;
@@ -1512,17 +1512,18 @@ export declare const insertAccountSchema: import("zod").ZodObject<Omit<{
 }, {
     telegramUsername: string;
     telegramChatId?: string | null | undefined;
-    passwordHash?: string | null | undefined;
+    country?: string | null | undefined;
+    resetCode?: string | null | undefined;
+    resetCodeExpiresAt?: Date | null | undefined;
     email?: string | null | undefined;
     accountStatus?: string | undefined;
+    passwordHash?: string | null | undefined;
     telegramNotifications?: import("drizzle-zod").Json | undefined;
     telegramLinkToken?: string | null | undefined;
     telegramLinkExpiresAt?: Date | null | undefined;
     healthDataConsent?: boolean | undefined;
     discussCount?: number | undefined;
     discussLimitOverride?: number | null | undefined;
-    resetCode?: string | null | undefined;
-    resetCodeExpiresAt?: Date | null | undefined;
     poolLeaderStatus?: string | null | undefined;
     poolLeaderAppliedAt?: Date | null | undefined;
     poolLeaderApprovedAt?: Date | null | undefined;
@@ -1572,7 +1573,6 @@ export declare const insertAccountSchema: import("zod").ZodObject<Omit<{
         acceptingOrders?: boolean;
         visible?: boolean;
     } | undefined;
-    country?: string | null | undefined;
     addressLine1?: string | null | undefined;
     addressLine2?: string | null | undefined;
     addressCity?: string | null | undefined;
