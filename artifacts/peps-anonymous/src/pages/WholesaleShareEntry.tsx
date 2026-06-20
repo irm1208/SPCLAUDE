@@ -91,20 +91,37 @@ export default function WholesaleShareEntry() {
                 <p className="text-sm" style={{ color: "var(--t-muted)" }}>Shared orders aren’t available just yet — check back soon.</p>
               </div>
             ) : (
-            <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+            <div className="space-y-3">
               {error && <p className="text-sm" style={{ color: "#ef4444" }}>{error}</p>}
 
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <div className="space-y-0.5">
+                  <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Start a shared order</h2>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>Create a new parcel and invite others to join using your share code.</p>
+                </div>
                 <button
                   onClick={startShare}
                   disabled={busy}
-                  className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-60"
+                  className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-60"
                   style={{ background: "var(--t-blue)" }}
                 >
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                   Start a shared order
                 </button>
-                <div className="flex gap-2 flex-1">
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>or</span>
+                <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
+              </div>
+
+              <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <div className="space-y-0.5">
+                  <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Join an existing order</h2>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>Got a code from an organiser? Enter it to join their parcel.</p>
+                </div>
+                <div className="flex gap-2">
                   <input
                     value={joinCode}
                     onChange={e => setJoinCode(e.target.value)}
@@ -116,8 +133,8 @@ export default function WholesaleShareEntry() {
                   <button
                     onClick={joinShare}
                     disabled={!joinCode.trim()}
-                    className="px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
-                    style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                    className="px-5 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                    style={{ background: "var(--t-blue)" }}
                   >
                     Join
                   </button>
@@ -125,7 +142,7 @@ export default function WholesaleShareEntry() {
               </div>
 
               {activeShares.length > 0 && (
-                <div className="pt-2 border-t space-y-1.5" style={{ borderColor: "var(--t-border)" }}>
+                <div className="rounded-xl p-4 space-y-1.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                   <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Your shared orders</p>
                   {activeShares.map(s => (
                     <button
