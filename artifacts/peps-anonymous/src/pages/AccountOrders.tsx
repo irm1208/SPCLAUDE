@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -6,7 +6,7 @@ import {
   FileText, RefreshCw, Loader2, AlertCircle, ChevronDown, ChevronUp,
   Users, User, Lock, Eye, EyeOff, CheckCircle, ShieldCheck,
   MessageCircle, Link2, Unlink, Bell, BellOff, Copy, ScanLine,
-  Trash2, RotateCcw, ShieldAlert,
+  Trash2, RotateCcw, ShieldAlert, ShoppingBag, Boxes,
 } from "lucide-react";
 import {
   useAccount, useAccountOrders, useProfile,
@@ -787,6 +787,29 @@ export default function AccountOrders() {
   const { data: orders = [], isLoading: ordersLoading, refetch } = useAccountOrders(gbId);
 
   const [mainTab, setMainTab] = useState<"orders" | "profile">("orders");
+  const [orderFilter, setOrderFilter] = useState<"groupbuy" | "wholesale" | "shop">("groupbuy");
+  const [orderFilterTouched, setOrderFilterTouched] = useState(false);
+
+  // Split the customer's orders into the three categories. Group buys are
+  // identified by groupBuyId (their orderType is null); wholesale orders by
+  // orderType; everything else is a regular shop order.
+  const groupedOrders = useMemo(() => {
+    const g = { groupbuy: [] as AccountOrder[], wholesale: [] as AccountOrder[], shop: [] as AccountOrder[] };
+    for (const o of orders) {
+      if (o.orderType === "wholesale" || o.orderType === "wholesale_shared") g.wholesale.push(o);
+      else if (o.groupBuyId) g.groupbuy.push(o);
+      else g.shop.push(o);
+    }
+    return g;
+  }, [orders]);
+
+  // Until the user taps a tab, land on the first category that actually has orders.
+  React.useEffect(() => {
+    if (orderFilterTouched) return;
+    if (groupedOrders[orderFilter].length > 0) return;
+    const firstNonEmpty = (["groupbuy", "wholesale", "shop"] as const).find(k => groupedOrders[k].length > 0);
+    if (firstNonEmpty) setOrderFilter(firstNonEmpty);
+  }, [groupedOrders, orderFilter, orderFilterTouched]);
 
   React.useEffect(() => {
     if (!accountLoading && !isLoggedIn) {
@@ -908,13 +931,84 @@ export default function AccountOrders() {
                 </motion.div>
               )}
 
-              {!ordersLoading && orders.map(order => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  onManage={() => handleManage(order.code)}
-                />
-              ))}
+              {/* Focused single group-buy view (?gbId=…): skip category tabs, show a flat list. */}
+              {!ordersLoading && orders.length > 0 && gbId && (
+                <div className="space-y-4">
+                  {orders.map(order => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      onManage={() => handleManage(order.code)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!ordersLoading && orders.length > 0 && !gbId && (
+                <>
+                  {/* Order category sub-tabs: Group Buys / Wholesale / Shop */}
+                  <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm" style={{ border: "1px solid var(--t-border)" }}>
+                    {([
+                      { id: "groupbuy" as const, label: "Group Buys", icon: Users },
+                      { id: "wholesale" as const, label: "Wholesale", icon: Boxes },
+                      { id: "shop" as const, label: "Shop", icon: ShoppingBag },
+                    ]).map(tab => {
+                      const count = groupedOrders[tab.id].length;
+                      const active = orderFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setOrderFilter(tab.id); setOrderFilterTouched(true); }}
+                          className="flex-1 relative flex items-center justify-center gap-1 h-9 rounded-xl text-[11px] font-semibold transition-all min-w-0"
+                          style={active ? { background: "var(--t-blue)", color: "#fff" } : { color: "var(--t-muted)" }}
+                        >
+                          <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{tab.label}</span>
+                          {count > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 rounded-full shrink-0"
+                              style={active
+                                ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
+                                : { background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                              {count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {groupedOrders[orderFilter].length === 0 ? (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                      className="bg-white rounded-xl p-8 text-center shadow-sm"
+                      style={{ border: "1px solid var(--t-border)" }}>
+                      <div className="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4"
+                        style={{ background: "rgba(124,58,237,0.08)" }}>
+                        {orderFilter === "groupbuy" ? <Users className="w-7 h-7 text-blue-600" />
+                          : orderFilter === "wholesale" ? <Boxes className="w-7 h-7 text-blue-600" />
+                          : <ShoppingBag className="w-7 h-7 text-blue-600" />}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700 mb-1">
+                        No {orderFilter === "groupbuy" ? "group buy" : orderFilter === "wholesale" ? "wholesale" : "shop"} orders
+                      </p>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        {orderFilter === "groupbuy" ? "You haven't joined any group buys yet."
+                          : orderFilter === "wholesale" ? "You don't have any wholesale orders yet."
+                          : "You don't have any shop orders yet."}
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <div className="space-y-4">
+                      {groupedOrders[orderFilter].map(order => (
+                        <OrderCard
+                          key={order.id}
+                          order={order}
+                          onManage={() => handleManage(order.code)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
 
               {!ordersLoading && (
                 <DeletedOrdersSection onRestored={() => refetch()} />
