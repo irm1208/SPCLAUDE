@@ -2797,7 +2797,7 @@ function PaymentsTab({ assignment, me, onAssignmentUpdate }: {
         <div className="flex gap-2 flex-wrap">
           {[
             { key: "cryptoEnabled", label: "Crypto" },
-            { key: "usdtEnabled", label: "USDT" },
+            { key: "usdtEnabled", label: "USDT / USDC" },
             { key: "revolutEnabled", label: "Revolut" },
             { key: "paypalEnabled", label: "PayPal" },
             { key: "anonPayEnabled", label: "AnonPay" },
@@ -2825,7 +2825,7 @@ function PaymentsTab({ assignment, me, onAssignmentUpdate }: {
           <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Crypto</p>
             {enabled.usdtEnabled && (
-              <PField label="USDT Wallet Address" icon={Wallet}>
+              <PField label="USDT / USDC Wallet Address" icon={Wallet}>
                 <input value={form.usdtWallet} onChange={e => setForm(f => ({ ...f, usdtWallet: e.target.value }))}
                   placeholder="TRC20 / ERC20 address…" className={inputCls("text-sm")} style={inputStyle} />
               </PField>

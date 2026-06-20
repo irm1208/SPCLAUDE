@@ -20984,7 +20984,7 @@ const RESHIPPER_STATUS_COLORS: Record<ReshipperStatus, string> = {
 
 const PM_KEYS = [
   { key: "cryptoEnabled",   label: "Crypto" },
-  { key: "usdtEnabled",     label: "USDT" },
+  { key: "usdtEnabled",     label: "USDT / USDC" },
   { key: "revolutEnabled",  label: "Revolut" },
   { key: "paypalEnabled",   label: "PayPal" },
   { key: "anonPayEnabled",  label: "AnonPay" },

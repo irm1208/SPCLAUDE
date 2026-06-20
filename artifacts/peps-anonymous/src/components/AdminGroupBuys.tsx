@@ -8882,7 +8882,7 @@ type ApprovedReshipper = {
 };
 
 const PAYMENT_METHODS: { key: string; label: string }[] = [
-  { key: "usdtEnabled", label: "USDT" },
+  { key: "usdtEnabled", label: "USDT / USDC" },
   { key: "revolutEnabled", label: "Revolut" },
   { key: "paypalEnabled", label: "PayPal" },
   { key: "cryptoEnabled", label: "Crypto" },

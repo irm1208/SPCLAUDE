@@ -1133,7 +1133,7 @@ export default function OrderForm() {
                         </p>
                       )}
                       {reshipperInfo?.enabledPaymentMethods && typeof reshipperInfo.enabledPaymentMethods === "object" && !Array.isArray(reshipperInfo.enabledPaymentMethods) && (() => {
-                        const labels: Record<string, string> = { usdtEnabled: "USDT", revolutEnabled: "Revolut", paypalEnabled: "PayPal", cryptoEnabled: "Crypto", anonPayEnabled: "AnonPay" };
+                        const labels: Record<string, string> = { usdtEnabled: "USDT / USDC", revolutEnabled: "Revolut", paypalEnabled: "PayPal", cryptoEnabled: "Crypto", anonPayEnabled: "AnonPay" };
                         const methods = Object.entries(reshipperInfo.enabledPaymentMethods as Record<string, unknown>).filter(([, v]) => v).map(([k]) => labels[k] ?? k);
                         return methods.length > 0 ? (
                           <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Methods: {methods.join(", ")}</p>

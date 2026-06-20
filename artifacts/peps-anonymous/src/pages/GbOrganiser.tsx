@@ -10597,7 +10597,7 @@ interface ApprovedReshipper {
 }
 
 const PAYMENT_METHOD_KEYS = [
-  { key: "usdtEnabled", label: "USDT" },
+  { key: "usdtEnabled", label: "USDT / USDC" },
   { key: "revolutEnabled", label: "Revolut" },
   { key: "paypalEnabled", label: "PayPal" },
   { key: "cryptoEnabled", label: "Crypto" },
