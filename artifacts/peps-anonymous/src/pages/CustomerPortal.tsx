@@ -271,11 +271,13 @@ function OrderCard({ order, onManage, onReorder, groupBuyName }: { order: Order;
               <Users className="w-3 h-3" style={{ color: "var(--t-blue)" }} />
               <span className="text-[10px] font-bold" style={{ color: "var(--t-blue)" }}>{groupBuyName} Order</span>
             </div>
-          ) : order.orderType === "wholesale" ? (
+          ) : (order.orderType === "wholesale" || order.orderType === "wholesale_shared") ? (
             <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full"
               style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
               <Store className="w-3 h-3" style={{ color: "#10B981" }} />
-              <span className="text-[10px] font-bold" style={{ color: "#10B981" }}>Wholesale</span>
+              <span className="text-[10px] font-bold" style={{ color: "#10B981" }}>
+                {order.orderType === "wholesale_shared" ? "Shared Wholesale" : "Wholesale"}
+              </span>
             </div>
           ) : <span />}
           <span
@@ -6650,7 +6652,7 @@ export default function CustomerPortal() {
       .catch(() => {});
   }, []);
 
-  const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "regular">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "wholesale" | "shop">("all");
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
   const [showCompoundHistory, setShowCompoundHistory] = useState(false);
@@ -7089,10 +7091,13 @@ export default function CustomerPortal() {
   const isActive = (o: Order) => ["Draft", "Submitted", "Processing", "Shipped"].includes(o.status);
   const isPrev   = (o: Order) => ["Completed", "Cancelled"].includes(o.status);
 
-  // Regular (non-GB) orders
+  // Regular (non-GB) orders, split into wholesale vs shop
+  const isWholesaleOrder = (o: Order) => o.orderType === "wholesale" || o.orderType === "wholesale_shared";
   const regularOrders   = filteredByGb.filter(o => !o.groupBuyId);
   const regularActive   = regularOrders.filter(isActive);
   const regularPrevious = regularOrders.filter(isPrev);
+  const wholesaleOrders = regularOrders.filter(isWholesaleOrder);
+  const shopOrders      = regularOrders.filter(o => !isWholesaleOrder(o));
 
   // GB orders: group by groupBuyId → { gb, orders[] }
   const gbGroupMap = new Map<string, { gb: GroupBuySummary | null; orders: Order[] }>();
@@ -7754,14 +7759,13 @@ export default function CustomerPortal() {
     const totalOrders   = filteredByGb.length;
     const completed     = filteredByGb.filter(o => o.status === "Completed").length;
 
-    // Show all orders combined (no active/history split)
-    const shownRegular = regularOrders;
-
-    const hasRegular = shownRegular.length > 0;
-    const hasGb      = gbOrderGroups.length > 0;
-    const showGb      = hasGb      && (typeFilter === "all" || typeFilter === "gb");
-    const showRegular = hasRegular && (typeFilter === "all" || typeFilter === "regular");
-    const nothingAtAll = !ordersLoading && !showGb && !showRegular;
+    const hasGb        = gbOrderGroups.length > 0;
+    const hasWholesale = wholesaleOrders.length > 0;
+    const hasShop      = shopOrders.length > 0;
+    const showGb        = hasGb        && (typeFilter === "all" || typeFilter === "gb");
+    const showWholesale = hasWholesale && (typeFilter === "all" || typeFilter === "wholesale");
+    const showShop      = hasShop      && (typeFilter === "all" || typeFilter === "shop");
+    const nothingAtAll  = !ordersLoading && !showGb && !showWholesale && !showShop;
 
     return (
       <PortalLayout navProps={navProps}>
@@ -7816,9 +7820,9 @@ export default function CustomerPortal() {
 
           {/* ── Type filter pills ── */}
           <div className="flex gap-1.5">
-            {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buy" }, { id: "regular" as const, label: "Lonely Vial" } ]).map(opt => (
+            {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buys" }, { id: "wholesale" as const, label: "Wholesale" }, { id: "shop" as const, label: "Shop" } ]).map(opt => (
               <button key={opt.id} onClick={() => setTypeFilter(opt.id)}
-                className="flex-1 h-8 rounded-xl text-[11px] font-semibold transition-all"
+                className="flex-1 h-8 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap"
                 style={typeFilter === opt.id
                   ? { background: "var(--t-blue)", color: "white" }
                   : { background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
@@ -7844,13 +7848,22 @@ export default function CustomerPortal() {
               </div>
               <p className="text-sm font-bold mb-1" style={{ color: T.text }}>No orders yet</p>
               <p className="text-xs mb-5" style={{ color: T.subtle }}>
-                {typeFilter === "gb" ? "You haven't placed any group buy orders yet." : "Your orders will appear here"}
+                {typeFilter === "gb" ? "You haven't placed any group buy orders yet."
+                  : typeFilter === "wholesale" ? "You haven't placed any wholesale orders yet."
+                  : typeFilter === "shop" ? "You haven't placed any shop orders yet."
+                  : "Your orders will appear here"}
               </p>
               {typeFilter === "gb" ? (
                 <button onClick={() => setSection("groups")}
                   className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
                   style={{ background: "var(--t-blue-deep)" }}>
                   Make an Order <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              ) : typeFilter === "wholesale" ? (
+                <button onClick={() => setLocation("/wholesale")}
+                  className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
+                  style={{ background: "var(--t-blue-deep)" }}>
+                  Place an Order <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               ) : (
                 <button onClick={() => setLocation("/shop")}
@@ -7921,29 +7934,56 @@ export default function CustomerPortal() {
             );
           })}
 
-          {/* ── Regular Orders section ── */}
-          {showRegular && (
+          {/* ── Wholesale Orders section ── */}
+          {showWholesale && (
             <div className="space-y-5">
-              {/* Only show header when group buy orders are also visible and not filtering */}
-              {showGb && typeFilter === "all" && (
+              {typeFilter === "all" && (
+                <div className="flex items-center gap-2 px-1">
+                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: T.surface2 }}>
+                    <Boxes className="w-3.5 h-3.5" style={{ color: T.muted }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold" style={{ color: T.text }}>Wholesale Orders</p>
+                    <p className="text-[10px]" style={{ color: T.subtle }}>{wholesaleOrders.length} order{wholesaleOrders.length !== 1 ? "s" : ""}</p>
+                  </div>
+                </div>
+              )}
+              <AnimatePresence>
+                {wholesaleOrders.map((order, i) => (
+                  <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+                    <OrderCard
+                      order={order}
+                      onManage={() => handleManage(order)}
+                      onReorder={order.orderType === "wholesale" ? () => handleReorder(order) : undefined}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* ── Shop Orders section ── */}
+          {showShop && (
+            <div className="space-y-5">
+              {typeFilter === "all" && (
                 <div className="flex items-center gap-2 px-1">
                   <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
                     style={{ background: T.surface2 }}>
                     <ShoppingBag className="w-3.5 h-3.5" style={{ color: T.muted }} />
                   </div>
                   <div>
-                    <p className="text-xs font-bold" style={{ color: T.text }}>My Orders</p>
-                    <p className="text-[10px]" style={{ color: T.subtle }}>{shownRegular.length} order{shownRegular.length !== 1 ? "s" : ""}</p>
+                    <p className="text-xs font-bold" style={{ color: T.text }}>Shop Orders</p>
+                    <p className="text-[10px]" style={{ color: T.subtle }}>{shopOrders.length} order{shopOrders.length !== 1 ? "s" : ""}</p>
                   </div>
                 </div>
               )}
               <AnimatePresence>
-                {shownRegular.map((order, i) => (
+                {shopOrders.map((order, i) => (
                   <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
                     <OrderCard
                       order={order}
                       onManage={() => handleManage(order)}
-                      onReorder={order.orderType === "wholesale" ? () => handleReorder(order) : undefined}
                     />
                   </motion.div>
                 ))}
