@@ -687,7 +687,7 @@ function OrdersTab({ secret }: { secret: string }) {
   const [balanceFilter, setBalanceFilter] = useState<"all" | "owed" | "paid">("all");
   const [directShippingFilter, setDirectShippingFilter] = useState(false);
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
-  const [orderView, setOrderView] = useState<"gb" | "wholesale" | "all">("gb");
+  const [orderView, setOrderView] = useState<"gb" | "wholesale" | "shared" | "all">("gb");
   const [routingFilter, setRoutingFilter] = useState<"all" | "direct" | "reshipper" | "unrouted">("all");
   const [activeFilterPanel, setActiveFilterPanel] = useState<"payment" | "flags" | "scope" | "dates" | null>(null);
   const [clearBalanceEnabled, setClearBalanceEnabled] = useState(() => {
@@ -1149,7 +1149,8 @@ function OrdersTab({ secret }: { secret: string }) {
       || (balanceFilter === "paid" && o.balancePaymentStatus === "confirmed");
     const matchDirectShipping = !directShippingFilter || o.directShippingRequested === true;
     const matchOrderView = orderView === "all" ? true
-      : orderView === "wholesale" ? o.isWholesale === true
+      : orderView === "wholesale" ? o.orderType === "wholesale"
+      : orderView === "shared" ? o.orderType === "wholesale_shared"
       : !o.isWholesale;
     return matchVendor && matchPayFrom && matchPayTo && matchNoVs && matchBalance && matchDirectShipping && matchOrderView;
   }).sort((a, b) => {
@@ -1196,7 +1197,7 @@ function OrdersTab({ secret }: { secret: string }) {
   type OrderRow = { type: "order"; order: Order } | { type: "header"; group: SharedGroup };
 
   const orderRows = useMemo<OrderRow[]>(() => {
-    const grouping = orderView === "wholesale" || orderView === "all";
+    const grouping = orderView === "shared" || orderView === "all";
     if (!grouping) return filtered.map(o => ({ type: "order" as const, order: o }));
     const groups = new Map<string, Order[]>();
     for (const o of filtered) {
@@ -1841,11 +1842,12 @@ function OrdersTab({ secret }: { secret: string }) {
           </Card>
         </div>
       )}
-      {/* ── Order View Toggle: GB Orders / Wholesale / All ── */}
+      {/* ── Order View Toggle: GB Orders / Wholesale / Shared Order / All ── */}
       <div className="flex items-center gap-1 p-1 bg-muted rounded-xl w-fit mb-1">
         {([
           { value: "gb", label: "GB Orders" },
           { value: "wholesale", label: "Wholesale" },
+          { value: "shared", label: "Shared Order" },
           { value: "all", label: "All" },
         ] as const).map(opt => (
           <button
