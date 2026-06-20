@@ -549,6 +549,7 @@ router.put("/wholesale-shares/:id/delivery-address", requireWholesale, async (re
   if (!name) { res.status(400).json({ error: "Enter the recipient's name." }); return; }
   if (!line1) { res.status(400).json({ error: "Enter the first line of the address." }); return; }
   if (!country) { res.status(400).json({ error: "Choose the destination country." }); return; }
+  if (!phone) { res.status(400).json({ error: "Enter a contact phone number for delivery." }); return; }
 
   // The country must map to a shippable vendor region or the parcel can never be
   // priced or locked — reject early so the recipient gets immediate feedback.
@@ -636,8 +637,8 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
     res.status(400).json({ error: "A shared order needs at least 2 members before it can be locked." });
     return;
   }
-  if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName) {
-    res.status(400).json({ error: "Set the delivery member and their full shipping address before locking." });
+  if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName || !share.shippingPhone) {
+    res.status(400).json({ error: "Set the delivery member and their full shipping address (including a contact phone) before locking." });
     return;
   }
   const deliveryIsMember = members.some(m => m.username.toLowerCase() === share.deliveryUsername!.toLowerCase());

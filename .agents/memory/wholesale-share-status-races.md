@@ -53,6 +53,17 @@ snapshot of an already-locked share.
 shipping to their saved account address), but letting the organiser type it would
 re-open the spoofing hole — so editing is restricted to the recipient themselves.
 
+**Required shipping fields are validated in THREE lockstep places.** A required
+delivery field (name, line1, country, and now PHONE) must be enforced at all of:
+(1) `PUT /delivery-address` body validation; (2) the `POST /lock` readiness guard
+(`!share.shippingPhone` etc.); (3) the frontend `deliverySet` boolean that drives
+the lock checklist + `canLock`. Enforcing only the form/Save button is NOT enough:
+the organiser's `PUT /delivery` seeds the shipping snapshot from the recipient's
+saved account, which can leave a field (e.g. phone) null without the recipient ever
+opening the form — so lock-readiness must independently re-check each required field
+or a blank one slips through to materialised orders. If you make another shipping
+field mandatory, change all three spots together.
+
 # "wholesale_shared" must be treated as wholesale in admin views
 
 A locked share materialises per-member orders with `orderType="wholesale_shared"`
