@@ -6693,6 +6693,81 @@ interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; de
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
 
+// ── Uther wholesale tiered package shipping (mirrors server wholesale-shipping) ──
+// A vendor defines tier columns (e.g. "1–5", "6–10", …) with an upper kit bound
+// per tier and a per-region price list. Orders larger than maxKitsPerPackage are
+// split into multiple packages, each priced by its own tier.
+interface Fs3WholesaleRegion { name: string; prices?: number[]; priceNote?: string; customNote?: string; countries?: string[]; }
+interface Fs3WholesaleVendor { id: string; name: string; tiers: string[]; tierBounds?: number[]; maxKitsPerPackage?: number; regions: Fs3WholesaleRegion[]; }
+
+function fs3TierIndex(kits: number, bounds: number[]): number {
+  for (let i = 0; i < bounds.length; i++) { if (kits <= bounds[i]) return i; }
+  return bounds.length - 1;
+}
+
+// Match an order's shipping country to a vendor region (raw or normalised name).
+function fs3PickRegion(vendor: Fs3WholesaleVendor | null, country: string | null | undefined): Fs3WholesaleRegion | null {
+  if (!vendor || !country) return null;
+  const candidates = [country.trim().toLowerCase(), normalizeCountry(country).trim().toLowerCase()].filter(Boolean);
+  if (candidates.length === 0) return null;
+  for (const region of vendor.regions) {
+    if (region.countries?.some(rc => candidates.includes(rc.trim().toLowerCase()))) return region;
+  }
+  return null;
+}
+
+// Per-package prices for `kits`, split into chunks of maxKitsPerPackage with each
+// chunk priced by its own kit-count tier. Returns null when the region can't be
+// auto-priced (custom/per-kg note or no price list).
+function fs3PackagePrices(vendor: Fs3WholesaleVendor | null, region: Fs3WholesaleRegion | null, kits: number): number[] | null {
+  if (!vendor || !region || region.customNote || region.priceNote || !region.prices) return null;
+  const bounds = vendor.tierBounds ?? vendor.tiers.map((_, i) => (i + 1) * 5);
+  const maxPkg = vendor.maxKitsPerPackage ?? 25;
+  if (maxPkg <= 0) return null;
+  if (kits <= 0) return [];
+  const prices: number[] = [];
+  let remaining = kits;
+  while (remaining > 0) {
+    const inPkg = Math.min(remaining, maxPkg);
+    const price = region.prices[fs3TierIndex(inPkg, bounds)];
+    if (price == null) return null;
+    prices.push(price);
+    remaining -= inPkg;
+  }
+  return prices;
+}
+
+// Resolve the "Package: …" line + package count + total for a shipment of
+// `totalKits` to `country`. Uses Uther wholesale tiered region pricing when the
+// region resolves; otherwise falls back to the flat per-package cost ($70).
+function fs3ComputePackageShipping(
+  vendor: Fs3WholesaleVendor | null,
+  fallbackMaxKits: number,
+  totalKits: number,
+  country: string | null | undefined,
+): { numPackages: number; packageTotal: number; packageLine: string } {
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+  // No kits → no shipping (matches the server wholesale calculator).
+  if (totalKits <= 0) return { numPackages: 0, packageTotal: 0, packageLine: `Package: ${fmt(0)}` };
+  const region = fs3PickRegion(vendor, country);
+  const tiered = fs3PackagePrices(vendor, region, totalKits);
+  if (tiered && tiered.length > 0) {
+    const packageTotal = Number(tiered.reduce((a, b) => a + b, 0).toFixed(2));
+    const allSame = tiered.every(p => p === tiered[0]);
+    const desc = allSame
+      ? `${tiered.length} x ${fmt(tiered[0])} = ${fmt(packageTotal)}`
+      : `${tiered.map(fmt).join(" + ")} = ${fmt(packageTotal)}`;
+    return { numPackages: tiered.length, packageTotal, packageLine: `Package: ${desc}` };
+  }
+  // Fallback (region unmatched / custom pricing / vendor not loaded): flat
+  // per-package cost, still splitting at 25 kits/package per the user's rule.
+  const PKG_COST = 70;
+  const maxKits = fallbackMaxKits > 0 ? fallbackMaxKits : (vendor?.maxKitsPerPackage ?? 25);
+  const numPackages = Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
+  const packageTotal = numPackages * PKG_COST;
+  return { numPackages, packageTotal, packageLine: `Package: ${numPackages} x ${fmt(PKG_COST)} = ${fmt(packageTotal)}` };
+}
+
 function Fs3Tab({ secret }: { secret: string }) {
   // ── Password gate (no sessionStorage — always required on mount) ──
   const [fs3Authed, setFs3Authed] = useState(false);
@@ -6774,6 +6849,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [dataErr, setDataErr] = useState("");
   const [groupBuys, setGroupBuys] = useState<Fs3GroupBuy[]>([]);
   const [vendors, setVendors] = useState<string[]>([]);
+  // Active Uther wholesale vendor — drives tiered package shipping in TXT downloads.
+  const [wholesaleVendor, setWholesaleVendor] = useState<Fs3WholesaleVendor | null>(null);
 
   // Filters
   const [filterGroupBuy, setFilterGroupBuy] = useState("");
@@ -6812,6 +6889,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       .then((d: any) => setStockList(Array.isArray(d) ? d.map((p: any) => ({ id: String(p.id ?? ""), name: String(p.name ?? ""), stock: p.stock ?? null, low: p.lowStockThreshold ?? null })) : []))
       .catch(() => setStockList([]));
   }, [secret]);
+  useEffect(() => {
+    fetch("/api/wholesale-vendor")
+      .then(r => (r.ok ? r.json() : null))
+      .then((v: unknown) => setWholesaleVendor(v && typeof v === "object" ? (v as Fs3WholesaleVendor) : null))
+      .catch(() => setWholesaleVendor(null));
+  }, []);
   const stockById = useMemo(() => {
     const m = new Map<string, { stock: number | null; low: number | null }>();
     for (const p of stockList) {
@@ -7347,17 +7430,35 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     URL.revokeObjectURL(url);
   };
 
+  // Ensure the active wholesale vendor is loaded before pricing a TXT download
+  // (guards the brief window before the on-mount fetch resolves).
+  const ensureWholesaleVendor = async (): Promise<Fs3WholesaleVendor | null> => {
+    if (wholesaleVendor) return wholesaleVendor;
+    try {
+      const r = await fetch("/api/wholesale-vendor");
+      const v: unknown = r.ok ? await r.json() : null;
+      const parsed = v && typeof v === "object" ? (v as Fs3WholesaleVendor) : null;
+      if (parsed) setWholesaleVendor(parsed);
+      return parsed;
+    } catch { return null; }
+  };
+
   // ── Download single direct order as TXT (vendor-facing template) ──
-  const downloadDirectOrderTxt = (o: Fs3GbOrder) => {
+  const downloadDirectOrderTxt = async (o: Fs3GbOrder) => {
     const gb = groupBuys.find(g => g.id === filterGroupBuy);
+    const vendor = await ensureWholesaleVendor();
     const items = o.lineItems ?? [];
     const totalKits = items.reduce((s, li) => s + li.quantity, 0);
 
-    // Package: always $70, minimum 1 package
-    const pkgUnitCost = 70;
-    const maxKits = gb?.vendorShippingMaxKitsPerPackage ?? 0;
-    const numPackages = Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
-    const packageTotal = numPackages * pkgUnitCost;
+    // Package shipping: Uther wholesale tiered region pricing by kit count
+    // (25 kits/package; overflow cycles to the next package). Flat $70 fallback
+    // when the region can't be resolved or auto-priced.
+    const { packageTotal, packageLine } = fs3ComputePackageShipping(
+      vendor,
+      gb?.vendorShippingMaxKitsPerPackage ?? 0,
+      totalKits,
+      o.shippingCountry,
+    );
 
     const fmtMoney = (n: number) => `$${n.toFixed(2)}`;
     const itemLines = items.map(li => {
@@ -7382,7 +7483,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       "",
       `Total QTY: ${totalKits % 1 === 0 ? Math.round(totalKits) : totalKits.toFixed(1)}`,
       `Total: ${fmtMoney(productTotal)}`,
-      `Package: ${numPackages} x ${fmtMoney(pkgUnitCost)} = ${fmtMoney(packageTotal)}`,
+      packageLine,
       `Grand Total: ${fmtMoney(grandTotal)}`,
       "",
       "Address:",
@@ -7510,15 +7611,11 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     // Shared orders (orders sharing a sharedOrderId) ship to one address, so all
     // member line items are merged into a SINGLE combined order block (one total,
     // one package, one address). Standalone direct/wholesale orders keep one block each.
+    const vendor = await ensureWholesaleVendor();
     const itemPrice = (li: { productName: string; quantity: number; unitPrice?: number; lineTotal?: number }): number => {
       const fs3UnitCost = getCost(li.productName);
       return fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity);
     };
-    const calcPackages = (totalKits: number): number => {
-      const maxKits = gb?.vendorShippingMaxKitsPerPackage ?? 0;
-      return Math.max(1, maxKits > 0 ? Math.ceil(totalKits / maxKits) : 1);
-    };
-
     // Build one block for a set of orders that ship together (1 standalone order,
     // or every member of a shared order combined into one).
     const buildOrderBlock = (orders: Fs3GbOrder[], idx: number): { text: string; grandTotal: number; isShared: boolean } => {
@@ -7529,12 +7626,18 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       });
       const totalKits = items.reduce((s, li) => s + li.quantity, 0);
       const productTotal = items.reduce((s, li) => s + itemPrice(li), 0);
-      const numPackages = calcPackages(totalKits);
-      const packageTotal = numPackages * PKG_COST;
-      const grandTotal = productTotal + packageTotal;
-      const qtyDisplay = totalKits % 1 === 0 ? String(Math.round(totalKits)) : totalKits.toFixed(1);
       // Shared members all carry the same recipient address; use the first order as the anchor.
       const anchor = orders[0];
+      // Package shipping: Uther wholesale tiered region pricing by kit count
+      // (25 kits/package; overflow cycles to the next package). Flat $70 fallback.
+      const { packageTotal, packageLine } = fs3ComputePackageShipping(
+        vendor,
+        gb?.vendorShippingMaxKitsPerPackage ?? 0,
+        totalKits,
+        anchor.shippingCountry,
+      );
+      const grandTotal = productTotal + packageTotal;
+      const qtyDisplay = totalKits % 1 === 0 ? String(Math.round(totalKits)) : totalKits.toFixed(1);
       const orderRef = anchor.code ? `Order no. ${anchor.code} (${anchor.telegramUsername})` : `Order (${anchor.telegramUsername})`;
       const text = [
         orderRef,
@@ -7544,7 +7647,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         "",
         `Total QTY: ${qtyDisplay}`,
         `Total: ${fmt(productTotal)}`,
-        `Package: ${numPackages} x ${fmt(PKG_COST)} = ${fmt(packageTotal)}`,
+        packageLine,
         `Grand Total: ${fmt(grandTotal)}`,
         "",
         "Address:",
