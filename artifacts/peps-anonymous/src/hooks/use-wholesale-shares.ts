@@ -104,8 +104,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try { data = text ? JSON.parse(text) : null; } catch { /* non-json */ }
   if (!res.ok) {
     const message = (data as { error?: string })?.error || "Something went wrong. Please try again.";
-    const err = new Error(message) as Error & { status?: number };
+    const err = new Error(message) as Error & { status?: number; data?: unknown };
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data as T;
@@ -125,7 +126,7 @@ export function useWholesaleShares(enabled = true) {
 
 export type ShareFetchResult =
   | { ok: true; share: WholesaleShareDetail }
-  | { ok: false; status: number; message: string };
+  | { ok: false; status: number; message: string; creatorUsername?: string | null };
 
 export function useWholesaleShare(id: string | null) {
   return useQuery<ShareFetchResult>({
@@ -135,8 +136,13 @@ export function useWholesaleShare(id: string | null) {
         const share = await request<WholesaleShareDetail>(`/api/wholesale-shares/${id}`);
         return { ok: true as const, share };
       } catch (e) {
-        const err = e as Error & { status?: number };
-        return { ok: false as const, status: err.status ?? 0, message: err.message };
+        const err = e as Error & { status?: number; data?: { creatorUsername?: string | null } };
+        return {
+          ok: false as const,
+          status: err.status ?? 0,
+          message: err.message,
+          creatorUsername: err.data?.creatorUsername ?? null,
+        };
       }
     },
     enabled: !!id,

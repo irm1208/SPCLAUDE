@@ -340,7 +340,7 @@ export default function WholesaleShared() {
               <p className="text-sm mt-1" style={{ color: "var(--t-muted)" }}>
                 {notFound
                   ? "This code doesn't match any shared order. Double-check the code with the organiser."
-                  : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>. Join to add your own items.</>}
+                  : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>{result.creatorUsername ? <> by the order lead ({result.creatorUsername})</> : null}. Join to add your own items.</>}
               </p>
             </div>
             {canJoin && (

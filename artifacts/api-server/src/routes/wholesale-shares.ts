@@ -363,7 +363,12 @@ router.get("/wholesale-shares/:id", requireWholesale, async (req, res): Promise<
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
   const member = await loadMember(share.id, me);
-  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  if (!member) {
+    // Non-members can still see WHO invited them (the order lead) on the join
+    // screen — the share id is an invite code, so this isn't a leak.
+    res.status(403).json({ error: "You are not a member of this shared order.", creatorUsername: share.creatorUsername });
+    return;
+  }
   res.json(await buildShareResponse(share, me));
 });
 
