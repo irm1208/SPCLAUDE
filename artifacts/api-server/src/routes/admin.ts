@@ -3659,7 +3659,9 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
     } else if (routingTypeParam === "direct") {
       allOrders = allOrders.filter(o => o.routingType === routingTypeParam);
     } else if (routingTypeParam === "wholesale") {
-      allOrders = allOrders.filter(o => o.orderType === "wholesale" || o.orderType === "wholesale_shared");
+      allOrders = allOrders.filter(o => o.orderType === "wholesale");
+    } else if (routingTypeParam === "shared") {
+      allOrders = allOrders.filter(o => o.orderType === "wholesale_shared");
     }
   }
 

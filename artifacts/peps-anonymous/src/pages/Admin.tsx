@@ -6791,7 +6791,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [orderSearch, setOrderSearch] = useState("");
 
   // Routing filter panel
-  const [filterRouting, setFilterRouting] = useState<"" | "reshipper" | "wholesale" | "direct">("");
+  const [filterRouting, setFilterRouting] = useState<"" | "reshipper" | "wholesale" | "shared" | "direct">("");
   const [filterReshipper, setFilterReshipper] = useState("");
   const [routingOrders, setRoutingOrders] = useState<Fs3GbOrder[]>([]);
   const [routingOrdersLoading, setRoutingOrdersLoading] = useState(false);
@@ -6967,12 +6967,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const params = new URLSearchParams();
     if (filterRouting === "reshipper") params.set("hasReshipper", "true");
     else if (filterRouting === "direct") { params.set("routingType", "direct"); params.set("pageSize", "500"); }
-    else if (filterRouting === "wholesale") params.set("wholesale", "true");
+    else if (filterRouting === "wholesale" || filterRouting === "shared") params.set("wholesale", "true");
     if (filterGroupBuy) params.set("groupBuyId", filterGroupBuy);
     if (filterVendor) params.set("vendor", filterVendor);
-    // For wholesale, also load shared-order metadata so member orders can be
+    // For wholesale + shared, also load shared-order metadata so member orders can be
     // grouped into one shared order (organiser highlight + delivery info).
-    if (filterRouting === "wholesale") {
+    if (filterRouting === "wholesale" || filterRouting === "shared") {
       fetch(apiUrl("/admin/wholesale-shares?status=all"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
         .then(r => r.ok ? r.json() : { shares: [] })
         .then(d => {
@@ -7163,9 +7163,14 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   }, [routingOrders, filterRouting]);
 
   const displayedRoutingOrders = useMemo(() => {
-    if (!filterReshipper) return routingOrders;
-    return routingOrders.filter(o => o.reshipperUsername === filterReshipper);
-  }, [routingOrders, filterReshipper]);
+    let base = routingOrders;
+    // The wholesale fetch returns both pure-wholesale and shared orders, so split
+    // them client-side: "wholesale" = standalone wholesale, "shared" = shared orders.
+    if (filterRouting === "wholesale") base = base.filter(o => o.orderType === "wholesale");
+    else if (filterRouting === "shared") base = base.filter(o => o.orderType === "wholesale_shared");
+    if (filterReshipper) base = base.filter(o => o.reshipperUsername === filterReshipper);
+    return base;
+  }, [routingOrders, filterReshipper, filterRouting]);
 
   // Wholesale view: collapse a shared order's per-member orders into one group.
   // Orders sharing a `sharedOrderId` belong to the same wholesale shared order;
@@ -7254,7 +7259,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           map.set(key, (map.get(key) ?? 0) + item.qty);
         });
       });
-    } else if (filterRouting === "direct" || filterRouting === "wholesale") {
+    } else if (filterRouting === "direct" || filterRouting === "wholesale" || filterRouting === "shared") {
       const sourceOrders = selectedOrderIds.size > 0
         ? displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id))
         : displayedRoutingOrders;
@@ -8079,8 +8084,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               onChange={e => { setFilterRouting(e.target.value as any); setFilterReshipper(""); }}
             >
               <option value="">All</option>
-              <option value="reshipper">Reshipper</option>
               <option value="wholesale">Wholesale</option>
+              <option value="shared">Shared Orders</option>
+              <option value="reshipper">Reshipper</option>
               <option value="direct">Direct</option>
             </select>
           </div>
@@ -8114,7 +8120,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                {filterRouting === "reshipper" ? "Reshipper Orders" : filterRouting === "wholesale" ? "Wholesale Orders" : "Direct Orders"}
+                {filterRouting === "reshipper" ? "Reshipper Orders" : filterRouting === "wholesale" ? "Wholesale Orders" : filterRouting === "shared" ? "Shared Orders" : "Direct Orders"}
               </p>
               {!routingOrdersLoading && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -8221,8 +8227,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 </div>
               ))}
             </div>
-          ) : filterRouting === "wholesale" ? (
-            // Wholesale: collapse each shared order's per-member orders into one grouped order
+          ) : (filterRouting === "wholesale" || filterRouting === "shared") ? (
+            // Wholesale + shared: collapse each shared order's per-member orders into one grouped order
             <div className="space-y-2">
               {wholesaleGroups.map(g => {
                 if (!g.shareId) return renderWsRow(g.orders[0]);
