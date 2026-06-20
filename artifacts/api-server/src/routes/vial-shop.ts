@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, sql, inArray, and } from "drizzle-orm";
 import { isStablecoin, fetchFiatToUsd } from "../lib/crypto-pricing";
+import { verifyTransaction, effectiveStableCurrency } from "../lib/payment-verify";
 
 const router: IRouter = Router();
 
@@ -130,6 +131,7 @@ function fmtOrder(o: any, items: any[] = [], { revealWallet = true } = {}, vendo
     // USDT amount the buyer must send (fiat total converted to USD ≈ USDT).
     // Falls back to the fiat total for legacy orders created before conversion.
     paymentUsdAmount: o.paymentUsdAmount != null ? parseFloat(o.paymentUsdAmount) : parseFloat(o.total),
+    paymentCurrency: o.paymentCurrency ?? "USDT",
     paymentStatus: o.paymentStatus, paymentTxHash: o.paymentTxHash,
     walletAddress: (revealWallet && accepted) ? o.walletAddress : null,
     revolutLink: (revealWallet && accepted && vendor?.revolutLink) ? vendor.revolutLink : null,
@@ -144,69 +146,11 @@ function fmtOrder(o: any, items: any[] = [], { revealWallet = true } = {}, vendo
   };
 }
 
-// ─── USDT Verification ─────────────────────────────────────────
-const USDT_CONTRACT = "0xdac17f958d2ee523a2206206994597c13d831ec7";
-const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const USDT_DECIMALS = 6;
-const RPC_ENDPOINTS = [
-  "https://eth.llamarpc.com",
-  "https://cloudflare-eth.com",
-  "https://rpc.ankr.com/eth",
-  "https://ethereum-rpc.publicnode.com",
-  "https://1rpc.io/eth",
-  "https://eth-mainnet.public.blastapi.io",
-];
-
-async function ethJsonRpc(method: string, params: unknown[], retryOnNull = false): Promise<unknown> {
-  let lastErr: unknown;
-  for (const url of RPC_ENDPOINTS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: AbortSignal.timeout(8000),
-      });
-      const json: any = await res.json();
-      if (json.error) throw new Error(json.error.message ?? "RPC error");
-      if (retryOnNull && json.result === null) {
-        lastErr = new Error("null result from RPC");
-        continue;
-      }
-      return json.result;
-    } catch (err) { lastErr = err; }
-  }
-  throw lastErr;
-}
-
-async function verifyUsdtTransfer(txHash: string, walletAddress: string, expectedAmount: number) {
-  let receipt: any;
-  try { receipt = await ethJsonRpc("eth_getTransactionReceipt", [txHash], true); }
-  catch { return { verified: false as const, pending: true, reason: "Transaction not found on Ethereum — it may still be propagating. Please wait a minute and try again." }; }
-  if (!receipt) return { verified: false as const, pending: true, reason: "Transaction not yet mined — wait a minute and try again." };
-  if (receipt.status !== "0x1") return { verified: false as const, reason: "Transaction failed on-chain." };
-
-  const wallet = walletAddress.toLowerCase();
-  for (const log of receipt.logs as any[]) {
-    if (log.address?.toLowerCase() !== USDT_CONTRACT) continue;
-    if (!Array.isArray(log.topics) || log.topics[0] !== TRANSFER_TOPIC) continue;
-    if (log.topics.length < 3) continue;
-    const recipient = "0x" + log.topics[2].slice(26).toLowerCase();
-    if (recipient !== wallet) continue;
-    const amountUsdt = Number(BigInt(log.data)) / Math.pow(10, USDT_DECIMALS);
-    const tolerance = Math.max(expectedAmount * 0.01, 0.02);
-    if (Math.abs(amountUsdt - expectedAmount) <= tolerance) {
-      let blockConfirmations = 1;
-      try {
-        const cur = parseInt(await ethJsonRpc("eth_blockNumber", []) as string, 16);
-        const txB = parseInt(receipt.blockNumber as string, 16);
-        blockConfirmations = Math.max(1, cur - txB + 1);
-      } catch { /* non-fatal */ }
-      return { verified: true as const, amountUsdt, blockConfirmations };
-    }
-  }
-  return { verified: false as const, reason: "No matching USDT transfer to the wallet found in this transaction." };
-}
+// ─── Crypto Verification ───────────────────────────────────────
+// The shop settles to a single Ethereum (ERC-20) wallet. Buyers may pay in USDT
+// or USDC — both 1:1 with USD and sent to the same address — so verification is
+// delegated to the shared verifyTransaction helper, which checks the correct
+// token contract for the chosen stablecoin.
 
 // ══════════════════════════════════════════════════════════════
 // PUBLIC ROUTES
@@ -491,13 +435,21 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
   const walletAddress = order.walletAddress || await getConfig("walletAddress");
   if (!walletAddress) { res.status(400).json({ error: "Wallet address not configured" }); return; }
 
-  // Verify against the USDT amount locked at checkout (fiat total → USD). Legacy
-  // orders without a locked amount fall back to the raw total.
+  // Resolve which stablecoin to verify against. The shop's base rail is USDT on
+  // Ethereum (ERC-20); buyers may instead choose USDC, but ONLY when the wallet is
+  // a valid EVM address. Never trust the client blindly — effectiveStableCurrency
+  // falls back to USDT for any unsupported/invalid choice.
+  const payCurrency = effectiveStableCurrency("USDT", "ERC-20", walletAddress, req.body?.cryptoCurrency);
+
+  // Verify against the amount locked at checkout (fiat total → USD). Both USDT and
+  // USDC are 1:1 with USD. Legacy orders without a locked amount fall back to total.
   const expectedAmount = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : parseFloat(order.total);
-  const result = await verifyUsdtTransfer(cleanHash, walletAddress, expectedAmount);
+  const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, payCurrency, "ERC-20");
 
   if (!result.verified) {
-    await db.update(vialOrdersTable).set({ paymentTxHash: cleanHash }).where(eq(vialOrdersTable.id, order.id));
+    await db.update(vialOrdersTable)
+      .set({ paymentTxHash: cleanHash, paymentCurrency: payCurrency })
+      .where(eq(vialOrdersTable.id, order.id));
     res.json({ verified: false, pending: (result as any).pending ?? false, reason: result.reason });
     return;
   }
@@ -505,7 +457,7 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(vialOrdersTable)
     .set({
-      paymentStatus: "confirmed", paymentTxHash: cleanHash,
+      paymentStatus: "confirmed", paymentTxHash: cleanHash, paymentCurrency: payCurrency,
       shippingName: shippingName.trim(), shippingAddress: shippingAddress.trim(),
     })
     .where(eq(vialOrdersTable.id, order.id))
@@ -532,11 +484,11 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
           if (!vendor.telegramChatId) continue;
           const vendorProductIds = new Set(products.filter(p => p.vendorId === vendor.id).map(p => p.id));
           const vendorItems = orderItems.filter(i => vendorProductIds.has(i.productId));
-          const itemsList = vendorItems.map(i => `• ${i.productName} ×${i.quantity} — $${parseFloat(i.lineTotal).toFixed(2)} USDT`).join("\n");
+          const itemsList = vendorItems.map(i => `• ${i.productName} ×${i.quantity} — $${parseFloat(i.lineTotal).toFixed(2)} ${payCurrency}`).join("\n");
           const msg =
             `🎉 <b>New Order Confirmed!</b>\n\n` +
             `Order: <code>${order.code}</code>\n` +
-            `Amount: <b>$${parseFloat(order.total).toFixed(2)} USDT</b>\n\n` +
+            `Amount: <b>$${parseFloat(order.total).toFixed(2)} ${payCurrency}</b>\n\n` +
             `<b>Ship to:</b>\n${updated.shippingName}\n${updated.shippingAddress}\n` +
             (order.telegramUsername ? `<b>Telegram:</b> @${order.telegramUsername}\n` : "") +
             (order.email ? `<b>Email:</b> ${order.email}\n` : "") +
@@ -547,7 +499,7 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
     }
   } catch { /* seller notification errors must never break the response */ }
 
-  res.json({ verified: true, paymentStatus: updated.paymentStatus, amountUsdt: (result as any).amountUsdt });
+  res.json({ verified: true, paymentStatus: updated.paymentStatus, currency: payCurrency, amountUsdt: (result as any).amountUsdt });
 });
 
 // ══════════════════════════════════════════════════════════════

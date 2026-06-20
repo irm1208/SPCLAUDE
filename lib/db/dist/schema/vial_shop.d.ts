@@ -1145,6 +1145,23 @@ export declare const vialOrdersTable: import("drizzle-orm/pg-core").PgTableWithC
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        paymentCurrency: import("drizzle-orm/pg-core").PgColumn<{
+            name: "payment_currency";
+            tableName: "vial_orders";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         adminNotes: import("drizzle-orm/pg-core").PgColumn<{
             name: "admin_notes";
             tableName: "vial_orders";

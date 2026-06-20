@@ -13,6 +13,13 @@ import { T } from "@/lib/theme";
 
 const ACCENT = "var(--t-blue)";
 
+// Stablecoins a buyer may pay with on the Ethereum (ERC-20) rail. Both settle to
+// the same wallet; only the token sent (and verified contract) differs.
+const CRYPTO_TOKENS = [
+  { code: "USDT" as const, color: "#26A17B" },
+  { code: "USDC" as const, color: "#2775CA" },
+];
+
 interface DiscountResult {
   id: string; code: string; discountType: string;
   discountValue: number; discountAmount: number; description: string;
@@ -23,6 +30,7 @@ interface VialOrder {
   paymentUsdAmount: number;
   discountAmount: number; discountCodeUsed: string | null;
   orderStatus: string; paymentStatus: string; walletAddress: string | null;
+  paymentCurrency: string;
   revolutLink: string | null; paypalLink: string | null;
   shippingName: string | null; shippingAddress: string | null;
   items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
@@ -130,6 +138,7 @@ export default function ShopCheckout() {
   const [payLoading, setPayLoading] = useState(false);
   const [payResult, setPayResult] = useState<{ verified: boolean; reason?: string; pending?: boolean } | null>(null);
   const [copied, setCopied] = useState<"wallet" | "amount" | null>(null);
+  const [cryptoCurrency, setCryptoCurrency] = useState<"USDT" | "USDC">("USDT");
 
   useEffect(() => {
     if (!order || order.orderStatus !== "pending_acceptance") return;
@@ -146,6 +155,18 @@ export default function ShopCheckout() {
   }, [order]);
 
   const finalTotal = Math.max(0, cartTotal - (discount?.discountAmount ?? 0));
+  // USDC is only offered when the wallet is a valid Ethereum (ERC-20) address.
+  const walletIsEth = !!order?.walletAddress && /^0x[0-9a-fA-F]{40}$/.test(order.walletAddress);
+  const tokenColor = cryptoCurrency === "USDC" ? "#2775CA" : "#26A17B";
+
+  // Restore the buyer's token choice when an existing order is loaded, so a retry
+  // of a pending/failed USDC payment doesn't silently fall back to USDT. Keyed on
+  // order id (not the polled object) to avoid overriding an in-progress selection.
+  useEffect(() => {
+    if (!order?.id || !walletIsEth) return;
+    const c = order.paymentCurrency;
+    if (c === "USDT" || c === "USDC") setCryptoCurrency(c);
+  }, [order?.id, walletIsEth]);
 
   useEffect(() => {
     if (cartCount === 0 && !order) setLocation("/shop");
@@ -220,6 +241,7 @@ export default function ShopCheckout() {
           txHash: txHash.trim(),
           shippingName: shippingName.trim(),
           shippingAddress: shippingAddress.trim(),
+          cryptoCurrency,
         }),
       });
       const data = await res.json();
@@ -630,7 +652,7 @@ export default function ShopCheckout() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className="text-2xl font-black font-mono" style={{ color: T.text }}>{order.paymentUsdAmount.toFixed(2)}</span>
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-md text-white" style={{ background: "#26A17B" }}>USDT</span>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-md text-white" style={{ background: tokenColor }}>{cryptoCurrency}</span>
                           </div>
                           <button
                             onClick={() => copyText(order.paymentUsdAmount.toFixed(2), "amount")}
@@ -642,10 +664,42 @@ export default function ShopCheckout() {
                         </div>
                       </div>
 
+                      {/* Token choice — only when paying to an Ethereum (ERC-20) wallet */}
+                      {walletIsEth && (
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold" style={{ color: T.muted }}>Pay with</p>
+                          <div className="flex gap-2">
+                            {CRYPTO_TOKENS.map(t => {
+                              const active = cryptoCurrency === t.code;
+                              return (
+                                <button
+                                  key={t.code}
+                                  onClick={() => setCryptoCurrency(t.code)}
+                                  className="flex-1 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                                  style={{
+                                    background: active ? t.color : T.surface2,
+                                    color: active ? "white" : T.muted,
+                                    border: `1.5px solid ${active ? t.color : T.border}`,
+                                  }}
+                                >
+                                  {active && <Check className="w-3.5 h-3.5" />} {t.code}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[11px]" style={{ color: T.subtle }}>Same wallet for both — pick the token you hold. Ethereum (ERC-20) network only.</p>
+                        </div>
+                      )}
+
                       {/* Crypto / Wallet */}
                       {order.walletAddress ? (
                         <div className="rounded-xl p-3.5 space-y-2" style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
-                          <p className="text-xs font-semibold" style={{ color: T.muted }}>USDT wallet address</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold" style={{ color: T.muted }}>{cryptoCurrency} wallet address</p>
+                            {walletIsEth && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>ERC-20</span>
+                            )}
+                          </div>
                           <div className="flex items-start gap-2">
                             <p className="text-xs font-mono break-all flex-1 leading-relaxed" style={{ color: T.text }}>{order.walletAddress}</p>
                             <button
@@ -761,7 +815,7 @@ export default function ShopCheckout() {
                     )}
                     <div className="flex justify-between text-sm font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                       <span style={{ color: T.text }}>Total</span>
-                      <span style={{ color: ACCENT }}>${order.paymentUsdAmount.toFixed(2)} USDT</span>
+                      <span style={{ color: ACCENT }}>${order.paymentUsdAmount.toFixed(2)} {cryptoCurrency}</span>
                     </div>
                   </div>
                 </>

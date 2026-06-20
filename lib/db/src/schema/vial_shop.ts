@@ -76,8 +76,11 @@ export const vialOrdersTable = pgTable("vial_orders", {
   paymentTxHash: text("payment_tx_hash"),
   walletAddress: text("wallet_address"),
   // USD-equivalent of the fiat total, locked at checkout. Vial shop pays in
-  // USDT (1:1 with USD), so this doubles as the expected USDT coin amount.
+  // a 1:1 USD stablecoin (USDT or USDC), so this doubles as the expected coin amount.
   paymentUsdAmount: numeric("payment_usd_amount", { precision: 10, scale: 2 }),
+  // ERC-20 stablecoin the buyer chose to pay with (USDT or USDC). Both settle to
+  // the same Ethereum wallet; only the verified contract differs. Defaults to USDT.
+  paymentCurrency: text("payment_currency"),
   adminNotes: text("admin_notes"),
   shippingCountry: text("shipping_country"),
   shippingCity: text("shipping_city"),
