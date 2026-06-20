@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Loader2, Copy, Check, Users, Truck, Lock, Plus, Minus, Search, Crown,
   ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
-  ChevronDown, Info,
+  ChevronDown, Info, MessageCircle, Send,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
@@ -19,6 +19,9 @@ import {
   lockWholesaleShare,
   cancelWholesaleShare,
   useInvalidateWholesaleShare,
+  useWholesaleShareMessages,
+  postWholesaleShareMessage,
+  useInvalidateWholesaleShareMessages,
   type WholesaleShareDetail,
   type WholesaleSplitMode,
 } from "@/hooks/use-wholesale-shares";
@@ -1030,6 +1033,11 @@ export default function WholesaleShared() {
               </section>
             )}
 
+            {/* Group chat — members only */}
+            {share.isMember && (
+              <ShareChat shareId={share.id} readOnly={share.status === "cancelled"} />
+            )}
+
             {/* My share to pay (locked, non-creator quick action handled in member row) */}
           </motion.div>
         </main>
@@ -1055,5 +1063,133 @@ function Checklist({ ok, text }: { ok: boolean; text: string }) {
       </span>
       <span style={{ color: ok ? "var(--t-text)" : "var(--t-muted)" }}>{text}</span>
     </div>
+  );
+}
+
+function formatChatTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+}
+
+// Telegram-style chat thread for the members of a shared wholesale order.
+function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }) {
+  const cardStyle = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
+  const fieldStyle = { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)", border: "1px solid var(--t-border)" } as const;
+
+  const { data: messages = [], isLoading } = useWholesaleShareMessages(shareId);
+  const invalidateMessages = useInvalidateWholesaleShareMessages();
+
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const lastCountRef = useRef(0);
+
+  // Auto-scroll to the newest message when the count changes.
+  useEffect(() => {
+    if (messages.length !== lastCountRef.current) {
+      lastCountRef.current = messages.length;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages.length]);
+
+  const send = async () => {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await postWholesaleShareMessage(shareId, body);
+      setDraft("");
+      invalidateMessages(shareId);
+    } catch (e) {
+      setError((e as Error).message || "Couldn't send. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  return (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Group Chat</p>
+      <div className="rounded-2xl flex flex-col overflow-hidden" style={cardStyle}>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2.5" style={{ maxHeight: "22rem", minHeight: "9rem" }}>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-muted)" }} />
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+              <MessageCircle className="w-8 h-8" style={{ color: "var(--t-muted)", opacity: 0.4 }} />
+              <p className="text-sm" style={{ color: "var(--t-muted)" }}>No messages yet — say hello to your group.</p>
+            </div>
+          ) : (
+            messages.map(m => (
+              <div key={m.id} className={`flex ${m.isYou ? "justify-end" : "justify-start"}`}>
+                <div className="max-w-[80%] min-w-0">
+                  {!m.isYou && (
+                    <p className="text-[11px] font-semibold mb-0.5 px-1" style={{ color: "var(--t-blue)" }}>@{m.username}</p>
+                  )}
+                  <div
+                    className="rounded-2xl px-3 py-2 text-sm break-words whitespace-pre-wrap"
+                    style={m.isYou
+                      ? { background: "var(--t-blue)", color: "#fff", borderBottomRightRadius: 4 }
+                      : { background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)", borderBottomLeftRadius: 4 }}
+                  >
+                    {m.body}
+                  </div>
+                  <p className="text-[10px] mt-0.5 px-1" style={{ color: "var(--t-muted)", textAlign: m.isYou ? "right" : "left" }}>
+                    {formatChatTime(m.createdAt)}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {readOnly ? (
+          <div className="px-4 py-3 text-xs text-center" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+            This shared order has been cancelled — chat is read-only.
+          </div>
+        ) : (
+          <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+            {error && <p className="text-xs px-1" style={{ color: "#b91c1c" }}>{error}</p>}
+            <div className="flex items-end gap-2">
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Message your group…"
+                rows={1}
+                maxLength={2000}
+                className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ ...fieldStyle, maxHeight: "7rem" }}
+              />
+              <button
+                onClick={() => void send()}
+                disabled={sending || !draft.trim()}
+                className="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl text-white disabled:opacity-40"
+                style={{ background: "var(--t-blue)" }}
+                aria-label="Send message"
+              >
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

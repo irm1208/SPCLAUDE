@@ -2407,7 +2407,7 @@ router.get("/account/telegram/status", requireAccount, async (req, res): Promise
     .from(accountsTable)
     .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
 
-  const defaultPrefs = { status: true, deleted: true, payment: true, profile: true, new_order: true };
+  const defaultPrefs = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
   const prefs = (account?.telegramNotifications && typeof account.telegramNotifications === "object")
     ? { ...defaultPrefs, ...(account.telegramNotifications as Record<string, boolean>) }
     : defaultPrefs;
@@ -2453,7 +2453,7 @@ router.patch("/account/telegram/prefs", requireAccount, async (req, res): Promis
     return;
   }
 
-  const validKeys = ["status", "deleted", "payment", "profile", "new_order"];
+  const validKeys = ["status", "deleted", "payment", "profile", "new_order", "wholesale_chat"];
   const sanitized: Record<string, boolean> = {};
   for (const key of validKeys) {
     if (typeof (prefs as Record<string, unknown>)[key] === "boolean") {

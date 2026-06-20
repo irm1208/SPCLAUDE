@@ -10,6 +10,7 @@ export interface TelegramPrefs {
   profile: boolean;
   new_order: boolean;
   role_application: boolean;
+  wholesale_chat: boolean;
 }
 
 const DEFAULT_PREFS: TelegramPrefs = {
@@ -19,6 +20,7 @@ const DEFAULT_PREFS: TelegramPrefs = {
   profile: true,
   new_order: true,
   role_application: true,
+  wholesale_chat: true,
 };
 
 function parsePrefKey(pref: unknown): TelegramPrefs {
@@ -31,6 +33,7 @@ function parsePrefKey(pref: unknown): TelegramPrefs {
     profile:          typeof p.profile          === "boolean" ? p.profile          : true,
     new_order:        typeof p.new_order        === "boolean" ? p.new_order        : true,
     role_application: typeof p.role_application === "boolean" ? p.role_application : true,
+    wholesale_chat:   typeof p.wholesale_chat   === "boolean" ? p.wholesale_chat   : true,
   };
 }
 

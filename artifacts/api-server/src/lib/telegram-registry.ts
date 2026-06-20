@@ -131,6 +131,17 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
     defaultTemplate:
       `📦 <b>Order Shipped!</b>\n\nOrder <code>#{{code}}</code> has been shipped.{{gb_name}}\nTracking: <code>{{tracking}}</code>\n\nFrom: @{{username}}\nUser Total: {{order_total}}\nDelivery: {{delivery}}\nPayment: {{payment_status}}\n\n<a href="{{app_url}}/account">View your orders →</a>`,
   },
+  {
+    eventKey: "wholesale_share_message",
+    label: "Shared Order Chat Message (Customer)",
+    audience: "customer",
+    prefKey: "wholesale_chat",
+    description: "Sent to the other members of a shared wholesale order when someone posts a chat message.",
+    placeholders: ["code", "sender", "message", "app_url"],
+    defaultTemplate:
+      `💬 <b>New message</b> in shared order <code>#{{code}}</code>\n\n<b>{{sender}}:</b> {{message}}\n\n<a href="{{app_url}}/wholesale/shared/{{code}}">Open chat →</a>`,
+    editableInAdmin: true,
+  },
   // ── Admin notifications ─────────────────────────────────────────────────────
   {
     eventKey: "admin_new_order",

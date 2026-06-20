@@ -87,3 +87,20 @@ export type InsertWholesaleShare = z.infer<typeof insertWholesaleShareSchema>;
 
 export const insertWholesaleShareMemberSchema = createInsertSchema(wholesaleShareMembersTable).omit({ joinedAt: true, updatedAt: true });
 export type InsertWholesaleShareMember = z.infer<typeof insertWholesaleShareMemberSchema>;
+
+// ── Shared order chat ────────────────────────────────────────────────────────
+// A lightweight Telegram-style message thread scoped to a single shared order.
+// Only members of the share can read or post. Posting also fires a Telegram bot
+// notification to every OTHER member who has the chat preference enabled.
+export const wholesaleShareMessagesTable = pgTable("wholesale_share_messages", {
+  id: text("id").primaryKey(),
+  shareId: text("share_id").notNull().references(() => wholesaleSharesTable.id, { onDelete: "cascade" }),
+  username: text("username").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("wholesale_share_messages_share_idx").on(t.shareId, t.createdAt),
+]);
+
+export type WholesaleShareMessage = typeof wholesaleShareMessagesTable.$inferSelect;
+export type NewWholesaleShareMessage = typeof wholesaleShareMessagesTable.$inferInsert;

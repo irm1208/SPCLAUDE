@@ -359,7 +359,7 @@ function TelegramCard() {
   const [unlinkConfirm, setUnlinkConfirm] = useState(false);
 
   const linked = tgStatus?.linked ?? false;
-  const prefs: TelegramPrefs = tgStatus?.prefs ?? { status: true, deleted: true, payment: true, profile: true, new_order: true };
+  const prefs: TelegramPrefs = tgStatus?.prefs ?? { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
 
   const PREF_LABELS: { key: keyof TelegramPrefs; label: string; desc: string }[] = [
     { key: "new_order",  label: "New Orders",     desc: "When you place an order" },
@@ -367,6 +367,7 @@ function TelegramCard() {
     { key: "payment",    label: "Payments",        desc: "Payment confirmations & issues" },
     { key: "deleted",    label: "Deletions",       desc: "When an order is removed" },
     { key: "profile",    label: "Profile Changes", desc: "When your profile is updated" },
+    { key: "wholesale_chat", label: "Shared Order Chat", desc: "New messages in a shared wholesale order" },
   ];
 
   const handleLinkInit = async () => {

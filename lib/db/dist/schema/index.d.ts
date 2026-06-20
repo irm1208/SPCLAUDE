@@ -43,6 +43,5 @@ export * from "./routing_history";
 export * from "./fs3_submissions";
 export { orderDispatchImagesTable } from "./orders";
 export type { OrderDispatchImage } from "./orders";
-export * from "./dna_profiles";
 export * from "./bt_knowledge_cache";
 //# sourceMappingURL=index.d.ts.map

@@ -91,6 +91,14 @@ export interface WholesaleShareSummary {
   createdAt: string;
 }
 
+export interface WholesaleShareMessage {
+  id: string;
+  username: string;
+  body: string;
+  createdAt: string;
+  isYou: boolean;
+}
+
 // ── Shared fetch helper ────────────────────────────────────────────────────────
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -228,4 +236,29 @@ export function useInvalidateWholesaleShare() {
     qc.invalidateQueries({ queryKey: ["wholesale-shares"] });
     if (id) qc.invalidateQueries({ queryKey: ["wholesale-share", id] });
   };
+}
+
+// ── Chat (shared order message thread) ─────────────────────────────────────────
+
+export function useWholesaleShareMessages(id: string | null, enabled = true) {
+  return useQuery<WholesaleShareMessage[]>({
+    queryKey: ["wholesale-share-messages", id],
+    queryFn: () => request<WholesaleShareMessage[]>(`/api/wholesale-shares/${id}/messages`),
+    enabled: !!id && enabled,
+    retry: false,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function postWholesaleShareMessage(id: string, body: string) {
+  return request<WholesaleShareMessage>(`/api/wholesale-shares/${id}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export function useInvalidateWholesaleShareMessages() {
+  const qc = useQueryClient();
+  return (id: string) => qc.invalidateQueries({ queryKey: ["wholesale-share-messages", id] });
 }

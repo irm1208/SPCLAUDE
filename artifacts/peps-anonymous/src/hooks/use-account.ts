@@ -529,6 +529,7 @@ export interface TelegramPrefs {
   payment: boolean;
   profile: boolean;
   new_order: boolean;
+  wholesale_chat: boolean;
 }
 
 export interface TelegramStatus {
@@ -541,7 +542,7 @@ export function useTelegramStatus(enabled = true) {
     queryKey: ["account", "telegram-status"],
     queryFn: async () => {
       const res = await fetch("/api/account/telegram/status", { credentials: "include" });
-      if (!res.ok) return { linked: false, prefs: { status: true, deleted: true, payment: true, profile: true, new_order: true } };
+      if (!res.ok) return { linked: false, prefs: { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true } };
       return res.json();
     },
     staleTime: 30 * 1000,
