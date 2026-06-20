@@ -15,6 +15,7 @@ export * from "./customers";
 export * from "./admin_alerts";
 export * from "./group_buys";
 export * from "./wholesale_shares";
+export * from "./wholesale_chat_telegram_messages";
 export * from "./accounts";
 export * from "./blood_tests";
 export * from "./compound_logs";

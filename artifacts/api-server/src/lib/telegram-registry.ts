@@ -139,7 +139,7 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
     description: "Sent to the other members of a shared wholesale order when someone posts a chat message.",
     placeholders: ["code", "sender", "message", "app_url"],
     defaultTemplate:
-      `💬 <b>New message</b> in shared order <code>#{{code}}</code>\n\n<b>{{sender}}:</b> {{message}}\n\n<a href="{{app_url}}/wholesale/shared/{{code}}">Open chat →</a>`,
+      `💬 <b>New message</b> in shared order <code>#{{code}}</code>\n\n<b>{{sender}}:</b> {{message}}\n\n<a href="{{app_url}}/wholesale/shared/{{code}}">Open chat →</a>\n<i>Or reply to this message to post to the chat.</i>`,
     editableInAdmin: true,
   },
   // ── Admin notifications ─────────────────────────────────────────────────────

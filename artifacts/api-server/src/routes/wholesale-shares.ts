@@ -13,7 +13,7 @@ import {
   type WholesaleShareItem,
   type WholesaleShareSplitMode,
 } from "@workspace/db";
-import { eq, and, isNull, sql, desc, gte, inArray } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
@@ -25,7 +25,7 @@ import {
   type ShippingVendor,
 } from "../lib/wholesale-shipping";
 import { writeLog } from "../lib/audit-log";
-import { notifyUserFromTemplate } from "../lib/telegram";
+import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 
 const router: IRouter = Router();
 
@@ -285,44 +285,6 @@ async function loadMember(shareId: string, username: string): Promise<MemberRow 
   return m ?? null;
 }
 
-// Escape user-supplied text for safe inclusion in a Telegram HTML-parse-mode message.
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-// Fire-and-forget Telegram notification to every OTHER member of a share when a
-// chat message is posted. Failures (unlinked accounts, disabled prefs) are
-// silently ignored by notifyUserFromTemplate.
-async function notifyShareMembersOfMessage(shareId: string, senderUsername: string, message: string): Promise<void> {
-  const members = await db
-    .select({ username: wholesaleShareMembersTable.username })
-    .from(wholesaleShareMembersTable)
-    .where(eq(wholesaleShareMembersTable.shareId, shareId));
-
-  const senderLower = senderUsername.toLowerCase();
-  const recipients = members.filter(m => m.username.toLowerCase() !== senderLower);
-  if (recipients.length === 0) return;
-
-  const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
-  const sender = escapeHtml(senderUsername.replace(/^@/, ""));
-  const truncated = message.length > 300 ? `${message.slice(0, 300)}…` : message;
-  const safeMessage = escapeHtml(truncated);
-
-  await Promise.allSettled(recipients.map(r =>
-    notifyUserFromTemplate(r.username, "wholesale_chat", "wholesale_share_message", {
-      code: shareId,
-      sender: `@${sender}`,
-      message: safeMessage,
-      app_url: appUrl,
-    }),
-  ));
-}
-
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 // GET /api/wholesale-shares — list shares the current member belongs to
@@ -442,54 +404,18 @@ router.get("/wholesale-shares/:id/messages", requireWholesale, async (req, res):
 // POST /api/wholesale-shares/:id/messages — post a chat message (members only)
 router.post("/wholesale-shares/:id/messages", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const share = await loadShare(String(req.params.id));
-  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
-  const member = await loadMember(share.id, me);
-  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
-  if (share.status === "cancelled") {
-    res.status(409).json({ error: "This shared order has been cancelled. Chat is read-only." });
-    return;
-  }
-
   const raw = (req.body ?? {}) as { body?: unknown };
-  const text = typeof raw.body === "string" ? raw.body.trim() : "";
-  if (text.length < 1) { res.status(400).json({ error: "Message cannot be empty." }); return; }
-  if (text.length > 2000) { res.status(400).json({ error: "Message is too long (max 2000 characters)." }); return; }
-
-  // DB-backed per-member throttle: max 10 messages/minute or 60/hour per member+share.
-  const now = Date.now();
-  const since1m = new Date(now - 60_000);
-  const since1h = new Date(now - 3_600_000);
-  const [counts] = await db
-    .select({
-      lastMinute: sql<number>`count(*) filter (where ${wholesaleShareMessagesTable.createdAt} >= ${since1m})::int`,
-      lastHour: sql<number>`count(*)::int`,
-    })
-    .from(wholesaleShareMessagesTable)
-    .where(and(
-      eq(wholesaleShareMessagesTable.shareId, share.id),
-      sql`lower(${wholesaleShareMessagesTable.username}) = ${me.toLowerCase()}`,
-      gte(wholesaleShareMessagesTable.createdAt, since1h),
-    ));
-  if ((counts?.lastMinute ?? 0) >= 10 || (counts?.lastHour ?? 0) >= 60) {
-    res.status(429).json({ error: "You're sending messages too quickly. Please slow down." });
-    return;
-  }
-
-  const id = randomUUID();
-  const createdAt = new Date();
-  await db.insert(wholesaleShareMessagesTable).values({
-    id, shareId: share.id, username: me, body: text, createdAt,
+  const result = await postWholesaleChatMessage({
+    shareId: String(req.params.id),
+    senderUsername: me,
+    body: typeof raw.body === "string" ? raw.body : "",
   });
-
-  // Notify the other members in the background — never block on Telegram.
-  void notifyShareMembersOfMessage(share.id, me, text).catch(() => {});
-
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
   res.status(201).json({
-    id,
-    username: me,
-    body: text,
-    createdAt: createdAt.toISOString(),
+    id: result.message.id,
+    username: result.message.username,
+    body: result.message.body,
+    createdAt: result.message.createdAt.toISOString(),
     isYou: true,
   });
 });

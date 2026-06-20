@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable } from "@workspace/db";
+import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable, wholesaleChatTelegramMessagesTable } from "@workspace/db";
+import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull } from "drizzle-orm";
 import { randomBytes, randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
@@ -2140,6 +2141,34 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
     clearConv(chatId);
     await startTicketFlow(chatId);
     res.json({ ok: true }); return;
+  }
+
+  // ── Route reply to a shared-order (wholesale) chat message ────────────────
+  // Checked BEFORE ticket routing: a (message_id, chatId) pair routes to exactly
+  // one share, so matching here and returning avoids any collision with tickets.
+  const waReplyToId = (message.reply_to_message as { message_id?: number } | undefined)?.message_id;
+  if (waReplyToId) {
+    const [waMap] = await db
+      .select({ shareId: wholesaleChatTelegramMessagesTable.shareId })
+      .from(wholesaleChatTelegramMessagesTable)
+      .where(and(
+        eq(wholesaleChatTelegramMessagesTable.telegramMessageId, waReplyToId),
+        eq(wholesaleChatTelegramMessagesTable.chatId, chatId),
+      ));
+
+    if (waMap) {
+      const result = await postWholesaleChatMessage({
+        shareId: waMap.shareId,
+        senderUsername: username,
+        body: text,
+      });
+      if (result.ok) {
+        await sendTelegramMessage(chatId, `✅ <b>Posted to shared order chat</b> — <code>#${waMap.shareId}</code>`, "HTML");
+      } else {
+        await sendTelegramMessage(chatId, `❌ ${result.error}`, "HTML");
+      }
+      res.json({ ok: true }); return;
+    }
   }
 
   // ── Route reply to tracked ticket message ─────────────────────────────────

@@ -169,6 +169,23 @@ export async function notifyUserFromTemplate(
 }
 
 /**
+ * Like `notifyUserFromTemplate`, but returns `{ ok, messageId?, chatId? }` so the
+ * caller can persist the sent Telegram `message_id` for reply routing (e.g. the
+ * shared-order chat lets members reply in Telegram and posts it back in-app).
+ */
+export async function notifyUserFromTemplateFull(
+  telegramUsername: string,
+  prefKey: keyof TelegramPrefs,
+  eventKey: string,
+  vars: Record<string, string>,
+): Promise<NotifyResult> {
+  const { template, enabled } = await getTemplate(eventKey);
+  if (!enabled) return { ok: false };
+  const text = renderTemplate(template, vars);
+  return notifyUserFull(telegramUsername, prefKey, text);
+}
+
+/**
  * Like `sendAdminMessage`, but the message text is built from a stored/default template.
  * The registry is the sole source of defaults — no inline default is accepted.
  * If the event is disabled in the template config the notification is silently skipped.
@@ -316,15 +333,28 @@ export async function getAdminChatId(): Promise<string> {
   return chatId;
 }
 
-export async function notifyUser(
+/** Result of a per-user notify: whether it sent, and (when known) the sent
+ * Telegram `message_id` and the recipient's chat id, for reply-routing. */
+export interface NotifyResult {
+  ok: boolean;
+  messageId?: number;
+  chatId?: string;
+}
+
+/**
+ * Like `notifyUser`, but returns `{ ok, messageId?, chatId? }`. Sends via
+ * `sendTelegramMessageFull` so the Telegram `message_id` is captured while
+ * preserving the same account lookup and per-event preference checks.
+ */
+export async function notifyUserFull(
   telegramUsername: string,
   prefKey: keyof TelegramPrefs,
   text: string,
-): Promise<void> {
+): Promise<NotifyResult> {
   const { token } = await getCredentials();
   if (!token) {
     console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${telegramUsername} — bot token not configured`);
-    return;
+    return { ok: false };
   }
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
@@ -335,28 +365,38 @@ export async function notifyUser(
 
     if (!account) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — account not found`);
-      return;
+      return { ok: false };
     }
     if (!account.telegramChatId) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — Telegram not linked (no chatId)`);
-      return;
+      return { ok: false };
     }
 
     const prefs = parsePrefKey(account.telegramNotifications);
     if (!prefs[prefKey]) {
       console.debug(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — preference disabled`);
-      return;
+      return { ok: false, chatId: account.telegramChatId };
     }
 
-    const ok = await sendTelegramMessage(account.telegramChatId, text, "HTML", { recipientType: "user", recipientUsername: bare });
-    if (ok) {
+    const result = await sendTelegramMessageFull(account.telegramChatId, text, "HTML", { recipientType: "user", recipientUsername: bare });
+    if (result.ok) {
       console.log(`[telegram:notify] SENT event=${prefKey} user=@${bare} chatId=${account.telegramChatId}`);
     } else {
       console.error(`[telegram:notify] FAIL event=${prefKey} user=@${bare} chatId=${account.telegramChatId} — sendMessage returned false`);
     }
+    return { ...result, chatId: account.telegramChatId };
   } catch (err) {
     console.error(`[telegram:notify] ERROR event=${prefKey} user=@${telegramUsername}:`, err);
+    return { ok: false };
   }
+}
+
+export async function notifyUser(
+  telegramUsername: string,
+  prefKey: keyof TelegramPrefs,
+  text: string,
+): Promise<void> {
+  await notifyUserFull(telegramUsername, prefKey, text);
 }
 
 /**
