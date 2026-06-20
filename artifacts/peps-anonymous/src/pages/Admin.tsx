@@ -6510,7 +6510,8 @@ interface Fs3Totals {
 }
 interface Fs3GroupBuy { id: string; name: string; vendorShippingAmount: number | null; vendorShippingKits: number | null; vendorShippingMaxKitsPerPackage: number | null; }
 interface Fs3GbMember { telegramUsername: string; email: string | null; accountStatus: string | null; hasPassword: boolean; hasTelegram: boolean; joinedAt: string | null; tags: string[]; countryLegId: string | null; }
-interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; }
+interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
+interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
 
@@ -6617,6 +6618,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [routingOrders, setRoutingOrders] = useState<Fs3GbOrder[]>([]);
   const [routingOrdersLoading, setRoutingOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [shareMeta, setShareMeta] = useState<Map<string, Fs3ShareMeta>>(new Map());
 
 
   // Cost prices (fetched from server — never in the JS bundle)
@@ -6790,6 +6792,20 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     else if (filterRouting === "wholesale") params.set("wholesale", "true");
     if (filterGroupBuy) params.set("groupBuyId", filterGroupBuy);
     if (filterVendor) params.set("vendor", filterVendor);
+    // For wholesale, also load shared-order metadata so member orders can be
+    // grouped into one shared order (organiser highlight + delivery info).
+    if (filterRouting === "wholesale") {
+      fetch(apiUrl("/admin/wholesale-shares?status=all"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+        .then(r => r.ok ? r.json() : { shares: [] })
+        .then(d => {
+          const m = new Map<string, Fs3ShareMeta>();
+          for (const s of (d?.shares ?? []) as Fs3ShareMeta[]) m.set(s.id, s);
+          setShareMeta(m);
+        })
+        .catch(() => setShareMeta(new Map()));
+    } else {
+      setShareMeta(new Map());
+    }
     fetch(apiUrl(`/admin/orders?${params}`), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.json())
       .then(d => {
@@ -6972,6 +6988,23 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     if (!filterReshipper) return routingOrders;
     return routingOrders.filter(o => o.reshipperUsername === filterReshipper);
   }, [routingOrders, filterReshipper]);
+
+  // Wholesale view: collapse a shared order's per-member orders into one group.
+  // Orders sharing a `sharedOrderId` belong to the same wholesale shared order;
+  // standalone orders stay on their own. Preserves the original ordering.
+  const wholesaleGroups = useMemo(() => {
+    const map = new Map<string, Fs3GbOrder[]>();
+    const order: string[] = [];
+    for (const o of displayedRoutingOrders) {
+      const key = o.sharedOrderId ? `s:${o.sharedOrderId}` : `o:${o.id}`;
+      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      map.get(key)!.push(o);
+    }
+    return order.map(k => {
+      const orders = map.get(k)!;
+      return { key: k, shareId: orders[0].sharedOrderId ?? null, orders };
+    });
+  }, [displayedRoutingOrders]);
 
   // Orders grouped by reshipper (for reshipper view)
   const ordersByReshipper = useMemo(() => {
@@ -7455,6 +7488,53 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       + (inclVendor ? activeVendorShipping : 0)
       + (inclTips ? activeTips : 0)
     : 0;
+
+  // Normalise telegram usernames for organiser matching (strip @, lowercase)
+  const sameUser = (a?: string | null, b?: string | null) =>
+    !!a && !!b && a.replace(/^@/, "").toLowerCase() === b.replace(/^@/, "").toLowerCase();
+
+  // Single order row used by the wholesale + direct flat lists (and shared-order members)
+  const renderWsRow = (o: Fs3GbOrder, isOrganiser = false) => {
+    const isShipped = o.status === "Shipped" || o.status === "Completed" || !!(o.trackingNumber) || !!(o.trackingNumbers && o.trackingNumbers.length > 0);
+    const kits = (o.lineItems ?? []).reduce((s, li) => s + li.quantity, 0);
+    return (
+      <label key={o.id} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${selectedOrderIds.has(o.id) ? "bg-primary/8 border-primary/20" : isShipped ? "bg-green-50 border-green-200 hover:bg-green-100" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
+        <input
+          type="checkbox"
+          checked={selectedOrderIds.has(o.id)}
+          onChange={() => setSelectedOrderIds(prev => {
+            const next = new Set(prev);
+            next.has(o.id) ? next.delete(o.id) : next.add(o.id);
+            return next;
+          })}
+          className="rounded border-input accent-primary"
+        />
+        <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+        {isOrganiser && <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">Organiser</span>}
+        {(o.vendorShipping != null && o.vendorShipping > 0) && (
+          <span className="text-[10px] text-slate-500 shrink-0">+${parseFloat(String(o.vendorShipping)).toFixed(2)} ship</span>
+        )}
+        {kits > 0 && <span className="text-[10px] text-slate-400 shrink-0">{kits} kit{kits !== 1 ? "s" : ""}</span>}
+        {o.shippingCountry && <span className="text-[10px] font-medium text-slate-500 shrink-0">{o.shippingCountry}</span>}
+        {o.code && <span className="text-[10px] font-mono text-muted-foreground shrink-0 ml-auto">{o.code}</span>}
+        {isShipped && <span className="text-[10px] font-semibold text-green-700 shrink-0">✓ Shipped</span>}
+        <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${o.status === "Completed" ? "bg-green-100 text-green-700" : o.status === "Shipped" ? "bg-violet-100 text-violet-700" : o.status === "Processing" ? "bg-amber-100 text-amber-700" : "bg-orange-50 text-orange-500"}`}>{o.status}</span>
+        {o.paymentStatus != null && (
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed" ? "bg-green-100 text-green-700" : o.paymentStatus === "pending_confirmation" ? "bg-amber-100 text-amber-700" : "bg-red-50 text-red-500"}`}>
+            {o.paymentStatus === "confirmed" ? "Paid" : o.paymentStatus === "test_confirmed" ? "Test paid" : o.paymentStatus === "pending_confirmation" ? "Pending" : "Unpaid"}
+          </span>
+        )}
+        {o.grandTotal != null && <span className="text-xs font-mono font-semibold shrink-0">${parseFloat(String(o.grandTotal)).toFixed(2)}</span>}
+        <button
+          title="Download order as .txt"
+          onClick={e => { e.preventDefault(); e.stopPropagation(); downloadDirectOrderTxt(o); }}
+          className="shrink-0 p-1 rounded hover:bg-slate-200 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="w-3 h-3" />
+        </button>
+      </label>
+    );
+  };
 
   // ── View ──
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
@@ -7963,51 +8043,54 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 </div>
               ))}
             </div>
-          ) : (
-            // Flat list for wholesale / direct
-            <div className="space-y-1">
-              {displayedRoutingOrders.map(o => {
-                const isShipped = o.status === "Shipped" || o.status === "Completed" || !!(o.trackingNumber) || !!(o.trackingNumbers && o.trackingNumbers.length > 0);
-                const kits = (o.lineItems ?? []).reduce((s, li) => s + li.quantity, 0);
+          ) : filterRouting === "wholesale" ? (
+            // Wholesale: collapse each shared order's per-member orders into one grouped order
+            <div className="space-y-2">
+              {wholesaleGroups.map(g => {
+                if (!g.shareId) return renderWsRow(g.orders[0]);
+                const meta = shareMeta.get(g.shareId);
+                const combinedKits = g.orders.reduce((s, o) => s + (o.lineItems ?? []).reduce((t, li) => t + li.quantity, 0), 0);
+                const combinedTotal = g.orders.reduce((s, o) => s + parseFloat(String(o.grandTotal ?? "0")), 0);
+                const paidCount = g.orders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed").length;
+                const allPaid = g.orders.length > 0 && paidCount === g.orders.length;
+                const country = meta?.deliveryCountry || g.orders.find(o => o.shippingCountry)?.shippingCountry || null;
+                const dest = [meta?.deliveryName, country].filter(Boolean).join(", ");
+                const allSelected = g.orders.every(o => selectedOrderIds.has(o.id));
                 return (
-                <label key={o.id} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${selectedOrderIds.has(o.id) ? "bg-primary/8 border-primary/20" : isShipped ? "bg-green-50 border-green-200 hover:bg-green-100" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
-                  <input
-                    type="checkbox"
-                    checked={selectedOrderIds.has(o.id)}
-                    onChange={() => setSelectedOrderIds(prev => {
-                      const next = new Set(prev);
-                      next.has(o.id) ? next.delete(o.id) : next.add(o.id);
-                      return next;
-                    })}
-                    className="rounded border-input accent-primary"
-                  />
-                  <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
-                  {(o.vendorShipping != null && o.vendorShipping > 0) && (
-                    <span className="text-[10px] text-slate-500 shrink-0">+${parseFloat(String(o.vendorShipping)).toFixed(2)} ship</span>
-                  )}
-                  {kits > 0 && <span className="text-[10px] text-slate-400 shrink-0">{kits} kit{kits !== 1 ? "s" : ""}</span>}
-                  {o.shippingCountry && <span className="text-[10px] font-medium text-slate-500 shrink-0">{o.shippingCountry}</span>}
-                  {o.code && <span className="text-[10px] font-mono text-muted-foreground shrink-0 ml-auto">{o.code}</span>}
-                  {isShipped && <span className="text-[10px] font-semibold text-green-700 shrink-0">✓ Shipped</span>}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${o.status === "Completed" ? "bg-green-100 text-green-700" : o.status === "Shipped" ? "bg-violet-100 text-violet-700" : o.status === "Processing" ? "bg-amber-100 text-amber-700" : "bg-orange-50 text-orange-500"}`}>{o.status}</span>
-                  {o.paymentStatus != null && (
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed" ? "bg-green-100 text-green-700" : o.paymentStatus === "pending_confirmation" ? "bg-amber-100 text-amber-700" : "bg-red-50 text-red-500"}`}>
-                      {o.paymentStatus === "confirmed" ? "Paid" : o.paymentStatus === "test_confirmed" ? "Test paid" : o.paymentStatus === "pending_confirmation" ? "Pending" : "Unpaid"}
-                    </span>
-                  )}
-                  {o.grandTotal != null && <span className="text-xs font-mono font-semibold shrink-0">${parseFloat(String(o.grandTotal)).toFixed(2)}</span>}
-                  {(filterRouting === "direct" || filterRouting === "wholesale") && (
-                    <button
-                      title="Download order as .txt"
-                      onClick={e => { e.preventDefault(); e.stopPropagation(); downloadDirectOrderTxt(o); }}
-                      className="shrink-0 p-1 rounded hover:bg-slate-200 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Download className="w-3 h-3" />
-                    </button>
-                  )}
-                </label>
+                  <div key={g.key} className="rounded-lg border border-primary/30 bg-primary/[0.04] overflow-hidden">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 border-b border-primary/15">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={() => setSelectedOrderIds(prev => {
+                          const next = new Set(prev);
+                          if (allSelected) g.orders.forEach(o => next.delete(o.id));
+                          else g.orders.forEach(o => next.add(o.id));
+                          return next;
+                        })}
+                        className="rounded border-input accent-primary"
+                      />
+                      <Package className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="text-xs font-semibold text-foreground shrink-0">Shared order</span>
+                      {meta?.creatorUsername && <span className="text-[10px] text-muted-foreground truncate">organiser {meta.creatorUsername}</span>}
+                      <span className="text-[10px] text-slate-400 shrink-0 ml-auto">{g.orders.length} member{g.orders.length !== 1 ? "s" : ""}</span>
+                      {combinedKits > 0 && <span className="text-[10px] text-slate-400 shrink-0">{combinedKits} kit{combinedKits !== 1 ? "s" : ""}</span>}
+                      {dest && <span className="text-[10px] font-medium text-slate-500 shrink-0">→ {dest}</span>}
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${allPaid ? "bg-green-100 text-green-700" : paidCount > 0 ? "bg-amber-100 text-amber-700" : "bg-red-50 text-red-500"}`}>{paidCount}/{g.orders.length} paid</span>
+                      <span className="text-xs font-mono font-semibold shrink-0">${combinedTotal.toFixed(2)}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{g.shareId}</span>
+                    </div>
+                    <div className="p-1.5 space-y-1">
+                      {g.orders.map(o => renderWsRow(o, sameUser(o.telegramUsername, meta?.creatorUsername)))}
+                    </div>
+                  </div>
                 );
               })}
+            </div>
+          ) : (
+            // Flat list for direct
+            <div className="space-y-1">
+              {displayedRoutingOrders.map(o => renderWsRow(o))}
             </div>
           )}
         </Card>

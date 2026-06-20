@@ -221,6 +221,8 @@ function fmtOrder(o: Record<string, any>, lineItems: Record<string, any>[] = [])
     balanceConfirmedAt: (o as any).balanceConfirmedAt instanceof Date ? (o as any).balanceConfirmedAt.toISOString() : ((o as any).balanceConfirmedAt ?? null),
     currency: o.currency ?? null,
     groupBuyId: o.groupBuyId ?? null,
+    orderType: o.orderType ?? null,
+    sharedOrderId: o.sharedOrderId ?? null,
     shippingCountry: o.shippingCountry ?? null,
     ipAddress: o.ipAddress ?? null,
     directShippingRequested: o.directShippingRequested ?? false,
