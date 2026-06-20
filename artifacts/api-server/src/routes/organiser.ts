@@ -3907,6 +3907,54 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
   res.json({ ok: true, updatedCount: updatedOrders.length, ratePrice, currency, paid: isPaid });
 });
 
+// ─── POST /api/organiser/group-buys/:gbId/orders/bulk-delete ──────────────
+// Soft-deletes multiple orders for the organiser's own GB in one call.
+router.post("/organiser/group-buys/:gbId/orders/bulk-delete", requireOrganiser, async (req, res): Promise<void> => {
+  const { gbId } = req.params;
+  const actorUsername = req.organiser!.telegramUsername;
+
+  const [gb] = await db
+    .select({ id: groupBuysTable.id, name: groupBuysTable.name })
+    .from(groupBuysTable)
+    .where(gbOwner(req, gbId))
+    .limit(1);
+  if (!gb) { res.status(403).json({ error: "Not your group buy" }); return; }
+
+  const { orderIds } = req.body as { orderIds?: string[] };
+  if (!Array.isArray(orderIds) || orderIds.length === 0) {
+    res.status(400).json({ error: "orderIds required" }); return;
+  }
+
+  // Only soft-delete orders that actually belong to this GB and aren't already deleted
+  const targets = await db
+    .select({ id: ordersTable.id, code: ordersTable.code, telegramUsername: ordersTable.telegramUsername })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+      sql`${ordersTable.id} = ANY(${orderIds})`,
+    ));
+
+  if (targets.length === 0) { res.status(404).json({ error: "No matching orders found" }); return; }
+
+  await db
+    .update(ordersTable)
+    .set({ deletedAt: new Date(), deletedBy: `organiser:${actorUsername}` })
+    .where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+      sql`${ordersTable.id} = ANY(${orderIds})`,
+    ));
+
+  writeLog("order", "info", "orders_bulk_deleted_by_organiser",
+    `Organiser @${actorUsername} bulk-deleted ${targets.length} order(s) in GB ${gb.name}`,
+    { gbId, deletedCount: targets.length, codes: targets.map(t => t.code) },
+    (req.ip ?? "unknown") as string,
+  ).catch(() => {});
+
+  res.json({ ok: true, deleted: targets.length });
+});
+
 // ─── DELETE /api/organiser/group-buys/:gbId/orders/:orderId ───────────────
 // Soft-deletes a single order for the organiser's own GB.
 // Sets deletedAt/deletedBy, order is recoverable within the 2-day window via /restore.

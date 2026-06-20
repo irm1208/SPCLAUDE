@@ -6716,6 +6716,9 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [bulkAddSubmitting, setBulkAddSubmitting] = useState(false);
   const [bulkAddResult, setBulkAddResult] = useState<{ added: number; skipped: number; productName: string } | null>(null);
   const [bulkAddError, setBulkAddError] = useState("");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState("");
 
   const handleBulkAddProduct = async () => {
     if (!bulkAddProductId || selectedOrderIds.size === 0) return;
@@ -6738,6 +6741,26 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       if (ordRes.ok) setOrders(await ordRes.json());
     } catch { setBulkAddError("Network error"); }
     finally { setBulkAddSubmitting(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedOrderIds.size === 0) return;
+    setBulkDeleting(true);
+    setBulkDeleteError("");
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders/bulk-delete`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: [...selectedOrderIds] }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBulkDeleteError(data.error ?? "Failed"); return; }
+      const deletedIds = new Set(selectedOrderIds);
+      setOrders(prev => prev.filter(o => !deletedIds.has(o.id)));
+      setSelectedOrderIds(new Set());
+      setBulkDeleteOpen(false);
+    } catch { setBulkDeleteError("Network error"); }
+    finally { setBulkDeleting(false); }
   };
 
   // Product picker for adding to existing orders
@@ -7976,6 +7999,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                 style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-blue-15, rgba(27,58,122,0.2))", color: "var(--t-blue-deep)" }}
                 onClick={() => {
                   setBulkAddOpen(v => !v);
+                  setBulkDeleteOpen(false);
                   setBulkAddResult(null);
                   setBulkAddError("");
                   if (gbProducts.length === 0) {
@@ -7987,6 +8011,13 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                 }}
               >
                 <Plus className="w-3 h-3" /> Add Product to Selected
+              </button>
+              <button
+                className="h-6 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1"
+                style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}
+                onClick={() => { setBulkDeleteOpen(v => !v); setBulkAddOpen(false); setBulkDeleteError(""); }}
+              >
+                <Trash2 className="w-3 h-3" /> Delete Selected
               </button>
             </>
           )}
@@ -8043,6 +8074,36 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                 : `All selected orders already have "${bulkAddResult.productName}"`}
             </p>
           )}
+        </div>
+      )}
+      {bulkDeleteOpen && selectedOrderIds.size > 0 && (
+        <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(220,38,38,0.04)", border: "1.5px solid rgba(220,38,38,0.2)" }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#DC2626" }}>
+              Delete {selectedOrderIds.size} Selected Order{selectedOrderIds.size !== 1 ? "s" : ""}
+            </p>
+            <button onClick={() => { setBulkDeleteOpen(false); setBulkDeleteError(""); }} style={{ color: "var(--t-muted)" }}><X className="w-3.5 h-3.5" /></button>
+          </div>
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+            These orders will be soft-deleted and can be restored from Trash within 48 hours.
+          </p>
+          {bulkDeleteError && <p className="text-[11px] font-medium" style={{ color: "#DC2626" }}>{bulkDeleteError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="h-7 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 text-white disabled:opacity-50"
+              style={{ background: "#DC2626" }}
+            >
+              {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              {bulkDeleting ? "Deleting…" : `Yes, delete ${selectedOrderIds.size}`}
+            </button>
+            <button
+              onClick={() => { setBulkDeleteOpen(false); setBulkDeleteError(""); }}
+              className="h-7 px-3 rounded-lg text-[11px] font-bold"
+              style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
+            >Cancel</button>
+          </div>
         </div>
       )}
       <div className="space-y-4">
