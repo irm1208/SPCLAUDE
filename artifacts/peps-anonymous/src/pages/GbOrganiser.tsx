@@ -6648,6 +6648,9 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [msgTexts, setMsgTexts] = useState<Record<string, string>>({});
   const [msgSending, setMsgSending] = useState<Record<string, boolean>>({});
   const [msgResult, setMsgResult] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({});
+  const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
   const [oosSelected, setOosSelected] = useState<Set<string>>(new Set());
   const [oosSubmitting, setOosSubmitting] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
@@ -7058,6 +7061,28 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       setOrgQrMsg(prev => ({ ...prev, [key]: { ok: false, text: "Network error" } }));
     }
     setOrgQrSaving(prev => ({ ...prev, [key]: false }));
+  };
+
+  const deleteOrder = async (o: OrgOrder) => {
+    setDeleting(prev => ({ ...prev, [o.id]: true }));
+    setDeleteErr(prev => ({ ...prev, [o.id]: "" }));
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders/${o.id}`, {
+        method: "DELETE", credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setDeleteErr(prev => ({ ...prev, [o.id]: d.error ?? "Failed to delete" }));
+      } else {
+        setDeleteConfirm(prev => { const s = new Set(prev); s.delete(o.id); return s; });
+        closeEdit(o.id);
+        setOrders(prev => prev.filter(x => x.id !== o.id));
+      }
+    } catch {
+      setDeleteErr(prev => ({ ...prev, [o.id]: "Connection error" }));
+    } finally {
+      setDeleting(prev => ({ ...prev, [o.id]: false }));
+    }
   };
 
   const saveEdit = async (o: OrgOrder) => {
@@ -8669,6 +8694,44 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                           {msgSending[o.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <SendHorizonal className="w-3 h-3" />}
                           {msgSending[o.id] ? "Sending…" : "Send Message"}
                         </button>
+                      </div>
+
+                      {/* Delete order */}
+                      <div className="border-t pt-3" style={{ borderColor: "var(--t-border)" }}>
+                        {!deleteConfirm.has(o.id) ? (
+                          <button
+                            onClick={() => setDeleteConfirm(prev => { const s = new Set(prev); s.add(o.id); return s; })}
+                            className="h-7 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5"
+                            style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete Order
+                          </button>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] font-semibold" style={{ color: "#DC2626" }}>
+                              Delete order #{o.code}? It can be restored from the Trash within 48 hours.
+                            </p>
+                            {deleteErr[o.id] && <p className="text-[11px]" style={{ color: "#DC2626" }}>{deleteErr[o.id]}</p>}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => deleteOrder(o)}
+                                disabled={deleting[o.id]}
+                                className="h-7 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 text-white"
+                                style={{ background: "#DC2626", opacity: deleting[o.id] ? 0.6 : 1 }}
+                              >
+                                {deleting[o.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                {deleting[o.id] ? "Deleting…" : "Yes, delete"}
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(prev => { const s = new Set(prev); s.delete(o.id); return s; })}
+                                className="h-7 px-3 rounded-lg text-[11px] font-bold"
+                                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>

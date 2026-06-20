@@ -3907,6 +3907,41 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
   res.json({ ok: true, updatedCount: updatedOrders.length, ratePrice, currency, paid: isPaid });
 });
 
+// ─── DELETE /api/organiser/group-buys/:gbId/orders/:orderId ───────────────
+// Soft-deletes a single order for the organiser's own GB.
+// Sets deletedAt/deletedBy, order is recoverable within the 2-day window via /restore.
+router.delete("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, async (req, res): Promise<void> => {
+  const { gbId, orderId } = req.params;
+  const actorUsername = req.organiser!.telegramUsername;
+
+  const [gb] = await db
+    .select({ id: groupBuysTable.id, name: groupBuysTable.name })
+    .from(groupBuysTable)
+    .where(gbOwner(req, gbId))
+    .limit(1);
+  if (!gb) { res.status(403).json({ error: "Not your group buy" }); return; }
+
+  const [order] = await db
+    .select()
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)))
+    .limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  await db
+    .update(ordersTable)
+    .set({ deletedAt: new Date(), deletedBy: `organiser:${actorUsername}` })
+    .where(eq(ordersTable.id, orderId));
+
+  writeLog("order", "info", "order_deleted_by_organiser",
+    `Organiser @${actorUsername} deleted order ${order.code} (${order.telegramUsername}) in GB ${gb.name}`,
+    { orderId: order.id, code: order.code, telegramUsername: order.telegramUsername, gbId },
+    (req.ip ?? "unknown") as string,
+  ).catch(() => {});
+
+  res.json({ ok: true, code: order.code });
+});
+
 // ─── GET /organiser/group-buys/:gbId/orders/trash ─────────────────────────
 // Returns soft-deleted orders for this GB within the 2-day restore window.
 // Scoped to orders belonging to the requesting organiser's own GB.
