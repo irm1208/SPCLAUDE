@@ -13,9 +13,10 @@ import {
   type WholesaleShareItem,
   type WholesaleShareSplitMode,
 } from "@workspace/db";
-import { eq, and, isNull, sql, desc, gte } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, gte, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale } from "../middleware/require-wholesale";
+import { requireAdmin } from "../middleware/require-admin";
 import { getActiveWholesaleVendor } from "./config";
 import {
   calcTotalShipping,
@@ -953,6 +954,97 @@ router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): 
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
+});
+
+// ── Admin: grouped view of wholesale shared orders ───────────────────────────
+// One row per shared order so admins see the whole combined parcel as a single
+// order: every member's individual order stacked together, each with its paid
+// status, the organiser (creator) highlighted, and the delivery address.
+// Guarded by the admin secret (X-Admin-Secret header). "made" = locked or
+// submitted (member orders have been materialised).
+const isOrderPaid = (ps: string | null | undefined): boolean =>
+  ps === "confirmed" || ps === "test_confirmed";
+
+router.get("/admin/wholesale-shares", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const statusQ = String((req.query as Record<string, string | undefined>).status ?? "made").toLowerCase();
+  let statusFilter: string[] | null;
+  if (statusQ === "open") statusFilter = ["open"];
+  else if (statusQ === "cancelled") statusFilter = ["cancelled"];
+  else if (statusQ === "all") statusFilter = null;
+  else statusFilter = ["locked", "submitted"]; // "made" (default)
+
+  const shares = await db
+    .select()
+    .from(wholesaleSharesTable)
+    .where(statusFilter ? inArray(wholesaleSharesTable.status, statusFilter) : undefined)
+    .orderBy(desc(wholesaleSharesTable.createdAt));
+
+  if (shares.length === 0) {
+    res.json({ shares: [] });
+    return;
+  }
+
+  const shareIds = shares.map(s => s.id);
+  const members = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(inArray(wholesaleShareMembersTable.shareId, shareIds));
+
+  const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
+  const orderById = new Map<string, typeof ordersTable.$inferSelect>();
+  if (orderIds.length > 0) {
+    const orders = await db.select().from(ordersTable).where(inArray(ordersTable.id, orderIds));
+    for (const o of orders) orderById.set(o.id, o);
+  }
+
+  const membersByShare = new Map<string, typeof members>();
+  for (const m of members) {
+    const arr = membersByShare.get(m.shareId) ?? [];
+    arr.push(m);
+    membersByShare.set(m.shareId, arr);
+  }
+
+  const rows = shares.map(s => {
+    const ms = membersByShare.get(s.id) ?? [];
+    const isLocked = s.status !== "open";
+    const paidCount = ms.filter(m => isOrderPaid(m.orderId ? orderById.get(m.orderId)?.paymentStatus : null)).length;
+    const combinedKits = ms.reduce((acc, m) => acc + memberKits(m.items ?? []), 0);
+    const combinedSubtotal = Number(ms.reduce((acc, m) => acc + memberSubtotal(m.items ?? []), 0).toFixed(2));
+    return {
+      id: s.id,
+      status: s.status,
+      creatorUsername: s.creatorUsername,
+      deliveryUsername: s.deliveryUsername ?? null,
+      deliveryName: s.shippingName ?? null,
+      deliveryCountry: s.shippingCountry ?? null,
+      memberCount: ms.length,
+      paidCount,
+      allPaid: isLocked && ms.length > 0 && paidCount === ms.length,
+      combinedKits,
+      combinedSubtotal,
+      totalVendorShipping: s.totalVendorShipping != null ? Number(s.totalVendorShipping) : null,
+      totalKits: s.totalKits != null ? Number(s.totalKits) : null,
+      createdAt: (s.createdAt as Date).toISOString(),
+      lockedAt: s.lockedAt ? (s.lockedAt as Date).toISOString() : null,
+      submittedAt: s.submittedAt ? (s.submittedAt as Date).toISOString() : null,
+      cancelledAt: s.cancelledAt ? (s.cancelledAt as Date).toISOString() : null,
+    };
+  });
+
+  res.json({ shares: rows });
+});
+
+router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const share = await loadShare(req.params.id);
+  if (!share) {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  // Pass an admin-neutral username: every isYou=false, no canEditAddress.
+  res.json(await buildShareResponse(share, ""));
 });
 
 export default router;

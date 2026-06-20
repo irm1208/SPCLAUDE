@@ -13776,6 +13776,7 @@ const ALL_TABS_META = [
   { id: "inventorysync", label: "Inventory Sync", icon: RefreshCcw },
   { id: "inventory",    label: "Inventory",      icon: Database },
   { id: "wholesale",    label: "Wholesale",      icon: Package },
+  { id: "wholesale-shares", label: "Shared Orders", icon: Users },
   { id: "dispatch",     label: "Dispatch",        icon: PackageCheck },
   { id: "dashboard",    label: "Dashboard",      icon: BarChart3 },
 ];
@@ -17803,6 +17804,245 @@ function VendorModal({ vendor, numTiers, onSave, onClose }: {
           <button onClick={handleSave} className="flex-1 h-10 rounded-xl text-sm font-semibold text-white" style={{ background: "#F24908" }}>Save Vendor</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+type AdminShareRow = {
+  id: string; status: string; creatorUsername: string;
+  deliveryUsername: string | null; deliveryName: string | null; deliveryCountry: string | null;
+  memberCount: number; paidCount: number; allPaid: boolean;
+  combinedKits: number; combinedSubtotal: number;
+  totalVendorShipping: number | null; totalKits: number | null;
+  createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
+};
+type AdminShareMember = {
+  username: string; isCreator: boolean;
+  items: { productId: string; productName: string; quantity: number; unitPrice: number }[];
+  kits: number; subtotal: number; tip: number; shippingShare: number | null;
+  orderId: string | null; orderCode: string | null; orderStatus: string | null;
+  paymentStatus: string | null; hasDeliveryAddress: boolean;
+};
+type AdminShareDetail = {
+  id: string; status: string; creatorUsername: string;
+  delivery: { username: string | null; name: string | null; phone: string | null; email: string | null; address: string | null; country: string | null };
+  members: AdminShareMember[]; memberCount: number;
+  combinedKits: number; combinedSubtotal: number;
+  totalVendorShipping: number | null; totalKits: number | null; allPaid: boolean;
+  createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
+};
+
+function ShareStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { bg: string; fg: string; label: string }> = {
+    open:      { bg: "rgba(245,158,11,0.15)", fg: "#f59e0b", label: "Open" },
+    locked:    { bg: "rgba(59,130,246,0.15)", fg: "#3b82f6", label: "Locked" },
+    submitted: { bg: "rgba(34,197,94,0.15)",  fg: "#22c55e", label: "Submitted" },
+    cancelled: { bg: "rgba(239,68,68,0.15)",  fg: "#ef4444", label: "Cancelled" },
+  };
+  const s = map[status] ?? { bg: "rgba(148,163,184,0.15)", fg: "#94a3b8", label: status };
+  return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: s.bg, color: s.fg }}>{s.label}</span>;
+}
+
+function SharePayBadge({ status, hasOrder }: { status: string | null; hasOrder: boolean }) {
+  if (!hasOrder) return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>No order</span>;
+  const paid = status === "confirmed" || status === "test_confirmed";
+  const pending = status === "pending_confirmation";
+  const rejected = status === "rejected" || status === "failed";
+  let bg = "rgba(148,163,184,0.15)", fg = "#94a3b8", label = "Unpaid";
+  if (paid) { bg = "rgba(34,197,94,0.15)"; fg = "#22c55e"; label = "Paid"; }
+  else if (pending) { bg = "rgba(245,158,11,0.15)"; fg = "#f59e0b"; label = "Pending"; }
+  else if (rejected) { bg = "rgba(239,68,68,0.15)"; fg = "#ef4444"; label = "Rejected"; }
+  return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: bg, color: fg }}>{label}</span>;
+}
+
+function AdminWholesaleSharesTab({ secret }: { secret: string }) {
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const [statusFilter, setStatusFilter] = useState<"made" | "open" | "cancelled" | "all">("made");
+  const [rows, setRows] = useState<AdminShareRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, AdminShareDetail>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(null); setExpandedId(null);
+    fetch(apiUrl(`/admin/wholesale-shares?status=${statusFilter}`), { headers: { "x-admin-secret": secret } })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { if (!cancelled) setRows(d.shares ?? []); })
+      .catch(() => { if (!cancelled) setError("Failed to load shared orders"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [secret, statusFilter]);
+
+  const toggle = async (id: string) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (!detailById[id]) {
+      setDetailLoading(true);
+      try {
+        const r = await fetch(apiUrl(`/admin/wholesale-shares/${id}`), { headers: { "x-admin-secret": secret } });
+        if (r.ok) { const d = await r.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [id]: d })); }
+      } catch { /* ignore */ }
+      setDetailLoading(false);
+    }
+  };
+
+  const FILTERS: { id: typeof statusFilter; label: string }[] = [
+    { id: "made", label: "Made" },
+    { id: "open", label: "Open" },
+    { id: "cancelled", label: "Cancelled" },
+    { id: "all", label: "All" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+          <Users className="w-5 h-5" /> Shared Orders
+        </h2>
+        <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>
+          Each combined wholesale parcel shown as one order — every member's order stacked together with its paid status, the organiser highlighted, and the delivery address.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {FILTERS.map(f => (
+          <button
+            key={f.id}
+            onClick={() => setStatusFilter(f.id)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={statusFilter === f.id
+              ? { background: "var(--adm-accent)", color: "#fff" }
+              : { background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm py-8 justify-center" style={{ color: "var(--adm-muted)" }}>
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      ) : error ? (
+        <div className="text-sm py-8 text-center" style={{ color: "#ef4444" }}>{error}</div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm py-12 text-center" style={{ color: "var(--adm-muted)" }}>No shared orders here yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map(row => {
+            const open = expandedId === row.id;
+            const detail = detailById[row.id];
+            return (
+              <div key={row.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
+                <button onClick={() => toggle(row.id)} className="w-full text-left px-4 py-3 flex items-center gap-3">
+                  {open ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{row.id}</span>
+                      <ShareStatusBadge status={row.status} />
+                      {row.status !== "open" && (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                          style={row.allPaid
+                            ? { background: "rgba(34,197,94,0.15)", color: "#22c55e" }
+                            : { background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
+                          {row.paidCount}/{row.memberCount} paid
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
+                      Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
+                      {row.deliveryCountry ? ` · → ${row.deliveryCountry}` : ""}
+                    </div>
+                  </div>
+                </button>
+
+                {open && (
+                  <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "var(--adm-border)" }}>
+                    {!detail ? (
+                      <div className="flex items-center gap-2 text-sm py-6 justify-center" style={{ color: "var(--adm-muted)" }}>
+                        {detailLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading order…</> : "—"}
+                      </div>
+                    ) : (
+                      <div className="space-y-3 mt-3">
+                        {/* Delivery address */}
+                        <div className="rounded-lg p-3 text-xs" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
+                          <div className="flex items-center gap-1.5 font-semibold mb-1" style={{ color: "var(--adm-text)" }}>
+                            <Truck className="w-3.5 h-3.5" /> Delivery address
+                            {detail.delivery.username && (
+                              <span style={{ color: "var(--adm-muted)" }}>
+                                · to @{detail.delivery.username}{detail.delivery.username === detail.creatorUsername ? " (organiser)" : ""}
+                              </span>
+                            )}
+                          </div>
+                          {detail.delivery.address ? (
+                            <div className="space-y-0.5" style={{ color: "var(--adm-muted)" }}>
+                              {detail.delivery.name && <div style={{ color: "var(--adm-text)" }}>{detail.delivery.name}</div>}
+                              <div className="whitespace-pre-wrap">{detail.delivery.address}</div>
+                              {detail.delivery.country && <div>{detail.delivery.country}</div>}
+                              {detail.delivery.phone && <div>☎ {detail.delivery.phone}</div>}
+                              {detail.delivery.email && <div>✉ {detail.delivery.email}</div>}
+                            </div>
+                          ) : (
+                            <div style={{ color: "var(--adm-muted)" }}>No delivery address set yet.</div>
+                          )}
+                        </div>
+
+                        {/* Member orders, stacked */}
+                        <div className="space-y-2">
+                          {detail.members.map(m => (
+                            <div key={m.username} className="rounded-lg p-3"
+                              style={m.isCreator
+                                ? { background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.35)" }
+                                : { background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-sm" style={{ color: "var(--adm-text)" }}>@{m.username}</span>
+                                {m.isCreator && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(59,130,246,0.18)", color: "#3b82f6" }}>Organiser</span>}
+                                <SharePayBadge status={m.paymentStatus} hasOrder={!!m.orderId} />
+                                {m.orderCode && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>order #{m.orderCode}</span>}
+                                {m.orderStatus && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>· {m.orderStatus}</span>}
+                              </div>
+                              {m.items.length > 0 ? (
+                                <div className="mt-2 space-y-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
+                                  {m.items.map((it, i) => (
+                                    <div key={i} className="flex justify-between gap-3">
+                                      <span className="truncate">{it.quantity}× {it.productName}</span>
+                                      <span className="shrink-0">{money(it.quantity * it.unitPrice)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-xs" style={{ color: "var(--adm-muted)" }}>No items.</div>
+                              )}
+                              <div className="mt-2 pt-2 border-t flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
+                                <span>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
+                                <span>Subtotal {money(m.subtotal)}</span>
+                                {m.tip > 0 && <span>Tip {money(m.tip)}</span>}
+                                {m.shippingShare != null && <span>Shipping {money(m.shippingShare)}</span>}
+                                <span className="ml-auto" style={{ color: "var(--adm-text)", fontWeight: 600 }}>Total {money(m.subtotal + m.tip + (m.shippingShare ?? 0))}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Combined totals */}
+                        <div className="rounded-lg p-3 text-xs flex flex-wrap gap-x-4 gap-y-1" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)", color: "var(--adm-muted)" }}>
+                          <span style={{ color: "var(--adm-text)", fontWeight: 600 }}>Combined</span>
+                          <span>{detail.combinedKits} kit{detail.combinedKits === 1 ? "" : "s"}</span>
+                          <span>Subtotal {money(detail.combinedSubtotal)}</span>
+                          {detail.totalVendorShipping != null && <span>Vendor shipping {money(detail.totalVendorShipping)}</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -23450,6 +23690,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "testingpools" && <AdminTestingPools secret={secret} />}
           {activeTab === "tglog"         && <TelegramLogTab secret={secret} />}
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
+          {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
           {activeTab === "dispatch"      && <AdminDispatch secret={secret} />}
           {activeTab === "invite-codes"  && <InviteCodesTab secret={secret} />}
           {activeTab === "coupons"       && <AdminCouponsTab secret={secret} />}
