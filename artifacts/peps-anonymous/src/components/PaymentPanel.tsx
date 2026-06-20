@@ -998,7 +998,7 @@ export default function PaymentPanel({
             >
               <CryptoIconBadge currency={cryptoCurrency} size={44} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{cryptoCurrency} Crypto</p>
+                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{availableCryptoOptions.length > 1 ? availableCryptoOptions.map(o => o.currency).join(" or ") : `${cryptoCurrency} Crypto`}</p>
                 <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{cryptoNetwork} · {isAutoVerified(cryptoCurrency, cryptoNetwork) ? "Verified automatically on-chain" : "Organiser confirms manually"}</p>
               </div>
               <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
