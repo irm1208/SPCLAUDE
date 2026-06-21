@@ -512,6 +512,41 @@ router.post("/admin/dispatch/:gbId/mark-shipped-by-reshipper", async (req, res) 
   }
 });
 
+// ─── POST /admin/dispatch/:gbId/mark-orders-shipped ─────────────────────────
+// Generic bulk "mark as Shipped" for specific order IDs — used to bypass the
+// parcel-matching Calculate flow when items have already been dispatched.
+router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { gbId } = req.params as { gbId: string };
+    const { orderIds } = req.body as { orderIds?: string[] };
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.status(400).json({ error: "orderIds required" }); return;
+    }
+
+    // Validate orders belong to this GB and are not already Shipped/Cancelled
+    const rows = await db
+      .select({ id: ordersTable.id, status: ordersTable.status })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt), inArray(ordersTable.id, orderIds)));
+
+    const toMark = rows
+      .filter(o => !["Shipped", "Completed", "Cancelled"].includes(o.status ?? ""))
+      .map(o => o.id);
+
+    if (toMark.length === 0) { res.json({ ok: true, marked: 0 }); return; }
+
+    await db.update(ordersTable)
+      .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
+      .where(inArray(ordersTable.id, toMark));
+
+    res.json({ ok: true, marked: toMark.length });
+  } catch (e) {
+    console.error("[dispatch mark-orders-shipped]", e);
+    res.status(500).json({ error: "Failed to mark orders as shipped" });
+  }
+});
+
 // ─── GET /admin/dispatch/:gbId/half-kits ────────────────────────────────────
 // Returns orders with half-kit line items (qty < 1), grouped by reshipper.
 router.get("/admin/dispatch/:gbId/half-kits", async (req, res) => {

@@ -388,6 +388,9 @@ function PackingSlipsTab({
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [ovExpanded, setOvExpanded] = useState<Record<string, boolean>>({ dispatched: false, ready: true, cannot: true, pending: true });
   const [ovCannotSelected, setOvCannotSelected] = useState<Set<string>>(new Set());
+  const [ovPendingSelected, setOvPendingSelected] = useState<Set<string>>(new Set());
+  const [markingPending, setMarkingPending] = useState(false);
+  const [markPendingMsg, setMarkPendingMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Reset downstream when GB changes
   useEffect(() => {
@@ -535,6 +538,34 @@ function PackingSlipsTab({
   const ovPending = useMemo(() => overviewOrders.filter(o =>
     !["Shipped", "Completed", "Cancelled"].includes(o.status) && !readyIds.has(o.id) && !cannotIds.has(o.id)
   ), [overviewOrders, readyIds, cannotIds]);
+
+  const handleMarkPendingShipped = async () => {
+    const idsToMark = ovPendingSelected.size > 0 ? [...ovPendingSelected] : ovPending.map(o => o.id);
+    if (idsToMark.length === 0) return;
+    setMarkingPending(true);
+    setMarkPendingMsg(null);
+    try {
+      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/mark-orders-shipped`), {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ orderIds: idsToMark }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setMarkPendingMsg({ ok: true, text: `✓ ${d.marked} order${d.marked !== 1 ? "s" : ""} marked as Shipped` });
+        const markedSet = new Set(idsToMark);
+        setOverviewOrders(prev => prev.map(o => markedSet.has(o.id) ? { ...o, status: "Shipped" } : o));
+        setOvPendingSelected(new Set());
+      } else {
+        setMarkPendingMsg({ ok: false, text: d.error ?? "Failed" });
+      }
+    } catch {
+      setMarkPendingMsg({ ok: false, text: "Network error" });
+    } finally {
+      setMarkingPending(false);
+    }
+  };
 
   const handleMarkUnfulfillableShipped = async (specificIds?: string[]) => {
     const idsToMark = specificIds && specificIds.length > 0
@@ -976,7 +1007,7 @@ function PackingSlipsTab({
                 )}
               </div>
 
-              {/* Pending / No Stock */}
+              {/* Pending / Not Dispatched */}
               <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <button
                   onClick={() => setOvExpanded(p => ({ ...p, pending: !p.pending }))}
@@ -984,23 +1015,62 @@ function PackingSlipsTab({
                 >
                   <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
                   <span className="text-sm font-semibold text-slate-700 flex-1">
-                    Pending / Not Assigned ({ovPending.length})
+                    Pending / Not Dispatched ({ovPending.length})
                     {computeResult && ovPending.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">— no stock allocated in these parcels</span>}
                   </span>
+                  {ovPending.length > 0 && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleMarkPendingShipped(); }}
+                      disabled={markingPending}
+                      className="mr-2 shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-600 text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+                    >
+                      {markingPending ? "Marking…" : ovPendingSelected.size > 0 ? `Mark ${ovPendingSelected.size} Shipped` : "Mark all Shipped"}
+                    </button>
+                  )}
                   <span className="text-[11px] text-slate-500">{ovExpanded.pending ? "▲" : "▼"}</span>
                 </button>
                 {ovExpanded.pending && (
-                  <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
+                  <div>
+                    {markPendingMsg && (
+                      <p className={`text-xs px-4 py-1.5 font-medium ${markPendingMsg.ok ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
+                        {markPendingMsg.text}
+                      </p>
+                    )}
                     {ovPending.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-2">{computeResult ? "All orders accounted for." : "Awaiting Calculate…"}</p>
-                    ) : ovPending.map(o => (
-                      <div key={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
-                        <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
-                        {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
-                        {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
-                        <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{o.status}</span>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50/70 border-b border-slate-100">
+                          <span className="text-[11px] text-slate-600 font-medium">
+                            {ovPendingSelected.size > 0 ? `${ovPendingSelected.size} selected` : "Tick to mark individually, or use "Mark all Shipped""}
+                          </span>
+                          <button onClick={() => setOvPendingSelected(new Set(ovPending.map(o => o.id)))} className="text-[11px] text-slate-500 hover:underline">Select all</button>
+                          {ovPendingSelected.size > 0 && (
+                            <button onClick={() => setOvPendingSelected(new Set())} className="text-[11px] text-slate-500 hover:underline">Clear</button>
+                          )}
+                        </div>
+                        <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                          {ovPending.map(o => {
+                            const sel = ovPendingSelected.has(o.id);
+                            return (
+                              <div
+                                key={o.id}
+                                onClick={() => setOvPendingSelected(prev => { const next = new Set(prev); next.has(o.id) ? next.delete(o.id) : next.add(o.id); return next; })}
+                                className={`cursor-pointer flex items-center gap-2 px-4 py-2 text-xs transition-colors ${sel ? "bg-slate-50" : "hover:bg-slate-50/40"}`}
+                              >
+                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${sel ? "bg-slate-500 border-slate-500" : "border-slate-300"}`}>
+                                  {sel && <Check className="w-2 h-2 text-white" />}
+                                </div>
+                                <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
+                                {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
+                                {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
+                                <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{o.status}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
