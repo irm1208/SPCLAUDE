@@ -386,7 +386,7 @@ function PackingSlipsTab({
   interface OverviewOrder { id: string; code: string; telegramUsername: string | null; shippingName: string | null; status: string }
   const [overviewOrders, setOverviewOrders] = useState<OverviewOrder[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [ovExpanded, setOvExpanded] = useState<Record<string, boolean>>({ dispatched: false, ready: true, cannot: true, pending: false });
+  const [ovExpanded, setOvExpanded] = useState<Record<string, boolean>>({ dispatched: false, ready: true, cannot: true, pending: true });
   const [ovCannotSelected, setOvCannotSelected] = useState<Set<string>>(new Set());
 
   // Reset downstream when GB changes
@@ -443,14 +443,15 @@ function PackingSlipsTab({
       .finally(() => setParcelsLoading(false));
   }, [selectedGb, scopeType, scopeId, headers]);
 
-  // Load orders for the overview panel: per-reshipper for the reshipper scope,
-  // or every order in the GB for the "All Orders" scope. This works even when no
-  // parcels have been logged yet, so admins can always see the underlying orders.
+  // Load orders for the overview panel: per-reshipper, per-country-leg, or all
+  // orders in the GB. Works even when no parcels have been logged yet.
   useEffect(() => {
     setOverviewOrders([]);
+    setOverviewLoading(false);
     const isReshipper = scopeType === "reshipper" && !!scopeId;
+    const isCountry = scopeType === "country" && !!scopeId;
     const isAll = scopeType === "all";
-    if (!selectedGb || (!isReshipper && !isAll)) return;
+    if (!selectedGb || (!isReshipper && !isCountry && !isAll)) return;
     setOverviewLoading(true);
     const params = new URLSearchParams({ groupBuyId: selectedGb, pageSize: "999" });
     if (isReshipper) params.set("reshipper", scopeId!.replace(/^@/, ""));
@@ -458,9 +459,12 @@ function PackingSlipsTab({
       .then(r => r.json())
       .then((data: unknown) => {
         const raw = Array.isArray(data) ? data : (Array.isArray((data as any)?.orders) ? (data as any).orders : []);
-        setOverviewOrders((raw as any[]).filter(o => !o.deletedAt));
+        let filtered = (raw as any[]).filter(o => !o.deletedAt);
+        // Country leg scope: filter client-side by countryLegId
+        if (isCountry) filtered = filtered.filter(o => o.countryLegId === scopeId);
+        setOverviewOrders(filtered);
       })
-      .catch(() => {})
+      .catch(() => { setOverviewOrders([]); })
       .finally(() => setOverviewLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGb, scopeType, scopeId, headers]);
@@ -823,15 +827,15 @@ function PackingSlipsTab({
         </Section>
       )}
 
-      {/* ── Order Overview (reshipper or all-orders scope) ── */}
-      {((scopeType === "reshipper" && scopeId) || scopeType === "all") && (
-        <Section title={`All Orders${scopeType === "reshipper" ? ` — ${scopeId}` : ""}${overviewOrders.length > 0 ? ` (${overviewOrders.length} total)` : ""}`}>
+      {/* ── Order Overview (reshipper, country leg, or all-orders scope) ── */}
+      {((scopeType === "reshipper" && scopeId) || (scopeType === "country" && scopeId) || scopeType === "all") && (
+        <Section title={`All Orders${scopeType === "reshipper" ? ` — ${scopeId}` : scopeType === "country" && scopeOptions ? ` — ${scopeOptions.countryLegs.find(l => l.id === scopeId)?.countryName ?? scopeId}` : ""}${overviewOrders.length > 0 ? ` (${overviewOrders.length} total)` : ""}`}>
           {overviewLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading orders…
             </div>
           ) : overviewOrders.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{scopeType === "reshipper" ? "No orders found for this reshipper." : "No orders found for this group buy."}</p>
+            <p className="text-sm text-muted-foreground">{scopeType === "reshipper" ? "No orders found for this reshipper." : scopeType === "country" ? "No orders assigned to this country leg." : "No orders found for this group buy."}</p>
           ) : (
             <div className="space-y-2">
 
