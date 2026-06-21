@@ -88,7 +88,7 @@ interface OrganiserGB {
   paymentsEnabled: boolean;
   paymentMessage: string | null;
   paymentMessageEnabled: boolean;
-  shippingOptions: { id: string; label: string; price: number }[];
+  shippingOptions: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }[];
   organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
   organiserId: string | null;
   labTestSupplier: string | null;
@@ -5972,8 +5972,8 @@ const TROCADOR_COINS = [
 ] as const;
 
 function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
-  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string }[]>(
-    (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0) }))
+  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; requiresAddress: boolean; requiresQrCode: boolean }[]>(
+    (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
   );
   const [payments, setPayments] = useState({
     cryptoCurrency: gb.organiserPayments?.cryptoCurrency ?? "USDT",
@@ -6053,16 +6053,19 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
     setSplitApplying(false);
   };
 
-  const addShipping = () => setShippingOptions(s => [...s, { id: `ship-${Date.now()}`, label: "", description: "", priceStr: "0" }]);
+  const addShipping = () => setShippingOptions(s => [...s, { id: `ship-${Date.now()}`, label: "", description: "", priceStr: "0", requiresAddress: false, requiresQrCode: false }]);
   const removeShipping = (idx: number) => setShippingOptions(s => s.filter((_, i) => i !== idx));
   const updateShipping = (idx: number, k: "label" | "description" | "priceStr", v: string) => {
+    setShippingOptions(s => s.map((o, i) => i === idx ? { ...o, [k]: v } : o));
+  };
+  const updateShippingBool = (idx: number, k: "requiresAddress" | "requiresQrCode", v: boolean) => {
     setShippingOptions(s => s.map((o, i) => i === idx ? { ...o, [k]: v } : o));
   };
 
   const saveShipping = async () => {
     setSavingShip(true); setError("");
     try {
-      const payload = shippingOptions.map(({ priceStr, ...o }) => ({ ...o, price: parseFloat(priceStr) || 0 }));
+      const payload = shippingOptions.map(({ priceStr, ...o }) => ({ ...o, price: parseFloat(priceStr) || 0, requiresAddress: o.requiresAddress, requiresQrCode: o.requiresQrCode }));
       const res = await fetch(`/api/organiser/group-buys/${gb.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shippingOptions: payload }) });
       if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
       onUpdated(await res.json()); setOkShip(true); setTimeout(() => setOkShip(false), 2000);
@@ -6122,6 +6125,16 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
               className={`${inputCls} text-xs`}
               style={inputStyle}
             />
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-0.5">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--t-subtle)" }}>
+                <input type="checkbox" checked={o.requiresAddress} onChange={e => updateShippingBool(i, "requiresAddress", e.target.checked)} className="rounded" />
+                Requires delivery address
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--t-subtle)" }}>
+                <input type="checkbox" checked={o.requiresQrCode} onChange={e => updateShippingBool(i, "requiresQrCode", e.target.checked)} className="rounded" />
+                Requires QR code upload
+              </label>
+            </div>
           </div>
         ))}
         <button onClick={saveShipping} disabled={savingShip} className="h-10 px-5 rounded-xl text-xs font-bold text-white flex items-center gap-1.5" style={{ background: okShip ? "#16A34A" : "var(--t-blue-deep)" }}>
