@@ -1235,6 +1235,9 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
   if (order.inpostQrCode && !qrCodes["inpost"]) qrCodes["inpost"] = order.inpostQrCode as string;
   if (order.royalMailQrCode && !qrCodes["royal-mail"]) qrCodes["royal-mail"] = order.royalMailQrCode as string;
 
+  // Whether the customer's self-delete is locked by the group buy "Delete Order" setting
+  const groupBuyDeleteLocked = await isCustomerActionLockedByGb(order.groupBuyId, "delete");
+
   res.json({
     ...formatOrderResponse(order as unknown as Record<string, unknown>, lineItems as unknown as Record<string, unknown>[], gbPaymentsEnabled),
     qrCodes,
@@ -1245,6 +1248,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     groupBuyDirectShippingPaymentsEnabled: gbDirectShippingPaymentsEnabled,
     groupBuyPaymentBanner: gbPaymentBanner,
     groupBuyAllowOrderAddons: gbAllowOrderAddons,
+    groupBuyDeleteLocked,
     groupBuyHidePricesWhenClosed: gbHidePricesWhenClosed,
     groupBuyHideCostBreakdownWhenClosed: gbHideCostBreakdownWhenClosed,
     groupBuyHideGrandTotalWhenClosed: gbHideGrandTotalWhenClosed,
@@ -1917,6 +1921,11 @@ router.delete("/orders/:orderId", async (req, res): Promise<void> => {
   const deletableStatuses: OrderStatus[] = ["Draft", "Submitted"];
   if (!deletableStatuses.includes(order.status as OrderStatus)) {
     res.status(403).json({ error: `Orders with status "${order.status}" cannot be deleted. Contact support if needed.` });
+    return;
+  }
+
+  if (order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed") {
+    res.status(403).json({ error: `This order has already been paid and can no longer be deleted. Contact support if needed.` });
     return;
   }
 

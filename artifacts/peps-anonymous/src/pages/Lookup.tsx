@@ -1387,8 +1387,8 @@ export default function Lookup() {
                   </div>
                 ) : null}
 
-                {/* Delete order — only available for Draft/Submitted */}
-                {EDITABLE_STATUSES.includes(foundOrder.status) && (
+                {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
+                {EDITABLE_STATUSES.includes(foundOrder.status) && foundOrder.paymentStatus !== "confirmed" && foundOrder.paymentStatus !== "test_confirmed" && !foundOrder.groupBuyDeleteLocked && (
                   <div className="rounded-xl border border-red-100 bg-red-50/50 p-4">
                     <button
                       onClick={() => { setDeleteConfirm(true); setDeleteError(null); }}

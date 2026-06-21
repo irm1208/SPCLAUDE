@@ -130,6 +130,7 @@ interface OrderDetail {
   groupBuyPaymentsEnabled: boolean | null;
   groupBuyDirectShippingPaymentsEnabled?: boolean | null;
   groupBuyAllowOrderAddons?: boolean;
+  groupBuyDeleteLocked?: boolean;
   customShippingRequiresAddress?: boolean;
   customShippingRequiresQrCode?: boolean;
   qrCodes?: Record<string, string>;
@@ -2493,8 +2494,8 @@ export default function AccountOrderDetail() {
                     </div>
                   ) : null}
 
-                  {/* Delete order — only for Draft/Submitted */}
-                  {EDITABLE_STATUSES.includes(order.status) && (
+                  {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
+                  {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder && !order.groupBuyDeleteLocked && (
                     <div className="rounded-xl border p-4" style={{ borderColor: "rgba(239,68,68,0.2)", background: "color-mix(in srgb, #ef4444 6%, var(--t-surface))" }}>
                       <button
                         onClick={() => { setDeleteConfirm(true); setDeleteError(null); }}

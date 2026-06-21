@@ -1522,6 +1522,9 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     obcCurrency = gbRow?.currency ?? null;
   }
 
+  // Whether the customer's self-delete is locked by the group buy "Delete Order" setting
+  const obcDeleteLocked = await isCustomerActionLockedByGb(order.groupBuyId, "delete");
+
   res.json({
     id: order.id,
     code: order.code,
@@ -1562,6 +1565,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     royalMailQrCode: order.royalMailQrCode ?? null,
     groupBuyId: order.groupBuyId ?? null,
     currency: obcCurrency,
+    groupBuyDeleteLocked: obcDeleteLocked,
     createdAt: (order.createdAt as Date).toISOString(),
     updatedAt: (order.updatedAt as Date).toISOString(),
     lineItems: lineItems.map(li => ({
@@ -1690,6 +1694,9 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     }
   }
 
+  // Whether the customer's self-delete is locked by the group buy "Delete Order" setting
+  const groupBuyDeleteLocked = await isCustomerActionLockedByGb(order.groupBuyId, "delete");
+
   // Merge old inpost/royalMail QR codes into the generic qrCodes map
   const qrCodes: Record<string, string> = { ...((order.qrCodes as Record<string, string> | null) ?? {}) };
   if (order.inpostQrCode && !qrCodes["inpost"]) qrCodes["inpost"] = order.inpostQrCode;
@@ -1739,6 +1746,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyPaymentsEnabled,
     groupBuyDirectShippingPaymentsEnabled,
     groupBuyAllowOrderAddons,
+    groupBuyDeleteLocked,
     customShippingRequiresAddress,
     customShippingRequiresQrCode,
     groupBuyQrUploadInpostEnabled,
@@ -2613,6 +2621,11 @@ router.delete("/account/orders/:id", requireAccount, async (req, res): Promise<v
   const deletableStatuses = ["Draft", "Submitted"];
   if (!deletableStatuses.includes(order.status)) {
     res.status(403).json({ error: `Orders with status "${order.status}" cannot be deleted. Contact support if needed.` });
+    return;
+  }
+
+  if (order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed") {
+    res.status(403).json({ error: `This order has already been paid and can no longer be deleted. Contact support if needed.` });
     return;
   }
 
