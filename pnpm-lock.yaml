@@ -104,9 +104,6 @@ importers:
       '@workspace/shipping':
         specifier: workspace:*
         version: link:../../lib/shipping
-      '@workspace/snp-database':
-        specifier: workspace:*
-        version: link:../../lib/snp-database
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -635,8 +632,6 @@ importers:
   lib/protobufjs-stub: {}
 
   lib/shipping: {}
-
-  lib/snp-database: {}
 
   scripts:
     dependencies:
