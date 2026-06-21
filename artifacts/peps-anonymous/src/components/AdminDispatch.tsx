@@ -443,13 +443,18 @@ function PackingSlipsTab({
       .finally(() => setParcelsLoading(false));
   }, [selectedGb, scopeType, scopeId, headers]);
 
-  // Load all orders for the selected reshipper for the overview panel
+  // Load orders for the overview panel: per-reshipper for the reshipper scope,
+  // or every order in the GB for the "All Orders" scope. This works even when no
+  // parcels have been logged yet, so admins can always see the underlying orders.
   useEffect(() => {
     setOverviewOrders([]);
-    if (scopeType !== "reshipper" || !scopeId || !selectedGb) return;
+    const isReshipper = scopeType === "reshipper" && !!scopeId;
+    const isAll = scopeType === "all";
+    if (!selectedGb || (!isReshipper && !isAll)) return;
     setOverviewLoading(true);
-    const norm = scopeId.replace(/^@/, "");
-    fetch(apiUrl(`/admin/orders?groupBuyId=${selectedGb}&reshipper=${encodeURIComponent(norm)}&pageSize=999`), { headers, credentials: "omit" })
+    const params = new URLSearchParams({ groupBuyId: selectedGb, pageSize: "999" });
+    if (isReshipper) params.set("reshipper", scopeId!.replace(/^@/, ""));
+    fetch(apiUrl(`/admin/orders?${params.toString()}`), { headers, credentials: "omit" })
       .then(r => r.json())
       .then((data: unknown) => {
         const raw = Array.isArray(data) ? data : (Array.isArray((data as any)?.orders) ? (data as any).orders : []);
@@ -670,7 +675,7 @@ function PackingSlipsTab({
 
             {scopeType === "reshipper" && scopeOptions && (
               scopeOptions.reshippers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No reshippers have delivered parcels yet.</p>
+                <p className="text-sm text-muted-foreground">No reshippers found for this group buy.</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {scopeOptions.reshippers.map(r => (
@@ -818,15 +823,15 @@ function PackingSlipsTab({
         </Section>
       )}
 
-      {/* ── Order Overview (reshipper scope) ── */}
-      {scopeType === "reshipper" && scopeId && (
-        <Section title={`All Orders — ${scopeId}${overviewOrders.length > 0 ? ` (${overviewOrders.length} total)` : ""}`}>
+      {/* ── Order Overview (reshipper or all-orders scope) ── */}
+      {((scopeType === "reshipper" && scopeId) || scopeType === "all") && (
+        <Section title={`All Orders${scopeType === "reshipper" ? ` — ${scopeId}` : ""}${overviewOrders.length > 0 ? ` (${overviewOrders.length} total)` : ""}`}>
           {overviewLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading orders…
             </div>
           ) : overviewOrders.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No orders found for this reshipper.</p>
+            <p className="text-sm text-muted-foreground">{scopeType === "reshipper" ? "No orders found for this reshipper." : "No orders found for this group buy."}</p>
           ) : (
             <div className="space-y-2">
 

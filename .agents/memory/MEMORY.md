@@ -22,3 +22,4 @@
 - [My Orders page location](my-orders-page-location.md) — customer My Orders tabs = CustomerPortal.tsx (section "orders", /account?s=orders); /my-orders (AccountOrders.tsx) is a separate secondary page.
 - [Crypto verify tolerance](crypto-verify-tolerance.md) — once crypto amounts are locked-rate converted (display==verify), all verifyTransaction paths must use ~1% default tolerance, never 15%; loose tolerance is a money-integrity risk and gets code-review rejected.
 - [ERC-20 stablecoin currency authority](erc20-stablecoin-currency-authority.md) — customer USDT/USDC choice only on ETH ERC-20 rail; validate vs server options, persist + re-read at verify, never trust client currency.
+- [Dispatch parcel gating](dispatch-parcel-gating.md) — GB dispatch reshipper list + Order Overview must not be gated on delivered parcels; union active-order reshippers, render overview for reshipper+all scopes with zero parcels.

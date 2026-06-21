@@ -26,7 +26,8 @@ function remaining(item: ExtParcelItem): number {
 }
 
 // ─── GET /admin/dispatch/:gbId/scope-options ────────────────────────────────
-// Returns reshippers (that have ≥1 delivered parcel) + country legs for a GB.
+// Returns reshippers (union of those with ≥1 delivered parcel AND those on the
+// GB's active orders) + country legs for a GB.
 router.get("/admin/dispatch/:gbId/scope-options", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
@@ -38,13 +39,35 @@ router.get("/admin/dispatch/:gbId/scope-options", async (req, res) => {
     const DELIVERED = ["in_transit", "out_for_delivery", "attempted", "delivered"];
     const deliveredParcels = parcels.filter(p => DELIVERED.includes(p.status));
 
-    const reshippers = [
-      ...new Set(
-        deliveredParcels
-          .filter(p => p.reshipperUsername)
-          .map(p => p.reshipperUsername!)
-      ),
-    ].sort();
+    // Reshippers are sourced from BOTH delivered parcels AND the GB's active
+    // orders, so the dispatch scope still lists every reshipper that has orders
+    // even before any parcels have been logged/delivered for them.
+    const orderRows = await db
+      .select({
+        reshipperUsername: ordersTable.reshipperUsername,
+        deletedAt: ordersTable.deletedAt,
+        status: ordersTable.status,
+      })
+      .from(ordersTable)
+      .where(eq(ordersTable.groupBuyId, gbId));
+
+    const activeOrderReshippers = orderRows
+      .filter(o => o.reshipperUsername && !o.deletedAt && !["Cancelled"].includes(o.status))
+      .map(o => o.reshipperUsername!);
+
+    // Dedupe case-insensitively (orders are matched case-insensitively + @-stripped
+    // downstream), keeping the first-seen original casing for display.
+    const byKey = new Map<string, string>();
+    for (const raw of [
+      ...deliveredParcels.filter(p => p.reshipperUsername).map(p => p.reshipperUsername!),
+      ...activeOrderReshippers,
+    ]) {
+      const display = raw.trim().replace(/^@/, "");
+      if (!display) continue;
+      const key = display.toLowerCase();
+      if (!byKey.has(key)) byKey.set(key, display);
+    }
+    const reshippers = [...byKey.values()].sort((a, b) => a.localeCompare(b));
 
     const countryLegs = await db.select().from(gbCountryLegsTable)
       .where(eq(gbCountryLegsTable.gbId, gbId));
