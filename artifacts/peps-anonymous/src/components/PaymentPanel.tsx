@@ -284,7 +284,7 @@ interface Props {
   paymentTestAmount: number | null;
   testPaymentTxHash: string | null;
   paymentRejectionReason?: string | null;
-  onStatusChange?: (status: string, txHash?: string) => void;
+  onStatusChange?: (status: string, txHash?: string, currency?: string) => void;
   paymentsEnabled?: boolean;
   creditsUsd?: number;
 }
@@ -664,7 +664,7 @@ export default function PaymentPanel({
   const updateStatus = (s: string, tx?: string) => {
     setStatus(s);
     if (tx) setTxHash(tx);
-    onStatusChange?.(s, tx);
+    onStatusChange?.(s, tx, cryptoCurrency);
   };
 
   // ── Terminal states ──────────────────────────────────────────

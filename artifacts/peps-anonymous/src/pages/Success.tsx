@@ -263,6 +263,7 @@ export default function Success() {
 
   const [downloading, setDownloading] = useState(false);
   const [confirmedTxHash, setConfirmedTxHash] = useState<string | null>(null);
+  const [confirmedCurrency, setConfirmedCurrency] = useState<string>("USDT");
   const [globalVendorWarning, setGlobalVendorWarning] = useState(true);
   const [addressSaved, setAddressSaved] = useState(false);
   const [hubSection, setHubSection] = useState<HubSection>("orders");
@@ -391,7 +392,7 @@ export default function Success() {
                   {confirmedTxHash?.startsWith("anonpay:") ? (
                     <p className="text-xs text-green-700 mb-1">Your AnonPay crypto payment has been verified.</p>
                   ) : (
-                    <p className="text-xs text-green-700 mb-1">Your USDT payment has been verified on the blockchain.</p>
+                    <p className="text-xs text-green-700 mb-1">Your {confirmedCurrency} payment has been verified on the blockchain.</p>
                   )}
                   <p className="text-[10px] text-green-600 font-semibold mb-0.5">Transaction ID</p>
                   {confirmedTxHash?.startsWith("anonpay:") ? (
@@ -438,8 +439,11 @@ export default function Success() {
               paymentTestAmount={null}
               testPaymentTxHash={null}
               paymentsEnabled={receipt.paymentsEnabled}
-              onStatusChange={(status, txHash) => {
-                if (status === "confirmed" && txHash) setConfirmedTxHash(txHash);
+              onStatusChange={(status, txHash, currency) => {
+                if (status === "confirmed" && txHash) {
+                  setConfirmedTxHash(txHash);
+                  if (currency) setConfirmedCurrency(currency);
+                }
               }}
             />
           </motion.div>
