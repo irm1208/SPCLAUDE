@@ -1187,7 +1187,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const { toast } = useToast();
   const { data: catalog = [] } = useQuery<CatalogEntry[]>({
     queryKey: ["/api/test-catalog"],
-    queryFn: async () => (await fetch("/api/test-catalog")).json(),
+    queryFn: async () => (await fetch("/api/test-catalog", { cache: "no-store" })).json(),
   });
 
   // Basic info

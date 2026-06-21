@@ -1069,7 +1069,7 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
 
   const { data: catalog = [] } = useQuery<CatalogEntry[]>({
     queryKey: ["/api/admin/test-catalog"],
-    queryFn: async () => (await fetch("/api/admin/test-catalog", { headers })).json(),
+    queryFn: async () => (await fetch("/api/admin/test-catalog", { headers, cache: "no-store" })).json(),
   });
 
   const update = useMutation({
@@ -1858,7 +1858,7 @@ function CatalogPanel({ headers }: { headers: HeadersInit }) {
   const { toast } = useToast();
   const { data: rows = [], isLoading } = useQuery<CatalogEntry[]>({
     queryKey: ["/api/admin/test-catalog"],
-    queryFn: async () => (await fetch("/api/admin/test-catalog", { headers })).json(),
+    queryFn: async () => (await fetch("/api/admin/test-catalog", { headers, cache: "no-store" })).json(),
   });
 
   const [code, setCode] = useState("");

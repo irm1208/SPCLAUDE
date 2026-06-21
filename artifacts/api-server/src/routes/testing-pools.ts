@@ -675,6 +675,9 @@ router.get("/test-catalog", async (_req, res): Promise<void> => {
     .from(testCatalogTable)
     .where(eq(testCatalogTable.active, true))
     .orderBy(testCatalogTable.sortOrder);
+  // Prices change in the admin catalog and must never be served stale from a
+  // browser/proxy/edge (e.g. Cloudflare) cache — always revalidate.
+  res.set("Cache-Control", "no-store");
   res.json(rows.map(r => ({ ...r, defaultPriceUsd: num(r.defaultPriceUsd) })));
 });
 
@@ -1062,6 +1065,7 @@ router.patch("/account/pool-leader/participants/:id", requireAccount, async (req
 router.get("/admin/test-catalog", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const rows = await db.select().from(testCatalogTable).orderBy(testCatalogTable.sortOrder);
+  res.set("Cache-Control", "no-store");
   res.json(rows.map(r => ({ ...r, defaultPriceUsd: num(r.defaultPriceUsd) })));
 });
 
