@@ -18,7 +18,8 @@ export type { Receipt, ReceiptLineItem };
 
 const COMMON_COUNTRIES = ["United Kingdom", "Ireland", "United States", "Canada", "Australia", "Germany", "France", "Netherlands", "Spain", "Italy"];
 
-function ShippingAddressForm({ orderId, onSaved }: { orderId: string; onSaved: () => void }) {
+function ShippingAddressForm({ orderId, deliveryMethod, onSaved }: { orderId: string; deliveryMethod?: string; onSaved: () => void }) {
+  const deliveryTitle = deliveryMethod?.trim() ? deliveryMethod.trim() : "Shipping Address";
   const { account } = useAccount();
   const [name, setName] = useState("");
   const [street, setStreet] = useState("");
@@ -114,7 +115,7 @@ function ShippingAddressForm({ orderId, onSaved }: { orderId: string; onSaved: (
             <MapPin className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           </div>
           <div>
-            <p className="font-semibold text-sm" style={{ color: "var(--t-text)" }}>Royal Mail Delivery</p>
+            <p className="font-semibold text-sm" style={{ color: "var(--t-text)" }}>{deliveryTitle}</p>
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>Enter your shipping details</p>
           </div>
         </div>
@@ -472,6 +473,7 @@ export default function Success() {
             <ShippingAddressForm
               key="ship-form"
               orderId={orderId}
+              deliveryMethod={deliveryMethod}
               onSaved={() => setAddressSaved(true)}
             />
           )}
