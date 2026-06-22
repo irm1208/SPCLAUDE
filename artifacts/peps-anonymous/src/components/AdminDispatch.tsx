@@ -1505,7 +1505,7 @@ function LabelSlip({ order: o }: { order: DispatchOrder }) {
 
       {/* Footer */}
       <div className="label-footer" style={{ marginTop: "8px", paddingTop: "6px", borderTop: "1.5px solid #111", fontSize: "8px", color: "#9ca3af", textAlign: "center" }}>
-        Salt & Peps · pepsanonymous.co.uk
+        Salt & Peps · saltandpeps.co.uk
       </div>
     </div>
   );
