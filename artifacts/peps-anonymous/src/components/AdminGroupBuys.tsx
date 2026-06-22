@@ -7679,6 +7679,10 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   const [pendingBatch, setPendingBatch] = useState<string | null>(null);
   const ocrInputRef = useRef<HTMLInputElement>(null);
 
+  // Vote reminder
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderMsg, setReminderMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   // Status / funding / results
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const [fundingNote, setFundingNote] = useState("");
@@ -8503,12 +8507,50 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
 
           {/* Contributors */}
           <div className="border border-border rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contributors</p>
-              <span className="text-xs text-muted-foreground">
-                {(data?.contributors ?? []).filter(c => c.hasVoted).length} / {(data?.contributors ?? []).length} voted
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {(data?.contributors ?? []).filter(c => c.hasVoted).length} / {(data?.contributors ?? []).length} voted
+                </span>
+                {(data?.contributors ?? []).some(c => !c.hasVoted) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px] gap-1"
+                    disabled={sendingReminder}
+                    onClick={async () => {
+                      setSendingReminder(true);
+                      setReminderMsg(null);
+                      try {
+                        const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/testing/send-vote-reminder`), {
+                          method: "POST",
+                          headers: { "x-admin-secret": secret },
+                        });
+                        const d = await r.json();
+                        if (r.ok) {
+                          setReminderMsg({ ok: true, text: `✓ Sent to ${d.sent} member${d.sent !== 1 ? "s" : ""}${d.failed > 0 ? ` · ${d.failed} failed` : ""}` });
+                        } else {
+                          setReminderMsg({ ok: false, text: d.error ?? "Failed" });
+                        }
+                      } catch {
+                        setReminderMsg({ ok: false, text: "Network error" });
+                      } finally {
+                        setSendingReminder(false);
+                      }
+                    }}
+                  >
+                    {sendingReminder ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    {sendingReminder ? "Sending…" : "Remind unvoted"}
+                  </Button>
+                )}
+              </div>
             </div>
+            {reminderMsg && (
+              <p className={`text-xs font-medium px-2 py-1 rounded ${reminderMsg.ok ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400" : "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400"}`}>
+                {reminderMsg.text}
+              </p>
+            )}
 
             {(data?.contributors ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">No confirmed contributions yet.</p>

@@ -12,8 +12,9 @@ import {
   productsTable,
   testCatalogTable,
 } from "@workspace/db";
-import { eq, and, gt, sum, count, sql, inArray } from "drizzle-orm";
+import { eq, and, gt, sum, count, sql, inArray, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
+import { notifyUser } from "../lib/telegram";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
 import { timingSafeEqual } from "crypto";
 import { extractBatchNumbersFromImages } from "../lib/gemini-lab-extract";
@@ -1329,6 +1330,69 @@ router.get("/testing/results", async (req, res): Promise<void> => {
     .orderBy(sql`${gbTestingRoundsTable.resultPostedAt} DESC`);
 
   res.json(results);
+});
+
+// ─── POST /admin/group-buys/:gbId/testing/send-vote-reminder ────────────────
+// Sends a Telegram message to every contributor who hasn't voted yet.
+router.post("/admin/group-buys/:gbId/testing/send-vote-reminder", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { gbId } = req.params as { gbId: string };
+
+    // Get the active testing round
+    const [round] = await db
+      .select({ id: gbTestingRoundsTable.id })
+      .from(gbTestingRoundsTable)
+      .where(eq(gbTestingRoundsTable.groupBuyId, gbId))
+      .orderBy(sql`${gbTestingRoundsTable.createdAt} DESC`)
+      .limit(1);
+
+    if (!round) { res.status(404).json({ error: "No testing round found" }); return; }
+
+    // Get all contributors
+    const contributorRows = await db
+      .select({ id: ordersTable.id, telegramUsername: ordersTable.telegramUsername })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, gbId), gt(ordersTable.testingContribution, "0"), isNull(ordersTable.deletedAt)));
+
+    // Get who has already voted
+    const voteRows = await db
+      .select({ orderId: gbTestingVotesTable.orderId })
+      .from(gbTestingVotesTable)
+      .where(eq(gbTestingVotesTable.roundId, round.id));
+
+    const votedOrderIds = new Set(voteRows.map(v => v.orderId));
+    const unvoted = contributorRows.filter(c => !votedOrderIds.has(c.id) && c.telegramUsername);
+
+    if (unvoted.length === 0) { res.json({ sent: 0, failed: 0, skipped: 0 }); return; }
+
+    const [gb] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
+    const gbName = gb?.name ?? "the group buy";
+    const voteUrl = `https://saltandpeps.co.uk/testing/${gbId}`;
+
+    const message =
+      `🗳️ <b>Vote reminder — ${gbName}</b>\n\n` +
+      `You haven't cast your lab testing vote yet!\n\n` +
+      `Please visit the link below to choose which peptide and test you'd like us to run:\n` +
+      `<a href="${voteUrl}">${voteUrl}</a>\n\n` +
+      `Every contribution counts — thank you! 🙏`;
+
+    let sent = 0, failed = 0, skipped = 0;
+    for (const contributor of unvoted) {
+      if (!contributor.telegramUsername) { skipped++; continue; }
+      try {
+        const ok = await notifyUser(contributor.telegramUsername, "gb_vote_reminder", message);
+        if (ok) sent++; else failed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    res.json({ sent, failed, skipped });
+  } catch (e) {
+    console.error("[gb-testing send-vote-reminder]", e);
+    res.status(500).json({ error: "Failed to send reminders" });
+  }
 });
 
 export default router;
