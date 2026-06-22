@@ -45,6 +45,10 @@ export const ordersTable = pgTable("orders", {
   royalMailQrCode: text("royal_mail_qr_code"),
   qrPosted: boolean("qr_posted").notNull().default(false),
   qrCodes: jsonb("qr_codes").$type<Record<string, string>>(),
+  // Admin per-order override of the chosen shipping option's address / QR requirement.
+  // null = inherit from the shipping option; true = force required; false = force not required.
+  requiresAddressOverride: boolean("requires_address_override"),
+  requiresQrCodeOverride: boolean("requires_qr_code_override"),
   groupBuyId: text("group_buy_id"),
   // Links a wholesale-shared order (orderType "wholesale_shared") to its parent wholesale_shares row.
   sharedOrderId: text("shared_order_id"),

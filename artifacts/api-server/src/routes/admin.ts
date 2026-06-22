@@ -231,6 +231,8 @@ function fmtOrder(o: Record<string, any>, lineItems: Record<string, any>[] = [])
     directShippingCost: o.directShippingCost != null ? parseFloat(String(o.directShippingCost)) : null,
     adminFee: o.adminFee != null ? parseFloat(String(o.adminFee)) : 0,
     adminFeeLabel: o.adminFeeLabel ?? null,
+    requiresAddressOverride: (o as any).requiresAddressOverride ?? null,
+    requiresQrCodeOverride: (o as any).requiresQrCodeOverride ?? null,
     lineItems: lineItems.map((li) => ({
       id: li.id,
       productId: li.productId,
@@ -526,12 +528,18 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
 
   const gbIds = [...new Set(orders.map((o) => o.groupBuyId).filter(Boolean))] as string[];
   const gbCurrencyMap = new Map<string, string | null>();
+  const gbShippingOptionsMap = new Map<string, Array<{ id: string; requiresAddress?: boolean; requiresQrCode?: boolean }>>();
   if (gbIds.length > 0) {
     const gbRows = await db
-      .select({ id: groupBuysTable.id, currency: groupBuysTable.currency })
+      .select({ id: groupBuysTable.id, currency: groupBuysTable.currency, shippingOptions: groupBuysTable.shippingOptions })
       .from(groupBuysTable)
       .where(inArray(groupBuysTable.id, gbIds));
-    for (const row of gbRows) gbCurrencyMap.set(row.id, row.currency ?? null);
+    for (const row of gbRows) {
+      gbCurrencyMap.set(row.id, row.currency ?? null);
+      if (row.shippingOptions) {
+        try { gbShippingOptionsMap.set(row.id, JSON.parse(row.shippingOptions)); } catch { /* ignore malformed JSON */ }
+      }
+    }
   }
 
   const reshipperMap = new Map<string, string>();
@@ -605,10 +613,21 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
       (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed");
     const hasDraft = !!o.draftLineItems;
     const shareMeta = o.sharedOrderId ? shareMetaMap.get(o.sharedOrderId) : null;
+    // Effective address / QR requirement: shipping-option default, overridden by any per-order admin flag.
+    const shOpts = o.groupBuyId ? gbShippingOptionsMap.get(o.groupBuyId) : null;
+    const matchedShOpt = (shOpts && o.deliveryMethodId) ? shOpts.find(opt => opt.id === o.deliveryMethodId) : null;
+    const shippingOptionRequiresAddress = matchedShOpt?.requiresAddress ?? false;
+    const shippingOptionRequiresQrCode = matchedShOpt?.requiresQrCode ?? false;
+    let customShippingRequiresAddress = shippingOptionRequiresAddress;
+    let customShippingRequiresQrCode = shippingOptionRequiresQrCode;
+    if (o.requiresAddressOverride != null) customShippingRequiresAddress = o.requiresAddressOverride;
+    if (o.requiresQrCodeOverride != null) customShippingRequiresQrCode = o.requiresQrCodeOverride;
     return {
       ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []) as unknown as Record<string, any>[]),
       reshipperUsername, accountCountry, isWholesale,
       missingAddress, hasUnresolvedBalance, needsBalanceDueReview, hasDraft,
+      customShippingRequiresAddress, customShippingRequiresQrCode,
+      shippingOptionRequiresAddress, shippingOptionRequiresQrCode,
       draftLineItems: o.draftLineItems ?? null,
       draftLineItemsSavedAt: o.draftLineItemsSavedAt?.toISOString() ?? null,
       sharedOrderCreator: shareMeta?.creatorUsername ?? null,
@@ -1062,7 +1081,7 @@ router.post("/admin/orders", async (req, res): Promise<void> => {
 router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { status, vendorShipping, trackingNumber, trackingNumbers, adminNotes, adminMessage, telegramUsername, paymentStatus, paymentTxHash, paymentTxHashes, paymentUsdAmount, pin, refundStatus, refundReason, clearBalance, shippingName, shippingAddress, directShippingRequested, deliveryMethod, deliveryPrice, amountDue, adminFee, adminFeeLabel } = req.body;
+  const { status, vendorShipping, trackingNumber, trackingNumbers, adminNotes, adminMessage, telegramUsername, paymentStatus, paymentTxHash, paymentTxHashes, paymentUsdAmount, pin, refundStatus, refundReason, clearBalance, shippingName, shippingAddress, directShippingRequested, deliveryMethod, deliveryPrice, amountDue, adminFee, adminFeeLabel, requiresAddressOverride, requiresQrCodeOverride } = req.body;
 
   const [existing] = await db
     .select()
@@ -1146,6 +1165,14 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   if (refundReason !== undefined) updates.refundReason = refundReason || null;
   if (shippingName !== undefined) updates.shippingName = shippingName ? String(shippingName).trim().slice(0, 200) : null;
   if (shippingAddress !== undefined) updates.shippingAddress = shippingAddress ? String(shippingAddress).trim().slice(0, 1000) : null;
+  // Per-order override of the shipping option's address / QR requirement.
+  // null clears the override (inherit shipping option default); true/false forces it.
+  if (requiresAddressOverride !== undefined) {
+    updates.requiresAddressOverride = requiresAddressOverride === null ? null : Boolean(requiresAddressOverride);
+  }
+  if (requiresQrCodeOverride !== undefined) {
+    updates.requiresQrCodeOverride = requiresQrCodeOverride === null ? null : Boolean(requiresQrCodeOverride);
+  }
   if (directShippingRequested !== undefined) {
     const next = Boolean(directShippingRequested);
     updates.directShippingRequested = next;
@@ -1358,15 +1385,19 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   let patchGbName = "";
   let patchGbOrganiser = "";
   let patchGbCurrency: string | null = null;
+  let patchGbShippingOptions: Array<{ id: string; requiresAddress?: boolean; requiresQrCode?: boolean }> | null = null;
   if (existing.groupBuyId) {
     const [patchGbRow] = await db
-      .select({ name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency })
+      .select({ name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency, shippingOptions: groupBuysTable.shippingOptions })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, existing.groupBuyId));
     if (patchGbRow) {
       patchGbName = patchGbRow.name;
       patchGbOrganiser = patchGbRow.organiserId ? `@${patchGbRow.organiserId}` : "Admin";
       patchGbCurrency = patchGbRow.currency ?? null;
+      if (patchGbRow.shippingOptions) {
+        try { patchGbShippingOptions = JSON.parse(patchGbRow.shippingOptions); } catch { /* ignore malformed JSON */ }
+      }
     }
   }
 
@@ -1492,7 +1523,25 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
-  res.json(fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]));
+  // Recompute the effective address / QR requirement so the admin UI reflects the saved override.
+  let patchOptReqAddress = false;
+  let patchOptReqQr = false;
+  if (patchGbShippingOptions && updated.deliveryMethodId) {
+    const m = patchGbShippingOptions.find(o => o.id === updated.deliveryMethodId);
+    if (m) { patchOptReqAddress = m.requiresAddress ?? false; patchOptReqQr = m.requiresQrCode ?? false; }
+  }
+  let patchReqAddress = patchOptReqAddress;
+  let patchReqQr = patchOptReqQr;
+  if (updated.requiresAddressOverride != null) patchReqAddress = updated.requiresAddressOverride;
+  if (updated.requiresQrCodeOverride != null) patchReqQr = updated.requiresQrCodeOverride;
+
+  res.json({
+    ...fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]),
+    customShippingRequiresAddress: patchReqAddress,
+    customShippingRequiresQrCode: patchReqQr,
+    shippingOptionRequiresAddress: patchOptReqAddress,
+    shippingOptionRequiresQrCode: patchOptReqQr,
+  });
 });
 
 // ─── POST /api/admin/orders/:id/convert-to-wholesale ─────────
@@ -8562,6 +8611,10 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
     }
   }
 
+  // Admin per-order override takes precedence over the shipping option's defaults.
+  if ((order as any).requiresAddressOverride != null) customShippingRequiresAddress = (order as any).requiresAddressOverride;
+  if ((order as any).requiresQrCodeOverride != null) customShippingRequiresQrCode = (order as any).requiresQrCodeOverride;
+
   const qrCodes: Record<string, string> = { ...((order.qrCodes as Record<string, string> | null) ?? {}) };
   if (order.inpostQrCode && !qrCodes["inpost"]) qrCodes["inpost"] = order.inpostQrCode;
   if (order.royalMailQrCode && !qrCodes["royal-mail"]) qrCodes["royal-mail"] = order.royalMailQrCode;
@@ -8609,6 +8662,8 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
     groupBuyAllowOrderAddons,
     customShippingRequiresAddress,
     customShippingRequiresQrCode,
+    requiresAddressOverride: (order as any).requiresAddressOverride ?? null,
+    requiresQrCodeOverride: (order as any).requiresQrCodeOverride ?? null,
     groupBuyQrUploadInpostEnabled,
     groupBuyQrUploadRoyalMailEnabled,
     groupBuyQrUploadMessage,

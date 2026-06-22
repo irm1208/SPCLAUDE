@@ -1663,6 +1663,10 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     }
   }
 
+  // Admin per-order override takes precedence over the shipping option's defaults.
+  if ((order as any).requiresAddressOverride != null) customShippingRequiresAddress = (order as any).requiresAddressOverride;
+  if ((order as any).requiresQrCodeOverride != null) customShippingRequiresQrCode = (order as any).requiresQrCodeOverride;
+
   // Look up the customer's country leg for this GB to check directShippingEnabled;
   // fall back to GB-level directShippingEnabled when the member has no country leg.
   let directShippingEnabled = false;

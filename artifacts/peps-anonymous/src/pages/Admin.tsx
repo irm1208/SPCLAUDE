@@ -114,6 +114,9 @@ interface Order {
   hasPaymentScreenshot?: boolean;
   shippingName: string | null; shippingPhone?: string | null; shippingEmail?: string | null; shippingAddress: string | null;
   pin: string; inpostQrCode: string | null; royalMailQrCode?: string | null;
+  customShippingRequiresAddress?: boolean; customShippingRequiresQrCode?: boolean;
+  shippingOptionRequiresAddress?: boolean; shippingOptionRequiresQrCode?: boolean;
+  requiresAddressOverride?: boolean | null; requiresQrCodeOverride?: boolean | null;
   createdAt: string; paymentConfirmedAt?: string | null; lineItems: LineItem[];
   refundStatus: string | null; refundReason: string | null; refundedAt: string | null;
   amountDue?: number; balancePaymentStatus?: string | null; balanceTxHash?: string | null; balanceConfirmedAt?: string | null;
@@ -3549,6 +3552,29 @@ function OrdersTab({ secret }: { secret: string }) {
                           <Input type="number" min="0" step="0.01" className="h-10 text-sm"
                             value={ed.vendorShipping ?? order.vendorShipping}
                             onChange={e => updateEdit(order.id, "vendorShipping", e.target.value)} />
+                        </div>
+                        <div className="rounded-lg border border-sky-200 bg-sky-50/40 p-3 space-y-2">
+                          <Label className="text-xs font-bold text-sky-700 uppercase tracking-widest block">Delivery Requirements</Label>
+                          <p className="text-[11px] text-sky-700/70 -mt-1">Force this order to require a delivery address and/or QR code upload, overriding the shipping option default.</p>
+                          <label className="flex items-center gap-2 text-sm text-sky-900 cursor-pointer">
+                            <input type="checkbox" className="rounded h-4 w-4"
+                              checked={ed.requiresAddressOverride === undefined ? !!order.customShippingRequiresAddress : ed.requiresAddressOverride === null ? !!order.shippingOptionRequiresAddress : !!ed.requiresAddressOverride}
+                              onChange={e => updateEdit(order.id, "requiresAddressOverride", e.target.checked)} />
+                            Require delivery address
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-sky-900 cursor-pointer">
+                            <input type="checkbox" className="rounded h-4 w-4"
+                              checked={ed.requiresQrCodeOverride === undefined ? !!order.customShippingRequiresQrCode : ed.requiresQrCodeOverride === null ? !!order.shippingOptionRequiresQrCode : !!ed.requiresQrCodeOverride}
+                              onChange={e => updateEdit(order.id, "requiresQrCodeOverride", e.target.checked)} />
+                            Require QR code upload
+                          </label>
+                          {(((ed.requiresAddressOverride !== undefined ? ed.requiresAddressOverride : order.requiresAddressOverride) != null) ||
+                            ((ed.requiresQrCodeOverride !== undefined ? ed.requiresQrCodeOverride : order.requiresQrCodeOverride) != null)) && (
+                            <button type="button" className="text-[11px] text-sky-700 hover:underline"
+                              onClick={() => { updateEdit(order.id, "requiresAddressOverride", null); updateEdit(order.id, "requiresQrCodeOverride", null); }}>
+                              Reset to shipping option defaults
+                            </button>
+                          )}
                         </div>
                         <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2">
                           <Label className="text-xs font-bold text-amber-700 uppercase tracking-widest block">Balance Owed</Label>
