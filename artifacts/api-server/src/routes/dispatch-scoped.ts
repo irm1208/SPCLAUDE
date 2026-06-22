@@ -138,6 +138,8 @@ const reshipperCfg: DispatchRouterCfg = {
     }
   },
   bodyScopeFilter: reshipperBodyFilter(RESHIPPER_PREFIX),
+  // Narrows read endpoints to the reshipper's own orders/parcels server-side.
+  reshipperScope: (req) => norm(req.reshipper?.telegramUsername) || null,
   assertGbAccess: (req, gbId) => reshipperHasGb(req, gbId),
   assertImageAccess: async (req, imageId) => {
     const [img] = await db

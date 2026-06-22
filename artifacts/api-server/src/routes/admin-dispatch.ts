@@ -27,6 +27,10 @@ export interface DispatchRouterCfg {
   assertOrderAccess: (req: Request, orderId: string) => Promise<boolean>;
   forceScope?: (req: Request) => void;
   bodyScopeFilter?: RequestHandler;
+  // When set (reshipper only), read endpoints are narrowed to orders/parcels
+  // owned by the returned normalized username. Undefined for admin/organiser,
+  // who see the whole group buy — so their behavior is unchanged.
+  reshipperScope?: (req: Request) => string | null;
   includeAux: boolean;
   listGroupBuys?: (req: Request) => Promise<{ id: string; name: string }[]>;
   ordersHandler?: (req: Request, res: Response) => Promise<void>;
@@ -70,6 +74,17 @@ function remaining(item: ExtParcelItem): number {
   return item.qty - (item.dispatchedQty ?? 0);
 }
 
+// Normalize a username for case-insensitive, @-stripped comparison.
+const normUser = (s?: string | null): string => (s ?? "").replace(/^@/, "").toLowerCase();
+
+// True when an order belongs to the given reshipper (by attribution or dispatcher).
+function orderOwnedByReshipper(
+  o: { reshipperUsername?: string | null; dispatchedByReshipper?: string | null },
+  ru: string,
+): boolean {
+  return normUser(o.reshipperUsername) === ru || normUser(o.dispatchedByReshipper) === ru;
+}
+
 // ─── GET /admin/dispatch/:gbId/scope-options ────────────────────────────────
 // Returns reshippers (union of those with ≥1 delivered parcel AND those on the
 // GB's active orders) + country legs for a GB.
@@ -111,7 +126,11 @@ router.get(`${cfg.prefix}/:gbId/scope-options`, async (req, res) => {
       const key = display.toLowerCase();
       if (!byKey.has(key)) byKey.set(key, display);
     }
-    const reshippers = [...byKey.values()].sort((a, b) => a.localeCompare(b));
+    let reshippers = [...byKey.values()].sort((a, b) => a.localeCompare(b));
+
+    // Reshipper scope: never reveal other reshippers — only the caller's own entry.
+    const ru = cfg.reshipperScope?.(req) ?? null;
+    if (ru) reshippers = reshippers.filter(r => normUser(r) === ru);
 
     const countryLegs = await db.select().from(gbCountryLegsTable)
       .where(eq(gbCountryLegsTable.gbId, gbId));
@@ -319,9 +338,19 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
       return;
     }
 
+    // Restrict targeted orders to this GB up front, so parcel stock can never be
+    // deducted using line items from orders outside the URL group buy.
+    const scopedOrders = await db.select({ id: ordersTable.id }).from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+    const scopedOrderIds = scopedOrders.map(o => o.id);
+    if (scopedOrderIds.length === 0) {
+      res.json({ ok: true, confirmed: 0 });
+      return;
+    }
+
     // Get selected orders' line items → build total needs map
     const lineItemsAll = await db.select().from(orderLineItemsTable)
-      .where(inArray(orderLineItemsTable.orderId, orderIds));
+      .where(inArray(orderLineItemsTable.orderId, scopedOrderIds));
 
     const needsMap = new Map<string, number>();
     lineItemsAll.forEach(li => {
@@ -375,9 +404,9 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
     // GB-scoped so callers can never confirm orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds)));
 
-    res.json({ ok: true, confirmed: orderIds.length });
+    res.json({ ok: true, confirmed: scopedOrderIds.length });
   } catch (e) {
     console.error("[dispatch confirm]", e);
     res.status(500).json({ error: "Failed to confirm dispatch" });
@@ -397,9 +426,19 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
       return;
     }
 
+    // Restrict targeted orders to this GB up front, so parcel stock can never be
+    // restored using line items from orders outside the URL group buy.
+    const scopedOrders = await db.select({ id: ordersTable.id }).from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+    const scopedOrderIds = scopedOrders.map(o => o.id);
+    if (scopedOrderIds.length === 0) {
+      res.json({ ok: true, undispatched: 0 });
+      return;
+    }
+
     // Build a map of qty to restore per product name from the order line items
     const lineItems = await db.select().from(orderLineItemsTable)
-      .where(inArray(orderLineItemsTable.orderId, orderIds));
+      .where(inArray(orderLineItemsTable.orderId, scopedOrderIds));
 
     const restoreMap = new Map<string, number>();
     lineItems.forEach(li => {
@@ -432,9 +471,9 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
     // GB-scoped so callers can never un-dispatch orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Processing", updatedAt: new Date(), dispatchConfirmedAt: null, dispatchedByReshipper: null })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds)));
 
-    res.json({ ok: true, undispatched: orderIds.length });
+    res.json({ ok: true, undispatched: scopedOrderIds.length });
   } catch (e) {
     console.error("[dispatch undispatch]", e);
     res.status(500).json({ error: "Failed to un-dispatch orders" });
@@ -595,8 +634,9 @@ router.get(`${cfg.prefix}/:gbId/half-kits`, async (req, res) => {
     const allOrders = await db.select().from(ordersTable)
       .where(eq(ordersTable.groupBuyId, gbId));
 
+    const ru = cfg.reshipperScope?.(req) ?? null;
     const activeOrders = allOrders.filter(o =>
-      !o.deletedAt && o.status !== "Cancelled"
+      !o.deletedAt && o.status !== "Cancelled" && (!ru || orderOwnedByReshipper(o, ru))
     );
 
     if (activeOrders.length === 0) {
@@ -781,12 +821,19 @@ router.get(`${cfg.prefix}/:gbId/click-drop-csv`, async (req, res) => {
         shippingEmail: ordersTable.shippingEmail,
         grandTotal: ordersTable.grandTotal,
         deliveryMethod: ordersTable.deliveryMethod,
+        reshipperUsername: ordersTable.reshipperUsername,
+        dispatchedByReshipper: ordersTable.dispatchedByReshipper,
       })
       .from(ordersTable)
       .where(and(
         eq(ordersTable.groupBuyId, gbId),
         inArray(ordersTable.id, orderIds),
-      ));
+      ))
+      // Reshipper scope: never export another reshipper's customer addresses.
+      .then(rows => {
+        const ru = cfg.reshipperScope?.(req) ?? null;
+        return ru ? rows.filter(o => orderOwnedByReshipper(o, ru)) : rows;
+      });
 
     // Identify orders whose shippingAddress blob needs AI parsing
     // (structured city/postcode fields missing OR blob looks like a free-text dump)
@@ -1105,13 +1152,20 @@ Rules:
     console.log("[dispatch ocr-image] extracted:", { extractedCode, extractedUsername, memberName: ocrResult.memberName, notes: ocrResult.notes, raw: cleaned.slice(0, 200) });
 
     // Find matching order in this GB
-    const gbOrders = await db.select({
+    const ru = cfg.reshipperScope?.(req) ?? null;
+    let gbOrders = await db.select({
       id: ordersTable.id,
       code: ordersTable.code,
       telegramUsername: ordersTable.telegramUsername,
       shippingName: ordersTable.shippingName,
       status: ordersTable.status,
+      reshipperUsername: ordersTable.reshipperUsername,
+      dispatchedByReshipper: ordersTable.dispatchedByReshipper,
     }).from(ordersTable).where(eq(ordersTable.groupBuyId, gbId));
+
+    // Reshipper scope: only ever match against the caller's own orders, so OCR
+    // can never disclose another reshipper's order metadata within the GB.
+    if (ru) gbOrders = gbOrders.filter(o => orderOwnedByReshipper(o, ru));
 
     let matchedOrder: typeof gbOrders[0] | null = null;
     let matchConfidence: "high" | "medium" | "low" = "low";
@@ -1279,13 +1333,18 @@ function formatOrder(order: OrderRow, lineItems: LineItemRow[]) {
 router.get(`${cfg.prefix}/:gbId/dispatch-images-map`, async (req, res) => {
   try {
     const { gbId } = req.params;
+    const ru = cfg.reshipperScope?.(req) ?? null;
+    // Reshipper scope: only surface images for the caller's own orders.
+    const ownSql = sql`(lower(replace(coalesce(${ordersTable.reshipperUsername}, ''), '@', '')) = ${ru} OR lower(replace(coalesce(${ordersTable.dispatchedByReshipper}, ''), '@', '')) = ${ru})`;
     const imgs = await db.select({
       id: orderDispatchImagesTable.id,
       orderId: orderDispatchImagesTable.orderId,
       filename: orderDispatchImagesTable.filename,
     }).from(orderDispatchImagesTable)
       .innerJoin(ordersTable, eq(orderDispatchImagesTable.orderId, ordersTable.id))
-      .where(eq(ordersTable.groupBuyId, gbId));
+      .where(ru
+        ? and(eq(ordersTable.groupBuyId, gbId), ownSql)
+        : eq(ordersTable.groupBuyId, gbId));
     const map: Record<string, { id: string; filename: string }[]> = {};
     for (const img of imgs) {
       if (!map[img.orderId]) map[img.orderId] = [];
@@ -1351,7 +1410,9 @@ router.post(`${cfg.prefix}/:gbId/archive-orders`, async (req, res): Promise<void
         const rows = await db.select().from(gbParcelsTable)
           .where(eq(gbParcelsTable.groupBuyId, gbId))
           .orderBy(gbParcelsTable.createdAt);
-        res.json(rows);
+        // Reshipper scope: only the caller's own parcels.
+        const ru = cfg.reshipperScope?.(req) ?? null;
+        res.json(ru ? rows.filter(p => normUser(p.reshipperUsername) === ru) : rows);
       } catch (e) {
         console.error("[dispatch gb parcels]", e);
         res.status(500).json({ error: "Failed to load parcels" });
