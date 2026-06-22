@@ -14,6 +14,7 @@ import {
   ArrowUp, ArrowDown, Eye, EyeOff,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { IntlShippingTab } from "@/components/IntlShippingTab";
 import { GbQrCodesPanel } from "@/components/GbQrCodesPanel";
@@ -12233,7 +12234,7 @@ function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "orders" | "parcels" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "orders" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -12243,6 +12244,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
   { id: "parcels", label: "Parcels", icon: Truck, gbRequired: true },
+  { id: "dispatch", label: "Dispatch & Packaging Slips", icon: FileText, gbRequired: true },
   { id: "qrcodes", label: "QR Codes", icon: QrCode, gbRequired: true },
   { id: "labtests", label: "Lab Tests", icon: FlaskConical, gbRequired: true },
   { id: "pnl", label: "P&L", icon: BarChart3, gbRequired: true },
@@ -12264,7 +12266,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
 };
 
 const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "orders"];
-const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "qrcodes", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
+const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "qrcodes", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
   if (!gbId) return {};
@@ -12321,6 +12323,17 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
   useEffect(() => { loadGbs(); }, [loadGbs]);
 
   const selectedGb = gbs.find(g => g.id === selectedGbId) ?? null;
+
+  // Dispatch & Packaging Slips — scope-locked server-side to this organiser's owned GBs.
+  const dispatchCfg = useMemo<DispatchCfg>(() => ({
+    role: "organiser",
+    base: "/organiser/dispatch",
+    dfetch: (path, opts) => fetch(`/api${path}`, { credentials: "include", ...opts }),
+    ordersPath: (qs) => `/organiser/dispatch/orders?${qs}`,
+    groupBuysPath: "/organiser/dispatch/group-buys-list",
+    gbParcelsPath: (gbId) => `/organiser/dispatch/group-buys/${gbId}/parcels`,
+    orderImagesPath: (orderId) => `/organiser/dispatch/orders/${orderId}/dispatch-images`,
+  }), []);
 
   const handleSelectGb = (id: string) => {
     setSelectedGbId(id);
@@ -12535,6 +12548,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}
+        {activeTab === "dispatch" && selectedGb && <DispatchManager cfg={dispatchCfg} />}
         {activeTab === "labtests" && selectedGb && <LabTestsTabOrg gb={selectedGb} />}
         {activeTab === "pnl" && selectedGb && <PnlTab gb={selectedGb} />}
         {activeTab === "broadcast" && selectedGb && <BroadcastTab gb={selectedGb} />}

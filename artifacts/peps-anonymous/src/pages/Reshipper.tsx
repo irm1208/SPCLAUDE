@@ -11,6 +11,7 @@ import {
   CheckCircle2, RotateCcw,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { useAccount } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES } from "@/data/countries";
@@ -3478,7 +3479,7 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
   );
 }
 
-type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "payments" | "broadcast";
+type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
 
 const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "overview",  label: "Overview",  icon: LayoutDashboard },
@@ -3488,6 +3489,7 @@ const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "qr",        label: "QR Codes",  icon: QrCode },
   { id: "shipping",  label: "Shipping",  icon: Truck },
   { id: "parcels",   label: "Parcels",   icon: Package },
+  { id: "dispatch",  label: "Dispatch & Packaging Slips", icon: FileText },
   { id: "payments",  label: "Payments",  icon: CreditCard },
   { id: "broadcast", label: "Broadcast", icon: MessageSquare },
 ];
@@ -3587,6 +3589,18 @@ export default function ReshipperPage() {
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentAssignment = assignments.find(a => a.gbId === selectedGbId);
+
+  // Dispatch & Packaging Slips — scope-locked server-side to this reshipper.
+  const dispatchCfg = useMemo<DispatchCfg>(() => ({
+    role: "reshipper",
+    base: "/reshipper/dispatch",
+    dfetch: (path, opts) => reshipFetch(`/api${path}`, opts),
+    ordersPath: (qs) => `/reshipper/dispatch/orders?${qs}`,
+    groupBuysPath: "/reshipper/dispatch/group-buys-list",
+    gbParcelsPath: (gbId) => `/reshipper/dispatch/group-buys/${gbId}/parcels`,
+    orderImagesPath: (orderId) => `/reshipper/dispatch/orders/${orderId}/dispatch-images`,
+    lockedScope: { scopeType: "reshipper", scopeId: stripAt(me?.telegramUsername ?? "") },
+  }), [me?.telegramUsername]);
 
   const updateGbInAssignment = useCallback((updated: RAssignment["gb"]) => {
     setAssignments(prev => prev.map(a => a.gbId === selectedGbId ? { ...a, gb: updated } : a));
@@ -3842,6 +3856,7 @@ export default function ReshipperPage() {
                 <ShippingTab key={selectedGbId} gbId={selectedGbId} initialGb={currentAssignment.gb} onGbUpdate={updateGbInAssignment} allowPayments={currentAssignment.allowPayments} allowVendorShippingSplit={currentAssignment.allowVendorShippingSplit} />
               )}
               {activeTab === "parcels" && <ParcelsTab key={selectedGbId} gbId={selectedGbId} />}
+              {activeTab === "dispatch" && <DispatchManager cfg={dispatchCfg} />}
               {activeTab === "payments" && me && (
                 <PaymentsTab key={selectedGbId} assignment={currentAssignment} me={me} onAssignmentUpdate={updateAssignment} />
               )}

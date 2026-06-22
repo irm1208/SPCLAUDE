@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction, type RequestHandler } from "express";
 import { requireAdmin } from "../middleware/require-admin";
 import { db } from "@workspace/db";
 import {
@@ -16,7 +16,52 @@ import { sendTelegramMessage, notifyUserFromTemplate } from "../lib/telegram";
 import { GoogleGenAI } from "../lib/google-genai";
 import { randomUUID } from "crypto";
 
-const router = Router();
+
+// ─── factory config ──────────────────────────────────────────────────────────
+export interface DispatchRouterCfg {
+  prefix: string;            // e.g. "/admin/dispatch"
+  ordersImagesPrefix: string; // e.g. "/admin/orders" -> "{p}/:orderId/dispatch-images"
+  auth: RequestHandler;
+  assertGbAccess: (req: Request, gbId: string) => Promise<boolean>;
+  assertImageAccess: (req: Request, imageId: string) => Promise<boolean>;
+  assertOrderAccess: (req: Request, orderId: string) => Promise<boolean>;
+  forceScope?: (req: Request) => void;
+  bodyScopeFilter?: RequestHandler;
+  includeAux: boolean;
+  listGroupBuys?: (req: Request) => Promise<{ id: string; name: string }[]>;
+  ordersHandler?: (req: Request, res: Response) => Promise<void>;
+}
+
+export function createDispatchRouter(cfg: DispatchRouterCfg): IRouter {
+
+  const router: IRouter = Router({ mergeParams: true });
+
+  router.use(cfg.auth);
+  if (cfg.forceScope) {
+    router.use((req: Request, _res: Response, next: NextFunction) => { cfg.forceScope!(req); next(); });
+  }
+  if (cfg.bodyScopeFilter) {
+    router.use(cfg.bodyScopeFilter);
+  }
+  router.param("gbId", async (req: Request, res: Response, next: NextFunction, gbId: string) => {
+    try {
+      if (!(await cfg.assertGbAccess(req, gbId))) { res.status(403).json({ error: "Forbidden" }); return; }
+      next();
+    } catch { res.status(500).json({ error: "Access check failed" }); }
+  });
+  router.param("imageId", async (req: Request, res: Response, next: NextFunction, imageId: string) => {
+    try {
+      if (!(await cfg.assertImageAccess(req, imageId))) { res.status(403).json({ error: "Forbidden" }); return; }
+      next();
+    } catch { res.status(500).json({ error: "Access check failed" }); }
+  });
+  router.param("orderId", async (req: Request, res: Response, next: NextFunction, orderId: string) => {
+    try {
+      if (!(await cfg.assertOrderAccess(req, orderId))) { res.status(403).json({ error: "Forbidden" }); return; }
+      next();
+    } catch { res.status(500).json({ error: "Access check failed" }); }
+  });
+
 
 // ─── types ─────────────────────────────────────────────────────────────────
 type ExtParcelItem = ParcelItem & { dispatchedQty?: number };
@@ -28,8 +73,7 @@ function remaining(item: ExtParcelItem): number {
 // ─── GET /admin/dispatch/:gbId/scope-options ────────────────────────────────
 // Returns reshippers (union of those with ≥1 delivered parcel AND those on the
 // GB's active orders) + country legs for a GB.
-router.get("/admin/dispatch/:gbId/scope-options", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/scope-options`, async (req, res) => {
   try {
     const { gbId } = req.params;
 
@@ -82,8 +126,7 @@ router.get("/admin/dispatch/:gbId/scope-options", async (req, res) => {
 // ─── GET /admin/dispatch/:gbId/parcels ─────────────────────────────────────
 // Returns delivered parcels for a GB (filtered by scope), with remainingQty.
 // Query params: scopeType=reshipper|country, scopeId=<username|legId>
-router.get("/admin/dispatch/:gbId/parcels", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/parcels`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const { scopeType, scopeId } = req.query as Record<string, string>;
@@ -121,8 +164,7 @@ router.get("/admin/dispatch/:gbId/parcels", async (req, res) => {
 // ─── POST /admin/dispatch/:gbId/compute ────────────────────────────────────
 // Body: { parcelIds: string[], scopeType: string, scopeId: string }
 // Returns fulfillable + unfulfillable orders based on available parcel stock.
-router.post("/admin/dispatch/:gbId/compute", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/compute`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const { parcelIds, scopeType, scopeId } = req.body as {
@@ -260,8 +302,7 @@ router.post("/admin/dispatch/:gbId/compute", async (req, res) => {
 // ─── POST /admin/dispatch/:gbId/confirm ─────────────────────────────────────
 // Body: { orderIds: string[], parcelIds: string[] }
 // Deducts stock from parcels based on the selected orders' line items.
-router.post("/admin/dispatch/:gbId/confirm", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const { orderIds, parcelIds } = req.body as {
@@ -330,10 +371,11 @@ router.post("/admin/dispatch/:gbId/confirm", async (req, res) => {
       .map(p => p.reshipperUsername)
       .find(r => !!r) ?? null;
 
-    // Mark all dispatched orders as Shipped and stamp dispatch confirmation time + reshipper
+    // Mark all dispatched orders as Shipped and stamp dispatch confirmation time + reshipper.
+    // GB-scoped so callers can never confirm orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper })
-      .where(inArray(ordersTable.id, orderIds));
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
 
     res.json({ ok: true, confirmed: orderIds.length });
   } catch (e) {
@@ -345,8 +387,7 @@ router.post("/admin/dispatch/:gbId/confirm", async (req, res) => {
 // ─── POST /admin/dispatch/:gbId/undispatch ───────────────────────────────────
 // Reverses a dispatch confirmation: resets status to Processing, clears stamps,
 // and restores dispatchedQty on parcels for this GB.
-router.post("/admin/dispatch/:gbId/undispatch", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
   try {
     const { gbId } = req.params as { gbId: string };
     const { orderIds } = req.body as { orderIds: string[] };
@@ -387,10 +428,11 @@ router.post("/admin/dispatch/:gbId/undispatch", async (req, res) => {
         .where(eq(gbParcelsTable.id, parcel.id));
     }
 
-    // Reset order status back to Processing
+    // Reset order status back to Processing.
+    // GB-scoped so callers can never un-dispatch orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Processing", updatedAt: new Date(), dispatchConfirmedAt: null, dispatchedByReshipper: null })
-      .where(inArray(ordersTable.id, orderIds));
+      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
 
     res.json({ ok: true, undispatched: orderIds.length });
   } catch (e) {
@@ -401,8 +443,7 @@ router.post("/admin/dispatch/:gbId/undispatch", async (req, res) => {
 
 // ─── POST /admin/dispatch/:gbId/reattribute ─────────────────────────────────
 // Set dispatchedByReshipper on a batch of orders (for correcting historical data).
-router.post("/admin/dispatch/:gbId/reattribute", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/reattribute`, async (req, res) => {
   try {
     const { gbId } = req.params as { gbId: string };
     const { orderIds, reshipper } = req.body as { orderIds?: string[]; reshipper?: string };
@@ -423,8 +464,7 @@ router.post("/admin/dispatch/:gbId/reattribute", async (req, res) => {
 // ─── GET /admin/dispatch/:gbId/unshipped-by-reshipper ───────────────────────
 // Returns orders in this GB whose reshipperUsername matches (direct match only,
 // no leg routing) and whose status is not Shipped/Completed/Cancelled/Deleted.
-router.get("/admin/dispatch/:gbId/unshipped-by-reshipper", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/unshipped-by-reshipper`, async (req, res) => {
   try {
     const { gbId } = req.params as { gbId: string };
     const reshipper = req.query.reshipper as string | undefined;
@@ -464,8 +504,7 @@ router.get("/admin/dispatch/:gbId/unshipped-by-reshipper", async (req, res) => {
 // Finds all non-Shipped/Completed orders in this GB for a given reshipper and
 // marks them as Shipped + stamps dispatchConfirmedAt + dispatchedByReshipper.
 // Used to recover orders confirmed via packing slips before status tracking existed.
-router.post("/admin/dispatch/:gbId/mark-shipped-by-reshipper", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) => {
   try {
     const { gbId } = req.params as { gbId: string };
     // orderIds: if provided, mark only those specific orders; otherwise mark all unshipped for reshipper
@@ -549,8 +588,7 @@ router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
 
 // ─── GET /admin/dispatch/:gbId/half-kits ────────────────────────────────────
 // Returns orders with half-kit line items (qty < 1), grouped by reshipper.
-router.get("/admin/dispatch/:gbId/half-kits", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/half-kits`, async (req, res) => {
   try {
     const { gbId } = req.params;
 
@@ -719,8 +757,7 @@ Rules:
   return result;
 }
 
-router.get("/admin/dispatch/:gbId/click-drop-csv", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/click-drop-csv`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const rawIds = String(req.query.orderIds ?? "");
@@ -893,8 +930,7 @@ router.get("/admin/dispatch/:gbId/click-drop-csv", async (req, res) => {
 
 // ─── GET /admin/dispatch/:gbId/gb-info ──────────────────────────────────────
 // Returns lightweight GB info needed by the Dispatched Orders tab.
-router.get("/admin/dispatch/:gbId/gb-info", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/gb-info`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const [gb] = await db
@@ -935,8 +971,7 @@ router.get("/admin/dispatch/:gbId/gb-info", async (req, res) => {
 // ─── POST /admin/dispatch/:gbId/notify-qr ───────────────────────────────────
 // Sends a Telegram QR-upload reminder to the selected orders' customers.
 // Body: { orderIds: string[], customMessage?: string }
-router.post("/admin/dispatch/:gbId/notify-qr", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/notify-qr`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const { orderIds, customMessage } = req.body as {
@@ -957,12 +992,13 @@ router.post("/admin/dispatch/:gbId/notify-qr", async (req, res) => {
     const gbName = gb?.name ?? "your group buy";
     const appUrl = process.env["PUBLIC_URL"] ?? "https://saltandpeps.co.uk";
 
-    // Load orders to get telegram usernames and codes
+    // Load orders to get telegram usernames and codes.
+    // GB-scoped so callers can never notify customers of orders outside the URL group buy.
     const orders = await db.select({
       id: ordersTable.id,
       telegramUsername: ordersTable.telegramUsername,
       code: ordersTable.code,
-    }).from(ordersTable).where(inArray(ordersTable.id, orderIds));
+    }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
 
     type NotifyResult = { orderId: string; username: string; status: "sent" | "failed" | "no_account" | "no_chat_id" };
     const results: NotifyResult[] = [];
@@ -1000,8 +1036,7 @@ router.post("/admin/dispatch/:gbId/notify-qr", async (req, res) => {
 // Runs Gemini Vision OCR on an uploaded image and returns extracted order data
 // + the best matching order from this GB. Does NOT save anything yet.
 // Body: { imageData: string (base64 data URL), filename: string }
-router.post("/admin/dispatch/:gbId/ocr-image", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/ocr-image`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const { imageData, filename } = req.body as { imageData: string; filename: string };
@@ -1128,8 +1163,7 @@ Rules:
 // ─── POST /admin/dispatch/:gbId/save-dispatch-image ─────────────────────────
 // Saves a confirmed dispatch image to an order.
 // Body: { orderId, imageData, filename, ocrOrderCode?, ocrUsername? }
-router.post("/admin/dispatch/:gbId/save-dispatch-image", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/save-dispatch-image`, async (req, res) => {
   try {
     const { orderId, imageData, filename, ocrOrderCode, ocrUsername } = req.body as {
       orderId: string;
@@ -1142,6 +1176,15 @@ router.post("/admin/dispatch/:gbId/save-dispatch-image", async (req, res) => {
     if (!orderId || !imageData || !filename) {
       res.status(400).json({ error: "orderId, imageData, and filename are required" }); return;
     }
+
+    // GB-scope the target order so callers can never attach images to orders
+    // outside the URL group buy.
+    const { gbId } = req.params;
+    const [targetOrder] = await db.select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)))
+      .limit(1);
+    if (!targetOrder) { res.status(403).json({ error: "Forbidden" }); return; }
 
     const imageId = randomUUID();
     await db.insert(orderDispatchImagesTable).values({
@@ -1163,8 +1206,7 @@ router.post("/admin/dispatch/:gbId/save-dispatch-image", async (req, res) => {
 
 // ─── GET /admin/dispatch/images/:imageId ────────────────────────────────────
 // Lazy-loads a single dispatch image's data (base64). Admin only.
-router.get("/admin/dispatch/images/:imageId", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/images/:imageId`, async (req, res) => {
   try {
     const [img] = await db.select().from(orderDispatchImagesTable)
       .where(eq(orderDispatchImagesTable.id, req.params.imageId));
@@ -1177,8 +1219,7 @@ router.get("/admin/dispatch/images/:imageId", async (req, res) => {
 });
 
 // ─── DELETE /admin/dispatch/images/:imageId ──────────────────────────────────
-router.delete("/admin/dispatch/images/:imageId", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.delete(`${cfg.prefix}/images/:imageId`, async (req, res) => {
   try {
     await db.delete(orderDispatchImagesTable).where(eq(orderDispatchImagesTable.id, req.params.imageId));
     res.json({ ok: true });
@@ -1190,8 +1231,7 @@ router.delete("/admin/dispatch/images/:imageId", async (req, res) => {
 
 // ─── GET /admin/orders/:orderId/dispatch-images ──────────────────────────────
 // Returns metadata list for all dispatch images on an order (no image data).
-router.get("/admin/orders/:orderId/dispatch-images", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.ordersImagesPrefix}/:orderId/dispatch-images`, async (req, res) => {
   try {
     const imgs = await db.select({
       id: orderDispatchImagesTable.id,
@@ -1236,8 +1276,7 @@ function formatOrder(order: OrderRow, lineItems: LineItemRow[]) {
 
 // ─── GET /admin/dispatch/:gbId/dispatch-images-map ──────────────────────────
 // Returns a map of orderId → [{id, filename}] for all dispatch images in the GB.
-router.get("/admin/dispatch/:gbId/dispatch-images-map", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.get(`${cfg.prefix}/:gbId/dispatch-images-map`, async (req, res) => {
   try {
     const { gbId } = req.params;
     const imgs = await db.select({
@@ -1261,8 +1300,7 @@ router.get("/admin/dispatch/:gbId/dispatch-images-map", async (req, res) => {
 
 // ── POST /admin/dispatch/:gbId/archive-orders ──────────────────────────────
 // Moves selected dispatched orders in/out of the archive view (sets/clears dispatchArchivedAt).
-router.post("/admin/dispatch/:gbId/archive-orders", async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/archive-orders`, async (req, res): Promise<void> => {
   const { gbId } = req.params as { gbId: string };
   const { orderIds, archive = true } = req.body as { orderIds: string[]; archive?: boolean };
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
@@ -1279,4 +1317,65 @@ router.post("/admin/dispatch/:gbId/archive-orders", async (req, res): Promise<vo
   }
 });
 
-export default router;
+  // ─── Aux endpoints (reshipper/organiser only) ──────────────────────────────
+  if (cfg.includeAux) {
+    // List of group buys the caller can access ({ id, name }).
+    router.get(`${cfg.prefix}/group-buys-list`, async (req: Request, res: Response) => {
+      try {
+        const gbs = cfg.listGroupBuys ? await cfg.listGroupBuys(req) : [];
+        res.json(gbs);
+      } catch (e) {
+        console.error("[dispatch group-buys-list]", e);
+        res.status(500).json({ error: "Failed to load group buys" });
+      }
+    });
+
+    // Orders list (same shape as admin /orders), GB-scoped to caller.
+    router.get(`${cfg.prefix}/orders`, async (req: Request, res: Response) => {
+      try {
+        const gbId = String((req.query as Record<string, string>)["groupBuyId"] ?? "");
+        if (!gbId) { res.status(400).json({ error: "groupBuyId required" }); return; }
+        if (!(await cfg.assertGbAccess(req, gbId))) { res.status(403).json({ error: "Forbidden" }); return; }
+        if (!cfg.ordersHandler) { res.status(500).json({ error: "Not configured" }); return; }
+        await cfg.ordersHandler(req, res);
+      } catch (e) {
+        console.error("[dispatch orders]", e);
+        res.status(500).json({ error: "Failed to load orders" });
+      }
+    });
+
+    // Parcels for a GB (same shape as admin /admin/group-buys/:id/parcels).
+    router.get(`${cfg.prefix}/group-buys/:gbId/parcels`, async (req: Request, res: Response) => {
+      try {
+        const { gbId } = req.params as { gbId: string };
+        const rows = await db.select().from(gbParcelsTable)
+          .where(eq(gbParcelsTable.groupBuyId, gbId))
+          .orderBy(gbParcelsTable.createdAt);
+        res.json(rows);
+      } catch (e) {
+        console.error("[dispatch gb parcels]", e);
+        res.status(500).json({ error: "Failed to load parcels" });
+      }
+    });
+  }
+
+  return router;
+}
+
+// ─── Admin instance (unchanged behavior: x-admin-secret guard, no scoping) ────
+const requireAdminMw: RequestHandler = (req, res, next) => {
+  if (!requireAdmin(req, res)) return;
+  next();
+};
+
+const ADMIN_CFG: DispatchRouterCfg = {
+  prefix: "/admin/dispatch",
+  ordersImagesPrefix: "/admin/orders",
+  auth: requireAdminMw,
+  assertGbAccess: async () => true,
+  assertImageAccess: async () => true,
+  assertOrderAccess: async () => true,
+  includeAux: false,
+};
+
+export default createDispatchRouter(ADMIN_CFG);
