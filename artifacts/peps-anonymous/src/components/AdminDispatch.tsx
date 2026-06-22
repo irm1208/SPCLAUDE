@@ -1042,7 +1042,7 @@ function PackingSlipsTab({
                       <div>
                         <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50/70 border-b border-slate-100">
                           <span className="text-[11px] text-slate-600 font-medium">
-                            {ovPendingSelected.size > 0 ? `${ovPendingSelected.size} selected` : "Tick to mark individually, or use "Mark all Shipped""}
+                            {ovPendingSelected.size > 0 ? `${ovPendingSelected.size} selected` : "Tick to mark individually, or use \u2018Mark all Shipped\u2019"}
                           </span>
                           <button onClick={() => setOvPendingSelected(new Set(ovPending.map(o => o.id)))} className="text-[11px] text-slate-500 hover:underline">Select all</button>
                           {ovPendingSelected.size > 0 && (
