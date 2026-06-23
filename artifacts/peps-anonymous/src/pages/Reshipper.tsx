@@ -3758,7 +3758,7 @@ export default function ReshipperPage() {
 
         {/* ── GB picker row (multiple assignments) ── */}
         {assignments.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0 bg-[#fcfcfc]" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0 bg-[#f7f7f7]" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
             {assignments.map(a => (
               <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
                 className="flex items-center gap-1 px-3 h-7 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
