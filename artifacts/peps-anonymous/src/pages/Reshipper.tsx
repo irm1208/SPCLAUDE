@@ -103,6 +103,7 @@ interface ROrder {
   shippingCountry?: string | null;
   trackingNumber: string | null;
   paymentTxHash: string | null;
+  paymentCryptoCurrency?: string | null;
   createdAt: string;
   paymentConfirmedAt?: string | null;
   lineItems?: { productName: string; quantity: number; lineTotal: number }[];
@@ -124,6 +125,25 @@ interface RParcel {
   items: { name: string; qty: number }[];
   cachedEvents: { date: string; status: string; location: string }[];
   createdAt: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Build a block-explorer URL for a payment tx hash. Returns null for non-on-chain
+// references (manual fiat rails like "fiat:revolut"/"fiat:paypal", or empty).
+// AnonPay hashes ("anonpay:<id>") link to the Trocador tracking page.
+function txExplorerUrl(txHash: string | null | undefined, currency?: string | null): string | null {
+  const h = (txHash ?? "").trim();
+  if (!h || h.startsWith("fiat:")) return null;
+  if (h.startsWith("anonpay:")) {
+    return `https://trocador.app/anonpay/${encodeURIComponent(h.slice("anonpay:".length))}`;
+  }
+  const cur = (currency ?? "").toUpperCase().trim();
+  // BTC hashes are 64 hex chars with no 0x prefix; ETH/ERC-20 hashes start with 0x.
+  if (cur === "BTC" || (!h.startsWith("0x") && /^[0-9a-fA-F]{64}$/.test(h))) {
+    return `https://blockstream.info/tx/${h}`;
+  }
+  return `https://etherscan.io/tx/${h}`;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1691,13 +1711,36 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                                     <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Transaction</h4>
                                   </div>
                                   {detail?.paymentTxHash ? (
-                                    <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                                      <div className="flex items-center justify-between gap-2 mb-1">
-                                        <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
-                                        <CopyButton value={detail.paymentTxHash} />
-                                      </div>
-                                      <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
-                                    </div>
+                                    (() => {
+                                      const explorerUrl = txExplorerUrl(detail.paymentTxHash, detail.paymentCryptoCurrency);
+                                      return (
+                                        <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                          <div className="flex items-center justify-between gap-2 mb-1">
+                                            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
+                                            <CopyButton value={detail.paymentTxHash} />
+                                          </div>
+                                          {explorerUrl ? (
+                                            <a
+                                              href={explorerUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="font-mono text-[11px] break-all leading-relaxed inline-flex items-start gap-1 hover:underline"
+                                              style={{ color: "var(--t-blue)" }}
+                                            >
+                                              <span>{detail.paymentTxHash}</span>
+                                              <ExternalLink className="w-3 h-3 shrink-0 mt-0.5" />
+                                            </a>
+                                          ) : (
+                                            <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
+                                          )}
+                                          {detail.paymentConfirmedAt && (
+                                            <p className="text-[9px] mt-1.5" style={{ color: "var(--t-subtle)" }}>
+                                              Confirmed {new Date(detail.paymentConfirmedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()
                                   ) : (
                                     <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No transaction hash recorded.</p>
                                   )}
