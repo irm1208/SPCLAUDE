@@ -7685,6 +7685,21 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   const [sendingReminder, setSendingReminder] = useState(false);
   const [reminderMsg, setReminderMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Pending contributions
+  type PendingContrib = { id: string; order_id: string; amount: number; payment_method: string; tx_hash: string | null; status: string; rejection_reason: string | null; created_at: string; code: string; telegram_username: string };
+  const [pendingContribs, setPendingContribs] = useState<PendingContrib[]>([]);
+  const [actingContrib, setActingContrib] = useState<string | null>(null);
+
+  const loadContribs = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/testing/contributions`), { headers: { "x-admin-secret": secret } });
+      if (r.ok) {
+        const d = await r.json();
+        setPendingContribs((d.contributions ?? []).filter((c: PendingContrib) => c.status === "pending"));
+      }
+    } catch { /* silent */ }
+  }, [gb.id, secret]);
+
   // Status / funding / results
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const [fundingNote, setFundingNote] = useState("");
@@ -7730,7 +7745,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
     finally { setLoading(false); }
   }, [secret, gb.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadContribs(); }, [load, loadContribs]);
 
   const availablePaymentMethods = React.useMemo(() => {
     const op = data?.organiserPayments ?? {};
@@ -8540,6 +8555,70 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
               {ballotSaved ? "Saved!" : "Save Ballot"}
             </Button>
           </div>
+
+          {/* Pending contributions awaiting payment confirmation */}
+          {pendingContribs.length > 0 && (
+            <div className="border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-3 bg-amber-50 dark:bg-amber-950">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                Pending contributions ({pendingContribs.length})
+              </p>
+              <div className="space-y-0 divide-y divide-amber-200 dark:divide-amber-800">
+                {pendingContribs.map(c => (
+                  <div key={c.id} className="py-3 flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium">@{c.telegram_username?.replace(/^@/, "")}</span>
+                        <span className="text-[10px] text-muted-foreground">#{c.code}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {c.payment_method}{c.tx_hash ? ` · ${c.tx_hash}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold tabular-nums">£{c.amount.toFixed(2)}</span>
+                      <Button
+                        size="sm"
+                        className="h-6 px-2 text-[11px] bg-green-600 hover:bg-green-700 text-white"
+                        disabled={actingContrib === c.id}
+                        onClick={async () => {
+                          setActingContrib(c.id);
+                          try {
+                            const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/testing/contributions/${c.id}`), {
+                              method: "PATCH",
+                              headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "confirm" }),
+                            });
+                            if (r.ok) { await load(); await loadContribs(); }
+                          } finally { setActingContrib(null); }
+                        }}
+                      >
+                        {actingContrib === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[11px] text-red-600 border-red-300 hover:bg-red-50"
+                        disabled={actingContrib === c.id}
+                        onClick={async () => {
+                          setActingContrib(c.id);
+                          try {
+                            const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/testing/contributions/${c.id}`), {
+                              method: "PATCH",
+                              headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "reject" }),
+                            });
+                            if (r.ok) { await loadContribs(); }
+                          } finally { setActingContrib(null); }
+                        }}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Contributors */}
           <div className="border border-border rounded-lg p-4 space-y-3">
