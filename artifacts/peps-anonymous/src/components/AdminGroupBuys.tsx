@@ -8573,9 +8573,12 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {c.payment_method}{c.tx_hash ? ` · ${c.tx_hash}` : ""}
                       </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {new Date(c.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-semibold tabular-nums">£{c.amount.toFixed(2)}</span>
+                      <span className="text-sm font-semibold tabular-nums">{gb.currency === "GBP" ? "£" : "€"}{c.amount.toFixed(2)}</span>
                       <Button
                         size="sm"
                         className="h-6 px-2 text-[11px] bg-green-600 hover:bg-green-700 text-white"
