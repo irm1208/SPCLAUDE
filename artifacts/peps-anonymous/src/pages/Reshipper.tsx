@@ -1492,48 +1492,88 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               })()}
 
                               {/* COURIER QR */}
-                              {activeFacet === "qr" && (
-                                <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.18)" }}>
-                                  <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "#7C3AED" }}>
-                                    <QrCode className="w-2.5 h-2.5" /> QR Codes
-                                  </p>
-                                  {(["inpost", "royal-mail"] as const).map(courier => {
-                                    const label = courier === "inpost" ? "InPost" : "Royal Mail";
-                                    const det = orderDetails[order.id] ?? order;
-                                    const existing = courier === "inpost" ? det.inpostQrCode : det.royalMailQrCode;
-                                    const key = `${order.id}-${courier}`;
-                                    const isUploading = reshQrSaving[key];
-                                    const qrMsg = reshQrMsg[key];
-                                    return (
-                                      <div key={courier} className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
-                                        {existing ? (
-                                          <div className="flex items-center gap-2">
-                                            <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
-                                            <button
-                                              className="text-[10px] font-semibold disabled:opacity-50"
-                                              style={{ color: "#DC2626" }}
-                                              disabled={isUploading}
-                                              onClick={() => uploadReshQr(order.id, courier, null)}
-                                            >{isUploading ? "…" : "Clear"}</button>
-                                          </div>
-                                        ) : (
-                                          <label className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer"
-                                            style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", color: "#7C3AED", opacity: isUploading ? 0.5 : 1 }}>
-                                            <Upload className="w-2.5 h-2.5" />
-                                            {isUploading ? "Uploading…" : "Upload"}
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden"
-                                              disabled={isUploading}
-                                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, courier, f); e.target.value = ""; }}
-                                            />
-                                          </label>
-                                        )}
-                                        {qrMsg?.text && <span className="text-[10px] font-semibold" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</span>}
+                              {activeFacet === "qr" && (() => {
+                                const det = orderDetails[order.id] ?? order;
+                                const couriers = [
+                                  { id: "inpost" as const, label: "InPost", existing: det.inpostQrCode },
+                                  { id: "royal-mail" as const, label: "Royal Mail", existing: det.royalMailQrCode },
+                                ];
+                                const uploadedCount = couriers.filter(c => c.existing).length;
+                                return (
+                                  <div className="space-y-2.5">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)" }}>
+                                        <QrCode className="w-3.5 h-3.5" style={{ color: "#7C3AED" }} />
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                                      <div className="min-w-0">
+                                        <h4 className="text-[11px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--t-text)" }}>Courier QR Codes</h4>
+                                        <p className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--t-subtle)" }}>Upload the courier label QR for this parcel</p>
+                                      </div>
+                                      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums shrink-0" style={{ background: "rgba(124,58,237,0.1)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>{uploadedCount}/{couriers.length}</span>
+                                    </div>
+
+                                    {/* Courier cards */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                      {couriers.map(c => {
+                                        const key = `${order.id}-${c.id}`;
+                                        const isUploading = reshQrSaving[key];
+                                        const qrMsg = reshQrMsg[key];
+                                        const has = !!c.existing;
+                                        return (
+                                          <div key={c.id} className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <Truck className="w-3.5 h-3.5 shrink-0" style={{ color: "#7C3AED" }} />
+                                                <span className="text-xs font-bold truncate" style={{ color: "var(--t-text)" }}>{c.label}</span>
+                                              </div>
+                                              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 flex items-center gap-1"
+                                                style={has
+                                                  ? { background: "rgba(22,163,74,0.1)", color: "#16A34A" }
+                                                  : { background: "var(--t-surface2)", color: "var(--t-subtle)" }}>
+                                                {has ? <Check className="w-2.5 h-2.5" /> : null}{has ? "Ready" : "Missing"}
+                                              </span>
+                                            </div>
+
+                                            {has ? (
+                                              <div className="flex flex-col items-center gap-2">
+                                                <a href={c.existing!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden" style={{ border: "1px solid rgba(124,58,237,0.25)" }}>
+                                                  <img src={c.existing!} alt={`${c.label} QR`} className="w-24 h-24 object-contain bg-white p-1.5" />
+                                                </a>
+                                                <div className="flex items-center gap-1.5 w-full">
+                                                  <a href={c.existing!} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 h-7 rounded-lg flex items-center justify-center gap-1 text-[10px] font-semibold"
+                                                    style={{ background: "rgba(124,58,237,0.08)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>
+                                                    <ExternalLink className="w-2.5 h-2.5" /> View
+                                                  </a>
+                                                  <button disabled={isUploading} onClick={() => uploadReshQr(order.id, c.id, null)}
+                                                    className="h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 text-[10px] font-semibold disabled:opacity-50"
+                                                    style={{ background: "rgba(220,38,38,0.06)", color: "#DC2626", border: "1px solid rgba(220,38,38,0.2)" }}>
+                                                    {isUploading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <label className="flex flex-col items-center justify-center gap-1 py-5 rounded-lg cursor-pointer text-center"
+                                                style={{ border: "1.5px dashed rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.04)", opacity: isUploading ? 0.6 : 1 }}>
+                                                {isUploading ? <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#7C3AED" }} /> : <Upload className="w-5 h-5" style={{ color: "#7C3AED" }} />}
+                                                <span className="text-[11px] font-bold" style={{ color: "#7C3AED" }}>{isUploading ? "Uploading…" : "Upload QR"}</span>
+                                                <span className="text-[9px]" style={{ color: "var(--t-subtle)" }}>PNG, JPG or PDF</span>
+                                                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden" disabled={isUploading}
+                                                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, c.id, f); e.target.value = ""; }} />
+                                              </label>
+                                            )}
+
+                                            {qrMsg?.text && (
+                                              <p className="text-[10px] font-semibold text-center" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</p>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {/* DELIVERY ADDRESS */}
                               {activeFacet === "order" && (
