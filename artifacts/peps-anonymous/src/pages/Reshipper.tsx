@@ -1243,17 +1243,20 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                      <div className="border-t px-4 py-4 space-y-4" style={{ borderColor: "var(--t-border)" }}>
+                      <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
 
                         {/* Line items */}
                         {detail?.lineItems && detail.lineItems.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--t-subtle)" }}>Items</p>
-                            <div className="space-y-1.5">
+                          <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                            <div className="px-3 py-2 flex items-center gap-1.5 border-b" style={{ borderColor: "var(--t-border)" }}>
+                              <Package className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
+                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Items</p>
+                            </div>
+                            <div>
                               {detail.lineItems.map((item, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                  <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
-                                    style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}</span>
+                                <div key={i} className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
+                                  <span className="min-w-[1.75rem] h-6 px-1.5 rounded-md flex items-center justify-center text-[10px] font-bold tabular-nums shrink-0"
+                                    style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}×</span>
                                   <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--t-text)" }}>{item.productName}</span>
                                   <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
                                     {sym}{fmtCurrency(item.lineTotal)}
@@ -1261,14 +1264,23 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                                 </div>
                               ))}
                             </div>
+                            <div className="px-3 py-2 flex items-center justify-between" style={{ background: "var(--t-surface2)" }}>
+                              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Subtotal</span>
+                              <span className="text-xs font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
+                                {sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}
+                              </span>
+                            </div>
                           </div>
                         )}
 
                         {/* Transaction ID */}
                         {detail?.paymentTxHash && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
-                            <p className="font-mono text-xs break-all" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
+                          <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
+                              <CopyButton value={detail.paymentTxHash} />
+                            </div>
+                            <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
                           </div>
                         )}
 
@@ -1359,7 +1371,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
 
                         {/* Edit form */}
                         {isEditing ? (
-                          <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                          <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                             <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Edit Order</p>
                             <div className="grid grid-cols-2 gap-2">
                               {[
@@ -1442,21 +1454,28 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                             </div>
                           </div>
                         ) : (
-                          <div>
-                            {detail && (
-                              <div className="grid grid-cols-2 gap-2 mb-3 text-xs" style={{ color: "var(--t-muted)" }}>
-                                {detail.shippingName && <div><span className="text-[9px] font-bold uppercase tracking-wide block" style={{ color: "var(--t-subtle)" }}>Name</span>{detail.shippingName}</div>}
-                                {detail.shippingAddress && <div className="col-span-2"><span className="text-[9px] font-bold uppercase tracking-wide block" style={{ color: "var(--t-subtle)" }}>Address</span>{detail.shippingAddress}{detail.shippingCity ? `, ${detail.shippingCity}` : ""}{detail.shippingPostcode ? ` ${detail.shippingPostcode}` : ""}</div>}
+                          <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "var(--t-subtle)" }}>
+                                <MapPin className="w-2.5 h-2.5" /> Delivery Address
+                              </p>
+                              <button onClick={() => startEdit(order)}
+                                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg"
+                                style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+                                <Pencil className="w-2.5 h-2.5" /> Edit
+                              </button>
+                            </div>
+                            {detail && (detail.shippingName || detail.shippingAddress) ? (
+                              <div className="text-[11px] leading-relaxed">
+                                {detail.shippingName && <div className="font-semibold" style={{ color: "var(--t-text)" }}>{detail.shippingName}</div>}
+                                {detail.shippingAddress && <div style={{ color: "var(--t-muted)" }}>{detail.shippingAddress}{detail.shippingCity ? `, ${detail.shippingCity}` : ""}{detail.shippingPostcode ? ` ${detail.shippingPostcode}` : ""}</div>}
                               </div>
+                            ) : (
+                              <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No address on file yet</p>
                             )}
                             {msg[order.id] && (
-                              <p className="text-xs font-semibold mb-2" style={{ color: msg[order.id].includes("✓") ? "#16A34A" : "#DC2626" }}>{msg[order.id]}</p>
+                              <p className="text-xs font-semibold mt-2" style={{ color: msg[order.id].includes("✓") ? "#16A34A" : "#DC2626" }}>{msg[order.id]}</p>
                             )}
-                            <button onClick={() => startEdit(order)}
-                              className="h-7 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5"
-                              style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
-                              <Pencil className="w-3 h-3" /> Edit Address / Tracking
-                            </button>
                           </div>
                         )}
                         {/* QR Code Upload */}
@@ -1510,6 +1529,37 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Copy button ──────────────────────────────────────────────────────────────
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
+        const p = navigator.clipboard?.writeText(value);
+        if (p) { p.then(done).catch(() => {}); return; }
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          done();
+        } catch { /* clipboard unavailable */ }
+      }}
+      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg transition-colors shrink-0"
+      style={{ background: "var(--t-surface2)", color: copied ? "#16A34A" : "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+      {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }
 
