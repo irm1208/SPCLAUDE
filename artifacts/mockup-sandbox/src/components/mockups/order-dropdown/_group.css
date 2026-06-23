@@ -1,0 +1,19 @@
+/* Salt&Peps app tokens — scoped to the order-dropdown mockup group.
+   Copied from artifacts/peps-anonymous/src/index.css so semantic
+   styling matches the real app. */
+.sp-order-scope {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #374151;
+  --t-subtle:   #4B5563;
+  --brand-navy: #1B3A7A;
+  --brand-blue: #2D6BCC;
+  --t-blue:     #2D6BCC;
+  --t-blue-deep: #1B3A7A;
+  --t-accent:   #2D6BCC;
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  font-family: 'Inter', sans-serif;
+}
