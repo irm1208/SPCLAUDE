@@ -50,26 +50,26 @@ const currentStepIndex = 3;
 type Facet = 'status' | 'tracking' | 'qr' | 'items' | 'address' | 'tx';
 
 export function SplitWorkspace() {
-  const [activeFacet, setActiveFacet] = useState<Facet>('status');
+  const [activeFacet, setActiveFacet] = useState<Facet>('items');
 
   const navItems = [
+    { id: 'items', label: 'Order Items', icon: Package },
     { id: 'status', label: 'Status & Timeline', icon: Box },
     { id: 'tracking', label: 'Tracking Numbers', icon: Truck },
     { id: 'qr', label: 'Courier QR Codes', icon: QrCode },
-    { id: 'items', label: 'Order Items', icon: Package },
     { id: 'address', label: 'Delivery Address', icon: MapPin },
     { id: 'tx', label: 'Transaction ID', icon: TxIcon },
   ];
 
   return (
-    <div className="sp-order-scope min-h-screen p-6 flex justify-center items-center" style={{ background: 'var(--t-bg)' }}>
-      <div className="w-full max-w-[1000px] split-workspace-container">
+    <div className="sp-order-scope min-h-screen p-3 sm:p-4 lg:p-6 flex justify-center items-center" style={{ background: 'var(--t-bg)' }}>
+      <div className="w-full max-w-[1100px] split-workspace-container">
         
         {/* LEFT RAIL */}
-        <div className="w-[320px] flex-shrink-0 flex flex-col border-r" style={{ borderColor: 'var(--t-border)', background: '#FAFAFA' }}>
+        <div className="sw-rail">
           
           {/* Header */}
-          <div className="p-6 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <div className="p-4 lg:p-6 border-b" style={{ borderColor: 'var(--t-border)' }}>
             <div className="flex items-center justify-between mb-3">
               <span className="font-mono text-[14px] font-bold" style={{ color: 'var(--t-muted)' }}>{order.code}</span>
               <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: 'rgba(22,163,74,0.1)', color: '#16A34A' }}>
@@ -94,8 +94,8 @@ export function SplitWorkspace() {
           </div>
 
           {/* Navigation */}
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-2">Order Details</div>
+          <div className="sw-nav">
+            <div className="hidden md:block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-2">Order Details</div>
             {navItems.map(item => {
               const active = activeFacet === item.id;
               const Icon = item.icon;
@@ -119,7 +119,7 @@ export function SplitWorkspace() {
           
           <div className="absolute top-0 left-0 right-0 h-[120px] pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 100%)', zIndex: 1 }} />
           
-          <div className="flex-1 overflow-y-auto p-10 z-10">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-7 lg:p-10 z-10">
             {activeFacet === 'status' && <StatusFacet />}
             {activeFacet === 'tracking' && <TrackingFacet />}
             {activeFacet === 'qr' && <QRFacet />}
@@ -244,7 +244,7 @@ function QRFacet() {
       <h2 className="text-[24px] font-black tracking-tight text-gray-900 mb-2">Courier QR Codes</h2>
       <p className="text-[14px] text-gray-500 mb-8">Upload shipping labels for quick warehouse access.</p>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-4 lg:gap-6">
         {['InPost', 'Royal Mail'].map(label => (
           <div key={label} className="flex flex-col group cursor-pointer">
             <div className="aspect-square bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center gap-3 group-hover:bg-blue-50/50 group-hover:border-blue-200 transition-all mb-3 relative overflow-hidden">
