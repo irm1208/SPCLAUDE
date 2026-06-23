@@ -437,6 +437,7 @@ function PackingSlipsTab({
   const cfg = useDispatchCfg();
   // Onboarding help (banner + per-step "i" icons) is for newcomers only; admin stays unchanged.
   const showHelp = cfg.role !== "admin";
+  const [guideOpen, setGuideOpen] = useState(false);
   const [scopeType, setScopeType] = useState<"reshipper" | "country" | "all" | "">("");
   const [scopeId, setScopeId] = useState("");
   const [scopeOptions, setScopeOptions] = useState<ScopeOptions | null>(null);
@@ -781,11 +782,21 @@ function PackingSlipsTab({
     <div className="space-y-5">
       {/* ── Getting-started guide (shown to reshippers/organisers new to the platform) ── */}
       {cfg.role !== "admin" && (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-start gap-2.5">
-            <Lightbulb className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-            <div className="space-y-2 text-sm">
-              <p className="font-semibold text-foreground">How dispatch works</p>
+        <div className="rounded-xl border border-primary/20 bg-primary/5">
+          <button
+            type="button"
+            onClick={() => setGuideOpen(o => !o)}
+            className="w-full flex items-center gap-2.5 p-4 text-left"
+            aria-expanded={guideOpen}
+          >
+            <Lightbulb className="w-5 h-5 text-primary shrink-0" />
+            <p className="font-semibold text-foreground text-sm flex-1">How dispatch works</p>
+            {guideOpen
+              ? <ChevronUp className="w-4 h-4 text-primary shrink-0" />
+              : <ChevronDown className="w-4 h-4 text-primary shrink-0" />}
+          </button>
+          {guideOpen && (
+            <div className="px-4 pb-4 pl-[2.875rem] space-y-2 text-sm">
               <p className="text-muted-foreground leading-relaxed">
                 This page turns parcels that have arrived to you into ready-to-post orders for your members. Work through it top to bottom:
               </p>
@@ -807,7 +818,7 @@ function PackingSlipsTab({
                 Tap any <Info className="inline w-3.5 h-3.5 -mt-0.5" /> icon for more detail on that step.
               </p>
             </div>
-          </div>
+          )}
         </div>
       )}
 
