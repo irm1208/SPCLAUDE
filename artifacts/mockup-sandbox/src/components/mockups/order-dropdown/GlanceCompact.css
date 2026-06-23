@@ -1,0 +1,76 @@
+.glance-compact-root {
+  container-type: inline-size;
+}
+
+.glance-compact-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.2fr) minmax(200px, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+}
+
+@container (max-width: 900px) {
+  .glance-compact-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 12px;
+  }
+}
+
+.glance-progress-track {
+  height: 4px;
+  background: var(--t-border);
+  border-radius: 2px;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.glance-progress-fill {
+  background: var(--t-blue);
+  height: 100%;
+}
+
+.glance-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--t-surface2);
+  color: var(--t-subtle);
+  border: 1px solid var(--t-border);
+}
+
+.glance-btn:hover {
+  background: var(--t-border);
+  color: var(--t-text);
+}
+
+.glance-btn-primary {
+  background: rgba(45,107,204,0.06);
+  color: var(--t-blue);
+  border: 1px solid rgba(45,107,204,0.2);
+}
+
+.glance-btn-primary:hover {
+  background: rgba(45,107,204,0.12);
+  color: var(--t-blue-deep);
+}
+
+.glance-tracking-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--t-surface2);
+  border: 1px solid var(--t-border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--t-text);
+}

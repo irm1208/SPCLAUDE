@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID, timingSafeEqual, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
@@ -339,12 +339,10 @@ router.post("/admin/fs3-verify", (req: any, res: any): void => {
 // Query params: groupBuyId, country, reshipper, status, paymentStatus, paymentMethod,
 //   routingType, batchLocked, balanceDueReview, search, dateFrom, dateTo,
 //   page (1-based, default 1), pageSize (default 100, max 500)
-router.get("/admin/orders", async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-
+export async function adminOrdersHandler(req: Request, res: Response): Promise<void> {
   try {
   const {
-    groupBuyId, country, reshipper,
+    groupBuyId, country, reshipper, scopeType: scopeTypeQ,
     status: statusQ, paymentStatus: payStatusQ, paymentMethod: payMethodQ,
     routingType: routingTypeQ, batchLocked: batchLockedQ, balanceDueReview: balanceDueReviewQ,
     search: searchQ, dateFrom: dateFromQ, dateTo: dateToQ,
@@ -443,7 +441,19 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   }
 
   // If filtering by reshipper: match via country leg assignments OR a direct reshipperUsername
-  if (reshipper) {
+  if (reshipper && scopeTypeQ === "reshipper") {
+    // Reshipper-scoped surfaces (own dispatch view): strict ownership only —
+    // orders attributed to or personally dispatched by this reshipper. Country
+    // leg matching is intentionally NOT used here, so a reshipper never sees
+    // orders other reshippers own/dispatched within the same leg.
+    const normReshipper = reshipper.replace(/^@/, "").toLowerCase();
+    conditions.push(
+      or(
+        sql`lower(replace(coalesce(${ordersTable.reshipperUsername}, ''), '@', '')) = ${normReshipper}`,
+        sql`lower(replace(coalesce(${ordersTable.dispatchedByReshipper}, ''), '@', '')) = ${normReshipper}`,
+      ),
+    );
+  } else if (reshipper) {
     const assignments = await db
       .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
       .from(gbReshippersTable)
@@ -699,6 +709,11 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     console.error("[admin] GET /admin/orders error:", err);
     if (!res.headersSent) res.status(500).json({ error: "Failed to load orders" });
   }
+}
+
+router.get("/admin/orders", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  await adminOrdersHandler(req, res);
 });
 
 // ─── GET /api/admin/orders/ids — return all matching IDs (for select-all across pages) ─

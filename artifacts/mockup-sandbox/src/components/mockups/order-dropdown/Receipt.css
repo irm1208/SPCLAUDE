@@ -1,0 +1,94 @@
+.sp-receipt {
+  --paper:    #FBF7EE;
+  --paper-2:  #F4EEE0;
+  --ink:      #2B2620;
+  --ink-soft: #6B6356;
+  --ink-faint:#9A9182;
+  --rule:     #D8CFBC;
+  --thermal:  #1A1713;
+  --stamp:    #B3402F;
+  --stamp-bg: rgba(179, 64, 47, 0.07);
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+
+.sp-receipt .leader {
+  flex: 1;
+  margin: 0 6px;
+  border-bottom: 1px dotted var(--ink-faint);
+  transform: translateY(-3px);
+  min-width: 12px;
+}
+
+.sp-receipt-perf-top,
+.sp-receipt-perf-bottom {
+  height: 12px;
+  background-repeat: repeat-x;
+  background-size: 16px 12px;
+}
+.sp-receipt-perf-top {
+  background-image:
+    radial-gradient(circle at 8px 14px, transparent 7px, var(--paper) 7px);
+}
+.sp-receipt-perf-bottom {
+  background-image:
+    radial-gradient(circle at 8px -2px, transparent 7px, var(--paper) 7px);
+}
+
+.sp-receipt-tear {
+  height: 14px;
+  background:
+    linear-gradient(135deg, var(--paper) 50%, transparent 50%) repeat-x,
+    linear-gradient(-135deg, var(--paper) 50%, transparent 50%) repeat-x;
+  background-size: 14px 14px;
+  background-position: top;
+  filter: drop-shadow(0 2px 1px rgba(43, 38, 32, 0.08));
+}
+
+.sp-receipt-paper {
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(43, 38, 32, 0.012) 0px,
+      rgba(43, 38, 32, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  box-shadow:
+    0 18px 40px -12px rgba(43, 38, 32, 0.35),
+    0 2px 6px rgba(43, 38, 32, 0.12);
+}
+
+.sp-receipt-barcode {
+  height: 38px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--ink) 0px, var(--ink) 1px,
+    transparent 1px, transparent 3px,
+    var(--ink) 3px, var(--ink) 5px,
+    transparent 5px, transparent 6px,
+    var(--ink) 6px, var(--ink) 9px,
+    transparent 9px, transparent 11px,
+    var(--ink) 11px, var(--ink) 12px,
+    transparent 12px, transparent 14px
+  );
+}
+
+.sp-receipt-stamp {
+  border: 2px solid var(--stamp);
+  color: var(--stamp);
+  transform: rotate(-9deg);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(179, 64, 47, 0.25);
+  opacity: 0.92;
+}
+
+.sp-receipt-qr {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, var(--ink) 25%, transparent 25%, transparent 75%, var(--ink) 75%),
+    linear-gradient(45deg, var(--ink) 25%, transparent 25%, transparent 75%, var(--ink) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  opacity: 0.18;
+}

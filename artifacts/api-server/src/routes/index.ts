@@ -49,6 +49,7 @@ import ticketsRouter from "./tickets";
 import adminAiChatbotRouter from "./admin-ai-chatbot";
 import adminBtChatRouter from "./admin-bt-chat";
 import adminDispatchRouter from "./admin-dispatch";
+import { reshipperDispatchRouter, organiserDispatchRouter } from "./dispatch-scoped";
 import wholesaleSharesRouter from "./wholesale-shares";
 
 const router: IRouter = Router();
@@ -130,6 +131,8 @@ router.use(ticketsRouter);
 router.use(adminAiChatbotRouter);
 router.use(adminBtChatRouter);
 router.use(adminDispatchRouter);
+router.use(reshipperDispatchRouter);
+router.use(organiserDispatchRouter);
 router.use(wholesaleSharesRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────

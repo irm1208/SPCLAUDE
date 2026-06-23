@@ -7,7 +7,8 @@
     "dev": "NODE_ENV=development tsx ./src/index.ts",
     "build": "pnpm --filter @workspace/db run push-force && tsx ./build.ts",
     "build:compile": "tsx ./build.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/genai": "workspace:*",
@@ -36,6 +37,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
     "esbuild": "^0.27.3",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "vitest": "^4.1.9"
   }
 }

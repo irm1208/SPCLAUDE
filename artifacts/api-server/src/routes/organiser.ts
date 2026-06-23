@@ -73,7 +73,7 @@ function escapeHtml(str: string): string {
  * @param req Express request (with req.organiser set)
  * @param gbId The GB id param from the route (if filtering by specific GB)
  */
-function gbOwner(req: Request, gbId?: string | null) {
+export function gbOwner(req: Request, gbId?: string | null) {
   if (req.organiser?.isAdmin) {
     const targetId = gbId ?? req.organiser.adminGbId;
     return targetId ? eq(groupBuysTable.id, targetId) : sql`true`;

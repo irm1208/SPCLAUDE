@@ -8,9 +8,10 @@ import {
   LayoutDashboard, ShoppingBag, Settings, ExternalLink, Copy,
   Search, Filter, Wallet, QrCode, FileDown, BarChart3, MapPin,
   Download, ImageOff, Inbox, Bell, Users, FileText, Box,
-  CheckCircle2, RotateCcw,
+  CheckCircle2, RotateCcw, Home, Hash, ChevronRight, Info,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { useAccount } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES } from "@/data/countries";
@@ -102,6 +103,7 @@ interface ROrder {
   shippingCountry?: string | null;
   trackingNumber: string | null;
   paymentTxHash: string | null;
+  paymentCryptoCurrency?: string | null;
   createdAt: string;
   paymentConfirmedAt?: string | null;
   lineItems?: { productName: string; quantity: number; lineTotal: number }[];
@@ -123,6 +125,25 @@ interface RParcel {
   items: { name: string; qty: number }[];
   cachedEvents: { date: string; status: string; location: string }[];
   createdAt: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Build a block-explorer URL for a payment tx hash. Returns null for non-on-chain
+// references (manual fiat rails like "fiat:revolut"/"fiat:paypal", or empty).
+// AnonPay hashes ("anonpay:<id>") link to the Trocador tracking page.
+function txExplorerUrl(txHash: string | null | undefined, currency?: string | null): string | null {
+  const h = (txHash ?? "").trim();
+  if (!h || h.startsWith("fiat:")) return null;
+  if (h.startsWith("anonpay:")) {
+    return `https://trocador.app/anonpay/${encodeURIComponent(h.slice("anonpay:".length))}`;
+  }
+  const cur = (currency ?? "").toUpperCase().trim();
+  // BTC hashes are 64 hex chars with no 0x prefix; ETH/ERC-20 hashes start with 0x.
+  if (cur === "BTC" || (!h.startsWith("0x") && /^[0-9a-fA-F]{64}$/.test(h))) {
+    return `https://blockstream.info/tx/${h}`;
+  }
+  return `https://etherscan.io/tx/${h}`;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -172,6 +193,14 @@ const PARCEL_STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   exception:        { color: "#DC2626", bg: "rgba(220,38,38,0.1)" },
   expired:          { color: "#64748B", bg: "rgba(100,116,139,0.1)" },
 };
+
+// ─── Order workspace facets (Split Workspace inline view) ──────────────────────
+
+const SW_FACETS = [
+  { id: "order", label: "Order Details", icon: Package },
+  { id: "qr", label: "Courier QR", icon: QrCode },
+] as const;
+type Facet = typeof SW_FACETS[number]["id"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -401,7 +430,6 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
           </button>
         )}
       </div>
-
       {productRows.length > 0 ? (
         <>
           {/* Stats strip */}
@@ -508,13 +536,10 @@ interface QrViewerOrder {
 
 function stripAt(u: string) { return u.replace(/^@/, ""); }
 
-function QrLightbox({ dataUrl, label, username, onClose }: { dataUrl: string; label: string; username: string; onClose: () => void }) {
-  const download = () => {
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `${stripAt(username)}-${label.replace(/\s+/g, "-")}-qr.png`;
-    a.click();
-  };
+function QrLightbox({ dataUrl, label, username, code, posted, saving, onTogglePosted, onClose }: {
+  dataUrl: string; label: string; username: string; code: string;
+  posted: boolean; saving: boolean; onTogglePosted: () => void; onClose: () => void;
+}) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -522,28 +547,32 @@ function QrLightbox({ dataUrl, label, username, onClose }: { dataUrl: string; la
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-sm rounded-2xl overflow-hidden bg-white shadow-2xl"
+        className="relative w-full max-w-sm max-h-[90vh] flex flex-col rounded-2xl overflow-hidden bg-white shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#e2e8f0" }}>
-          <div>
-            <p className="text-xs font-bold" style={{ color: QR_NAVY }}>@{stripAt(username)}</p>
-            <p className="text-[10px]" style={{ color: "#94a3b8" }}>{label}</p>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: "#e2e8f0" }}>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate" style={{ color: QR_NAVY }}>@{stripAt(username)}</p>
+            <p className="text-[11px] truncate" style={{ color: "#94a3b8" }}>{code} · {label}</p>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.06)" }}>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(0,0,0,0.06)" }}>
             <X className="w-3.5 h-3.5" style={{ color: "#64748b" }} />
           </button>
         </div>
-        <div className="p-4 flex items-center justify-center bg-white">
-          <img src={dataUrl} alt={`${label} QR`} className="w-full h-auto object-contain rounded-xl" style={{ maxHeight: "70vh" }} />
+        <div className="flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center bg-white">
+          <img src={dataUrl} alt={`${label} QR`} className="w-full h-auto object-contain rounded-xl" />
         </div>
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 shrink-0">
           <button
-            onClick={download}
-            className="w-full flex items-center justify-center gap-1.5 h-9 rounded-xl text-[12px] font-bold"
-            style={{ background: `linear-gradient(135deg, ${QR_NAVY} 0%, ${QR_BLUE} 100%)`, color: "#fff" }}
+            onClick={onTogglePosted}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-1.5 h-10 rounded-xl text-[13px] font-bold transition-all hover:opacity-90 disabled:opacity-60"
+            style={posted
+              ? { background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }
+              : { background: `linear-gradient(135deg, ${QR_NAVY} 0%, ${QR_BLUE} 100%)`, color: "#fff" }}
           >
-            <Download className="w-3.5 h-3.5" /> Download
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : posted ? <RotateCcw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {posted ? "Posted" : "Mark as Posted"}
           </button>
         </div>
       </div>
@@ -568,10 +597,13 @@ function QrOrderCard({ order, gbId, onTogglePosted }: { order: QrViewerOrder; gb
   }
   const hasAny = qrImages.length > 0;
 
-  async function handleToggle(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function togglePosted() {
     setSaving(true);
     try { await onTogglePosted(order.id, !order.qrPosted); } finally { setSaving(false); }
+  }
+  async function handleToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    await togglePosted();
   }
 
   return (
@@ -664,6 +696,10 @@ function QrOrderCard({ order, gbId, onTogglePosted }: { order: QrViewerOrder; gb
           dataUrl={lightbox.dataUrl}
           label={lightbox.label}
           username={order.telegramUsername}
+          code={order.code}
+          posted={order.qrPosted}
+          saving={saving}
+          onTogglePosted={togglePosted}
           onClose={() => setLightbox(null)}
         />
       )}
@@ -925,6 +961,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const [filterPayDateFrom, setFilterPayDateFrom] = useState("");
   const [filterPayDateTo, setFilterPayDateTo] = useState("");
   const [sortBy, setSortBy] = useState<"order_desc" | "order_asc" | "pay_desc" | "pay_asc">("order_desc");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<Partial<ROrder>>({});
@@ -937,6 +974,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const [msg, setMsg] = useState<Record<string, string>>({});
   const [reshQrSaving, setReshQrSaving] = useState<Record<string, boolean>>({});
   const [reshQrMsg, setReshQrMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [activeFacet, setActiveFacet] = useState<Facet>("order");
 
   const filtered = useMemo(() => {
     let list = orders;
@@ -993,6 +1031,9 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const toggleExpand = async (id: string) => {
     if (expandedId === id) { setExpandedId(null); return; }
     setExpandedId(id);
+    setActiveFacet("order");
+    setEditingId(null);
+    setTrackingEditId(null);
     await loadDetail(id);
   };
 
@@ -1108,77 +1149,132 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search username or code…"
-            className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
-            style={{ ...inputStyle }}
-          />
-        </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
-          <option value="all">All statuses</option>
-          {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
-          className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
-          <option value="all">All payments</option>
-          {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABEL[s] ?? s}</option>)}
-        </select>
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Order date:</span>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
-          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
-          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        {(filterDateFrom || filterDateTo) && (
-          <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
-            className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
-            style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
-            <X className="w-2.5 h-2.5" /> Clear
-          </button>
-        )}
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Payment date:</span>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
-          <input type="date" value={filterPayDateFrom} onChange={e => setFilterPayDateFrom(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
-          <input type="date" value={filterPayDateTo} onChange={e => setFilterPayDateTo(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        {(filterPayDateFrom || filterPayDateTo) && (
-          <button onClick={() => { setFilterPayDateFrom(""); setFilterPayDateTo(""); }}
-            className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
-            style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
-            <X className="w-2.5 h-2.5" /> Clear
-          </button>
-        )}
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Sort:</span>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
-          className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
-          <option value="order_desc">Newest order first</option>
-          <option value="order_asc">Oldest order first</option>
-          <option value="pay_desc">Most recent paid first</option>
-          <option value="pay_asc">First paid first</option>
-        </select>
-      </div>
+      {(() => {
+        const activeFilterCount =
+          (filterStatus !== "all" ? 1 : 0) +
+          (filterPayment !== "all" ? 1 : 0) +
+          (filterDateFrom || filterDateTo ? 1 : 0) +
+          (filterPayDateFrom || filterPayDateTo ? 1 : 0) +
+          (sortBy !== "order_desc" ? 1 : 0);
+        const clearAll = () => {
+          setFilterStatus("all"); setFilterPayment("all");
+          setFilterDateFrom(""); setFilterDateTo("");
+          setFilterPayDateFrom(""); setFilterPayDateTo("");
+          setSortBy("order_desc");
+        };
+        return (
+          <>
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1 min-w-[140px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
+                <input
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search username or code…"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
+                  style={{ ...inputStyle }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(o => !o)}
+                className="h-9 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0"
+                style={{
+                  background: filtersOpen || activeFilterCount > 0 ? "var(--t-blue)" : "var(--t-surface2)",
+                  color: filtersOpen || activeFilterCount > 0 ? "#fff" : "var(--t-text)",
+                  border: "1px solid var(--t-border)",
+                }}>
+                <Filter className="w-3.5 h-3.5" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold"
+                    style={{ background: "rgba(255,255,255,0.25)", color: "#fff" }}>
+                    {activeFilterCount}
+                  </span>
+                )}
+                {filtersOpen
+                  ? <ChevronUp className="w-3.5 h-3.5" />
+                  : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            {filtersOpen && (
+              <div className="rounded-xl p-3 space-y-3"
+                style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
+                    <option value="all">All statuses</option>
+                    {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
+                    className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
+                    <option value="all">All payments</option>
+                    {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABEL[s] ?? s}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Order date:</span>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
+                    <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
+                    <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  {(filterDateFrom || filterDateTo) && (
+                    <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Payment date:</span>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
+                    <input type="date" value={filterPayDateFrom} onChange={e => setFilterPayDateFrom(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
+                    <input type="date" value={filterPayDateTo} onChange={e => setFilterPayDateTo(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  {(filterPayDateFrom || filterPayDateTo) && (
+                    <button onClick={() => { setFilterPayDateFrom(""); setFilterPayDateTo(""); }}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap items-center justify-between">
+                  <div className="flex gap-2 flex-wrap items-center">
+                    <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Sort:</span>
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
+                      <option value="order_desc">Newest order first</option>
+                      <option value="order_asc">Oldest order first</option>
+                      <option value="pay_desc">Most recent paid first</option>
+                      <option value="pay_asc">First paid first</option>
+                    </select>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearAll}
+                      className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear all filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{filtered.length} of {orders.length} orders</p>
         <button
@@ -1189,7 +1285,6 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
           <FileDown className="w-3 h-3" /> Export CSV
         </button>
       </div>
-
       {filtered.length === 0 ? (
         <div className="text-center py-12" style={{ color: "var(--t-subtle)" }}>No orders found</div>
       ) : (
@@ -1239,269 +1334,422 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                       : <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--t-muted)" }} />
                   }
                 </div>
-
-                {/* Expanded detail */}
+                {/* Expanded detail — Split Workspace (master-detail) */}
                 <AnimatePresence initial={false}>
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                      <div className="border-t px-4 py-4 space-y-4" style={{ borderColor: "var(--t-border)" }}>
+                      <div className="border-t flex flex-col md:flex-row md:h-[480px]" style={{ borderColor: "var(--t-border)" }}>
 
-                        {/* Line items */}
-                        {detail?.lineItems && detail.lineItems.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--t-subtle)" }}>Items</p>
-                            <div className="space-y-1.5">
-                              {detail.lineItems.map((item, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                  <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
-                                    style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}</span>
-                                  <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--t-text)" }}>{item.productName}</span>
-                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
-                                    {sym}{fmtCurrency(item.lineTotal)}
-                                  </span>
-                                </div>
-                              ))}
+                        {/* RAIL: order identity + facet nav */}
+                        <div className="shrink-0 md:w-[248px] lg:w-[288px] border-b md:border-b-0 md:border-r flex flex-col"
+                          style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                          <div className="px-4 pt-3.5 pb-3 border-b" style={{ borderColor: "var(--t-border)" }}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold" style={{ color: "var(--t-muted)" }}>{order.code}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ color: sc.color, background: sc.bg }}>{order.status}</span>
+                            </div>
+                            <p className="text-sm font-bold mt-1.5 truncate" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-sm font-extrabold tabular-nums" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(order.grandTotal)}</span>
+                              <span className="text-[10px] font-semibold" style={{ color: PAYMENT_COLOR[order.paymentStatus] ?? "#94A3B8" }}>{PAYMENT_LABEL[order.paymentStatus] ?? order.paymentStatus}</span>
                             </div>
                           </div>
-                        )}
+                          <nav className="flex md:flex-col gap-1 p-2 overflow-x-auto md:overflow-y-auto md:flex-1">
+                            {SW_FACETS.map(f => {
+                              const FIcon = f.icon;
+                              const active = activeFacet === f.id;
+                              return (
+                                <button key={f.id} onClick={() => setActiveFacet(f.id)}
+                                  className="shrink-0 md:w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors"
+                                  style={active
+                                    ? { background: "var(--t-blue-deep)", color: "#FFFFFF" }
+                                    : { background: "transparent", color: "var(--t-muted)" }}>
+                                  <FIcon className="w-3.5 h-3.5 shrink-0" />
+                                  <span>{f.label}</span>
+                                  <ChevronRight className="w-3 h-3 ml-auto shrink-0 hidden md:block" style={{ opacity: active ? 0.85 : 0.3 }} />
+                                </button>
+                              );
+                            })}
+                          </nav>
+                        </div>
 
-                        {/* Transaction ID */}
-                        {detail?.paymentTxHash && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
-                            <p className="font-mono text-xs break-all" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
-                          </div>
-                        )}
+                        {/* DETAIL pane */}
+                        <div className="flex-1 min-w-0 overflow-y-auto" style={{ background: "var(--t-surface)" }}>
+                          {loadingDetail === order.id && !detail ? (
+                            <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-subtle)" }} /></div>
+                          ) : (
+                            <div className="p-4 space-y-3">
+                              {msg[order.id] && (
+                                <p className="text-xs font-semibold" style={{ color: msg[order.id].includes("✓") ? "#16A34A" : "#DC2626" }}>{msg[order.id]}</p>
+                              )}
 
-                        {/* Tracking section */}
-                        {(() => {
-                          const det = orderDetails[order.id] ?? order;
-                          const currentNums: string[] = det.trackingNumbers?.length
-                            ? det.trackingNumbers
-                            : det.trackingNumber ? [det.trackingNumber] : [];
-                          const isEditingTracking = trackingEditId === order.id;
-                          return (
-                            <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.18)" }}>
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "var(--t-blue)" }}>
-                                  <MapPin className="w-2.5 h-2.5" /> Tracking
-                                </p>
-                                {!isEditingTracking && (
-                                  <button
-                                    onClick={() => startTrackingEdit(order)}
-                                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg"
-                                    style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}>
-                                    <Pencil className="w-2.5 h-2.5" />
-                                    {currentNums.length ? "Edit" : "Add"}
-                                  </button>
-                                )}
-                              </div>
-                              {isEditingTracking ? (
+                              {/* ITEMS */}
+                              {activeFacet === "order" && (
                                 <div className="space-y-2">
-                                  <div className="space-y-1">
-                                    {(trackingNums.length ? trackingNums : [""]).map((v, i, arr) => (
-                                      <div key={i} className="flex gap-1">
-                                        <input
-                                          value={v}
-                                          onChange={e => { const n = [...arr]; n[i] = e.target.value; setTrackingNums(n); }}
-                                          placeholder={i === 0 ? "e.g. AB123456789GB" : "Additional tracking…"}
-                                          className={inputCls("text-xs font-mono")}
-                                          style={inputStyle}
-                                          autoFocus={i === 0}
-                                        />
-                                        {arr.length > 1 && (
-                                          <button type="button"
-                                            className="h-8 w-7 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
-                                            style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)" }}
-                                            onClick={() => setTrackingNums(arr.filter((_, j) => j !== i))}>
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    ))}
-                                    {trackingNums.length < 10 && (
-                                      <button type="button"
-                                        className="flex items-center gap-1 text-[10px] font-semibold hover:underline"
-                                        style={{ color: "var(--t-accent)" }}
-                                        onClick={() => setTrackingNums(prev => [...prev, ""])}>
-                                        <Plus className="w-2.5 h-2.5" /> Add tracking number
-                                      </button>
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <Package className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
+                                      <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Order Items</h4>
+                                    </div>
+                                    {detail?.lineItems && detail.lineItems.length > 0 && (
+                                      <span className="text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                                        {detail.lineItems.reduce((s, it) => s + Number(it.quantity ?? 0), 0)} items
+                                      </span>
                                     )}
                                   </div>
-                                  <div className="flex gap-2">
-                                    <button onClick={() => saveTracking(order.id)} disabled={savingTracking === order.id}
-                                      className="h-7 px-3 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
-                                      style={{ background: "var(--t-blue-deep)" }}>
-                                      {savingTracking === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                                      Save
-                                    </button>
-                                    <button onClick={() => setTrackingEditId(null)}
-                                      className="h-7 px-3 rounded-lg text-xs font-semibold"
-                                      style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
-                                      Cancel
-                                    </button>
-                                  </div>
+                                  {detail?.lineItems && detail.lineItems.length > 0 ? (
+                                    <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                      <div className="flex items-center gap-2 px-3 py-2 text-[9px] font-bold uppercase tracking-wider" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: "1px solid var(--t-border)" }}>
+                                        <span className="w-9 shrink-0 text-center">Qty</span>
+                                        <span className="flex-1">Item</span>
+                                        <span className="text-right">Amount</span>
+                                      </div>
+                                      {detail.lineItems.map((item, i) => {
+                                        const qty = Number(item.quantity ?? 0);
+                                        const total = Number(item.lineTotal ?? 0);
+                                        const unit = qty > 0 ? total / qty : total;
+                                        return (
+                                          <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
+                                            <span className="w-9 h-6 shrink-0 rounded-md flex items-center justify-center text-[11px] font-bold tabular-nums" style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}>{qty}×</span>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-[11px] font-semibold leading-snug break-words" style={{ color: "var(--t-text)" }}>{item.productName}</p>
+                                              {qty > 1 && <p className="text-[10px] tabular-nums mt-0.5" style={{ color: "var(--t-subtle)" }}>{sym}{fmtCurrency(unit)} each</p>}
+                                            </div>
+                                            <span className="text-[11px] font-bold tabular-nums shrink-0" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(total)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                      <div className="px-3 py-2.5 flex items-center justify-between" style={{ background: "var(--t-surface2)", borderTop: "1px solid var(--t-border)" }}>
+                                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Subtotal</span>
+                                        <span className="text-sm font-extrabold tabular-nums" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No items on this order.</p>
+                                  )}
                                 </div>
-                              ) : currentNums.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {currentNums.map((tn, i) => (
-                                    <span key={i} className="font-mono text-[11px] px-2 py-0.5 rounded-md"
-                                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.2)" }}>
-                                      {tn}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No tracking added yet</p>
                               )}
-                            </div>
-                          );
-                        })()}
 
-                        {/* Edit form */}
-                        {isEditing ? (
-                          <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Edit Order</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              {[
-                                { key: "shippingName", label: "Name" },
-                                { key: "shippingAddress", label: "Address" },
-                                { key: "shippingCity", label: "City" },
-                                { key: "shippingPostcode", label: "Postcode" },
-                              ].map(f => (
-                                <div key={f.key} className={f.key === "shippingAddress" ? "col-span-2" : ""}>
-                                  <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>{f.label}</label>
-                                  <input
-                                    value={(editFields as Record<string, string>)[f.key] ?? ""}
-                                    onChange={e => setEditFields(prev => ({ ...prev, [f.key]: e.target.value }))}
-                                    className={inputCls("text-xs")}
-                                    style={inputStyle}
-                                  />
-                                </div>
-                              ))}
-                              <div className="col-span-2">
-                                <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>Tracking Numbers</label>
-                                <div className="space-y-1">
-                                  {((editFields.trackingNumbers as string[] | undefined)?.length ? editFields.trackingNumbers as string[] : [""]).map((v, i, arr) => (
-                                    <div key={i} className="flex gap-1">
-                                      <input
-                                        value={v}
-                                        onChange={e => { const n = [...arr]; n[i] = e.target.value; setEditFields(prev => ({ ...prev, trackingNumbers: n })); }}
-                                        placeholder={i === 0 ? "e.g. AB123456789GB" : "Additional tracking…"}
-                                        className={inputCls("text-xs font-mono")}
-                                        style={inputStyle}
-                                      />
-                                      {arr.length > 1 && (
-                                        <button type="button" className="h-8 w-7 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
-                                          style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)" }}
-                                          onClick={() => setEditFields(prev => ({ ...prev, trackingNumbers: arr.filter((_, j) => j !== i) }))}>
-                                          <X className="w-3 h-3" />
+                              {/* TRACKING */}
+                              {activeFacet === "order" && (() => {
+                                const det = orderDetails[order.id] ?? order;
+                                const currentNums: string[] = det.trackingNumbers?.length
+                                  ? det.trackingNumbers
+                                  : det.trackingNumber ? [det.trackingNumber] : [];
+                                const isEditingTracking = trackingEditId === order.id;
+                                return (
+                                  <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.18)" }}>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "var(--t-blue)" }}>
+                                        <MapPin className="w-2.5 h-2.5" /> Tracking
+                                      </p>
+                                      {!isEditingTracking && (
+                                        <button
+                                          onClick={() => startTrackingEdit(order)}
+                                          className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg"
+                                          style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}>
+                                          <Pencil className="w-2.5 h-2.5" />
+                                          {currentNums.length ? "Edit" : "Add"}
                                         </button>
                                       )}
                                     </div>
-                                  ))}
-                                  {((editFields.trackingNumbers as string[] | undefined) ?? []).length < 10 && (
-                                    <button type="button" className="flex items-center gap-1 text-[10px] font-semibold hover:underline"
-                                      style={{ color: "var(--t-accent)" }}
-                                      onClick={() => setEditFields(prev => ({ ...prev, trackingNumbers: [...((prev.trackingNumbers as string[] | undefined) ?? []), ""] }))}>
-                                      <Plus className="w-2.5 h-2.5" /> Add tracking number
-                                    </button>
+                                    {isEditingTracking ? (
+                                      <div className="space-y-2">
+                                        <div className="space-y-1">
+                                          {(trackingNums.length ? trackingNums : [""]).map((v, i, arr) => (
+                                            <div key={i} className="flex gap-1">
+                                              <input
+                                                value={v}
+                                                onChange={e => { const n = [...arr]; n[i] = e.target.value; setTrackingNums(n); }}
+                                                placeholder={i === 0 ? "e.g. AB123456789GB" : "Additional tracking…"}
+                                                className={inputCls("text-xs font-mono")}
+                                                style={inputStyle}
+                                                autoFocus={i === 0}
+                                              />
+                                              {arr.length > 1 && (
+                                                <button type="button"
+                                                  className="h-8 w-7 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
+                                                  style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)" }}
+                                                  onClick={() => setTrackingNums(arr.filter((_, j) => j !== i))}>
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              )}
+                                            </div>
+                                          ))}
+                                          {trackingNums.length < 10 && (
+                                            <button type="button"
+                                              className="flex items-center gap-1 text-[10px] font-semibold hover:underline"
+                                              style={{ color: "var(--t-accent)" }}
+                                              onClick={() => setTrackingNums(prev => [...prev, ""])}>
+                                              <Plus className="w-2.5 h-2.5" /> Add tracking number
+                                            </button>
+                                          )}
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <button onClick={() => saveTracking(order.id)} disabled={savingTracking === order.id}
+                                            className="h-7 px-3 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
+                                            style={{ background: "var(--t-blue-deep)" }}>
+                                            {savingTracking === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                            Save
+                                          </button>
+                                          <button onClick={() => setTrackingEditId(null)}
+                                            className="h-7 px-3 rounded-lg text-xs font-semibold"
+                                            style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : currentNums.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {currentNums.map((tn, i) => (
+                                          <span key={i} className="font-mono text-[11px] px-2 py-0.5 rounded-md"
+                                            style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.2)" }}>
+                                            {tn}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No tracking added yet</p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              {/* COURIER QR */}
+                              {activeFacet === "qr" && (() => {
+                                const det = orderDetails[order.id] ?? order;
+                                const couriers = [
+                                  { id: "inpost" as const, label: "InPost", existing: det.inpostQrCode },
+                                  { id: "royal-mail" as const, label: "Royal Mail", existing: det.royalMailQrCode },
+                                ];
+                                const uploadedCount = couriers.filter(c => c.existing).length;
+                                return (
+                                  <div className="space-y-2.5">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)" }}>
+                                        <QrCode className="w-3.5 h-3.5" style={{ color: "#7C3AED" }} />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h4 className="text-[11px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--t-text)" }}>Courier QR Codes</h4>
+                                        <p className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--t-subtle)" }}>Upload the courier label QR for this parcel</p>
+                                      </div>
+                                      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums shrink-0" style={{ background: "rgba(124,58,237,0.1)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>{uploadedCount}/{couriers.length}</span>
+                                    </div>
+
+                                    {/* Courier cards */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                      {couriers.map(c => {
+                                        const key = `${order.id}-${c.id}`;
+                                        const isUploading = reshQrSaving[key];
+                                        const qrMsg = reshQrMsg[key];
+                                        const has = !!c.existing;
+                                        return (
+                                          <div key={c.id} className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <Truck className="w-3.5 h-3.5 shrink-0" style={{ color: "#7C3AED" }} />
+                                                <span className="text-xs font-bold truncate" style={{ color: "var(--t-text)" }}>{c.label}</span>
+                                              </div>
+                                              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 flex items-center gap-1"
+                                                style={has
+                                                  ? { background: "rgba(22,163,74,0.1)", color: "#16A34A" }
+                                                  : { background: "var(--t-surface2)", color: "var(--t-subtle)" }}>
+                                                {has ? <Check className="w-2.5 h-2.5" /> : null}{has ? "Ready" : "Missing"}
+                                              </span>
+                                            </div>
+
+                                            {has ? (
+                                              <div className="flex flex-col items-center gap-2">
+                                                <a href={c.existing!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden" style={{ border: "1px solid rgba(124,58,237,0.25)" }}>
+                                                  <img src={c.existing!} alt={`${c.label} QR`} className="w-24 h-24 object-contain bg-white p-1.5" />
+                                                </a>
+                                                <div className="flex items-center gap-1.5 w-full">
+                                                  <a href={c.existing!} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 h-7 rounded-lg flex items-center justify-center gap-1 text-[10px] font-semibold"
+                                                    style={{ background: "rgba(124,58,237,0.08)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>
+                                                    <ExternalLink className="w-2.5 h-2.5" /> View
+                                                  </a>
+                                                  <button disabled={isUploading} onClick={() => uploadReshQr(order.id, c.id, null)}
+                                                    className="h-7 px-2.5 rounded-lg flex items-center justify-center gap-1 text-[10px] font-semibold disabled:opacity-50"
+                                                    style={{ background: "rgba(220,38,38,0.06)", color: "#DC2626", border: "1px solid rgba(220,38,38,0.2)" }}>
+                                                    {isUploading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <label className="flex flex-col items-center justify-center gap-1 py-5 rounded-lg cursor-pointer text-center"
+                                                style={{ border: "1.5px dashed rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.04)", opacity: isUploading ? 0.6 : 1 }}>
+                                                {isUploading ? <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#7C3AED" }} /> : <Upload className="w-5 h-5" style={{ color: "#7C3AED" }} />}
+                                                <span className="text-[11px] font-bold" style={{ color: "#7C3AED" }}>{isUploading ? "Uploading…" : "Upload QR"}</span>
+                                                <span className="text-[9px]" style={{ color: "var(--t-subtle)" }}>PNG, JPG or PDF</span>
+                                                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden" disabled={isUploading}
+                                                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, c.id, f); e.target.value = ""; }} />
+                                              </label>
+                                            )}
+
+                                            {qrMsg?.text && (
+                                              <p className="text-[10px] font-semibold text-center" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</p>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* DELIVERY ADDRESS */}
+                              {activeFacet === "order" && (
+                                isEditing ? (
+                                  <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                    <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Edit Order</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[
+                                        { key: "shippingName", label: "Name" },
+                                        { key: "shippingAddress", label: "Address" },
+                                        { key: "shippingCity", label: "City" },
+                                        { key: "shippingPostcode", label: "Postcode" },
+                                      ].map(f => (
+                                        <div key={f.key} className={f.key === "shippingAddress" ? "col-span-2" : ""}>
+                                          <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>{f.label}</label>
+                                          <input
+                                            value={(editFields as Record<string, string>)[f.key] ?? ""}
+                                            onChange={e => setEditFields(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                            className={inputCls("text-xs")}
+                                            style={inputStyle}
+                                          />
+                                        </div>
+                                      ))}
+                                      <div className="col-span-2">
+                                        <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>Tracking Numbers</label>
+                                        <div className="space-y-1">
+                                          {((editFields.trackingNumbers as string[] | undefined)?.length ? editFields.trackingNumbers as string[] : [""]).map((v, i, arr) => (
+                                            <div key={i} className="flex gap-1">
+                                              <input
+                                                value={v}
+                                                onChange={e => { const n = [...arr]; n[i] = e.target.value; setEditFields(prev => ({ ...prev, trackingNumbers: n })); }}
+                                                placeholder={i === 0 ? "e.g. AB123456789GB" : "Additional tracking…"}
+                                                className={inputCls("text-xs font-mono")}
+                                                style={inputStyle}
+                                              />
+                                              {arr.length > 1 && (
+                                                <button type="button" className="h-8 w-7 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
+                                                  style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)" }}
+                                                  onClick={() => setEditFields(prev => ({ ...prev, trackingNumbers: arr.filter((_, j) => j !== i) }))}>
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              )}
+                                            </div>
+                                          ))}
+                                          {((editFields.trackingNumbers as string[] | undefined) ?? []).length < 10 && (
+                                            <button type="button" className="flex items-center gap-1 text-[10px] font-semibold hover:underline"
+                                              style={{ color: "var(--t-accent)" }}
+                                              onClick={() => setEditFields(prev => ({ ...prev, trackingNumbers: [...((prev.trackingNumbers as string[] | undefined) ?? []), ""] }))}>
+                                              <Plus className="w-2.5 h-2.5" /> Add tracking number
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {allowed.length > 0 && (
+                                        <div>
+                                          <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>Status</label>
+                                          <select
+                                            value={editFields.status ?? order.status}
+                                            onChange={e => setEditFields(prev => ({ ...prev, status: e.target.value }))}
+                                            className="w-full h-9 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
+                                            <option value={order.status}>{order.status} (current)</option>
+                                            {allowed.map(s => <option key={s} value={s}>{s}</option>)}
+                                          </select>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => saveOrder(order.id)} disabled={saving === order.id}
+                                        className="h-8 px-4 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
+                                        style={{ background: "var(--t-blue-deep)" }}>
+                                        {saving === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        Save
+                                      </button>
+                                      <button onClick={() => setEditingId(null)}
+                                        className="h-8 px-3 rounded-xl text-xs font-semibold"
+                                        style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "var(--t-subtle)" }}>
+                                        <MapPin className="w-2.5 h-2.5" /> Delivery Address
+                                      </p>
+                                      <button onClick={() => startEdit(order)}
+                                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg"
+                                        style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+                                        <Pencil className="w-2.5 h-2.5" /> Edit
+                                      </button>
+                                    </div>
+                                    {detail && (detail.shippingName || detail.shippingAddress) ? (
+                                      <div className="text-[11px] leading-relaxed">
+                                        {detail.shippingName && <div className="font-semibold" style={{ color: "var(--t-text)" }}>{detail.shippingName}</div>}
+                                        {detail.shippingAddress && <div style={{ color: "var(--t-muted)" }}>{detail.shippingAddress}{detail.shippingCity ? `, ${detail.shippingCity}` : ""}{detail.shippingPostcode ? ` ${detail.shippingPostcode}` : ""}</div>}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No address on file yet</p>
+                                    )}
+                                  </div>
+                                )
+                              )}
+
+                              {/* TRANSACTION */}
+                              {activeFacet === "order" && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Hash className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
+                                    <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Transaction</h4>
+                                  </div>
+                                  {detail?.paymentTxHash ? (
+                                    (() => {
+                                      const explorerUrl = txExplorerUrl(detail.paymentTxHash, detail.paymentCryptoCurrency);
+                                      return (
+                                        <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                                          <div className="flex items-center justify-between gap-2 mb-1">
+                                            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
+                                            <CopyButton value={detail.paymentTxHash} />
+                                          </div>
+                                          {explorerUrl ? (
+                                            <a
+                                              href={explorerUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="font-mono text-[11px] break-all leading-relaxed inline-flex items-start gap-1 hover:underline"
+                                              style={{ color: "var(--t-blue)" }}
+                                            >
+                                              <span>{detail.paymentTxHash}</span>
+                                              <ExternalLink className="w-3 h-3 shrink-0 mt-0.5" />
+                                            </a>
+                                          ) : (
+                                            <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
+                                          )}
+                                          {detail.paymentConfirmedAt && (
+                                            <p className="text-[9px] mt-1.5" style={{ color: "var(--t-subtle)" }}>
+                                              Confirmed {new Date(detail.paymentConfirmedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No transaction hash recorded.</p>
                                   )}
-                                </div>
-                              </div>
-                              {allowed.length > 0 && (
-                                <div>
-                                  <label className="text-[10px] font-semibold mb-1 block" style={{ color: "var(--t-subtle)" }}>Status</label>
-                                  <select
-                                    value={editFields.status ?? order.status}
-                                    onChange={e => setEditFields(prev => ({ ...prev, status: e.target.value }))}
-                                    className="w-full h-9 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
-                                    <option value={order.status}>{order.status} (current)</option>
-                                    {allowed.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
                                 </div>
                               )}
                             </div>
-                            {msg[order.id] && (
-                              <p className={`text-xs font-semibold ${msg[order.id].includes("✓") ? "" : "text-red-500"}`}
-                                style={msg[order.id].includes("✓") ? { color: "#16A34A" } : undefined}>
-                                {msg[order.id]}
-                              </p>
-                            )}
-                            <div className="flex gap-2">
-                              <button onClick={() => saveOrder(order.id)} disabled={saving === order.id}
-                                className="h-8 px-4 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
-                                style={{ background: "var(--t-blue-deep)" }}>
-                                {saving === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                Save
-                              </button>
-                              <button onClick={() => setEditingId(null)}
-                                className="h-8 px-3 rounded-xl text-xs font-semibold"
-                                style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            {detail && (
-                              <div className="grid grid-cols-2 gap-2 mb-3 text-xs" style={{ color: "var(--t-muted)" }}>
-                                {detail.shippingName && <div><span className="text-[9px] font-bold uppercase tracking-wide block" style={{ color: "var(--t-subtle)" }}>Name</span>{detail.shippingName}</div>}
-                                {detail.shippingAddress && <div className="col-span-2"><span className="text-[9px] font-bold uppercase tracking-wide block" style={{ color: "var(--t-subtle)" }}>Address</span>{detail.shippingAddress}{detail.shippingCity ? `, ${detail.shippingCity}` : ""}{detail.shippingPostcode ? ` ${detail.shippingPostcode}` : ""}</div>}
-                              </div>
-                            )}
-                            {msg[order.id] && (
-                              <p className="text-xs font-semibold mb-2" style={{ color: msg[order.id].includes("✓") ? "#16A34A" : "#DC2626" }}>{msg[order.id]}</p>
-                            )}
-                            <button onClick={() => startEdit(order)}
-                              className="h-7 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5"
-                              style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
-                              <Pencil className="w-3 h-3" /> Edit Address / Tracking
-                            </button>
-                          </div>
-                        )}
-                        {/* QR Code Upload */}
-                        <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.18)" }}>
-                          <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "#7C3AED" }}>
-                            <QrCode className="w-2.5 h-2.5" /> QR Codes
-                          </p>
-                          {(["inpost", "royal-mail"] as const).map(courier => {
-                            const label = courier === "inpost" ? "InPost" : "Royal Mail";
-                            const det = orderDetails[order.id] ?? order;
-                            const existing = courier === "inpost" ? det.inpostQrCode : det.royalMailQrCode;
-                            const key = `${order.id}-${courier}`;
-                            const isUploading = reshQrSaving[key];
-                            const qrMsg = reshQrMsg[key];
-                            return (
-                              <div key={courier} className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
-                                {existing ? (
-                                  <div className="flex items-center gap-2">
-                                    <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
-                                    <button
-                                      className="text-[10px] font-semibold disabled:opacity-50"
-                                      style={{ color: "#DC2626" }}
-                                      disabled={isUploading}
-                                      onClick={() => uploadReshQr(order.id, courier, null)}
-                                    >{isUploading ? "…" : "Clear"}</button>
-                                  </div>
-                                ) : (
-                                  <label className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer"
-                                    style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", color: "#7C3AED", opacity: isUploading ? 0.5 : 1 }}>
-                                    <Upload className="w-2.5 h-2.5" />
-                                    {isUploading ? "Uploading…" : "Upload"}
-                                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden"
-                                      disabled={isUploading}
-                                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, courier, f); e.target.value = ""; }}
-                                    />
-                                  </label>
-                                )}
-                                {qrMsg?.text && <span className="text-[10px] font-semibold" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</span>}
-                              </div>
-                            );
-                          })}
+                          )}
                         </div>
+
                       </div>
                     </motion.div>
                   )}
@@ -1512,6 +1760,37 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Copy button ──────────────────────────────────────────────────────────────
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
+        const p = navigator.clipboard?.writeText(value);
+        if (p) { p.then(done).catch(() => {}); return; }
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          done();
+        } catch { /* clipboard unavailable */ }
+      }}
+      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg transition-colors shrink-0"
+      style={{ background: "var(--t-surface2)", color: copied ? "#16A34A" : "var(--t-muted)", border: "1px solid var(--t-border)" }}>
+      {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }
 
@@ -2467,16 +2746,13 @@ function ParcelsTab({ gbId }: { gbId: string }) {
           </button>
         </div>
       </div>
-
       {creating && <ParcelFormUI gbId={gbId} form={form} setForm={setForm} saving={saving} msg={msg} editingId={editingId} onSave={saveCreate} onCancel={() => { setCreating(false); setMsg(""); }} />}
-
       {parcels.length === 0 && !creating && (
         <div className="flex flex-col items-center py-12 space-y-2">
           <Truck className="w-8 h-8" style={{ color: "var(--t-border)" }} />
           <p className="text-sm" style={{ color: "var(--t-subtle)" }}>No parcels yet</p>
         </div>
       )}
-
       <div className="space-y-2">
         {parcels.map(p => {
           const sc = PARCEL_STATUS_COLORS[p.status] ?? PARCEL_STATUS_COLORS.pending;
@@ -2557,7 +2833,6 @@ function ParcelsTab({ gbId }: { gbId: string }) {
                   </p>
                 )}
               </div>
-
               <AnimatePresence initial={false}>
                 {isOpen && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
@@ -3042,7 +3317,6 @@ function BroadcastTab({ gbId, gbName, reshipperUsername, country }: {
           </button>
         ))}
       </div>
-
       <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>
           {mode === "individual" ? "Direct Message" : "Group Broadcast"}
@@ -3190,7 +3464,6 @@ function BroadcastTab({ gbId, gbName, reshipperUsername, country }: {
           </div>
         </div>
       </div>
-
       {result && (
         <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
           style={{ background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.2)", color: "#15803D" }}>
@@ -3478,7 +3751,59 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
   );
 }
 
-type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "payments" | "broadcast";
+type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
+
+const TAB_HELP: Record<RTab, string> = {
+  overview: "A quick snapshot of this group buy: how many orders you have, totals at a glance, and your progress. Start here to see where things stand.",
+  summary: "A breakdown of your orders in numbers and charts: what's been ordered, money owed, and totals. Use it to double-check figures.",
+  orders: "The orders you're responsible for reshipping. Tap any order to see its items, the customer's address, tracking, and to update its status.",
+  unclaimed: "Orders in this group buy that nobody has picked up yet. Claim the ones you'll handle and they'll move into your 'My Orders' tab.",
+  qr: "The shipping-label QR codes for each order. Tap a code to make it big enough to scan at the post office, then mark it 'Posted' once it's sent.",
+  shipping: "Set up how things are sent for this group buy: the delivery methods you offer and their prices.",
+  parcels: "Track the parcels coming from the vendor to you (the reshipper). Add the vendor's tracking number for each incoming box so everyone can follow it. This is the vendor → reshipper leg, not the parcels you later post to customers.",
+  dispatch: "Print packing slips and manage dispatch: the paperwork that goes inside or on each parcel before you send it.",
+  payments: "Keep track of who has paid and manage payment details for your orders.",
+  broadcast: "Send one message to every customer in this group buy at once, for example a shipping update or an important notice.",
+};
+
+function TabHelp({ tab }: { tab: RTab }) {
+  const [open, setOpen] = useState(false);
+  const meta = TABS.find(t => t.id === tab);
+  return (
+    <div className="mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all"
+        style={{
+          background: open ? "var(--t-blue-10)" : "var(--t-surface2)",
+          color: "var(--t-blue)",
+          border: "1px solid var(--t-border)",
+        }}
+      >
+        <Info className="w-3.5 h-3.5" />
+        {open ? "Hide explanation" : `What is "${meta?.label}"?`}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="mt-2 p-3 rounded-xl text-[12px] leading-relaxed"
+              style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+            >
+              {TAB_HELP[tab]}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "overview",  label: "Overview",  icon: LayoutDashboard },
@@ -3488,6 +3813,7 @@ const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "qr",        label: "QR Codes",  icon: QrCode },
   { id: "shipping",  label: "Shipping",  icon: Truck },
   { id: "parcels",   label: "Parcels",   icon: Package },
+  { id: "dispatch",  label: "Dispatch & Packaging Slips", icon: FileText },
   { id: "payments",  label: "Payments",  icon: CreditCard },
   { id: "broadcast", label: "Broadcast", icon: MessageSquare },
 ];
@@ -3587,6 +3913,19 @@ export default function ReshipperPage() {
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentAssignment = assignments.find(a => a.gbId === selectedGbId);
+
+  // Dispatch & Packaging Slips — scope-locked server-side to this reshipper.
+  const dispatchCfg = useMemo<DispatchCfg>(() => ({
+    role: "reshipper",
+    base: "/reshipper/dispatch",
+    dfetch: (path, opts) => reshipFetch(`/api${path}`, opts),
+    ordersPath: (qs) => `/reshipper/dispatch/orders?${qs}`,
+    groupBuysPath: "/reshipper/dispatch/group-buys-list",
+    gbParcelsPath: (gbId) => `/reshipper/dispatch/group-buys/${gbId}/parcels`,
+    orderImagesPath: (orderId) => `/reshipper/dispatch/orders/${orderId}/dispatch-images`,
+    lockedScope: { scopeType: "reshipper", scopeId: stripAt(me?.telegramUsername ?? "") },
+    gbId: selectedGbId || undefined,
+  }), [me?.telegramUsername, selectedGbId]);
 
   const updateGbInAssignment = useCallback((updated: RAssignment["gb"]) => {
     setAssignments(prev => prev.map(a => a.gbId === selectedGbId ? { ...a, gb: updated } : a));
@@ -3752,7 +4091,7 @@ export default function ReshipperPage() {
 
         {/* ── GB picker row (multiple assignments) ── */}
         {assignments.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0 bg-[#f7f7f7]" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
             {assignments.map(a => (
               <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
                 className="flex items-center gap-1 px-3 h-7 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
@@ -3808,6 +4147,7 @@ export default function ReshipperPage() {
         <div className="flex-1 overflow-y-auto px-4 py-5 pb-24">
           {currentAssignment ? (
             <>
+              <TabHelp tab={activeTab} />
               {activeTab === "overview" && (
                 ordersLoading
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
@@ -3842,6 +4182,7 @@ export default function ReshipperPage() {
                 <ShippingTab key={selectedGbId} gbId={selectedGbId} initialGb={currentAssignment.gb} onGbUpdate={updateGbInAssignment} allowPayments={currentAssignment.allowPayments} allowVendorShippingSplit={currentAssignment.allowVendorShippingSplit} />
               )}
               {activeTab === "parcels" && <ParcelsTab key={selectedGbId} gbId={selectedGbId} />}
+              {activeTab === "dispatch" && <DispatchManager cfg={dispatchCfg} />}
               {activeTab === "payments" && me && (
                 <PaymentsTab key={selectedGbId} assignment={currentAssignment} me={me} onAssignmentUpdate={updateAssignment} />
               )}

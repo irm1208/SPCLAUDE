@@ -3,23 +3,78 @@ import {
   Loader2, Package, PackageCheck, Printer, Check, AlertTriangle,
   ChevronRight, RefreshCw, Truck, X, CheckSquare, Square,
   Upload, ImagePlus, ZoomIn, Trash2, ChevronDown, ChevronUp, Camera, Bell,
+  Info, Lightbulb,
 } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
 function apiUrl(path: string) { return `/api${path}`; }
 
+// ─── Dispatch config (role-aware: admin / reshipper / organiser) ──────────────
+export interface DispatchCfg {
+  role: "admin" | "reshipper" | "organiser";
+  /** Base path (without /api) for the dispatch routes, e.g. "/admin/dispatch". */
+  base: string;
+  /** Performs an authenticated fetch. `path` is WITHOUT the /api prefix. */
+  dfetch: (path: string, opts?: RequestInit) => Promise<Response>;
+  /** Builds the orders list path (without /api) from a query string. */
+  ordersPath: (qs: string) => string;
+  /** Group-buys list path (without /api). */
+  groupBuysPath: string;
+  /** Parcels-for-GB path (without /api). */
+  gbParcelsPath: (gbId: string) => string;
+  /** Per-order dispatch-images path (without /api). */
+  orderImagesPath: (orderId: string) => string;
+  /** When set (reshipper), the Scope selector is hidden and locked to self. */
+  lockedScope?: { scopeType: "reshipper"; scopeId: string };
+  /**
+   * When set, the dispatch tab is bound to this group buy (the one already
+   * selected on the parent page) and its own GB picker is hidden, so there's
+   * no second chooser and no desync from the page's selection.
+   */
+  gbId?: string;
+}
+
+const DispatchCfgContext = React.createContext<DispatchCfg | null>(null);
+
+export function useDispatchCfg(): DispatchCfg {
+  const ctx = React.useContext(DispatchCfgContext);
+  if (!ctx) throw new Error("useDispatchCfg must be used within a DispatchManager");
+  return ctx;
+}
+
+/** Builds an admin DispatchCfg from the admin secret (x-admin-secret header). */
+function makeAdminCfg(secret: string): DispatchCfg {
+  const authHeaders: Record<string, string> = { "x-admin-secret": secret };
+  return {
+    role: "admin",
+    base: "/admin/dispatch",
+    dfetch: (path, opts) =>
+      fetch(apiUrl(path), {
+        ...opts,
+        headers: { ...authHeaders, ...(opts?.headers as Record<string, string> | undefined) },
+        credentials: "omit",
+      }),
+    ordersPath: (qs) => `/admin/orders?${qs}`,
+    groupBuysPath: "/admin/group-buys-list",
+    gbParcelsPath: (gbId) => `/admin/group-buys/${gbId}/parcels`,
+    orderImagesPath: (orderId) => `/admin/orders/${orderId}/dispatch-images`,
+  };
+}
+
 // ─── DispatchPhotoThumb — lazy-loads a single dispatch photo ─────────────────
-function DispatchPhotoThumb({ imageId, headers }: { imageId: string; headers: Record<string, string> }) {
+function DispatchPhotoThumb({ imageId }: { imageId: string }) {
+  const cfg = useDispatchCfg();
   const [src, setSrc] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(apiUrl(`/admin/dispatch/images/${imageId}`), { headers, credentials: "omit" })
+    cfg.dfetch(`${cfg.base}/images/${imageId}`)
       .then(r => r.json())
       .then(d => { if (!cancelled && d.imageData) setSrc(d.imageData); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [imageId, headers]);
+  }, [imageId, cfg]);
 
   if (!src) return <span className="text-[10px] text-muted-foreground italic">Loading…</span>;
 
@@ -126,34 +181,61 @@ interface HalfKitReshipper {
 }
 
 // ─── main export ─────────────────────────────────────────────────────────────
+// Thin admin wrapper — keeps the existing Admin.tsx usage (`<AdminDispatch secret={...} />`)
+// working unchanged while the shared, config-driven UI lives in DispatchManager.
 export function AdminDispatch({ secret }: { secret: string }) {
-  const headers = useMemo(() => ({ "x-admin-secret": secret }), [secret]);
-  const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "archived-dispatched" | "shipped">("packing");
+  const cfg = useMemo<DispatchCfg>(() => makeAdminCfg(secret), [secret]);
+  return <DispatchManager cfg={cfg} />;
+}
+
+// ─── DispatchManager — shared, role-aware dispatch UI ─────────────────────────
+export function DispatchManager({ cfg }: { cfg: DispatchCfg }) {
+  return (
+    <DispatchCfgContext.Provider value={cfg}>
+      <DispatchManagerInner />
+    </DispatchCfgContext.Provider>
+  );
+}
+
+function DispatchManagerInner() {
+  const cfg = useDispatchCfg();
+  const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "shipped">("packing");
   const [groupBuys, setGroupBuys] = useState<GbStub[]>([]);
-  const [selectedGb, setSelectedGb] = useState("");
+  const [selectedGb, setSelectedGb] = useState(cfg.gbId ?? "");
 
   useEffect(() => {
-    fetch(apiUrl("/admin/group-buys-list"), { headers, credentials: "omit" })
+    // Bound to the parent page's selected GB — skip the internal GB list.
+    if (cfg.gbId) { setSelectedGb(cfg.gbId); return; }
+    cfg.dfetch(cfg.groupBuysPath)
       .then(r => r.json())
-      .then(d => setGroupBuys(Array.isArray(d) ? d : []))
+      .then(d => {
+        const list: GbStub[] = Array.isArray(d) ? d : [];
+        setGroupBuys(list);
+        // Auto-select when there is exactly one accessible GB.
+        if (list.length === 1) setSelectedGb(list[0].id);
+      })
       .catch(() => {});
-  }, [headers]);
+  }, [cfg]);
+
+  // Hide the picker when bound to the page's GB, or for non-admin roles with a single GB.
+  const hideGbPicker = !!cfg.gbId || (cfg.role !== "admin" && groupBuys.length <= 1);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       {/* Sub-tab toggle */}
-      <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-muted w-fit">
+      <div className="flex flex-nowrap gap-1 p-1 rounded-xl bg-muted max-w-full overflow-x-auto">
         {([
           ["packing", "Dispatch & Packing Slips"],
-          ["halfkits", "Half Kits"],
+          // Half Kits is admin-only — hidden on reshipper/organiser surfaces.
+          ...(cfg.role === "admin" ? [["halfkits", "Half Kits"]] as const : []),
           ["dispatched", "Dispatched Orders"],
-          ["archived-dispatched", "Archived Dispatched"],
-          ["shipped", "Shipped Items"],
+          // Shipped Items is admin-only — hidden on reshipper/organiser surfaces.
+          ...(cfg.role === "admin" ? [["shipped", "Shipped Items"]] as const : []),
         ] as const).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setSubTab(id)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
               subTab === id
                 ? "bg-white shadow-sm text-foreground"
                 : "text-muted-foreground hover:text-foreground"
@@ -165,32 +247,31 @@ export function AdminDispatch({ secret }: { secret: string }) {
       </div>
 
       {/* GB selector — shared */}
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Group Buy</label>
-        <select
-          value={selectedGb}
-          onChange={e => setSelectedGb(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-2 bg-background min-w-[240px] max-w-xs"
-        >
-          <option value="">— Select group buy —</option>
-          {groupBuys.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </select>
-      </div>
+      {!hideGbPicker && (
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Group Buy</label>
+          <select
+            value={selectedGb}
+            onChange={e => setSelectedGb(e.target.value)}
+            className="text-sm border rounded-lg px-3 py-2 bg-background min-w-[240px] max-w-xs"
+          >
+            <option value="">— Select group buy —</option>
+            {groupBuys.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+      )}
 
       {subTab === "packing" && (
-        <PackingSlipsTab secret={secret} selectedGb={selectedGb} headers={headers} />
+        <PackingSlipsTab selectedGb={selectedGb} />
       )}
       {subTab === "halfkits" && (
-        <HalfKitsTab selectedGb={selectedGb} headers={headers} />
+        <HalfKitsTab selectedGb={selectedGb} />
       )}
       {subTab === "dispatched" && (
-        <DispatchedOrdersTab selectedGb={selectedGb} headers={headers} />
-      )}
-      {subTab === "archived-dispatched" && (
-        <ArchivedDispatchedOrdersTab selectedGb={selectedGb} headers={headers} />
+        <DispatchedOrdersTab selectedGb={selectedGb} />
       )}
       {subTab === "shipped" && (
-        <ShippedItemsContent secret={secret} selectedGb={selectedGb} headers={headers} />
+        <ShippedItemsContent selectedGb={selectedGb} />
       )}
     </div>
   );
@@ -201,11 +282,10 @@ export function AdminDispatch({ secret }: { secret: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function HalfKitsTab({
   selectedGb,
-  headers,
 }: {
   selectedGb: string;
-  headers: Record<string, string>;
 }) {
+  const cfg = useDispatchCfg();
   const [data, setData] = useState<HalfKitReshipper[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -222,12 +302,12 @@ function HalfKitsTab({
     if (!selectedGb) return;
     setLoading(true);
     setError("");
-    fetch(apiUrl(`/admin/dispatch/${selectedGb}/half-kits`), { headers, credentials: "omit" })
+    cfg.dfetch(`${cfg.base}/${selectedGb}/half-kits`)
       .then(r => r.json())
       .then(d => setData(Array.isArray(d.reshippers) ? d.reshippers : []))
       .catch(() => setError("Failed to load half-kit data"))
       .finally(() => setLoading(false));
-  }, [selectedGb, headers]);
+  }, [selectedGb, cfg]);
 
   if (!selectedGb) {
     return (
@@ -346,14 +426,14 @@ function HalfKitsTab({
 // PackingSlipsTab — dispatch workflow with packing slip generation
 // ─────────────────────────────────────────────────────────────────────────────
 function PackingSlipsTab({
-  secret,
   selectedGb,
-  headers,
 }: {
-  secret: string;
   selectedGb: string;
-  headers: Record<string, string>;
 }) {
+  const cfg = useDispatchCfg();
+  // Onboarding help (banner + per-step "i" icons) is for newcomers only; admin stays unchanged.
+  const showHelp = cfg.role !== "admin";
+  const [guideOpen, setGuideOpen] = useState(false);
   const [scopeType, setScopeType] = useState<"reshipper" | "country" | "all" | "">("");
   const [scopeId, setScopeId] = useState("");
   const [scopeOptions, setScopeOptions] = useState<ScopeOptions | null>(null);
@@ -371,6 +451,7 @@ function PackingSlipsTab({
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [showPrint, setShowPrint] = useState(false);
+  const [gbName, setGbName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -392,37 +473,50 @@ function PackingSlipsTab({
   const [markingPending, setMarkingPending] = useState(false);
   const [markPendingMsg, setMarkPendingMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Reset downstream when GB changes
+  // Reset downstream when GB changes. For a locked scope (reshipper) re-apply
+  // the locked scope instead of clearing it, so multi-GB reshippers don't
+  // dead-end with an empty scope after switching group buys.
+  const lockedScope = cfg.lockedScope;
   useEffect(() => {
-    setScopeType("");
-    setScopeId("");
+    setScopeType(lockedScope ? lockedScope.scopeType : "");
+    setScopeId(lockedScope ? lockedScope.scopeId : "");
     setScopeOptions(null);
     setParcels([]);
     setSelectedParcelIds(new Set());
     setComputeResult(null);
     setSelectedOrderIds(new Set());
     setConfirmMsg(null);
-  }, [selectedGb]);
+  }, [selectedGb, lockedScope]);
 
   // Load scope options when GB selected
   useEffect(() => {
     if (!selectedGb) { setScopeOptions(null); return; }
     setScopeLoading(true);
-    fetch(apiUrl(`/admin/dispatch/${selectedGb}/scope-options`), { headers, credentials: "omit" })
+    cfg.dfetch(`${cfg.base}/${selectedGb}/scope-options`)
       .then(r => r.json())
       .then(d => setScopeOptions(d))
       .catch(() => setScopeOptions(null))
       .finally(() => setScopeLoading(false));
-  }, [selectedGb, headers]);
+  }, [selectedGb, cfg]);
+
+  // Load the group buy name (shown on printed packing slips)
+  useEffect(() => {
+    if (!selectedGb) { setGbName(""); return; }
+    cfg.dfetch(`${cfg.base}/${selectedGb}/gb-info`)
+      .then(r => r.json())
+      .then(d => setGbName(d?.name ?? ""))
+      .catch(() => setGbName(""));
+  }, [selectedGb, cfg]);
 
   // Reset downstream when scope changes
   useEffect(() => {
-    setScopeId("");
+    // When the scope is locked (reshipper), keep the locked scopeId instead of clearing it.
+    setScopeId(lockedScope && scopeType === lockedScope.scopeType ? lockedScope.scopeId : "");
     setParcels([]);
     setSelectedParcelIds(new Set());
     setComputeResult(null);
     setSelectedOrderIds(new Set());
-  }, [scopeType]);
+  }, [scopeType, lockedScope]);
 
   // Load parcels when scope + scopeId set
   useEffect(() => {
@@ -434,7 +528,7 @@ function PackingSlipsTab({
     setParcelsLoading(true);
     const params = new URLSearchParams({ scopeType });
     if (scopeId) params.set("scopeId", scopeId);
-    fetch(apiUrl(`/admin/dispatch/${selectedGb}/parcels?${params}`), { headers, credentials: "omit" })
+    cfg.dfetch(`${cfg.base}/${selectedGb}/parcels?${params}`)
       .then(r => r.json())
       .then(d => {
         setParcels(Array.isArray(d) ? d : []);
@@ -444,7 +538,7 @@ function PackingSlipsTab({
       })
       .catch(() => setParcels([]))
       .finally(() => setParcelsLoading(false));
-  }, [selectedGb, scopeType, scopeId, headers]);
+  }, [selectedGb, scopeType, scopeId, cfg]);
 
   // Load orders for the overview panel: per-reshipper, per-country-leg, or all
   // orders in the GB. Works even when no parcels have been logged yet.
@@ -458,7 +552,7 @@ function PackingSlipsTab({
     setOverviewLoading(true);
     const params = new URLSearchParams({ groupBuyId: selectedGb, pageSize: "999" });
     if (isReshipper) params.set("reshipper", scopeId!.replace(/^@/, ""));
-    fetch(apiUrl(`/admin/orders?${params.toString()}`), { headers, credentials: "omit" })
+    cfg.dfetch(cfg.ordersPath(params.toString()))
       .then(r => r.json())
       .then((data: unknown) => {
         const raw = Array.isArray(data) ? data : (Array.isArray((data as any)?.orders) ? (data as any).orders : []);
@@ -470,7 +564,7 @@ function PackingSlipsTab({
       .catch(() => { setOverviewOrders([]); })
       .finally(() => setOverviewLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGb, scopeType, scopeId, headers]);
+  }, [selectedGb, scopeType, scopeId, cfg]);
 
   const toggleParcel = (id: string) =>
     setSelectedParcelIds(prev => {
@@ -495,10 +589,9 @@ function PackingSlipsTab({
     setComputeResult(null);
     setSelectedOrderIds(new Set());
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/compute`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/compute`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parcelIds: [...selectedParcelIds],
           scopeType,
@@ -576,10 +669,9 @@ function PackingSlipsTab({
     setMarkingUnfulfillable(true);
     setMarkUnfulfillableMsg(null);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/mark-shipped-by-reshipper`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/mark-shipped-by-reshipper`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reshipper: scopeId, orderIds: idsToMark }),
       });
       const d = await r.json();
@@ -606,10 +698,9 @@ function PackingSlipsTab({
     setConfirming(true);
     setConfirmMsg(null);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/confirm`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/confirm`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderIds: [...selectedOrderIds],
           parcelIds: [...selectedParcelIds],
@@ -626,7 +717,7 @@ function PackingSlipsTab({
         if (selectedGb && scopeType && (scopeType === "all" || scopeId)) {
           const params = new URLSearchParams({ scopeType });
           if (scopeId) params.set("scopeId", scopeId);
-          fetch(apiUrl(`/admin/dispatch/${selectedGb}/parcels?${params}`), { headers, credentials: "omit" })
+          cfg.dfetch(`${cfg.base}/${selectedGb}/parcels?${params}`)
             .then(r2 => r2.json())
             .then(d2 => setParcels(Array.isArray(d2) ? d2 : []))
             .catch(() => {});
@@ -656,10 +747,9 @@ function PackingSlipsTab({
     setNotifyingQr(true);
     setNotifyQrMsg(null);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/notify-qr`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/notify-qr`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: inpostSelectedOrders.map(o => o.id) }),
       });
       const d = await r.json();
@@ -686,8 +776,58 @@ function PackingSlipsTab({
 
   return (
     <div className="space-y-5">
-      {/* ── Step 1: Scope ── */}
-      <Section title="1. Scope">
+      {/* ── Getting-started guide (shown to reshippers/organisers new to the platform) ── */}
+      {cfg.role !== "admin" && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5">
+          <button
+            type="button"
+            onClick={() => setGuideOpen(o => !o)}
+            className="w-full flex items-center gap-2.5 p-4 text-left"
+            aria-expanded={guideOpen}
+          >
+            <Lightbulb className="w-5 h-5 text-primary shrink-0" />
+            <p className="font-semibold text-foreground text-sm flex-1">How dispatch works</p>
+            {guideOpen
+              ? <ChevronUp className="w-4 h-4 text-primary shrink-0" />
+              : <ChevronDown className="w-4 h-4 text-primary shrink-0" />}
+          </button>
+          {guideOpen && (
+            <div className="px-4 pb-4 pl-[2.875rem] space-y-2 text-sm">
+              <p className="text-muted-foreground leading-relaxed">
+                This page turns parcels that have arrived to you into ready-to-post orders for your members. Work through it top to bottom:
+              </p>
+              <ol className="space-y-1.5 text-muted-foreground">
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">1.</span>
+                  <span><strong className="text-foreground">Select delivered parcels</strong> — tick the parcels that have physically arrived so the system knows what stock you have.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">2.</span>
+                  <span><strong className="text-foreground">Build orders</strong> — it works out which members' orders you can fully pack from those parcels.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">3.</span>
+                  <span><strong className="text-foreground">Print &amp; confirm</strong> — print the packing slips, then confirm dispatch so members are notified.</span>
+                </li>
+              </ol>
+              <p className="text-muted-foreground leading-relaxed">
+                Tap any <Info className="inline w-3.5 h-3.5 -mt-0.5" /> icon for more detail on that step.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Step 1: Scope (hidden when locked to a single reshipper) ── */}
+      {!lockedScope && (
+      <Section
+        title="1. Scope"
+        help={showHelp ? (
+          <span>
+            Choose <strong>whose</strong> orders you want to work on. <strong>Reshipper</strong> shows one reshipper's orders, <strong>Country Leg</strong> groups by destination country, and <strong>All Orders</strong> covers everyone in this group buy.
+          </span>
+        ) : undefined}
+      >
         {scopeLoading ? (
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
         ) : (
@@ -760,10 +900,18 @@ function PackingSlipsTab({
           </div>
         )}
       </Section>
+      )}
 
       {/* ── Step 2: Parcels ── */}
       {scopeType && (scopeType === "all" || scopeId) && (
-        <Section title="2. Select Delivered Parcels">
+        <Section
+          title="2. Select Delivered Parcels"
+          help={showHelp ? (
+            <span>
+              These are parcels marked <strong>delivered</strong> to you. Tick the ones you've physically received and opened — the system uses their contents as your available stock for packing members' orders. The numbers show how many items remain vs. already dispatched.
+            </span>
+          ) : undefined}
+        >
           {parcelsLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           ) : parcels.length === 0 ? (
@@ -878,6 +1026,9 @@ function PackingSlipsTab({
                 >
                   <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                   <span className="text-sm font-semibold text-green-800 flex-1">Confirmed Dispatched ({ovDispatched.length})</span>
+                  <InfoTip label="About Confirmed Dispatched">
+                    These orders have already been posted and the members have been notified. They're done — nothing more to do here. This is just a record of what's gone out.
+                  </InfoTip>
                   <span className="text-[11px] text-green-600">{ovExpanded.dispatched ? "▲" : "▼"}</span>
                 </button>
                 {ovExpanded.dispatched && (
@@ -907,6 +1058,9 @@ function PackingSlipsTab({
                     Ready to Dispatch ({ovReady.length})
                     {!computeResult && <span className="ml-2 text-xs font-normal text-blue-400">— select parcels &amp; run Calculate</span>}
                   </span>
+                  <InfoTip label="About Ready to Dispatch">
+                    These orders can be fully packed from the parcels you ticked — every item is in stock. Print their packing slips and confirm dispatch to send them out. (Select your delivered parcels and run Calculate to fill this list.)
+                  </InfoTip>
                   <span className="text-[11px] text-blue-600">{ovExpanded.ready ? "▲" : "▼"}</span>
                 </button>
                 {ovExpanded.ready && (
@@ -936,6 +1090,9 @@ function PackingSlipsTab({
                     Cannot Fulfill ({ovCannot.length})
                     {!computeResult && <span className="ml-2 text-xs font-normal text-amber-400">— run Calculate to populate</span>}
                   </span>
+                  <InfoTip label="About Cannot Fulfill">
+                    These orders are missing one or more items in the parcels you selected, so they can't be fully packed yet. Wait for the missing stock to arrive, or — if you're posting a partial order anyway — tick the orders and use "Mark Shipped".
+                  </InfoTip>
                   {ovCannot.length > 0 && computeResult && (
                     <button
                       onClick={e => { e.stopPropagation(); handleMarkUnfulfillableShipped(ovCannotSelected.size > 0 ? [...ovCannotSelected] : undefined); }}
@@ -1018,6 +1175,9 @@ function PackingSlipsTab({
                     Pending / Not Dispatched ({ovPending.length})
                     {computeResult && ovPending.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">— no stock allocated in these parcels</span>}
                   </span>
+                  <InfoTip label="About Pending / Not Dispatched">
+                    Orders that haven't been dealt with yet — none of their items are in the parcels you selected, so nothing was allocated. They'll move to "Ready to Dispatch" once the right stock arrives. You can also mark them shipped manually if needed.
+                  </InfoTip>
                   {ovPending.length > 0 && (
                     <button
                       onClick={e => { e.stopPropagation(); handleMarkPendingShipped(); }}
@@ -1084,6 +1244,11 @@ function PackingSlipsTab({
       {computeResult && (
         <Section
           title={`3. Select Orders to Dispatch (${selectedOrderIds.size} selected)`}
+          help={showHelp ? (
+            <span>
+              <strong>Fulfillable</strong> orders (green) can be fully packed from the parcels you selected. <strong>Cannot fulfil yet</strong> means you're still missing some items. Tick the orders you're posting, print their packing slips, then confirm dispatch — that marks them shipped and notifies the members.
+            </span>
+          ) : undefined}
           action={
             <button
               onClick={selectAllOrders}
@@ -1204,26 +1369,57 @@ function PackingSlipsTab({
 
       {/* ── Print Modal ── */}
       {showPrint && selectedOrders.length > 0 && (
-        <PrintModal orders={selectedOrders} onClose={() => setShowPrint(false)} />
+        <PrintModal orders={selectedOrders} gbName={gbName} onClose={() => setShowPrint(false)} />
       )}
     </div>
   );
 }
 
-// ─── Section wrapper ──────────────────────────────────────────────────────────
+// ─── InfoTip ──────────────────────────────────────────────────────────────────
+// Tap-friendly "i" icon that opens a short plain-language explanation. Uses a
+// click popover (not hover) so it works on touch devices.
+function InfoTip({ children, label, triggerClassName }: { children: React.ReactNode; label?: string; triggerClassName?: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label || "More information"}
+          onClick={e => e.stopPropagation()}
+          className={triggerClassName ?? "inline-flex items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"}
+        >
+          <Info className="w-4 h-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        onClick={e => e.stopPropagation()}
+        className="w-72 text-sm leading-relaxed text-muted-foreground bg-white border border-border shadow-lg"
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Section({
   title,
   children,
   action,
+  help,
 }: {
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  help?: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-border bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {help && <InfoTip label={`About ${title}`}>{help}</InfoTip>}
+        </div>
         {action}
       </div>
       <div className="p-4">{children}</div>
@@ -1280,7 +1476,7 @@ function OrderSummary({ o }: { o: DispatchOrder }) {
 }
 
 // ─── PrintModal ───────────────────────────────────────────────────────────────
-function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () => void }) {
+function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[]; gbName?: string; onClose: () => void }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [format, setFormat] = useState<"a4" | "4x6">("a4");
 
@@ -1428,11 +1624,11 @@ function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () 
           <div ref={printRef}>
             {format === "4x6" ? (
               <div className="slip-grid">
-                {orders.map(o => <LabelSlip key={o.id} order={o} />)}
+                {orders.map(o => <LabelSlip key={o.id} order={o} gbName={gbName} />)}
               </div>
             ) : (
               <div className="slip-grid" style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                {orders.map(o => <PackingSlip key={o.id} order={o} />)}
+                {orders.map(o => <PackingSlip key={o.id} order={o} gbName={gbName} />)}
               </div>
             )}
           </div>
@@ -1443,7 +1639,7 @@ function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () 
 }
 
 // ─── LabelSlip — 4×6 single-label layout ──────────────────────────────────────
-function LabelSlip({ order: o }: { order: DispatchOrder }) {
+function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string }) {
   const kits = o.lineItems.reduce((s, li) => s + li.quantity, 0);
   const addressParts = [o.shippingAddress, o.shippingCity, o.shippingPostcode, o.shippingCountry].filter(Boolean);
 
@@ -1505,14 +1701,14 @@ function LabelSlip({ order: o }: { order: DispatchOrder }) {
 
       {/* Footer */}
       <div className="label-footer" style={{ marginTop: "8px", paddingTop: "6px", borderTop: "1.5px solid #111", fontSize: "8px", color: "#9ca3af", textAlign: "center" }}>
-        Salt & Peps · saltandpeps.co.uk
+        Salt & Peps · saltandpeps.co.uk{gbName ? ` · ${gbName}` : ""}
       </div>
     </div>
   );
 }
 
 // ─── PackingSlip card ─────────────────────────────────────────────────────────
-function PackingSlip({ order: o }: { order: DispatchOrder }) {
+function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string }) {
   const kits = o.lineItems.reduce((s, li) => s + li.quantity, 0);
 
   const addressParts = [
@@ -1577,6 +1773,11 @@ function PackingSlip({ order: o }: { order: DispatchOrder }) {
           {addressParts.map((part, i) => <div key={i}>{part}</div>)}
         </div>
       )}
+
+      {/* Footer */}
+      <div className="slip-footer" style={{ marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #d1d5db", fontSize: "7.5px", color: "#9ca3af", textAlign: "center" }}>
+        Salt & Peps · Saltandpeps.co.uk{gbName ? ` · ${gbName}` : ""}
+      </div>
     </div>
   );
 }
@@ -1598,11 +1799,11 @@ interface PendingImage {
   error?: string;
 }
 
-function DispatchImageUploader({ gbId, headers, orders }: {
+function DispatchImageUploader({ gbId, orders }: {
   gbId: string;
-  headers: Record<string, string>;
   orders: Fs3GbOrder[];
 }) {
+  const cfg = useDispatchCfg();
   const [expanded, setExpanded] = useState(false);
   const [items, setItems] = useState<PendingImage[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -1611,10 +1812,9 @@ function DispatchImageUploader({ gbId, headers, orders }: {
   const processFile = useCallback(async (item: PendingImage) => {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "processing" } : i));
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${gbId}/ocr-image`), {
+      const r = await cfg.dfetch(`${cfg.base}/${gbId}/ocr-image`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageData: item.dataUrl, filename: item.file.name }),
         signal: AbortSignal.timeout(90000),
       });
@@ -1633,7 +1833,7 @@ function DispatchImageUploader({ gbId, headers, orders }: {
     } catch {
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "error", error: "OCR failed" } : i));
     }
-  }, [gbId, headers]);
+  }, [gbId, cfg]);
 
   const compressForOcr = useCallback((dataUrl: string): Promise<string> => {
     return new Promise(resolve => {
@@ -1686,10 +1886,9 @@ function DispatchImageUploader({ gbId, headers, orders }: {
     if (!item.selectedOrderId || !item.ocrResult) return;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "processing" } : i));
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${gbId}/save-dispatch-image`), {
+      const r = await cfg.dfetch(`${cfg.base}/${gbId}/save-dispatch-image`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: item.selectedOrderId,
           imageData: item.dataUrl,
@@ -1719,21 +1918,49 @@ function DispatchImageUploader({ gbId, headers, orders }: {
   const unsavedCount = items.filter(i => !i.saved && i.status !== "error").length;
 
   return (
-    <div className="border rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 bg-indigo-50 hover:bg-indigo-100 border-b border-indigo-100 transition-colors text-left"
-      >
-        <Camera className="w-4 h-4 text-indigo-600 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-indigo-800">Upload Dispatch Photos</p>
-          <p className="text-xs text-indigo-500">AI reads packing slips and matches each photo to an order</p>
-        </div>
+    <div className="rounded-2xl overflow-hidden border-2 border-indigo-300 shadow-lg shadow-indigo-200/50 ring-1 ring-indigo-100">
+      <div className="flex items-center gap-2 px-4 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <Camera className="w-5 h-5 text-white shrink-0" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white">Upload Dispatch Photos</p>
+            <p className="text-xs text-indigo-100">AI reads packing slips and matches each photo to an order</p>
+          </div>
+        </button>
         {unsavedCount > 0 && (
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-600 text-white">{unsavedCount}</span>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white text-indigo-700 shrink-0">{unsavedCount}</span>
         )}
-        {expanded ? <ChevronUp className="w-4 h-4 text-indigo-500 shrink-0" /> : <ChevronDown className="w-4 h-4 text-indigo-500 shrink-0" />}
-      </button>
+        <InfoTip
+          label="How to use Upload Dispatch Photos"
+          triggerClassName="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors shrink-0"
+        >
+          <div className="space-y-2">
+            <p className="font-semibold text-foreground">What it does</p>
+            <p>Lets you snap or upload a photo of each parcel's packing slip. The system reads the slip with AI and automatically matches it to the right order, attaching the photo as proof of dispatch.</p>
+            <p className="font-semibold text-foreground">How to use it</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>Drag photos in, or tap the box to pick them from your phone or computer (you can add several at once).</li>
+              <li>Wait a moment while each packing slip is read.</li>
+              <li>Check the matched order. If it picked the wrong one, choose the correct order from the dropdown — or set it to skip.</li>
+              <li>Save each photo to attach it to that order. Saved photos turn green.</li>
+            </ol>
+            <p className="text-xs">Tip: clear, well-lit photos where the order code is readable match most accurately.</p>
+          </div>
+        </InfoTip>
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-label={expanded ? "Collapse" : "Expand"}
+          className="shrink-0 text-white/80 hover:text-white transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </div>
 
       {expanded && (
         <div className="p-4 space-y-4 bg-white">
@@ -1875,11 +2102,10 @@ type NotifyResult = { orderId: string; username: string; status: "sent" | "faile
 
 function DispatchedOrdersTab({
   selectedGb,
-  headers,
 }: {
   selectedGb: string;
-  headers: Record<string, string>;
 }) {
+  const cfg = useDispatchCfg();
   const [orders, setOrders] = useState<Fs3GbOrder[]>([]);
   const [gbInfo, setGbInfo] = useState<GbInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1900,11 +2126,9 @@ function DispatchedOrdersTab({
   // Print state
   const [showPrint, setShowPrint] = useState(false);
 
-  // Archive state
-  const [archiving, setArchiving] = useState(false);
+  // Un-dispatch state
   const [undispatching, setUndispatching] = useState(false);
   const [undispatchMsg, setUndispatchMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [archiveMsg, setArchiveMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Re-attribute state
   const [reattributing, setReattributing] = useState(false);
@@ -1940,9 +2164,9 @@ function DispatchedOrdersTab({
     setNotifyResult(null);
     setNotifyError("");
     Promise.all([
-      fetch(apiUrl(`/admin/orders?groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`), { headers, credentials: "omit" }).then(r => r.json()),
-      fetch(apiUrl(`/admin/dispatch/${selectedGb}/gb-info`), { headers, credentials: "omit" }).then(r => r.json()),
-      fetch(apiUrl(`/admin/dispatch/${selectedGb}/dispatch-images-map`), { headers, credentials: "omit" }).then(r => r.json()).catch(() => ({})),
+      cfg.dfetch(cfg.ordersPath(`groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`)).then(r => r.json()),
+      cfg.dfetch(`${cfg.base}/${selectedGb}/gb-info`).then(r => r.json()),
+      cfg.dfetch(`${cfg.base}/${selectedGb}/dispatch-images-map`).then(r => r.json()).catch(() => ({})),
     ])
       .then(([ordersData, gbData, imagesMap]) => {
         const raw: Fs3GbOrder[] = Array.isArray(ordersData) ? ordersData : (Array.isArray(ordersData?.orders) ? ordersData.orders : []);
@@ -1958,7 +2182,7 @@ function DispatchedOrdersTab({
       .catch(() => setError("Failed to load dispatched orders"))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGb, headers]);
+  }, [selectedGb, cfg]);
 
   useEffect(() => { setSelectedReshipper(""); setSelectedIds(new Set()); setUnshippedOrders([]); setUnshippedSelected(new Set()); setUnshippedExpanded(false); }, [selectedGb]);
 
@@ -1967,7 +2191,7 @@ function DispatchedOrdersTab({
     setUnshippedOrders([]); setUnshippedSelected(new Set()); setUnshippedExpanded(false);
     if (!selectedGb || !selectedReshipper || selectedReshipper === "__direct__") return;
     const norm = selectedReshipper.replace(/^@/, "");
-    fetch(apiUrl(`/admin/dispatch/${selectedGb}/unshipped-by-reshipper?reshipper=${encodeURIComponent(norm)}`), { headers, credentials: "omit" })
+    cfg.dfetch(`${cfg.base}/${selectedGb}/unshipped-by-reshipper?reshipper=${encodeURIComponent(norm)}`)
       .then(r => r.json())
       .then(data => {
         const orders: UnshippedOrder[] = Array.isArray(data?.orders) ? data.orders : [];
@@ -2042,10 +2266,9 @@ function DispatchedOrdersTab({
     if (!selectedReshipper || selectedReshipper === "__direct__" || unshippedSelected.size === 0) return;
     setMarkingShipped(true);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/mark-shipped-by-reshipper`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/mark-shipped-by-reshipper`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reshipper: selectedReshipper, orderIds: [...unshippedSelected] }),
       });
       const d = await r.json();
@@ -2054,7 +2277,7 @@ function DispatchedOrdersTab({
         setUnshippedOrders(prev => prev.filter(o => !unshippedSelected.has(o.id)));
         setUnshippedSelected(new Set());
         // Reload the dispatched orders list
-        const ordersData = await fetch(apiUrl(`/admin/orders?groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`), { headers, credentials: "omit" }).then(r2 => r2.json());
+        const ordersData = await cfg.dfetch(cfg.ordersPath(`groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`)).then(r2 => r2.json());
         const raw: Fs3GbOrder[] = Array.isArray(ordersData) ? ordersData : (Array.isArray(ordersData?.orders) ? ordersData.orders : []);
         setOrders(raw.filter(o => !(o as any).deletedAt));
       } else {
@@ -2073,10 +2296,9 @@ function DispatchedOrdersTab({
     setUndispatching(true);
     setUndispatchMsg(null);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/undispatch`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/undispatch`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: [...selectedIds] }),
       });
       const d = await r.json();
@@ -2094,48 +2316,21 @@ function DispatchedOrdersTab({
     }
   };
 
-  const handleArchive = async () => {
-    if (selectedIds.size === 0) return;
-    setArchiving(true);
-    setArchiveMsg(null);
-    try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/archive-orders`), {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
-        body: JSON.stringify({ orderIds: [...selectedIds], archive: true }),
-      });
-      const d = await r.json();
-      if (d.ok) {
-        setArchiveMsg({ ok: true, text: `${d.updated} order${d.updated !== 1 ? "s" : ""} archived` });
-        setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
-        setSelectedIds(new Set());
-      } else {
-        setArchiveMsg({ ok: false, text: d.error ?? "Archive failed" });
-      }
-    } catch {
-      setArchiveMsg({ ok: false, text: "Network error" });
-    } finally {
-      setArchiving(false);
-    }
-  };
-
   const handleReattribute = async (reshipper: string) => {
     if (selectedIds.size === 0) return;
     setReattributing(true);
     setReattributeMsg(null);
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/reattribute`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/reattribute`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: [...selectedIds], reshipper }),
       });
       const d = await r.json();
       if (r.ok) {
         setReattributeMsg({ ok: true, text: `${d.updated} order${d.updated !== 1 ? "s" : ""} attributed to ${reshipper}` });
         // Re-fetch orders to reflect the change
-        const ordersData = await fetch(apiUrl(`/admin/orders?groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`), { headers, credentials: "omit" }).then(r2 => r2.json());
+        const ordersData = await cfg.dfetch(cfg.ordersPath(`groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=false&pageSize=999`)).then(r2 => r2.json());
         const raw: Fs3GbOrder[] = Array.isArray(ordersData) ? ordersData : (Array.isArray(ordersData?.orders) ? ordersData.orders : []);
         setOrders(raw.filter(o => !(o as any).deletedAt));
         setSelectedIds(new Set());
@@ -2155,8 +2350,8 @@ function DispatchedOrdersTab({
     try {
       const ids = [...selectedIds].join(",");
       const params = new URLSearchParams({ orderIds: ids, serviceCode: cdServiceCode, weightG: cdWeightG });
-      const url = apiUrl(`/admin/dispatch/${selectedGb}/click-drop-csv?${params}`);
-      const r = await fetch(url, { headers, credentials: "omit" });
+      const url = `${cfg.base}/${selectedGb}/click-drop-csv?${params}`;
+      const r = await cfg.dfetch(url);
       if (!r.ok) { const d = await r.json(); alert(d.error ?? "Export failed"); return; }
       const blob = await r.blob();
       const a = document.createElement("a");
@@ -2179,10 +2374,9 @@ function DispatchedOrdersTab({
     setNotifyResult(null);
     setNotifyError("");
     try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/notify-qr`), {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/notify-qr`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: [...selectedIds], customMessage: customMessage.trim() || undefined }),
       });
       const d = await r.json();
@@ -2234,7 +2428,7 @@ function DispatchedOrdersTab({
     <div className="space-y-4">
       {/* Dispatch Image Uploader */}
       {selectedGb && (
-        <DispatchImageUploader gbId={selectedGb} headers={headers} orders={orders} />
+        <DispatchImageUploader gbId={selectedGb} orders={orders} />
       )}
 
       {/* Summary bar */}
@@ -2456,26 +2650,11 @@ function DispatchedOrdersTab({
               {undispatching ? "Un-dispatching…" : `↩ Un-dispatch (${selectedIds.size})`}
             </button>
           )}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleArchive}
-              disabled={archiving}
-              title="Move selected orders to Archived Dispatched Orders"
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
-            >
-              {archiving ? "Archiving…" : `Archive (${selectedIds.size})`}
-            </button>
-          )}
         </div>
       </div>
       {reattributeMsg && (
         <p className={`text-xs px-3 py-2 rounded border ${reattributeMsg.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
           {reattributeMsg.text}
-        </p>
-      )}
-      {archiveMsg && (
-        <p className={`text-xs px-3 py-2 rounded border ${archiveMsg.ok ? "bg-slate-50 text-slate-600 border-slate-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-          {archiveMsg.ok ? "✓ " : "✗ "}{archiveMsg.text}
         </p>
       )}
       {undispatchMsg && (
@@ -2597,7 +2776,7 @@ function DispatchedOrdersTab({
                       ) : (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {(dispatchImagesMap[o.id] ?? []).map(img => (
-                            <DispatchPhotoThumb key={img.id} imageId={img.id} headers={headers} />
+                            <DispatchPhotoThumb key={img.id} imageId={img.id} />
                           ))}
                         </div>
                       )}
@@ -2730,298 +2909,16 @@ function DispatchedOrdersTab({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ArchivedDispatchedOrdersTab — shows archived dispatched orders with restore option
-// ─────────────────────────────────────────────────────────────────────────────
-function ArchivedDispatchedOrdersTab({
-  selectedGb,
-  headers,
-}: {
-  selectedGb: string;
-  headers: Record<string, string>;
-}) {
-  const [orders, setOrders] = useState<Fs3GbOrder[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [restoring, setRestoring] = useState(false);
-  const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [dispatchImagesMap, setDispatchImagesMap] = useState<Record<string, { id: string; filename: string }[]>>({});
-
-  const loadOrders = useCallback(async () => {
-    if (!selectedGb) { setOrders([]); setDispatchImagesMap({}); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const [data, imagesMap] = await Promise.all([
-        fetch(
-          apiUrl(`/admin/orders?groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=true&pageSize=999`),
-          { headers, credentials: "omit" },
-        ).then(r => r.json()),
-        fetch(apiUrl(`/admin/dispatch/${selectedGb}/dispatch-images-map`), { headers, credentials: "omit" })
-          .then(r => r.json()).catch(() => ({})),
-      ]);
-      const raw: Fs3GbOrder[] = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
-      setOrders(raw.filter(o => !(o as any).deletedAt));
-      setDispatchImagesMap(imagesMap && typeof imagesMap === "object" && !Array.isArray(imagesMap) ? imagesMap : {});
-    } catch {
-      setError("Failed to load archived orders");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedGb, headers]);
-
-  useEffect(() => { loadOrders(); setSelectedIds(new Set()); setRestoreMsg(null); setSearch(""); }, [selectedGb]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return orders;
-    const q = search.trim().toLowerCase();
-    return orders.filter(o =>
-      (o.telegramUsername ?? "").toLowerCase().includes(q) ||
-      (o.code ?? "").toLowerCase().includes(q) ||
-      (o.shippingName ?? "").toLowerCase().includes(q),
-    );
-  }, [orders, search]);
-
-  const toggleOrder = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => setSelectedIds(new Set(filtered.map(o => o.id)));
-  const clearSelection = () => setSelectedIds(new Set());
-
-  const handleRestore = async () => {
-    if (selectedIds.size === 0) return;
-    setRestoring(true);
-    setRestoreMsg(null);
-    try {
-      const r = await fetch(apiUrl(`/admin/dispatch/${selectedGb}/archive-orders`), {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "omit",
-        body: JSON.stringify({ orderIds: [...selectedIds], archive: false }),
-      });
-      const d = await r.json();
-      if (d.ok) {
-        setRestoreMsg({ ok: true, text: `${d.updated} order${d.updated !== 1 ? "s" : ""} restored to Dispatched Orders` });
-        setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
-        setSelectedIds(new Set());
-      } else {
-        setRestoreMsg({ ok: false, text: d.error ?? "Restore failed" });
-      }
-    } catch {
-      setRestoreMsg({ ok: false, text: "Network error" });
-    } finally {
-      setRestoring(false);
-    }
-  };
-
-  if (!selectedGb) {
-    return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Select a group buy to view archived dispatched orders</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 py-10 text-muted-foreground justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        <span className="text-sm">Loading archived orders…</span>
-      </div>
-    );
-  }
-
-  if (error) return <p className="text-sm text-red-600 py-6 text-center">{error}</p>;
-
-  if (orders.length === 0) {
-    return (
-      <div className="text-center py-16 text-muted-foreground border rounded-xl bg-muted/20">
-        <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm font-medium">No archived dispatched orders</p>
-        <p className="text-xs mt-1 opacity-70">Archive orders from the Dispatched Orders tab to see them here.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Summary bar */}
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-slate-50 border-slate-200">
-        <Package className="w-5 h-5 text-slate-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-700">
-            {orders.length} archived order{orders.length !== 1 ? "s" : ""}
-          </p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            These orders have been archived from the Dispatched Orders view. Restore to move them back.
-          </p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <input
-        type="search"
-        placeholder="Search by username, code or name…"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="w-full text-sm border rounded-lg px-3 py-2 bg-background"
-      />
-
-      {/* Selection toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">
-          {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select orders to restore"}
-        </span>
-        <div className="flex gap-1.5 flex-wrap">
-          <button
-            onClick={selectAll}
-            className="px-2.5 py-1 rounded text-[11px] font-medium border border-input bg-background hover:bg-muted transition-colors"
-          >
-            Select all ({filtered.length})
-          </button>
-          {selectedIds.size > 0 && (
-            <button
-              onClick={clearSelection}
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-input bg-background hover:bg-muted transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleRestore}
-              disabled={restoring}
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
-            >
-              {restoring ? "Restoring…" : `Restore to Dispatched (${selectedIds.size})`}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {restoreMsg && (
-        <p className={`text-xs px-3 py-2 rounded border ${restoreMsg.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-          {restoreMsg.ok ? "✓ " : "✗ "}{restoreMsg.text}
-        </p>
-      )}
-
-      {/* Orders list */}
-      {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">No orders match your filter.</p>
-      ) : (
-        <Section title={`Archived Dispatched Orders (${filtered.length}${filtered.length !== orders.length ? ` of ${orders.length}` : ""})`}>
-          <div className="divide-y divide-border -mx-4 -mb-4">
-            {filtered.map(o => {
-              const kits = (o.lineItems ?? []).reduce((s, li) => s + li.quantity, 0);
-              const selected = selectedIds.has(o.id);
-              return (
-                <div
-                  key={o.id}
-                  onClick={() => toggleOrder(o.id)}
-                  className={`px-4 py-3 flex gap-3 cursor-pointer transition-colors ${
-                    selected ? "bg-blue-50" : "hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="pt-0.5 shrink-0">
-                    {selected
-                      ? <CheckSquare className="w-4 h-4 text-primary" />
-                      : <Square className="w-4 h-4 text-muted-foreground" />
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono font-bold text-foreground">
-                        {o.code ? `@${o.code}` : o.id.slice(0, 8)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{o.telegramUsername}</span>
-                      {o.reshipperUsername && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                          {o.reshipperUsername}
-                        </span>
-                      )}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                        o.status === "Completed" ? "bg-emerald-100 text-emerald-700" : "bg-green-100 text-green-700"
-                      }`}>
-                        {o.status}
-                      </span>
-                      {o.deliveryMethod && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border font-medium bg-slate-50 text-slate-600 border-slate-200">
-                          {o.deliveryMethod}
-                        </span>
-                      )}
-                      <span className="ml-auto text-xs text-muted-foreground font-medium shrink-0">
-                        {kits.toFixed(kits % 1 === 0 ? 0 : 1)} kit{kits !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {(o.lineItems ?? []).map((li, i) => (
-                        <span key={i} className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600">
-                          {li.quantity}× {li.productName}
-                        </span>
-                      ))}
-                    </div>
-                    {(o.shippingName || o.shippingCountry) && (
-                      <p className="text-[10px] text-muted-foreground">
-                        {[o.shippingName, o.shippingCountry].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                    {/* Tracking number */}
-                    <div className="flex items-center gap-1.5 text-[10px]">
-                      <Truck className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      {(() => {
-                        const nums = [
-                          ...(o.trackingNumbers ?? []),
-                          ...(o.trackingNumber && !(o.trackingNumbers ?? []).includes(o.trackingNumber) ? [o.trackingNumber] : []),
-                        ].filter(Boolean);
-                        if (nums.length === 0) return <span className="text-muted-foreground italic">No tracking number</span>;
-                        return <span className="font-mono text-blue-700">{nums.join(", ")}</span>;
-                      })()}
-                    </div>
-                    {/* Dispatch photos */}
-                    <div className="flex items-center gap-2 text-[10px]">
-                      <Camera className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      {(dispatchImagesMap[o.id] ?? []).length === 0 ? (
-                        <span className="text-muted-foreground italic">No dispatch photo</span>
-                      ) : (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {(dispatchImagesMap[o.id] ?? []).map(img => (
-                            <DispatchPhotoThumb key={img.id} imageId={img.id} headers={headers} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ShippedItemsContent — copy of the existing "Shipped Items" analysis logic
 // ─────────────────────────────────────────────────────────────────────────────
 type RoutingType = "" | "reshipper" | "direct" | "wholesale";
 
 function ShippedItemsContent({
-  secret,
   selectedGb,
-  headers,
 }: {
-  secret: string;
   selectedGb: string;
-  headers: Record<string, string>;
 }) {
+  const cfg = useDispatchCfg();
   const [parcels, setParcels] = useState<Fs3GbParcel[]>([]);
   const [orders, setOrders] = useState<Fs3GbOrder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3032,8 +2929,8 @@ function ShippedItemsContent({
     if (!selectedGb) { setParcels([]); setOrders([]); return; }
     setLoading(true);
     Promise.all([
-      fetch(apiUrl(`/admin/group-buys/${selectedGb}/parcels`), { headers, credentials: "omit" }).then(r => r.json()),
-      fetch(apiUrl(`/admin/orders?groupBuyId=${selectedGb}&pageSize=999`), { headers, credentials: "omit" }).then(r => r.json()),
+      cfg.dfetch(cfg.gbParcelsPath(selectedGb)).then(r => r.json()),
+      cfg.dfetch(cfg.ordersPath(`groupBuyId=${selectedGb}&pageSize=999`)).then(r => r.json()),
     ])
       .then(([p, o]) => {
         setParcels(Array.isArray(p) ? p : []);
@@ -3041,7 +2938,7 @@ function ShippedItemsContent({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [selectedGb, headers]);
+  }, [selectedGb, cfg]);
 
   useEffect(() => { setSelectedReshippers(new Set()); }, [routingType]);
 
