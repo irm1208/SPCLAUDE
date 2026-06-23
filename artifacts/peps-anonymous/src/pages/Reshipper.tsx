@@ -210,12 +210,9 @@ function deriveOrderTimeline(order: ROrder): { current: number; done: boolean[];
 // ─── Order workspace facets (Split Workspace inline view) ──────────────────────
 
 const SW_FACETS = [
-  { id: "items", label: "Order Items", icon: Package },
+  { id: "order", label: "Order Details", icon: Package },
   { id: "status", label: "Status & Timeline", icon: Box },
-  { id: "tracking", label: "Tracking", icon: Truck },
   { id: "qr", label: "Courier QR", icon: QrCode },
-  { id: "address", label: "Delivery Address", icon: MapPin },
-  { id: "tx", label: "Transaction", icon: Hash },
 ] as const;
 type Facet = typeof SW_FACETS[number]["id"];
 
@@ -982,7 +979,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const [msg, setMsg] = useState<Record<string, string>>({});
   const [reshQrSaving, setReshQrSaving] = useState<Record<string, boolean>>({});
   const [reshQrMsg, setReshQrMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
-  const [activeFacet, setActiveFacet] = useState<Facet>("items");
+  const [activeFacet, setActiveFacet] = useState<Facet>("order");
 
   const filtered = useMemo(() => {
     let list = orders;
@@ -1039,7 +1036,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const toggleExpand = async (id: string) => {
     if (expandedId === id) { setExpandedId(null); return; }
     setExpandedId(id);
-    setActiveFacet("items");
+    setActiveFacet("order");
     setEditingId(null);
     setTrackingEditId(null);
     await loadDetail(id);
@@ -1339,7 +1336,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               )}
 
                               {/* ITEMS */}
-                              {activeFacet === "items" && (
+                              {activeFacet === "order" && (
                                 <div className="space-y-2">
                                   <div className="flex items-center gap-1.5 mb-1">
                                     <Package className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
@@ -1410,7 +1407,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               )}
 
                               {/* TRACKING */}
-                              {activeFacet === "tracking" && (() => {
+                              {activeFacet === "order" && (() => {
                                 const det = orderDetails[order.id] ?? order;
                                 const currentNums: string[] = det.trackingNumbers?.length
                                   ? det.trackingNumbers
@@ -1539,7 +1536,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               )}
 
                               {/* DELIVERY ADDRESS */}
-                              {activeFacet === "address" && (
+                              {activeFacet === "order" && (
                                 isEditing ? (
                                   <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                                     <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Edit Order</p>
@@ -1642,7 +1639,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               )}
 
                               {/* TRANSACTION */}
-                              {activeFacet === "tx" && (
+                              {activeFacet === "order" && (
                                 <div className="space-y-2">
                                   <div className="flex items-center gap-1.5 mb-1">
                                     <Hash className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
