@@ -174,44 +174,10 @@ const PARCEL_STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   expired:          { color: "#64748B", bg: "rgba(100,116,139,0.1)" },
 };
 
-// ─── Order status timeline ──────────────────────────────────────────────────
-
-const TIMELINE_STEPS: { key: string; label: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
-  { key: "submitted", label: "Submitted", icon: FileText },
-  { key: "paid", label: "Paid", icon: CreditCard },
-  { key: "packed", label: "Packed", icon: Box },
-  { key: "shipped", label: "Shipped", icon: Truck },
-  { key: "delivered", label: "Delivered", icon: Home },
-];
-
-function deriveOrderTimeline(order: ROrder): { current: number; done: boolean[]; cancelled: boolean } {
-  if (order.status === "Cancelled") return { current: -1, done: [false, false, false, false, false], cancelled: true };
-  const rank: Record<string, number> = { Draft: 0, Submitted: 1, Processing: 2, Shipped: 3, Completed: 4 };
-  const r = rank[order.status] ?? 0;
-  const paid = order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed";
-  // `current` = the stage the order is actively at (status-driven only, no over-claiming).
-  let current: number;
-  if (r === 0) current = -1;        // Draft — not submitted yet, nothing active
-  else if (r === 1) current = 0;    // Submitted
-  else if (r === 2) current = 2;    // Processing → packing in progress
-  else if (r === 3) current = 3;    // Shipped — in transit
-  else current = 4;                 // Completed → delivered
-  // Per-node completion. Paid is a payment-driven overlay, independent of fulfilment stage.
-  const done = [
-    r >= 2,                         // Submitted milestone passed
-    paid,                           // Paid
-    r >= 3,                         // Packed (done once shipped)
-    r >= 4,                         // Shipped (done once delivered)
-    order.status === "Completed",   // Delivered
-  ];
-  return { current, done, cancelled: false };
-}
-
 // ─── Order workspace facets (Split Workspace inline view) ──────────────────────
 
 const SW_FACETS = [
   { id: "order", label: "Order Details", icon: Package },
-  { id: "status", label: "Status & Timeline", icon: Box },
   { id: "qr", label: "Courier QR", icon: QrCode },
 ] as const;
 type Facet = typeof SW_FACETS[number]["id"];
@@ -1245,7 +1211,6 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
             const isEditing = editingId === order.id;
             const detail = orderDetails[order.id];
             const allowed = ALLOWED_STATUS_TRANSITIONS[order.status] ?? [];
-            const tl = deriveOrderTimeline(order);
 
             return (
               <div key={order.id} className="rounded-2xl overflow-hidden"
@@ -1338,70 +1303,46 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                               {/* ITEMS */}
                               {activeFacet === "order" && (
                                 <div className="space-y-2">
-                                  <div className="flex items-center gap-1.5 mb-1">
-                                    <Package className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
-                                    <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Order Items</h4>
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <Package className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
+                                      <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Order Items</h4>
+                                    </div>
+                                    {detail?.lineItems && detail.lineItems.length > 0 && (
+                                      <span className="text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                                        {detail.lineItems.reduce((s, it) => s + Number(it.quantity ?? 0), 0)} items
+                                      </span>
+                                    )}
                                   </div>
                                   {detail?.lineItems && detail.lineItems.length > 0 ? (
                                     <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                                      <div>
-                                        {detail.lineItems.map((item, i) => (
-                                          <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
-                                            <span className="min-w-[1.75rem] h-6 px-1.5 rounded-md flex items-center justify-center text-[10px] font-bold tabular-nums shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}×</span>
-                                            <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--t-text)" }}>{item.productName}</span>
-                                            <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(item.lineTotal)}</span>
-                                          </div>
-                                        ))}
+                                      <div className="flex items-center gap-2 px-3 py-2 text-[9px] font-bold uppercase tracking-wider" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: "1px solid var(--t-border)" }}>
+                                        <span className="w-9 shrink-0 text-center">Qty</span>
+                                        <span className="flex-1">Item</span>
+                                        <span className="text-right">Amount</span>
                                       </div>
-                                      <div className="px-3 py-2.5 flex items-center justify-between" style={{ background: "var(--t-surface2)" }}>
+                                      {detail.lineItems.map((item, i) => {
+                                        const qty = Number(item.quantity ?? 0);
+                                        const total = Number(item.lineTotal ?? 0);
+                                        const unit = qty > 0 ? total / qty : total;
+                                        return (
+                                          <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
+                                            <span className="w-9 h-6 shrink-0 rounded-md flex items-center justify-center text-[11px] font-bold tabular-nums" style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}>{qty}×</span>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-[11px] font-semibold leading-snug break-words" style={{ color: "var(--t-text)" }}>{item.productName}</p>
+                                              {qty > 1 && <p className="text-[10px] tabular-nums mt-0.5" style={{ color: "var(--t-subtle)" }}>{sym}{fmtCurrency(unit)} each</p>}
+                                            </div>
+                                            <span className="text-[11px] font-bold tabular-nums shrink-0" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(total)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                      <div className="px-3 py-2.5 flex items-center justify-between" style={{ background: "var(--t-surface2)", borderTop: "1px solid var(--t-border)" }}>
                                         <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Subtotal</span>
-                                        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}</span>
+                                        <span className="text-sm font-extrabold tabular-nums" style={{ color: "var(--t-text)" }}>{sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}</span>
                                       </div>
                                     </div>
                                   ) : (
                                     <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No items on this order.</p>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* STATUS & TIMELINE */}
-                              {activeFacet === "status" && (
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-1.5 mb-1">
-                                    <Box className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
-                                    <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Status & Timeline</h4>
-                                  </div>
-                                  {tl.cancelled ? (
-                                    <div className="rounded-xl p-4 text-center" style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)" }}>
-                                      <p className="text-sm font-bold" style={{ color: "#DC2626" }}>Order cancelled</p>
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-xl p-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                                      {TIMELINE_STEPS.map((step, i) => {
-                                        const done = tl.done[i];
-                                        const current = i === tl.current && !done;
-                                        const StepIcon = step.icon;
-                                        const last = i === TIMELINE_STEPS.length - 1;
-                                        let when = "";
-                                        if (step.key === "submitted") when = new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                                        else if (step.key === "paid" && order.paymentConfirmedAt) when = new Date(order.paymentConfirmedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                                        return (
-                                          <div key={step.key} className="flex gap-3 pb-4 last:pb-0 relative">
-                                            {!last && <div className="absolute left-[11px] top-6 bottom-0 w-0.5" style={{ background: done ? "var(--t-blue)" : "var(--t-border)" }} />}
-                                            <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10"
-                                              style={current
-                                                ? { background: "var(--t-blue-deep)", boxShadow: "0 0 0 4px var(--t-blue-10)" }
-                                                : done ? { background: "var(--t-blue)" } : { background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                                              {done ? <Check className="w-3 h-3" style={{ color: "#FFFFFF" }} /> : <StepIcon className="w-3 h-3" style={{ color: current ? "#FFFFFF" : "var(--t-subtle)" }} />}
-                                            </div>
-                                            <div className="min-w-0 pt-0.5">
-                                              <p className="text-xs font-bold" style={{ color: (done || current) ? "var(--t-text)" : "var(--t-subtle)" }}>{step.label}</p>
-                                              {when && <p className="text-[10px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{when}</p>}
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
                                   )}
                                 </div>
                               )}
