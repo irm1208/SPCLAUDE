@@ -941,6 +941,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const [filterPayDateFrom, setFilterPayDateFrom] = useState("");
   const [filterPayDateTo, setFilterPayDateTo] = useState("");
   const [sortBy, setSortBy] = useState<"order_desc" | "order_asc" | "pay_desc" | "pay_asc">("order_desc");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<Partial<ROrder>>({});
@@ -1128,77 +1129,132 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search username or code…"
-            className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
-            style={{ ...inputStyle }}
-          />
-        </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
-          <option value="all">All statuses</option>
-          {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
-          className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
-          <option value="all">All payments</option>
-          {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABEL[s] ?? s}</option>)}
-        </select>
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Order date:</span>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
-          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
-          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        {(filterDateFrom || filterDateTo) && (
-          <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
-            className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
-            style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
-            <X className="w-2.5 h-2.5" /> Clear
-          </button>
-        )}
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Payment date:</span>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
-          <input type="date" value={filterPayDateFrom} onChange={e => setFilterPayDateFrom(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        <div className="flex items-center gap-1">
-          <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
-          <input type="date" value={filterPayDateTo} onChange={e => setFilterPayDateTo(e.target.value)}
-            className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
-        </div>
-        {(filterPayDateFrom || filterPayDateTo) && (
-          <button onClick={() => { setFilterPayDateFrom(""); setFilterPayDateTo(""); }}
-            className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
-            style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
-            <X className="w-2.5 h-2.5" /> Clear
-          </button>
-        )}
-      </div>
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Sort:</span>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
-          className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
-          <option value="order_desc">Newest order first</option>
-          <option value="order_asc">Oldest order first</option>
-          <option value="pay_desc">Most recent paid first</option>
-          <option value="pay_asc">First paid first</option>
-        </select>
-      </div>
+      {(() => {
+        const activeFilterCount =
+          (filterStatus !== "all" ? 1 : 0) +
+          (filterPayment !== "all" ? 1 : 0) +
+          (filterDateFrom || filterDateTo ? 1 : 0) +
+          (filterPayDateFrom || filterPayDateTo ? 1 : 0) +
+          (sortBy !== "order_desc" ? 1 : 0);
+        const clearAll = () => {
+          setFilterStatus("all"); setFilterPayment("all");
+          setFilterDateFrom(""); setFilterDateTo("");
+          setFilterPayDateFrom(""); setFilterPayDateTo("");
+          setSortBy("order_desc");
+        };
+        return (
+          <>
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1 min-w-[140px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
+                <input
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search username or code…"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
+                  style={{ ...inputStyle }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(o => !o)}
+                className="h-9 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0"
+                style={{
+                  background: filtersOpen || activeFilterCount > 0 ? "var(--t-blue)" : "var(--t-surface2)",
+                  color: filtersOpen || activeFilterCount > 0 ? "#fff" : "var(--t-text)",
+                  border: "1px solid var(--t-border)",
+                }}>
+                <Filter className="w-3.5 h-3.5" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold"
+                    style={{ background: "rgba(255,255,255,0.25)", color: "#fff" }}>
+                    {activeFilterCount}
+                  </span>
+                )}
+                {filtersOpen
+                  ? <ChevronUp className="w-3.5 h-3.5" />
+                  : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            {filtersOpen && (
+              <div className="rounded-xl p-3 space-y-3"
+                style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
+                    <option value="all">All statuses</option>
+                    {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
+                    className="h-9 rounded-xl px-3 text-xs focus:outline-none" style={inputStyle}>
+                    <option value="all">All payments</option>
+                    {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABEL[s] ?? s}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Order date:</span>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
+                    <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
+                    <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  {(filterDateFrom || filterDateTo) && (
+                    <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Payment date:</span>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>From</label>
+                    <input type="date" value={filterPayDateFrom} onChange={e => setFilterPayDateFrom(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>To</label>
+                    <input type="date" value={filterPayDateTo} onChange={e => setFilterPayDateTo(e.target.value)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle} />
+                  </div>
+                  {(filterPayDateFrom || filterPayDateTo) && (
+                    <button onClick={() => { setFilterPayDateFrom(""); setFilterPayDateTo(""); }}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap items-center justify-between">
+                  <div className="flex gap-2 flex-wrap items-center">
+                    <span className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>Sort:</span>
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+                      className="h-8 rounded-xl px-2 text-xs focus:outline-none" style={inputStyle}>
+                      <option value="order_desc">Newest order first</option>
+                      <option value="order_asc">Oldest order first</option>
+                      <option value="pay_desc">Most recent paid first</option>
+                      <option value="pay_asc">First paid first</option>
+                    </select>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearAll}
+                      className="h-7 px-2.5 rounded-lg text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: "var(--t-surface)", color: "var(--t-subtle)", border: "1px solid var(--t-border)" }}>
+                      <X className="w-2.5 h-2.5" /> Clear all filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{filtered.length} of {orders.length} orders</p>
         <button
