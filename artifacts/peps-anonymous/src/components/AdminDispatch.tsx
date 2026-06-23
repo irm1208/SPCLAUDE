@@ -1804,7 +1804,7 @@ function DispatchImageUploader({ gbId, orders }: {
   orders: Fs3GbOrder[];
 }) {
   const cfg = useDispatchCfg();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [items, setItems] = useState<PendingImage[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
