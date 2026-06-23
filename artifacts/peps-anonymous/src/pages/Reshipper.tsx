@@ -402,7 +402,6 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
           </button>
         )}
       </div>
-
       {productRows.length > 0 ? (
         <>
           {/* Stats strip */}
@@ -1190,7 +1189,6 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
           <FileDown className="w-3 h-3" /> Export CSV
         </button>
       </div>
-
       {filtered.length === 0 ? (
         <div className="text-center py-12" style={{ color: "var(--t-subtle)" }}>No orders found</div>
       ) : (
@@ -1240,7 +1238,6 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                       : <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--t-muted)" }} />
                   }
                 </div>
-
                 {/* Expanded detail */}
                 <AnimatePresence initial={false}>
                   {isOpen && (
@@ -2468,16 +2465,13 @@ function ParcelsTab({ gbId }: { gbId: string }) {
           </button>
         </div>
       </div>
-
       {creating && <ParcelFormUI gbId={gbId} form={form} setForm={setForm} saving={saving} msg={msg} editingId={editingId} onSave={saveCreate} onCancel={() => { setCreating(false); setMsg(""); }} />}
-
       {parcels.length === 0 && !creating && (
         <div className="flex flex-col items-center py-12 space-y-2">
           <Truck className="w-8 h-8" style={{ color: "var(--t-border)" }} />
           <p className="text-sm" style={{ color: "var(--t-subtle)" }}>No parcels yet</p>
         </div>
       )}
-
       <div className="space-y-2">
         {parcels.map(p => {
           const sc = PARCEL_STATUS_COLORS[p.status] ?? PARCEL_STATUS_COLORS.pending;
@@ -2558,7 +2552,6 @@ function ParcelsTab({ gbId }: { gbId: string }) {
                   </p>
                 )}
               </div>
-
               <AnimatePresence initial={false}>
                 {isOpen && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
@@ -3043,7 +3036,6 @@ function BroadcastTab({ gbId, gbName, reshipperUsername, country }: {
           </button>
         ))}
       </div>
-
       <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>
           {mode === "individual" ? "Direct Message" : "Group Broadcast"}
@@ -3191,7 +3183,6 @@ function BroadcastTab({ gbId, gbName, reshipperUsername, country }: {
           </div>
         </div>
       </div>
-
       {result && (
         <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
           style={{ background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.2)", color: "#15803D" }}>
@@ -3767,7 +3758,7 @@ export default function ReshipperPage() {
 
         {/* ── GB picker row (multiple assignments) ── */}
         {assignments.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0 bg-[#fcfcfc]" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
             {assignments.map(a => (
               <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
                 className="flex items-center gap-1 px-3 h-7 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
