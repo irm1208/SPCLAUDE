@@ -272,3 +272,139 @@ describe("organiser dispatch scope lock", () => {
     expect(mockState.state.updateSpy).not.toHaveBeenCalled();
   });
 });
+
+// ─── happy paths ───────────────────────────────────────────────────────────────
+// The negative tests above prove forged/foreign ids are blocked. These prove the
+// scope locks do NOT over-block: a reshipper acting on their OWN parcels/orders,
+// and an organiser acting on a GB they OWN, both succeed and the writes happen.
+describe("reshipper dispatch — legitimate actions succeed", () => {
+  it("confirms dispatch for the reshipper's own orders + parcels (writes happen)", async () => {
+    // reshipperA is on the GB and owns both the order and the parcel.
+    mockState.state.selectImpl = (ctx) => {
+      switch (ctx.table) {
+        case "gb_reshippers": return [{ id: GB_ID }];
+        case "orders": return [{ id: "own-order", reshipperUsername: "reshipperA", dispatchedByReshipper: null }];
+        case "gb_parcels": return [{ id: "own-parcel", reshipperUsername: "reshipperA", items: [{ name: "BPC-157", qty: 5 }] }];
+        case "order_line_items": return [{ orderId: "own-order", productName: "BPC-157", quantity: 1 }];
+        default: return [];
+      }
+    };
+
+    const app = buildApp(reshipperDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/reshipper/dispatch/${GB_ID}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-reshipper": "reshipperA" },
+        body: JSON.stringify({ orderIds: ["own-order"], parcelIds: ["own-parcel"] }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, confirmed: 1 });
+    // Parcel stock was deducted and the order was stamped Shipped.
+    const orderShipped = mockState.state.updateSpy.mock.calls.some(
+      (c) => (c[0] as { table: string; values: { status?: string } }).table === "orders" &&
+             (c[0] as { values: { status?: string } }).values.status === "Shipped",
+    );
+    expect(orderShipped).toBe(true);
+    const parcelWrite = mockState.state.updateSpy.mock.calls.some(
+      (c) => (c[0] as { table: string }).table === "gb_parcels",
+    );
+    expect(parcelWrite).toBe(true);
+  });
+
+  it("saves a dispatch image for the reshipper's own order (insert happens)", async () => {
+    mockState.state.selectImpl = (ctx) => {
+      switch (ctx.table) {
+        case "gb_reshippers": return [{ id: GB_ID }];
+        // Serves both loadOrderScope (body filter) and the handler's targetOrder check.
+        case "orders": return [{ id: "own-order", groupBuyId: GB_ID, reshipperUsername: "reshipperA", dispatchedByReshipper: null }];
+        default: return [];
+      }
+    };
+
+    const app = buildApp(reshipperDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/reshipper/dispatch/${GB_ID}/save-dispatch-image`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-reshipper": "reshipperA" },
+        body: JSON.stringify({ orderId: "own-order", imageData: "data:image/jpg;base64,AAA", filename: "x.jpg" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok?: boolean; imageId?: string };
+    expect(body.ok).toBe(true);
+    expect(typeof body.imageId).toBe("string");
+    const imgInsert = mockState.state.insertSpy.mock.calls.some(
+      (c) => (c[0] as { table: string }).table === "order_dispatch_images",
+    );
+    expect(imgInsert).toBe(true);
+  });
+});
+
+describe("organiser dispatch — legitimate actions succeed", () => {
+  // organiserOwnsGb finds the GB → the :gbId param check passes.
+  const owned = (extra: (table: string) => unknown[]) => {
+    mockState.state.selectImpl = (ctx) => {
+      if (ctx.table === "group_buys") return [{ id: GB_ID }];
+      return extra(ctx.table);
+    };
+  };
+
+  it("confirms dispatch in a group buy it owns (order stamped Shipped)", async () => {
+    owned((table) => {
+      switch (table) {
+        case "orders": return [{ id: "o1" }];
+        case "order_line_items": return [{ orderId: "o1", productName: "X", quantity: 1 }];
+        case "gb_parcels": return [{ id: "p1", reshipperUsername: null, items: [{ name: "X", qty: 5 }] }];
+        default: return [];
+      }
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1"], parcelIds: ["p1"] }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, confirmed: 1 });
+    const orderShipped = mockState.state.updateSpy.mock.calls.some(
+      (c) => (c[0] as { table: string; values: { status?: string } }).table === "orders" &&
+             (c[0] as { values: { status?: string } }).values.status === "Shipped",
+    );
+    expect(orderShipped).toBe(true);
+  });
+
+  it("un-dispatches orders in a group buy it owns (order reset to Processing)", async () => {
+    owned((table) => {
+      switch (table) {
+        case "orders": return [{ id: "o1" }];
+        case "order_line_items": return [{ orderId: "o1", productName: "X", quantity: 1 }];
+        case "gb_parcels": return [{ id: "p1", reshipperUsername: null, items: [{ name: "X", qty: 1, dispatchedQty: 1 }] }];
+        default: return [];
+      }
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/undispatch`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1"] }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, undispatched: 1 });
+    const orderReset = mockState.state.updateSpy.mock.calls.some(
+      (c) => (c[0] as { table: string; values: { status?: string } }).table === "orders" &&
+             (c[0] as { values: { status?: string } }).values.status === "Processing",
+    );
+    expect(orderReset).toBe(true);
+  });
+});
