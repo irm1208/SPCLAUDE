@@ -1382,7 +1382,7 @@ function PackingSlipsTab({
 // ─── InfoTip ──────────────────────────────────────────────────────────────────
 // Tap-friendly "i" icon that opens a short plain-language explanation. Uses a
 // click popover (not hover) so it works on touch devices.
-function InfoTip({ children, label }: { children: React.ReactNode; label?: string }) {
+function InfoTip({ children, label, triggerClassName }: { children: React.ReactNode; label?: string; triggerClassName?: string }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -1390,7 +1390,7 @@ function InfoTip({ children, label }: { children: React.ReactNode; label?: strin
           type="button"
           aria-label={label || "More information"}
           onClick={e => e.stopPropagation()}
-          className="inline-flex items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className={triggerClassName ?? "inline-flex items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"}
         >
           <Info className="w-4 h-4" />
         </button>
@@ -1808,7 +1808,7 @@ function DispatchImageUploader({ gbId, orders }: {
   orders: Fs3GbOrder[];
 }) {
   const cfg = useDispatchCfg();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [items, setItems] = useState<PendingImage[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1922,21 +1922,49 @@ function DispatchImageUploader({ gbId, orders }: {
   const unsavedCount = items.filter(i => !i.saved && i.status !== "error").length;
 
   return (
-    <div className="border rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 bg-indigo-50 hover:bg-indigo-100 border-b border-indigo-100 transition-colors text-left"
-      >
-        <Camera className="w-4 h-4 text-indigo-600 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-indigo-800">Upload Dispatch Photos</p>
-          <p className="text-xs text-indigo-500">AI reads packing slips and matches each photo to an order</p>
-        </div>
+    <div className="rounded-2xl overflow-hidden border-2 border-indigo-300 shadow-lg shadow-indigo-200/50 ring-1 ring-indigo-100">
+      <div className="flex items-center gap-2 px-4 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <Camera className="w-5 h-5 text-white shrink-0" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white">Upload Dispatch Photos</p>
+            <p className="text-xs text-indigo-100">AI reads packing slips and matches each photo to an order</p>
+          </div>
+        </button>
         {unsavedCount > 0 && (
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-600 text-white">{unsavedCount}</span>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white text-indigo-700 shrink-0">{unsavedCount}</span>
         )}
-        {expanded ? <ChevronUp className="w-4 h-4 text-indigo-500 shrink-0" /> : <ChevronDown className="w-4 h-4 text-indigo-500 shrink-0" />}
-      </button>
+        <InfoTip
+          label="How to use Upload Dispatch Photos"
+          triggerClassName="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors shrink-0"
+        >
+          <div className="space-y-2">
+            <p className="font-semibold text-foreground">What it does</p>
+            <p>Lets you snap or upload a photo of each parcel's packing slip. The system reads the slip with AI and automatically matches it to the right order, attaching the photo as proof of dispatch.</p>
+            <p className="font-semibold text-foreground">How to use it</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>Drag photos in, or tap the box to pick them from your phone or computer (you can add several at once).</li>
+              <li>Wait a moment while each packing slip is read.</li>
+              <li>Check the matched order. If it picked the wrong one, choose the correct order from the dropdown — or set it to skip.</li>
+              <li>Save each photo to attach it to that order. Saved photos turn green.</li>
+            </ol>
+            <p className="text-xs">Tip: clear, well-lit photos where the order code is readable match most accurately.</p>
+          </div>
+        </InfoTip>
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-label={expanded ? "Collapse" : "Expand"}
+          className="shrink-0 text-white/80 hover:text-white transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </div>
 
       {expanded && (
         <div className="p-4 space-y-4 bg-white">
