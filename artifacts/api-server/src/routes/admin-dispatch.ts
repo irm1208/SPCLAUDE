@@ -40,12 +40,31 @@ export function createDispatchRouter(cfg: DispatchRouterCfg): IRouter {
 
   const router: IRouter = Router({ mergeParams: true });
 
-  router.use(cfg.auth);
+  // Auth + scope middleware MUST only run for THIS router's own paths. Each
+  // router instance is mounted at the app root, so an unscoped middleware runs
+  // on every request that falls through to it — e.g. the admin instance's
+  // requireAdmin would reject /reshipper/dispatch/* and /organiser/dispatch/*
+  // (503/401) before they reach their own routers.
+  //
+  // We gate (rather than mount with a path) on purpose: `router.use(path, fn)`
+  // strips the mount prefix from req.path, which breaks downstream middleware
+  // (e.g. the reshipper body filter) that matches against the full prefixed path.
+  const ownsPath = (req: Request): boolean => {
+    const p = req.path;
+    const underPrefix = p === cfg.prefix || p.startsWith(cfg.prefix + "/");
+    const underImages = p === cfg.ordersImagesPrefix || p.startsWith(cfg.ordersImagesPrefix + "/");
+    return underPrefix || underImages;
+  };
+  const gate = (mw: RequestHandler): RequestHandler => (req, res, next) => {
+    if (!ownsPath(req)) { next(); return; }
+    mw(req, res, next);
+  };
+  router.use(gate(cfg.auth));
   if (cfg.forceScope) {
-    router.use((req: Request, _res: Response, next: NextFunction) => { cfg.forceScope!(req); next(); });
+    router.use(gate((req: Request, _res: Response, next: NextFunction) => { cfg.forceScope!(req); next(); }));
   }
   if (cfg.bodyScopeFilter) {
-    router.use(cfg.bodyScopeFilter);
+    router.use(gate(cfg.bodyScopeFilter));
   }
   router.param("gbId", async (req: Request, res: Response, next: NextFunction, gbId: string) => {
     try {
