@@ -1375,7 +1375,7 @@ function InfoTip({ children, label }: { children: React.ReactNode; label?: strin
       <PopoverContent
         align="start"
         onClick={e => e.stopPropagation()}
-        className="w-72 text-sm leading-relaxed text-muted-foreground"
+        className="w-72 text-sm leading-relaxed text-muted-foreground bg-white border border-border shadow-lg"
       >
         {children}
       </PopoverContent>
