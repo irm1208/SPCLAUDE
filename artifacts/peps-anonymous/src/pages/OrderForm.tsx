@@ -253,6 +253,7 @@ function SearchableProductSelect({
           paddingTop: 10,
           paddingBottom: 10,
           transition: "background 0.1s",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
         }}
         onMouseEnter={e => { if (!isDisabled) (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.18)" : "rgba(255,255,255,0.05)"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.12)" : "transparent"; }}
