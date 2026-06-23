@@ -264,7 +264,7 @@ function SearchableProductSelect({
             : <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", background: dotColor ?? "rgba(255,255,255,0.12)", opacity: isDisabled ? 0.35 : 1 }} />
         )}
 
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, wordBreak: "break-word" }}>
           {p.name}{p.mgSize ? ` - ${p.mgSize}` : ""}
         </span>
 
@@ -351,12 +351,14 @@ function SearchableProductSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(o => !o)}
-        className="w-full text-left focus:outline-none flex items-center"
+        className="w-full text-left focus:outline-none flex items-start"
         style={{
-          height: 48,
+          minHeight: 48,
           borderRadius: 12,
           paddingLeft: 16,
           paddingRight: 40,
+          paddingTop: 13,
+          paddingBottom: 13,
           fontSize: 14,
           background: "#162231",
           border: open ? "1px solid rgba(91,141,239,0.5)" : "1px solid rgba(255,255,255,0.08)",
@@ -368,7 +370,7 @@ function SearchableProductSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, wordBreak: "break-word", lineHeight: "1.4" }}>
           {disabled ? "Loading products…" : selected ? `${selected.name}${selected.mgSize ? ` - ${selected.mgSize}` : ""}` : "Select a product…"}
         </span>
       </button>
