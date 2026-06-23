@@ -1588,7 +1588,19 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
                 <p className="text-xs text-gray-400">Tracking information will appear here once your order is shipped.</p>
               </div>
             ) : (
-              parcels.map((parcel, idx) => {
+              <>
+              <div className="flex items-start gap-2.5 p-3 rounded-2xl border border-blue-100 bg-blue-50/70">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--t-blue)" }} />
+                <div className="text-xs leading-relaxed text-gray-600 space-y-1">
+                  <p>
+                    <strong className="text-gray-800">This tracking is for parcels travelling from the vendor to your reshipper</strong> — it's not the tracking for your personal order being posted to you.
+                  </p>
+                  <p>
+                    If several parcels list the same items, that's because the order is split across the whole group buy.
+                  </p>
+                </div>
+              </div>
+              {parcels.map((parcel, idx) => {
                 const statusInfo = PARCEL_STATUS_DISPLAY[parcel.status] ?? PARCEL_STATUS_DISPLAY.pending;
                 const events = parcel.events ?? [];
                 const isOpen = expanded[parcel.id];
@@ -1684,7 +1696,8 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
                     )}
                   </div>
                 );
-              })
+              })}
+              </>
             )}
 
             {/* ── Still to come ── */}
