@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ShoppingBag, Settings, ExternalLink, Copy,
   Search, Filter, Wallet, QrCode, FileDown, BarChart3, MapPin,
   Download, ImageOff, Inbox, Bell, Users, FileText, Box,
-  CheckCircle2, RotateCcw,
+  CheckCircle2, RotateCcw, Home,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
@@ -173,6 +173,39 @@ const PARCEL_STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   exception:        { color: "#DC2626", bg: "rgba(220,38,38,0.1)" },
   expired:          { color: "#64748B", bg: "rgba(100,116,139,0.1)" },
 };
+
+// ─── Order status timeline ──────────────────────────────────────────────────
+
+const TIMELINE_STEPS: { key: string; label: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
+  { key: "submitted", label: "Submitted", icon: FileText },
+  { key: "paid", label: "Paid", icon: CreditCard },
+  { key: "packed", label: "Packed", icon: Box },
+  { key: "shipped", label: "Shipped", icon: Truck },
+  { key: "delivered", label: "Delivered", icon: Home },
+];
+
+function deriveOrderTimeline(order: ROrder): { current: number; done: boolean[]; cancelled: boolean } {
+  if (order.status === "Cancelled") return { current: -1, done: [false, false, false, false, false], cancelled: true };
+  const rank: Record<string, number> = { Draft: 0, Submitted: 1, Processing: 2, Shipped: 3, Completed: 4 };
+  const r = rank[order.status] ?? 0;
+  const paid = order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed";
+  // `current` = the stage the order is actively at (status-driven only, no over-claiming).
+  let current: number;
+  if (r === 0) current = -1;        // Draft — not submitted yet, nothing active
+  else if (r === 1) current = 0;    // Submitted
+  else if (r === 2) current = 2;    // Processing → packing in progress
+  else if (r === 3) current = 3;    // Shipped — in transit
+  else current = 4;                 // Completed → delivered
+  // Per-node completion. Paid is a payment-driven overlay, independent of fulfilment stage.
+  const done = [
+    r >= 2,                         // Submitted milestone passed
+    paid,                           // Paid
+    r >= 3,                         // Packed (done once shipped)
+    r >= 4,                         // Shipped (done once delivered)
+    order.status === "Completed",   // Delivered
+  ];
+  return { current, done, cancelled: false };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1199,6 +1232,12 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
             const isEditing = editingId === order.id;
             const detail = orderDetails[order.id];
             const allowed = ALLOWED_STATUS_TRANSITIONS[order.status] ?? [];
+            const tl = deriveOrderTimeline(order);
+            const statusPill = order.status === "Shipped" ? "In transit"
+              : order.status === "Completed" ? "Delivered"
+              : order.status === "Cancelled" ? "Cancelled"
+              : order.status === "Processing" ? "In progress"
+              : (PAYMENT_LABEL[order.paymentStatus] ?? order.paymentStatus);
 
             return (
               <div key={order.id} className="rounded-2xl overflow-hidden"
@@ -1243,47 +1282,64 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                      <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-
-                        {/* Line items */}
-                        {detail?.lineItems && detail.lineItems.length > 0 && (
-                          <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                            <div className="px-3 py-2 flex items-center gap-1.5 border-b" style={{ borderColor: "var(--t-border)" }}>
-                              <Package className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
-                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Items</p>
+                      <div className="border-t" style={{ borderColor: "var(--t-border)" }}>
+                        {/* HERO: Elevated status timeline */}
+                        <div className="px-4 pt-4 pb-5" style={{ background: tl.cancelled ? "var(--t-surface2)" : "var(--t-gradient)" }}>
+                          <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: tl.cancelled ? "var(--t-subtle)" : "rgba(255,255,255,0.6)" }}>Delivery status</p>
+                              <p className="text-2xl font-extrabold leading-tight mt-0.5" style={{ color: tl.cancelled ? "#DC2626" : "#FFFFFF" }}>{order.status}</p>
                             </div>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 mt-1"
+                              style={tl.cancelled
+                                ? { background: "rgba(220,38,38,0.12)", color: "#DC2626" }
+                                : { background: "rgba(255,255,255,0.18)", color: "#FFFFFF" }}>
+                              <Truck className="w-3 h-3 shrink-0" />
+                              <span className="text-[10px] font-bold">{statusPill}</span>
+                            </div>
+                          </div>
+                          {tl.cancelled ? (
+                            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>This order was cancelled.</p>
+                          ) : (
                             <div>
-                              {detail.lineItems.map((item, i) => (
-                                <div key={i} className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
-                                  <span className="min-w-[1.75rem] h-6 px-1.5 rounded-md flex items-center justify-center text-[10px] font-bold tabular-nums shrink-0"
-                                    style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}×</span>
-                                  <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--t-text)" }}>{item.productName}</span>
-                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
-                                    {sym}{fmtCurrency(item.lineTotal)}
-                                  </span>
-                                </div>
-                              ))}
+                              <div className="flex items-center gap-1 mb-3">
+                                {TIMELINE_STEPS.slice(0, -1).map((_, i) => {
+                                  const filled = i < tl.current;
+                                  const active = i === tl.current - 1;
+                                  return (
+                                    <div key={i} className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.2)" }}>
+                                      <div className="h-full rounded-full" style={{ width: filled ? "100%" : "0%", background: "#FFFFFF", boxShadow: active ? "0 0 8px rgba(255,255,255,0.7)" : "none" }} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex justify-between">
+                                {TIMELINE_STEPS.map((step, i) => {
+                                  const done = tl.done[i];
+                                  const current = i === tl.current && !done;
+                                  const Icon = step.icon;
+                                  return (
+                                    <div key={step.key} className="flex flex-col items-center gap-1.5" style={{ width: `${100 / TIMELINE_STEPS.length}%` }}>
+                                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                                        style={current
+                                          ? { background: "#FFFFFF", boxShadow: "0 0 0 4px rgba(255,255,255,0.25)" }
+                                          : done
+                                            ? { background: "rgba(255,255,255,0.9)" }
+                                            : { background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.28)" }}>
+                                        {done
+                                          ? <Check className="w-3 h-3 shrink-0" style={{ color: "var(--t-blue-deep)" }} />
+                                          : <Icon className="w-3 h-3 shrink-0" style={{ color: current ? "var(--t-blue-deep)" : "rgba(255,255,255,0.8)" }} />}
+                                      </div>
+                                      <span className="text-[8px] font-bold text-center leading-none whitespace-nowrap" style={{ color: current ? "#FFFFFF" : "rgba(255,255,255,0.6)" }}>{step.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <div className="px-3 py-2 flex items-center justify-between" style={{ background: "var(--t-surface2)" }}>
-                              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Subtotal</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
-                                {sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Transaction ID */}
-                        {detail?.paymentTxHash && (
-                          <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
-                              <CopyButton value={detail.paymentTxHash} />
-                            </div>
-                            <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
-                          </div>
-                        )}
-
+                          )}
+                        </div>
+                        {/* PRIMARY: Tracking + QR */}
+                        <div className="px-3 py-3 space-y-3" style={{ background: "var(--t-surface)" }}>
                         {/* Tracking section */}
                         {(() => {
                           const det = orderDetails[order.id] ?? order;
@@ -1368,8 +1424,79 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                             </div>
                           );
                         })()}
-
-                        {/* Edit form */}
+                          {/* QR Code Upload */}
+                        <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.18)" }}>
+                          <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "#7C3AED" }}>
+                            <QrCode className="w-2.5 h-2.5" /> QR Codes
+                          </p>
+                          {(["inpost", "royal-mail"] as const).map(courier => {
+                            const label = courier === "inpost" ? "InPost" : "Royal Mail";
+                            const det = orderDetails[order.id] ?? order;
+                            const existing = courier === "inpost" ? det.inpostQrCode : det.royalMailQrCode;
+                            const key = `${order.id}-${courier}`;
+                            const isUploading = reshQrSaving[key];
+                            const qrMsg = reshQrMsg[key];
+                            return (
+                              <div key={courier} className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
+                                {existing ? (
+                                  <div className="flex items-center gap-2">
+                                    <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
+                                    <button
+                                      className="text-[10px] font-semibold disabled:opacity-50"
+                                      style={{ color: "#DC2626" }}
+                                      disabled={isUploading}
+                                      onClick={() => uploadReshQr(order.id, courier, null)}
+                                    >{isUploading ? "…" : "Clear"}</button>
+                                  </div>
+                                ) : (
+                                  <label className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer"
+                                    style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", color: "#7C3AED", opacity: isUploading ? 0.5 : 1 }}>
+                                    <Upload className="w-2.5 h-2.5" />
+                                    {isUploading ? "Uploading…" : "Upload"}
+                                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden"
+                                      disabled={isUploading}
+                                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, courier, f); e.target.value = ""; }}
+                                    />
+                                  </label>
+                                )}
+                                {qrMsg?.text && <span className="text-[10px] font-semibold" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        </div>
+                        {/* SECONDARY: Order details */}
+                        <div className="px-3 pb-3 pt-1 space-y-2" style={{ background: "var(--t-surface2)" }}>
+                        <p className="pt-2 px-0.5 text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: "var(--t-subtle)" }}>Order details</p>
+                          {/* Line items */}
+                        {detail?.lineItems && detail.lineItems.length > 0 && (
+                          <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                            <div className="px-3 py-2 flex items-center gap-1.5 border-b" style={{ borderColor: "var(--t-border)" }}>
+                              <Package className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
+                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Items</p>
+                            </div>
+                            <div>
+                              {detail.lineItems.map((item, i) => (
+                                <div key={i} className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
+                                  <span className="min-w-[1.75rem] h-6 px-1.5 rounded-md flex items-center justify-center text-[10px] font-bold tabular-nums shrink-0"
+                                    style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>{item.quantity}×</span>
+                                  <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--t-text)" }}>{item.productName}</span>
+                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
+                                    {sym}{fmtCurrency(item.lineTotal)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="px-3 py-2 flex items-center justify-between" style={{ background: "var(--t-surface2)" }}>
+                              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Subtotal</span>
+                              <span className="text-xs font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
+                                {sym}{fmtCurrency(detail.lineItems.reduce((s, it) => s + Number(it.lineTotal ?? 0), 0))}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                          {/* Edit form */}
                         {isEditing ? (
                           <div className="space-y-3 p-3 rounded-xl" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                             <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Edit Order</p>
@@ -1478,46 +1605,16 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                             )}
                           </div>
                         )}
-                        {/* QR Code Upload */}
-                        <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.18)" }}>
-                          <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1" style={{ color: "#7C3AED" }}>
-                            <QrCode className="w-2.5 h-2.5" /> QR Codes
-                          </p>
-                          {(["inpost", "royal-mail"] as const).map(courier => {
-                            const label = courier === "inpost" ? "InPost" : "Royal Mail";
-                            const det = orderDetails[order.id] ?? order;
-                            const existing = courier === "inpost" ? det.inpostQrCode : det.royalMailQrCode;
-                            const key = `${order.id}-${courier}`;
-                            const isUploading = reshQrSaving[key];
-                            const qrMsg = reshQrMsg[key];
-                            return (
-                              <div key={courier} className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
-                                {existing ? (
-                                  <div className="flex items-center gap-2">
-                                    <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
-                                    <button
-                                      className="text-[10px] font-semibold disabled:opacity-50"
-                                      style={{ color: "#DC2626" }}
-                                      disabled={isUploading}
-                                      onClick={() => uploadReshQr(order.id, courier, null)}
-                                    >{isUploading ? "…" : "Clear"}</button>
-                                  </div>
-                                ) : (
-                                  <label className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer"
-                                    style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", color: "#7C3AED", opacity: isUploading ? 0.5 : 1 }}>
-                                    <Upload className="w-2.5 h-2.5" />
-                                    {isUploading ? "Uploading…" : "Upload"}
-                                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="hidden"
-                                      disabled={isUploading}
-                                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadReshQr(order.id, courier, f); e.target.value = ""; }}
-                                    />
-                                  </label>
-                                )}
-                                {qrMsg?.text && <span className="text-[10px] font-semibold" style={{ color: qrMsg.ok ? "#16A34A" : "#DC2626" }}>{qrMsg.text}</span>}
-                              </div>
-                            );
-                          })}
+                          {/* Transaction ID */}
+                        {detail?.paymentTxHash && (
+                          <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction ID</p>
+                              <CopyButton value={detail.paymentTxHash} />
+                            </div>
+                            <p className="font-mono text-[11px] break-all leading-relaxed" style={{ color: "var(--t-muted)" }}>{detail.paymentTxHash}</p>
+                          </div>
+                        )}
                         </div>
                       </div>
                     </motion.div>
