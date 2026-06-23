@@ -414,6 +414,7 @@ router.get("/group-buys/:gbId/testing", async (req, res): Promise<void> => {
       contributionAmount: parseFloat(round.contributionAmount as string),
       anyContribution: !!(round.anyContribution),
       lateOptInEnabled: !!(round.lateOptInEnabled),
+      lateOptInVoteThreshold: (round as any).lateOptInVoteThreshold ?? null,
       resultNotes: isOptedIn ? round.resultNotes : null,
       resultPdfUrl: isOptedIn ? round.resultPdfUrl : null,
       resultPostedAt: round.resultPostedAt,
@@ -963,7 +964,7 @@ router.post(
 router.patch("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const { gbId } = req.params;
-  const { status, resultNotes, resultPdfUrl, fundingNote, voteOptions, peptideBatches, testOptions, janoshikPaymentUrl, anyContribution, lateOptInEnabled, lateOptInPaymentMethods, maxCompoundVotes, maxTestVotes, labShippingCost } = req.body;
+  const { status, resultNotes, resultPdfUrl, fundingNote, voteOptions, peptideBatches, testOptions, janoshikPaymentUrl, anyContribution, lateOptInEnabled, lateOptInPaymentMethods, lateOptInVoteThreshold, maxCompoundVotes, maxTestVotes, labShippingCost } = req.body;
 
   const [round] = await db
     .select()
@@ -1010,6 +1011,14 @@ router.patch("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> 
   }
   if (lateOptInEnabled !== undefined) {
     updates.lateOptInEnabled = Boolean(lateOptInEnabled);
+  }
+  if (lateOptInVoteThreshold !== undefined) {
+    if (lateOptInVoteThreshold === null) {
+      updates.lateOptInVoteThreshold = null;
+    } else {
+      const v = parseInt(String(lateOptInVoteThreshold), 10);
+      if (!isNaN(v) && v >= 1 && v <= 100) updates.lateOptInVoteThreshold = v;
+    }
   }
   if (lateOptInPaymentMethods !== undefined) {
     if (lateOptInPaymentMethods === null || !Array.isArray(lateOptInPaymentMethods)) {

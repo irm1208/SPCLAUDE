@@ -7599,6 +7599,7 @@ interface TestingRound {
   anyContribution: boolean;
   lateOptInEnabled: boolean;
   lateOptInPaymentMethods: string[] | null;
+  lateOptInVoteThreshold: number | null;
   maxCompoundVotes: number;
   maxTestVotes: number;
   voteOptions: string[] | null;
@@ -7660,6 +7661,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   const [editContribAmount, setEditContribAmount] = useState("15");
   const [lateOptIn, setLateOptIn] = useState(false);
   const [latePayMethods, setLatePayMethods] = useState<string[]>([]);
+  const [lateVoteThreshold, setLateVoteThreshold] = useState<string>("");
   const [editJanoshikUrl, setEditJanoshikUrl] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -7713,6 +7715,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
         setEditContribAmount(String(d.round.contributionAmount ?? 15));
         setLateOptIn(d.round.lateOptInEnabled ?? false);
         setLatePayMethods(d.round.lateOptInPaymentMethods ?? []);
+        setLateVoteThreshold(d.round.lateOptInVoteThreshold != null ? String(d.round.lateOptInVoteThreshold) : "");
         setEditJanoshikUrl(d.round.janoshikPaymentUrl ?? "");
         const opts = d.round.voteOptions && d.round.voteOptions.length > 0
           ? d.round.voteOptions
@@ -7767,6 +7770,7 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
           ...(editAnyContrib ? {} : { contributionAmount: parseFloat(editContribAmount) || 15 }),
           lateOptInEnabled: lateOptIn,
           lateOptInPaymentMethods: lateOptIn ? latePayMethods : [],
+          lateOptInVoteThreshold: lateVoteThreshold.trim() !== "" ? parseInt(lateVoteThreshold, 10) : null,
           janoshikPaymentUrl: editJanoshikUrl.trim() || null,
         }),
       });
@@ -8271,6 +8275,38 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                 />
                 <span className="text-sm font-medium">Allow late contributions</span>
               </label>
+
+              {lateOptIn && (
+                <div className="pl-6 space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Vote threshold to unlock late opt-in <span className="font-normal">(% of contributors, optional)</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={lateVoteThreshold}
+                      onChange={e => setLateVoteThreshold(e.target.value)}
+                      placeholder="e.g. 80"
+                      className="w-24 text-xs px-3 py-2 rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <span className="text-xs text-muted-foreground">%</span>
+                    {lateVoteThreshold.trim() !== "" && (
+                      <button
+                        type="button"
+                        onClick={() => setLateVoteThreshold("")}
+                        className="text-xs text-muted-foreground underline hover:text-foreground"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Leave blank to open late opt-in immediately. Set a number (1–100) to require that percentage of contributors to have voted first.
+                  </p>
+                </div>
+              )}
 
               {lateOptIn && (
                 <div className="pl-6 space-y-2">
