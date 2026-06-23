@@ -1,0 +1,112 @@
+.sp-pipeline-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  background: var(--t-bg);
+  overflow: hidden;
+}
+
+.sp-pipeline-header {
+  background: var(--t-surface);
+  border-bottom: 1px solid var(--t-border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-shrink: 0;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+}
+
+.sp-pipeline-board {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  padding: 24px;
+  gap: 16px;
+  overflow-x: auto;
+  background: var(--t-bg);
+}
+
+.sp-pipeline-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.sp-pipeline-col.is-past {
+  opacity: 0.8;
+  background: var(--t-surface2);
+  border-color: transparent;
+}
+
+.sp-pipeline-col.is-current {
+  min-width: 380px;
+  border-color: var(--t-blue);
+  box-shadow: 0 8px 24px -4px rgba(45, 107, 204, 0.12), 0 4px 8px -4px rgba(45, 107, 204, 0.08);
+  flex-grow: 1;
+}
+
+.sp-pipeline-col.is-future {
+  opacity: 0.5;
+  background: var(--t-surface2);
+  border-style: dashed;
+}
+
+.sp-pipeline-col-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--t-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.is-current .sp-pipeline-col-header {
+  background: var(--t-blue);
+  color: white;
+  border-bottom: none;
+}
+
+.is-past .sp-pipeline-col-header {
+  border-bottom-color: transparent;
+}
+
+.sp-pipeline-col-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sp-pipeline-col-title {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.sp-pipeline-col-date {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.sp-pipeline-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--t-blue);
+  color: white;
+}
+
+.is-current .sp-pipeline-check {
+  background: white;
+  color: var(--t-blue);
+}
