@@ -224,7 +224,8 @@ function DispatchManagerInner() {
       <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-muted w-fit">
         {([
           ["packing", "Dispatch & Packing Slips"],
-          ["halfkits", "Half Kits"],
+          // Half Kits is admin-only — hidden on reshipper/organiser surfaces.
+          ...(cfg.role === "admin" ? [["halfkits", "Half Kits"]] as const : []),
           ["dispatched", "Dispatched Orders"],
           ["archived-dispatched", "Archived Dispatched"],
           ["shipped", "Shipped Items"],
