@@ -228,7 +228,8 @@ function DispatchManagerInner() {
           ...(cfg.role === "admin" ? [["halfkits", "Half Kits"]] as const : []),
           ["dispatched", "Dispatched Orders"],
           ["archived-dispatched", "Archived Dispatched"],
-          ["shipped", "Shipped Items"],
+          // Shipped Items is admin-only — hidden on reshipper/organiser surfaces.
+          ...(cfg.role === "admin" ? [["shipped", "Shipped Items"]] as const : []),
         ] as const).map(([id, label]) => (
           <button
             key={id}
