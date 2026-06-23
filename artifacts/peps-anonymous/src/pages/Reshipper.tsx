@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ShoppingBag, Settings, ExternalLink, Copy,
   Search, Filter, Wallet, QrCode, FileDown, BarChart3, MapPin,
   Download, ImageOff, Inbox, Bell, Users, FileText, Box,
-  CheckCircle2, RotateCcw, Home, Hash, ChevronRight,
+  CheckCircle2, RotateCcw, Home, Hash, ChevronRight, Info,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
@@ -3654,6 +3654,58 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
 
 type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
 
+const TAB_HELP: Record<RTab, string> = {
+  overview: "A quick snapshot of this group buy: how many orders you have, totals at a glance, and your progress. Start here to see where things stand.",
+  summary: "A breakdown of your orders in numbers and charts: what's been ordered, money owed, and totals. Use it to double-check figures.",
+  orders: "The orders you're responsible for reshipping. Tap any order to see its items, the customer's address, tracking, and to update its status.",
+  unclaimed: "Orders in this group buy that nobody has picked up yet. Claim the ones you'll handle and they'll move into your 'My Orders' tab.",
+  qr: "The shipping-label QR codes for each order. Tap a code to make it big enough to scan at the post office, then mark it 'Posted' once it's sent.",
+  shipping: "Set up how things are sent for this group buy: the delivery methods you offer and their prices.",
+  parcels: "Group several orders into one parcel. Handy when you're posting more than one order together in the same box.",
+  dispatch: "Print packing slips and manage dispatch: the paperwork that goes inside or on each parcel before you send it.",
+  payments: "Keep track of who has paid and manage payment details for your orders.",
+  broadcast: "Send one message to every customer in this group buy at once, for example a shipping update or an important notice.",
+};
+
+function TabHelp({ tab }: { tab: RTab }) {
+  const [open, setOpen] = useState(false);
+  const meta = TABS.find(t => t.id === tab);
+  return (
+    <div className="mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all"
+        style={{
+          background: open ? "var(--t-blue-10)" : "var(--t-surface2)",
+          color: "var(--t-blue)",
+          border: "1px solid var(--t-border)",
+        }}
+      >
+        <Info className="w-3.5 h-3.5" />
+        {open ? "Hide explanation" : `What is "${meta?.label}"?`}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="mt-2 p-3 rounded-xl text-[12px] leading-relaxed"
+              style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+            >
+              {TAB_HELP[tab]}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "overview",  label: "Overview",  icon: LayoutDashboard },
   { id: "summary",   label: "Summary",   icon: BarChart3 },
@@ -3996,6 +4048,7 @@ export default function ReshipperPage() {
         <div className="flex-1 overflow-y-auto px-4 py-5 pb-24">
           {currentAssignment ? (
             <>
+              <TabHelp tab={activeTab} />
               {activeTab === "overview" && (
                 ordersLoading
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
