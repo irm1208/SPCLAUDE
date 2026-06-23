@@ -3,7 +3,9 @@ import {
   Loader2, Package, PackageCheck, Printer, Check, AlertTriangle,
   ChevronRight, RefreshCw, Truck, X, CheckSquare, Square,
   Upload, ImagePlus, ZoomIn, Trash2, ChevronDown, ChevronUp, Camera, Bell,
+  Info, Lightbulb,
 } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
 function apiUrl(path: string) { return `/api${path}`; }
 
@@ -433,6 +435,8 @@ function PackingSlipsTab({
   selectedGb: string;
 }) {
   const cfg = useDispatchCfg();
+  // Onboarding help (banner + per-step "i" icons) is for newcomers only; admin stays unchanged.
+  const showHelp = cfg.role !== "admin";
   const [scopeType, setScopeType] = useState<"reshipper" | "country" | "all" | "">("");
   const [scopeId, setScopeId] = useState("");
   const [scopeOptions, setScopeOptions] = useState<ScopeOptions | null>(null);
@@ -765,9 +769,48 @@ function PackingSlipsTab({
 
   return (
     <div className="space-y-5">
+      {/* ── Getting-started guide (shown to reshippers/organisers new to the platform) ── */}
+      {cfg.role !== "admin" && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-start gap-2.5">
+            <Lightbulb className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div className="space-y-2 text-sm">
+              <p className="font-semibold text-foreground">How dispatch works</p>
+              <p className="text-muted-foreground leading-relaxed">
+                This page turns parcels that have arrived to you into ready-to-post orders for your members. Work through it top to bottom:
+              </p>
+              <ol className="space-y-1.5 text-muted-foreground">
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">1.</span>
+                  <span><strong className="text-foreground">Select delivered parcels</strong> — tick the parcels that have physically arrived so the system knows what stock you have.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">2.</span>
+                  <span><strong className="text-foreground">Build orders</strong> — it works out which members' orders you can fully pack from those parcels.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-primary shrink-0">3.</span>
+                  <span><strong className="text-foreground">Print &amp; confirm</strong> — print the packing slips, then confirm dispatch so members are notified.</span>
+                </li>
+              </ol>
+              <p className="text-muted-foreground leading-relaxed">
+                Tap any <Info className="inline w-3.5 h-3.5 -mt-0.5" /> icon for more detail on that step.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Step 1: Scope (hidden when locked to a single reshipper) ── */}
       {!lockedScope && (
-      <Section title="1. Scope">
+      <Section
+        title="1. Scope"
+        help={showHelp ? (
+          <span>
+            Choose <strong>whose</strong> orders you want to work on. <strong>Reshipper</strong> shows one reshipper's orders, <strong>Country Leg</strong> groups by destination country, and <strong>All Orders</strong> covers everyone in this group buy.
+          </span>
+        ) : undefined}
+      >
         {scopeLoading ? (
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
         ) : (
@@ -844,7 +887,14 @@ function PackingSlipsTab({
 
       {/* ── Step 2: Parcels ── */}
       {scopeType && (scopeType === "all" || scopeId) && (
-        <Section title="2. Select Delivered Parcels">
+        <Section
+          title="2. Select Delivered Parcels"
+          help={showHelp ? (
+            <span>
+              These are parcels marked <strong>delivered</strong> to you. Tick the ones you've physically received and opened — the system uses their contents as your available stock for packing members' orders. The numbers show how many items remain vs. already dispatched.
+            </span>
+          ) : undefined}
+        >
           {parcelsLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           ) : parcels.length === 0 ? (
@@ -1165,6 +1215,11 @@ function PackingSlipsTab({
       {computeResult && (
         <Section
           title={`3. Select Orders to Dispatch (${selectedOrderIds.size} selected)`}
+          help={showHelp ? (
+            <span>
+              <strong>Fulfillable</strong> orders (green) can be fully packed from the parcels you selected. <strong>Cannot fulfil yet</strong> means you're still missing some items. Tick the orders you're posting, print their packing slips, then confirm dispatch — that marks them shipped and notifies the members.
+            </span>
+          ) : undefined}
           action={
             <button
               onClick={selectAllOrders}
@@ -1291,20 +1346,51 @@ function PackingSlipsTab({
   );
 }
 
-// ─── Section wrapper ──────────────────────────────────────────────────────────
+// ─── InfoTip ──────────────────────────────────────────────────────────────────
+// Tap-friendly "i" icon that opens a short plain-language explanation. Uses a
+// click popover (not hover) so it works on touch devices.
+function InfoTip({ children, label }: { children: React.ReactNode; label?: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label || "More information"}
+          onClick={e => e.stopPropagation()}
+          className="inline-flex items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+        >
+          <Info className="w-4 h-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        onClick={e => e.stopPropagation()}
+        className="w-72 text-sm leading-relaxed text-muted-foreground"
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Section({
   title,
   children,
   action,
+  help,
 }: {
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  help?: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-border bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {help && <InfoTip label={`About ${title}`}>{help}</InfoTip>}
+        </div>
         {action}
       </div>
       <div className="p-4">{children}</div>

@@ -25,3 +25,4 @@
 - [Dispatch factory router auth scoping](dispatch-router-auth-scoping.md) — root-mounted role-scoped dispatch routers must path-scope their auth middleware (router.use(cfg.prefix,...)) or admin's requireAdmin 503s sibling /reshipper|organiser/dispatch/* before they reach their own router.
 - [api-server vitest + db mock](api-server-vitest-db-mock.md) — mock @workspace/db via schema-only export (no Pool); scoped routers use path-less auth, so mount only the router under test, not both.
 - [Dispatch parcel gating](dispatch-parcel-gating.md) — GB dispatch reshipper list + Order Overview must not be gated on delivered parcels; union active-order reshippers, render overview for reshipper+all scopes with zero parcels.
+- [Shared dispatch admin parity](shared-dispatch-admin-parity.md) — AdminDispatch.tsx is shared by admin/reshipper/organiser; any UI addition must be gated by cfg.role to keep admin byte-identical.
