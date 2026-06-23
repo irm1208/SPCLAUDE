@@ -516,13 +516,10 @@ interface QrViewerOrder {
 
 function stripAt(u: string) { return u.replace(/^@/, ""); }
 
-function QrLightbox({ dataUrl, label, username, onClose }: { dataUrl: string; label: string; username: string; onClose: () => void }) {
-  const download = () => {
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `${stripAt(username)}-${label.replace(/\s+/g, "-")}-qr.png`;
-    a.click();
-  };
+function QrLightbox({ dataUrl, label, username, code, posted, saving, onTogglePosted, onClose }: {
+  dataUrl: string; label: string; username: string; code: string;
+  posted: boolean; saving: boolean; onTogglePosted: () => void; onClose: () => void;
+}) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -530,28 +527,32 @@ function QrLightbox({ dataUrl, label, username, onClose }: { dataUrl: string; la
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-sm rounded-2xl overflow-hidden bg-white shadow-2xl"
+        className="relative w-full max-w-sm max-h-[90vh] flex flex-col rounded-2xl overflow-hidden bg-white shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#e2e8f0" }}>
-          <div>
-            <p className="text-xs font-bold" style={{ color: QR_NAVY }}>@{stripAt(username)}</p>
-            <p className="text-[10px]" style={{ color: "#94a3b8" }}>{label}</p>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: "#e2e8f0" }}>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate" style={{ color: QR_NAVY }}>@{stripAt(username)}</p>
+            <p className="text-[11px] truncate" style={{ color: "#94a3b8" }}>{code} · {label}</p>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.06)" }}>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(0,0,0,0.06)" }}>
             <X className="w-3.5 h-3.5" style={{ color: "#64748b" }} />
           </button>
         </div>
-        <div className="p-4 flex items-center justify-center bg-white">
-          <img src={dataUrl} alt={`${label} QR`} className="w-full h-auto object-contain rounded-xl" style={{ maxHeight: "70vh" }} />
+        <div className="flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center bg-white">
+          <img src={dataUrl} alt={`${label} QR`} className="w-full h-auto object-contain rounded-xl" />
         </div>
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 shrink-0">
           <button
-            onClick={download}
-            className="w-full flex items-center justify-center gap-1.5 h-9 rounded-xl text-[12px] font-bold"
-            style={{ background: `linear-gradient(135deg, ${QR_NAVY} 0%, ${QR_BLUE} 100%)`, color: "#fff" }}
+            onClick={onTogglePosted}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-1.5 h-10 rounded-xl text-[13px] font-bold transition-all hover:opacity-90 disabled:opacity-60"
+            style={posted
+              ? { background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }
+              : { background: `linear-gradient(135deg, ${QR_NAVY} 0%, ${QR_BLUE} 100%)`, color: "#fff" }}
           >
-            <Download className="w-3.5 h-3.5" /> Download
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : posted ? <RotateCcw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {posted ? "Posted" : "Mark as Posted"}
           </button>
         </div>
       </div>
@@ -576,10 +577,13 @@ function QrOrderCard({ order, gbId, onTogglePosted }: { order: QrViewerOrder; gb
   }
   const hasAny = qrImages.length > 0;
 
-  async function handleToggle(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function togglePosted() {
     setSaving(true);
     try { await onTogglePosted(order.id, !order.qrPosted); } finally { setSaving(false); }
+  }
+  async function handleToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    await togglePosted();
   }
 
   return (
@@ -672,6 +676,10 @@ function QrOrderCard({ order, gbId, onTogglePosted }: { order: QrViewerOrder; gb
           dataUrl={lightbox.dataUrl}
           label={lightbox.label}
           username={order.telegramUsername}
+          code={order.code}
+          posted={order.qrPosted}
+          saving={saving}
+          onTogglePosted={togglePosted}
           onClose={() => setLightbox(null)}
         />
       )}
