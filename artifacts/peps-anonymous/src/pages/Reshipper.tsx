@@ -3717,7 +3717,7 @@ const TAB_HELP: Record<RTab, string> = {
   unclaimed: "Orders in this group buy that nobody has picked up yet. Claim the ones you'll handle and they'll move into your 'My Orders' tab.",
   qr: "The shipping-label QR codes for each order. Tap a code to make it big enough to scan at the post office, then mark it 'Posted' once it's sent.",
   shipping: "Set up how things are sent for this group buy: the delivery methods you offer and their prices.",
-  parcels: "Group several orders into one parcel. Handy when you're posting more than one order together in the same box.",
+  parcels: "Track the parcels coming from the vendor to you (the reshipper). Add the vendor's tracking number for each incoming box so everyone can follow it. This is the vendor → reshipper leg, not the parcels you later post to customers.",
   dispatch: "Print packing slips and manage dispatch: the paperwork that goes inside or on each parcel before you send it.",
   payments: "Keep track of who has paid and manage payment details for your orders.",
   broadcast: "Send one message to every customer in this group buy at once, for example a shipping update or an important notice.",
