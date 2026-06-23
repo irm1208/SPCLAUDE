@@ -1030,6 +1030,9 @@ function PackingSlipsTab({
                 >
                   <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                   <span className="text-sm font-semibold text-green-800 flex-1">Confirmed Dispatched ({ovDispatched.length})</span>
+                  <InfoTip label="About Confirmed Dispatched">
+                    These orders have already been posted and the members have been notified. They're done — nothing more to do here. This is just a record of what's gone out.
+                  </InfoTip>
                   <span className="text-[11px] text-green-600">{ovExpanded.dispatched ? "▲" : "▼"}</span>
                 </button>
                 {ovExpanded.dispatched && (
@@ -1059,6 +1062,9 @@ function PackingSlipsTab({
                     Ready to Dispatch ({ovReady.length})
                     {!computeResult && <span className="ml-2 text-xs font-normal text-blue-400">— select parcels &amp; run Calculate</span>}
                   </span>
+                  <InfoTip label="About Ready to Dispatch">
+                    These orders can be fully packed from the parcels you ticked — every item is in stock. Print their packing slips and confirm dispatch to send them out. (Select your delivered parcels and run Calculate to fill this list.)
+                  </InfoTip>
                   <span className="text-[11px] text-blue-600">{ovExpanded.ready ? "▲" : "▼"}</span>
                 </button>
                 {ovExpanded.ready && (
@@ -1088,6 +1094,9 @@ function PackingSlipsTab({
                     Cannot Fulfill ({ovCannot.length})
                     {!computeResult && <span className="ml-2 text-xs font-normal text-amber-400">— run Calculate to populate</span>}
                   </span>
+                  <InfoTip label="About Cannot Fulfill">
+                    These orders are missing one or more items in the parcels you selected, so they can't be fully packed yet. Wait for the missing stock to arrive, or — if you're posting a partial order anyway — tick the orders and use "Mark Shipped".
+                  </InfoTip>
                   {ovCannot.length > 0 && computeResult && (
                     <button
                       onClick={e => { e.stopPropagation(); handleMarkUnfulfillableShipped(ovCannotSelected.size > 0 ? [...ovCannotSelected] : undefined); }}
@@ -1170,6 +1179,9 @@ function PackingSlipsTab({
                     Pending / Not Dispatched ({ovPending.length})
                     {computeResult && ovPending.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">— no stock allocated in these parcels</span>}
                   </span>
+                  <InfoTip label="About Pending / Not Dispatched">
+                    Orders that haven't been dealt with yet — none of their items are in the parcels you selected, so nothing was allocated. They'll move to "Ready to Dispatch" once the right stock arrives. You can also mark them shipped manually if needed.
+                  </InfoTip>
                   {ovPending.length > 0 && (
                     <button
                       onClick={e => { e.stopPropagation(); handleMarkPendingShipped(); }}
