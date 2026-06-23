@@ -12333,7 +12333,8 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
     groupBuysPath: "/organiser/dispatch/group-buys-list",
     gbParcelsPath: (gbId) => `/organiser/dispatch/group-buys/${gbId}/parcels`,
     orderImagesPath: (orderId) => `/organiser/dispatch/orders/${orderId}/dispatch-images`,
-  }), []);
+    gbId: selectedGbId ?? undefined,
+  }), [selectedGbId]);
 
   const handleSelectGb = (id: string) => {
     setSelectedGbId(id);

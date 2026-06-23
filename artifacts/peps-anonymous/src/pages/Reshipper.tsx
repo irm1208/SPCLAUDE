@@ -3600,7 +3600,8 @@ export default function ReshipperPage() {
     gbParcelsPath: (gbId) => `/reshipper/dispatch/group-buys/${gbId}/parcels`,
     orderImagesPath: (orderId) => `/reshipper/dispatch/orders/${orderId}/dispatch-images`,
     lockedScope: { scopeType: "reshipper", scopeId: stripAt(me?.telegramUsername ?? "") },
-  }), [me?.telegramUsername]);
+    gbId: selectedGbId || undefined,
+  }), [me?.telegramUsername, selectedGbId]);
 
   const updateGbInAssignment = useCallback((updated: RAssignment["gb"]) => {
     setAssignments(prev => prev.map(a => a.gbId === selectedGbId ? { ...a, gb: updated } : a));

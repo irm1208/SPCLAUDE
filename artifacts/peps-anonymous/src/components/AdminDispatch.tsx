@@ -24,6 +24,12 @@ export interface DispatchCfg {
   orderImagesPath: (orderId: string) => string;
   /** When set (reshipper), the Scope selector is hidden and locked to self. */
   lockedScope?: { scopeType: "reshipper"; scopeId: string };
+  /**
+   * When set, the dispatch tab is bound to this group buy (the one already
+   * selected on the parent page) and its own GB picker is hidden, so there's
+   * no second chooser and no desync from the page's selection.
+   */
+  gbId?: string;
 }
 
 const DispatchCfgContext = React.createContext<DispatchCfg | null>(null);
@@ -193,9 +199,11 @@ function DispatchManagerInner() {
   const cfg = useDispatchCfg();
   const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "archived-dispatched" | "shipped">("packing");
   const [groupBuys, setGroupBuys] = useState<GbStub[]>([]);
-  const [selectedGb, setSelectedGb] = useState("");
+  const [selectedGb, setSelectedGb] = useState(cfg.gbId ?? "");
 
   useEffect(() => {
+    // Bound to the parent page's selected GB — skip the internal GB list.
+    if (cfg.gbId) { setSelectedGb(cfg.gbId); return; }
     cfg.dfetch(cfg.groupBuysPath)
       .then(r => r.json())
       .then(d => {
@@ -207,8 +215,8 @@ function DispatchManagerInner() {
       .catch(() => {});
   }, [cfg]);
 
-  // Hide the picker for non-admin roles that only have a single GB.
-  const hideGbPicker = cfg.role !== "admin" && groupBuys.length <= 1;
+  // Hide the picker when bound to the page's GB, or for non-admin roles with a single GB.
+  const hideGbPicker = !!cfg.gbId || (cfg.role !== "admin" && groupBuys.length <= 1);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
