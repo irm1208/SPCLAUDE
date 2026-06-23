@@ -199,7 +199,7 @@ export function DispatchManager({ cfg }: { cfg: DispatchCfg }) {
 
 function DispatchManagerInner() {
   const cfg = useDispatchCfg();
-  const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "archived-dispatched" | "shipped">("packing");
+  const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "shipped">("packing");
   const [groupBuys, setGroupBuys] = useState<GbStub[]>([]);
   const [selectedGb, setSelectedGb] = useState(cfg.gbId ?? "");
 
@@ -229,7 +229,6 @@ function DispatchManagerInner() {
           // Half Kits is admin-only — hidden on reshipper/organiser surfaces.
           ...(cfg.role === "admin" ? [["halfkits", "Half Kits"]] as const : []),
           ["dispatched", "Dispatched Orders"],
-          ["archived-dispatched", "Archived Dispatched"],
           // Shipped Items is admin-only — hidden on reshipper/organiser surfaces.
           ...(cfg.role === "admin" ? [["shipped", "Shipped Items"]] as const : []),
         ] as const).map(([id, label]) => (
@@ -270,9 +269,6 @@ function DispatchManagerInner() {
       )}
       {subTab === "dispatched" && (
         <DispatchedOrdersTab selectedGb={selectedGb} />
-      )}
-      {subTab === "archived-dispatched" && (
-        <ArchivedDispatchedOrdersTab selectedGb={selectedGb} />
       )}
       {subTab === "shipped" && (
         <ShippedItemsContent selectedGb={selectedGb} />
@@ -2130,11 +2126,9 @@ function DispatchedOrdersTab({
   // Print state
   const [showPrint, setShowPrint] = useState(false);
 
-  // Archive state
-  const [archiving, setArchiving] = useState(false);
+  // Un-dispatch state
   const [undispatching, setUndispatching] = useState(false);
   const [undispatchMsg, setUndispatchMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [archiveMsg, setArchiveMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Re-attribute state
   const [reattributing, setReattributing] = useState(false);
@@ -2319,31 +2313,6 @@ function DispatchedOrdersTab({
       setUndispatchMsg({ ok: false, text: "Network error" });
     } finally {
       setUndispatching(false);
-    }
-  };
-
-  const handleArchive = async () => {
-    if (selectedIds.size === 0) return;
-    setArchiving(true);
-    setArchiveMsg(null);
-    try {
-      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/archive-orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: [...selectedIds], archive: true }),
-      });
-      const d = await r.json();
-      if (d.ok) {
-        setArchiveMsg({ ok: true, text: `${d.updated} order${d.updated !== 1 ? "s" : ""} archived` });
-        setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
-        setSelectedIds(new Set());
-      } else {
-        setArchiveMsg({ ok: false, text: d.error ?? "Archive failed" });
-      }
-    } catch {
-      setArchiveMsg({ ok: false, text: "Network error" });
-    } finally {
-      setArchiving(false);
     }
   };
 
@@ -2681,26 +2650,11 @@ function DispatchedOrdersTab({
               {undispatching ? "Un-dispatching…" : `↩ Un-dispatch (${selectedIds.size})`}
             </button>
           )}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleArchive}
-              disabled={archiving}
-              title="Move selected orders to Archived Dispatched Orders"
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
-            >
-              {archiving ? "Archiving…" : `Archive (${selectedIds.size})`}
-            </button>
-          )}
         </div>
       </div>
       {reattributeMsg && (
         <p className={`text-xs px-3 py-2 rounded border ${reattributeMsg.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
           {reattributeMsg.text}
-        </p>
-      )}
-      {archiveMsg && (
-        <p className={`text-xs px-3 py-2 rounded border ${archiveMsg.ok ? "bg-slate-50 text-slate-600 border-slate-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-          {archiveMsg.ok ? "✓ " : "✗ "}{archiveMsg.text}
         </p>
       )}
       {undispatchMsg && (
@@ -2949,282 +2903,6 @@ function DispatchedOrdersTab({
           }))}
           onClose={() => setShowPrint(false)}
         />
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ArchivedDispatchedOrdersTab — shows archived dispatched orders with restore option
-// ─────────────────────────────────────────────────────────────────────────────
-function ArchivedDispatchedOrdersTab({
-  selectedGb,
-}: {
-  selectedGb: string;
-}) {
-  const cfg = useDispatchCfg();
-  const [orders, setOrders] = useState<Fs3GbOrder[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [restoring, setRestoring] = useState(false);
-  const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [dispatchImagesMap, setDispatchImagesMap] = useState<Record<string, { id: string; filename: string }[]>>({});
-
-  const loadOrders = useCallback(async () => {
-    if (!selectedGb) { setOrders([]); setDispatchImagesMap({}); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const [data, imagesMap] = await Promise.all([
-        cfg.dfetch(
-          cfg.ordersPath(`groupBuyId=${selectedGb}&dispatchConfirmed=true&dispatchArchived=true&pageSize=999`),
-        ).then(r => r.json()),
-        cfg.dfetch(`${cfg.base}/${selectedGb}/dispatch-images-map`)
-          .then(r => r.json()).catch(() => ({})),
-      ]);
-      const raw: Fs3GbOrder[] = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
-      setOrders(raw.filter(o => !(o as any).deletedAt));
-      setDispatchImagesMap(imagesMap && typeof imagesMap === "object" && !Array.isArray(imagesMap) ? imagesMap : {});
-    } catch {
-      setError("Failed to load archived orders");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedGb, cfg]);
-
-  useEffect(() => { loadOrders(); setSelectedIds(new Set()); setRestoreMsg(null); setSearch(""); }, [selectedGb]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return orders;
-    const q = search.trim().toLowerCase();
-    return orders.filter(o =>
-      (o.telegramUsername ?? "").toLowerCase().includes(q) ||
-      (o.code ?? "").toLowerCase().includes(q) ||
-      (o.shippingName ?? "").toLowerCase().includes(q),
-    );
-  }, [orders, search]);
-
-  const toggleOrder = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => setSelectedIds(new Set(filtered.map(o => o.id)));
-  const clearSelection = () => setSelectedIds(new Set());
-
-  const handleRestore = async () => {
-    if (selectedIds.size === 0) return;
-    setRestoring(true);
-    setRestoreMsg(null);
-    try {
-      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/archive-orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: [...selectedIds], archive: false }),
-      });
-      const d = await r.json();
-      if (d.ok) {
-        setRestoreMsg({ ok: true, text: `${d.updated} order${d.updated !== 1 ? "s" : ""} restored to Dispatched Orders` });
-        setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
-        setSelectedIds(new Set());
-      } else {
-        setRestoreMsg({ ok: false, text: d.error ?? "Restore failed" });
-      }
-    } catch {
-      setRestoreMsg({ ok: false, text: "Network error" });
-    } finally {
-      setRestoring(false);
-    }
-  };
-
-  if (!selectedGb) {
-    return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Select a group buy to view archived dispatched orders</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 py-10 text-muted-foreground justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        <span className="text-sm">Loading archived orders…</span>
-      </div>
-    );
-  }
-
-  if (error) return <p className="text-sm text-red-600 py-6 text-center">{error}</p>;
-
-  if (orders.length === 0) {
-    return (
-      <div className="text-center py-16 text-muted-foreground border rounded-xl bg-muted/20">
-        <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-        <p className="text-sm font-medium">No archived dispatched orders</p>
-        <p className="text-xs mt-1 opacity-70">Archive orders from the Dispatched Orders tab to see them here.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Summary bar */}
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-slate-50 border-slate-200">
-        <Package className="w-5 h-5 text-slate-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-700">
-            {orders.length} archived order{orders.length !== 1 ? "s" : ""}
-          </p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            These orders have been archived from the Dispatched Orders view. Restore to move them back.
-          </p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <input
-        type="search"
-        placeholder="Search by username, code or name…"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="w-full text-sm border rounded-lg px-3 py-2 bg-background"
-      />
-
-      {/* Selection toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">
-          {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select orders to restore"}
-        </span>
-        <div className="flex gap-1.5 flex-wrap">
-          <button
-            onClick={selectAll}
-            className="px-2.5 py-1 rounded text-[11px] font-medium border border-input bg-background hover:bg-muted transition-colors"
-          >
-            Select all ({filtered.length})
-          </button>
-          {selectedIds.size > 0 && (
-            <button
-              onClick={clearSelection}
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-input bg-background hover:bg-muted transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleRestore}
-              disabled={restoring}
-              className="px-2.5 py-1 rounded text-[11px] font-medium border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
-            >
-              {restoring ? "Restoring…" : `Restore to Dispatched (${selectedIds.size})`}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {restoreMsg && (
-        <p className={`text-xs px-3 py-2 rounded border ${restoreMsg.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-          {restoreMsg.ok ? "✓ " : "✗ "}{restoreMsg.text}
-        </p>
-      )}
-
-      {/* Orders list */}
-      {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">No orders match your filter.</p>
-      ) : (
-        <Section title={`Archived Dispatched Orders (${filtered.length}${filtered.length !== orders.length ? ` of ${orders.length}` : ""})`}>
-          <div className="divide-y divide-border -mx-4 -mb-4">
-            {filtered.map(o => {
-              const kits = (o.lineItems ?? []).reduce((s, li) => s + li.quantity, 0);
-              const selected = selectedIds.has(o.id);
-              return (
-                <div
-                  key={o.id}
-                  onClick={() => toggleOrder(o.id)}
-                  className={`px-4 py-3 flex gap-3 cursor-pointer transition-colors ${
-                    selected ? "bg-blue-50" : "hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="pt-0.5 shrink-0">
-                    {selected
-                      ? <CheckSquare className="w-4 h-4 text-primary" />
-                      : <Square className="w-4 h-4 text-muted-foreground" />
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono font-bold text-foreground">
-                        {o.code ? `@${o.code}` : o.id.slice(0, 8)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{o.telegramUsername}</span>
-                      {o.reshipperUsername && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                          {o.reshipperUsername}
-                        </span>
-                      )}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                        o.status === "Completed" ? "bg-emerald-100 text-emerald-700" : "bg-green-100 text-green-700"
-                      }`}>
-                        {o.status}
-                      </span>
-                      {o.deliveryMethod && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border font-medium bg-slate-50 text-slate-600 border-slate-200">
-                          {o.deliveryMethod}
-                        </span>
-                      )}
-                      <span className="ml-auto text-xs text-muted-foreground font-medium shrink-0">
-                        {kits.toFixed(kits % 1 === 0 ? 0 : 1)} kit{kits !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {(o.lineItems ?? []).map((li, i) => (
-                        <span key={i} className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600">
-                          {li.quantity}× {li.productName}
-                        </span>
-                      ))}
-                    </div>
-                    {(o.shippingName || o.shippingCountry) && (
-                      <p className="text-[10px] text-muted-foreground">
-                        {[o.shippingName, o.shippingCountry].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                    {/* Tracking number */}
-                    <div className="flex items-center gap-1.5 text-[10px]">
-                      <Truck className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      {(() => {
-                        const nums = [
-                          ...(o.trackingNumbers ?? []),
-                          ...(o.trackingNumber && !(o.trackingNumbers ?? []).includes(o.trackingNumber) ? [o.trackingNumber] : []),
-                        ].filter(Boolean);
-                        if (nums.length === 0) return <span className="text-muted-foreground italic">No tracking number</span>;
-                        return <span className="font-mono text-blue-700">{nums.join(", ")}</span>;
-                      })()}
-                    </div>
-                    {/* Dispatch photos */}
-                    <div className="flex items-center gap-2 text-[10px]">
-                      <Camera className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      {(dispatchImagesMap[o.id] ?? []).length === 0 ? (
-                        <span className="text-muted-foreground italic">No dispatch photo</span>
-                      ) : (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {(dispatchImagesMap[o.id] ?? []).map(img => (
-                            <DispatchPhotoThumb key={img.id} imageId={img.id} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
       )}
     </div>
   );
