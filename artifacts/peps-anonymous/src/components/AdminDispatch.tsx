@@ -454,6 +454,7 @@ function PackingSlipsTab({
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [showPrint, setShowPrint] = useState(false);
+  const [gbName, setGbName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -499,6 +500,15 @@ function PackingSlipsTab({
       .then(d => setScopeOptions(d))
       .catch(() => setScopeOptions(null))
       .finally(() => setScopeLoading(false));
+  }, [selectedGb, cfg]);
+
+  // Load the group buy name (shown on printed packing slips)
+  useEffect(() => {
+    if (!selectedGb) { setGbName(""); return; }
+    cfg.dfetch(`${cfg.base}/${selectedGb}/gb-info`)
+      .then(r => r.json())
+      .then(d => setGbName(d?.name ?? ""))
+      .catch(() => setGbName(""));
   }, [selectedGb, cfg]);
 
   // Reset downstream when scope changes
@@ -1340,7 +1350,7 @@ function PackingSlipsTab({
 
       {/* ── Print Modal ── */}
       {showPrint && selectedOrders.length > 0 && (
-        <PrintModal orders={selectedOrders} onClose={() => setShowPrint(false)} />
+        <PrintModal orders={selectedOrders} gbName={gbName} onClose={() => setShowPrint(false)} />
       )}
     </div>
   );
@@ -1447,7 +1457,7 @@ function OrderSummary({ o }: { o: DispatchOrder }) {
 }
 
 // ─── PrintModal ───────────────────────────────────────────────────────────────
-function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () => void }) {
+function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[]; gbName?: string; onClose: () => void }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [format, setFormat] = useState<"a4" | "4x6">("a4");
 
@@ -1595,11 +1605,11 @@ function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () 
           <div ref={printRef}>
             {format === "4x6" ? (
               <div className="slip-grid">
-                {orders.map(o => <LabelSlip key={o.id} order={o} />)}
+                {orders.map(o => <LabelSlip key={o.id} order={o} gbName={gbName} />)}
               </div>
             ) : (
               <div className="slip-grid" style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                {orders.map(o => <PackingSlip key={o.id} order={o} />)}
+                {orders.map(o => <PackingSlip key={o.id} order={o} gbName={gbName} />)}
               </div>
             )}
           </div>
@@ -1610,7 +1620,7 @@ function PrintModal({ orders, onClose }: { orders: DispatchOrder[]; onClose: () 
 }
 
 // ─── LabelSlip — 4×6 single-label layout ──────────────────────────────────────
-function LabelSlip({ order: o }: { order: DispatchOrder }) {
+function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string }) {
   const kits = o.lineItems.reduce((s, li) => s + li.quantity, 0);
   const addressParts = [o.shippingAddress, o.shippingCity, o.shippingPostcode, o.shippingCountry].filter(Boolean);
 
@@ -1672,14 +1682,14 @@ function LabelSlip({ order: o }: { order: DispatchOrder }) {
 
       {/* Footer */}
       <div className="label-footer" style={{ marginTop: "8px", paddingTop: "6px", borderTop: "1.5px solid #111", fontSize: "8px", color: "#9ca3af", textAlign: "center" }}>
-        Salt & Peps · pepsanonymous.co.uk
+        Salt & Peps · Saltandpeps.co.uk{gbName ? ` · ${gbName}` : ""}
       </div>
     </div>
   );
 }
 
 // ─── PackingSlip card ─────────────────────────────────────────────────────────
-function PackingSlip({ order: o }: { order: DispatchOrder }) {
+function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string }) {
   const kits = o.lineItems.reduce((s, li) => s + li.quantity, 0);
 
   const addressParts = [
@@ -1744,6 +1754,11 @@ function PackingSlip({ order: o }: { order: DispatchOrder }) {
           {addressParts.map((part, i) => <div key={i}>{part}</div>)}
         </div>
       )}
+
+      {/* Footer */}
+      <div className="slip-footer" style={{ marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #d1d5db", fontSize: "7.5px", color: "#9ca3af", textAlign: "center" }}>
+        Salt & Peps · Saltandpeps.co.uk{gbName ? ` · ${gbName}` : ""}
+      </div>
     </div>
   );
 }
