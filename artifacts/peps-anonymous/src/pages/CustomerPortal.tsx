@@ -229,6 +229,30 @@ function getGBCloseDateBadge(iso: string | null): { dateStr: string; daysStr: st
   return { dateStr, daysStr: `${diffMonths}mo left` };
 }
 
+// ─── Order-type colour coding ────────────────────────────────────────────────
+// Each order type gets a consistent accent colour so types are easy to tell apart.
+const WHOLESALE_ACCENT = "#10B981";
+const SHOP_ACCENT = "#7C3AED";
+
+// Deterministic accent per group buy so multiple group buys are visually distinct
+// from one another (stable hash of the id → one of the palette accents).
+function gbAccentColor(gbId: string | null | undefined): string {
+  if (!gbId) return GB_PALETTE[0]!.accent;
+  let h = 0;
+  for (let i = 0; i < gbId.length; i++) h = (h * 31 + gbId.charCodeAt(i)) >>> 0;
+  return GB_PALETTE[h % GB_PALETTE.length]!.accent;
+}
+
+// Convert a #rrggbb hex to an rgba() string for subtle tints/borders.
+function hexToRgba(hex: string, alpha: number): string {
+  const m = hex.replace("#", "");
+  const full = m.length === 3 ? m.split("").map(c => c + c).join("") : m;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -244,7 +268,7 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Order card ────────────────────────────────────────────────────────────────
 
-function OrderCard({ order, onManage, onReorder, groupBuyName }: { order: Order; onManage: () => void; onReorder?: () => void; groupBuyName?: string }) {
+function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order: Order; onManage: () => void; onReorder?: () => void; groupBuyName?: string; accent?: string }) {
   const sm = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
   const pm = PAYMENT_META[order.paymentStatus] ?? { label: order.paymentStatus, color: "#94A3B8" };
   const StatusIcon = sm.icon;
@@ -255,33 +279,35 @@ function OrderCard({ order, onManage, onReorder, groupBuyName }: { order: Order;
   const pmBg = isPaid ? "rgba(16,185,129,0.1)" : "rgba(148,163,184,0.1)";
   const hasLogistics = order.deliveryMethod || order.trackingNumber || order.adminMessage;
 
+  const isGb = !!order.groupBuyId || !!groupBuyName;
+  const isWholesale = order.orderType === "wholesale" || order.orderType === "wholesale_shared";
+  const typeColor = accent ?? (isGb ? GB_PALETTE[0]!.accent : isWholesale ? WHOLESALE_ACCENT : SHOP_ACCENT);
+  const TypeIcon = isGb ? Users : isWholesale ? Boxes : ShoppingBag;
+  const typeLabel = isGb
+    ? `${groupBuyName ?? "Group Buy"} Order`
+    : order.orderType === "wholesale_shared" ? "Shared Wholesale"
+    : isWholesale ? "Wholesale"
+    : "Shop Order";
+
   return (
     <motion.div
       layout
-      className="rounded-2xl overflow-hidden"
+      className="relative rounded-2xl overflow-hidden"
       style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 1px 4px rgba(15,23,42,0.07), 0 4px 12px rgba(15,23,42,0.04)" }}
     >
+      {/* Left accent rail — colour-codes the order type / group buy */}
+      <div className="absolute left-0 top-0 bottom-0 w-1.5 z-10" style={{ background: typeColor }} />
       {/* ── Zone A: Identity ─────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
         {/* Row 1: GB label (left) + status + total stacked (right) */}
         <div className="flex items-start justify-between gap-2 mb-2.5">
-          {groupBuyName ? (
-            <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full"
-              style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-15)" }}>
-              <Users className="w-3 h-3" style={{ color: "var(--t-blue)" }} />
-              <span className="text-[10px] font-bold" style={{ color: "var(--t-blue)" }}>{groupBuyName} Order</span>
-            </div>
-          ) : (order.orderType === "wholesale" || order.orderType === "wholesale_shared") ? (
-            <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full"
-              style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
-              <Store className="w-3 h-3" style={{ color: "#10B981" }} />
-              <span className="text-[10px] font-bold" style={{ color: "#10B981" }}>
-                {order.orderType === "wholesale_shared" ? "Shared Wholesale" : "Wholesale"}
-              </span>
-            </div>
-          ) : <span />}
+          <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full min-w-0"
+            style={{ background: hexToRgba(typeColor, 0.10), border: `1px solid ${hexToRgba(typeColor, 0.22)}` }}>
+            <TypeIcon className="w-3 h-3 shrink-0" style={{ color: typeColor }} />
+            <span className="text-[10px] font-bold truncate" style={{ color: typeColor }}>{typeLabel}</span>
+          </div>
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0"
             style={{ background: sm.bg, color: sm.color }}
           >
             <StatusIcon className="w-3 h-3" />
@@ -7903,17 +7929,19 @@ export default function CustomerPortal() {
             const dotColor = GB_STATUS_DOT[gbStatus] ?? "#94A3B8";
             const gbLabel  = GB_STATUS_LABEL[gbStatus] ?? gbStatus;
             const hasPaid  = gbOrders.some(o => ["confirmed", "test_confirmed"].includes(o.paymentStatus));
+            const accent   = gbAccentColor(groupBuyId);
             return (
-              <div key={groupBuyId} className="space-y-3">
+              <div key={groupBuyId} className="rounded-2xl p-3 space-y-3"
+                style={{ background: hexToRgba(accent, 0.05), border: `1px solid ${hexToRgba(accent, 0.18)}` }}>
                 {/* Group buy header */}
-                <div className="flex items-center gap-3 px-1">
+                <div className="flex items-center gap-3 px-0.5">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: "var(--t-blue-10)" }}>
-                      <Users className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} />
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: hexToRgba(accent, 0.14), border: `1px solid ${hexToRgba(accent, 0.25)}` }}>
+                      <Users className="w-4 h-4" style={{ color: accent }} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold truncate" style={{ color: T.text }}>
+                      <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>
                         {gb?.name ?? "Group Buy"}
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
@@ -7934,11 +7962,11 @@ export default function CustomerPortal() {
                 </div>
 
                 {/* Orders under this group buy */}
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <AnimatePresence>
                     {shown.map((order, i) => (
                       <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                        <OrderCard order={order} onManage={() => handleManage(order)} groupBuyName={gb?.name ?? undefined} />
+                        <OrderCard order={order} onManage={() => handleManage(order)} groupBuyName={gb?.name ?? undefined} accent={accent} />
                       </motion.div>
                     ))}
                   </AnimatePresence>
@@ -7952,9 +7980,9 @@ export default function CustomerPortal() {
             <div className="space-y-5">
               {typeFilter === "all" && (
                 <div className="flex items-center gap-2 px-1">
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: T.surface2 }}>
-                    <Boxes className="w-3.5 h-3.5" style={{ color: T.muted }} />
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: hexToRgba(WHOLESALE_ACCENT, 0.12), border: `1px solid ${hexToRgba(WHOLESALE_ACCENT, 0.25)}` }}>
+                    <Boxes className="w-4 h-4" style={{ color: WHOLESALE_ACCENT }} />
                   </div>
                   <div>
                     <p className="text-xs font-bold" style={{ color: T.text }}>Wholesale Orders</p>
@@ -7968,6 +7996,7 @@ export default function CustomerPortal() {
                     <OrderCard
                       order={order}
                       onManage={() => handleManage(order)}
+                      accent={WHOLESALE_ACCENT}
                       onReorder={order.orderType === "wholesale" ? () => handleReorder(order) : undefined}
                     />
                   </motion.div>
@@ -7981,9 +8010,9 @@ export default function CustomerPortal() {
             <div className="space-y-5">
               {typeFilter === "all" && (
                 <div className="flex items-center gap-2 px-1">
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: T.surface2 }}>
-                    <ShoppingBag className="w-3.5 h-3.5" style={{ color: T.muted }} />
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: hexToRgba(SHOP_ACCENT, 0.12), border: `1px solid ${hexToRgba(SHOP_ACCENT, 0.25)}` }}>
+                    <ShoppingBag className="w-4 h-4" style={{ color: SHOP_ACCENT }} />
                   </div>
                   <div>
                     <p className="text-xs font-bold" style={{ color: T.text }}>Shop Orders</p>
@@ -7997,6 +8026,7 @@ export default function CustomerPortal() {
                     <OrderCard
                       order={order}
                       onManage={() => handleManage(order)}
+                      accent={SHOP_ACCENT}
                     />
                   </motion.div>
                 ))}
