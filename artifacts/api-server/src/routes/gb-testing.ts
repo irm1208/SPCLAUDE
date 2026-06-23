@@ -14,7 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, and, gt, sum, count, sql, inArray, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
-import { notifyUser } from "../lib/telegram";
+import { notifyUserFull } from "../lib/telegram";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
 import { timingSafeEqual } from "crypto";
 import { extractBatchNumbersFromImages } from "../lib/gemini-lab-extract";
@@ -1390,8 +1390,8 @@ router.post("/admin/group-buys/:gbId/testing/send-vote-reminder", async (req, re
     for (const contributor of unvoted) {
       if (!contributor.telegramUsername) { skipped++; continue; }
       try {
-        const ok = await notifyUser(contributor.telegramUsername, "gb_vote_reminder", message);
-        if (ok) sent++; else failed++;
+        const result = await notifyUserFull(contributor.telegramUsername, "status", message);
+        if (result.ok) sent++; else failed++;
       } catch {
         failed++;
       }
