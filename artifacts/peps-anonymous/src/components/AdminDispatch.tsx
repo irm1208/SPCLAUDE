@@ -223,7 +223,7 @@ function DispatchManagerInner() {
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       {/* Sub-tab toggle */}
-      <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-muted w-fit">
+      <div className="flex flex-nowrap gap-1 p-1 rounded-xl bg-muted max-w-full overflow-x-auto">
         {([
           ["packing", "Dispatch & Packing Slips"],
           // Half Kits is admin-only — hidden on reshipper/organiser surfaces.
@@ -236,7 +236,7 @@ function DispatchManagerInner() {
           <button
             key={id}
             onClick={() => setSubTab(id)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
               subTab === id
                 ? "bg-white shadow-sm text-foreground"
                 : "text-muted-foreground hover:text-foreground"
