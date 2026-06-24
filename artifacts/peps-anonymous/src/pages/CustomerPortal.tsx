@@ -20,7 +20,7 @@ import {
   SlidersHorizontal, Sparkles, RotateCcw, GripVertical,
   Navigation, MapPin, Box, UsersRound, Eye, EyeOff, QrCode,
   LayoutList, LayoutGrid, Store, Star, RefreshCcw, Hash, Wallet, Boxes, Pencil,
-  Download, Maximize2,
+  Download, Maximize2, Archive, ArchiveRestore,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -40,11 +40,12 @@ import { SteroidPlotter } from "@/components/SteroidPlotter";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { PageLayout } from "@/components/PageLayout";
 import { RulesetModal } from "@/components/RulesetModal";
+import { toast } from "@/hooks/use-toast";
 import {
   useAccount, useLogout, useAccountOrders, useTestingLateOptIn, useTestingActivePools, useTestingGbPools,
   useTelegramStatus, useTelegramLinkInit, useTelegramUnlink, useTelegramUpdatePrefs, useTelegramSendTest,
   useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useLeaveGroupBuy, useUpdateCountry, useCountryLegs,
-  useViewerAccess,
+  useViewerAccess, useSetGroupBuyArchived,
   type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry,
 } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
@@ -6705,6 +6706,9 @@ export default function CustomerPortal() {
   const lastJoinHandledRef = useRef<string | null>(null);
   const [leaveConfirmGb, setLeaveConfirmGb] = useState<GroupBuySummary | null>(null);
   const leaveGbMut = useLeaveGroupBuy();
+  const archiveGbMut = useSetGroupBuyArchived();
+  const [showArchivedGbs, setShowArchivedGbs] = useState(false);
+  const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
   const updateCountryMut = useUpdateCountry();
   const [showCountryPrompt, setShowCountryPrompt] = useState(false);
   const [countryPromptValue, setCountryPromptValue] = useState("");
@@ -8046,6 +8050,8 @@ export default function CustomerPortal() {
   // ─── Group Buys section ───────────────────────────────────────────────────────
 
   if (section === "groups") {
+    const activeGbs = groupBuys.filter(g => !g.archived);
+    const archivedGbs = groupBuys.filter(g => g.archived);
     return (
       <PortalLayout navProps={navProps}>
         {/* ════════════════════ BRANDED GRADIENT HEADER ════════════════════════ */}
@@ -8085,7 +8091,7 @@ export default function CustomerPortal() {
             </div>
             <h1 className="text-2xl font-bold text-white leading-tight">My Group Buys</h1>
             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>
-              {groupBuys.length} group buy{groupBuys.length !== 1 ? "s" : ""}
+              {activeGbs.length} group buy{activeGbs.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -8118,7 +8124,7 @@ export default function CustomerPortal() {
             <div className="col-span-2 flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
           )}
 
-          {!gbLoading && groupBuys.length === 0 && (
+          {!gbLoading && activeGbs.length === 0 && archivedGbs.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="col-span-2 rounded-xl p-8 text-center shadow-sm" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <div className="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: "var(--t-blue-08)" }}>
@@ -8136,7 +8142,7 @@ export default function CustomerPortal() {
             </motion.div>
           )}
 
-          {!gbLoading && groupBuys.map((gb, idx) => {
+          {!gbLoading && activeGbs.map((gb, idx) => {
             const palette = GB_PALETTE[idx % GB_PALETTE.length];
             const GBIcon = palette.icon;
             const isOrderable = gb.status === "active";
@@ -8268,6 +8274,21 @@ export default function CustomerPortal() {
                         <Info className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />
                       </button>
                       <button
+                        onClick={async () => {
+                          setPendingArchiveId(gb.id);
+                          try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
+                          catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                          finally { setPendingArchiveId(null); }
+                        }}
+                        disabled={pendingArchiveId === gb.id}
+                        title="Archive — hide from this list"
+                        className="w-6 h-6 rounded-full flex items-center justify-center"
+                        style={{ background: "rgba(255,255,255,0.10)" }}>
+                        {pendingArchiveId === gb.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" style={{ color: "rgba(255,255,255,0.55)" }} />
+                          : <Archive className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />}
+                      </button>
+                      <button
                         onClick={() => {
                           setLeaveConfirmGb(gb);
                         }}
@@ -8283,6 +8304,54 @@ export default function CustomerPortal() {
             );
           })}
         </div>
+
+        {!gbLoading && archivedGbs.length > 0 && (
+          <div className="pt-5">
+            <button
+              onClick={() => setShowArchivedGbs(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl"
+              style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: T.muted }}>
+                <Archive className="w-4 h-4" style={{ color: T.muted }} />
+                Archived ({archivedGbs.length})
+              </span>
+              {showArchivedGbs
+                ? <ChevronUp className="w-4 h-4" style={{ color: T.muted }} />
+                : <ChevronDown className="w-4 h-4" style={{ color: T.muted }} />}
+            </button>
+            {showArchivedGbs && (
+              <div className="mt-2 space-y-2">
+                {archivedGbs.map(gb => (
+                  <div key={gb.id}
+                    className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
+                    style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{gb.name}</p>
+                      <p className="text-xs truncate" style={{ color: T.muted }}>
+                        by {gb.organiserId ?? "Admin"}{gb.productCount > 0 ? ` · ${gb.productCount} product${gb.productCount !== 1 ? "s" : ""}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setPendingArchiveId(gb.id);
+                        try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: false }); }
+                        catch (e) { toast({ title: "Couldn't unarchive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                        finally { setPendingArchiveId(null); }
+                      }}
+                      disabled={pendingArchiveId === gb.id}
+                      className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold"
+                      style={{ background: T.surface2, color: T.text, border: `1px solid ${T.border}` }}>
+                      {pendingArchiveId === gb.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <ArchiveRestore className="w-3.5 h-3.5" />}
+                      Unarchive
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <AnimatePresence>
           {infoGb && <GBInfoModal gb={infoGb} onClose={() => setInfoGb(null)} />}

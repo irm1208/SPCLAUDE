@@ -296,10 +296,11 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
 
   // Look up account's country for visibility checks
   const [acctRowGb] = await db
-    .select({ country: accountsTable.country })
+    .select({ country: accountsTable.country, archivedGroupBuyIds: accountsTable.archivedGroupBuyIds })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, tg));
   const accountCountryGb = acctRowGb?.country ?? null;
+  const archivedGbSet = new Set<string>(acctRowGb?.archivedGroupBuyIds ?? []);
 
   // Forced GBs — GBs where this customer's username is in the forcedUsernames array
   const forcedRows = await db
@@ -327,11 +328,58 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
         kitsOrderedByUser,
         kitsOrderedTotal,
         countryLegId: memberCountryLegIdMap.get(gb.id) ?? null,
+        archived: archivedGbSet.has(gb.id),
       };
     })
   );
 
   res.json(result);
+});
+
+// POST /api/group-buys/:id/archive — hide a GB from the user's personal list (per-account, reversible)
+router.post("/group-buys/:id/archive", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const id = String(req.params["id"]);
+  if (!id || id.length > 200) {
+    res.status(400).json({ error: "Invalid group buy id" });
+    return;
+  }
+  // Only allow archiving a real group buy (prevents arbitrary-id bloat on the account row)
+  const [gb] = await db
+    .select({ id: groupBuysTable.id })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+  if (!gb) {
+    res.status(404).json({ error: "Group buy not found" });
+    return;
+  }
+  // Atomic append-if-absent: a single row-locked UPDATE so concurrent archive
+  // actions (e.g. bulk-cleaning the list) cannot overwrite each other's changes.
+  await db
+    .update(accountsTable)
+    .set({ archivedGroupBuyIds: sql`${accountsTable.archivedGroupBuyIds} || ${JSON.stringify([id])}::jsonb` })
+    .where(and(
+      eq(accountsTable.telegramUsername, tg),
+      sql`NOT (${accountsTable.archivedGroupBuyIds} @> ${JSON.stringify([id])}::jsonb)`,
+    ));
+  res.json({ ok: true, archived: true });
+});
+
+// POST /api/group-buys/:id/unarchive — restore a previously archived GB
+router.post("/group-buys/:id/unarchive", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const id = String(req.params["id"]);
+  if (!id || id.length > 200) {
+    res.status(400).json({ error: "Invalid group buy id" });
+    return;
+  }
+  // Atomic remove-by-value: rebuild the array without this id in one row-locked
+  // UPDATE so concurrent archive/unarchive actions cannot clobber each other.
+  await db
+    .update(accountsTable)
+    .set({ archivedGroupBuyIds: sql`COALESCE((SELECT jsonb_agg(elem) FROM jsonb_array_elements_text(${accountsTable.archivedGroupBuyIds}) AS elem WHERE elem <> ${id}), '[]'::jsonb)` })
+    .where(eq(accountsTable.telegramUsername, tg));
+  res.json({ ok: true, archived: false });
 });
 
 // GET /api/group-buys/:id/products — products for a GB (member only)

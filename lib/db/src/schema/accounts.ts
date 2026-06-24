@@ -92,6 +92,8 @@ export const accountsTable = pgTable("accounts", {
   addressPhone: text("address_phone"),
   addressPhonePrefix: text("address_phone_prefix"),
   wholesaleDraft: jsonb("wholesale_draft").$type<Record<string, unknown> | null>(),
+  // Per-account list of group buy IDs the user has archived (hidden from their Group Buys list)
+  archivedGroupBuyIds: jsonb("archived_group_buy_ids").$type<string[]>().notNull().default([]),
   lastLoginIp: text("last_login_ip"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   signupInviteCode: text("signup_invite_code"),

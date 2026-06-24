@@ -156,6 +156,7 @@ export interface GroupBuySummary {
   adminFeeAmount?: number | null;
   adminFeeLabel?: string | null;
   directShippingPaymentsEnabled?: boolean;
+  archived?: boolean;
 }
 
 export function useMyGroupBuys(enabled = true) {
@@ -169,6 +170,25 @@ export function useMyGroupBuys(enabled = true) {
     staleTime: 60 * 1000,
     retry: false,
     enabled,
+  });
+}
+
+export function useSetGroupBuyArchived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupBuyId, archived }: { groupBuyId: string; archived: boolean }) => {
+      const res = await fetch(
+        `/api/group-buys/${encodeURIComponent(groupBuyId)}/${archived ? "archive" : "unarchive"}`,
+        { method: "POST", credentials: "include" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to update group buy");
+      return data as { ok: boolean; archived: boolean };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["account", "group-buys"] });
+      qc.refetchQueries({ queryKey: ["account", "group-buys"] });
+    },
   });
 }
 
