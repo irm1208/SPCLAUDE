@@ -10864,9 +10864,11 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Failed");
-      setIsWholesale(!isWholesale);
-      setWholesaleMsg({ ok: true, text: !isWholesale ? "Wholesale access granted" : "Wholesale access removed" });
+      const nextVal = !isWholesale;
+      setIsWholesale(nextVal);
+      setWholesaleMsg({ ok: true, text: nextVal ? "Wholesale access granted" : "Wholesale access removed" });
       setTimeout(() => setWholesaleMsg(null), 3000);
+      loadProfile();
     } catch (e: unknown) {
       setWholesaleMsg({ ok: false, text: e instanceof Error ? e.message : "Failed to update wholesale status" });
     }
@@ -12010,6 +12012,7 @@ function UsernamesTab({ secret }: { secret: string }) {
         text: `${bulkAction === "grant" ? "Granted" : "Revoked"} ${ROLE_LABEL[bulkRole]} for ${j.updated} member${j.updated !== 1 ? "s" : ""}`,
       });
       setSelected(new Set());
+      setPanelUsername(null);
       fetch$();
     } catch (e) {
       setRoleMsg({ ok: false, text: e instanceof Error ? e.message : "Failed to update roles" });
@@ -12350,6 +12353,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                         {row.organiserStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">Org Applied</span>}
                         {row.poolLeaderStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">PL Applied</span>}
                         {row.reshipperStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">RS Applied</span>}
+                        {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesale</span>}
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         Joined {joinDate} · {row.orderCount} order{row.orderCount !== 1 ? "s" : ""} · ${row.totalSpent.toFixed(2)} spent{typeof row.credits === "number" ? ` · $${row.credits} credits` : ""}
