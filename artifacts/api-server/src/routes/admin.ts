@@ -4849,9 +4849,8 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
   const page = Math.max(0, parseInt(String(req.query.page ?? "0"), 10) || 0);
-  const limitRaw = String(req.query.limit ?? "50");
-  const limit = limitRaw === "all" ? 100000 : Math.min(10000, Math.max(1, parseInt(limitRaw, 10) || 50));
-  const offset = limitRaw === "all" ? 0 : page * limit;
+  const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+  const offset = page * limit;
   const gbIdFilter = typeof req.query.gbId === "string" ? req.query.gbId.trim() : null;
   const wholesaleOnly = req.query.wholesale === "true";
 

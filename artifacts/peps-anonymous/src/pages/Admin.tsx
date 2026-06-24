@@ -11917,7 +11917,6 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
-  const [memberLimit, setMemberLimit] = useState<"50" | "100" | "200" | "all">("200");
 
   useEffect(() => {
     fetch(apiUrl("/admin/group-buys"), { headers: { "x-admin-secret": secret } })
@@ -11943,14 +11942,14 @@ function UsernamesTab({ secret }: { secret: string }) {
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
-      params.set("limit", memberLimit);
+      params.set("limit", "200");
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
       // New endpoint returns { customers, total, page, limit }; fall back to array for legacy compat
       setRows(Array.isArray(data) ? data : (data.customers ?? []));
     } catch { /* ignore */ }
     setLoading(false);
-  }, [secret, searchQuery, gbFilter, wholesaleFilter, memberLimit]);
+  }, [secret, searchQuery, gbFilter, wholesaleFilter]);
 
   useEffect(() => { fetch$(); }, [fetch$]);
 
@@ -12228,23 +12227,8 @@ function UsernamesTab({ secret }: { secret: string }) {
         </select>
       </div>
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-muted-foreground">{displayed.length} member{displayed.length !== 1 ? "s" : ""}</p>
-          <select
-            className="h-7 rounded-lg border bg-background px-2 text-xs font-medium text-foreground"
-            value={memberLimit}
-            onChange={e => {
-              setMemberLimit(e.target.value as "50" | "100" | "200" | "all");
-              setSelected(new Set());
-            }}
-          >
-            <option value="50">Show 50</option>
-            <option value="100">Show 100</option>
-            <option value="200">Show 200</option>
-            <option value="all">Show all</option>
-          </select>
-        </div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{displayed.length} member{displayed.length !== 1 ? "s" : ""}</p>
         {displayed.length > 0 && (
           <button
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
