@@ -209,6 +209,14 @@ export default function Review() {
         adminFeeLabel: adminFeeAmount > 0 ? (adminFeeLabel ?? null) : null,
       }));
       draft.clearDraft();
+      if (isWholesale) {
+        fetch("/api/account/wholesale-draft", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draft: null }),
+        }).catch(() => {});
+      }
       setLocation(`/success?code=${data.code}&action=${existingOrderId ? "updated" : "created"}&oid=${oid}`);
     };
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
@@ -80,6 +80,9 @@ export default function WholesaleOrder() {
   const [vendorLoading, setVendorLoading] = useState(true);
   const [selectedRegionIdx, setSelectedRegionIdx] = useState<number | null>(null);
   const [regionAutoSelected, setRegionAutoSelected] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [draftSavedFlash, setDraftSavedFlash] = useState(false);
 
   useEffect(() => {
     if (!accountLoading && (!account || !account.isWholesale)) {
@@ -95,6 +98,7 @@ export default function WholesaleOrder() {
 
   const draftInitialised = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveAbort = useRef<AbortController | null>(null);
 
   // Restore draft on mount: edit/reorder sessionStorage keys take priority, then DB draft
   useEffect(() => {
@@ -141,6 +145,11 @@ export default function WholesaleOrder() {
             if (d.tip != null) setTip(d.tip as number);
             if (d.editOrderId) setEditOrderId(d.editOrderId as string);
             if (d.editCode) setEditCode(d.editCode as string);
+            const hasContent =
+              (!!d.quantities && Object.keys(d.quantities as object).length > 0) ||
+              !!(d.fullName || d.phone || d.email || d.shippingAddress || d.shippingCountry || d.notes) ||
+              (typeof d.tip === "number" && d.tip > 0);
+            if (hasContent) setDraftRestored(true);
           }
         })
         .catch(() => {})
@@ -148,20 +157,37 @@ export default function WholesaleOrder() {
     }
   }, []);
 
-  // Auto-save to DB (debounced 1.5 s) whenever form fields change
+  // Build the current form as a draft payload, plus a helper to persist/clear it.
+  const buildDraft = () => ({ quantities, fullName, phone, email, shippingAddress, shippingCountry, notes, tip, editOrderId, editCode });
+  const draftHasContent =
+    Object.keys(quantities).length > 0 ||
+    [fullName, phone, email, shippingAddress, shippingCountry, notes].some(s => s.trim() !== "") ||
+    tip > 0;
+  const saveWholesaleDraft = (draft: Record<string, unknown> | null) => {
+    // Latest write wins: abort any in-flight save so an older autosave PUT can
+    // never land after a discard, a manual save, or the submit-time clear.
+    saveAbort.current?.abort();
+    const controller = new AbortController();
+    saveAbort.current = controller;
+    return fetch("/api/account/wholesale-draft", {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft }),
+      signal: controller.signal,
+    }).catch(() => {});
+  };
+
+  // Auto-save to DB (debounced 1.5 s) whenever form fields change. Store null when
+  // the form is empty so a blank draft is never resurrected (e.g. after discard).
+  // Cleanup clears any pending timer so it can't fire after we navigate away.
   useEffect(() => {
     if (!draftInitialised.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      fetch("/api/account/wholesale-draft", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draft: { quantities, fullName, phone, email, shippingAddress, shippingCountry, notes, tip, editOrderId, editCode },
-        }),
-      }).catch(() => {});
+      saveWholesaleDraft(draftHasContent ? buildDraft() : null);
     }, 1500);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [quantities, fullName, phone, email, shippingAddress, shippingCountry, notes, tip, editOrderId, editCode]);
 
   useEffect(() => {
@@ -323,14 +349,40 @@ export default function WholesaleOrder() {
       })),
     });
 
-    // Clear DB draft now that the order is proceeding to review
-    fetch("/api/account/wholesale-draft", {
-      method: "PUT",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draft: null }),
-    }).catch(() => {});
+    // Persist the draft one last time and cancel any pending autosave timer so no
+    // late timer can fire after we leave. The draft is only cleared on real submit
+    // (Review onSuccess), so backing out of review keeps the user's work.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveWholesaleDraft(draftHasContent ? buildDraft() : null);
     setLocation("/review");
+  };
+
+  const handleSaveDraft = async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setDraftSaving(true);
+    await saveWholesaleDraft(buildDraft());
+    setDraftSaving(false);
+    setDraftRestored(false);
+    setDraftSavedFlash(true);
+    setTimeout(() => setDraftSavedFlash(false), 2500);
+  };
+
+  const handleDiscardDraft = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setQuantities({});
+    setFullName("");
+    setPhone("");
+    setEmail("");
+    setShippingAddress("");
+    setShippingCountry("");
+    setNotes("");
+    setTip(0);
+    setEditOrderId(null);
+    setEditCode(null);
+    setSelectedRegionIdx(null);
+    setRegionAutoSelected(false);
+    setDraftRestored(false);
+    saveWholesaleDraft(null);
   };
 
   const searchQ = productSearch.trim().toLowerCase();
@@ -362,6 +414,13 @@ export default function WholesaleOrder() {
                   : "Select products and quantities, then proceed to review."}
               </p>
             </div>
+
+            {draftRestored && (
+              <div className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3" style={{ background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", color: "var(--t-text)" }}>
+                <span>Resumed your saved draft — pick up where you left off.</span>
+                <button onClick={handleDiscardDraft} className="shrink-0 text-xs font-bold px-3 h-8 rounded-lg" style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}>Discard draft</button>
+              </div>
+            )}
 
             {pageMessage && (
               <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", color: "var(--t-text)" }}>
@@ -972,16 +1031,27 @@ export default function WholesaleOrder() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={handleReview}
-                disabled={lineItems.length === 0}
-                className="flex items-center gap-2 h-12 px-6 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
-                style={{ background: "var(--t-blue)" }}
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Review Order
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSaveDraft}
+                  disabled={!draftHasContent || draftSaving}
+                  className="flex items-center gap-2 h-12 px-4 rounded-xl text-sm font-bold transition-all disabled:opacity-40 active:scale-[0.98]"
+                  style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                >
+                  {draftSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSavedFlash ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                  {draftSavedFlash ? "Saved" : "Save draft"}
+                </button>
+                <button
+                  onClick={handleReview}
+                  disabled={lineItems.length === 0}
+                  className="flex items-center gap-2 h-12 px-6 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
+                  style={{ background: "var(--t-blue)" }}
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  Review Order
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </TotalBarShell>

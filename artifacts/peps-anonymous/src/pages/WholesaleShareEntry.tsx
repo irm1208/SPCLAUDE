@@ -143,7 +143,10 @@ export default function WholesaleShareEntry() {
 
               {activeShares.length > 0 && (
                 <div className="rounded-xl p-4 space-y-1.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                  <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Your shared orders</p>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Your shared orders</p>
+                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Pick up where you left off — your saved items and delivery details are kept.</p>
+                  </div>
                   {activeShares.map(s => (
                     <button
                       key={s.id}
