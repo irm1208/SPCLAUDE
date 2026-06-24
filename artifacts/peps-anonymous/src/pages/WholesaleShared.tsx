@@ -214,6 +214,8 @@ export default function WholesaleShared() {
   const [actionError, setActionError] = useState("");
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  // Inline address edit toggle — recipient can open this when share is open
+  const [showAddrEdit, setShowAddrEdit] = useState(false);
 
   // Gate: wholesale members only
   useEffect(() => {
@@ -886,6 +888,177 @@ export default function WholesaleShared() {
               </div>
             </section>
 
+            {/* Shipping details — visible to all members once a delivery member is chosen */}
+            {share.isMember && share.delivery.username && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Shipping</p>
+                  {share.delivery.canEditAddress && !showAddrEdit && (
+                    <button
+                      onClick={() => setShowAddrEdit(true)}
+                      className="text-xs font-semibold"
+                      style={{ color: "var(--t-blue)" }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {!isOpen && share.delivery.address && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.20)" }}>
+                      <Lock className="w-2.5 h-2.5" /> Locked
+                    </span>
+                  )}
+                </div>
+                <div className="rounded-xl p-4 space-y-3" style={card}>
+                  {showAddrEdit && share.delivery.canEditAddress ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Edit delivery address</p>
+                        <button onClick={() => setShowAddrEdit(false)} className="text-xs" style={{ color: "var(--t-muted)" }}>Cancel</button>
+                      </div>
+                      <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                        You're receiving this parcel. This address is for this order only and won't change your account.
+                      </p>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
+                        <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                      </div>
+                      <div className="relative">
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Find your address</label>
+                        <div className="relative">
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--t-muted)" }} />
+                          <input
+                            value={addrQuery}
+                            onChange={e => runAddrSearch(e.target.value)}
+                            onFocus={() => { if (addrResults.length) setShowAddrResults(true); }}
+                            onBlur={() => { addrBlurTimer.current = setTimeout(() => setShowAddrResults(false), 150); }}
+                            onKeyDown={onAddrKeyDown}
+                            placeholder="Start typing your address or postcode"
+                            autoComplete="off"
+                            role="combobox"
+                            aria-expanded={addrDropdownOpen}
+                            aria-controls="addr-suggestions"
+                            aria-autocomplete="list"
+                            aria-activedescendant={addrActiveIdx >= 0 ? `addr-opt-${addrActiveIdx}` : undefined}
+                            className="w-full h-10 pl-9 pr-9 rounded-lg border text-sm outline-none"
+                            style={field}
+                          />
+                          {addrSearching && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: "var(--t-muted)" }} />}
+                          {addrDropdownOpen && (
+                            <div id="addr-suggestions" role="listbox" className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ background: "var(--t-card, #fff)", borderColor: "var(--t-border)" }}>
+                              {addrResults.length > 0 ? addrResults.map((s, i) => (
+                                <div
+                                  key={i} id={`addr-opt-${i}`} role="option" aria-selected={i === addrActiveIdx}
+                                  onMouseDown={e => { e.preventDefault(); pickAddress(s); }}
+                                  onMouseEnter={() => setAddrActiveIdx(i)}
+                                  className="px-3 py-2 text-sm cursor-pointer"
+                                  style={{ color: "var(--t-text)", background: i === addrActiveIdx ? "var(--t-hover, rgba(0,0,0,0.06))" : "transparent", borderBottom: i < addrResults.length - 1 ? "1px solid var(--t-border)" : "none" }}
+                                >
+                                  {s.label}
+                                </div>
+                              )) : (
+                                <div className="px-3 py-2 text-sm" style={{ color: "var(--t-muted)" }}>No matches — keep typing or fill the fields manually.</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>Pick your address to auto-fill the fields below, or enter them manually.</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
+                        <input value={addr.line1} onChange={e => setAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
+                        <input value={addr.line2} onChange={e => setAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
+                          <input value={addr.city} onChange={e => setAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
+                          <input value={addr.postcode} onChange={e => setAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+                        <select value={addr.country} onChange={e => setAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+                          <option value="">Select country…</option>
+                          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>The vendor must ship to this country, or the order can't be priced or locked.</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Mobile / Phone</label>
+                        <input value={addr.phone} onChange={e => setAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => { await saveDeliveryAddress(); setShowAddrEdit(false); }}
+                          disabled={busy === "delivery-address" || !addr.name.trim() || !addr.line1.trim() || !addr.country || !addr.phone.trim()}
+                          className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                          style={{ background: "var(--t-blue)" }}
+                        >
+                          {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                          Save address
+                        </button>
+                        <button
+                          onClick={() => setShowAddrEdit(false)}
+                          className="px-4 h-11 rounded-xl text-sm font-semibold"
+                          style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : share.delivery.address ? (
+                    <div className="space-y-3 text-sm">
+                      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Name</span>
+                        <span style={{ color: "var(--t-text)" }}>{share.delivery.name || "—"}</span>
+                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Address</span>
+                        <span className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{share.delivery.address}</span>
+                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Country</span>
+                        <span style={{ color: "var(--t-text)" }}>{share.delivery.country || "—"}</span>
+                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Mobile</span>
+                        <span style={{ color: "var(--t-text)" }}>{share.delivery.phone || "—"}</span>
+                      </div>
+                      {share.delivery.canEditAddress && (
+                        <button
+                          onClick={() => setShowAddrEdit(true)}
+                          className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold"
+                          style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                        >
+                          Edit address
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    share.delivery.canEditAddress ? (
+                      <div className="space-y-3">
+                        <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                          You're receiving this parcel. Add the delivery address so the organiser can lock the order.
+                        </p>
+                        <button
+                          onClick={() => setShowAddrEdit(true)}
+                          className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white"
+                          style={{ background: "var(--t-blue)" }}
+                        >
+                          <Truck className="w-4 h-4" /> Add delivery address
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
+                        <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#eab308" }} />
+                        <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address.</span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* My items editor */}
             {canEditItems && (
               <section className="space-y-2">
@@ -1459,111 +1632,6 @@ export default function WholesaleShared() {
                   >
                     {busy === "onward" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     Save onward shipping
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {/* Delivery address — only the chosen recipient can set a one-off address
-                for this parcel. It overrides their saved account address for this order
-                only and never changes their account. */}
-            {share.delivery.canEditAddress && (
-              <section className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Delivery Address</p>
-                <div className="rounded-xl p-4 space-y-3" style={card}>
-                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-                    You're receiving this parcel. Confirm or edit where it should go — this address is used for this order only and won't change your account.
-                  </p>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
-                    <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                  </div>
-                  <div className="relative">
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Find your address</label>
-                    <div className="relative">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--t-muted)" }} />
-                      <input
-                        value={addrQuery}
-                        onChange={e => runAddrSearch(e.target.value)}
-                        onFocus={() => { if (addrResults.length) setShowAddrResults(true); }}
-                        onBlur={() => { addrBlurTimer.current = setTimeout(() => setShowAddrResults(false), 150); }}
-                        onKeyDown={onAddrKeyDown}
-                        placeholder="Start typing your address or postcode"
-                        autoComplete="off"
-                        role="combobox"
-                        aria-expanded={addrDropdownOpen}
-                        aria-controls="addr-suggestions"
-                        aria-autocomplete="list"
-                        aria-activedescendant={addrActiveIdx >= 0 ? `addr-opt-${addrActiveIdx}` : undefined}
-                        className="w-full h-10 pl-9 pr-9 rounded-lg border text-sm outline-none"
-                        style={field}
-                      />
-                      {addrSearching && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: "var(--t-muted)" }} />}
-                      {addrDropdownOpen && (
-                        <div id="addr-suggestions" role="listbox" className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ background: "var(--t-card, #fff)", borderColor: "var(--t-border)" }}>
-                          {addrResults.length > 0 ? addrResults.map((s, i) => (
-                            <div
-                              key={i}
-                              id={`addr-opt-${i}`}
-                              role="option"
-                              aria-selected={i === addrActiveIdx}
-                              onMouseDown={e => { e.preventDefault(); pickAddress(s); }}
-                              onMouseEnter={() => setAddrActiveIdx(i)}
-                              className="px-3 py-2 text-sm cursor-pointer"
-                              style={{ color: "var(--t-text)", background: i === addrActiveIdx ? "var(--t-hover, rgba(0,0,0,0.06))" : "transparent", borderBottom: i < addrResults.length - 1 ? "1px solid var(--t-border)" : "none" }}
-                            >
-                              {s.label}
-                            </div>
-                          )) : (
-                            <div className="px-3 py-2 text-sm" style={{ color: "var(--t-muted)" }}>
-                              No matches — keep typing or fill the fields in manually.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>Pick your address to auto-fill the fields below, or enter them manually.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
-                    <input value={addr.line1} onChange={e => setAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
-                    <input value={addr.line2} onChange={e => setAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
-                      <input value={addr.city} onChange={e => setAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
-                      <input value={addr.postcode} onChange={e => setAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
-                    <select value={addr.country} onChange={e => setAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
-                      <option value="">Select country…</option>
-                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>
-                      The vendor must ship to this country, or the order can't be priced or locked.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone</label>
-                    <input value={addr.phone} onChange={e => setAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                  </div>
-                  <button
-                    onClick={saveDeliveryAddress}
-                    disabled={busy === "delivery-address" || !addr.name.trim() || !addr.line1.trim() || !addr.country || !addr.phone.trim()}
-                    className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                    style={{ background: "var(--t-blue)" }}
-                  >
-                    {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Save delivery address
                   </button>
                 </div>
               </section>
