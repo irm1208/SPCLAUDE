@@ -14,6 +14,29 @@
 
 Source spec: `docs/superpowers/specs/2026-06-24-shared-order-simplify-design.md`. Read it before starting.
 
+## Amendment — execution approach (architect-reviewed)
+
+Execute as a **B-first hybrid** to minimise risk of breaking behaviour. Keep ALL
+state, effects, and mutation handlers in `WholesaleShared.tsx` — do **not** move
+the seeded editor state, dirty guards, localStorage draft, address autocomplete,
+or mutation handlers into child files during this UX pass (their lifecycle is
+synchronised against a polling query; relocating them risks clobbering unsaved
+edits and resetting seed refs). Instead:
+
+1. Keep `ExpandableCard` + `stage.ts` (Task 1) — done.
+2. Reorganise the render in-file with local helpers (`renderBuilding/renderPaying/
+   renderDone/renderCancelled`, `renderManage`, `renderGroupCard`), reusing the
+   existing JSX/state/handlers by moving blocks, not rewriting them.
+3. Group organiser-only and recipient-only controls into one role-gated **Manage**
+   collapsible; each inner section keeps its existing server-derived permission gate.
+4. Add `WhatYouOwe` as a pure presentational child (no mutations except via
+   callbacks; fees only from server-resolved `me.*` numbers).
+5. Defer full extraction of `MyItemsEditor`/`ManageSheet`/`RecipientOnward`/
+   `DeliveryAddressForm` — optional follow-up after the UX is verified.
+
+Tasks 2–8 below are reinterpreted as in-file restructuring rather than file
+extraction. Role-gates must remove controls from the DOM, not just hide visually.
+
 ## Verification approach (read first — deviation from the template)
 
 This plan does **not** use unit-test TDD. The work is a behaviour-preserving move of existing JSX plus one new presentational card; there is no new business logic to drive with unit tests, and the project's test story is end-to-end (Playwright via the `testing` skill), not component unit tests. The verification gates are:
