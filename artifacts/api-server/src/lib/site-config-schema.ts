@@ -22,7 +22,7 @@ export interface ConfigKeyDescriptor {
 export const SITE_CONFIG_REGISTRY: ConfigKeyDescriptor[] = [
   // ── Payments ─────────────────────────────────────────────────
   { key: "paymentsEnabled", type: "boolean", group: "Payments", label: "Payments enabled", description: "Master switch for all order payments.", defaultValue: "true", publicallyExposed: true },
-  { key: "walletAddress", type: "string", group: "Payments", label: "Default crypto wallet", description: "Fallback payout wallet shown to customers when no per-GB wallet is set.", defaultValue: null },
+  { key: "walletAddress", type: "string", group: "Payments", label: "Default crypto wallet", description: "Fallback payout wallet shown to customers when no per-GB wallet is set. Overridden by WALLET_ADDRESS environment secret.", defaultValue: null },
   { key: "anonPayEnabled", type: "boolean", group: "Payments", label: "AnonPay enabled", description: "Show the AnonPay (Trocador) payment option to customers.", defaultValue: "true" },
   { key: "payment_verify_tolerance", type: "number", group: "Payments", label: "TX verify tolerance", description: "Allowed underpayment fraction when auto-verifying crypto transactions (e.g. 0.15 = 15%).", defaultValue: "0.15" },
 
@@ -32,9 +32,9 @@ export const SITE_CONFIG_REGISTRY: ConfigKeyDescriptor[] = [
   { key: "wholesale_page_message", type: "string", group: "Wholesale", label: "Page message", description: "Banner text shown on the wholesale landing page.", defaultValue: null, publicallyExposed: true },
   { key: "wholesale_shared_coming_soon", type: "boolean", group: "Wholesale", label: "Shared order coming soon", description: "Show a 'coming soon' message on the shared order page instead of the start/join controls.", defaultValue: "false", publicallyExposed: true },
   { key: "wholesale_shared_coming_soon_message", type: "string", group: "Wholesale", label: "Shared order coming-soon message", description: "Message shown on the shared order page when 'coming soon' is enabled.", defaultValue: "Coming soon", publicallyExposed: true },
-  { key: "wholesale_usdt_wallet", type: "string", group: "Wholesale", label: "USDT wallet", description: "USDT wallet shown to wholesale customers.", defaultValue: null },
+  { key: "wholesale_usdt_wallet", type: "string", group: "Wholesale", label: "USDT wallet", description: "USDT wallet shown to wholesale customers. Overridden by WHOLESALE_USDT_WALLET environment secret.", defaultValue: null },
   { key: "wholesale_anon_pay_enabled", type: "boolean", group: "Wholesale", label: "AnonPay enabled (wholesale)", description: "Show AnonPay option on wholesale checkout.", defaultValue: "false" },
-  { key: "wholesale_anon_pay_wallet", type: "string", group: "Wholesale", label: "AnonPay wallet", description: "Wholesale AnonPay payout wallet.", defaultValue: null },
+  { key: "wholesale_anon_pay_wallet", type: "string", group: "Wholesale", label: "AnonPay wallet", description: "Wholesale AnonPay payout wallet. Overridden by WHOLESALE_ANON_PAY_WALLET environment secret.", defaultValue: null },
   { key: "wholesale_anon_pay_ticker", type: "string", group: "Wholesale", label: "AnonPay ticker", description: "Coin ticker for wholesale AnonPay (e.g. usdt).", defaultValue: "usdt" },
   { key: "wholesale_anon_pay_network", type: "string", group: "Wholesale", label: "AnonPay network", description: "Network for wholesale AnonPay (e.g. ERC20, TRC20).", defaultValue: "ERC20" },
 

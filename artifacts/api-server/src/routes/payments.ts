@@ -165,7 +165,14 @@ function isValidBtcAddress(addr: string): boolean {
   return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(addr) || /^bc1[a-z0-9]{6,87}$/.test(addr);
 }
 
+const WALLET_ENV_OVERRIDES: Record<string, string | undefined> = {
+  walletAddress: process.env.WALLET_ADDRESS || undefined,
+  wholesale_usdt_wallet: process.env.WHOLESALE_USDT_WALLET || undefined,
+  wholesale_anon_pay_wallet: process.env.WHOLESALE_ANON_PAY_WALLET || undefined,
+};
+
 async function getConfig(key: string): Promise<string | null> {
+  if (WALLET_ENV_OVERRIDES[key]) return WALLET_ENV_OVERRIDES[key]!;
   const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
   return row?.value ?? null;
 }

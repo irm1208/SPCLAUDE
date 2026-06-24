@@ -307,10 +307,11 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('fs3_costs', 'id'), 242);
 
 -- site_config
+-- Wallet addresses and sensitive keys are set via environment secrets (WALLET_ADDRESS,
+-- WHOLESALE_USDT_WALLET, WHOLESALE_ANON_PAY_WALLET, TELEGRAM_BOT_TOKEN, etc.)
+-- or via the Admin → Config panel at runtime. They are intentionally not seeded here.
 INSERT INTO site_config (key, value, updated_at) VALUES
-  ('paymentsEnabled', 'false', '2026-03-19T17:03:36.596Z'),
-  ('walletAddress', '0x3B5670Fe10369082297f29eB6dB950C2db7d3659', '2026-03-18T17:33:51.806Z'),
-  ('walletChangeCodeHash', '41071ea6b4245c84275a8d3de474dda11ae560f5466a9fd407525753fe257e5d', '2026-03-18T17:34:11.004Z')
+  ('paymentsEnabled', 'false', '2026-03-19T17:03:36.596Z')
 ON CONFLICT (key) DO NOTHING;
 
 -- orders
