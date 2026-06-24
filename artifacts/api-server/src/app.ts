@@ -96,6 +96,7 @@ app.use([
   "/api/organiser/group-buys/:gbId/orders/:orderId/qr",
   "/api/reshipper/gb/:gbId/orders/:orderId",
   "/api/blood-tests/extract-image",
+  "/api/wholesale-shares/:id/onward-destination",
 ], express.json({ limit: "15mb" }));
 app.use([
   "/api/admin/dispatch/:gbId/ocr-image",

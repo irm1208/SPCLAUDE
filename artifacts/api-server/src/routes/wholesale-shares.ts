@@ -203,6 +203,11 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   // and is the payee of the reshipper fee. Treat their effective fees as 0 here so a
   // post-set recipient change can never leave a stale fee on the new recipient.
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
+  const currentLower = currentUsername.toLowerCase();
+  const isRecipientViewer = recipientLower != null && recipientLower === currentLower;
+  // The onward (reshipper) charge only applies once the parcel recipient has
+  // switched onward shipping on; otherwise every effective onward charge is 0.
+  const onwardEnabled = share.onwardShippingEnabled ?? false;
 
   const memberPayloads = members.map((m, idx) => {
     const items = m.items ?? [];
@@ -210,9 +215,13 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     const shippingShare = isLocked
       ? (m.shippingShare != null ? Number(m.shippingShare) : 0)
       : (shippingEstimate !== null ? liveShares[idx] : null);
-    const isRecipient = recipientLower != null && m.username.toLowerCase() === recipientLower;
+    const mLower = m.username.toLowerCase();
+    const isRecipient = recipientLower != null && mLower === recipientLower;
     const organiserFee = isRecipient ? 0 : Number(m.organiserFee ?? 0);
-    const reshipperFee = isRecipient ? 0 : Number(m.reshipperFee ?? 0);
+    const reshipperFee = (isRecipient || !onwardEnabled) ? 0 : Number(m.reshipperFee ?? 0);
+    // Onward destination (forwarding address + delivery QR) is private: only the
+    // member who provided it and the recipient who forwards it should ever see it.
+    const canSeeOnward = mLower === currentLower || isRecipientViewer;
     return {
       username: m.username,
       isCreator: m.isCreator,
@@ -233,6 +242,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       reshipperFee,
       organiserFeePaid: organiserFee > 0 ? (m.organiserFeePaid ?? false) : false,
       reshipperFeePaid: reshipperFee > 0 ? (m.reshipperFeePaid ?? false) : false,
+      // Onward shipping destination this member provided (null when not visible).
+      onwardAddress: canSeeOnward ? (m.onwardAddress ?? null) : null,
+      onwardQr: canSeeOnward ? (m.onwardQr ?? null) : null,
       orderId: m.orderId ?? null,
       orderCode: order?.code ?? null,
       orderStatus: order?.status ?? null,
@@ -243,9 +255,15 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
 
   const organiserFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.organiserFee, 0).toFixed(2));
   const reshipperFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.reshipperFee, 0).toFixed(2));
-  const currentLower = currentUsername.toLowerCase();
   const isCreatorViewer = share.creatorUsername.toLowerCase() === currentLower;
-  const isRecipientViewer = recipientLower != null && recipientLower === currentLower;
+  // The participant-facing reshipperFee above is masked to 0 while onward shipping is
+  // off, so the recipient's editor needs the RAW per-participant charges to seed from
+  // (otherwise toggling onward off/on would lose previously-configured amounts).
+  const rawOnwardCharges = isRecipientViewer
+    ? members
+        .filter(m => m.username.toLowerCase() !== recipientLower)
+        .map(m => ({ username: m.username, amount: Number(m.reshipperFee ?? 0) }))
+    : [];
 
   const allPaid = isLocked
     && memberPayloads.length > 0
@@ -290,19 +308,43 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     combinedSubtotal,
     totalVendorShipping: share.totalVendorShipping != null ? Number(share.totalVendorShipping) : null,
     totalKits: share.totalKits != null ? Number(share.totalKits) : null,
-    // ── Optional peer-to-peer fees (paid directly to organiser / recipient) ────
+    // ── Optional organiser fee (paid directly to the organiser/creator) ────────
     fees: {
       organiserPaymentInfo: share.organiserPaymentInfo ?? null,
-      reshipperPaymentInfo: share.reshipperPaymentInfo ?? null,
       organiserFeeTotal,
-      reshipperFeeTotal,
-      active: organiserFeeTotal > 0 || reshipperFeeTotal > 0,
+      active: organiserFeeTotal > 0,
       recipientUsername: share.deliveryUsername ?? null,
-      // Organiser (creator) receives organiser fees; recipient receives reshipper fees.
       organiserUsername: share.creatorUsername,
       canManage: share.status === "open" && isCreatorViewer,
       canConfirmOrganiserFees: isCreatorViewer,
-      canConfirmReshipperFees: isRecipientViewer,
+    },
+    // ── Onward shipping (recipient forwards each participant's items onward) ────
+    // Configured by the parcel recipient: a custom per-participant charge plus the
+    // recipient's own payout methods. Monies go to the recipient and NEVER enter any
+    // order total. Participants optionally provide a forwarding address / delivery QR.
+    onward: {
+      enabled: onwardEnabled,
+      recipientUsername: share.deliveryUsername ?? null,
+      payment: {
+        walletAddress: share.reshipperWalletAddress ?? null,
+        walletCurrency: (share.reshipperWalletCurrency === "USDT" || share.reshipperWalletCurrency === "USDC")
+          ? share.reshipperWalletCurrency
+          : null,
+        anonpay: share.reshipperAnonpay ?? null,
+        paypal: share.reshipperPaypal ?? null,
+        revolut: share.reshipperRevolut ?? null,
+        notes: share.reshipperPaymentInfo ?? null,
+      },
+      chargeTotal: reshipperFeeTotal,
+      // Raw configured charges (recipient only) for seeding their editor.
+      charges: rawOnwardCharges,
+      // Only the recipient configures onward shipping, and only while open.
+      canManage: share.status === "open" && isRecipientViewer,
+      // The recipient marks each onward charge paid (manual; any time pre-cancel).
+      canConfirm: isRecipientViewer && share.status !== "cancelled",
+      // Every non-recipient member may provide their forwarding destination while
+      // onward shipping is active (open through submitted).
+      canSetDestination: !!me && onwardEnabled && !isRecipientViewer && share.status !== "cancelled",
     },
     members: memberPayloads,
     memberCount: members.length,
@@ -1007,11 +1049,11 @@ router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): 
   res.json(await buildShareResponse(updated!, me));
 });
 
-// PUT /api/wholesale-shares/:id/fees — organiser sets optional peer-to-peer fees.
-// Custom per-participant organiser fee (paid to the organiser) and reshipper fee
-// (paid to the parcel recipient). Editable only while the share is open. The
-// current recipient is always exempt (their amounts are forced to 0). These fees
-// are paid SEPARATELY and never enter the per-member order total sent to admin.
+// PUT /api/wholesale-shares/:id/fees — organiser sets the optional organiser fee.
+// Custom per-participant organiser fee (paid directly to the organiser). Editable
+// only while the share is open. The current recipient is always exempt (forced to
+// 0). The onward (reshipper) charge is owned by the recipient via PUT /onward, so
+// this route never touches reshipper fields. Paid SEPARATELY, never in order total.
 router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -1027,8 +1069,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Pro
 
   const body = (req.body ?? {}) as {
     organiserPaymentInfo?: unknown;
-    reshipperPaymentInfo?: unknown;
-    fees?: Array<{ username?: unknown; organiserFee?: unknown; reshipperFee?: unknown }>;
+    fees?: Array<{ username?: unknown; organiserFee?: unknown }>;
   };
 
   const clampFee = (v: unknown): number => {
@@ -1044,7 +1085,6 @@ router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Pro
 
   const shareUpdates: Partial<typeof wholesaleSharesTable.$inferInsert> = {};
   if (body.organiserPaymentInfo !== undefined) shareUpdates.organiserPaymentInfo = cleanInfo(body.organiserPaymentInfo);
-  if (body.reshipperPaymentInfo !== undefined) shareUpdates.reshipperPaymentInfo = cleanInfo(body.reshipperPaymentInfo);
 
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
   const fees = Array.isArray(body.fees) ? body.fees : [];
@@ -1080,15 +1120,11 @@ router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Pro
         if (!member) continue;
         const isRecipient = recipientLower != null && uname === recipientLower;
         const prevOrganiserFee = Number(member.organiserFee ?? 0);
-        const prevReshipperFee = Number(member.reshipperFee ?? 0);
         const organiserFee = isRecipient ? 0 : (f.organiserFee !== undefined ? clampFee(f.organiserFee) : prevOrganiserFee);
-        const reshipperFee = isRecipient ? 0 : (f.reshipperFee !== undefined ? clampFee(f.reshipperFee) : prevReshipperFee);
         const set: Partial<typeof wholesaleShareMembersTable.$inferInsert> = {
           organiserFee: organiserFee.toFixed(2),
-          reshipperFee: reshipperFee.toFixed(2),
         };
         if (organiserFee !== prevOrganiserFee) set.organiserFeePaid = false;
-        if (reshipperFee !== prevReshipperFee) set.reshipperFeePaid = false;
         await tx.update(wholesaleShareMembersTable)
           .set(set)
           .where(eq(wholesaleShareMembersTable.id, member.id));
@@ -1147,6 +1183,201 @@ router.post("/wholesale-shares/:id/fees/confirm", requireWholesale, async (req, 
 
   await db.update(wholesaleShareMembersTable)
     .set(feeType === "organiser" ? { organiserFeePaid: paid } : { reshipperFeePaid: paid })
+    .where(eq(wholesaleShareMembersTable.id, member.id));
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/onward — the parcel recipient configures onward
+// shipping: toggle it on/off, publish their OWN payout methods (USDT/USDC ERC-20
+// wallet, anonPay, PayPal, Revolut, free-text notes — any combination), and set a
+// custom per-participant onward charge. Recipient-only and open-only. The charge is
+// stored in the per-member reshipperFee and is paid DIRECTLY to the recipient — it
+// never enters any order total / admin / vendor accounting. The current recipient is
+// always exempt (their charge is forced to 0).
+router.put("/wholesale-shares/:id/onward", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (!share.deliveryUsername) {
+    res.status(400).json({ error: "The organiser needs to choose the delivery recipient first." });
+    return;
+  }
+  if (share.deliveryUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the parcel recipient can set up onward shipping." });
+    return;
+  }
+  if (share.status !== "open") {
+    res.status(409).json({ error: "Onward shipping can only be changed while the shared order is open." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    enabled?: unknown;
+    walletAddress?: unknown;
+    walletCurrency?: unknown;
+    anonpay?: unknown;
+    paypal?: unknown;
+    revolut?: unknown;
+    notes?: unknown;
+    charges?: Array<{ username?: unknown; amount?: unknown }>;
+  };
+
+  const clampFee = (v: unknown): number => {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return 0;
+    return Number(Math.min(n, 100000).toFixed(2));
+  };
+  const cleanField = (v: unknown, max = 200): string | null => {
+    if (typeof v !== "string") return null;
+    const t = v.trim().slice(0, max);
+    return t.length > 0 ? t : null;
+  };
+
+  const enabled = Boolean(body.enabled);
+  const walletAddress = cleanField(body.walletAddress, 200);
+  // Currency authority lives on the server: only ERC-20 USDT/USDC are valid, and a
+  // wallet address is meaningless without one. Never trust the client's free choice.
+  let walletCurrency: "USDT" | "USDC" | null = null;
+  if (body.walletCurrency === "USDT" || body.walletCurrency === "USDC") {
+    walletCurrency = body.walletCurrency;
+  }
+  if (walletAddress && !walletCurrency) {
+    res.status(400).json({ error: "Choose the wallet currency (USDT or USDC) for the wallet address." });
+    return;
+  }
+  if (walletCurrency && !walletAddress) walletCurrency = null;
+
+  const shareUpdates: Partial<typeof wholesaleSharesTable.$inferInsert> = {
+    onwardShippingEnabled: enabled,
+    reshipperWalletAddress: walletAddress,
+    reshipperWalletCurrency: walletCurrency,
+    reshipperAnonpay: cleanField(body.anonpay, 200),
+    reshipperPaypal: cleanField(body.paypal, 200),
+    reshipperRevolut: cleanField(body.revolut, 200),
+    reshipperPaymentInfo: cleanField(body.notes, 500),
+  };
+
+  const recipientLower = share.deliveryUsername.toLowerCase();
+  const charges = Array.isArray(body.charges) ? body.charges : [];
+
+  // Same transactional row-lock + re-assert "open" pattern as the organiser /fees
+  // route: a concurrent lock/cancel can't slip a write onto a non-open share, and a
+  // changed onward charge clears the matching paid flag so a previously-confirmed
+  // charge can't stay "paid" after the recipient edits the amount.
+  try {
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ status: wholesaleSharesTable.status })
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+
+      await tx.update(wholesaleSharesTable).set(shareUpdates).where(eq(wholesaleSharesTable.id, share.id));
+
+      const members = await tx
+        .select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      const memberByLower = new Map(members.map(m => [m.username.toLowerCase(), m]));
+
+      for (const c of charges) {
+        const uname = String(c.username ?? "").toLowerCase();
+        const member = memberByLower.get(uname);
+        if (!member) continue;
+        const isRecipient = uname === recipientLower;
+        const prev = Number(member.reshipperFee ?? 0);
+        const reshipperFee = isRecipient ? 0 : (c.amount !== undefined ? clampFee(c.amount) : prev);
+        const set: Partial<typeof wholesaleShareMembersTable.$inferInsert> = {
+          reshipperFee: reshipperFee.toFixed(2),
+        };
+        if (reshipperFee !== prev) set.reshipperFeePaid = false;
+        await tx.update(wholesaleShareMembersTable)
+          .set(set)
+          .where(eq(wholesaleShareMembersTable.id, member.id));
+      }
+    });
+  } catch (e) {
+    if (e === FEES_CONFLICT) {
+      res.status(409).json({ error: "Onward shipping can only be changed while the shared order is open." });
+      return;
+    }
+    throw e;
+  }
+
+  await writeLog("order", "info", "wholesale_share_onward_updated",
+    `Wholesale share ${share.id} onward shipping updated by ${me} (enabled=${enabled})`, { shareId: share.id }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/onward-destination — a participant provides their
+// OWN forwarding destination for onward shipping: a written address and/or an
+// uploaded courier DELIVERY QR image (e.g. Royal Mail / InPost). The QR is stored
+// as an UNCOMPRESSED data URL so it stays scannable. Allowed only while onward
+// shipping is enabled and the share isn't cancelled; the recipient is exempt (they
+// are the destination). This is a DELIVERY label, never a payment QR.
+const ONWARD_QR_MAX_CHARS = 1_500_000; // ~1.1MB decoded — generous for a label/QR.
+router.put("/wholesale-shares/:id/onward-destination", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status === "cancelled") {
+    res.status(409).json({ error: "This shared order has been cancelled." });
+    return;
+  }
+  if (!share.onwardShippingEnabled) {
+    res.status(409).json({ error: "Onward shipping isn't switched on for this shared order." });
+    return;
+  }
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  if (share.deliveryUsername && share.deliveryUsername.toLowerCase() === me.toLowerCase()) {
+    res.status(400).json({ error: "You're the parcel recipient — there's nothing to forward to yourself." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as { address?: unknown; qr?: unknown };
+
+  let onwardAddress: string | null = null;
+  if (body.address !== undefined && body.address !== null) {
+    if (typeof body.address !== "string") { res.status(400).json({ error: "Address must be text." }); return; }
+    const t = body.address.trim().slice(0, 2000);
+    onwardAddress = t.length > 0 ? t : null;
+  }
+
+  let onwardQr: string | null = null;
+  if (body.qr !== undefined && body.qr !== null) {
+    if (typeof body.qr !== "string") { res.status(400).json({ error: "QR image is invalid." }); return; }
+    const q = body.qr.trim();
+    if (q.length > 0) {
+      if (!/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(q)) {
+        res.status(400).json({ error: "Upload an image file for the delivery QR (PNG, JPG, WebP or GIF)." });
+        return;
+      }
+      if (q.length > ONWARD_QR_MAX_CHARS) {
+        res.status(413).json({ error: "That image is too large — please upload a QR image under ~1MB." });
+        return;
+      }
+      onwardQr = q; // Stored uncompressed so the courier QR stays scannable.
+    }
+  }
+
+  // Only write the fields the caller actually sent (so sending just an address
+  // doesn't wipe a previously-uploaded QR, and vice-versa).
+  const set: Partial<typeof wholesaleShareMembersTable.$inferInsert> = {};
+  if (body.address !== undefined) set.onwardAddress = onwardAddress;
+  if (body.qr !== undefined) set.onwardQr = onwardQr;
+  if (Object.keys(set).length === 0) {
+    res.status(400).json({ error: "Provide an address or a delivery QR image." });
+    return;
+  }
+
+  await db.update(wholesaleShareMembersTable)
+    .set(set)
     .where(eq(wholesaleShareMembersTable.id, member.id));
 
   const updated = await loadShare(share.id);

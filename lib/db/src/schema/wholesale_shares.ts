@@ -54,6 +54,19 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // Free-text payment instructions shown to participants for each fee.
   organiserPaymentInfo: text("organiser_payment_info"),
   reshipperPaymentInfo: text("reshipper_payment_info"),
+  // ── Onward shipping (recipient re-ships each participant's items onward) ──────
+  // When the parcel recipient (delivery member) enables onward shipping, they set a
+  // custom per-participant onward charge (stored in the per-member reshipperFee) and
+  // publish their OWN payout methods below. These monies go directly to the recipient
+  // and NEVER enter any order total / admin / vendor accounting. The recipient marks
+  // each charge paid manually (no auto-verification).
+  onwardShippingEnabled: boolean("onward_shipping_enabled").notNull().default(false),
+  // Recipient's structured payout methods for the onward charge (any combination).
+  reshipperWalletAddress: text("reshipper_wallet_address"),
+  reshipperWalletCurrency: text("reshipper_wallet_currency"), // "USDT" | "USDC" (ERC-20 only)
+  reshipperAnonpay: text("reshipper_anonpay"),
+  reshipperPaypal: text("reshipper_paypal"),
+  reshipperRevolut: text("reshipper_revolut"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
@@ -87,6 +100,12 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   reshipperFee: numeric("reshipper_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   organiserFeePaid: boolean("organiser_fee_paid").notNull().default(false),
   reshipperFeePaid: boolean("reshipper_fee_paid").notNull().default(false),
+  // ── Onward shipping destination (provided by THIS participant) ───────────────
+  // Optional: where the recipient should forward this member's items. A written
+  // address and/or an uploaded courier DELIVERY QR image (e.g. Royal Mail/InPost),
+  // stored as an uncompressed data URL so it stays scannable. NOT a payment QR.
+  onwardAddress: text("onward_address"),
+  onwardQr: text("onward_qr"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [

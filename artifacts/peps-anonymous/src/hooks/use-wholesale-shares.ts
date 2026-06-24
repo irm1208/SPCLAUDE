@@ -27,6 +27,10 @@ export interface WholesaleShareMember {
   reshipperFee: number;
   organiserFeePaid: boolean;
   reshipperFeePaid: boolean;
+  // Onward shipping destination this member provided (visible only to the member
+  // themselves and the parcel recipient who forwards it; null otherwise).
+  onwardAddress: string | null;
+  onwardQr: string | null;
   orderId: string | null;
   orderCode: string | null;
   orderStatus: string | null;
@@ -36,15 +40,33 @@ export interface WholesaleShareMember {
 
 export interface WholesaleShareFees {
   organiserPaymentInfo: string | null;
-  reshipperPaymentInfo: string | null;
   organiserFeeTotal: number;
-  reshipperFeeTotal: number;
   active: boolean;
   recipientUsername: string | null;
   organiserUsername: string;
   canManage: boolean;
   canConfirmOrganiserFees: boolean;
-  canConfirmReshipperFees: boolean;
+}
+
+export type WholesaleWalletCurrency = "USDT" | "USDC";
+
+export interface WholesaleShareOnward {
+  enabled: boolean;
+  recipientUsername: string | null;
+  payment: {
+    walletAddress: string | null;
+    walletCurrency: WholesaleWalletCurrency | null;
+    anonpay: string | null;
+    paypal: string | null;
+    revolut: string | null;
+    notes: string | null;
+  };
+  chargeTotal: number;
+  // Raw configured charges, present only for the recipient (used to seed the editor).
+  charges: { username: string; amount: number }[];
+  canManage: boolean;        // recipient && share open — may configure onward shipping
+  canConfirm: boolean;       // recipient (pre-cancel) — may mark onward charges paid
+  canSetDestination: boolean; // non-recipient member && enabled && pre-cancel
 }
 
 export interface WholesaleShareVendorRegion {
@@ -92,6 +114,7 @@ export interface WholesaleShareDetail {
   totalVendorShipping: number | null;
   totalKits: number | null;
   fees: WholesaleShareFees;
+  onward: WholesaleShareOnward;
   members: WholesaleShareMember[];
   memberCount: number;
   allPaid: boolean;
@@ -245,16 +268,55 @@ export function setWholesaleShareSplit(id: string, splitMode: WholesaleSplitMode
 export interface WholesaleFeeInput {
   username: string;
   organiserFee?: number;
-  reshipperFee?: number;
 }
 
-// Organiser sets optional per-participant peer-to-peer fees plus the payment
-// details for how each fee should be paid. Editable only while the share is open.
+// Organiser sets the optional per-participant organiser fee plus the payment
+// details for how it should be paid. Editable only while the share is open.
 export function setWholesaleShareFees(
   id: string,
-  payload: { organiserPaymentInfo?: string; reshipperPaymentInfo?: string; fees: WholesaleFeeInput[] },
+  payload: { organiserPaymentInfo?: string; fees: WholesaleFeeInput[] },
 ) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface WholesaleOnwardChargeInput {
+  username: string;
+  amount: number;
+}
+
+// The parcel recipient configures onward shipping: toggle it on/off, publish their
+// own payout methods, and set a custom onward charge per participant. Recipient-only
+// and editable only while the share is open.
+export function setWholesaleShareOnward(
+  id: string,
+  payload: {
+    enabled: boolean;
+    walletAddress?: string;
+    walletCurrency?: WholesaleWalletCurrency | "";
+    anonpay?: string;
+    paypal?: string;
+    revolut?: string;
+    notes?: string;
+    charges: WholesaleOnwardChargeInput[];
+  },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/onward`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// A participant provides their own onward forwarding destination: a written address
+// and/or an uploaded courier DELIVERY QR image (data URL, stored uncompressed). Send
+// only the field(s) you want to change. Allowed while onward shipping is enabled.
+export function setWholesaleShareOnwardDestination(
+  id: string,
+  payload: { address?: string | null; qr?: string | null },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/onward-destination`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });
