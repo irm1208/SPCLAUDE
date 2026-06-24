@@ -26,3 +26,7 @@ or "Address set" while the page treats delivery as incomplete. Code review rejec
 - Auto-open-once state (the wizard) is per share+role-moment: key the in-memory ref and
   the localStorage seen-flag by `${shareId}:${moment}`, or one share suppresses another.
 - Hooks (`guide` useMemo, auto-open useEffect) must stay BEFORE the page's early returns.
+
+**Two different "shown once" scopes — keep them distinct:**
+- The SetupWizard auto-open is per share + role-moment (localStorage `peps:ws-wizard-seen:${id}:${moment}`) — it re-guides on each new order.
+- The post-save "invite others" popup (`InvitePrompt`, fired from `saveItems` success) is GLOBAL once per browser (localStorage `peps:ws-invite-prompt-seen`, set at show-time). **Why:** the user explicitly didn't want long-time users nagged on every order, so a veteran sees it at most once ever — not once per share. Only fires with items.length>0, status "open", and memberCount<maxMembers (don't prompt to invite when locked/full).

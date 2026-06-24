@@ -37,6 +37,7 @@ import { FeeLine } from "@/components/wholesale-shared/payment-fields";
 import { NextStepBanner } from "@/components/wholesale-shared/NextStepBanner";
 import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
+import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
 import { buildGuide, GUIDE_ANCHORS, type GuideTarget } from "@/components/wholesale-shared/next-step";
 
 interface ProductLite {
@@ -209,6 +210,8 @@ export default function WholesaleShared() {
   // Guided onboarding overlay (presentation only).
   const [wizardOpen, setWizardOpen] = useState(false);
   const [flashAnchor, setFlashAnchor] = useState<string | null>(null);
+  // One-time "invite others" popup, shown after a member saves their items.
+  const [invitePromptOpen, setInvitePromptOpen] = useState(false);
   const autoOpenedRef = useRef<string | null>(null);
 
   // Gate: wholesale members only
@@ -499,6 +502,18 @@ export default function WholesaleShared() {
       await setWholesaleShareItems(id, items, myTip);
       setItemsDirty(false);
       invalidate(id);
+      // One-time nudge: once a member has saved real items, while the order is
+      // still open and has room for more people, prompt them to share the invite
+      // link. Remembered globally (per browser) so long-time users don't keep
+      // seeing it on every order they touch.
+      if (items.length > 0 && share && share.status === "open" && share.memberCount < share.maxMembers) {
+        let seen = false;
+        try { seen = !!localStorage.getItem("peps:ws-invite-prompt-seen"); } catch { /* ignore */ }
+        if (!seen) {
+          try { localStorage.setItem("peps:ws-invite-prompt-seen", "1"); } catch { /* ignore */ }
+          setInvitePromptOpen(true);
+        }
+      }
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1634,6 +1649,16 @@ export default function WholesaleShared() {
                 copiedInvite={copied === "link"}
               />
             )}
+
+            <InvitePrompt
+              open={invitePromptOpen}
+              onClose={() => setInvitePromptOpen(false)}
+              shareLink={shareLink}
+              onCopy={() => copy(shareLink, "link")}
+              copied={copied === "link"}
+              memberCount={share.memberCount}
+              maxMembers={share.maxMembers}
+            />
 
             {/* My share to pay (locked, non-creator quick action handled in member row) */}
           </motion.div>
