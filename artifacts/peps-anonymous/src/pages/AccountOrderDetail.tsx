@@ -2386,6 +2386,54 @@ export default function AccountOrderDetail() {
                     )
                   )}
 
+                  {/* Shipping details — wholesale orders only */}
+                  {order.orderType === "wholesale" && (order.shippingName || order.shippingAddress || order.shippingCountry || order.shippingPhone) && (
+                    <Card className="p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Shipping Details</p>
+                        {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder ? (
+                          <button
+                            onClick={handleEdit}
+                            className="text-xs font-semibold px-2.5 py-1 rounded-lg"
+                            style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.20)" }}>
+                            <Lock className="w-2.5 h-2.5" /> Locked
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                        {order.shippingName && (
+                          <>
+                            <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Name</span>
+                            <span style={{ color: "var(--t-text)" }}>{order.shippingName}</span>
+                          </>
+                        )}
+                        {order.shippingAddress && (
+                          <>
+                            <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Address</span>
+                            <span className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{order.shippingAddress}</span>
+                          </>
+                        )}
+                        {order.shippingCountry && (
+                          <>
+                            <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Country</span>
+                            <span style={{ color: "var(--t-text)" }}>{order.shippingCountry}</span>
+                          </>
+                        )}
+                        {order.shippingPhone && (
+                          <>
+                            <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Mobile</span>
+                            <span style={{ color: "var(--t-text)" }}>{order.shippingPhone}</span>
+                          </>
+                        )}
+                      </div>
+                    </Card>
+                  )}
+
                   {/* InPost QR Code upload */}
                   {order.groupBuyQrUploadInpostEnabled && !order.directShippingRequested && (
                     order.paymentStatus === "confirmed" ? (
