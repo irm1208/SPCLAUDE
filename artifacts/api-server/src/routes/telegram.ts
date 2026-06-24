@@ -790,18 +790,26 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         res.json({ ok: true }); return;
       }
 
+      const viewerUsernameBare = viewerUsername.replace(/^@/, "").toLowerCase();
+      const viewerUsernameAt = `@${viewerUsernameBare}`;
+
       const allParcels = await db
         .select({ id: gbParcelsTable.id, label: gbParcelsTable.label, items: gbParcelsTable.items, status: gbParcelsTable.status, cachedEvents: gbParcelsTable.cachedEvents, groupBuyId: gbParcelsTable.groupBuyId, reshipperUsername: gbParcelsTable.reshipperUsername })
         .from(gbParcelsTable)
         .where(eq(gbParcelsTable.groupBuyId, gbId));
 
+      // Paid orders only — matches website visibility rules
       const memberOrders2 = await db
-        .select({ id: ordersTable.id, reshipperUsername: ordersTable.reshipperUsername, countryLegId: ordersTable.countryLegId, routingType: ordersTable.routingType })
+        .select({ id: ordersTable.id, reshipperUsername: ordersTable.reshipperUsername, countryLegId: ordersTable.countryLegId, routingType: ordersTable.routingType, directShippingRequested: ordersTable.directShippingRequested })
         .from(ordersTable)
         .where(and(
+          inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
           eq(ordersTable.groupBuyId, gbId),
-          sql`lower(${ordersTable.telegramUsername}) = ${viewerUsername.toLowerCase()}`,
           isNull(ordersTable.deletedAt),
+          or(
+            sql`lower(${ordersTable.telegramUsername}) = ${viewerUsernameAt}`,
+            sql`lower(${ordersTable.telegramUsername}) = ${viewerUsernameBare}`,
+          ),
         ));
 
       const memberItems2 = new Set<string>();
@@ -818,14 +826,20 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         (memberOrders2.map(o => o.reshipperUsername).filter(Boolean) as string[])
           .map(u => u.replace(/^@/, "").toLowerCase())
       );
-      const nonDirectLegOrders2 = memberOrders2.filter(o => o.countryLegId && o.routingType !== "direct");
-      if (nonDirectLegOrders2.length > 0) {
-        const legIds3 = [...new Set(nonDirectLegOrders2.map(o => o.countryLegId!))];
-        const legRows3 = await db
+      assignedReshippers2.add(viewerUsernameBare); // include self (reshipper-member case)
+
+      const reshipperOrderRows2 = memberOrders2.filter(o => {
+        if (o.routingType === "direct") return false;
+        if (o.routingType === "reshipper") return true;
+        return !o.directShippingRequested;
+      });
+      const legIds2 = [...new Set(reshipperOrderRows2.map(o => o.countryLegId).filter(Boolean) as string[])];
+      if (legIds2.length > 0) {
+        const legRows2 = await db
           .select({ id: gbCountryLegsTable.id, countryCode: gbCountryLegsTable.countryCode, gbId: gbCountryLegsTable.gbId })
           .from(gbCountryLegsTable)
-          .where(inArray(gbCountryLegsTable.id, legIds3));
-        for (const leg of legRows3) {
+          .where(inArray(gbCountryLegsTable.id, legIds2));
+        for (const leg of legRows2) {
           const reshippers3 = await db
             .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
             .from(gbReshippersTable)
@@ -840,17 +854,46 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
       }
 
+      const isDirect2 = reshipperOrderRows2.length === 0;
+      const hasExplicitReshipperAssignment2 = memberOrders2.some(o => o.reshipperUsername) || legIds2.length > 0;
+
+      // All reshipper names for this GB — for label-based parcel attribution
+      const allGbReshipperRows2 = await db
+        .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
+        .from(gbReshippersTable)
+        .where(eq(gbReshippersTable.gbId, gbId));
+      const allGbReshipperNames2 = new Set(
+        allGbReshipperRows2.map(r => r.reshipperUsername.replace(/^@/, "").toLowerCase())
+      );
+
       const memberParcels2 = allParcels.map(p => {
         const pItems = ((p.items ?? []) as { name: string }[]);
-        // Apply reshipper leg filter: reshipper parcels only visible to members on that leg
-        if (p.reshipperUsername) {
-          if (!assignedReshippers2.has(p.reshipperUsername.replace(/^@/, "").toLowerCase())) return { ...p, matchedItems: [] as string[] };
+
+        if (!hasExplicitReshipperAssignment2) {
+          // No routing tagged — show all parcels containing member's items
+          const matched = memberItems2.size > 0
+            ? pItems.filter(i => memberItems2.has(i.name.trim().toLowerCase())).map(i => i.name)
+            : pItems.map(i => i.name);
+          return { ...p, matchedItems: matched };
         }
+
+        // Identify parcel's reshipper via explicit field OR label match (same as website)
+        const parcelReshipper = p.reshipperUsername
+          ? p.reshipperUsername.replace(/^@/, "").toLowerCase()
+          : (allGbReshipperNames2.has(p.label.trim().toLowerCase()) ? p.label.trim().toLowerCase() : null);
+
+        if (parcelReshipper !== null) {
+          if (!assignedReshippers2.has(parcelReshipper)) return { ...p, matchedItems: [] as string[] };
+          // Reshipper parcel with no manifest yet — show status-only placeholder
+          if (pItems.length === 0) return { ...p, matchedItems: ["(manifest pending)"] };
+        } else if (!isDirect2) {
+          // Non-reshipper parcel — only visible to direct-shipping customers
+          return { ...p, matchedItems: [] as string[] };
+        }
+
         const matched = memberItems2.size > 0
           ? pItems.filter(i => memberItems2.has(i.name.trim().toLowerCase())).map(i => i.name)
           : pItems.map(i => i.name);
-        // For reshipper parcels with no manifest yet, show them (status-only view); for unassigned parcels require items
-        if (p.reshipperUsername && pItems.length === 0) return { ...p, matchedItems: ["(manifest pending)"] };
         return { ...p, matchedItems: matched };
       }).filter(p => p.matchedItems.length > 0);
 
@@ -904,15 +947,21 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       }
 
       const gbIdPend = cbData.slice("ps_pending:".length);
+      const tgUsernamePendBare = tgUsernamePend.replace(/^@/, "").toLowerCase();
+      const tgUsernamePendAt = `@${tgUsernamePendBare}`;
 
-      // Get this user's orders for this specific GB
+      // Paid orders only — matches website visibility rules
       const userOrders = await db
-        .select({ id: ordersTable.id })
+        .select({ id: ordersTable.id, reshipperUsername: ordersTable.reshipperUsername, countryLegId: ordersTable.countryLegId, routingType: ordersTable.routingType, directShippingRequested: ordersTable.directShippingRequested })
         .from(ordersTable)
         .where(and(
-          sql`lower(regexp_replace(${ordersTable.telegramUsername}, '^@', '')) = ${tgUsernamePend.toLowerCase()}`,
+          inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
           eq(ordersTable.groupBuyId, gbIdPend),
           isNull(ordersTable.deletedAt),
+          or(
+            sql`lower(${ordersTable.telegramUsername}) = ${tgUsernamePendAt}`,
+            sql`lower(${ordersTable.telegramUsername}) = ${tgUsernamePendBare}`,
+          ),
         ));
 
       if (userOrders.length === 0) {
@@ -934,11 +983,65 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         if (existing) { existing.qty += qty; } else { orderedItems.set(key, { name: li.productName.trim(), qty }); }
       }
 
-      // Get all items that have been put into parcels for this GB
-      const gbParcels = await db
-        .select({ items: gbParcelsTable.items })
+      // Build reshipper scope — same logic as track_gb and ps_all
+      const assignedReshippersPend = new Set<string>(
+        (userOrders.map(o => o.reshipperUsername).filter(Boolean) as string[])
+          .map(u => u.replace(/^@/, "").toLowerCase())
+      );
+      assignedReshippersPend.add(tgUsernamePendBare);
+
+      const reshipperOrderRowsPend = userOrders.filter(o => {
+        if (o.routingType === "direct") return false;
+        if (o.routingType === "reshipper") return true;
+        return !o.directShippingRequested;
+      });
+      const legIdsPend = [...new Set(reshipperOrderRowsPend.map(o => o.countryLegId).filter(Boolean) as string[])];
+      if (legIdsPend.length > 0) {
+        const legRowsPend = await db
+          .select({ id: gbCountryLegsTable.id, countryCode: gbCountryLegsTable.countryCode, gbId: gbCountryLegsTable.gbId })
+          .from(gbCountryLegsTable)
+          .where(inArray(gbCountryLegsTable.id, legIdsPend));
+        for (const leg of legRowsPend) {
+          const reshippersPend = await db
+            .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
+            .from(gbReshippersTable)
+            .where(and(
+              eq(gbReshippersTable.gbId, leg.gbId),
+              eq(gbReshippersTable.country, leg.countryCode),
+              eq(gbReshippersTable.enabled, true),
+            ));
+          reshippersPend.forEach(r => {
+            if (r.reshipperUsername) assignedReshippersPend.add(r.reshipperUsername.replace(/^@/, "").toLowerCase());
+          });
+        }
+      }
+
+      const isDirectPend = reshipperOrderRowsPend.length === 0;
+      const hasExplicitPend = userOrders.some(o => o.reshipperUsername) || legIdsPend.length > 0;
+
+      // All reshipper names for this GB — for label-based parcel attribution
+      const allGbReshipperRowsPend = await db
+        .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
+        .from(gbReshippersTable)
+        .where(eq(gbReshippersTable.gbId, gbIdPend));
+      const allGbReshipperNamesPend = new Set(
+        allGbReshipperRowsPend.map(r => r.reshipperUsername.replace(/^@/, "").toLowerCase())
+      );
+
+      // Get all parcels — then filter to only those this member can see (reshipper-scoped)
+      const gbParcelsAll = await db
+        .select({ items: gbParcelsTable.items, label: gbParcelsTable.label, reshipperUsername: gbParcelsTable.reshipperUsername })
         .from(gbParcelsTable)
         .where(eq(gbParcelsTable.groupBuyId, gbIdPend));
+
+      const gbParcels = gbParcelsAll.filter(p => {
+        if (!hasExplicitPend) return true;
+        const parcelReshipper = p.reshipperUsername
+          ? p.reshipperUsername.replace(/^@/, "").toLowerCase()
+          : (allGbReshipperNamesPend.has(p.label.trim().toLowerCase()) ? p.label.trim().toLowerCase() : null);
+        if (parcelReshipper !== null) return assignedReshippersPend.has(parcelReshipper);
+        return isDirectPend;
+      });
 
       const dispatchedKeys = new Set<string>();
       for (const parcel of gbParcels) {
