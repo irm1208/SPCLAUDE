@@ -11917,6 +11917,8 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
+  const [membersPage, setMembersPage] = useState(0);
+  const MEMBERS_PAGE_SIZE = 50;
 
   useEffect(() => {
     fetch(apiUrl("/admin/group-buys"), { headers: { "x-admin-secret": secret } })
@@ -11942,7 +11944,7 @@ function UsernamesTab({ secret }: { secret: string }) {
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
-      params.set("limit", "200");
+      params.set("limit", "2000");
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
       // New endpoint returns { customers, total, page, limit }; fall back to array for legacy compat
@@ -12075,6 +12077,14 @@ function UsernamesTab({ secret }: { secret: string }) {
       if (sortBy === "az") return a.telegramUsername.localeCompare(b.telegramUsername);
       return new Date(b.lastOrderAt).getTime() - new Date(a.lastOrderAt).getTime();
     });
+
+  const totalMembersPages = Math.max(1, Math.ceil(displayed.length / MEMBERS_PAGE_SIZE));
+  const safePage = Math.min(membersPage, totalMembersPages - 1);
+  const displayedPage = displayed.slice(safePage * MEMBERS_PAGE_SIZE, (safePage + 1) * MEMBERS_PAGE_SIZE);
+
+  // Reset to page 0 when any filter/sort/search changes
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
 
   return (
     <div className="space-y-4">
@@ -12228,16 +12238,32 @@ function UsernamesTab({ secret }: { secret: string }) {
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{displayed.length} member{displayed.length !== 1 ? "s" : ""}</p>
+        <p className="text-xs text-muted-foreground">
+          {displayed.length} member{displayed.length !== 1 ? "s" : ""}
+          {totalMembersPages > 1 && <span className="ml-1 text-muted-foreground/60">· page {safePage + 1}/{totalMembersPages}</span>}
+          {selected.size > 0 && <span className="ml-1 font-semibold text-violet-600">· {selected.size} selected</span>}
+        </p>
         {displayed.length > 0 && (
-          <button
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setSelected(
-              selected.size === displayed.length ? new Set() : new Set(displayed.map(r => r.telegramUsername))
+          <div className="flex items-center gap-3">
+            {totalMembersPages > 1 && selected.size < displayed.length && (
+              <button
+                className="text-xs text-violet-600 hover:text-violet-800 transition-colors font-medium"
+                onClick={() => setSelected(new Set(displayed.map(r => r.telegramUsername)))}
+              >
+                Select all {displayed.length}
+              </button>
             )}
-          >
-            {selected.size === displayed.length && displayed.length > 0 ? "Deselect all" : "Select all"}
-          </button>
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setSelected(
+                selected.size === displayedPage.length && displayedPage.every(r => selected.has(r.telegramUsername))
+                  ? new Set()
+                  : new Set(displayedPage.map(r => r.telegramUsername))
+              )}
+            >
+              {selected.size === displayedPage.length && displayedPage.length > 0 && displayedPage.every(r => selected.has(r.telegramUsername)) ? "Deselect page" : "Select page"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -12304,7 +12330,7 @@ function UsernamesTab({ secret }: { secret: string }) {
         <div className="text-center py-12 text-muted-foreground text-sm">No customers found.</div>
       ) : (
         <div className="space-y-1.5">
-          {displayed.map(row => {
+          {displayedPage.map(row => {
             const acctStatus = row.accountStatus ?? "active";
             const joinDate = row.createdAt ? new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
             const isSelected = selected.has(row.telegramUsername);
@@ -12392,6 +12418,30 @@ function UsernamesTab({ secret }: { secret: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination controls */}
+      {totalMembersPages > 1 && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <button
+            disabled={safePage === 0}
+            onClick={() => setMembersPage(p => Math.max(0, p - 1))}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-white hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Previous
+          </button>
+          <span className="text-xs text-muted-foreground">
+            Page <span className="font-semibold text-foreground">{safePage + 1}</span> of <span className="font-semibold text-foreground">{totalMembersPages}</span>
+            <span className="ml-2 text-muted-foreground/60">({displayed.length} total)</span>
+          </span>
+          <button
+            disabled={safePage >= totalMembersPages - 1}
+            onClick={() => setMembersPage(p => Math.min(totalMembersPages - 1, p + 1))}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-white hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
