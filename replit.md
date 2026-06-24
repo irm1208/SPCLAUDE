@@ -23,11 +23,6 @@ To run the application, use the following commands:
 - `TELEGRAM_BOT_TOKEN`: Telegram Bot API token for notifications
 - `TELEGRAM_ADMIN_CHAT_ID`: Admin Telegram chat for order alerts
 - `ORDER_PIN`: Optional global PIN gate for order creation
-- `WALLET_ADDRESS`: Default crypto payout wallet (overrides Admin → Config value)
-- `WHOLESALE_USDT_WALLET`: Wholesale USDT payout wallet (overrides Admin → Config value)
-- `WHOLESALE_ANON_PAY_WALLET`: Wholesale AnonPay payout wallet (overrides Admin → Config value)
-- `TRACK17_API_KEY`: 17track API key for tracking auto-refresh (overrides Admin → Config value)
-- `QIYUNLE_TOKEN`: Qiyunle inventory sync token (auto-managed, overrides DB value)
 
 ## Stack
 
