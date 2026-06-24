@@ -1772,8 +1772,11 @@ export default function AccountOrderDetail() {
   const [creditsError, setCreditsError] = useState<string | null>(null);
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
+  // Direct-shipping orders have their own tracking number on the order — don't show GB parcel tracking
+  const isDirectOrder = order?.routingType === "direct" ||
+    (order?.routingType !== "reshipper" && order?.directShippingRequested === true);
   const { data: parcels = [], isLoading: parcelsLoading } = useOrderParcels(
-    isPaidOrder ? order?.groupBuyId : null
+    isPaidOrder && !isDirectOrder ? order?.groupBuyId : null
   );
 
   useEffect(() => {
@@ -2059,8 +2062,8 @@ export default function AccountOrderDetail() {
                     {/* Dispatch photos uploaded by admin */}
                     <MemberDispatchImages orderId={order.id} />
 
-                    {/* GB parcel tracking (masked) */}
-                    {isPaidOrder && order.groupBuyId && (
+                    {/* GB parcel tracking (masked) — hidden for direct-shipping orders */}
+                    {isPaidOrder && order.groupBuyId && !isDirectOrder && (
                       parcelsLoading ? (
                         <div className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-center gap-3">
                           <Loader2 className="w-4 h-4 text-blue-300 animate-spin shrink-0" />

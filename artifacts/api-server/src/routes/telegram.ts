@@ -1557,17 +1557,24 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
         const trackingUsername = linked.telegramUsername.replace(/^@/, "").toLowerCase();
 
-        // Find all GBs this user has orders in
+        // Only paid orders; direct-shipping orders don't use GB tracking
         const memberOrders = await db
-          .select({ groupBuyId: ordersTable.groupBuyId })
+          .select({ groupBuyId: ordersTable.groupBuyId, routingType: ordersTable.routingType, directShippingRequested: ordersTable.directShippingRequested })
           .from(ordersTable)
           .where(and(
             sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${trackingUsername}`,
+            inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
             isNull(ordersTable.deletedAt),
             sql`${ordersTable.groupBuyId} is not null`,
           ));
 
-        const gbIds = [...new Set(memberOrders.map(o => o.groupBuyId).filter(Boolean) as string[])];
+        // Exclude GBs where every paid order is direct-shipping
+        const gbNonDirectSet = new Set<string>();
+        for (const o of memberOrders) {
+          const isDirect = o.routingType === "direct" || (o.routingType !== "reshipper" && o.directShippingRequested === true);
+          if (!isDirect) gbNonDirectSet.add(o.groupBuyId!);
+        }
+        const gbIds = [...gbNonDirectSet];
 
         if (gbIds.length === 0) {
           const { template: trackingEmptyTpl } = await getTemplate("bot_tracking_empty");
@@ -1704,6 +1711,23 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
 
         const isDirect = reshipperOrderRows.length === 0;
+
+        // Direct-shipping members don't use GB parcel tracking — their tracking
+        // number is on the order itself (added manually by the admin).
+        if (isDirect) {
+          const [gbRowDirect] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
+          const gbNameDirect = gbRowDirect?.name ?? gbId;
+          await sendTelegramMessageFull(
+            cbChatId,
+            `📦 <b>${gbNameDirect}</b>\n\n🏠 Your order ships directly to your address.\n\nYour tracking number is on your order — check the website for details.`,
+            "HTML", undefined, { reply_markup: { inline_keyboard: [
+              [{ text: "🌐 View My Orders", url: `${appUrl}/account` }],
+              [{ text: "⬅️ Back to Tracking", callback_data: "mn:tracking" }],
+            ] } },
+          );
+          res.json({ ok: true }); return;
+        }
+
         const hasExplicitReshipperAssignment = memberOrders.some(o => o.reshipperUsername) || legIds.length > 0;
 
         // All reshipper names for this GB — used for label-based parcel attribution
@@ -1735,41 +1759,14 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           return isDirect;
         });
 
-        // Synthesise parcel entries from direct-shipping order tracking numbers —
-        // these appear on the website but have no corresponding GB parcel record
         type BotParcel = { id: string; label: string; status: string; items: { name: string }[]; isSynthetic: boolean };
-        const directOrderParcels: BotParcel[] = [];
-        const directOrders = memberOrders.filter(o =>
-          o.routingType === "direct" || (o.routingType !== "reshipper" && o.directShippingRequested === true)
-        );
-        for (const o of directOrders) {
-          const nums: string[] = (Array.isArray(o.trackingNumbers) && (o.trackingNumbers as string[]).length)
-            ? (o.trackingNumbers as string[])
-            : (o.trackingNumber ? [o.trackingNumber] : []);
-          if (nums.length === 0) continue;
-          const syntheticStatus = (o.status === "Shipped" || o.status === "Completed") ? "in_transit"
-            : o.status === "Delivered" ? "delivered" : "pending";
-          nums.forEach((_, i) => {
-            directOrderParcels.push({
-              id: `order-${o.id}-${i}`,
-              label: nums.length > 1 ? `Your Parcel ${i + 1}` : "Your Parcel",
-              status: syntheticStatus,
-              items: memberLineItems.map(li => ({ name: li.productName })),
-              isSynthetic: true,
-            });
-          });
-        }
-
-        const allVisibleParcels: BotParcel[] = [
-          ...directOrderParcels,
-          ...memberParcels.map(p => ({
-            id: p.id,
-            label: p.label,
-            status: p.status ?? "pending",
-            items: (p.items ?? []) as { name: string }[],
-            isSynthetic: false,
-          })),
-        ];
+        const allVisibleParcels: BotParcel[] = memberParcels.map(p => ({
+          id: p.id,
+          label: p.label,
+          status: p.status ?? "pending",
+          items: (p.items ?? []) as { name: string }[],
+          isSynthetic: false,
+        }));
 
         const [gbRow] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
         const gbName = gbRow?.name ?? gbId;
