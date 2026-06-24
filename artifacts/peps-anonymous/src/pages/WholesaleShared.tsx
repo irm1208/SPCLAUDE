@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboa
 import { useLocation, useRoute } from "wouter";
 import { motion } from "framer-motion";
 import {
-  Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search, Crown,
-  ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
+  Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
+  ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
@@ -34,6 +34,10 @@ import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine } from "@/components/wholesale-shared/payment-fields";
+import { NextStepBanner } from "@/components/wholesale-shared/NextStepBanner";
+import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
+import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
+import { buildGuide, GUIDE_ANCHORS, type GuideTarget } from "@/components/wholesale-shared/next-step";
 
 interface ProductLite {
   id: string;
@@ -132,23 +136,6 @@ function StatusBadge({ status }: { status: WholesaleShareDetail["status"] }) {
   );
 }
 
-// Only a fully `confirmed` payment counts toward the shared order's auto-submit
-// (the backend's allPaid / maybeSubmitSharedOrder use `confirmed` only).
-function PayBadge({ paymentStatus }: { paymentStatus: string | null }) {
-  const paid = paymentStatus === "confirmed";
-  const pending = paymentStatus === "pending_confirmation";
-  const testOnly = paymentStatus === "test_confirmed";
-  const color = paid ? "#22c55e" : (pending || testOnly) ? "#eab308" : "#ef4444";
-  const bg = paid ? "rgba(34,197,94,0.12)" : (pending || testOnly) ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)";
-  const label = paid ? "Paid" : pending ? "Checking…" : testOnly ? "Test only" : "Unpaid";
-  return (
-    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ color, background: bg }}>
-      {paid ? <CheckCircle2 className="w-3 h-3" /> : (pending || testOnly) ? <Clock className="w-3 h-3" /> : null}
-      {label}
-    </span>
-  );
-}
-
 export default function WholesaleShared() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/wholesale/shared/:id");
@@ -219,6 +206,11 @@ export default function WholesaleShared() {
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
+  // Guided onboarding overlay (presentation only).
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [flashAnchor, setFlashAnchor] = useState<string | null>(null);
+  const autoOpenedRef = useRef<string | null>(null);
+
   // Gate: wholesale members only
   useEffect(() => {
     if (!accountLoading) {
@@ -236,6 +228,24 @@ export default function WholesaleShared() {
   }, []);
 
   const myMember = useMemo(() => share?.members.find(m => m.isYou) ?? null, [share]);
+
+  // ── Guided onboarding (presentation only) ──
+  // Role + stage aware step plan derived from existing share data. Powers the
+  // next-step banner and the setup wizard; never calls the server.
+  const guide = useMemo(() => (share && myMember ? buildGuide(share, myMember) : null), [share, myMember]);
+  const autoMoment = guide?.autoOpenMomentId ?? null;
+
+  // Auto-open the wizard once per role-moment (organiser/member/recipient setup),
+  // remembered per share in localStorage so it never nags on return visits.
+  useEffect(() => {
+    if (!autoMoment || !id) return;
+    const key = `${id}:${autoMoment}`;
+    if (autoOpenedRef.current === key) return;
+    autoOpenedRef.current = key;
+    let seen = false;
+    try { seen = !!localStorage.getItem(`peps:ws-wizard-seen:${key}`); } catch { /* ignore */ }
+    if (!seen) setWizardOpen(true);
+  }, [autoMoment, id]);
 
   // Per-member, per-share localStorage key for this member's unsaved draft. Null
   // until the account is loaded so we never read/write a non-namespaced key.
@@ -739,6 +749,33 @@ export default function WholesaleShared() {
 
   const shareLink = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "";
 
+  // Mark the active auto-open moment as seen so the wizard won't reopen on return.
+  const markWizardSeen = () => {
+    if (autoMoment && id) { try { localStorage.setItem(`peps:ws-wizard-seen:${id}:${autoMoment}`, "1"); } catch { /* ignore */ } }
+  };
+  const closeWizard = () => { setWizardOpen(false); markWizardSeen(); };
+
+  // Guide CTAs act inline (copy invite), navigate (pay), or close the overlay and
+  // scroll+flash the real control on the page — the page stays the source of truth.
+  const handleGuideAction = (target: GuideTarget) => {
+    if (target.kind === "copyInvite") { copy(shareLink, "link"); return; }
+    setWizardOpen(false);
+    markWizardSeen();
+    if (target.kind === "payOrder") { if (myMember?.orderId) setLocation(`/account/orders/${myMember.orderId}`); return; }
+    if (target.kind === "scroll") {
+      const anchor = target.anchor;
+      requestAnimationFrame(() => {
+        document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setFlashAnchor(anchor);
+        window.setTimeout(() => setFlashAnchor(null), 1600);
+      });
+    }
+  };
+  const flashStyle = (anchor: string) =>
+    flashAnchor === anchor
+      ? { boxShadow: "0 0 0 2px var(--t-blue)", borderRadius: 16, transition: "box-shadow 0.2s" }
+      : undefined;
+
   const searchQ = productSearch.trim().toLowerCase();
   const visibleProducts = (searchQ ? products.filter(p => p.name.toLowerCase().includes(searchQ)) : products)
     .filter(p => p.active !== false);
@@ -791,6 +828,16 @@ export default function WholesaleShared() {
                 </span>
               </div>
             </div>
+
+            {/* Your next step — always-on, role + stage aware guidance */}
+            {guide && (
+              <NextStepBanner
+                plan={guide}
+                onAction={handleGuideAction}
+                onOpenGuide={() => setWizardOpen(true)}
+                copiedInvite={copied === "link"}
+              />
+            )}
 
             {/* How it works (collapsible, minimised by default) */}
             <section className="rounded-2xl overflow-hidden" style={card}>
@@ -864,49 +911,12 @@ export default function WholesaleShared() {
               summary={`${share.memberCount}/${share.maxMembers} members`}
               defaultOpen={stage === "building"}
             >
-              <div className="rounded-xl divide-y overflow-hidden" style={{ ...card, borderColor: "var(--t-border)" }}>
-                {share.members.map(m => (
-                  <div key={m.username} className="p-4 flex items-start justify-between gap-3" style={{ borderColor: "var(--t-border)" }}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold truncate" style={{ color: "var(--t-text)" }}>@{m.username.replace(/^@/, "")}</span>
-                        {m.isCreator && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>
-                            <Crown className="w-2.5 h-2.5" /> Organiser
-                          </span>
-                        )}
-                        {m.isYou && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>You</span>}
-                        {share.delivery.username && m.username.toLowerCase() === share.delivery.username.toLowerCase() && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
-                            <Truck className="w-2.5 h-2.5" /> Delivery
-                          </span>
-                        )}
-                        {!isOpen && <PayBadge paymentStatus={m.paymentStatus} />}
-                      </div>
-                      <p className="text-xs mt-1" style={{ color: "var(--t-muted)" }}>
-                        {m.kits > 0 ? `${m.kits} kit${m.kits === 1 ? "" : "s"} · ${money(m.subtotal)}` : "No items yet"}
-                        {m.tip > 0 && ` · tip ${money(m.tip)}`}
-                        {m.shippingShare != null && ` · ship ${money(m.shippingShare)}`}
-                        {m.orderCode && ` · order #${m.orderCode}`}
-                      </p>
-                    </div>
-                    {!isOpen && m.isYou && m.orderId && m.paymentStatus !== "confirmed" && share.status !== "cancelled" && (
-                      <button
-                        onClick={() => setLocation(`/account/orders/${m.orderId}`)}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-bold text-white"
-                        style={{ background: "var(--t-blue)" }}
-                      >
-                        <CreditCard className="w-4 h-4" /> Pay
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
             </ExpandableCard>
 
             {/* My items editor */}
             {canEditItems && (
-              <section className="space-y-2">
+              <section id={GUIDE_ANCHORS.items} style={flashStyle(GUIDE_ANCHORS.items)} className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>My Items</p>
                   {itemsDirty && <span className="text-xs font-semibold" style={{ color: "#eab308" }}>Unsaved changes</span>}
@@ -997,11 +1007,13 @@ export default function WholesaleShared() {
 
             {/* What you owe — one combined personal money card (paying & done stages) */}
             {(stage === "paying" || stage === "done") && myMember && (
-              <WhatYouOwe
-                share={share}
-                me={myMember}
-                onPayOrder={() => { if (myMember.orderId) setLocation(`/account/orders/${myMember.orderId}`); }}
-              />
+              <div id={GUIDE_ANCHORS.owe} style={flashStyle(GUIDE_ANCHORS.owe)}>
+                <WhatYouOwe
+                  share={share}
+                  me={myMember}
+                  onPayOrder={() => { if (myMember.orderId) setLocation(`/account/orders/${myMember.orderId}`); }}
+                />
+              </div>
             )}
 
             {/* Combined order totals — group-level info, collapsible (open while building) */}
@@ -1106,6 +1118,7 @@ export default function WholesaleShared() {
                 controls. Each control inside keeps its own server-side gate, so a user
                 only ever sees the tools they're actually allowed to use. */}
             {showManage && (
+              <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
               <ExpandableCard
                 title="Manage order"
                 icon={<Settings className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
@@ -1498,13 +1511,14 @@ export default function WholesaleShared() {
 
                 </div>
               </ExpandableCard>
+              </div>
             )}
 
             {/* Delivery address — only the chosen recipient can set a one-off address
                 for this parcel. It overrides their saved account address for this order
                 only and never changes their account. */}
             {share.delivery.canEditAddress && (
-              <section className="space-y-2">
+              <section id={GUIDE_ANCHORS.address} style={flashStyle(GUIDE_ANCHORS.address)} className="space-y-2">
                 <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Delivery Address</p>
                 <div className="rounded-xl p-4 space-y-3" style={card}>
                   <p className="text-xs" style={{ color: "var(--t-muted)" }}>
@@ -1608,6 +1622,17 @@ export default function WholesaleShared() {
             {/* Group chat — members only */}
             {share.isMember && (
               <ShareChat shareId={share.id} readOnly={share.status === "cancelled"} />
+            )}
+
+            {guide && (
+              <SetupWizard
+                open={wizardOpen}
+                onClose={closeWizard}
+                plan={guide}
+                share={share}
+                onAction={handleGuideAction}
+                copiedInvite={copied === "link"}
+              />
             )}
 
             {/* My share to pay (locked, non-creator quick action handled in member row) */}
