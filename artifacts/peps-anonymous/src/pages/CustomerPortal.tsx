@@ -7859,7 +7859,7 @@ export default function CustomerPortal() {
 
           {/* ── Type filter pills ── */}
           <div className="flex gap-1.5">
-            {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buys" }, { id: "wholesale" as const, label: "Wholesale" }, { id: "shop" as const, label: "Shop" } ]).map(opt => (
+            {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buys" }, ...(account?.isWholesale ? [{ id: "wholesale" as const, label: "Wholesale" }] : []), { id: "shop" as const, label: "Shop" } ]).map(opt => (
               <button key={opt.id} onClick={() => setTypeFilter(opt.id)}
                 className="flex-1 h-8 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap"
                 style={typeFilter === opt.id
