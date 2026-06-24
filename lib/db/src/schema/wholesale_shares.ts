@@ -46,6 +46,14 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // Snapshots captured at lock for stable display
   totalVendorShipping: numeric("total_vendor_shipping", { precision: 10, scale: 2 }),
   totalKits: numeric("total_kits", { precision: 10, scale: 2 }),
+  // ── Optional peer-to-peer fees (paid separately, NOT to admin) ──────────────
+  // The organiser can charge each participant a custom organiser fee (paid to the
+  // organiser/creator) and a custom reshipper fee (paid to the parcel recipient
+  // for sorting out the deal). These are paid directly to the organiser/recipient
+  // and never enter the per-member order total that the admin/vendor collects.
+  // Free-text payment instructions shown to participants for each fee.
+  organiserPaymentInfo: text("organiser_payment_info"),
+  reshipperPaymentInfo: text("reshipper_payment_info"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
@@ -71,6 +79,14 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   orderId: text("order_id"),
   // Per-member vendor-shipping share computed at lock (snapshot for display).
   shippingShare: numeric("shipping_share", { precision: 10, scale: 2 }),
+  // ── Optional peer-to-peer fees set by the organiser for THIS participant ─────
+  // organiserFee → paid to the organiser; reshipperFee → paid to the parcel
+  // recipient. The current recipient is exempt (effective fee treated as 0).
+  // Each fee tracks a "paid" flag confirmed by its payee (organiser/recipient).
+  organiserFee: numeric("organiser_fee", { precision: 10, scale: 2 }).notNull().default("0"),
+  reshipperFee: numeric("reshipper_fee", { precision: 10, scale: 2 }).notNull().default("0"),
+  organiserFeePaid: boolean("organiser_fee_paid").notNull().default(false),
+  reshipperFeePaid: boolean("reshipper_fee_paid").notNull().default(false),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
