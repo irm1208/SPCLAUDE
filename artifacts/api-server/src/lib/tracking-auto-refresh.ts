@@ -417,6 +417,23 @@ async function runRefresh(): Promise<void> {
   }
 }
 
+/**
+ * Register + fetch + parse tracking events for any raw tracking number.
+ * Used by the Telegram bot for direct-shipping orders (no GB parcel record).
+ */
+export async function fetchTrackingEventsForNumber(trackingNumber: string): Promise<{
+  status: string;
+  events: { date: string; status: string; location: string }[];
+}> {
+  let registered = await track17Register(trackingNumber, 0);
+  if (!registered) registered = await track17Register(trackingNumber, 0);
+  await sleep(600);
+  const accepted = await track17GetInfo(trackingNumber, 0);
+  if (!accepted) return { status: "pending", events: [] };
+  const { status, events } = parseTrack17Response(accepted);
+  return { status, events };
+}
+
 export async function refreshSingleGbParcel(parcelId: string): Promise<{ status: string; updated: boolean }> {
   const [parcel] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
   if (!parcel || !parcel.trackingNumber?.trim()) return { status: parcel?.status ?? "unknown", updated: false };

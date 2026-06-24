@@ -9,7 +9,7 @@ import { sendTelegramMessage, sendTelegramMessageFull, sendAdminTicketNotificati
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
 import { translateZh } from "../lib/translate-zh";
-import { refreshSingleGbParcel } from "../lib/tracking-auto-refresh";
+import { refreshSingleGbParcel, fetchTrackingEventsForNumber } from "../lib/tracking-auto-refresh";
 import { GoogleGenAI } from "../lib/google-genai";
 
 const router: IRouter = Router();
@@ -1717,13 +1717,60 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         if (isDirect) {
           const [gbRowDirect] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
           const gbNameDirect = gbRowDirect?.name ?? gbId;
+
+          // Collect all tracking numbers from this member's orders for this GB
+          const directNums: string[] = [];
+          for (const o of memberOrders) {
+            const nums = Array.isArray(o.trackingNumbers) && (o.trackingNumbers as string[]).length
+              ? (o.trackingNumbers as string[])
+              : (o.trackingNumber ? [o.trackingNumber] : []);
+            for (const n of nums) {
+              if (n?.trim() && !directNums.includes(n.trim())) directNums.push(n.trim());
+            }
+          }
+
+          const DIRECT_EMOJI: Record<string, string> = {
+            pending: "⏳", in_transit: "🚀", out_for_delivery: "🚚",
+            attempted: "⚠️", delivered: "✅", exception: "🚨", expired: "💨",
+          };
+          const DIRECT_LABEL: Record<string, string> = {
+            pending: "Pending", in_transit: "In Transit", out_for_delivery: "Out for Delivery",
+            attempted: "Delivery Attempted", delivered: "Delivered", exception: "Exception", expired: "Expired",
+          };
+
+          let directBody = `📦 <b>${gbNameDirect}</b>\n🏠 <i>Direct shipping to your address</i>\n`;
+
+          if (directNums.length === 0) {
+            directBody += "\n<i>No tracking number has been added to your order yet.</i>";
+          } else {
+            for (const num of directNums) {
+              directBody += `\n\n🔢 <b>Tracking #:</b> <code>${num}</code>`;
+              // Fetch live 17track events
+              const { status, events } = await fetchTrackingEventsForNumber(num);
+              const emoji = DIRECT_EMOJI[status] ?? "📦";
+              const label = DIRECT_LABEL[status] ?? status;
+              directBody += `\n${emoji} <b>Status:</b> ${label}`;
+              if (events.length > 0) {
+                // Show the 5 most recent events (newest first)
+                const recent = [...events].reverse().slice(0, 5);
+                for (const ev of recent) {
+                  const dateStr = ev.date ? new Date(ev.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+                  const loc = ev.location ? ` · ${ev.location}` : "";
+                  directBody += `\n  <i>${dateStr}${loc}</i> — ${ev.status}`;
+                }
+              }
+            }
+          }
+
+          const directKeyboard: { text: string; url?: string; callback_data?: string }[][] = [];
+          for (const num of directNums) {
+            directKeyboard.push([{ text: `🌐 Track ${num} on 17track`, url: `https://t.17track.net/en#nums=${num}` }]);
+          }
+          directKeyboard.push([{ text: "⬅️ Back to Tracking", callback_data: "mn:tracking" }]);
+
           await sendTelegramMessageFull(
-            cbChatId,
-            `📦 <b>${gbNameDirect}</b>\n\n🏠 Your order ships directly to your address.\n\nYour tracking number is on your order — check the website for details.`,
-            "HTML", undefined, { reply_markup: { inline_keyboard: [
-              [{ text: "🌐 View My Orders", url: `${appUrl}/account` }],
-              [{ text: "⬅️ Back to Tracking", callback_data: "mn:tracking" }],
-            ] } },
+            cbChatId, directBody, "HTML", undefined,
+            { reply_markup: { inline_keyboard: directKeyboard } },
           );
           res.json({ ok: true }); return;
         }
