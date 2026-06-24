@@ -12353,7 +12353,6 @@ function UsernamesTab({ secret }: { secret: string }) {
                         {row.organiserStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">Org Applied</span>}
                         {row.poolLeaderStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">PL Applied</span>}
                         {row.reshipperStatus === "applied" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">RS Applied</span>}
-                        {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesale</span>}
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         Joined {joinDate} · {row.orderCount} order{row.orderCount !== 1 ? "s" : ""} · ${row.totalSpent.toFixed(2)} spent{typeof row.credits === "number" ? ` · $${row.credits} credits` : ""}
