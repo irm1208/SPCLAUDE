@@ -8937,6 +8937,9 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
   const [sendingNow, setSendingNow] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  const [testUsername, setTestUsername] = useState("");
+  const [testingMsg, setTestingMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sendingTest, setSendingTest] = useState(false);
 
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -8980,6 +8983,26 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
     setDeleting(null);
   };
 
+  const sendTest = async () => {
+    const u = testUsername.trim().replace(/^@/, "");
+    if (!u || !form.body.trim()) return;
+    setSendingTest(true);
+    setTestingMsg(null);
+    try {
+      const r = await fetch(apiUrl(`/admin/customers/${encodeURIComponent(u)}/send-message`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `[TEST]\n\n${form.body.trim()}` }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) setTestingMsg({ ok: true, text: `Test sent to @${u} ✓` });
+      else setTestingMsg({ ok: false, text: j.error ?? "Failed to send test" });
+    } catch {
+      setTestingMsg({ ok: false, text: "Network error" });
+    }
+    setSendingTest(false);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -9019,6 +9042,34 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
               </select>
             </div>
           </div>
+          {/* Test send */}
+          <div className="border-t border-border pt-3 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground">Send a test before broadcasting</p>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="@yourusername"
+                value={testUsername}
+                onChange={e => { setTestUsername(e.target.value); setTestingMsg(null); }}
+                disabled={sendingTest}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 shrink-0"
+                onClick={sendTest}
+                disabled={sendingTest || !testUsername.trim() || !form.body.trim()}
+              >
+                {sendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
+                Send test
+              </Button>
+            </div>
+            {testingMsg && (
+              <p className={cn("text-xs font-medium", testingMsg.ok ? "text-green-600" : "text-red-500")}>{testingMsg.text}</p>
+            )}
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={create} disabled={creating || !form.title.trim() || !form.body.trim()} className="gap-1.5">
               {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
