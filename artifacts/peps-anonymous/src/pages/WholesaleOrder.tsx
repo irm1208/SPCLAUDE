@@ -85,8 +85,9 @@ export default function WholesaleOrder() {
   const [draftSavedFlash, setDraftSavedFlash] = useState(false);
 
   useEffect(() => {
-    if (!accountLoading && (!account || !account.isWholesale)) {
-      setLocation("/");
+    if (!accountLoading) {
+      if (!account) setLocation("/login");
+      else if (!account.isWholesale) setLocation("/account");
     }
   }, [accountLoading, account, setLocation]);
 

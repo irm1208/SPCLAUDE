@@ -217,7 +217,10 @@ export default function WholesaleShared() {
 
   // Gate: wholesale members only
   useEffect(() => {
-    if (!accountLoading && (!account || !account.isWholesale)) setLocation("/wholesale");
+    if (!accountLoading) {
+      if (!account) setLocation("/login");
+      else if (!account.isWholesale) setLocation("/account");
+    }
   }, [accountLoading, account, setLocation]);
 
   // Load wholesale products once
