@@ -16,6 +16,8 @@ import {
   setWholesaleShareDelivery,
   setWholesaleShareDeliveryAddress,
   setWholesaleShareSplit,
+  setWholesaleShareFees,
+  confirmWholesaleShareFee,
   lockWholesaleShare,
   cancelWholesaleShare,
   unlockWholesaleShare,
@@ -163,6 +165,15 @@ export default function WholesaleShared() {
   const [delUser, setDelUser] = useState("");
   const deliverySeeded = useRef(false);
 
+  // Organiser-only optional peer-to-peer fee editor. Custom per-member organiser fee
+  // (paid to the organiser) and reshipper fee (paid to the parcel recipient). These
+  // are paid SEPARATELY and never enter the per-member order total.
+  const [orgPayInfo, setOrgPayInfo] = useState("");
+  const [resPayInfo, setResPayInfo] = useState("");
+  const [feeAmounts, setFeeAmounts] = useState<Record<string, { organiserFee: string; reshipperFee: string }>>({});
+  const [feesDirty, setFeesDirty] = useState(false);
+  const feesSeeded = useRef(false);
+
   // Recipient-only address form — the designated delivery member can enter a one-off
   // address for this parcel instead of being stuck with their saved account address.
   const [addr, setAddr] = useState({
@@ -265,6 +276,23 @@ export default function WholesaleShared() {
     if (share.isCreator) setDelUser(share.delivery.username ?? "");
     deliverySeeded.current = true;
   }, [share]);
+
+  // Seed the organiser fee editor once from the share's stored fee data. Skipped
+  // once the organiser has unsaved edits, so live polling never clobbers their work.
+  useEffect(() => {
+    if (!share || !share.fees.canManage || feesDirty || feesSeeded.current) return;
+    setOrgPayInfo(share.fees.organiserPaymentInfo ?? "");
+    setResPayInfo(share.fees.reshipperPaymentInfo ?? "");
+    const seeded: Record<string, { organiserFee: string; reshipperFee: string }> = {};
+    for (const m of share.members) {
+      seeded[m.username] = {
+        organiserFee: m.organiserFee > 0 ? String(m.organiserFee) : "",
+        reshipperFee: m.reshipperFee > 0 ? String(m.reshipperFee) : "",
+      };
+    }
+    setFeeAmounts(seeded);
+    feesSeeded.current = true;
+  }, [share, feesDirty]);
 
   // Seed the recipient address form once, when I'm the chosen recipient. Prefer any
   // address already saved on the share; otherwise fall back to my saved account
@@ -500,6 +528,48 @@ export default function WholesaleShared() {
     if (!id || mode === share.splitMode) return;
     setActionError(""); setBusy("split");
     try { await setWholesaleShareSplit(id, mode); invalidate(id); }
+    catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const setFeeAmount = (username: string, key: "organiserFee" | "reshipperFee", value: string) => {
+    setFeesDirty(true);
+    setFeeAmounts(prev => ({
+      ...prev,
+      [username]: { organiserFee: "", reshipperFee: "", ...prev[username], [key]: value },
+    }));
+  };
+
+  const saveFees = async () => {
+    if (!id || !share) return;
+    setActionError(""); setBusy("fees");
+    try {
+      const recipientLower = share.delivery.username?.toLowerCase() ?? null;
+      const fees = share.members.map(m => {
+        const a = feeAmounts[m.username] ?? { organiserFee: "", reshipperFee: "" };
+        const isRecipient = recipientLower != null && m.username.toLowerCase() === recipientLower;
+        return {
+          username: m.username,
+          organiserFee: isRecipient ? 0 : Math.max(0, parseFloat(a.organiserFee) || 0),
+          reshipperFee: isRecipient ? 0 : Math.max(0, parseFloat(a.reshipperFee) || 0),
+        };
+      });
+      await setWholesaleShareFees(id, {
+        organiserPaymentInfo: orgPayInfo.trim(),
+        reshipperPaymentInfo: resPayInfo.trim(),
+        fees,
+      });
+      setFeesDirty(false);
+      feesSeeded.current = false;
+      invalidate(id);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const toggleFeePaid = async (username: string, feeType: "organiser" | "reshipper", paid: boolean) => {
+    if (!id) return;
+    setActionError(""); setBusy(`feepaid:${feeType}:${username}`);
+    try { await confirmWholesaleShareFee(id, { username, feeType, paid }); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -818,6 +888,72 @@ export default function WholesaleShared() {
               </div>
             </section>
 
+            {/* Participant fees — paid separately between members (peer-to-peer),
+                never part of any order. Shown to everyone once any fee is set. The
+                payee (organiser / recipient) can mark each fee paid. */}
+            {share.fees.active && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Participant Fees</p>
+                <div className="rounded-xl p-4 space-y-3" style={card}>
+                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                    These are settled directly between members and are <span className="font-semibold">not</span> part of your order payment.
+                  </p>
+
+                  {share.fees.organiserFeeTotal > 0 && (
+                    <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                      <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text)" }}>
+                        Organiser fee → pay @{share.fees.organiserUsername.replace(/^@/, "")}
+                      </p>
+                      {share.fees.organiserPaymentInfo
+                        ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{share.fees.organiserPaymentInfo}</p>
+                        : <p className="text-xs" style={{ color: "var(--t-muted)" }}>Payment details not provided yet — ask the organiser.</p>}
+                    </div>
+                  )}
+
+                  {share.fees.reshipperFeeTotal > 0 && (
+                    <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                      <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text)" }}>
+                        Reshipper fee → pay {share.fees.recipientUsername ? `@${share.fees.recipientUsername.replace(/^@/, "")}` : "the recipient"}
+                      </p>
+                      {share.fees.reshipperPaymentInfo
+                        ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{share.fees.reshipperPaymentInfo}</p>
+                        : <p className="text-xs" style={{ color: "var(--t-muted)" }}>Payment details not provided yet — ask the recipient.</p>}
+                    </div>
+                  )}
+
+                  <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+                    {share.members.filter(m => m.organiserFee > 0 || m.reshipperFee > 0).map(m => (
+                      <div key={m.username} className="px-3 py-2.5 space-y-1.5">
+                        <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
+                          @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
+                        </p>
+                        {m.organiserFee > 0 && (
+                          <FeeLine
+                            label="Organiser fee"
+                            amount={money(m.organiserFee)}
+                            paid={m.organiserFeePaid}
+                            canConfirm={share.fees.canConfirmOrganiserFees}
+                            busy={busy === `feepaid:organiser:${m.username}`}
+                            onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
+                          />
+                        )}
+                        {m.reshipperFee > 0 && (
+                          <FeeLine
+                            label="Reshipper fee"
+                            amount={money(m.reshipperFee)}
+                            paid={m.reshipperFeePaid}
+                            canConfirm={share.fees.canConfirmReshipperFees}
+                            busy={busy === `feepaid:reshipper:${m.username}`}
+                            onToggle={() => toggleFeePaid(m.username, "reshipper", !m.reshipperFeePaid)}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Creator controls */}
             {share.isCreator && isOpen && (
               <section className="space-y-2">
@@ -879,6 +1015,104 @@ export default function WholesaleShared() {
                         <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address{share.delivery.canEditAddress ? " — that's you, fill it in below" : ""}.</span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Optional participant fees — custom per-member organiser fee
+                      (paid to you) and reshipper fee (paid to the parcel recipient).
+                      Paid separately, peer-to-peer; never added to anyone's order. */}
+                  <div className="pt-2 border-t space-y-3" style={{ borderColor: "var(--t-border)" }}>
+                    <div>
+                      <label className="block text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Participant fees (optional)</label>
+                      <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
+                        Charge each member a custom organiser fee (paid to you) and/or reshipper fee (paid to the parcel recipient). These are settled separately between members — they're never added to anyone's order total. The recipient is exempt.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>How to pay the organiser fee (to you)</label>
+                        <input
+                          value={orgPayInfo}
+                          onChange={e => { setFeesDirty(true); setOrgPayInfo(e.target.value); }}
+                          placeholder="e.g. PayPal me@example.com / Revolut @me"
+                          maxLength={500}
+                          className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
+                          style={field}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>
+                          How to pay the reshipper fee{share.delivery.username ? ` (to @${share.delivery.username.replace(/^@/, "")})` : " (to the recipient)"}
+                        </label>
+                        <input
+                          value={resPayInfo}
+                          onChange={e => { setFeesDirty(true); setResPayInfo(e.target.value); }}
+                          placeholder="e.g. recipient's PayPal / crypto address"
+                          maxLength={500}
+                          className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
+                          style={field}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+                      <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>
+                        <span>Member</span>
+                        <span className="w-20 text-center">Organiser</span>
+                        <span className="w-20 text-center">Reshipper</span>
+                      </div>
+                      {share.members.map(m => {
+                        const isRecipient = !!share.delivery.username && m.username.toLowerCase() === share.delivery.username.toLowerCase();
+                        const a = feeAmounts[m.username] ?? { organiserFee: "", reshipperFee: "" };
+                        return (
+                          <div key={m.username} className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 items-center">
+                            <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
+                              @{m.username.replace(/^@/, "")}{isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>recipient</span>}
+                            </span>
+                            {isRecipient ? (
+                              <span className="w-20 text-center text-xs" style={{ color: "var(--t-muted)" }}>—</span>
+                            ) : (
+                              <div className="w-20 flex items-center gap-1">
+                                <span className="text-xs" style={{ color: "var(--t-muted)" }}>$</span>
+                                <input
+                                  type="number" min="0" step="0.01"
+                                  value={a.organiserFee}
+                                  onChange={e => setFeeAmount(m.username, "organiserFee", e.target.value)}
+                                  placeholder="0"
+                                  className="w-full h-8 px-2 text-center rounded-lg border text-sm bg-transparent outline-none"
+                                  style={field}
+                                />
+                              </div>
+                            )}
+                            {isRecipient ? (
+                              <span className="w-20 text-center text-xs" style={{ color: "var(--t-muted)" }}>—</span>
+                            ) : (
+                              <div className="w-20 flex items-center gap-1">
+                                <span className="text-xs" style={{ color: "var(--t-muted)" }}>$</span>
+                                <input
+                                  type="number" min="0" step="0.01"
+                                  value={a.reshipperFee}
+                                  onChange={e => setFeeAmount(m.username, "reshipperFee", e.target.value)}
+                                  placeholder="0"
+                                  className="w-full h-8 px-2 text-center rounded-lg border text-sm bg-transparent outline-none"
+                                  style={field}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={saveFees}
+                      disabled={busy === "fees" || !feesDirty}
+                      className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                    >
+                      {busy === "fees" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Save fees
+                    </button>
                   </div>
 
                   {/* Lock checklist + actions */}
@@ -1084,6 +1318,40 @@ function Checklist({ ok, text }: { ok: boolean; text: string }) {
         {ok ? <Check className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
       </span>
       <span style={{ color: ok ? "var(--t-text)" : "var(--t-muted)" }}>{text}</span>
+    </div>
+  );
+}
+
+function FeeLine({ label, amount, paid, canConfirm, busy, onToggle }: {
+  label: string; amount: string; paid: boolean; canConfirm: boolean; busy: boolean; onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs" style={{ color: "var(--t-muted)" }}>{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{amount}</span>
+        {canConfirm ? (
+          <button
+            onClick={onToggle}
+            disabled={busy}
+            className="inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[11px] font-bold border disabled:opacity-50"
+            style={paid
+              ? { background: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.30)", color: "#15803d" }
+              : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+          >
+            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : paid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+            {paid ? "Paid" : "Mark paid"}
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[11px] font-bold"
+            style={paid
+              ? { background: "rgba(34,197,94,0.12)", color: "#15803d" }
+              : { background: "rgba(234,179,8,0.12)", color: "#a16207" }}>
+            {paid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+            {paid ? "Paid" : "Unpaid"}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

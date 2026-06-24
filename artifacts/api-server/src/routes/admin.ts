@@ -6037,6 +6037,7 @@ router.get("/admin/accounts", async (req: any, res: any): Promise<void> => {
         organiserRole: accountsTable.organiserRole,
         poolLeaderStatus: accountsTable.poolLeaderStatus,
         reshipperStatus: accountsTable.reshipperStatus,
+        isWholesale: accountsTable.isWholesale,
         country: accountsTable.country,
         lastLoginIp: accountsTable.lastLoginIp,
         lastLoginAt: accountsTable.lastLoginAt,

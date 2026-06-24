@@ -12343,6 +12343,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                           : <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Disconnected</span>
                         }
                         {(row.tags ?? []).includes("seller") && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Seller</span>}
+                        {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesaler</span>}
                         {(row.organiserStatus === "approved" || (row.tags ?? []).includes("group_buy_organiser")) && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700">Organiser</span>}
                         {row.poolLeaderStatus === "approved" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">Pool Leader</span>}
                         {row.reshipperStatus === "approved" && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">Reshipper</span>}

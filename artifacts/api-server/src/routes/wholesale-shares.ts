@@ -77,6 +77,10 @@ const NOT_CANCELLABLE = Symbol("share_not_cancellable");
 // and the route can respond 409 instead of overwriting the new status.
 const LOCK_CONFLICT = Symbol("share_lock_conflict");
 
+// Thrown inside the fee-update transaction when the share is no longer "open"
+// (a concurrent lock/cancel won the race), so fee writes roll back and we 409.
+const FEES_CONFLICT = Symbol("share_fees_conflict");
+
 // Thrown inside the unlock transaction when a concurrent cancel/submit already
 // moved the share off "locked", so we abort with 409 instead of reopening it.
 const UNLOCK_CONFLICT = Symbol("share_unlock_conflict");
@@ -195,16 +199,25 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     liveShares = splitShipping(shippingEstimate, weights, splitMode);
   }
 
+  // The parcel recipient (delivery member) is exempt from BOTH peer-to-peer fees,
+  // and is the payee of the reshipper fee. Treat their effective fees as 0 here so a
+  // post-set recipient change can never leave a stale fee on the new recipient.
+  const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
+
   const memberPayloads = members.map((m, idx) => {
     const items = m.items ?? [];
     const order = m.orderId ? orderById.get(m.orderId) : undefined;
     const shippingShare = isLocked
       ? (m.shippingShare != null ? Number(m.shippingShare) : 0)
       : (shippingEstimate !== null ? liveShares[idx] : null);
+    const isRecipient = recipientLower != null && m.username.toLowerCase() === recipientLower;
+    const organiserFee = isRecipient ? 0 : Number(m.organiserFee ?? 0);
+    const reshipperFee = isRecipient ? 0 : Number(m.reshipperFee ?? 0);
     return {
       username: m.username,
       isCreator: m.isCreator,
       isYou: m.username.toLowerCase() === currentUsername.toLowerCase(),
+      isRecipient,
       items: items.map(it => ({
         productId: it.productId,
         productName: it.productName,
@@ -215,6 +228,11 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       subtotal: memberSubtotal(items),
       tip: Number(m.tip ?? 0),
       shippingShare,
+      // Optional peer-to-peer fees (paid separately, NOT to admin/vendor).
+      organiserFee,
+      reshipperFee,
+      organiserFeePaid: organiserFee > 0 ? (m.organiserFeePaid ?? false) : false,
+      reshipperFeePaid: reshipperFee > 0 ? (m.reshipperFeePaid ?? false) : false,
       orderId: m.orderId ?? null,
       orderCode: order?.code ?? null,
       orderStatus: order?.status ?? null,
@@ -222,6 +240,12 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
     };
   });
+
+  const organiserFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.organiserFee, 0).toFixed(2));
+  const reshipperFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.reshipperFee, 0).toFixed(2));
+  const currentLower = currentUsername.toLowerCase();
+  const isCreatorViewer = share.creatorUsername.toLowerCase() === currentLower;
+  const isRecipientViewer = recipientLower != null && recipientLower === currentLower;
 
   const allPaid = isLocked
     && memberPayloads.length > 0
@@ -266,6 +290,20 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     combinedSubtotal,
     totalVendorShipping: share.totalVendorShipping != null ? Number(share.totalVendorShipping) : null,
     totalKits: share.totalKits != null ? Number(share.totalKits) : null,
+    // ── Optional peer-to-peer fees (paid directly to organiser / recipient) ────
+    fees: {
+      organiserPaymentInfo: share.organiserPaymentInfo ?? null,
+      reshipperPaymentInfo: share.reshipperPaymentInfo ?? null,
+      organiserFeeTotal,
+      reshipperFeeTotal,
+      active: organiserFeeTotal > 0 || reshipperFeeTotal > 0,
+      recipientUsername: share.deliveryUsername ?? null,
+      // Organiser (creator) receives organiser fees; recipient receives reshipper fees.
+      organiserUsername: share.creatorUsername,
+      canManage: share.status === "open" && isCreatorViewer,
+      canConfirmOrganiserFees: isCreatorViewer,
+      canConfirmReshipperFees: isRecipientViewer,
+    },
     members: memberPayloads,
     memberCount: members.length,
     allPaid,
@@ -964,6 +1002,152 @@ router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): 
   await writeLog("order", "warn", "wholesale_share_cancelled",
     `Wholesale share ${share.id} cancelled by ${me}${outcome.wasLocked ? ` (was locked; ${outcome.cancelledOrders} member orders cancelled)` : ""}${outcome.paidMembersNeedingRefund.length ? ` — refund needed for: ${outcome.paidMembersNeedingRefund.join(", ")}` : ""}`,
     { shareId: share.id, wasLocked: outcome.wasLocked, cancelledOrders: outcome.cancelledOrders, paidMembersNeedingRefund: outcome.paidMembersNeedingRefund }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/fees — organiser sets optional peer-to-peer fees.
+// Custom per-participant organiser fee (paid to the organiser) and reshipper fee
+// (paid to the parcel recipient). Editable only while the share is open. The
+// current recipient is always exempt (their amounts are forced to 0). These fees
+// are paid SEPARATELY and never enter the per-member order total sent to admin.
+router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can set fees." });
+    return;
+  }
+  if (share.status !== "open") {
+    res.status(409).json({ error: "Fees can only be changed while the shared order is open." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    organiserPaymentInfo?: unknown;
+    reshipperPaymentInfo?: unknown;
+    fees?: Array<{ username?: unknown; organiserFee?: unknown; reshipperFee?: unknown }>;
+  };
+
+  const clampFee = (v: unknown): number => {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return 0;
+    return Number(Math.min(n, 100000).toFixed(2));
+  };
+  const cleanInfo = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    const t = v.trim().slice(0, 500);
+    return t.length > 0 ? t : null;
+  };
+
+  const shareUpdates: Partial<typeof wholesaleSharesTable.$inferInsert> = {};
+  if (body.organiserPaymentInfo !== undefined) shareUpdates.organiserPaymentInfo = cleanInfo(body.organiserPaymentInfo);
+  if (body.reshipperPaymentInfo !== undefined) shareUpdates.reshipperPaymentInfo = cleanInfo(body.reshipperPaymentInfo);
+
+  const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
+  const fees = Array.isArray(body.fees) ? body.fees : [];
+
+  // All fee writes happen inside one transaction that first row-locks the share
+  // and re-asserts "open". A concurrent lock/cancel either lost the race (we win
+  // and it 409s on its own conditional update) or won it (we see the new status
+  // here and roll everything back), so fees can never be written to a non-open
+  // share. When a fee amount changes we also clear the matching paid flag, so a
+  // previously-confirmed fee can't stay "paid" after the organiser edits it.
+  try {
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ status: wholesaleSharesTable.status })
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+
+      if (Object.keys(shareUpdates).length > 0) {
+        await tx.update(wholesaleSharesTable).set(shareUpdates).where(eq(wholesaleSharesTable.id, share.id));
+      }
+
+      const members = await tx
+        .select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      const memberByLower = new Map(members.map(m => [m.username.toLowerCase(), m]));
+
+      for (const f of fees) {
+        const uname = String(f.username ?? "").toLowerCase();
+        const member = memberByLower.get(uname);
+        if (!member) continue;
+        const isRecipient = recipientLower != null && uname === recipientLower;
+        const prevOrganiserFee = Number(member.organiserFee ?? 0);
+        const prevReshipperFee = Number(member.reshipperFee ?? 0);
+        const organiserFee = isRecipient ? 0 : (f.organiserFee !== undefined ? clampFee(f.organiserFee) : prevOrganiserFee);
+        const reshipperFee = isRecipient ? 0 : (f.reshipperFee !== undefined ? clampFee(f.reshipperFee) : prevReshipperFee);
+        const set: Partial<typeof wholesaleShareMembersTable.$inferInsert> = {
+          organiserFee: organiserFee.toFixed(2),
+          reshipperFee: reshipperFee.toFixed(2),
+        };
+        if (organiserFee !== prevOrganiserFee) set.organiserFeePaid = false;
+        if (reshipperFee !== prevReshipperFee) set.reshipperFeePaid = false;
+        await tx.update(wholesaleShareMembersTable)
+          .set(set)
+          .where(eq(wholesaleShareMembersTable.id, member.id));
+      }
+    });
+  } catch (e) {
+    if (e === FEES_CONFLICT) {
+      res.status(409).json({ error: "Fees can only be changed while the shared order is open." });
+      return;
+    }
+    throw e;
+  }
+
+  await writeLog("order", "info", "wholesale_share_fees_updated",
+    `Wholesale share ${share.id} fees updated by ${me}`, { shareId: share.id }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/wholesale-shares/:id/fees/confirm — the payee marks a participant's
+// fee as received (or unpaid again). Organiser confirms organiser fees; the parcel
+// recipient confirms reshipper fees. Allowed any time except after cancellation.
+router.post("/wholesale-shares/:id/fees/confirm", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status === "cancelled") {
+    res.status(409).json({ error: "This shared order has been cancelled." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as { username?: unknown; feeType?: unknown; paid?: unknown };
+  const username = String(body.username ?? "");
+  const feeType = String(body.feeType ?? "");
+  const paid = Boolean(body.paid);
+  if (feeType !== "organiser" && feeType !== "reshipper") {
+    res.status(400).json({ error: "feeType must be 'organiser' or 'reshipper'." });
+    return;
+  }
+
+  const meLower = me.toLowerCase();
+  const isCreator = share.creatorUsername.toLowerCase() === meLower;
+  const isRecipient = !!share.deliveryUsername && share.deliveryUsername.toLowerCase() === meLower;
+  if (feeType === "organiser" && !isCreator) {
+    res.status(403).json({ error: "Only the organiser can confirm organiser fees." });
+    return;
+  }
+  if (feeType === "reshipper" && !isRecipient) {
+    res.status(403).json({ error: "Only the parcel recipient can confirm reshipper fees." });
+    return;
+  }
+
+  const member = await loadMember(share.id, username);
+  if (!member) { res.status(404).json({ error: "That member is not part of this shared order." }); return; }
+
+  await db.update(wholesaleShareMembersTable)
+    .set(feeType === "organiser" ? { organiserFeePaid: paid } : { reshipperFeePaid: paid })
+    .where(eq(wholesaleShareMembersTable.id, member.id));
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));

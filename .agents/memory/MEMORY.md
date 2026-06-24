@@ -28,3 +28,4 @@
 - [api-server vitest + db mock](api-server-vitest-db-mock.md) — mock @workspace/db via schema-only export (no Pool); scoped routers use path-less auth, so mount only the router under test, not both.
 - [Dispatch parcel gating](dispatch-parcel-gating.md) — GB dispatch reshipper list + Order Overview must not be gated on delivered parcels; union active-order reshippers, render overview for reshipper+all scopes with zero parcels.
 - [Shared dispatch admin parity](shared-dispatch-admin-parity.md) — AdminDispatch.tsx is shared by admin/reshipper/organiser; any UI addition must be gated by cfg.role to keep admin byte-identical.
+- [Wholesale shared P2P fees](wholesale-p2p-fees.md) — optional organiser/reshipper fees paid peer-to-peer, NEVER in order totals; recipient exempt (dynamic); fee edits transactional + reset paid flag.

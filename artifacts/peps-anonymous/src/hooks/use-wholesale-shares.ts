@@ -16,16 +16,35 @@ export interface WholesaleShareMember {
   username: string;
   isCreator: boolean;
   isYou: boolean;
+  isRecipient: boolean;
   items: WholesaleShareItem[];
   kits: number;
   subtotal: number;
   tip: number;
   shippingShare: number | null;
+  // Optional peer-to-peer fees (paid separately, not part of the order total).
+  organiserFee: number;
+  reshipperFee: number;
+  organiserFeePaid: boolean;
+  reshipperFeePaid: boolean;
   orderId: string | null;
   orderCode: string | null;
   orderStatus: string | null;
   paymentStatus: string | null;
   hasDeliveryAddress: boolean;
+}
+
+export interface WholesaleShareFees {
+  organiserPaymentInfo: string | null;
+  reshipperPaymentInfo: string | null;
+  organiserFeeTotal: number;
+  reshipperFeeTotal: number;
+  active: boolean;
+  recipientUsername: string | null;
+  organiserUsername: string;
+  canManage: boolean;
+  canConfirmOrganiserFees: boolean;
+  canConfirmReshipperFees: boolean;
 }
 
 export interface WholesaleShareVendorRegion {
@@ -72,6 +91,7 @@ export interface WholesaleShareDetail {
   combinedSubtotal: number;
   totalVendorShipping: number | null;
   totalKits: number | null;
+  fees: WholesaleShareFees;
   members: WholesaleShareMember[];
   memberCount: number;
   allPaid: boolean;
@@ -219,6 +239,36 @@ export function setWholesaleShareSplit(id: string, splitMode: WholesaleSplitMode
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/split`, {
     method: "PUT",
     body: JSON.stringify({ splitMode }),
+  });
+}
+
+export interface WholesaleFeeInput {
+  username: string;
+  organiserFee?: number;
+  reshipperFee?: number;
+}
+
+// Organiser sets optional per-participant peer-to-peer fees plus the payment
+// details for how each fee should be paid. Editable only while the share is open.
+export function setWholesaleShareFees(
+  id: string,
+  payload: { organiserPaymentInfo?: string; reshipperPaymentInfo?: string; fees: WholesaleFeeInput[] },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// The payee (organiser for organiser fees, recipient for reshipper fees) marks a
+// participant's fee as paid / unpaid.
+export function confirmWholesaleShareFee(
+  id: string,
+  payload: { username: string; feeType: "organiser" | "reshipper"; paid: boolean },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees/confirm`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
