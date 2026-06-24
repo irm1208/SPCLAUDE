@@ -92,6 +92,10 @@ export const accountsTable = pgTable("accounts", {
   addressPhone: text("address_phone"),
   addressPhonePrefix: text("address_phone_prefix"),
   wholesaleDraft: jsonb("wholesale_draft").$type<Record<string, unknown> | null>(),
+  // Timestamp set the first time the customer sees the "invite others" nudge on a
+  // shared wholesale order. null = never shown. Persisted so the one-time prompt is
+  // remembered per account, across devices (replaces the old per-browser flag).
+  wholesaleInvitePromptSeenAt: timestamp("wholesale_invite_prompt_seen_at", { withTimezone: true }),
   // Per-account list of group buy IDs the user has archived (hidden from their Group Buys list)
   archivedGroupBuyIds: jsonb("archived_group_buy_ids").$type<string[]>().notNull().default([]),
   lastLoginIp: text("last_login_ip"),

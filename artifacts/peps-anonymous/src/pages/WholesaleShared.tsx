@@ -7,7 +7,7 @@ import {
   ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
@@ -212,6 +212,8 @@ export default function WholesaleShared() {
   const [flashAnchor, setFlashAnchor] = useState<string | null>(null);
   // One-time "invite others" popup, shown after a member saves their items.
   const [invitePromptOpen, setInvitePromptOpen] = useState(false);
+  const markInvitePromptSeen = useMarkWholesaleInvitePromptSeen();
+  const invitePromptFired = useRef(false);
   const autoOpenedRef = useRef<string | null>(null);
 
   // Gate: wholesale members only
@@ -504,15 +506,22 @@ export default function WholesaleShared() {
       invalidate(id);
       // One-time nudge: once a member has saved real items, while the order is
       // still open and has room for more people, prompt them to share the invite
-      // link. Remembered globally (per browser) so long-time users don't keep
-      // seeing it on every order they touch.
-      if (items.length > 0 && share && share.status === "open" && share.memberCount < share.maxMembers) {
-        let seen = false;
-        try { seen = !!localStorage.getItem("peps:ws-invite-prompt-seen"); } catch { /* ignore */ }
-        if (!seen) {
-          try { localStorage.setItem("peps:ws-invite-prompt-seen", "1"); } catch { /* ignore */ }
-          setInvitePromptOpen(true);
-        }
+      // link. "Seen" is remembered per account in the database (account.me flag),
+      // so a long-time user sees it at most once, ever, across all their devices.
+      if (
+        items.length > 0 &&
+        share && share.status === "open" && share.memberCount < share.maxMembers &&
+        account && !account.wholesaleInvitePromptSeen &&
+        !invitePromptFired.current
+      ) {
+        invitePromptFired.current = true;
+        // Only the caller who actually set the DB flag opens the nudge, so two
+        // devices both starting with a stale "unseen" account don't each pop it.
+        // If saving fails, we don't open — it simply retries on a later session.
+        try {
+          const r = await markInvitePromptSeen.mutateAsync();
+          if (r?.newlyMarked) setInvitePromptOpen(true);
+        } catch { /* persistence failed — leave for a later session */ }
       }
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
