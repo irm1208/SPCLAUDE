@@ -1514,7 +1514,7 @@ const PARCEL_STATUS_DISPLAY: Record<string, { label: string; color: string; bg: 
   pending:          { label: "Pending",          color: "#6B7280", bg: "rgba(107,114,128,0.12)" },
   in_transit:       { label: "In Transit",       color: "#0891B2", bg: "rgba(8,145,178,0.12)" },
   out_for_delivery: { label: "Out for Delivery", color: "#D97706", bg: "rgba(217,119,6,0.12)" },
-  attempted:        { label: "Attempted",        color: "#9333EA", bg: "rgba(147,51,234,0.12)" },
+  attempted:        { label: "Delivery Attempted", color: "#9333EA", bg: "rgba(147,51,234,0.12)" },
   delivered:        { label: "Delivered",        color: "#16A34A", bg: "rgba(22,163,74,0.12)" },
   exception:        { label: "Exception",        color: "#DC2626", bg: "rgba(220,38,38,0.12)" },
   expired:          { label: "Expired",          color: "#6B7280", bg: "rgba(107,114,128,0.12)" },

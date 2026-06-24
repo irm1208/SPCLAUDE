@@ -678,7 +678,8 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         const tn = p.trackingNumber ?? "";
         const status = p.status ?? "pending";
         const parcelDonePm = status === "delivered";
-        const emoji = parcelDonePm ? "✅" : status === "out_for_delivery" ? "🚚" : status === "attempted" ? "⚠️" : status === "exception" ? "🚨" : "📍";
+        const PARCEL_EMOJI_PM: Record<string, string> = { pending: "⏳", in_transit: "🚀", out_for_delivery: "🚚", attempted: "⚠️", delivered: "✅", exception: "🚨", expired: "💨" };
+        const emoji = PARCEL_EMOJI_PM[status] ?? "📦";
 
         const u = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const d = "0123456789";
@@ -862,10 +863,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       const fmtDate3 = (raw: string): string => { try { const d = new Date(raw); if (isNaN(d.getTime())) return raw; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getUTCDate())}-${pad(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; } catch { return raw; } };
 
       const sections: string[] = [`<b>${gb?.name ?? gbId}</b> — your packages:\n`];
+      const PARCEL_EMOJI_ALL: Record<string, string> = { pending: "⏳", in_transit: "🚀", out_for_delivery: "🚚", attempted: "⚠️", delivered: "✅", exception: "🚨", expired: "💨" };
       for (const p of memberParcels2) {
         const status = p.status ?? "pending";
         const parcelDone = status === "delivered";
-        const emoji = parcelDone ? "✅" : status === "out_for_delivery" ? "🚚" : status === "attempted" ? "⚠️" : status === "exception" ? "🚨" : "📍";
+        const emoji = PARCEL_EMOJI_ALL[status] ?? "📦";
         const events = (p.cachedEvents ?? []) as Array<{ date: string; status: string; location?: string }>;
         const latestEvent = events[0];
         const latestLine = latestEvent ? `\nLatest: ${fmtDate3(latestEvent.date)} — ${translateZh(latestEvent.status)}` : "";
@@ -998,7 +1000,8 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         const tn = parcel.trackingNumber ?? "";
         const status = parcel.status ?? "pending";
         const parcelDonePs = status === "delivered";
-        const emoji = parcelDonePs ? "✅" : status === "out_for_delivery" ? "🚚" : status === "attempted" ? "⚠️" : status === "exception" ? "🚨" : "📍";
+        const PARCEL_EMOJI_PS: Record<string, string> = { pending: "⏳", in_transit: "🚀", out_for_delivery: "🚚", attempted: "⚠️", delivered: "✅", exception: "🚨", expired: "💨" };
+        const emoji = PARCEL_EMOJI_PS[status] ?? "📦";
 
         const u = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const d = "0123456789";
