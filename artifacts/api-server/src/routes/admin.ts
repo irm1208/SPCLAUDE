@@ -7011,17 +7011,18 @@ router.get("/admin/scheduled-announcements", async (req, res): Promise<void> => 
 router.post("/admin/scheduled-announcements", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { title, message, sendAt, groupBuyId } = req.body;
-  if (!title || !message || !sendAt) {
-    res.status(400).json({ error: "title, message and sendAt are required" });
+  const { title, message, body, sendAt, groupBuyId, targetType } = req.body;
+  const msgText = message || body;
+  if (!title || !msgText) {
+    res.status(400).json({ error: "title and message are required" });
     return;
   }
 
   const [row] = await db.insert(scheduledAnnouncementsTable).values({
     id: randomUUID(),
     title: String(title).trim(),
-    message: String(message).trim(),
-    sendAt: new Date(sendAt),
+    message: String(msgText).trim(),
+    sendAt: sendAt ? new Date(sendAt) : new Date(),
     groupBuyId: groupBuyId || null,
   }).returning();
 

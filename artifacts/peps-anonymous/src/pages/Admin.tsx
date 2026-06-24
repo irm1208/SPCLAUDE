@@ -8932,7 +8932,7 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
   const [announcements, setAnnouncements] = useState<ScheduledAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: "", body: "", scheduledFor: "", targetType: "all" });
+  const [form, setForm] = useState({ title: "", body: "", targetType: "all" });
   const [creating, setCreating] = useState(false);
   const [sendingNow, setSendingNow] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -8955,20 +8955,37 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
   const create = async () => {
     if (!form.title.trim() || !form.body.trim()) return;
     setCreating(true);
-    const res = await fetch(apiUrl("/admin/scheduled-announcements"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-      body: JSON.stringify({ title: form.title.trim(), body: form.body.trim(), scheduledFor: form.scheduledFor ? (() => { const m = form.scheduledFor.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` : form.scheduledFor; })() : null, targetType: form.targetType }),
-    });
-    if (res.ok) { await load(); setShowCreate(false); setForm({ title: "", body: "", scheduledFor: "", targetType: "all" }); setMsg("Created ✓"); }
-    else setMsg("Failed to create");
+    setMsg("");
+    try {
+      const res = await fetch(apiUrl("/admin/scheduled-announcements"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ title: form.title.trim(), body: form.body.trim(), targetType: form.targetType }),
+      });
+      if (!res.ok) throw new Error("Failed to create");
+      const created = await res.json();
+      const sendRes = await fetch(apiUrl(`/admin/scheduled-announcements/${created.id}/send`), {
+        method: "POST", headers: { "x-admin-secret": secret },
+      });
+      const sendData = await sendRes.json();
+      if (sendRes.ok) {
+        setMsg(`Sent to ${sendData.sent ?? "?"} recipients ✓`);
+        setShowCreate(false);
+        setForm({ title: "", body: "", targetType: "all" });
+        await load();
+      } else {
+        setMsg("Created but send failed — check bot token");
+      }
+    } catch {
+      setMsg("Failed to send");
+    }
     setCreating(false);
-    setTimeout(() => setMsg(""), 3000);
+    setTimeout(() => setMsg(""), 5000);
   };
 
   const sendNow = async (id: string) => {
     setSendingNow(id);
-    const res = await fetch(apiUrl(`/admin/scheduled-announcements/${id}/send-now`), { method: "POST", headers: { "x-admin-secret": secret } });
+    const res = await fetch(apiUrl(`/admin/scheduled-announcements/${id}/send`), { method: "POST", headers: { "x-admin-secret": secret } });
     const data = await res.json();
     if (res.ok) { setMsg(`Sent to ${data.sent ?? "?"} recipients ✓`); await load(); }
     else setMsg("Send failed");
@@ -9017,7 +9034,7 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
 
       {showCreate && (
         <Card className="p-4 space-y-3">
-          <p className="text-sm font-semibold">New Announcement</p>
+          <p className="text-sm font-semibold">New Broadcast</p>
           <div className="space-y-1">
             <Label className="text-xs">Title</Label>
             <Input value={form.title} onChange={e => setF("title", e.target.value)} placeholder="Announcement title" />
@@ -9025,22 +9042,7 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
           <div className="space-y-1">
             <Label className="text-xs">Message</Label>
             <textarea className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm min-h-[100px] resize-y focus:outline-none focus:ring-2 focus:ring-primary"
-              value={form.body} onChange={e => setF("body", e.target.value)} placeholder="Announcement body text…" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Schedule (optional)</Label>
-              <Input type="text" inputMode="numeric" value={form.scheduledFor} onChange={e => setF("scheduledFor", e.target.value)} placeholder="DD/MM/YYYY" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Target</Label>
-              <select className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={form.targetType} onChange={e => setF("targetType", e.target.value)}>
-                <option value="all">All Members</option>
-                <option value="active">Active Members</option>
-                <option value="paid">Paid Members</option>
-              </select>
-            </div>
+              value={form.body} onChange={e => setF("body", e.target.value)} placeholder="Message text…" />
           </div>
           {/* Test send */}
           <div className="border-t border-border pt-3 space-y-2">
@@ -9072,8 +9074,8 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
 
           <div className="flex gap-2">
             <Button onClick={create} disabled={creating || !form.title.trim() || !form.body.trim()} className="gap-1.5">
-              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Create
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+              {creating ? "Sending…" : "Send now"}
             </Button>
             <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
           </div>
