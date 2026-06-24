@@ -628,6 +628,10 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
     // CONDITIONAL update gated on status='open' — if a concurrent lock/cancel won
     // the race after our precheck, no row updates and we respond 409 rather than
     // mutating the shipping snapshot of an already-locked share.
+    // Onward payout details belong to the PREVIOUS recipient — they must never be
+    // surfaced under the new recipient or participants could pay the wrong person.
+    // Disable onward shipping and wipe the structured payout fields so the new
+    // recipient must re-enable and publish their OWN details (PUT .../onward).
     const changed = await db.update(wholesaleSharesTable)
       .set({
         deliveryUsername: deliveryMember.username,
@@ -636,6 +640,13 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
         shippingEmail: addr?.email ?? null,
         shippingAddress: addr?.address ?? null,
         shippingCountry: addr?.country ?? null,
+        onwardShippingEnabled: false,
+        reshipperWalletAddress: null,
+        reshipperWalletCurrency: null,
+        reshipperAnonpay: null,
+        reshipperPaypal: null,
+        reshipperRevolut: null,
+        reshipperPaymentInfo: null,
       })
       .where(and(
         eq(wholesaleSharesTable.id, share.id),
@@ -646,6 +657,11 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
       res.status(409).json({ error: "This shared order is no longer open." });
       return;
     }
+    // A new person now receives the money, so every prior "onward paid" confirmation
+    // is invalid — clear them all so nobody appears paid to the new recipient.
+    await db.update(wholesaleShareMembersTable)
+      .set({ reshipperFeePaid: false })
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
   }
 
   const updated = await loadShare(share.id);
@@ -1175,6 +1191,10 @@ router.post("/wholesale-shares/:id/fees/confirm", requireWholesale, async (req, 
   }
   if (feeType === "reshipper" && !isRecipient) {
     res.status(403).json({ error: "Only the parcel recipient can confirm reshipper fees." });
+    return;
+  }
+  if (feeType === "reshipper" && !share.onwardShippingEnabled) {
+    res.status(409).json({ error: "Onward shipping is not enabled for this shared order." });
     return;
   }
 
