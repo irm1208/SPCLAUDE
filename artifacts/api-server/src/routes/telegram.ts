@@ -1503,15 +1503,29 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
         const gbId = action.slice("track_gb:".length);
         const trackingUsername = linked.telegramUsername.replace(/^@/, "").toLowerCase();
+        const trackingUsernameAt = `@${trackingUsername}`;
 
-        // Find all orders for this user in this specific GB
+        // Only paid/confirmed orders — mirrors the website's visibility rules exactly
         const memberOrders = await db
-          .select({ id: ordersTable.id, groupBuyId: ordersTable.groupBuyId, reshipperUsername: ordersTable.reshipperUsername, countryLegId: ordersTable.countryLegId, routingType: ordersTable.routingType })
+          .select({
+            id: ordersTable.id,
+            reshipperUsername: ordersTable.reshipperUsername,
+            countryLegId: ordersTable.countryLegId,
+            routingType: ordersTable.routingType,
+            directShippingRequested: ordersTable.directShippingRequested,
+            trackingNumber: ordersTable.trackingNumber,
+            trackingNumbers: ordersTable.trackingNumbers,
+            status: ordersTable.status,
+          })
           .from(ordersTable)
           .where(and(
-            sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${trackingUsername}`,
+            inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
             eq(ordersTable.groupBuyId, gbId),
             isNull(ordersTable.deletedAt),
+            or(
+              sql`lower(${ordersTable.telegramUsername}) = ${trackingUsernameAt}`,
+              sql`lower(${ordersTable.telegramUsername}) = ${trackingUsername}`,
+            ),
           ));
 
         if (memberOrders.length === 0) {
@@ -1532,11 +1546,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           .from(gbParcelsTable)
           .where(eq(gbParcelsTable.groupBuyId, gbId));
 
-        // Build item name sets from the user's line items
+        // Build item name sets from the user's paid order line items
         const memberOrderIds = memberOrders.map(o => o.id);
         const memberLineItems = memberOrderIds.length > 0
           ? await db
-              .select({ productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity, orderId: orderLineItemsTable.orderId })
+              .select({ productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity })
               .from(orderLineItemsTable)
               .where(inArray(orderLineItemsTable.orderId, memberOrderIds))
           : [];
@@ -1551,14 +1565,22 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           if (existing) { existing.qty += qty; } else { gbItemQty.set(key, { name: li.productName.trim(), qty }); }
         }
 
-        // Build set of reshippers this member is assigned to for this GB.
+        // Build set of reshippers this member is assigned to
         const assignedReshippers = new Set<string>();
         for (const order of memberOrders) {
           if (order.reshipperUsername) assignedReshippers.add(order.reshipperUsername.replace(/^@/, "").toLowerCase());
         }
-        const nonDirectLegOrders = memberOrders.filter(o => o.countryLegId && o.routingType !== "direct");
-        if (nonDirectLegOrders.length > 0) {
-          const legIds = [...new Set(nonDirectLegOrders.map(o => o.countryLegId!))];
+        // Include own handle: covers members who are also reshippers in the same GB
+        assignedReshippers.add(trackingUsername);
+
+        // Reshipper-routed orders (exclude direct-shipping — same logic as website)
+        const reshipperOrderRows = memberOrders.filter(o => {
+          if (o.routingType === "direct") return false;
+          if (o.routingType === "reshipper") return true;
+          return !o.directShippingRequested;
+        });
+        const legIds = [...new Set(reshipperOrderRows.map(o => o.countryLegId).filter(Boolean) as string[])];
+        if (legIds.length > 0) {
           const legRows = await db
             .select({ id: gbCountryLegsTable.id, countryCode: gbCountryLegsTable.countryCode, gbId: gbCountryLegsTable.gbId })
             .from(gbCountryLegsTable)
@@ -1578,30 +1600,73 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           }
         }
 
-        // Also include the member's own username: covers the case where they are a GB
-        // reshipper and their parcels are labelled with their own handle.
-        assignedReshippers.add(trackingUsername);
+        const isDirect = reshipperOrderRows.length === 0;
+        const hasExplicitReshipperAssignment = memberOrders.some(o => o.reshipperUsername) || legIds.length > 0;
 
-        // When the member has no routing assignment (no reshipper stamped on order, no
-        // country leg) beyond the self-seed, the organiser hasn't tagged their orders.
-        // In that case drop the reshipper gate and match purely by item names so they
-        // can see all parcels containing their products regardless of which reshipper
-        // batch they were packed in.
-        const hasExplicitReshipperAssignment = memberOrders.some(o => o.reshipperUsername) || nonDirectLegOrders.length > 0;
+        // All reshipper names for this GB — used for label-based parcel attribution
+        const allGbReshipperRows = await db
+          .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
+          .from(gbReshippersTable)
+          .where(eq(gbReshippersTable.gbId, gbId));
+        const allGbReshipperNames = new Set(
+          allGbReshipperRows.map(r => r.reshipperUsername.replace(/^@/, "").toLowerCase())
+        );
 
-        // Filter parcels to only ones this member should see
+        // Filter GB parcels — mirrors website privacy logic exactly
         const memberParcels = parcels.filter(p => {
           const parcelItemList = ((p.items ?? []) as { name: string }[]);
           if (parcelItemList.length === 0) return false;
           if (gbItemNames.size === 0) return false;
-          // Must contain at least one item this member ordered
           if (!parcelItemList.some(i => gbItemNames.has(i.name.trim().toLowerCase()))) return false;
-          // Reshipper gate: only apply when the order has an explicit routing assignment
-          if (p.reshipperUsername && hasExplicitReshipperAssignment) {
-            return assignedReshippers.has(p.reshipperUsername.replace(/^@/, "").toLowerCase());
+          if (!hasExplicitReshipperAssignment) return true;
+
+          // Identify parcel's reshipper via explicit field OR label match (same as website)
+          const parcelReshipper = p.reshipperUsername
+            ? p.reshipperUsername.replace(/^@/, "").toLowerCase()
+            : (allGbReshipperNames.has(p.label.trim().toLowerCase()) ? p.label.trim().toLowerCase() : null);
+
+          if (parcelReshipper !== null) {
+            return assignedReshippers.has(parcelReshipper);
           }
-          return true;
+          // Non-reshipper parcel: only visible to direct-shipping customers
+          return isDirect;
         });
+
+        // Synthesise parcel entries from direct-shipping order tracking numbers —
+        // these appear on the website but have no corresponding GB parcel record
+        type BotParcel = { id: string; label: string; status: string; items: { name: string }[]; isSynthetic: boolean };
+        const directOrderParcels: BotParcel[] = [];
+        const directOrders = memberOrders.filter(o =>
+          o.routingType === "direct" || (o.routingType !== "reshipper" && o.directShippingRequested === true)
+        );
+        for (const o of directOrders) {
+          const nums: string[] = (Array.isArray(o.trackingNumbers) && (o.trackingNumbers as string[]).length)
+            ? (o.trackingNumbers as string[])
+            : (o.trackingNumber ? [o.trackingNumber] : []);
+          if (nums.length === 0) continue;
+          const syntheticStatus = (o.status === "Shipped" || o.status === "Completed") ? "in_transit"
+            : o.status === "Delivered" ? "delivered" : "pending";
+          nums.forEach((_, i) => {
+            directOrderParcels.push({
+              id: `order-${o.id}-${i}`,
+              label: nums.length > 1 ? `Your Parcel ${i + 1}` : "Your Parcel",
+              status: syntheticStatus,
+              items: memberLineItems.map(li => ({ name: li.productName })),
+              isSynthetic: true,
+            });
+          });
+        }
+
+        const allVisibleParcels: BotParcel[] = [
+          ...directOrderParcels,
+          ...memberParcels.map(p => ({
+            id: p.id,
+            label: p.label,
+            status: p.status ?? "pending",
+            items: (p.items ?? []) as { name: string }[],
+            isSynthetic: false,
+          })),
+        ];
 
         const [gbRow] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
         const gbName = gbRow?.name ?? gbId;
@@ -1617,7 +1682,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 
         const keyboard: { text: string; url?: string; callback_data?: string }[][] = [];
 
-        if (memberParcels.length === 0) {
+        if (allVisibleParcels.length === 0) {
           await sendTelegramMessageFull(
             cbChatId,
             `📦 <b>${gbName}</b>\n\nNo packages have been dispatched for you yet.`,
@@ -1629,18 +1694,20 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           res.json({ ok: true }); return;
         }
 
-        const lines = memberParcels.map(p => {
+        const lines = allVisibleParcels.map(p => {
           const emoji = PARCEL_STATUS_EMOJI[p.status] ?? "📦";
-          const label = PARCEL_STATUS_LABEL[p.status] ?? p.status;
-          const parcelItemList = ((p.items ?? []) as { name: string }[]);
-          const matchKeys = parcelItemList.length > 0
-            ? parcelItemList.map(i => i.name.trim().toLowerCase()).filter(k => gbItemQty.has(k))
-            : [...gbItemQty.keys()];
+          const statusLabel = PARCEL_STATUS_LABEL[p.status] ?? p.status;
+          const matchKeys = p.items
+            .map(i => i.name.trim().toLowerCase())
+            .filter(k => gbItemQty.has(k));
           const itemLines = matchKeys.length > 0
             ? "\n" + matchKeys.map(k => `  • ${gbItemQty.get(k)!.name}`).join("\n")
             : "";
-          keyboard.push([{ text: `📦 ${p.label}`, callback_data: `ps_menu:${p.id}` }]);
-          return `${emoji} <b>${p.label}</b> · ${label}${itemLines}`;
+          // Synthetic (direct-order) parcels have no GB parcel record to drill into
+          if (!p.isSynthetic) {
+            keyboard.push([{ text: `📦 ${p.label}`, callback_data: `ps_menu:${p.id}` }]);
+          }
+          return `${emoji} <b>${p.label}</b> · ${statusLabel}${itemLines}`;
         });
 
         keyboard.push([{ text: "📋 Not Yet Dispatched", callback_data: `ps_pending:${gbId}` }]);
