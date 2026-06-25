@@ -5,11 +5,40 @@ cd "$(dirname "$0")"
 
 echo "[start] Clearing any stale processes..."
 pkill -f "tsx.*src/index.ts" 2>/dev/null || true
+
 # Free only the ports this script owns.
 # Port 21503 is left free for the canvas artifact (Replit injects PORT=21503 for it).
 # This script's Vite runs on 21504 instead to avoid the conflict.
-fuser -k 5000/tcp 2>/dev/null || true
-fuser -k 21504/tcp 2>/dev/null || true
+#
+# NOTE: `fuser`/`lsof`/`ss` are not installed in this environment, so we resolve
+# the PID holding a port by reading /proc directly. Without this, stale Vite
+# processes survive restarts, keep port 21504, and force the new Vite onto 21508
+# while the 5000->21504 proxy keeps pointing at the dead port -> blank preview.
+kill_port() {
+  local port="$1" hp ino pid
+  hp=$(printf '%04X' "$port")
+  local inodes
+  inodes=$(awk -v hp="$hp" 'NR>1 && $4=="0A"{split($2,a,":"); if(a[2]==hp) print $10}' \
+    /proc/net/tcp /proc/net/tcp6 2>/dev/null | sort -u)
+  for ino in $inodes; do
+    for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+      if ls -l "/proc/$pid/fd" 2>/dev/null | grep -q "socket:\[$ino\]"; then
+        echo "[start] Freeing port $port (killing stale PID $pid)"
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+  done
+  return 0
+}
+
+# Fall back to fuser when it exists; otherwise use the /proc-based killer.
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k 5000/tcp 2>/dev/null || true
+  fuser -k 21504/tcp 2>/dev/null || true
+else
+  kill_port 5000 || true
+  kill_port 21504 || true
+fi
 sleep 1
 
 # Vite runs on port 21504 (canvas artifact owns 21503).

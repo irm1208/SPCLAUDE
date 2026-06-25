@@ -23,20 +23,27 @@ running makes them FAIL with `DIDNT_OPEN_A_PORT` (8080 / 21504 already bound) �
 spurious, harmless failure, not a real bug. To reload env/secrets, restart only
 **Start application** (and mockup-sandbox if needed).
 
-# Blank preview recovery (orphan start.sh trap)
+# Blank/broken preview recovery (orphan vite steals 21504)
 
-Symptom: preview pane is fully blank but `curl :5000` still returns *something*.
-Cause: repeated restarts leave **orphaned `start.sh` instances** (saw 5 at once).
-Each orphan ran its own `5000→21504` proxy + a Vite. When a fresh Start application
-can't bind 21504 (an orphan holds it) it lands on 21505–21508, but its proxy still
-forwards 5000→21504 → serves a stale/empty orphan Vite → blank screen.
+Symptom: preview pane is blank OR `curl :5000` returns 503/000; Start application log
+shows `Port 21504 is in use … Local: http://localhost:21508/` while the proxy still
+says `5000 → 21504`. Cause: stale **peps-anonymous Vite** processes from earlier
+restarts survive and keep 21504-2150x, so the fresh Vite lands on 21508 but the
+proxy keeps pointing at 21504 → broken preview.
 
-**Fix (do NOT just restart — orphans survive a workflow restart):**
-1. `fuser -k 5000/tcp 21504/tcp` — kill whoever holds the preview-path ports **by
-   port**, so the artifact `web` workflow's own Vite (on a different 2150x port) is
-   left alone. Killing by process name would also nuke/respawn-race that one.
-2. `pkill -f "bashr[c] start.sh"` — kill all orphan start.sh (bracket avoids self-match).
-3. Restart ONLY **Start application**; start.sh re-frees 5000/21504 and rebinds.
-4. Verify `curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/` == 200 and
-   screenshot the app. The `wss://localhost … ERR_CONNECTION_REFUSED` HMR warning and
-   a 401 on the account fetch (when logged out) are harmless dev noise.
+**Root cause of recurrence:** `fuser`/`lsof`/`ss`/`netstat` are **NOT installed** in
+this environment, so start.sh's old `fuser -k 21504/tcp` cleanup silently no-opped
+and orphans were never killed. start.sh now self-heals: a `/proc`-based `kill_port()`
+(parse `/proc/net/tcp{,6}` state 0A for the port's inode → find owning PID via
+`/proc/<pid>/fd`) frees 5000+21504 before binding. So a plain **restart of Start
+application now fixes it** — no manual port-killing needed going forward.
+
+**Manual recovery if ever needed again (no fuser available):**
+1. Use the `/proc` kill-by-port approach above to free 21504-21507 (NOT 21503 =
+   canvas artifact, NOT the live one). Killing peps-anonymous vite by cmdline is
+   unsafe — the canvas artifact runs the identical `vite --config vite.config.ts`.
+2. Restart ONLY **Start application**; confirm log shows `Local: http://localhost:21504/`
+   and `curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/` == 200.
+3. Live log via getWorkflowStatus, not /tmp/logs/*.log (that file is stale/rotated).
+   `wss://localhost … ERR_CONNECTION_REFUSED` HMR + a 401 account fetch (logged out)
+   are harmless dev noise.
