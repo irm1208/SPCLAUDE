@@ -118,6 +118,9 @@ export const ordersTable = pgTable("orders", {
   dispatchedByReshipper: text("dispatched_by_reshipper"),
   // Set when admin archives the order from the Dispatched Orders tab (soft-archive, not deleted)
   dispatchArchivedAt: timestamp("dispatch_archived_at", { withTimezone: true }),
+  // When set, this order is a top-up for an existing order. Permanently enforces free shipping
+  // and locks the delivery address to match the original order.
+  additionOfOrderId: text("addition_of_order_id"),
 }, (t) => [
   index("orders_telegram_username_idx").on(t.telegramUsername),
   index("orders_group_buy_id_idx").on(t.groupBuyId),
@@ -125,6 +128,7 @@ export const ordersTable = pgTable("orders", {
   index("orders_shipping_country_idx").on(t.shippingCountry),
   index("orders_created_at_idx").on(t.createdAt),
   index("orders_deleted_at_idx").on(t.deletedAt),
+  index("orders_addition_of_order_id_idx").on(t.additionOfOrderId),
 ]);
 
 export const orderNotesTable = pgTable("order_notes", {
