@@ -38,10 +38,9 @@ import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine } from "@/components/wholesale-shared/payment-fields";
-import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
 import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
-import { buildGuide, GUIDE_ANCHORS, type GuideTarget } from "@/components/wholesale-shared/next-step";
+import { buildGuide, GUIDE_ANCHORS } from "@/components/wholesale-shared/next-step";
 
 interface ProductLite {
   id: string;
@@ -226,14 +225,11 @@ export default function WholesaleShared() {
   // completed flag is remembered per share so a return visit skips the gate.
   const [setupDismissed, setSetupDismissed] = useState(false);
 
-  // Guided onboarding overlay (presentation only).
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [flashAnchor, setFlashAnchor] = useState<string | null>(null);
   // One-time "invite others" popup, shown after a member saves their items.
   const [invitePromptOpen, setInvitePromptOpen] = useState(false);
   const markInvitePromptSeen = useMarkWholesaleInvitePromptSeen();
   const invitePromptFired = useRef(false);
-  const autoOpenedRef = useRef<string | null>(null);
 
   // Gate: wholesale members only
   useEffect(() => {
@@ -281,20 +277,6 @@ export default function WholesaleShared() {
     try { done = !!localStorage.getItem(`peps:ws-setup-done:${id}`); } catch { /* ignore */ }
     setSetupDismissed(done);
   }, [id]);
-
-  // Auto-open the legacy setup overlay once per role-moment, remembered per share so
-  // it never nags on return visits. Skipped while the progressive setup gate is on
-  // screen — the gate is the onboarding there, so the overlay would clash.
-  useEffect(() => {
-    if (setupGateActive) return;
-    if (!autoMoment || !id) return;
-    const key = `${id}:${autoMoment}`;
-    if (autoOpenedRef.current === key) return;
-    autoOpenedRef.current = key;
-    let seen = false;
-    try { seen = !!localStorage.getItem(`peps:ws-wizard-seen:${key}`); } catch { /* ignore */ }
-    if (!seen) setWizardOpen(true);
-  }, [autoMoment, id, setupGateActive]);
 
   // Per-member, per-share localStorage key for this member's unsaved draft. Null
   // until the account is loaded so we never read/write a non-namespaced key.
@@ -879,24 +861,7 @@ export default function WholesaleShared() {
   const markWizardSeen = () => {
     if (autoMoment && id) { try { localStorage.setItem(`peps:ws-wizard-seen:${id}:${autoMoment}`, "1"); } catch { /* ignore */ } }
   };
-  const closeWizard = () => { setWizardOpen(false); markWizardSeen(); };
 
-  // Guide CTAs act inline (copy invite), navigate (pay), or close the overlay and
-  // scroll+flash the real control on the page — the page stays the source of truth.
-  const handleGuideAction = (target: GuideTarget) => {
-    if (target.kind === "copyInvite") { copy(shareLink, "link"); return; }
-    setWizardOpen(false);
-    markWizardSeen();
-    if (target.kind === "payOrder") { if (myMember?.orderId) setLocation(`/account/orders/${myMember.orderId}`); return; }
-    if (target.kind === "scroll") {
-      const anchor = target.anchor;
-      requestAnimationFrame(() => {
-        document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
-        setFlashAnchor(anchor);
-        window.setTimeout(() => setFlashAnchor(null), 1600);
-      });
-    }
-  };
   const flashStyle = (anchor: string) =>
     flashAnchor === anchor
       ? { boxShadow: "0 0 0 2px var(--t-blue)", borderRadius: 16, transition: "box-shadow 0.2s" }
@@ -1061,42 +1026,6 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Order breakdown (per-member items) — shown inside the Group & order details card,
-  // visible to the organiser and the delivery recipient only.
-  const sectionOrderBreakdown = showOrderBreakdown ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Breakdown</p>
-      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
-        {share.members.map(m => (
-          <div key={m.username} className="px-3 py-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
-                @{m.username.replace(/^@/, "")}
-                {m.isYou && <span className="text-[10px] ml-1 font-normal" style={{ color: "var(--t-muted)" }}>(you)</span>}
-                {m.isRecipient && <span className="text-[10px] ml-1 font-semibold" style={{ color: "#15803d" }}> · recipient</span>}
-              </p>
-              <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
-                {m.kits} kit{m.kits === 1 ? "" : "s"} · {money(m.subtotal)}
-              </span>
-            </div>
-            {m.items.length > 0 ? (
-              <ul className="space-y-1">
-                {m.items.map((it, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
-                    <span className="min-w-0 truncate">{it.productName}</span>
-                    <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No items added yet.</p>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  ) : null;
-
   const sectionGroup = (
     <ExpandableCard
       title="Group & order details"
@@ -1104,7 +1033,7 @@ export default function WholesaleShared() {
       summary={`${share.memberCount}/${share.maxMembers} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
       defaultOpen={false}
     >
-      <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
+      <GroupTracker share={share} showItems={showOrderBreakdown} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
       <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Order details</p>
         <div className="space-y-1">
@@ -1135,11 +1064,6 @@ export default function WholesaleShared() {
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
       </div>
-      {sectionOrderBreakdown && (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--t-border)" }}>
-          {sectionOrderBreakdown}
-        </div>
-      )}
       {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
@@ -2051,17 +1975,6 @@ export default function WholesaleShared() {
             )}
 
             {setupGateActive ? setupGateView : fullView}
-
-            {guide && (
-              <SetupWizard
-                open={wizardOpen}
-                onClose={closeWizard}
-                plan={guide}
-                share={share}
-                onAction={handleGuideAction}
-                copiedInvite={copied === "link"}
-              />
-            )}
 
             <InvitePrompt
               open={invitePromptOpen}

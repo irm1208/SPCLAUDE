@@ -5,6 +5,8 @@ import type { WholesaleShareDetail } from "@/hooks/use-wholesale-shares";
 interface GroupTrackerProps {
   share: WholesaleShareDetail;
   onPayMember: (orderId: string) => void;
+  // When true, show each member's per-product item breakdown inside their row.
+  showItems?: boolean;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -41,7 +43,7 @@ function Chip({ ok, label, neutralLabel, icon }: { ok: boolean; label: string; n
 
 // Per-member status list with progress chips so everyone can see where the group
 // stands. Presentation-only — same data the page already shows, just clearer.
-export function GroupTracker({ share, onPayMember }: GroupTrackerProps) {
+export function GroupTracker({ share, onPayMember, showItems = false }: GroupTrackerProps) {
   const isOpen = share.status === "open";
   const d = share.delivery;
   // Mirror the page's deliveryComplete check so the chip can't claim "Address set"
@@ -91,6 +93,16 @@ export function GroupTracker({ share, onPayMember }: GroupTrackerProps) {
             )}
             {!isOpen && <PayChip paymentStatus={m.paymentStatus} />}
           </div>
+          {showItems && m.items.length > 0 && (
+            <ul className="space-y-1 pt-2 mt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
+              {m.items.map((it, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
+                  <span className="min-w-0 truncate">{it.productName}</span>
+                  <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ))}
     </div>
