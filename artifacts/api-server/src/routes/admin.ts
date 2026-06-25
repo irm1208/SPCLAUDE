@@ -3843,14 +3843,16 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
 
   for (const li of vendorLineItems) {
     const gbId = orderGbMap.get(li.orderId) ?? null;
-    // Key by productId when present (so two distinct products that share a name
-    // stay separate, each with its own stock); fall back to name for null-id items.
-    const key = `${li.productId ?? li.productName}||${gbId ?? ""}`;
+    const gb = gbId ? gbMap.get(gbId) : undefined;
+    const vendor = gb?.vendor ?? productVendorMap.get(li.productId) ?? null;
+    // Key by productId (or name) + vendor so the same product always merges into one
+    // row regardless of whether its orders are inside a group buy or not.  Keying on
+    // gbId caused duplicate rows when the same catalog product appeared in both GB and
+    // non-GB orders.  Different vendors for the same product ID stay separate (correct).
+    const key = `${li.productId ?? li.productName}||${vendor ?? ""}`;
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
     if (!productMap.has(key)) {
-      const gb = gbId ? gbMap.get(gbId) : undefined;
-      const vendor = gb?.vendor ?? productVendorMap.get(li.productId) ?? null;
       const stockInfo = li.productId ? productStockMap.get(li.productId) : undefined;
       productMap.set(key, {
         name: li.productName,
@@ -3863,6 +3865,14 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
         stock: stockInfo?.stock ?? null,
         lowStockThreshold: stockInfo?.lowStockThreshold ?? null,
       });
+    } else {
+      // If this line item comes from a different GB context than the existing row,
+      // clear the GB fields — the merged row spans multiple contexts.
+      const entry = productMap.get(key)!;
+      if (entry.groupBuyId !== gbId) {
+        entry.groupBuyId = null;
+        entry.groupBuyName = null;
+      }
     }
     const entry = productMap.get(key)!;
     entry.totalQty += qty;
