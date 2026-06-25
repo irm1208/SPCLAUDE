@@ -105,6 +105,7 @@ interface OrderDetail {
   directShippingEnabled?: boolean;
   directShippingCost?: number | null;
   routingType?: string | null;
+  additionOfOrderId?: string | null;
   batchLocked?: boolean | null;
   notes: string | null;
   status: string;
@@ -2362,8 +2363,26 @@ export default function AccountOrderDetail() {
                     </Card>
                   )}
 
-                  {/* Delivery Address — shown when the chosen shipping option requires it, for Royal Mail, or for direct-shipping GB orders */}
-                  {(order.customShippingRequiresAddress || order.deliveryMethod?.toLowerCase().includes("royal") || order.directShippingRequested) && (
+                  {/* Delivery Address — additions ride along with the original order, so the address
+                      is locked (read-only). Otherwise show the editable section when the chosen
+                      shipping option requires it, for Royal Mail, or for direct-shipping GB orders. */}
+                  {order.additionOfOrderId ? (
+                    (order.shippingAddress || order.shippingName) ? (
+                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
+                            <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Delivery Address</p>
+                            <p className="text-xs mb-1.5" style={{ color: "var(--t-muted)" }}>Ships with your original order — this address can&apos;t be changed.</p>
+                            {order.shippingName && <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>{order.shippingName}</p>}
+                            {order.shippingAddress && <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-subtle)" }}>{order.shippingAddress}</p>}
+                          </div>
+                        </div>
+                      </Card>
+                    ) : null
+                  ) : (order.customShippingRequiresAddress || order.deliveryMethod?.toLowerCase().includes("royal") || order.directShippingRequested) && (
                     ["confirmed", "pending_confirmation", "test_confirmed"].includes(order.paymentStatus) ? (
                       <AccountShippingAddressSection
                         orderId={order.id}

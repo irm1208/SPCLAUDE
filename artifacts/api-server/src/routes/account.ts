@@ -309,6 +309,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
       addressPhonePrefix: accountsTable.addressPhonePrefix,
       credits: accountsTable.credits,
       isWholesale: accountsTable.isWholesale,
+      wholesaleInvitePromptSeenAt: accountsTable.wholesaleInvitePromptSeenAt,
     })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, tg));
@@ -345,6 +346,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
     addressPhonePrefix: acct?.addressPhonePrefix ?? null,
     credits: acct?.credits ?? 0,
     isWholesale: acct?.isWholesale ?? false,
+    wholesaleInvitePromptSeen: !!acct?.wholesaleInvitePromptSeenAt,
     groupBuys: memberships,
     rulesetVersion,
     ruleAcceptedVersion,
@@ -1316,6 +1318,23 @@ router.put("/account/wholesale-draft", requireAccount, async (req, res): Promise
     .set({ wholesaleDraft: draft })
     .where(eq(accountsTable.telegramUsername, tg));
   res.json({ ok: true });
+});
+
+// POST /api/account/wholesale-invite-prompt-seen — remember (once per account) that
+// the customer has seen the shared-order "invite others" nudge, so it isn't shown
+// again on any device. Idempotent: only stamps the first time (preserves first-seen).
+router.post("/account/wholesale-invite-prompt-seen", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  // Idempotent stamp: the IS NULL guard means only the very first call (per
+  // account) updates a row. `returning` lets us tell the caller whether THIS
+  // request did the stamping, so when several devices race with a stale
+  // "unseen" flag, exactly one of them is told to show the nudge.
+  const stamped = await db
+    .update(accountsTable)
+    .set({ wholesaleInvitePromptSeenAt: new Date() })
+    .where(and(eq(accountsTable.telegramUsername, tg), isNull(accountsTable.wholesaleInvitePromptSeenAt)))
+    .returning({ tg: accountsTable.telegramUsername });
+  res.json({ ok: true, newlyMarked: stamped.length > 0 });
 });
 
 // GET /api/account/orders — orders for the logged-in account, optionally filtered by gbId

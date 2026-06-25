@@ -1301,8 +1301,25 @@ export default function Lookup() {
                   />
                 )}
 
-                {/* Delivery Address (unlocked after payment, for all non-InPost methods or direct-shipping GB orders) */}
-                {(foundOrder.directShippingRequested || (foundOrder.deliveryMethod && !foundOrder.deliveryMethod.toLowerCase().includes("inpost"))) && (
+                {/* Delivery Address — additions ride along with the original order, so the address is
+                    locked (read-only). Otherwise unlocked after payment for non-InPost / direct-shipping orders. */}
+                {foundOrder.additionOfOrderId ? (
+                  (foundOrder.shippingAddress || foundOrder.shippingName) ? (
+                    <Card className="p-4 border-slate-200 bg-slate-50/60">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-700">Delivery Address</p>
+                          <p className="text-xs text-slate-400 mb-1.5">Ships with your original order — this address can&apos;t be changed.</p>
+                          {foundOrder.shippingName && <p className="text-sm font-medium text-slate-700">{foundOrder.shippingName}</p>}
+                          {foundOrder.shippingAddress && <p className="text-sm text-slate-600 whitespace-pre-line break-words">{foundOrder.shippingAddress}</p>}
+                        </div>
+                      </div>
+                    </Card>
+                  ) : null
+                ) : (foundOrder.directShippingRequested || (foundOrder.deliveryMethod && !foundOrder.deliveryMethod.toLowerCase().includes("inpost"))) && (
                   foundOrder.paymentStatus === "confirmed" ? (
                     <ShippingAddressSection
                       orderId={foundOrder.id}

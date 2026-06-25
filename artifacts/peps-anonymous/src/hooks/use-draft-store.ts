@@ -43,6 +43,11 @@ interface DraftState {
   // Delivery is always $0 for top-up orders
   isTopUp: boolean;
 
+  // When set, this draft is an "addition" (top-up) of the referenced parent order.
+  // The backend keeps delivery free and locks the address to the parent's; this carries
+  // the link so the create payload and an existing addition's edit screen stay consistent.
+  additionOfOrderId: string | null;
+
   // Lab Test Contribution ($15 optional)
   testingContribution: number;
 
@@ -121,6 +126,7 @@ export const useDraftStore = create<DraftState>()(
       notes: '',
       lineItems: [],
       isTopUp: false,
+      additionOfOrderId: null,
       testingContribution: 0,
       orderType: null,
       shippingName: '',
@@ -143,6 +149,7 @@ export const useDraftStore = create<DraftState>()(
             // Preserving it when the GB is the same allows the "Place Another Order" top-up
             // flow to keep its delivery-free flag after the OrderForm mounts.
             isTopUp: isChangingGb ? false : state.isTopUp,
+            additionOfOrderId: isChangingGb ? null : state.additionOfOrderId,
             // When switching to a different group buy, clear stale delivery, line items, and orderId
             ...(isChangingGb
               ? {
@@ -232,7 +239,10 @@ export const useDraftStore = create<DraftState>()(
           vendorShipping: order.vendorShipping,
           tip: order.tip,
           notes: order.notes || '',
-          isTopUp: false,
+          // An existing addition keeps free delivery and a locked address on edit; mirror that
+          // here so the edit screen shows the same state the backend will enforce.
+          isTopUp: !!(order as any).additionOfOrderId,
+          additionOfOrderId: (order as any).additionOfOrderId ?? null,
           directShippingRequested: isDirectShipping,
           shippingName: (order as any).shippingName ?? '',
           shippingPhone: (order as any).shippingPhone ?? '',
@@ -265,11 +275,22 @@ export const useDraftStore = create<DraftState>()(
         tip: 0,
         notes: '',
         isTopUp: true,
+        // Link to the parent order; the backend copies its address + routing and forces free
+        // shipping. Carry the parent's shipping fields so the review screen shows where it ships.
+        additionOfOrderId: order.id,
+        directShippingRequested: (order as any).directShippingRequested === true,
+        shippingName: (order as any).shippingName ?? '',
+        shippingPhone: (order as any).shippingPhone ?? '',
+        shippingEmail: (order as any).shippingEmail ?? '',
+        shippingAddress: (order as any).shippingAddress ?? '',
+        shippingCountry: (order as any).shippingCountry ?? '',
+        adminFee: 0,
+        adminFeeLabel: null,
         testingContribution: 0,
         lineItems: [{ id: generateId(), productId: '', productName: '', quantity: 1, unitPrice: 0, lineTotal: 0 }]
       }),
 
-      clearTopUp: () => set({ isTopUp: false, deliveryMethodId: '', deliveryMethod: '', deliveryPrice: 0 }),
+      clearTopUp: () => set({ isTopUp: false, additionOfOrderId: null, deliveryMethodId: '', deliveryMethod: '', deliveryPrice: 0 }),
 
       clearDraft: () => set({
         orderId: null,
@@ -283,6 +304,7 @@ export const useDraftStore = create<DraftState>()(
         tip: 0,
         notes: '',
         isTopUp: false,
+        additionOfOrderId: null,
         testingContribution: 0,
         orderType: null,
         shippingName: '',

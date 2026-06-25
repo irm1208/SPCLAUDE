@@ -17,6 +17,7 @@ export interface AccountMe {
   addressPhonePrefix?: string | null;
   credits?: number;
   isWholesale?: boolean;
+  wholesaleInvitePromptSeen?: boolean;
   rulesetVersion?: number;
   ruleAcceptedVersion?: number | null;
 }
@@ -360,6 +361,29 @@ export function useAssignMyCountryLeg(gbId: string | null) {
       qc.invalidateQueries({ queryKey: ["account", "group-buys"] });
       qc.refetchQueries({ queryKey: ["account", "group-buys"] });
       if (gbId) qc.invalidateQueries({ queryKey: ["group-buys", gbId, "country-legs"] });
+    },
+  });
+}
+
+// Remember (per account, server-side) that the customer has seen the shared-order
+// "invite others" nudge, so it never shows again on any device. Optimistically
+// flips the cached flag so it won't re-fire in the same session before refetch.
+export function useMarkWholesaleInvitePromptSeen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<{ ok: boolean; newlyMarked: boolean }> => {
+      const res = await fetch("/api/account/wholesale-invite-prompt-seen", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.setQueryData<AccountMe | null>(["account", "me"], (old) =>
+        old ? { ...old, wholesaleInvitePromptSeen: true } : old,
+      );
+      qc.invalidateQueries({ queryKey: ["account", "me"] });
     },
   });
 }

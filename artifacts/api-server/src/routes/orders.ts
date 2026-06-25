@@ -216,6 +216,7 @@ function formatOrderResponse(order: Record<string, unknown>, lineItems: Record<s
     inpostQrCode: (order.inpostQrCode as string | null) ?? null,
     royalMailQrCode: (order.royalMailQrCode as string | null) ?? null,
     groupBuyId: (order.groupBuyId as string | null) ?? null,
+    additionOfOrderId: (order.additionOfOrderId as string | null) ?? null,
     countryLegId: (order.countryLegId as string | null) ?? null,
     reshipperUsername: (order.reshipperUsername as string | null) ?? null,
     routingType: (order.routingType as string | null) ?? null,
@@ -345,6 +346,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     directShippingRequested: clientDirectShippingRequested,
     directShippingCost: clientDirectShippingCost,
     reshipperCode: clientReshipperCode,
+    additionOfOrderId: clientAdditionOfOrderId,
   } = req.body;
 
   if (!telegramUsername || typeof telegramUsername !== "string") {
@@ -375,10 +377,53 @@ router.post("/orders", async (req, res): Promise<void> => {
     ? clientGroupBuyId.trim().slice(0, 64)
     : null;
 
+  // ── Addition (top-up) order validation ────────────────────────────────────
+  // A non-null additionOfOrderId marks this as a free-shipping "addition" of a
+  // parent order: it rides along with the parent's shipment, so every shipping
+  // charge is forced to 0 and the shipping address is copied (locked) from the
+  // parent. Validate the parent belongs to the same customer and group buy.
+  let additionParent: typeof ordersTable.$inferSelect | null = null;
+  if (clientAdditionOfOrderId != null && clientAdditionOfOrderId !== "") {
+    const parentId = String(clientAdditionOfOrderId).slice(0, 64);
+    const [parent] = await db.select().from(ordersTable).where(eq(ordersTable.id, parentId));
+    if (!parent || parent.deletedAt || !safeEqual(parent.telegramUsername.toLowerCase(), tg)) {
+      res.status(400).json({ error: "Invalid original order for this addition" });
+      return;
+    }
+    if (parent.status === "Cancelled") {
+      res.status(400).json({ error: "Cannot add items to a cancelled order" });
+      return;
+    }
+    if (parent.paymentStatus !== "confirmed") {
+      res.status(400).json({ error: "Additions are only allowed on a paid order" });
+      return;
+    }
+    if (parent.additionOfOrderId) {
+      res.status(400).json({ error: "Cannot create an addition of an addition order" });
+      return;
+    }
+    if (parent.orderType === "wholesale") {
+      res.status(400).json({ error: "Wholesale orders do not support additions" });
+      return;
+    }
+    if ((parent.groupBuyId ?? null) !== normalizedGroupBuyId) {
+      res.status(400).json({ error: "Addition must belong to the same group buy as the original order" });
+      return;
+    }
+    additionParent = parent;
+  }
+
   let deliveryMethodRecord: { id: string; name: string; price: string } | null | undefined;
 
-  // Wholesale orders don't use a standard delivery method — vendor shipping is used instead
-  if (isWholesaleOrder) {
+  // Additions inherit the parent's delivery method label but never its price (always free).
+  if (additionParent) {
+    deliveryMethodRecord = {
+      id: additionParent.deliveryMethodId || "",
+      name: additionParent.deliveryMethod,
+      price: "0",
+    };
+  } else if (isWholesaleOrder) {
+    // Wholesale orders don't use a standard delivery method — vendor shipping is used instead
     deliveryMethodRecord = { id: "wholesale", name: "Vendor Shipping", price: "0" };
   } else if (String(deliveryMethodId) === "__direct_shipping" && clientDirectShippingRequested === true) {
     // Virtual method for vendor direct-to-home shipping — not in delivery_methods table
@@ -415,6 +460,7 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const deliveryPrice = parseFloat(deliveryMethodRecord.price);
   let vendorShipping = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  if (additionParent) vendorShipping = 0; // additions ride along free — no vendor shipping
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0)); // cap tip at $20
   const testingContribution = Math.max(0, parseFloat(String(clientTestingContribution)) || 0);
 
@@ -637,7 +683,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   // are computed against the product subtotal; fixed fees use the configured amount.
   // Direct-to-home orders never carry the admin fee, so keep both the fee and the
   // grand total consistent by zeroing it here (the insert below also clears it).
-  if (clientDirectShippingRequested === true) {
+  if (clientDirectShippingRequested === true || additionParent) {
     gbAdminFee = 0;
     gbAdminFeeLabel = null;
   } else if (gbAdminFeeEnabled && gbAdminFeeRaw != null) {
@@ -876,6 +922,27 @@ router.post("/orders", async (req, res): Promise<void> => {
       directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null
         ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
         : null,
+      // Additions (top-ups) ride along with the parent's shipment: lock the marker,
+      // copy the parent's shipping + routing fields, and force every fee to 0.
+      ...(additionParent ? {
+        additionOfOrderId: additionParent.id,
+        deliveryPrice: "0.00",
+        vendorShipping: "0.00",
+        adminFee: "0.00",
+        adminFeeLabel: null,
+        directShippingRequested: additionParent.directShippingRequested ?? false,
+        directShippingCost: null,
+        shippingName: additionParent.shippingName ?? null,
+        shippingPhone: additionParent.shippingPhone ?? null,
+        shippingEmail: additionParent.shippingEmail ?? null,
+        shippingAddress: additionParent.shippingAddress ?? null,
+        shippingCountry: additionParent.shippingCountry ?? null,
+        shippingCity: additionParent.shippingCity ?? null,
+        shippingPostcode: additionParent.shippingPostcode ?? null,
+        countryLegId: additionParent.countryLegId ?? null,
+        reshipperUsername: additionParent.reshipperUsername ?? null,
+        routingType: additionParent.routingType ?? null,
+      } : {}),
     })
     .returning();
 
@@ -1487,8 +1554,11 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
     return;
   }
 
-  const deliveryPrice = parseFloat(deliveryMethodRecord.price);
-  const vendorShipping = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  // Additions (top-ups) permanently ride along with the parent's shipment: ignore any
+  // client-sent delivery price / vendor shipping and force every shipping charge to 0.
+  const isAddition = !!order.additionOfOrderId;
+  const deliveryPrice = isAddition ? 0 : parseFloat(deliveryMethodRecord.price);
+  const vendorShipping = isAddition ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0));
 
   if (!Array.isArray(clientLineItems) || clientLineItems.length > MAX_LINE_ITEMS) {
@@ -1549,9 +1619,9 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
   // Resolve the admin fee for this edit. Fixed fees keep the amount stored on the order;
   // percentage fees are recomputed against the new subtotal so the fee tracks line-item changes.
   const storedAdminFee = parseFloat(String(order.adminFee ?? "0"));
-  let resolvedAdminFee = clientDirectShippingRequested === true ? 0 : storedAdminFee;
+  let resolvedAdminFee = (clientDirectShippingRequested === true || isAddition) ? 0 : storedAdminFee;
   let recomputedAdminFeeLabel: string | null | undefined =
-    clientDirectShippingRequested === true ? null : undefined;
+    (clientDirectShippingRequested === true || isAddition) ? null : undefined;
   // Only recompute percentage fees for orders that already carry an admin fee, so a percent fee
   // tracks line-item changes without retroactively adding a fee to orders that never had one
   // (mirrors the fixed-fee path, which preserves the stored amount).
@@ -1578,8 +1648,8 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
   const [updatedOrder] = await db
     .update(ordersTable)
     .set({
-      deliveryMethod: deliveryMethodRecord.name,
-      deliveryMethodId: deliveryMethodRecord.id,
+      deliveryMethod: isAddition ? order.deliveryMethod : deliveryMethodRecord.name,
+      deliveryMethodId: isAddition ? order.deliveryMethodId : deliveryMethodRecord.id,
       deliveryPrice: deliveryPrice.toFixed(2),
       vendorShipping: vendorShipping.toFixed(2),
       productSubtotal: productSubtotal.toFixed(2),
@@ -1589,10 +1659,12 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
       adminFee: resolvedAdminFee.toFixed(2),
       ...(recomputedAdminFeeLabel !== undefined && { adminFeeLabel: recomputedAdminFeeLabel }),
       notes: notes ? String(notes).trim().slice(0, MAX_NOTES_LENGTH) : null,
-      directShippingRequested: clientDirectShippingRequested === true,
-      directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null
-        ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
-        : null,
+      directShippingRequested: isAddition ? (order.directShippingRequested ?? false) : clientDirectShippingRequested === true,
+      directShippingCost: isAddition
+        ? null
+        : (clientDirectShippingRequested === true && clientDirectShippingCost != null
+          ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
+          : null),
       ...(isWholesaleOrder && {
         shippingName: clientShippingName ? String(clientShippingName).trim().slice(0, 256) : null,
         shippingPhone: clientShippingPhone ? String(clientShippingPhone).trim().slice(0, 64) : null,
@@ -1743,6 +1815,15 @@ router.post("/orders/:orderId/shipping-address", async (req, res): Promise<void>
   const storedPin = order.pin ?? "____";
   if (!safeEqual(order.telegramUsername.toLowerCase(), tg) || !safeEqual(storedPin, String(pin).trim())) {
     res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  // Additions (top-ups) inherit the parent order's address and ship together with it,
+  // so their address is locked — it can never be changed independently.
+  if (order.additionOfOrderId) {
+    res.status(403).json({
+      error: "This is an add-on to an earlier order — it ships to that order's address, which can't be changed here.",
+    });
     return;
   }
 
