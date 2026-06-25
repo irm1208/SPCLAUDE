@@ -12,6 +12,7 @@ import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
   joinWholesaleShare,
+  leaveWholesaleShare,
   setWholesaleShareItems,
   setWholesaleShareDelivery,
   setWholesaleShareDeliveryAddress,
@@ -718,6 +719,18 @@ export default function WholesaleShared() {
     catch (e) { setActionError((e as Error).message); setBusy(null); }
   };
 
+  const doLeave = async () => {
+    if (!id) return;
+    if (!window.confirm("Leave this shared order? You'll be removed and can rejoin later if it's still open.")) return;
+    setActionError(""); setBusy("leave");
+    try {
+      await leaveWholesaleShare(id);
+      if (draftKey) { try { localStorage.removeItem(draftKey); } catch { } }
+      setLocation("/wholesale");
+    }
+    catch (e) { setActionError((e as Error).message); setBusy(null); }
+  };
+
   const copy = (text: string, which: "code" | "link") => {
     navigator.clipboard?.writeText(text).then(() => {
       setCopied(which);
@@ -874,6 +887,17 @@ export default function WholesaleShared() {
                         {m.orderCode && ` · order #${m.orderCode}`}
                       </p>
                     </div>
+                    {isOpen && m.isYou && !m.isCreator && (
+                      <button
+                        onClick={doLeave}
+                        disabled={busy === "leave"}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-semibold"
+                        style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.20)" }}
+                      >
+                        {busy === "leave" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                        Leave
+                      </button>
+                    )}
                     {!isOpen && m.isYou && m.orderId && m.paymentStatus !== "confirmed" && share.status !== "cancelled" && (
                       <button
                         onClick={() => setLocation(`/account/orders/${m.orderId}`)}

@@ -216,6 +216,10 @@ export function joinWholesaleShare(id: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/join`, { method: "POST" });
 }
 
+export function leaveWholesaleShare(id: string) {
+  return request<{ ok: boolean }>(`/api/wholesale-shares/${id}/leave`, { method: "POST" });
+}
+
 export function setWholesaleShareItems(
   id: string,
   items: Array<{ productId: string; quantity: number }>,

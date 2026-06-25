@@ -545,6 +545,50 @@ router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Pr
   res.json(await buildShareResponse(share, me));
 });
 
+// POST /api/wholesale-shares/:id/leave — non-creator member leaves an open share
+router.post("/wholesale-shares/:id/leave", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status !== "open") {
+    res.status(409).json({ error: "This shared order is locked — you can no longer leave. Contact the organiser." });
+    return;
+  }
+  if (share.creatorUsername.toLowerCase() === me.toLowerCase()) {
+    res.status(400).json({ error: "As the organiser, you cannot leave — use Cancel instead." });
+    return;
+  }
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(404).json({ error: "You are not a member of this shared order." }); return; }
+
+  // If the leaving member is the designated delivery recipient, clear the delivery
+  // snapshot so the organiser must choose a new recipient before locking.
+  const isDelivery = share.deliveryUsername && share.deliveryUsername.toLowerCase() === me.toLowerCase();
+  if (isDelivery) {
+    await db.update(wholesaleSharesTable)
+      .set({
+        deliveryUsername: null,
+        shippingName: null,
+        shippingPhone: null,
+        shippingEmail: null,
+        shippingAddress: null,
+        shippingCountry: null,
+      })
+      .where(and(
+        eq(wholesaleSharesTable.id, share.id),
+        eq(wholesaleSharesTable.status, "open"),
+      ));
+  }
+
+  await db.delete(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.id, member.id));
+
+  await writeLog("order", "info", "wholesale_share_left",
+    `${me} left wholesale share ${share.id}`, { shareId: share.id, username: me }, req.ip);
+
+  res.json({ ok: true });
+});
+
 // PUT /api/wholesale-shares/:id/items — set the current member's items + tip
 router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
