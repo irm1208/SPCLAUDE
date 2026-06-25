@@ -339,7 +339,7 @@ async function runStartupMigrations(): Promise<void> {
         creator_username text NOT NULL,
         status text NOT NULL DEFAULT 'open',
         split_mode text NOT NULL DEFAULT 'even',
-        max_members integer NOT NULL DEFAULT 10,
+        max_members integer,
         vendor_id text,
         delivery_username text,
         shipping_name text,

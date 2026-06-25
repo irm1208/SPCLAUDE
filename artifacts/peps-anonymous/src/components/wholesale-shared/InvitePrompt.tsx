@@ -9,7 +9,7 @@ interface InvitePromptProps {
   onCopy: () => void;
   copied?: boolean;
   memberCount?: number;
-  maxMembers?: number;
+  maxMembers?: number | null;
 }
 
 // One-time nudge shown right after a member saves their items: invite more people

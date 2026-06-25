@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 
 // ── Shared Wholesale Orders ──────────────────────────────────────────────────
 // A "wholesale share" lets one wholesale member start a combined order and invite
-// up to MAX_WHOLESALE_SHARE_MEMBERS other wholesale members. Each member adds their
+// other wholesale members (the organiser can optionally cap the group size). Each member adds their
 // own items; the whole parcel ships to one chosen delivery member; everyone pays for
 // their own items; vendor shipping is split (evenly or by order size). The combined
 // order locks and is materialised into real per-member orders only after lock, and is
@@ -17,9 +17,6 @@ export type WholesaleShareStatus = typeof WHOLESALE_SHARE_STATUSES[number];
 // "by_size" = vendor shipping split proportionally to each member's kit count.
 export const WHOLESALE_SHARE_SPLIT_MODES = ["even", "by_size"] as const;
 export type WholesaleShareSplitMode = typeof WHOLESALE_SHARE_SPLIT_MODES[number];
-
-// Hard cap on total members in a single shared order (creator counts as one).
-export const MAX_WHOLESALE_SHARE_MEMBERS = 10;
 
 // Draft items held per member while the share is still open (before lock materialises orders).
 export type WholesaleShareItem = {
@@ -34,7 +31,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   creatorUsername: text("creator_username").notNull(),
   status: text("status").notNull().default("open"),
   splitMode: text("split_mode").notNull().default("even"),
-  maxMembers: integer("max_members").notNull().default(10),
+  maxMembers: integer("max_members"), // null = no limit on group size (organiser-set)
   // ── Organiser-set order rules (all optional; null = no limit) ────────────────
   // Per-person kit bounds and a total kit cap, enforced when members add items and
   // again at lock. A date/time deadline auto-locks the order once it's ready. An

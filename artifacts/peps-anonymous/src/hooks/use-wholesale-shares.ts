@@ -90,6 +90,7 @@ export interface WholesaleShareVendor {
 
 // Organiser-set order rules. Any field may be null (no limit / not set).
 export interface WholesaleShareSettings {
+  maxMembers: number | null; // null = no limit on group size
   minKitsPerMember: number | null;
   maxKitsPerMember: number | null;
   maxTotalKits: number | null;
@@ -102,7 +103,7 @@ export interface WholesaleShareDetail {
   id: string;
   status: WholesaleShareStatus;
   splitMode: WholesaleSplitMode;
-  maxMembers: number;
+  maxMembers: number | null;
   vendorId: string | null;
   creatorUsername: string;
   isCreator: boolean;
@@ -145,7 +146,7 @@ export interface WholesaleShareSummary {
   splitMode: WholesaleSplitMode;
   isCreator: boolean;
   memberCount: number;
-  maxMembers: number;
+  maxMembers: number | null;
   createdAt: string;
 }
 
@@ -356,6 +357,7 @@ export function confirmWholesaleShareFee(
 // Organiser sets the order rules (limits, deadline, allowed countries). Any field
 // sent as null/"" clears that rule. Organiser-only and editable while open.
 export interface WholesaleShareSettingsInput {
+  maxMembers?: number | null;
   minKitsPerMember?: number | null;
   maxKitsPerMember?: number | null;
   maxTotalKits?: number | null;

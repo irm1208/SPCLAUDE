@@ -74,7 +74,7 @@ export default function WholesaleShareEntry() {
                 <h1 className="text-xl font-bold" style={{ color: "var(--t-text)" }}>Shared Order</h1>
               </div>
               <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-                Pool one parcel with up to 10 members — everyone adds their own items and pays their own share, with vendor shipping split between you.
+                Pool one parcel with other members — everyone adds their own items and pays their own share, with vendor shipping split between you.
               </p>
             </div>
 
@@ -156,7 +156,7 @@ export default function WholesaleShareEntry() {
                     >
                       <span className="inline-flex items-center gap-2">
                         <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
-                        <span style={{ color: "var(--t-muted)" }}>{s.memberCount}/{s.maxMembers} · {s.isCreator ? "organiser" : "member"}</span>
+                        <span style={{ color: "var(--t-muted)" }}>{s.memberCount}{s.maxMembers != null ? `/${s.maxMembers}` : ""} · {s.isCreator ? "organiser" : "member"}</span>
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>

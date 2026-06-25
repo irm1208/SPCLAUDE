@@ -9,7 +9,6 @@ import {
   productsTable,
   accountsTable,
   WHOLESALE_SHARE_SPLIT_MODES,
-  MAX_WHOLESALE_SHARE_MEMBERS,
   type WholesaleShareItem,
   type WholesaleShareSplitMode,
 } from "@workspace/db";
@@ -321,6 +320,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     deadlinePassed: share.lockDeadline ? (share.lockDeadline as Date).getTime() <= Date.now() : false,
     // ── Organiser-set order rules (limits, deadline, allowed countries) ────────
     settings: {
+      maxMembers: share.maxMembers ?? null,
       minKitsPerMember: share.minKitsPerMember ?? null,
       maxKitsPerMember: share.maxKitsPerMember ?? null,
       maxTotalKits: share.maxTotalKits ?? null,
@@ -447,7 +447,6 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
     creatorUsername: me,
     status: "open",
     splitMode,
-    maxMembers: MAX_WHOLESALE_SHARE_MEMBERS,
     vendorId: vendor?.id ?? null,
   });
 
@@ -549,7 +548,7 @@ router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Pr
     .select({ c: sql<number>`count(*)::int` })
     .from(wholesaleShareMembersTable)
     .where(eq(wholesaleShareMembersTable.shareId, share.id));
-  if (c >= share.maxMembers) {
+  if (share.maxMembers != null && c >= share.maxMembers) {
     res.status(409).json({ error: `This shared order is full (max ${share.maxMembers} members).` });
     return;
   }
@@ -880,8 +879,8 @@ router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Pr
 });
 
 // PUT /api/wholesale-shares/:id/settings — organiser sets order limits & rules
-// (min/max kits per person, max total kits, a lock deadline, and an allowed-country
-// list). All fields are optional; null/empty clears that rule.
+// (max people, min/max kits per person, max total kits, a lock deadline, and an
+// allowed-country list). All fields are optional; null/empty clears that rule.
 router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -951,9 +950,31 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
     allowedCountries = cleaned.length > 0 ? cleaned : null;
   }
 
+  // Max people: null/"" = no limit. A whole number >= 2, never below the count of
+  // members already in the order (so an existing member is never orphaned).
+  let maxMembers: number | null = null;
+  if (body.maxMembers != null && body.maxMembers !== "") {
+    const m = Number(body.maxMembers);
+    if (!Number.isFinite(m) || !Number.isInteger(m) || m < 2) {
+      res.status(400).json({ error: "Max people must be a whole number of 2 or more (or blank for no limit)." });
+      return;
+    }
+    if (m > 1000) { res.status(400).json({ error: "Max people is too large." }); return; }
+    const [{ c }] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    if (m < c) {
+      res.status(400).json({ error: `Max people can't be below the ${c} member${c === 1 ? "" : "s"} already in this order.` });
+      return;
+    }
+    maxMembers = m;
+  }
+
   // CONDITIONAL update gated on status='open' so a concurrent lock/cancel wins.
   const changed = await db.update(wholesaleSharesTable)
     .set({
+      maxMembers,
       minKitsPerMember: minVal,
       maxKitsPerMember: maxVal,
       maxTotalKits: totalVal,
@@ -972,7 +993,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
 
   await writeLog("order", "info", "wholesale_share_settings_updated",
     `Wholesale share ${share.id} rules updated by ${me}`,
-    { shareId: share.id, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));

@@ -191,7 +191,7 @@ export default function WholesaleShared() {
   // deadline, and an allowed-country list. Seeded from the share once and skipped
   // while the organiser has unsaved edits (so polling can't clobber typing).
   const [settingsForm, setSettingsForm] = useState({
-    minKitsPerMember: "", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
+    maxMembers: "", minKitsPerMember: "", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
   });
   const [allowedCountriesList, setAllowedCountriesList] = useState<string[]>([]);
   const [countryToAdd, setCountryToAdd] = useState("");
@@ -389,6 +389,7 @@ export default function WholesaleShared() {
     if (!share || !share.settings.canManage || settingsDirty || settingsSeeded.current) return;
     const s = share.settings;
     setSettingsForm({
+      maxMembers: s.maxMembers != null ? String(s.maxMembers) : "",
       minKitsPerMember: s.minKitsPerMember != null ? String(s.minKitsPerMember) : "",
       maxKitsPerMember: s.maxKitsPerMember != null ? String(s.maxKitsPerMember) : "",
       maxTotalKits: s.maxTotalKits != null ? String(s.maxTotalKits) : "",
@@ -566,7 +567,7 @@ export default function WholesaleShared() {
       // so a long-time user sees it at most once, ever, across all their devices.
       if (
         items.length > 0 &&
-        share && share.status === "open" && share.memberCount < share.maxMembers &&
+        share && share.status === "open" && (share.maxMembers == null || share.memberCount < share.maxMembers) &&
         account && !account.wholesaleInvitePromptSeen &&
         !invitePromptFired.current
       ) {
@@ -687,6 +688,7 @@ export default function WholesaleShared() {
     setActionError(""); setBusy("settings");
     try {
       await setWholesaleShareSettings(id, {
+        maxMembers: settingsForm.maxMembers.trim() === "" ? null : Number(settingsForm.maxMembers),
         minKitsPerMember: settingsForm.minKitsPerMember.trim() === "" ? null : Number(settingsForm.minKitsPerMember),
         maxKitsPerMember: settingsForm.maxKitsPerMember.trim() === "" ? null : Number(settingsForm.maxKitsPerMember),
         maxTotalKits: settingsForm.maxTotalKits.trim() === "" ? null : Number(settingsForm.maxTotalKits),
@@ -928,7 +930,7 @@ export default function WholesaleShared() {
           {copied === "link" ? "Link copied" : "Copy invite link"}
         </button>
         <span className="inline-flex items-center gap-1.5 text-sm ml-auto" style={{ color: "var(--t-muted)" }}>
-          <Users className="w-4 h-4" /> {share.memberCount}/{share.maxMembers} members
+          <Users className="w-4 h-4" /> {share.memberCount}{share.maxMembers != null ? `/${share.maxMembers}` : ""} members
         </span>
       </div>
     </div>
@@ -954,7 +956,7 @@ export default function WholesaleShared() {
           <p>Pool your items with other wholesale members into one parcel and split the vendor shipping — everyone still pays for their own items.</p>
           <ol className="space-y-2.5">
             {[
-              { t: "Invite members.", d: `Share the code or invite link above. Up to ${share.maxMembers} members can join.` },
+              { t: "Invite members.", d: `Share the code or invite link above. ${share.maxMembers != null ? `Up to ${share.maxMembers} members can join.` : "There's no limit on how many can join."}` },
               { t: "Add your items.", d: "While the order is Open, each member picks their own products and an optional tip." },
               { t: "Set the delivery member.", d: "The organiser picks one member to receive the parcel. That member then confirms the address — using their saved account address or a different one just for this order." },
               { t: "Lock the order.", d: "Once everyone has items and a delivery member is set, the organiser locks it. Items freeze and each member gets their own order to pay." },
@@ -1046,7 +1048,7 @@ export default function WholesaleShared() {
     <ExpandableCard
       title="Group & order details"
       icon={<Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
-      summary={`${share.memberCount}/${share.maxMembers} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
+      summary={`${share.memberCount}${share.maxMembers != null ? `/${share.maxMembers}` : ""} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
       defaultOpen={false}
     >
       <GroupTracker share={share} showItems={showOrderBreakdown} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
@@ -1453,6 +1455,15 @@ export default function WholesaleShared() {
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
             Optional limits for this shared order. Leave a field blank for no limit.
           </p>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max people</label>
+            <input type="number" min="2" step="1" value={settingsForm.maxMembers}
+              onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, maxMembers: e.target.value })); }}
+              placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            <p className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>
+              The most members allowed in this order (you count as one). Leave blank for no limit.
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Min kits / person</label>
@@ -1932,7 +1943,7 @@ export default function WholesaleShared() {
       <div className="rounded-xl p-4 space-y-3" style={card}>
         <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Share to invite members</p>
         <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-          Send your code or invite link. You need at least 2 people — {share.memberCount} of {share.maxMembers} have joined so far.
+          Send your code or invite link. You need at least 2 people — {share.maxMembers != null ? `${share.memberCount} of ${share.maxMembers}` : share.memberCount} have joined so far.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <button
