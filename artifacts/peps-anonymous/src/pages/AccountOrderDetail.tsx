@@ -2197,8 +2197,8 @@ export default function AccountOrderDetail() {
                       />
                     )}
 
-                    {/* Routing status — show when routed or batch locked */}
-                    {(order.routingType || order.batchLocked) && (
+                    {/* Routing status — show when routed, batch locked, or reshipper assigned */}
+                    {(order.routingType || order.batchLocked || order.reshipperUsername) && (
                       <div className="border-t border-white/10 pt-3 space-y-2">
                         {order.batchLocked && (
                           <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)" }}>
@@ -2212,7 +2212,7 @@ export default function AccountOrderDetail() {
                             <p className="text-xs font-semibold" style={{ color: "#a5b4fc" }}>Your order will be shipped directly to your address</p>
                           </div>
                         )}
-                        {order.routingType === "reshipper" && (
+                        {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
                           <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
                             <div className="flex items-center gap-2 px-3 py-2">
                               <span className="text-base leading-none">📦</span>
