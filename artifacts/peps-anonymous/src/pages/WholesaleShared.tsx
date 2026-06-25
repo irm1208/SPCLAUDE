@@ -1637,6 +1637,10 @@ export default function WholesaleShared() {
               </section>
             )}
 
+                </div>
+              </ExpandableCard>
+            )}
+
             {/* Group chat — members only */}
             {share.isMember && (
               <ShareChat shareId={share.id} readOnly={share.status === "cancelled"} />
