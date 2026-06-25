@@ -5,9 +5,8 @@ cd "$(dirname "$0")"
 
 echo "[start] Clearing any stale processes..."
 pkill -f "tsx.*src/index.ts" 2>/dev/null || true
-pkill -f "vite.*--host" 2>/dev/null || true
-pkill -f "vite.*peps-anonymous" 2>/dev/null || true
-# Free the proxy port in case a stale proxy is holding it
+# Free only the specific ports this script owns — don't kill Vite processes
+# on other ports (e.g. the canvas artifact running on 21504).
 fuser -k 5000/tcp 2>/dev/null || true
 fuser -k 21503/tcp 2>/dev/null || true
 sleep 1
