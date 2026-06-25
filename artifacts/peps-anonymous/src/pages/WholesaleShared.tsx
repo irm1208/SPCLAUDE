@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search, Crown,
   ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
-  ChevronDown, Info, MessageCircle, Send, Upload, X,
+  ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
@@ -31,6 +31,10 @@ import {
   type WholesaleShareDetail,
   type WholesaleSplitMode,
 } from "@/hooks/use-wholesale-shares";
+import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
+import { shareStage } from "@/components/wholesale-shared/stage";
+import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
+import { FeeLine } from "@/components/wholesale-shared/payment-fields";
 
 interface ProductLite {
   id: string;
@@ -460,6 +464,16 @@ export default function WholesaleShared() {
   const shippingCalculable = deliverySet && share.estimateCalculable;
   const canLock = isOpen && share.members.length >= 2 && everyoneHasItems && deliverySet && shippingCalculable;
 
+  // Stage drives which cards show / auto-expand; role flags gate the single
+  // "Manage order" entry. Every underlying control keeps its own server-side gate.
+  const stage = shareStage(share.status);
+  const showOrganiserOpen = share.isCreator && isOpen;
+  const showOrganiserLocked = share.isCreator && share.status === "locked";
+  const showOnwardConfig = share.onward.canManage;
+  const showOnwardRoster = share.onward.enabled && share.onward.canConfirm;
+  const showFeeRoster = share.fees.canConfirmOrganiserFees && share.fees.active && share.fees.organiserFeeTotal > 0;
+  const showManage = showOrganiserOpen || showOrganiserLocked || showOnwardConfig || showOnwardRoster || showFeeRoster;
+
   const setQty = (pid: string, val: number) => {
     const v = Math.max(0, Math.round(val));
     setItemsDirty(true);
@@ -858,10 +872,14 @@ export default function WholesaleShared() {
               </div>
             )}
 
-            {/* Members */}
-            <section className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Members</p>
-              <div className="rounded-xl divide-y" style={{ ...card, borderColor: "var(--t-border)" }}>
+            {/* Group members — collapsible; open while still building */}
+            <ExpandableCard
+              title="Group"
+              icon={<Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
+              summary={`${share.memberCount}/${share.maxMembers} members`}
+              defaultOpen={stage === "building"}
+            >
+              <div className="rounded-xl divide-y overflow-hidden" style={{ ...card, borderColor: "var(--t-border)" }}>
                 {share.members.map(m => (
                   <div key={m.username} className="p-4 flex items-start justify-between gap-3" style={{ borderColor: "var(--t-border)" }}>
                     <div className="min-w-0 flex-1">
@@ -910,7 +928,7 @@ export default function WholesaleShared() {
                   </div>
                 ))}
               </div>
-            </section>
+            </ExpandableCard>
 
             {/* Shipping details — visible to all members once a delivery member is chosen */}
             {share.isMember && share.delivery.username && (
@@ -1174,10 +1192,22 @@ export default function WholesaleShared() {
               </section>
             )}
 
-            {/* Combined summary */}
-            <section className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Combined Order</p>
-              <div className="rounded-xl p-4 space-y-2.5" style={card}>
+            {/* What you owe — one combined personal money card (paying & done stages) */}
+            {(stage === "paying" || stage === "done") && myMember && (
+              <WhatYouOwe
+                share={share}
+                me={myMember}
+                onPayOrder={() => { if (myMember.orderId) setLocation(`/account/orders/${myMember.orderId}`); }}
+              />
+            )}
+
+            {/* Combined order totals — group-level info, collapsible (open while building) */}
+            <ExpandableCard
+              title="Order details"
+              summary={`${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
+              defaultOpen={stage === "building"}
+            >
+              <div className="space-y-2.5">
                 <Row label="Combined kits" value={String(share.combinedKits)} />
                 <Row label="Combined products" value={money(share.combinedSubtotal)} />
                 <Row
@@ -1195,181 +1225,91 @@ export default function WholesaleShared() {
                   <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
                 </div>
               </div>
-            </section>
+            </ExpandableCard>
 
-            {/* Organiser fee — paid separately between members (peer-to-peer),
-                never part of any order. Shown to everyone once a fee is set. The
-                organiser can mark each fee paid. */}
-            {share.fees.active && share.fees.organiserFeeTotal > 0 && (
+            {/* Your onward delivery — non-recipient members tell the recipient where to
+                forward their items. Shown whenever onward forwarding is on and I'm a
+                forwarding member. The charge itself now lives in "What you owe" above. */}
+            {share.onward.canSetDestination && myMember && (
               <section className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Onward Delivery</p>
                 <div className="rounded-xl p-4 space-y-3" style={card}>
-                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                    Settled directly with the organiser and <span className="font-semibold">not</span> part of your order payment.
-                  </p>
-
-                  <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                    <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text)" }}>
-                      Organiser fee → pay @{share.fees.organiserUsername.replace(/^@/, "")}
-                    </p>
-                    {share.fees.organiserPaymentInfo
-                      ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{share.fees.organiserPaymentInfo}</p>
-                      : <p className="text-xs" style={{ color: "var(--t-muted)" }}>Payment details not provided yet — ask the organiser.</p>}
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Where should your items go?</p>
+                    {myMember.reshipperFee > 0 && (
+                      <span className="text-xs font-bold" style={{ color: myMember.reshipperFeePaid ? "#15803d" : "var(--t-muted)" }}>
+                        {myMember.reshipperFeePaid ? "Onward charge paid" : "Onward charge due"}
+                      </span>
+                    )}
                   </div>
-
-                  <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-                    {share.members.filter(m => m.organiserFee > 0).map(m => (
-                      <div key={m.username} className="px-3 py-2.5 space-y-1.5">
-                        <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
-                          @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
-                        </p>
-                        <FeeLine
-                          label="Organiser fee"
-                          amount={money(m.organiserFee)}
-                          paid={m.organiserFeePaid}
-                          canConfirm={share.fees.canConfirmOrganiserFees}
-                          busy={busy === `feepaid:organiser:${m.username}`}
-                          onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
+                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                    Tell the recipient where to forward your items — a written address and/or a courier delivery QR (e.g. Royal Mail or InPost). This is a delivery label, never a payment QR.
+                  </p>
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Forwarding address</label>
+                    <textarea
+                      value={destAddress}
+                      onChange={e => { setDestDirty(true); setDestAddress(e.target.value); }}
+                      placeholder="Name, street, city, postcode, country"
+                      rows={3}
+                      maxLength={2000}
+                      className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-y"
+                      style={field}
+                    />
+                    <button
+                      onClick={saveOnwardAddress}
+                      disabled={busy === "onward-address" || !destDirty}
+                      className="mt-2 inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold disabled:opacity-50"
+                      style={{ background: "var(--t-blue)", color: "#fff" }}
+                    >
+                      {busy === "onward-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Save address
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Delivery QR (optional)</label>
+                    {myMember.onwardQr ? (
+                      <div className="flex items-center gap-3">
+                        <img src={myMember.onwardQr} alt="Your delivery QR" className="w-24 h-24 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
+                        <button
+                          onClick={removeOnwardQr}
+                          disabled={busy === "onward-qr"}
+                          className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-semibold disabled:opacity-50"
+                          style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                        >
+                          {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold cursor-pointer" style={{ background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+                        {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        Upload QR image
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={busy === "onward-qr"}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadOnwardQr(f); e.currentTarget.value = ""; }}
                         />
-                      </div>
-                    ))}
+                      </label>
+                    )}
                   </div>
                 </div>
               </section>
             )}
 
-            {/* Onward shipping — the parcel recipient forwards each member's items to
-                their own address. Settled peer-to-peer with the recipient, never part
-                of any order. Visible to all members once the recipient enables it. */}
-            {share.onward.enabled && (
-              <section className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Onward Shipping</p>
-                <div className="rounded-xl p-4 space-y-3" style={card}>
-                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                    {share.onward.recipientUsername
-                      ? <>@{share.onward.recipientUsername.replace(/^@/, "")} receives the parcel and forwards each member's items onward. Onward charges are settled directly with them and are <span className="font-semibold">not</span> part of your order payment.</>
-                      : <>The parcel recipient forwards each member's items onward. Onward charges are settled directly with them.</>}
-                  </p>
-
-                  {/* Recipient's published payout methods */}
-                  {(share.onward.payment.walletAddress || share.onward.payment.anonpay || share.onward.payment.paypal || share.onward.payment.revolut || share.onward.payment.notes) && (
-                    <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                      <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>
-                        Pay onward charges {share.onward.recipientUsername ? `@${share.onward.recipientUsername.replace(/^@/, "")}` : "the recipient"} via
-                      </p>
-                      {share.onward.payment.walletAddress && (
-                        <CopyField label={share.onward.payment.walletCurrency ? `${share.onward.payment.walletCurrency} (ERC-20)` : "Wallet"} value={share.onward.payment.walletAddress} />
-                      )}
-                      {share.onward.payment.anonpay && <CopyField label="anonPay" value={share.onward.payment.anonpay} />}
-                      {share.onward.payment.paypal && <CopyField label="PayPal" value={share.onward.payment.paypal} />}
-                      {share.onward.payment.revolut && <CopyField label="Revolut" value={share.onward.payment.revolut} />}
-                      {share.onward.payment.notes && (
-                        <p className="whitespace-pre-line text-xs pt-0.5" style={{ color: "var(--t-muted)" }}>{share.onward.payment.notes}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* My own onward charge + destination (non-recipient members) */}
-                  {share.onward.canSetDestination && (() => {
-                    const me = share.members.find(m => m.isYou);
-                    return (
-                      <div className="rounded-lg p-3 space-y-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Your onward delivery</p>
-                          {me && me.reshipperFee > 0 && (
-                            <span className="text-xs font-bold" style={{ color: me.reshipperFeePaid ? "#15803d" : "var(--t-text)" }}>
-                              {money(me.reshipperFee)}{me.reshipperFeePaid ? " · paid" : ""}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                          Tell the recipient where to forward your items — a written address and/or a courier delivery QR (e.g. Royal Mail or InPost). This is a delivery label, never a payment QR.
-                        </p>
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Forwarding address</label>
-                          <textarea
-                            value={destAddress}
-                            onChange={e => { setDestDirty(true); setDestAddress(e.target.value); }}
-                            placeholder="Name, street, city, postcode, country"
-                            rows={3}
-                            maxLength={2000}
-                            className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-y"
-                            style={field}
-                          />
-                          <button
-                            onClick={saveOnwardAddress}
-                            disabled={busy === "onward-address" || !destDirty}
-                            className="mt-2 inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold disabled:opacity-50"
-                            style={{ background: "var(--t-blue)", color: "#fff" }}
-                          >
-                            {busy === "onward-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                            Save address
-                          </button>
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Delivery QR (optional)</label>
-                          {me?.onwardQr ? (
-                            <div className="flex items-center gap-3">
-                              <img src={me.onwardQr} alt="Your delivery QR" className="w-24 h-24 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
-                              <button
-                                onClick={removeOnwardQr}
-                                disabled={busy === "onward-qr"}
-                                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-semibold disabled:opacity-50"
-                                style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
-                              >
-                                {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                                Remove
-                              </button>
-                            </div>
-                          ) : (
-                            <label className="inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold cursor-pointer" style={{ background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
-                              {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                              Upload QR image
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={busy === "onward-qr"}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadOnwardQr(f); e.currentTarget.value = ""; }}
-                              />
-                            </label>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Recipient roster: every participant's onward charge + destination */}
-                  {share.onward.canConfirm && (
-                    <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-                      {share.members.filter(m => !(share.onward.recipientUsername && m.username.toLowerCase() === share.onward.recipientUsername.toLowerCase())).map(m => (
-                        <div key={m.username} className="px-3 py-2.5 space-y-2">
-                          <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
-                            @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
-                          </p>
-                          {m.reshipperFee > 0 && (
-                            <FeeLine
-                              label="Onward charge"
-                              amount={money(m.reshipperFee)}
-                              paid={m.reshipperFeePaid}
-                              canConfirm={share.onward.canConfirm}
-                              busy={busy === `feepaid:reshipper:${m.username}`}
-                              onToggle={() => toggleFeePaid(m.username, "reshipper", !m.reshipperFeePaid)}
-                            />
-                          )}
-                          {m.onwardAddress
-                            ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{m.onwardAddress}</p>
-                            : <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No forwarding address yet.</p>}
-                          {m.onwardQr && (
-                            <img src={m.onwardQr} alt={`Delivery QR for ${m.username}`} className="w-28 h-28 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
+            {/* Manage order — ONE role-gated entry grouping the organiser and recipient
+                controls. Each control inside keeps its own server-side gate, so a user
+                only ever sees the tools they're actually allowed to use. */}
+            {showManage && (
+              <ExpandableCard
+                title="Manage order"
+                icon={<Settings className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
+                summary={share.isCreator ? "Organiser tools" : "Recipient tools"}
+                defaultOpen={showOrganiserOpen || showOnwardConfig}
+              >
+                <div className="space-y-5">
 
             {/* Creator controls */}
             {share.isCreator && isOpen && (
@@ -1662,7 +1602,7 @@ export default function WholesaleShared() {
             )}
 
             {/* Locked: organiser can still cancel if a member never pays */}
-            {share.isCreator && share.status === "locked" && (
+            {showOrganiserLocked && (
               <section className="space-y-2">
                 <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Controls</p>
                 <div className="rounded-xl p-4 space-y-3" style={card}>
@@ -1726,68 +1666,6 @@ function Checklist({ ok, text }: { ok: boolean; text: string }) {
         {ok ? <Check className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
       </span>
       <span style={{ color: ok ? "var(--t-text)" : "var(--t-muted)" }}>{text}</span>
-    </div>
-  );
-}
-
-function FeeLine({ label, amount, paid, canConfirm, busy, onToggle }: {
-  label: string; amount: string; paid: boolean; canConfirm: boolean; busy: boolean; onToggle: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs" style={{ color: "var(--t-muted)" }}>{label}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{amount}</span>
-        {canConfirm ? (
-          <button
-            onClick={onToggle}
-            disabled={busy}
-            className="inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[11px] font-bold border disabled:opacity-50"
-            style={paid
-              ? { background: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.30)", color: "#15803d" }
-              : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
-          >
-            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : paid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-            {paid ? "Paid" : "Mark paid"}
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[11px] font-bold"
-            style={paid
-              ? { background: "rgba(34,197,94,0.12)", color: "#15803d" }
-              : { background: "rgba(234,179,8,0.12)", color: "#a16207" }}>
-            {paid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-            {paid ? "Paid" : "Unpaid"}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// A labelled, tap-to-copy payment detail (wallet address, PayPal handle, etc.).
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable — ignore */ }
-  };
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>{label}</p>
-        <p className="text-xs font-mono break-all" style={{ color: "var(--t-text)" }}>{value}</p>
-      </div>
-      <button
-        onClick={copy}
-        className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border"
-        style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: copied ? "#15803d" : "var(--t-muted)" }}
-        title={`Copy ${label}`}
-      >
-        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-      </button>
     </div>
   );
 }
