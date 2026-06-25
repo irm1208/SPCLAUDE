@@ -139,6 +139,22 @@ interface OrderDetail {
   groupBuyQrUploadRoyalMailEnabled: boolean;
   groupBuyQrUploadMessage: string | null;
   groupBuyPaymentBanner?: string | null;
+  reshipperUsername?: string | null;
+  reshipperInfo?: {
+    country: string | null;
+    paymentMethods: {
+      usdtWallet?: string;
+      revolutHandle?: string;
+      paypalHandle?: string;
+      cryptoCurrency?: string;
+      cryptoNetwork?: string;
+      cryptoWalletAddress?: string;
+      anonPayEnabled?: boolean;
+      anonPayWallet?: string;
+      anonPayTicker?: string;
+      anonPayNetwork?: string;
+    } | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
   lineItems: OrderLineItem[];
@@ -2197,9 +2213,42 @@ export default function AccountOrderDetail() {
                           </div>
                         )}
                         {order.routingType === "reshipper" && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.25)" }}>
-                            <span className="text-base leading-none">📦</span>
-                            <p className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>Your order will be shipped via a reshipper</p>
+                          <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                            <div className="flex items-center gap-2 px-3 py-2">
+                              <span className="text-base leading-none">📦</span>
+                              <p className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>Your order will be shipped via a reshipper</p>
+                            </div>
+                            {order.reshipperUsername && (
+                              <div className="px-3 pb-3 space-y-2">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span style={{ color: "var(--t-muted)" }}>Reshipper</span>
+                                  <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{order.reshipperUsername.replace(/^@/, "")}</span>
+                                </div>
+                                {order.reshipperInfo?.country && (
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span style={{ color: "var(--t-muted)" }}>Based in</span>
+                                    <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
+                                  </div>
+                                )}
+                                {order.reshipperInfo?.paymentMethods && (() => {
+                                  const pm = order.reshipperInfo!.paymentMethods!;
+                                  const methods: string[] = [];
+                                  if (pm.revolutHandle) methods.push(`Revolut: @${pm.revolutHandle}`);
+                                  if (pm.paypalHandle) methods.push(`PayPal: ${pm.paypalHandle}`);
+                                  if (pm.usdtWallet) methods.push(`USDT: ${pm.usdtWallet}`);
+                                  if ((pm.cryptoCurrency || pm.cryptoNetwork) && pm.cryptoWalletAddress) methods.push(`${pm.cryptoCurrency ?? "Crypto"}${pm.cryptoNetwork ? ` (${pm.cryptoNetwork})` : ""}: ${pm.cryptoWalletAddress}`);
+                                  if (!methods.length) return null;
+                                  return (
+                                    <div className="pt-1 space-y-1 border-t" style={{ borderColor: "rgba(124,58,237,0.2)" }}>
+                                      <p className="text-xs" style={{ color: "var(--t-muted)" }}>Onward shipping payment</p>
+                                      {methods.map((m, i) => (
+                                        <p key={i} className="text-xs font-medium break-all" style={{ color: "var(--t-text)" }}>{m}</p>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

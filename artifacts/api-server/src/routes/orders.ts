@@ -1237,6 +1237,23 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, order.id));
 
+  let reshipperInfo: { country: string | null; paymentMethods: Record<string, unknown> | null } | null = null;
+  if (order.reshipperUsername) {
+    const [reshipper] = await db
+      .select({
+        country: accountsTable.country,
+        reshipperPaymentMethods: accountsTable.reshipperPaymentMethods,
+      })
+      .from(accountsTable)
+      .where(eq(accountsTable.telegramUsername, order.reshipperUsername));
+    if (reshipper) {
+      reshipperInfo = {
+        country: reshipper.country ?? null,
+        paymentMethods: (reshipper.reshipperPaymentMethods as Record<string, unknown> | null) ?? null,
+      };
+    }
+  }
+
   let gbPaymentsEnabled: boolean | null = null;
   let gbDirectShippingPaymentsEnabled: boolean | null = null;
   let gbQrUploadInpostEnabled = false;
@@ -1320,6 +1337,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     groupBuyHideCostBreakdownWhenClosed: gbHideCostBreakdownWhenClosed,
     groupBuyHideGrandTotalWhenClosed: gbHideGrandTotalWhenClosed,
     groupBuyStatus: gbStatus,
+    reshipperInfo,
   });
 });
 
