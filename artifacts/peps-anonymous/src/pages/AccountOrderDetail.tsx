@@ -2230,23 +2230,6 @@ export default function AccountOrderDetail() {
                                     <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
                                   </div>
                                 )}
-                                {order.reshipperInfo?.paymentMethods && (() => {
-                                  const pm = order.reshipperInfo!.paymentMethods!;
-                                  const methods: string[] = [];
-                                  if (pm.revolutHandle) methods.push(`Revolut: @${pm.revolutHandle}`);
-                                  if (pm.paypalHandle) methods.push(`PayPal: ${pm.paypalHandle}`);
-                                  if (pm.usdtWallet) methods.push(`USDT: ${pm.usdtWallet}`);
-                                  if ((pm.cryptoCurrency || pm.cryptoNetwork) && pm.cryptoWalletAddress) methods.push(`${pm.cryptoCurrency ?? "Crypto"}${pm.cryptoNetwork ? ` (${pm.cryptoNetwork})` : ""}: ${pm.cryptoWalletAddress}`);
-                                  if (!methods.length) return null;
-                                  return (
-                                    <div className="pt-1 space-y-1 border-t" style={{ borderColor: "rgba(124,58,237,0.2)" }}>
-                                      <p className="text-xs" style={{ color: "var(--t-muted)" }}>Onward shipping payment</p>
-                                      {methods.map((m, i) => (
-                                        <p key={i} className="text-xs font-medium break-all" style={{ color: "var(--t-text)" }}>{m}</p>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
                               </div>
                             )}
                           </div>
