@@ -5,6 +5,11 @@ cd "$(dirname "$0")"
 
 echo "[start] Clearing any stale processes..."
 pkill -f "tsx.*src/index.ts" 2>/dev/null || true
+pkill -f "vite.*--host" 2>/dev/null || true
+pkill -f "vite.*peps-anonymous" 2>/dev/null || true
+# Free the proxy port in case a stale proxy is holding it
+fuser -k 5000/tcp 2>/dev/null || true
+fuser -k 21503/tcp 2>/dev/null || true
 sleep 1
 
 # Vite runs on port 21503 — the port mapped to externalPort=80 in .replit.
