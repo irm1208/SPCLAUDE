@@ -486,6 +486,7 @@ export default function WholesaleShared() {
   const showOnwardRoster = share.onward.enabled && share.onward.canConfirm;
   const showFeeRoster = share.fees.canConfirmOrganiserFees && share.fees.active && share.fees.organiserFeeTotal > 0;
   const showManage = showOrganiserOpen || showOrganiserLocked || showOnwardConfig || showOnwardRoster || showFeeRoster;
+  const showOrderBreakdown = (share.isCreator || !!myMember?.isRecipient) && share.members.length > 0;
 
   const setQty = (pid: string, val: number) => {
     const v = Math.max(0, Math.round(val));
@@ -1551,6 +1552,41 @@ export default function WholesaleShared() {
                         : <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No forwarding address yet.</p>}
                       {m.onwardQr && (
                         <img src={m.onwardQr} alt={`Delivery QR for ${m.username}`} className="w-28 h-28 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Order breakdown — visible to organiser and delivery recipient only */}
+            {showOrderBreakdown && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Breakdown</p>
+                <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
+                  {share.members.map(m => (
+                    <div key={m.username} className="px-3 py-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                          @{m.username.replace(/^@/, "")}
+                          {m.isYou && <span className="text-[10px] ml-1 font-normal" style={{ color: "var(--t-muted)" }}>(you)</span>}
+                          {m.isRecipient && <span className="text-[10px] ml-1 font-semibold" style={{ color: "#15803d" }}> · recipient</span>}
+                        </p>
+                        <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
+                          {m.kits} kit{m.kits === 1 ? "" : "s"} · {money(m.subtotal)}
+                        </span>
+                      </div>
+                      {m.items.length > 0 ? (
+                        <ul className="space-y-1">
+                          {m.items.map((it, i) => (
+                            <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
+                              <span className="min-w-0 truncate">{it.productName}</span>
+                              <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No items added yet.</p>
                       )}
                     </div>
                   ))}
