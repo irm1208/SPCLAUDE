@@ -946,7 +946,6 @@ export default function WholesaleShared() {
               defaultOpen={stage === "building"}
             >
               <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
-<<<<<<< HEAD
               {isOpen && myMember && !share.isCreator && (
                 <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
                   <button
@@ -960,8 +959,6 @@ export default function WholesaleShared() {
                   </button>
                 </div>
               )}
-=======
->>>>>>> 651997aa207a15e6985a868cfbaf89b5eb2f6dac
             </ExpandableCard>
 
             {/* My items editor */}
