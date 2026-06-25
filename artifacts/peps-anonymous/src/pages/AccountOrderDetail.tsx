@@ -2001,6 +2001,30 @@ export default function AccountOrderDetail() {
                   exit={{ opacity: 0, y: -8 }}
                   className="space-y-4"
                 >
+                  {/* Reshipper card — shown above the main order box when a reshipper is assigned */}
+                  {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
+                    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <span className="text-base leading-none">📦</span>
+                        <p className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>Your order will be shipped via a reshipper</p>
+                      </div>
+                      {order.reshipperUsername && (
+                        <div className="px-3 pb-3 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span style={{ color: "var(--t-muted)" }}>Reshipper</span>
+                            <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{order.reshipperUsername.replace(/^@/, "")}</span>
+                          </div>
+                          {order.reshipperInfo?.country && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span style={{ color: "var(--t-muted)" }}>Based in</span>
+                              <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Status + tracking card */}
                   <div
                     className="rounded-xl text-white p-5 space-y-4 relative overflow-hidden"
@@ -2197,8 +2221,8 @@ export default function AccountOrderDetail() {
                       />
                     )}
 
-                    {/* Routing status — show when routed, batch locked, or reshipper assigned */}
-                    {(order.routingType || order.batchLocked || order.reshipperUsername) && (
+                    {/* Routing banners (batch lock + direct only — reshipper card is above the blue box) */}
+                    {(order.batchLocked || order.routingType === "direct") && (
                       <div className="border-t border-white/10 pt-3 space-y-2">
                         {order.batchLocked && (
                           <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)" }}>
@@ -2210,28 +2234,6 @@ export default function AccountOrderDetail() {
                           <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
                             <span className="text-base leading-none">🏠</span>
                             <p className="text-xs font-semibold" style={{ color: "#a5b4fc" }}>Your order will be shipped directly to your address</p>
-                          </div>
-                        )}
-                        {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
-                          <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
-                            <div className="flex items-center gap-2 px-3 py-2">
-                              <span className="text-base leading-none">📦</span>
-                              <p className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>Your order will be shipped via a reshipper</p>
-                            </div>
-                            {order.reshipperUsername && (
-                              <div className="px-3 pb-3 space-y-2">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span style={{ color: "var(--t-muted)" }}>Reshipper</span>
-                                  <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{order.reshipperUsername.replace(/^@/, "")}</span>
-                                </div>
-                                {order.reshipperInfo?.country && (
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span style={{ color: "var(--t-muted)" }}>Based in</span>
-                                    <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
