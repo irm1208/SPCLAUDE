@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboa
 import { useLocation, useRoute } from "wouter";
 import { motion } from "framer-motion";
 import {
-  Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search, Crown,
-  ArrowLeft, CreditCard, CheckCircle2, Clock, Share2, Ban, AlertCircle,
+  Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
+  ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
@@ -35,6 +35,11 @@ import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine } from "@/components/wholesale-shared/payment-fields";
+import { NextStepBanner } from "@/components/wholesale-shared/NextStepBanner";
+import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
+import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
+import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
+import { buildGuide, GUIDE_ANCHORS, type GuideTarget } from "@/components/wholesale-shared/next-step";
 
 interface ProductLite {
   id: string;
@@ -133,23 +138,6 @@ function StatusBadge({ status }: { status: WholesaleShareDetail["status"] }) {
   );
 }
 
-// Only a fully `confirmed` payment counts toward the shared order's auto-submit
-// (the backend's allPaid / maybeSubmitSharedOrder use `confirmed` only).
-function PayBadge({ paymentStatus }: { paymentStatus: string | null }) {
-  const paid = paymentStatus === "confirmed";
-  const pending = paymentStatus === "pending_confirmation";
-  const testOnly = paymentStatus === "test_confirmed";
-  const color = paid ? "#22c55e" : (pending || testOnly) ? "#eab308" : "#ef4444";
-  const bg = paid ? "rgba(34,197,94,0.12)" : (pending || testOnly) ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)";
-  const label = paid ? "Paid" : pending ? "Checking…" : testOnly ? "Test only" : "Unpaid";
-  return (
-    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ color, background: bg }}>
-      {paid ? <CheckCircle2 className="w-3 h-3" /> : (pending || testOnly) ? <Clock className="w-3 h-3" /> : null}
-      {label}
-    </span>
-  );
-}
-
 export default function WholesaleShared() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/wholesale/shared/:id");
@@ -219,8 +207,15 @@ export default function WholesaleShared() {
   const [actionError, setActionError] = useState("");
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-  // Inline address edit toggle — recipient can open this when share is open
-  const [showAddrEdit, setShowAddrEdit] = useState(false);
+
+  // Guided onboarding overlay (presentation only).
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [flashAnchor, setFlashAnchor] = useState<string | null>(null);
+  // One-time "invite others" popup, shown after a member saves their items.
+  const [invitePromptOpen, setInvitePromptOpen] = useState(false);
+  const markInvitePromptSeen = useMarkWholesaleInvitePromptSeen();
+  const invitePromptFired = useRef(false);
+  const autoOpenedRef = useRef<string | null>(null);
 
   // Gate: wholesale members only
   useEffect(() => {
@@ -239,6 +234,24 @@ export default function WholesaleShared() {
   }, []);
 
   const myMember = useMemo(() => share?.members.find(m => m.isYou) ?? null, [share]);
+
+  // ── Guided onboarding (presentation only) ──
+  // Role + stage aware step plan derived from existing share data. Powers the
+  // next-step banner and the setup wizard; never calls the server.
+  const guide = useMemo(() => (share && myMember ? buildGuide(share, myMember) : null), [share, myMember]);
+  const autoMoment = guide?.autoOpenMomentId ?? null;
+
+  // Auto-open the wizard once per role-moment (organiser/member/recipient setup),
+  // remembered per share in localStorage so it never nags on return visits.
+  useEffect(() => {
+    if (!autoMoment || !id) return;
+    const key = `${id}:${autoMoment}`;
+    if (autoOpenedRef.current === key) return;
+    autoOpenedRef.current = key;
+    let seen = false;
+    try { seen = !!localStorage.getItem(`peps:ws-wizard-seen:${key}`); } catch { /* ignore */ }
+    if (!seen) setWizardOpen(true);
+  }, [autoMoment, id]);
 
   // Per-member, per-share localStorage key for this member's unsaved draft. Null
   // until the account is loaded so we never read/write a non-namespaced key.
@@ -492,6 +505,25 @@ export default function WholesaleShared() {
       await setWholesaleShareItems(id, items, myTip);
       setItemsDirty(false);
       invalidate(id);
+      // One-time nudge: once a member has saved real items, while the order is
+      // still open and has room for more people, prompt them to share the invite
+      // link. "Seen" is remembered per account in the database (account.me flag),
+      // so a long-time user sees it at most once, ever, across all their devices.
+      if (
+        items.length > 0 &&
+        share && share.status === "open" && share.memberCount < share.maxMembers &&
+        account && !account.wholesaleInvitePromptSeen &&
+        !invitePromptFired.current
+      ) {
+        invitePromptFired.current = true;
+        // Only the caller who actually set the DB flag opens the nudge, so two
+        // devices both starting with a stale "unseen" account don't each pop it.
+        // If saving fails, we don't open — it simply retries on a later session.
+        try {
+          const r = await markInvitePromptSeen.mutateAsync();
+          if (r?.newlyMarked) setInvitePromptOpen(true);
+        } catch { /* persistence failed — leave for a later session */ }
+      }
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -735,13 +767,9 @@ export default function WholesaleShared() {
 
   const doLeave = async () => {
     if (!id) return;
-    if (!window.confirm("Leave this shared order? You'll be removed and can rejoin later if it's still open.")) return;
-    setActionError(""); setBusy("leave");
-    try {
-      await leaveWholesaleShare(id);
-      if (draftKey) { try { localStorage.removeItem(draftKey); } catch { } }
-      setLocation("/wholesale");
-    }
+    if (!window.confirm("Leave this shared order? You won't be able to rejoin without the invite code.")) return;
+    setBusy("leave"); setActionError("");
+    try { await leaveWholesaleShare(id); invalidate(id); setLocation("/account"); }
     catch (e) { setActionError((e as Error).message); setBusy(null); }
   };
 
@@ -753,6 +781,33 @@ export default function WholesaleShared() {
   };
 
   const shareLink = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "";
+
+  // Mark the active auto-open moment as seen so the wizard won't reopen on return.
+  const markWizardSeen = () => {
+    if (autoMoment && id) { try { localStorage.setItem(`peps:ws-wizard-seen:${id}:${autoMoment}`, "1"); } catch { /* ignore */ } }
+  };
+  const closeWizard = () => { setWizardOpen(false); markWizardSeen(); };
+
+  // Guide CTAs act inline (copy invite), navigate (pay), or close the overlay and
+  // scroll+flash the real control on the page — the page stays the source of truth.
+  const handleGuideAction = (target: GuideTarget) => {
+    if (target.kind === "copyInvite") { copy(shareLink, "link"); return; }
+    setWizardOpen(false);
+    markWizardSeen();
+    if (target.kind === "payOrder") { if (myMember?.orderId) setLocation(`/account/orders/${myMember.orderId}`); return; }
+    if (target.kind === "scroll") {
+      const anchor = target.anchor;
+      requestAnimationFrame(() => {
+        document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setFlashAnchor(anchor);
+        window.setTimeout(() => setFlashAnchor(null), 1600);
+      });
+    }
+  };
+  const flashStyle = (anchor: string) =>
+    flashAnchor === anchor
+      ? { boxShadow: "0 0 0 2px var(--t-blue)", borderRadius: 16, transition: "box-shadow 0.2s" }
+      : undefined;
 
   const searchQ = productSearch.trim().toLowerCase();
   const visibleProducts = (searchQ ? products.filter(p => p.name.toLowerCase().includes(searchQ)) : products)
@@ -806,6 +861,16 @@ export default function WholesaleShared() {
                 </span>
               </div>
             </div>
+
+            {/* Your next step — always-on, role + stage aware guidance */}
+            {guide && (
+              <NextStepBanner
+                plan={guide}
+                onAction={handleGuideAction}
+                onOpenGuide={() => setWizardOpen(true)}
+                copiedInvite={copied === "link"}
+              />
+            )}
 
             {/* How it works (collapsible, minimised by default) */}
             <section className="rounded-2xl overflow-hidden" style={card}>
@@ -879,231 +944,25 @@ export default function WholesaleShared() {
               summary={`${share.memberCount}/${share.maxMembers} members`}
               defaultOpen={stage === "building"}
             >
-              <div className="rounded-xl divide-y overflow-hidden" style={{ ...card, borderColor: "var(--t-border)" }}>
-                {share.members.map(m => (
-                  <div key={m.username} className="p-4 flex items-start justify-between gap-3" style={{ borderColor: "var(--t-border)" }}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold truncate" style={{ color: "var(--t-text)" }}>@{m.username.replace(/^@/, "")}</span>
-                        {m.isCreator && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>
-                            <Crown className="w-2.5 h-2.5" /> Organiser
-                          </span>
-                        )}
-                        {m.isYou && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>You</span>}
-                        {share.delivery.username && m.username.toLowerCase() === share.delivery.username.toLowerCase() && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
-                            <Truck className="w-2.5 h-2.5" /> Delivery
-                          </span>
-                        )}
-                        {!isOpen && <PayBadge paymentStatus={m.paymentStatus} />}
-                      </div>
-                      <p className="text-xs mt-1" style={{ color: "var(--t-muted)" }}>
-                        {m.kits > 0 ? `${m.kits} kit${m.kits === 1 ? "" : "s"} · ${money(m.subtotal)}` : "No items yet"}
-                        {m.tip > 0 && ` · tip ${money(m.tip)}`}
-                        {m.shippingShare != null && ` · ship ${money(m.shippingShare)}`}
-                        {m.orderCode && ` · order #${m.orderCode}`}
-                      </p>
-                    </div>
-                    {isOpen && m.isYou && !m.isCreator && (
-                      <button
-                        onClick={doLeave}
-                        disabled={busy === "leave"}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-semibold"
-                        style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.20)" }}
-                      >
-                        {busy === "leave" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                        Leave
-                      </button>
-                    )}
-                    {!isOpen && m.isYou && m.orderId && m.paymentStatus !== "confirmed" && share.status !== "cancelled" && (
-                      <button
-                        onClick={() => setLocation(`/account/orders/${m.orderId}`)}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-bold text-white"
-                        style={{ background: "var(--t-blue)" }}
-                      >
-                        <CreditCard className="w-4 h-4" /> Pay
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
+              {isOpen && myMember && !share.isCreator && (
+                <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
+                  <button
+                    onClick={doLeave}
+                    disabled={busy === "leave"}
+                    className="inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-semibold disabled:opacity-50"
+                    style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                  >
+                    {busy === "leave" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                    Leave shared order
+                  </button>
+                </div>
+              )}
             </ExpandableCard>
-
-            {/* Shipping details — visible to all members once a delivery member is chosen */}
-            {share.isMember && share.delivery.username && (
-              <section className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Shipping</p>
-                  {share.delivery.canEditAddress && !showAddrEdit && (
-                    <button
-                      onClick={() => setShowAddrEdit(true)}
-                      className="text-xs font-semibold"
-                      style={{ color: "var(--t-blue)" }}
-                    >
-                      Edit
-                    </button>
-                  )}
-                  {!isOpen && share.delivery.address && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.20)" }}>
-                      <Lock className="w-2.5 h-2.5" /> Locked
-                    </span>
-                  )}
-                </div>
-                <div className="rounded-xl p-4 space-y-3" style={card}>
-                  {showAddrEdit && share.delivery.canEditAddress ? (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Edit delivery address</p>
-                        <button onClick={() => setShowAddrEdit(false)} className="text-xs" style={{ color: "var(--t-muted)" }}>Cancel</button>
-                      </div>
-                      <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-                        You're receiving this parcel. This address is for this order only and won't change your account.
-                      </p>
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
-                        <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                      </div>
-                      <div className="relative">
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Find your address</label>
-                        <div className="relative">
-                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--t-muted)" }} />
-                          <input
-                            value={addrQuery}
-                            onChange={e => runAddrSearch(e.target.value)}
-                            onFocus={() => { if (addrResults.length) setShowAddrResults(true); }}
-                            onBlur={() => { addrBlurTimer.current = setTimeout(() => setShowAddrResults(false), 150); }}
-                            onKeyDown={onAddrKeyDown}
-                            placeholder="Start typing your address or postcode"
-                            autoComplete="off"
-                            role="combobox"
-                            aria-expanded={addrDropdownOpen}
-                            aria-controls="addr-suggestions"
-                            aria-autocomplete="list"
-                            aria-activedescendant={addrActiveIdx >= 0 ? `addr-opt-${addrActiveIdx}` : undefined}
-                            className="w-full h-10 pl-9 pr-9 rounded-lg border text-sm outline-none"
-                            style={field}
-                          />
-                          {addrSearching && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: "var(--t-muted)" }} />}
-                          {addrDropdownOpen && (
-                            <div id="addr-suggestions" role="listbox" className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ background: "var(--t-card, #fff)", borderColor: "var(--t-border)" }}>
-                              {addrResults.length > 0 ? addrResults.map((s, i) => (
-                                <div
-                                  key={i} id={`addr-opt-${i}`} role="option" aria-selected={i === addrActiveIdx}
-                                  onMouseDown={e => { e.preventDefault(); pickAddress(s); }}
-                                  onMouseEnter={() => setAddrActiveIdx(i)}
-                                  className="px-3 py-2 text-sm cursor-pointer"
-                                  style={{ color: "var(--t-text)", background: i === addrActiveIdx ? "var(--t-hover, rgba(0,0,0,0.06))" : "transparent", borderBottom: i < addrResults.length - 1 ? "1px solid var(--t-border)" : "none" }}
-                                >
-                                  {s.label}
-                                </div>
-                              )) : (
-                                <div className="px-3 py-2 text-sm" style={{ color: "var(--t-muted)" }}>No matches — keep typing or fill the fields manually.</div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>Pick your address to auto-fill the fields below, or enter them manually.</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
-                        <input value={addr.line1} onChange={e => setAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
-                        <input value={addr.line2} onChange={e => setAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
-                          <input value={addr.city} onChange={e => setAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
-                          <input value={addr.postcode} onChange={e => setAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
-                        <select value={addr.country} onChange={e => setAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
-                          <option value="">Select country…</option>
-                          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>The vendor must ship to this country, or the order can't be priced or locked.</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Mobile / Phone</label>
-                        <input value={addr.phone} onChange={e => setAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={async () => { await saveDeliveryAddress(); setShowAddrEdit(false); }}
-                          disabled={busy === "delivery-address" || !addr.name.trim() || !addr.line1.trim() || !addr.country || !addr.phone.trim()}
-                          className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                          style={{ background: "var(--t-blue)" }}
-                        >
-                          {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                          Save address
-                        </button>
-                        <button
-                          onClick={() => setShowAddrEdit(false)}
-                          className="px-4 h-11 rounded-xl text-sm font-semibold"
-                          style={{ background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </>
-                  ) : share.delivery.address ? (
-                    <div className="space-y-3 text-sm">
-                      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Name</span>
-                        <span style={{ color: "var(--t-text)" }}>{share.delivery.name || "—"}</span>
-                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Address</span>
-                        <span className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{share.delivery.address}</span>
-                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Country</span>
-                        <span style={{ color: "var(--t-text)" }}>{share.delivery.country || "—"}</span>
-                        <span className="text-xs font-semibold pt-0.5" style={{ color: "var(--t-muted)" }}>Mobile</span>
-                        <span style={{ color: "var(--t-text)" }}>{share.delivery.phone || "—"}</span>
-                      </div>
-                      {share.delivery.canEditAddress && (
-                        <button
-                          onClick={() => setShowAddrEdit(true)}
-                          className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold"
-                          style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
-                        >
-                          Edit address
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    share.delivery.canEditAddress ? (
-                      <div className="space-y-3">
-                        <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-                          You're receiving this parcel. Add the delivery address so the organiser can lock the order.
-                        </p>
-                        <button
-                          onClick={() => setShowAddrEdit(true)}
-                          className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white"
-                          style={{ background: "var(--t-blue)" }}
-                        >
-                          <Truck className="w-4 h-4" /> Add delivery address
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
-                        <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#eab308" }} />
-                        <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address.</span>
-                      </div>
-                    )
-                  )}
-                </div>
-              </section>
-            )}
 
             {/* My items editor */}
             {canEditItems && (
-              <section className="space-y-2">
+              <section id={GUIDE_ANCHORS.items} style={flashStyle(GUIDE_ANCHORS.items)} className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>My Items</p>
                   {itemsDirty && <span className="text-xs font-semibold" style={{ color: "#eab308" }}>Unsaved changes</span>}
@@ -1194,11 +1053,13 @@ export default function WholesaleShared() {
 
             {/* What you owe — one combined personal money card (paying & done stages) */}
             {(stage === "paying" || stage === "done") && myMember && (
-              <WhatYouOwe
-                share={share}
-                me={myMember}
-                onPayOrder={() => { if (myMember.orderId) setLocation(`/account/orders/${myMember.orderId}`); }}
-              />
+              <div id={GUIDE_ANCHORS.owe} style={flashStyle(GUIDE_ANCHORS.owe)}>
+                <WhatYouOwe
+                  share={share}
+                  me={myMember}
+                  onPayOrder={() => { if (myMember.orderId) setLocation(`/account/orders/${myMember.orderId}`); }}
+                />
+              </div>
             )}
 
             {/* Combined order totals — group-level info, collapsible (open while building) */}
@@ -1303,6 +1164,7 @@ export default function WholesaleShared() {
                 controls. Each control inside keeps its own server-side gate, so a user
                 only ever sees the tools they're actually allowed to use. */}
             {showManage && (
+              <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
               <ExpandableCard
                 title="Manage order"
                 icon={<Settings className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
@@ -1637,14 +1499,197 @@ export default function WholesaleShared() {
               </section>
             )}
 
+            {/* Organiser fees — confirm each member's peer-to-peer fee as paid */}
+            {showFeeRoster && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fees — Mark Paid</p>
+                <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+                  {share.members.filter(m => m.organiserFee > 0).map(m => (
+                    <div key={m.username} className="px-3 py-2.5 space-y-1.5">
+                      <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
+                        @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
+                      </p>
+                      <FeeLine
+                        label="Organiser fee"
+                        amount={money(m.organiserFee)}
+                        paid={m.organiserFeePaid}
+                        canConfirm={share.fees.canConfirmOrganiserFees}
+                        busy={busy === `feepaid:organiser:${m.username}`}
+                        onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Onward charges roster — recipient confirms each member's onward charge */}
+            {showOnwardRoster && (
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Onward Charges — Mark Paid</p>
+                <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+                  {share.members.filter(m => !(share.onward.recipientUsername && m.username.toLowerCase() === share.onward.recipientUsername.toLowerCase())).map(m => (
+                    <div key={m.username} className="px-3 py-2.5 space-y-2">
+                      <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
+                        @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
+                      </p>
+                      {m.reshipperFee > 0 && (
+                        <FeeLine
+                          label="Onward charge"
+                          amount={money(m.reshipperFee)}
+                          paid={m.reshipperFeePaid}
+                          canConfirm={share.onward.canConfirm}
+                          busy={busy === `feepaid:reshipper:${m.username}`}
+                          onToggle={() => toggleFeePaid(m.username, "reshipper", !m.reshipperFeePaid)}
+                        />
+                      )}
+                      {m.onwardAddress
+                        ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{m.onwardAddress}</p>
+                        : <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No forwarding address yet.</p>}
+                      {m.onwardQr && (
+                        <img src={m.onwardQr} alt={`Delivery QR for ${m.username}`} className="w-28 h-28 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
                 </div>
               </ExpandableCard>
+              </div>
+            )}
+
+            {/* Delivery address — only the chosen recipient can set a one-off address
+                for this parcel. It overrides their saved account address for this order
+                only and never changes their account. */}
+            {share.delivery.canEditAddress && (
+              <section id={GUIDE_ANCHORS.address} style={flashStyle(GUIDE_ANCHORS.address)} className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Delivery Address</p>
+                <div className="rounded-xl p-4 space-y-3" style={card}>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                    You're receiving this parcel. Confirm or edit where it should go — this address is used for this order only and won't change your account.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
+                    <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div className="relative">
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Find your address</label>
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--t-muted)" }} />
+                      <input
+                        value={addrQuery}
+                        onChange={e => runAddrSearch(e.target.value)}
+                        onFocus={() => { if (addrResults.length) setShowAddrResults(true); }}
+                        onBlur={() => { addrBlurTimer.current = setTimeout(() => setShowAddrResults(false), 150); }}
+                        onKeyDown={onAddrKeyDown}
+                        placeholder="Start typing your address or postcode"
+                        autoComplete="off"
+                        role="combobox"
+                        aria-expanded={addrDropdownOpen}
+                        aria-controls="addr-suggestions"
+                        aria-autocomplete="list"
+                        aria-activedescendant={addrActiveIdx >= 0 ? `addr-opt-${addrActiveIdx}` : undefined}
+                        className="w-full h-10 pl-9 pr-9 rounded-lg border text-sm outline-none"
+                        style={field}
+                      />
+                      {addrSearching && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: "var(--t-muted)" }} />}
+                      {addrDropdownOpen && (
+                        <div id="addr-suggestions" role="listbox" className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ background: "var(--t-card, #fff)", borderColor: "var(--t-border)" }}>
+                          {addrResults.length > 0 ? addrResults.map((s, i) => (
+                            <div
+                              key={i}
+                              id={`addr-opt-${i}`}
+                              role="option"
+                              aria-selected={i === addrActiveIdx}
+                              onMouseDown={e => { e.preventDefault(); pickAddress(s); }}
+                              onMouseEnter={() => setAddrActiveIdx(i)}
+                              className="px-3 py-2 text-sm cursor-pointer"
+                              style={{ color: "var(--t-text)", background: i === addrActiveIdx ? "var(--t-hover, rgba(0,0,0,0.06))" : "transparent", borderBottom: i < addrResults.length - 1 ? "1px solid var(--t-border)" : "none" }}
+                            >
+                              {s.label}
+                            </div>
+                          )) : (
+                            <div className="px-3 py-2 text-sm" style={{ color: "var(--t-muted)" }}>
+                              No matches — keep typing or fill the fields in manually.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>Pick your address to auto-fill the fields below, or enter them manually.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
+                    <input value={addr.line1} onChange={e => setAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
+                    <input value={addr.line2} onChange={e => setAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
+                      <input value={addr.city} onChange={e => setAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
+                      <input value={addr.postcode} onChange={e => setAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+                    <select value={addr.country} onChange={e => setAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+                      <option value="">Select country…</option>
+                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>
+                      The vendor must ship to this country, or the order can't be priced or locked.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone</label>
+                    <input value={addr.phone} onChange={e => setAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+                  </div>
+                  <button
+                    onClick={saveDeliveryAddress}
+                    disabled={busy === "delivery-address" || !addr.name.trim() || !addr.line1.trim() || !addr.country || !addr.phone.trim()}
+                    className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                    style={{ background: "var(--t-blue)" }}
+                  >
+                    {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Save delivery address
+                  </button>
+                </div>
+              </section>
             )}
 
             {/* Group chat — members only */}
             {share.isMember && (
               <ShareChat shareId={share.id} readOnly={share.status === "cancelled"} />
             )}
+
+            {guide && (
+              <SetupWizard
+                open={wizardOpen}
+                onClose={closeWizard}
+                plan={guide}
+                share={share}
+                onAction={handleGuideAction}
+                copiedInvite={copied === "link"}
+              />
+            )}
+
+            <InvitePrompt
+              open={invitePromptOpen}
+              onClose={() => setInvitePromptOpen(false)}
+              shareLink={shareLink}
+              onCopy={() => copy(shareLink, "link")}
+              copied={copied === "link"}
+              memberCount={share.memberCount}
+              maxMembers={share.maxMembers}
+            />
 
             {/* My share to pay (locked, non-creator quick action handled in member row) */}
           </motion.div>
