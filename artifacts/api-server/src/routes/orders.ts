@@ -1249,6 +1249,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
   let gbHideCostBreakdownWhenClosed = false;
   let gbHideGrandTotalWhenClosed = false;
   let gbStatus: string | null = null;
+  let gbOrganiser: string | null = null;
   if (order.groupBuyId) {
     const [gb] = await db
       .select({
@@ -1264,6 +1265,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
         hideCostBreakdownWhenClosed: groupBuysTable.hideCostBreakdownWhenClosed,
         hideGrandTotalWhenClosed: groupBuysTable.hideGrandTotalWhenClosed,
         status: groupBuysTable.status,
+        organiserId: groupBuysTable.organiserId,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
@@ -1278,6 +1280,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     gbHideCostBreakdownWhenClosed = gb?.hideCostBreakdownWhenClosed ?? false;
     gbHideGrandTotalWhenClosed = gb?.hideGrandTotalWhenClosed ?? false;
     gbStatus = gb?.status ?? null;
+    gbOrganiser = gb?.organiserId ?? null;
     if (gb?.qrUploadCouriers && (gb.qrUploadCouriers as string[]).length > 0) {
       gbQrUploadCouriers = gb.qrUploadCouriers as string[];
     } else {
@@ -1320,6 +1323,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     groupBuyHideCostBreakdownWhenClosed: gbHideCostBreakdownWhenClosed,
     groupBuyHideGrandTotalWhenClosed: gbHideGrandTotalWhenClosed,
     groupBuyStatus: gbStatus,
+    groupBuyOrganiser: gbOrganiser,
   });
 });
 

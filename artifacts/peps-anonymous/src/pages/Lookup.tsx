@@ -5,7 +5,7 @@ import { COUNTRIES as COUNTRIES_LOOKUP } from "@/data/countries";
 import {
   Loader2, Search, AlertCircle, Truck, Package, MessageCircle,
   KeyRound, CheckCircle2, Eye, EyeOff, ArrowLeft, QrCode,
-  Upload, Download, ImagePlus, Plus, MapPin, Lock, Trash2, AtSign,
+  Upload, Download, ImagePlus, Plus, MapPin, Lock, Trash2, AtSign, Store,
 } from "lucide-react";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -1138,6 +1138,36 @@ export default function Lookup() {
                     <span className="text-white/50">Delivery</span>
                     <span className="font-semibold text-white">{foundOrder.deliveryMethod}</span>
                   </div>
+
+                  {/* Reseller contacts — organiser + reshipper, linked to their Telegram */}
+                  {((foundOrder as any).groupBuyOrganiser || foundOrder.reshipperUsername) && (
+                    <div className="flex flex-wrap gap-2">
+                      {(foundOrder as any).groupBuyOrganiser && (
+                        <a
+                          href={`https://t.me/${String((foundOrder as any).groupBuyOrganiser).replace(/^@/, "")}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20 transition-colors"
+                        >
+                          <Store className="w-3.5 h-3.5 text-white/70" />
+                          <span className="text-white/60">Organiser</span>
+                          <span>@{String((foundOrder as any).groupBuyOrganiser).replace(/^@/, "")}</span>
+                        </a>
+                      )}
+                      {foundOrder.reshipperUsername && (
+                        <a
+                          href={`https://t.me/${String(foundOrder.reshipperUsername).replace(/^@/, "")}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20 transition-colors"
+                        >
+                          <Truck className="w-3.5 h-3.5 text-white/70" />
+                          <span className="text-white/60">Reshipper</span>
+                          <span>@{String(foundOrder.reshipperUsername).replace(/^@/, "")}</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
 
                   {(foundOrder as any).adminMessage && (
                     <div className="bg-blue-400/20 border border-blue-400/30 rounded-xl p-3 flex items-start gap-3">
