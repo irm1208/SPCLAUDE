@@ -976,12 +976,44 @@ export default function WholesaleShared() {
     </button>
   ) : null;
 
+  // Lock checklist + actions — lives inside the Group & order details card.
+  const lockChecklistBlock = (
+    <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
+      <Checklist ok={share.members.length >= 2} text="At least 2 members" />
+      <Checklist ok={everyoneHasItems} text="Every member has added items" />
+      <Checklist ok={deliverySet} text="Delivery member & address set" />
+      <Checklist ok={shippingCalculable} text={deliverySet ? "Shipping can be calculated for this destination" : "Shipping calculable (set delivery first)"} />
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={doLock}
+          disabled={!canLock || busy === "lock"}
+          className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+          style={{ background: "var(--t-blue)" }}
+        >
+          {busy === "lock" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+          Lock & create orders
+        </button>
+        <button
+          onClick={doCancel}
+          disabled={busy === "cancel"}
+          className="px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
+          style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+        >
+          Cancel
+        </button>
+      </div>
+      <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+        Locking creates each member's order and stops further edits. Each member then pays their own share.
+      </p>
+    </div>
+  );
+
   const sectionGroup = (
     <ExpandableCard
       title="Group & order details"
       icon={<Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
       summary={`${share.memberCount}/${share.maxMembers} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
-      defaultOpen={stage === "building"}
+      defaultOpen={false}
     >
       <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
       <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
@@ -1003,6 +1035,7 @@ export default function WholesaleShared() {
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
       </div>
+      {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
           {leaveButton}
@@ -1252,7 +1285,7 @@ export default function WholesaleShared() {
 
   // Optional organiser fee — custom per-member charge paid directly to the organiser.
   const organiserFeeBlock = (
-    <div className="pt-2 border-t space-y-3" style={{ borderColor: "var(--t-border)" }}>
+    <div className="space-y-3">
       <div>
         <label className="block text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Organiser fee (optional)</label>
         <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
@@ -1316,49 +1349,23 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Lock checklist + actions
-  const lockChecklistBlock = (
-    <div className="pt-2 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
-      <Checklist ok={share.members.length >= 2} text="At least 2 members" />
-      <Checklist ok={everyoneHasItems} text="Every member has added items" />
-      <Checklist ok={deliverySet} text="Delivery member & address set" />
-      <Checklist ok={shippingCalculable} text={deliverySet ? "Shipping can be calculated for this destination" : "Shipping calculable (set delivery first)"} />
-      <div className="flex gap-2 pt-1">
-        <button
-          onClick={doLock}
-          disabled={!canLock || busy === "lock"}
-          className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-          style={{ background: "var(--t-blue)" }}
-        >
-          {busy === "lock" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-          Lock & create orders
-        </button>
-        <button
-          onClick={doCancel}
-          disabled={busy === "cancel"}
-          className="px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50"
-          style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
-        >
-          Cancel
-        </button>
-      </div>
-      <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-        Locking creates each member's order and stops further edits. Each member then pays their own share.
-      </p>
-    </div>
-  );
-
-  // Full-view organiser-open card — all controls grouped together (today's layout).
+  // Full-view organiser-open controls — separated into focused boxes.
   const sectionOrganiserControlsFull = (share.isCreator && isOpen) ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Controls</p>
-      <div className="rounded-xl p-4 space-y-4" style={card}>
-        {orgSplitBlock}
-        {deliveryPickerBlock}
-        {organiserFeeBlock}
-        {lockChecklistBlock}
-      </div>
-    </section>
+    <div className="space-y-4">
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping & Delivery</p>
+        <div className="rounded-xl p-4 space-y-4" style={card}>
+          {orgSplitBlock}
+          {deliveryPickerBlock}
+        </div>
+      </section>
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
+        <div className="rounded-xl p-4" style={card}>
+          {organiserFeeBlock}
+        </div>
+      </section>
+    </div>
   ) : null;
 
   // Recipient onward-shipping setup (toggle + payout methods + per-member charges).
