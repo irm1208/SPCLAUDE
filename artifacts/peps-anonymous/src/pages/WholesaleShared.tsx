@@ -38,7 +38,6 @@ import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine } from "@/components/wholesale-shared/payment-fields";
 import { NextStepBanner } from "@/components/wholesale-shared/NextStepBanner";
 import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
-import { WizardShell } from "@/components/wholesale-shared/WizardShell";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
 import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
 import { buildGuide, GUIDE_ANCHORS, type GuideTarget } from "@/components/wholesale-shared/next-step";
@@ -125,23 +124,6 @@ const STOCK_META: Record<StockLevel, { label: string; color: string }> = {
   none: { label: "—", color: "var(--t-muted)" },
 };
 
-// Icon for each guide step id, used in the guided wizard header.
-function stepIcon(id: string): ReactNode {
-  const cls = "w-5 h-5";
-  switch (id) {
-    case "items": return <Package className={cls} />;
-    case "invite": return <Share2 className={cls} />;
-    case "delivery": return <Truck className={cls} />;
-    case "address": return <MapPin className={cls} />;
-    case "onward": return <Send className={cls} />;
-    case "lock": return <Lock className={cls} />;
-    case "pay": return <CreditCard className={cls} />;
-    case "fee-organiser": return <CreditCard className={cls} />;
-    case "fee-onward": return <Truck className={cls} />;
-    default: return <CheckCircle2 className={cls} />;
-  }
-}
-
 function StatusBadge({ status }: { status: WholesaleShareDetail["status"] }) {
   const meta: Record<string, { label: string; color: string; bg: string }> = {
     open: { label: "Open", color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
@@ -227,11 +209,10 @@ export default function WholesaleShared() {
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Presentation: default to the guided step-by-step wizard, with a toggle to the
-  // full all-at-once view. Remembered per share so a return visit keeps the choice.
-  const [viewMode, setViewMode] = useState<"guided" | "full">("guided");
-  // Which guided step is on screen. Driven by buildGuide ordering; navigation only.
-  const [wizIdx, setWizIdx] = useState(0);
+  // Presentation: a brand-new order is set up in ordered sections (add items, then
+  // organiser shipping split + fee). Once those are done the full order opens. The
+  // completed flag is remembered per share so a return visit skips the gate.
+  const [setupDismissed, setSetupDismissed] = useState(false);
 
   // Guided onboarding overlay (presentation only).
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -265,31 +246,35 @@ export default function WholesaleShared() {
   // next-step banner and the setup wizard; never calls the server.
   const guide = useMemo(() => (share && myMember ? buildGuide(share, myMember) : null), [share, myMember]);
   const autoMoment = guide?.autoOpenMomentId ?? null;
-  const guideStage = guide?.stage ?? null;
 
-  // Restore the saved view preference for this share (guided by default).
+  // Progressive setup gate (presentation only). A brand-new order is set up in
+  // ordered sections — "Add your items", then (organiser only) "Shipping split &
+  // organiser fee". Completing one reveals the next; once they're done the full
+  // order opens. Derived purely from existing share data.
+  const setupSteps: string[] = guide?.stage === "building"
+    ? ["items", ...(share?.isCreator ? ["shipfee"] : [])]
+    : [];
+  const setupStepDone = (sid: string): boolean => {
+    if (sid === "items") return (myMember?.kits ?? 0) > 0;
+    if (sid === "shipfee") return setupDismissed;
+    return true;
+  };
+  const activeSetupStep = setupSteps.find(sid => !setupStepDone(sid)) ?? null;
+  const setupGateActive = activeSetupStep !== null;
+
+  // Restore whether this share's setup gate was already completed.
   useEffect(() => {
-    if (!id) return;
-    let saved: string | null = null;
-    try { saved = localStorage.getItem(`peps:ws-view:${id}`); } catch { /* ignore */ }
-    setViewMode(saved === "full" ? "full" : "guided");
+    if (!id) { setSetupDismissed(false); return; }
+    let done = false;
+    try { done = !!localStorage.getItem(`peps:ws-setup-done:${id}`); } catch { /* ignore */ }
+    setSetupDismissed(done);
   }, [id]);
 
-  // Reset the wizard to the guide's current step whenever the stage changes (the
-  // old step may no longer exist). Polling that doesn't change the stage leaves the
-  // member's place alone so they can navigate freely with Back/Next.
+  // Auto-open the legacy setup overlay once per role-moment, remembered per share so
+  // it never nags on return visits. Skipped while the progressive setup gate is on
+  // screen — the gate is the onboarding there, so the overlay would clash.
   useEffect(() => {
-    if (!guide) return;
-    const idx = guide.currentId ? guide.steps.findIndex(s => s.id === guide.currentId) : 0;
-    setWizIdx(idx >= 0 ? idx : 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guideStage]);
-
-  // Auto-open the wizard once per role-moment (organiser/member/recipient setup),
-  // remembered per share in localStorage so it never nags on return visits. Only in
-  // the full view — the guided view IS the wizard, so the overlay would clash.
-  useEffect(() => {
-    if (viewMode !== "full") return;
+    if (setupGateActive) return;
     if (!autoMoment || !id) return;
     const key = `${id}:${autoMoment}`;
     if (autoOpenedRef.current === key) return;
@@ -297,7 +282,7 @@ export default function WholesaleShared() {
     let seen = false;
     try { seen = !!localStorage.getItem(`peps:ws-wizard-seen:${key}`); } catch { /* ignore */ }
     if (!seen) setWizardOpen(true);
-  }, [autoMoment, id, viewMode]);
+  }, [autoMoment, id, setupGateActive]);
 
   // Per-member, per-share localStorage key for this member's unsaved draft. Null
   // until the account is loaded so we never read/write a non-namespaced key.
@@ -829,10 +814,13 @@ export default function WholesaleShared() {
 
   const shareLink = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "";
 
-  // Persist the view choice so a return visit keeps it.
-  const changeViewMode = (m: "guided" | "full") => {
-    setViewMode(m);
-    if (id) { try { localStorage.setItem(`peps:ws-view:${id}`, m); } catch { /* ignore */ } }
+  // Mark the progressive setup gate complete so the full order opens (and stays
+  // open on return visits). Also mark the current onboarding moment seen so the
+  // legacy setup overlay doesn't pop up immediately on top of the full order.
+  const dismissSetup = () => {
+    setSetupDismissed(true);
+    if (id) { try { localStorage.setItem(`peps:ws-setup-done:${id}`, "1"); } catch { /* ignore */ } }
+    markWizardSeen();
   };
 
   // Mark the active auto-open moment as seen so the wizard won't reopen on return.
@@ -1782,108 +1770,66 @@ export default function WholesaleShared() {
     </div>
   );
 
-  const deliveryStepCard = (share.isCreator && isOpen) ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Pick The Recipient</p>
-      <div className="rounded-xl p-4 space-y-4" style={card}>
-        {deliveryPickerBlock}
+
+  // Progressive setup gate (presentation only) — shown while a brand-new order is
+  // being built. Sections complete in order: the active step is open, completed ones
+  // collapse to a "Done" summary, and later steps stay locked until their turn.
+  const setupGateView = (
+    <div className="space-y-4">
+      <div className="px-1">
+        <h2 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>Set up your order</h2>
+        <p className="text-sm mt-0.5" style={{ color: "var(--t-muted)" }}>
+          Finish each step and your full order opens.
+        </p>
       </div>
-    </section>
-  ) : null;
 
-  const lockStepCard = (share.isCreator && isOpen) ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Lock &amp; Create Orders</p>
-      <div className="rounded-xl p-4 space-y-4" style={card}>
-        {orgSplitBlock}
-        {organiserFeeBlock}
-        {lockChecklistBlock}
-      </div>
-    </section>
-  ) : null;
+      {setupSteps.map((sid, i) => {
+        const done = setupStepDone(sid);
+        const active = sid === activeSetupStep;
+        const title = sid === "items" ? "Add your items" : "Shipping split & organiser fee";
+        const badgeStyle = done
+          ? { background: "rgba(34,197,94,0.15)", color: "#15803d" }
+          : active
+            ? { background: "var(--t-blue)", color: "#fff" }
+            : { background: "var(--t-surface2)", color: "var(--t-muted)" };
+        return (
+          <section key={sid} className="rounded-2xl overflow-hidden" style={card}>
+            <div className="flex items-center gap-3 px-4 py-3.5" style={active ? undefined : { opacity: done ? 1 : 0.6 }}>
+              <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={badgeStyle}>
+                {done ? <Check className="w-4 h-4" /> : i + 1}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{title}</p>
+                {!active && (
+                  <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+                    {done ? "Done" : "Unlocks after the step above"}
+                  </p>
+                )}
+              </div>
+            </div>
+            {active && (
+              <div className="px-4 pb-4 pt-1 space-y-4 border-t" style={{ borderColor: "var(--t-border)" }}>
+                {sid === "items" ? sectionMyItems : (
+                  <>
+                    {orgSplitBlock}
+                    {organiserFeeBlock}
+                    <button
+                      onClick={dismissSetup}
+                      className="w-full h-11 rounded-xl text-sm font-bold"
+                      style={{ background: "var(--t-blue)", color: "#fff" }}
+                    >
+                      Open full order
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
-  const stepBody = (sid: string): ReactNode => {
-    switch (sid) {
-      case "items": return sectionMyItems;
-      case "invite": return inviteStepBody;
-      case "delivery": return <>{deliveryStepCard}{groupTrackerCard}</>;
-      case "address": return sectionAddressForm;
-      case "onward": return sectionOnwardConfig;
-      case "lock": return lockStepCard;
-      case "pay": return <>{sectionWhatYouOwe}{groupTrackerCard}</>;
-      case "fee-organiser": return sectionWhatYouOwe;
-      case "fee-onward": return sectionWhatYouOwe;
-      default: return null;
-    }
-  };
-
-  // Guided wizard model — ordering comes straight from buildGuide (unchanged).
-  const guidedAvailable = !!guide && stage !== "cancelled";
-  const wizardSteps = guidedAvailable ? (guide?.steps ?? []) : [];
-  const safeIdx = Math.min(Math.max(0, wizIdx), Math.max(0, wizardSteps.length - 1));
-  const activeStep = wizardSteps[safeIdx] ?? null;
-  const effectiveMode = guidedAvailable ? viewMode : "full";
-
-  // Secondary tools, always reachable in the guided view (and always shown in full).
-  const moreOptions = (
-    <ExpandableCard
-      title="More options"
-      icon={<Settings className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
-      summary="Tools & details"
-    >
-      <div className="space-y-5">
-        {groupTrackerCard}
-        {leaveButton && <section>{leaveButton}</section>}
-        {sectionOrderDetails}
-        {sectionOrderBreakdown}
-        {sectionOnwardDestination}
-        {sectionFeeRoster}
-        {sectionOnwardRoster}
-        {sectionOrganiserLocked}
-        {sectionChat}
-      </div>
-    </ExpandableCard>
-  );
-
-  const doneCard = (
-    <section className="rounded-2xl p-6 text-center space-y-3" style={card}>
-      <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: "rgba(34,197,94,0.12)" }}>
-        <CheckCircle2 className="w-6 h-6" style={{ color: "#15803d" }} />
-      </div>
-      <h2 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
-        {stage === "done" ? "Order placed" : "You're all set"}
-      </h2>
-      <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-        {stage === "done"
-          ? "Everyone has paid and the parcel is on its way to the vendor."
-          : "Nothing left for you to do right now. Check back here for updates, or open the full order below."}
-      </p>
-    </section>
-  );
-
-  const guidedView = (
-    <>
-      {activeStep ? (
-        <WizardShell
-          stepIndex={safeIdx}
-          stepCount={wizardSteps.length}
-          icon={stepIcon(activeStep.id)}
-          title={activeStep.title}
-          instruction={activeStep.description}
-          note={activeStep.blocked ? activeStep.note : undefined}
-          done={activeStep.done}
-          optional={activeStep.optional}
-          onBack={safeIdx > 0 ? () => setWizIdx(safeIdx - 1) : undefined}
-          onNext={safeIdx < wizardSteps.length - 1 ? () => setWizIdx(safeIdx + 1) : undefined}
-          nextLabel="Next step"
-        >
-          {stepBody(activeStep.id)}
-        </WizardShell>
-      ) : (
-        doneCard
-      )}
-      {moreOptions}
-    </>
+      {groupTrackerCard}
+    </div>
   );
 
   const fullView = (
@@ -1919,9 +1865,6 @@ export default function WholesaleShared() {
     </>
   );
 
-  const toggleActive = { background: "var(--t-blue)", color: "#fff" } as const;
-  const toggleInactive = { background: "transparent", color: "var(--t-muted)" } as const;
-
   return (
     <PageLayout>
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
@@ -1942,33 +1885,7 @@ export default function WholesaleShared() {
               </div>
             )}
 
-            {/* View toggle — step-by-step is the default; the full all-at-once
-                order is a quieter, right-aligned secondary option so the simple
-                flow stays the focus. */}
-            {guidedAvailable && (
-              <div className="flex justify-end">
-                <div className="inline-flex items-center gap-1 rounded-full p-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                  <button
-                    onClick={() => changeViewMode("guided")}
-                    aria-pressed={viewMode === "guided"}
-                    className="h-8 px-3.5 rounded-full text-xs font-semibold transition-colors"
-                    style={viewMode === "guided" ? toggleActive : toggleInactive}
-                  >
-                    Step-by-step
-                  </button>
-                  <button
-                    onClick={() => changeViewMode("full")}
-                    aria-pressed={viewMode === "full"}
-                    className="h-8 px-3.5 rounded-full text-xs font-semibold transition-colors"
-                    style={viewMode === "full" ? toggleActive : toggleInactive}
-                  >
-                    Full order
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {effectiveMode === "guided" ? guidedView : fullView}
+            {setupGateActive ? setupGateView : fullView}
 
             {guide && (
               <SetupWizard
