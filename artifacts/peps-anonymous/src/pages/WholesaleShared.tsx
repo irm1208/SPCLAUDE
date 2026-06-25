@@ -978,12 +978,31 @@ export default function WholesaleShared() {
 
   const sectionGroup = (
     <ExpandableCard
-      title="Group"
+      title="Group & order details"
       icon={<Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
-      summary={`${share.memberCount}/${share.maxMembers} members`}
+      summary={`${share.memberCount}/${share.maxMembers} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
       defaultOpen={stage === "building"}
     >
       <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
+      <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Order details</p>
+        <Row label="Combined kits" value={String(share.combinedKits)} />
+        <Row label="Combined products" value={money(share.combinedSubtotal)} />
+        <Row
+          label={`Vendor shipping${share.shippingRegion ? ` · ${share.shippingRegion}` : ""}`}
+          value={
+            share.status !== "open" && share.totalVendorShipping != null
+              ? money(share.totalVendorShipping)
+              : share.shippingEstimate != null
+                ? `≈ ${money(share.shippingEstimate)}`
+                : share.delivery.country ? "—" : "Set delivery to estimate"
+          }
+        />
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-sm" style={{ color: "var(--t-muted)" }}>Split between members</span>
+          <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
+        </div>
+      </div>
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
           {leaveButton}
@@ -1099,33 +1118,6 @@ export default function WholesaleShared() {
       />
     </div>
   ) : null;
-
-  const sectionOrderDetails = (
-    <ExpandableCard
-      title="Order details"
-      summary={`${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
-      defaultOpen={stage === "building"}
-    >
-      <div className="space-y-2.5">
-        <Row label="Combined kits" value={String(share.combinedKits)} />
-        <Row label="Combined products" value={money(share.combinedSubtotal)} />
-        <Row
-          label={`Vendor shipping${share.shippingRegion ? ` · ${share.shippingRegion}` : ""}`}
-          value={
-            share.status !== "open" && share.totalVendorShipping != null
-              ? money(share.totalVendorShipping)
-              : share.shippingEstimate != null
-                ? `≈ ${money(share.shippingEstimate)}`
-                : share.delivery.country ? "—" : "Set delivery to estimate"
-          }
-        />
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-sm" style={{ color: "var(--t-muted)" }}>Split between members</span>
-          <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
-        </div>
-      </div>
-    </ExpandableCard>
-  );
 
   const sectionOnwardDestination = share.onward.canSetDestination && myMember ? (
     <section className="space-y-2">
@@ -1828,7 +1820,6 @@ export default function WholesaleShared() {
       {sectionGroup}
       {sectionMyItems}
       {sectionWhatYouOwe}
-      {sectionOrderDetails}
       {sectionOnwardDestination}
       {showManage && (
         <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
