@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Check, CheckCircle2, Clock, CreditCard, Crown, MapPin, Truck } from "lucide-react";
+import { Check, CheckCircle2, Clock, CreditCard, Crown, Loader2, MapPin, Trash2, Truck } from "lucide-react";
 import type { WholesaleShareDetail } from "@/hooks/use-wholesale-shares";
 
 interface GroupTrackerProps {
@@ -7,6 +7,11 @@ interface GroupTrackerProps {
   onPayMember: (orderId: string) => void;
   // When true, show each member's per-product item breakdown inside their row.
   showItems?: boolean;
+  // When provided (organiser, open order), shows a Remove button on each
+  // removable member's row. `removingUsername` is the member currently being
+  // removed — used to show a busy spinner and disable the button.
+  onRemoveMember?: (username: string) => void;
+  removingUsername?: string | null;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -43,7 +48,7 @@ function Chip({ ok, label, neutralLabel, icon }: { ok: boolean; label: string; n
 
 // Per-member status list with progress chips so everyone can see where the group
 // stands. Presentation-only — same data the page already shows, just clearer.
-export function GroupTracker({ share, onPayMember, showItems = false }: GroupTrackerProps) {
+export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMember, removingUsername }: GroupTrackerProps) {
   const isOpen = share.status === "open";
   const d = share.delivery;
   // Mirror the page's deliveryComplete check so the chip can't claim "Address set"
@@ -83,6 +88,18 @@ export function GroupTracker({ share, onPayMember, showItems = false }: GroupTra
                 style={{ background: "var(--t-blue)" }}
               >
                 <CreditCard className="w-4 h-4" /> Pay
+              </button>
+            )}
+            {isOpen && onRemoveMember && m.canRemove && (
+              <button
+                onClick={() => onRemoveMember(m.username)}
+                disabled={removingUsername === m.username}
+                className="shrink-0 inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-50"
+                style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                aria-label={`Remove @${m.username.replace(/^@/, "")}`}
+              >
+                {removingUsername === m.username ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Remove
               </button>
             )}
           </div>

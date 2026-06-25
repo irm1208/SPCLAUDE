@@ -5,7 +5,7 @@ import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, Upload, X,
-  Package, MapPin, CreditCard, Trash2,
+  Package, MapPin, CreditCard,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -1051,7 +1051,18 @@ export default function WholesaleShared() {
       summary={`${share.memberCount}${share.maxMembers != null ? `/${share.maxMembers}` : ""} members · ${share.combinedKits} kit${share.combinedKits === 1 ? "" : "s"} · ${money(share.combinedSubtotal)}`}
       defaultOpen={false}
     >
-      <GroupTracker share={share} showItems={showOrderBreakdown} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
+      <GroupTracker
+        share={share}
+        showItems={showOrderBreakdown}
+        onPayMember={orderId => setLocation(`/account/orders/${orderId}`)}
+        onRemoveMember={showOrganiserOpen ? removeMember : undefined}
+        removingUsername={busy?.startsWith("remove:") ? busy.slice(7) : null}
+      />
+      {showOrganiserOpen && share.members.some(m => m.canRemove) && (
+        <p className="text-[11px] mt-2" style={{ color: "var(--t-muted)" }}>
+          Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
+        </p>
+      )}
       <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Order details</p>
         <div className="space-y-1">
@@ -1082,39 +1093,6 @@ export default function WholesaleShared() {
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
       </div>
-      {share.isCreator && isOpen && (
-        <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Members</p>
-          <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-            {share.members.map(m => (
-              <div key={m.username} className="flex items-center justify-between gap-2 px-3 py-2.5">
-                <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
-                  @{m.username.replace(/^@/, "")}
-                  {m.isCreator && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>organiser</span>}
-                  {m.isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>recipient</span>}
-                  <span className="text-[11px] ml-2" style={{ color: "var(--t-muted)" }}>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
-                </span>
-                {m.canRemove ? (
-                  <button
-                    onClick={() => removeMember(m.username)}
-                    disabled={busy === `remove:${m.username}`}
-                    className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0"
-                    style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
-                  >
-                    {busy === `remove:${m.username}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                    Remove
-                  </button>
-                ) : (
-                  <span className="text-[11px] shrink-0" style={{ color: "var(--t-muted)" }}>—</span>
-                )}
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-            Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
-          </p>
-        </div>
-      )}
       {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
