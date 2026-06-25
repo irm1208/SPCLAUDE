@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useLocation, useRoute } from "wouter";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
-  ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
+  ChevronDown, Info, MessageCircle, Send, Upload, X,
   Package, MapPin, CreditCard, Trash2,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
@@ -435,6 +435,22 @@ export default function WholesaleShared() {
     if (addrBlurTimer.current) clearTimeout(addrBlurTimer.current);
   }, []);
 
+  // Delivery-address popup. Opens automatically the moment this member becomes
+  // the recipient without a saved address (e.g. the organiser picks themselves),
+  // and can be re-opened from the "Add/Edit delivery address" buttons. Declared
+  // with the other hooks (above the early returns) to keep hook order stable.
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const addrAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    const canEdit = !!share?.delivery.canEditAddress;
+    const hasAddress = !!share?.delivery.address;
+    if (canEdit && !hasAddress) {
+      if (!addrAutoOpenedRef.current) { addrAutoOpenedRef.current = true; setAddressModalOpen(true); }
+    } else if (!canEdit) {
+      addrAutoOpenedRef.current = false;
+    }
+  }, [share?.delivery.canEditAddress, share?.delivery.address]);
+
   const priceOf = (productId: string) => products.find(p => p.id === productId)?.price ?? 0;
   const nameOf = (productId: string) => products.find(p => p.id === productId)?.name ?? productId;
 
@@ -516,15 +532,14 @@ export default function WholesaleShared() {
   const shippingCalculable = deliverySet && share.estimateCalculable;
   const canLock = isOpen && share.members.length >= 2 && everyoneHasItems && deliverySet && shippingCalculable;
 
-  // Stage drives which cards show / auto-expand; role flags gate the single
-  // "Manage order" entry. Every underlying control keeps its own server-side gate.
+  // Stage drives which cards show / auto-expand; role flags gate the
+  // organiser/recipient sections. Every underlying control keeps its own
+  // server-side gate too.
   const stage = shareStage(share.status);
   const showOrganiserOpen = share.isCreator && isOpen;
   const showOrganiserLocked = share.isCreator && share.status === "locked";
-  const showOnwardConfig = share.onward.canManage;
   const showOnwardRoster = share.onward.enabled && share.onward.canConfirm;
   const showFeeRoster = share.fees.canConfirmOrganiserFees && share.fees.active && share.fees.organiserFeeTotal > 0;
-  const showManage = showOrganiserOpen || showOrganiserLocked || showOnwardConfig || showOnwardRoster || showFeeRoster;
   const showOrderBreakdown = (share.isCreator || !!myMember?.isRecipient) && share.members.length > 0;
 
   const setQty = (pid: string, val: number) => {
@@ -654,6 +669,7 @@ export default function WholesaleShared() {
         phone: addr.phone,
       });
       invalidate(id);
+      setAddressModalOpen(false);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1064,6 +1080,39 @@ export default function WholesaleShared() {
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
       </div>
+      {share.isCreator && isOpen && (
+        <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Members</p>
+          <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+            {share.members.map(m => (
+              <div key={m.username} className="flex items-center justify-between gap-2 px-3 py-2.5">
+                <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
+                  @{m.username.replace(/^@/, "")}
+                  {m.isCreator && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>organiser</span>}
+                  {m.isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>recipient</span>}
+                  <span className="text-[11px] ml-2" style={{ color: "var(--t-muted)" }}>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
+                </span>
+                {m.canRemove ? (
+                  <button
+                    onClick={() => removeMember(m.username)}
+                    disabled={busy === `remove:${m.username}`}
+                    className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0"
+                    style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                  >
+                    {busy === `remove:${m.username}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    Remove
+                  </button>
+                ) : (
+                  <span className="text-[11px] shrink-0" style={{ color: "var(--t-muted)" }}>—</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+            Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
+          </p>
+        </div>
+      )}
       {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
@@ -1306,8 +1355,17 @@ export default function WholesaleShared() {
       {share.delivery.username && !share.delivery.address && (
         <div className="rounded-lg p-3 text-xs flex items-start gap-2" style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "var(--t-text)" }}>
           <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#eab308" }} />
-          <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address{share.delivery.canEditAddress ? " — that's you, fill it in below" : ""}.</span>
+          <span>Waiting for @{share.delivery.username.replace(/^@/, "")} to add a delivery address{share.delivery.canEditAddress ? " — that's you, add it now" : ""}.</span>
         </div>
+      )}
+      {share.delivery.canEditAddress && (
+        <button
+          onClick={() => setAddressModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold"
+          style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", border: "1px solid var(--t-blue-25)" }}
+        >
+          <MapPin className="w-4 h-4" /> {share.delivery.address ? "Edit delivery address" : "Add delivery address"}
+        </button>
       )}
     </div>
   );
@@ -1378,19 +1436,20 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Full-view organiser-open controls — separated into focused boxes.
-  const sectionOrganiserControlsFull = (share.isCreator && isOpen) ? (
-    <div className="space-y-4">
-      <section className="space-y-2">
-        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping & Delivery</p>
-        <div className="rounded-xl p-4 space-y-4" style={card}>
-          {orgSplitBlock}
-          {deliveryPickerBlock}
-        </div>
-      </section>
-      <section className="space-y-2">
-        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Limits &amp; Rules</p>
-        <div className="rounded-xl p-4 space-y-4" style={card}>
+  // Organiser shipping & delivery card (split + recipient picker). Combined with
+  // the onward-shipping block below into the Shipping & Delivery section.
+  const shippingDeliveryCard = (share.isCreator && isOpen) ? (
+    <div className="rounded-xl p-4 space-y-4" style={card}>
+      {orgSplitBlock}
+      {deliveryPickerBlock}
+    </div>
+  ) : null;
+
+  // Order limits & rules — its own section.
+  const sectionOrderLimits = (share.isCreator && isOpen) ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Limits &amp; Rules</p>
+      <div className="rounded-xl p-4 space-y-4" style={card}>
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
             Optional limits for this shared order. Leave a field blank for no limit.
           </p>
@@ -1466,44 +1525,16 @@ export default function WholesaleShared() {
           </button>
         </div>
       </section>
-      <section className="space-y-2">
-        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Members</p>
-        <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-          {share.members.map(m => (
-            <div key={m.username} className="flex items-center justify-between gap-2 px-3 py-2.5">
-              <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
-                @{m.username.replace(/^@/, "")}
-                {m.isCreator && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>organiser</span>}
-                {m.isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>recipient</span>}
-                <span className="text-[11px] ml-2" style={{ color: "var(--t-muted)" }}>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
-              </span>
-              {m.canRemove ? (
-                <button
-                  onClick={() => removeMember(m.username)}
-                  disabled={busy === `remove:${m.username}`}
-                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0"
-                  style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
-                >
-                  {busy === `remove:${m.username}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                  Remove
-                </button>
-              ) : (
-                <span className="text-[11px] shrink-0" style={{ color: "var(--t-muted)" }}>—</span>
-              )}
-            </div>
-          ))}
-        </div>
-        <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
-          Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
-        </p>
-      </section>
-      <section className="space-y-2">
-        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
-        <div className="rounded-xl p-4" style={card}>
-          {organiserFeeBlock}
-        </div>
-      </section>
-    </div>
+  ) : null;
+
+  // Organiser fee — its own section.
+  const sectionOrganiserFee = (share.isCreator && isOpen) ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
+      <div className="rounded-xl p-4" style={card}>
+        {organiserFeeBlock}
+      </div>
+    </section>
   ) : null;
 
   // Recipient onward-shipping setup (toggle + payout methods + per-member charges).
@@ -1631,6 +1662,16 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // Combined Shipping & Delivery section: organiser split/recipient picker plus the
+  // recipient's onward-shipping setup, grouped under one header.
+  const sectionShippingDelivery = (shippingDeliveryCard || sectionOnwardConfig) ? (
+    <section id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)} className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping &amp; Delivery</p>
+      {shippingDeliveryCard}
+      {sectionOnwardConfig}
+    </section>
+  ) : null;
+
   // Locked: organiser can still unlock / cancel if a member never pays.
   const sectionOrganiserLocked = showOrganiserLocked ? (
     <section className="space-y-2">
@@ -1723,11 +1764,64 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  // Delivery address — only the chosen recipient can set a one-off address.
-  const sectionAddressForm = share.delivery.canEditAddress ? (
+  // Recipient address prompt: a compact card whose button opens the modal. Shown
+  // to whoever is receiving the parcel but isn't looking at the organiser picker.
+  // (Only the chosen recipient can set this one-off delivery address.)
+  const sectionRecipientAddressPrompt = (share.delivery.canEditAddress && !(share.isCreator && isOpen)) ? (
     <section id={GUIDE_ANCHORS.address} style={flashStyle(GUIDE_ANCHORS.address)} className="space-y-2">
       <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Delivery Address</p>
       <div className="rounded-xl p-4 space-y-3" style={card}>
+        <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+          You're receiving this parcel. {share.delivery.address ? "Review or update where it should go." : "Add where it should go — used for this order only, it won't change your account."}
+        </p>
+        {share.delivery.address && (
+          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+            <p className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{share.delivery.address}</p>
+            {share.delivery.country && <p style={{ color: "var(--t-text)" }}>{share.delivery.country}</p>}
+            {share.delivery.phone && <p style={{ color: "var(--t-muted)" }}>{share.delivery.phone}</p>}
+          </div>
+        )}
+        <button
+          onClick={() => setAddressModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 h-11 rounded-xl text-sm font-bold text-white"
+          style={{ background: "var(--t-blue)" }}
+        >
+          <MapPin className="w-4 h-4" /> {share.delivery.address ? "Edit delivery address" : "Add delivery address"}
+        </button>
+      </div>
+    </section>
+  ) : null;
+
+  // Delivery-address popup — the full address form shown as a centred modal.
+  const addressModal = (
+    <AnimatePresence>
+      {addressModalOpen && share.delivery.canEditAddress && (
+        <>
+          <motion.div
+            key="addr-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setAddressModalOpen(false)}
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
+          />
+          <motion.div
+            key="addr-modal"
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
+            role="dialog"
+            aria-modal="true"
+            className="fixed z-[61] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[88vh] overflow-y-auto rounded-2xl p-5 space-y-3 shadow-2xl"
+            style={card}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Your delivery address</p>
+              <button onClick={() => setAddressModalOpen(false)} aria-label="Close">
+                <X className="w-5 h-5" style={{ color: "var(--t-muted)" }} />
+              </button>
+            </div>
         <p className="text-xs" style={{ color: "var(--t-muted)" }}>
           You're receiving this parcel. Confirm or edit where it should go — this address is used for this order only and won't change your account.
         </p>
@@ -1822,9 +1916,11 @@ export default function WholesaleShared() {
           {busy === "delivery-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           Save delivery address
         </button>
-      </div>
-    </section>
-  ) : null;
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
 
   const sectionChat = share.isMember ? (
     <ShareChat shareId={share.id} readOnly={share.status === "cancelled"} />
@@ -1931,26 +2027,15 @@ export default function WholesaleShared() {
       {sectionMyItems}
       {sectionWhatYouOwe}
       {sectionOnwardDestination}
-      {showManage && (
-        <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
-          <ExpandableCard
-            title="Manage order"
-            icon={<Settings className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
-            summary={share.isCreator ? "Organiser tools" : "Recipient tools"}
-            defaultOpen={showOrganiserOpen || showOnwardConfig}
-          >
-            <div className="space-y-5">
-              {sectionOrganiserControlsFull}
-              {sectionOnwardConfig}
-              {sectionOrganiserLocked}
-              {sectionFeeRoster}
-              {sectionOnwardRoster}
-            </div>
-          </ExpandableCard>
-        </div>
-      )}
-      {sectionAddressForm}
+      {sectionShippingDelivery}
+      {sectionOrderLimits}
+      {sectionOrganiserFee}
+      {sectionOrganiserLocked}
+      {sectionFeeRoster}
+      {sectionOnwardRoster}
+      {sectionRecipientAddressPrompt}
       {sectionChat}
+      {addressModal}
     </>
   );
 
@@ -2033,24 +2118,53 @@ function formatChatTime(iso: string): string {
 function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }) {
   const cardStyle = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
   const fieldStyle = { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)", border: "1px solid var(--t-border)" } as const;
+  const SEEN_KEY = `wsChat:seen:${shareId}`;
 
   const { data: messages = [], isLoading } = useWholesaleShareMessages(shareId);
   const invalidateMessages = useInvalidateWholesaleShareMessages();
 
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // How many messages have been "seen". null until we know a baseline; a brand-new
+  // visitor's existing history is treated as seen so the badge counts only new ones.
+  const [seenCount, setSeenCount] = useState<number | null>(() => {
+    try {
+      const v = localStorage.getItem(SEEN_KEY);
+      if (v == null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    } catch { return null; }
+  });
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const lastCountRef = useRef(0);
 
-  // Auto-scroll to the newest message when the count changes.
+  const markAllSeen = (count: number) => {
+    setSeenCount(count);
+    try { localStorage.setItem(SEEN_KEY, String(count)); } catch { /* storage unavailable */ }
+  };
+
+  // Establish the baseline once messages first load for a brand-new visitor.
   useEffect(() => {
-    if (messages.length !== lastCountRef.current) {
+    if (seenCount == null && !isLoading) markAllSeen(messages.length);
+  }, [isLoading, messages.length, seenCount]);
+
+  // Keep everything marked read while the panel is open.
+  useEffect(() => {
+    if (open) markAllSeen(messages.length);
+  }, [open, messages.length]);
+
+  // Auto-scroll to the newest message while the panel is open.
+  useEffect(() => {
+    if (open && messages.length !== lastCountRef.current) {
       lastCountRef.current = messages.length;
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [messages.length]);
+  }, [messages.length, open]);
+
+  const unread = seenCount == null ? 0 : Math.max(0, messages.length - seenCount);
 
   const send = async () => {
     const body = draft.trim();
@@ -2076,75 +2190,119 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
   };
 
   return (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Group Chat</p>
-      <div className="rounded-2xl flex flex-col overflow-hidden" style={cardStyle}>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5" style={{ maxHeight: "22rem", minHeight: "9rem" }}>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-muted)" }} />
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-              <MessageCircle className="w-8 h-8" style={{ color: "var(--t-muted)", opacity: 0.4 }} />
-              <p className="text-sm" style={{ color: "var(--t-muted)" }}>No messages yet — say hello to your group.</p>
-            </div>
-          ) : (
-            messages.map(m => (
-              <div key={m.id} className={`flex ${m.isYou ? "justify-end" : "justify-start"}`}>
-                <div className="max-w-[80%] min-w-0">
-                  {!m.isYou && (
-                    <p className="text-[11px] font-semibold mb-0.5 px-1" style={{ color: "var(--t-blue)" }}>@{m.username}</p>
-                  )}
-                  <div
-                    className="rounded-2xl px-3 py-2 text-sm break-words whitespace-pre-wrap"
-                    style={m.isYou
-                      ? { background: "var(--t-blue)", color: "#fff", borderBottomRightRadius: 4 }
-                      : { background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)", borderBottomLeftRadius: 4 }}
-                  >
-                    {m.body}
-                  </div>
-                  <p className="text-[10px] mt-0.5 px-1" style={{ color: "var(--t-muted)", textAlign: m.isYou ? "right" : "left" }}>
-                    {formatChatTime(m.createdAt)}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {readOnly ? (
-          <div className="px-4 py-3 text-xs text-center" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
-            This shared order has been cancelled — chat is read-only.
-          </div>
-        ) : (
-          <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
-            {error && <p className="text-xs px-1" style={{ color: "#b91c1c" }}>{error}</p>}
-            <div className="flex items-end gap-2">
-              <textarea
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Message your group…"
-                rows={1}
-                maxLength={2000}
-                className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={{ ...fieldStyle, maxHeight: "7rem" }}
-              />
-              <button
-                onClick={() => void send()}
-                disabled={sending || !draft.trim()}
-                className="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl text-white disabled:opacity-40"
-                style={{ background: "var(--t-blue)" }}
-                aria-label="Send message"
-              >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+    <>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="fixed right-4 bottom-24 md:bottom-6 md:right-6 z-40 inline-flex items-center justify-center h-14 w-14 rounded-full shadow-lg text-white"
+        style={{ background: "var(--t-blue)" }}
+        aria-label={open ? "Close group chat" : "Open group chat"}
+      >
+        {open ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
+        {!open && unread > 0 && (
+          <span
+            className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center"
+            style={{ background: "#ef4444", color: "#fff", border: "2px solid var(--t-bg)" }}
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
         )}
-      </div>
-    </section>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.div
+              key="chat-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setOpen(false)}
+              className="fixed inset-0 z-[58] bg-black/30 backdrop-blur-sm md:bg-transparent md:backdrop-blur-0"
+            />
+            <motion.div
+              key="chat-panel"
+              initial={{ opacity: 0, y: "100%" }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="fixed z-[59] bottom-0 left-0 right-0 rounded-t-3xl flex flex-col overflow-hidden md:bottom-24 md:right-6 md:left-auto md:w-96 md:rounded-2xl md:shadow-2xl"
+              style={cardStyle}
+            >
+              <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Group Chat</p>
+                <button onClick={() => setOpen(false)} aria-label="Close chat">
+                  <X className="w-5 h-5" style={{ color: "var(--t-muted)" }} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5" style={{ maxHeight: "60vh", minHeight: "12rem" }}>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-muted)" }} />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+                    <MessageCircle className="w-8 h-8" style={{ color: "var(--t-muted)", opacity: 0.4 }} />
+                    <p className="text-sm" style={{ color: "var(--t-muted)" }}>No messages yet — say hello to your group.</p>
+                  </div>
+                ) : (
+                  messages.map(m => (
+                    <div key={m.id} className={`flex ${m.isYou ? "justify-end" : "justify-start"}`}>
+                      <div className="max-w-[80%] min-w-0">
+                        {!m.isYou && (
+                          <p className="text-[11px] font-semibold mb-0.5 px-1" style={{ color: "var(--t-blue)" }}>@{m.username}</p>
+                        )}
+                        <div
+                          className="rounded-2xl px-3 py-2 text-sm break-words whitespace-pre-wrap"
+                          style={m.isYou
+                            ? { background: "var(--t-blue)", color: "#fff", borderBottomRightRadius: 4 }
+                            : { background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)", borderBottomLeftRadius: 4 }}
+                        >
+                          {m.body}
+                        </div>
+                        <p className="text-[10px] mt-0.5 px-1" style={{ color: "var(--t-muted)", textAlign: m.isYou ? "right" : "left" }}>
+                          {formatChatTime(m.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              {readOnly ? (
+                <div className="px-4 py-3 text-xs text-center" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+                  This shared order has been cancelled — chat is read-only.
+                </div>
+              ) : (
+                <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+                  {error && <p className="text-xs px-1" style={{ color: "#b91c1c" }}>{error}</p>}
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      value={draft}
+                      onChange={e => setDraft(e.target.value)}
+                      onKeyDown={onKeyDown}
+                      placeholder="Message your group…"
+                      rows={1}
+                      maxLength={2000}
+                      className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
+                      style={{ ...fieldStyle, maxHeight: "7rem" }}
+                    />
+                    <button
+                      onClick={() => void send()}
+                      disabled={sending || !draft.trim()}
+                      className="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl text-white disabled:opacity-40"
+                      style={{ background: "var(--t-blue)" }}
+                      aria-label="Send message"
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
