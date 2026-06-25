@@ -1942,25 +1942,29 @@ export default function WholesaleShared() {
               </div>
             )}
 
-            {/* View toggle: guided wizard (default) vs the full all-at-once order */}
+            {/* View toggle — step-by-step is the default; the full all-at-once
+                order is a quieter, right-aligned secondary option so the simple
+                flow stays the focus. */}
             {guidedAvailable && (
-              <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                <button
-                  onClick={() => changeViewMode("guided")}
-                  aria-pressed={viewMode === "guided"}
-                  className="flex-1 h-9 rounded-lg text-sm font-semibold transition-colors"
-                  style={viewMode === "guided" ? toggleActive : toggleInactive}
-                >
-                  Guided steps
-                </button>
-                <button
-                  onClick={() => changeViewMode("full")}
-                  aria-pressed={viewMode === "full"}
-                  className="flex-1 h-9 rounded-lg text-sm font-semibold transition-colors"
-                  style={viewMode === "full" ? toggleActive : toggleInactive}
-                >
-                  Show full order
-                </button>
+              <div className="flex justify-end">
+                <div className="inline-flex items-center gap-1 rounded-full p-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                  <button
+                    onClick={() => changeViewMode("guided")}
+                    aria-pressed={viewMode === "guided"}
+                    className="h-8 px-3.5 rounded-full text-xs font-semibold transition-colors"
+                    style={viewMode === "guided" ? toggleActive : toggleInactive}
+                  >
+                    Step-by-step
+                  </button>
+                  <button
+                    onClick={() => changeViewMode("full")}
+                    aria-pressed={viewMode === "full"}
+                    className="h-8 px-3.5 rounded-full text-xs font-semibold transition-colors"
+                    style={viewMode === "full" ? toggleActive : toggleInactive}
+                  >
+                    Full order
+                  </button>
+                </div>
               </div>
             )}
 
