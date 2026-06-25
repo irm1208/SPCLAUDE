@@ -281,18 +281,25 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     isCreator: share.creatorUsername.toLowerCase() === currentUsername.toLowerCase(),
     currentUsername,
     isMember: !!me,
-    delivery: {
-      username: share.deliveryUsername ?? null,
-      name: share.shippingName ?? null,
-      phone: share.shippingPhone ?? null,
-      email: share.shippingEmail ?? null,
-      address: share.shippingAddress ?? null,
-      country: share.shippingCountry ?? null,
-      // The designated recipient (and only they) may set a one-off address while open.
-      canEditAddress: share.status === "open"
-        && !!share.deliveryUsername
-        && share.deliveryUsername.toLowerCase() === currentUsername.toLowerCase(),
-    },
+    delivery: (() => {
+      // Only the organiser and the designated recipient see the full address.
+      // All other participants see only who is receiving and the country (for context).
+      const isRecipientViewer = !!share.deliveryUsername
+        && share.deliveryUsername.toLowerCase() === currentLower;
+      const canSeeAddress = isCreatorViewer || isRecipientViewer;
+      return {
+        username: share.deliveryUsername ?? null,
+        name: canSeeAddress ? (share.shippingName ?? null) : null,
+        phone: canSeeAddress ? (share.shippingPhone ?? null) : null,
+        email: canSeeAddress ? (share.shippingEmail ?? null) : null,
+        address: canSeeAddress ? (share.shippingAddress ?? null) : null,
+        country: share.shippingCountry ?? null,
+        // The designated recipient (and only they) may set a one-off address while open.
+        canEditAddress: share.status === "open"
+          && !!share.deliveryUsername
+          && isRecipientViewer,
+      };
+    })(),
     vendor: vendor ? {
       id: vendor.id,
       name: vendor.name,
