@@ -36,7 +36,6 @@ import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine } from "@/components/wholesale-shared/payment-fields";
-import { NextStepBanner } from "@/components/wholesale-shared/NextStepBanner";
 import { SetupWizard } from "@/components/wholesale-shared/SetupWizard";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
 import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
@@ -900,15 +899,6 @@ export default function WholesaleShared() {
       </div>
     </div>
   );
-
-  const sectionNextStep = guide ? (
-    <NextStepBanner
-      plan={guide}
-      onAction={handleGuideAction}
-      onOpenGuide={() => setWizardOpen(true)}
-      copiedInvite={copied === "link"}
-    />
-  ) : null;
 
   const sectionHowItWorks = (
     <section className="rounded-2xl overflow-hidden" style={card}>
@@ -1834,7 +1824,6 @@ export default function WholesaleShared() {
 
   const fullView = (
     <>
-      {sectionNextStep}
       {sectionHowItWorks}
       {sectionGroup}
       {sectionMyItems}
