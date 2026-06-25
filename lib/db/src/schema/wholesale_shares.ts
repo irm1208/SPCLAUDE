@@ -35,6 +35,15 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   status: text("status").notNull().default("open"),
   splitMode: text("split_mode").notNull().default("even"),
   maxMembers: integer("max_members").notNull().default(10),
+  // ── Organiser-set order rules (all optional; null = no limit) ────────────────
+  // Per-person kit bounds and a total kit cap, enforced when members add items and
+  // again at lock. A date/time deadline auto-locks the order once it's ready. An
+  // optional country allow-list restricts where the parcel may ship.
+  minKitsPerMember: integer("min_kits_per_member"),
+  maxKitsPerMember: integer("max_kits_per_member"),
+  maxTotalKits: integer("max_total_kits"),
+  lockDeadline: timestamp("lock_deadline", { withTimezone: true }),
+  allowedCountries: jsonb("allowed_countries").$type<string[]>(),
   vendorId: text("vendor_id"), // snapshot of the active wholesale vendor at creation time
   // Chosen delivery member + their address snapshot (whole parcel ships here)
   deliveryUsername: text("delivery_username"),

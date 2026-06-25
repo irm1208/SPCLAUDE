@@ -69,6 +69,8 @@ export const SITE_CONFIG_REGISTRY: ConfigKeyDescriptor[] = [
   { key: "scheduler.tracking-auto-refresh.intervalMs", type: "number", group: "Schedulers", label: "Tracking refresh interval (ms)", description: "Polling interval for the 17track tracking refresher.", defaultValue: "7200000" },
   { key: "scheduler.qiyunle-sync.enabled", type: "boolean", group: "Schedulers", label: "Qiyunle sync enabled", description: "Master switch for the Qiyunle inventory sync.", defaultValue: "true" },
   { key: "scheduler.qiyunle-sync.intervalMs", type: "number", group: "Schedulers", label: "Qiyunle sync interval (ms)", description: "Polling interval for the Qiyunle inventory sync.", defaultValue: "7200000" },
+  { key: "scheduler.wholesale-share-auto-lock.enabled", type: "boolean", group: "Schedulers", label: "Wholesale share auto-lock enabled", description: "Master switch for auto-locking wholesale shared orders at their deadline.", defaultValue: "true" },
+  { key: "scheduler.wholesale-share-auto-lock.intervalMs", type: "number", group: "Schedulers", label: "Wholesale share auto-lock interval (ms)", description: "Polling interval for the wholesale shared-order deadline auto-lock job.", defaultValue: "60000" },
 ];
 
 export const REGISTRY_BY_KEY: Record<string, ConfigKeyDescriptor> = Object.fromEntries(

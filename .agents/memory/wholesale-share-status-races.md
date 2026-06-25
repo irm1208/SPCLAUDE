@@ -91,6 +91,33 @@ opening the form — so lock-readiness must independently re-check each required
 or a blank one slips through to materialised orders. If you make another shipping
 field mandatory, change all three spots together.
 
+# Organiser open-only settings, remove-member, and item caps obey the same rule
+
+The organiser can configure per-share limits while `status='open'`: min/max kits per
+member, max total kits, a lock deadline (auto-lock), and an allowed shipping-country
+allowlist (`allowedCountries` null = all countries). These are plain routes + hooks
+(NOT in OpenAPI). Caps are enforced at `PUT /items` (per-member + total), country at
+`PUT /delivery-address`, and ALL of them again at lock time inside `attemptLockShare`
+(the extracted lock service shared by `POST /lock`, the auto-lock scheduler, and the
+lazy GET trigger) — never trust that an open-time check still holds at lock.
+
+**Every open-only mutator must gate its write on the parent still being open, or it
+races a concurrent lock/cancel:**
+- `PUT /settings`: conditional parent update `WHERE id=? AND status='open'` → 409.
+- `PUT /items`: the member-row update carries an inline
+  `EXISTS (SELECT 1 FROM wholesale_shares WHERE id=? AND status='open')` predicate and
+  `.returning()`; 0 rows → 409. A bare `WHERE member.id=?` let items change AFTER lock.
+- `POST /remove-member`: ALL writes (parent delivery/onward clear when the removed
+  member was the recipient, `reshipperFeePaid` reset, and the member DELETE) run in ONE
+  `db.transaction`, fronted by a conditional parent update gated on `status='open'`
+  (`.returning()`); 0 rows sets a `conflict` flag → roll back → 409. Mirrors `/leave`
+  but `/leave` itself still does an unconditional delete (lower stakes, self-only).
+
+**Why:** a precheck `if (share.status !== 'open')` is TOCTOU — the share can lock
+between the check and the write. Only a conditional UPDATE/DELETE (or EXISTS-gated
+write) re-evaluated under the row lock is safe; bundle multi-statement removals in a
+transaction so a mid-flight lock can't leave a half-removed member.
+
 # "wholesale_shared" must be treated as wholesale in admin views
 
 A locked share materialises per-member orders with `orderType="wholesale_shared"`

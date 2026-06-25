@@ -5,7 +5,7 @@ import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, Upload, X, Settings,
-  Package, MapPin, CreditCard,
+  Package, MapPin, CreditCard, Trash2,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -25,6 +25,8 @@ import {
   lockWholesaleShare,
   cancelWholesaleShare,
   unlockWholesaleShare,
+  setWholesaleShareSettings,
+  removeWholesaleShareMember,
   useInvalidateWholesaleShare,
   useWholesaleShareMessages,
   postWholesaleShareMessage,
@@ -185,6 +187,17 @@ export default function WholesaleShared() {
   const [destAddress, setDestAddress] = useState("");
   const [destDirty, setDestDirty] = useState(false);
   const destSeeded = useRef(false);
+
+  // Organiser-only order rules: min/max kits per person, max total kits, an auto-lock
+  // deadline, and an allowed-country list. Seeded from the share once and skipped
+  // while the organiser has unsaved edits (so polling can't clobber typing).
+  const [settingsForm, setSettingsForm] = useState({
+    minKitsPerMember: "", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
+  });
+  const [allowedCountriesList, setAllowedCountriesList] = useState<string[]>([]);
+  const [countryToAdd, setCountryToAdd] = useState("");
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const settingsSeeded = useRef(false);
 
   // Recipient-only address form — the designated delivery member can enter a one-off
   // address for this parcel instead of being stuck with their saved account address.
@@ -388,6 +401,20 @@ export default function WholesaleShared() {
     setDestAddress(me?.onwardAddress ?? "");
     destSeeded.current = true;
   }, [share, destDirty]);
+
+  // Seed the organiser order-rules form once (organiser + open only).
+  useEffect(() => {
+    if (!share || !share.settings.canManage || settingsDirty || settingsSeeded.current) return;
+    const s = share.settings;
+    setSettingsForm({
+      minKitsPerMember: s.minKitsPerMember != null ? String(s.minKitsPerMember) : "",
+      maxKitsPerMember: s.maxKitsPerMember != null ? String(s.maxKitsPerMember) : "",
+      maxTotalKits: s.maxTotalKits != null ? String(s.maxTotalKits) : "",
+      lockDeadline: s.lockDeadline ? toDatetimeLocal(s.lockDeadline) : "",
+    });
+    setAllowedCountriesList(s.allowedCountries ?? []);
+    settingsSeeded.current = true;
+  }, [share, settingsDirty]);
 
   // Seed the recipient address form once, when I'm the chosen recipient. Prefer any
   // address already saved on the share; otherwise fall back to my saved account
@@ -653,6 +680,32 @@ export default function WholesaleShared() {
     if (!id || mode === share.splitMode) return;
     setActionError(""); setBusy("split");
     try { await setWholesaleShareSplit(id, mode); invalidate(id); }
+    catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const saveSettings = async () => {
+    if (!id) return;
+    setActionError(""); setBusy("settings");
+    try {
+      await setWholesaleShareSettings(id, {
+        minKitsPerMember: settingsForm.minKitsPerMember.trim() === "" ? null : Number(settingsForm.minKitsPerMember),
+        maxKitsPerMember: settingsForm.maxKitsPerMember.trim() === "" ? null : Number(settingsForm.maxKitsPerMember),
+        maxTotalKits: settingsForm.maxTotalKits.trim() === "" ? null : Number(settingsForm.maxTotalKits),
+        lockDeadline: settingsForm.lockDeadline ? new Date(settingsForm.lockDeadline).toISOString() : null,
+        allowedCountries: allowedCountriesList.length > 0 ? allowedCountriesList : null,
+      });
+      setSettingsDirty(false);
+      settingsSeeded.current = false;
+      invalidate(id);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const removeMember = async (username: string) => {
+    if (!id) return;
+    setActionError(""); setBusy(`remove:${username}`);
+    try { await removeWholesaleShareMember(id, username); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1008,6 +1061,42 @@ export default function WholesaleShared() {
     </div>
   );
 
+  // Order breakdown (per-member items) — shown inside the Group & order details card,
+  // visible to the organiser and the delivery recipient only.
+  const sectionOrderBreakdown = showOrderBreakdown ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Breakdown</p>
+      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
+        {share.members.map(m => (
+          <div key={m.username} className="px-3 py-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                @{m.username.replace(/^@/, "")}
+                {m.isYou && <span className="text-[10px] ml-1 font-normal" style={{ color: "var(--t-muted)" }}>(you)</span>}
+                {m.isRecipient && <span className="text-[10px] ml-1 font-semibold" style={{ color: "#15803d" }}> · recipient</span>}
+              </p>
+              <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
+                {m.kits} kit{m.kits === 1 ? "" : "s"} · {money(m.subtotal)}
+              </span>
+            </div>
+            {m.items.length > 0 ? (
+              <ul className="space-y-1">
+                {m.items.map((it, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
+                    <span className="min-w-0 truncate">{it.productName}</span>
+                    <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No items added yet.</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
   const sectionGroup = (
     <ExpandableCard
       title="Group & order details"
@@ -1018,7 +1107,18 @@ export default function WholesaleShared() {
       <GroupTracker share={share} onPayMember={orderId => setLocation(`/account/orders/${orderId}`)} />
       <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Order details</p>
-        <Row label="Combined kits" value={String(share.combinedKits)} />
+        <div className="space-y-1">
+          <Row label="Combined kits" value={String(share.combinedKits)} />
+          {share.members.some(m => m.kits > 0) && (
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              {share.members.filter(m => m.kits > 0).map(m => (
+                <span key={m.username} className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                  @{m.username.replace(/^@/, "")}: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{m.kits}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <Row label="Combined products" value={money(share.combinedSubtotal)} />
         <Row
           label={`Vendor shipping${share.shippingRegion ? ` · ${share.shippingRegion}` : ""}`}
@@ -1035,6 +1135,11 @@ export default function WholesaleShared() {
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
       </div>
+      {sectionOrderBreakdown && (
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--t-border)" }}>
+          {sectionOrderBreakdown}
+        </div>
+      )}
       {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
         <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
@@ -1360,6 +1465,115 @@ export default function WholesaleShared() {
         </div>
       </section>
       <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Limits &amp; Rules</p>
+        <div className="rounded-xl p-4 space-y-4" style={card}>
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+            Optional limits for this shared order. Leave a field blank for no limit.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Min kits / person</label>
+              <input type="number" min="0" step="1" value={settingsForm.minKitsPerMember}
+                onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, minKitsPerMember: e.target.value })); }}
+                placeholder="No min" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max kits / person</label>
+              <input type="number" min="0" step="1" value={settingsForm.maxKitsPerMember}
+                onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, maxKitsPerMember: e.target.value })); }}
+                placeholder="No max" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max kits total (whole order)</label>
+            <input type="number" min="0" step="1" value={settingsForm.maxTotalKits}
+              onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, maxTotalKits: e.target.value })); }}
+              placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Auto-lock deadline</label>
+            <input type="datetime-local" value={settingsForm.lockDeadline}
+              onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, lockDeadline: e.target.value })); }}
+              className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            <p className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>
+              When this time passes, the order locks itself automatically — as soon as it's ready (enough members, delivery set, etc.). Leave blank for no deadline.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Limit shipping to countries</label>
+            <p className="text-[11px] mb-1.5" style={{ color: "var(--t-muted)" }}>
+              If set, the parcel can only be delivered to one of these countries. Leave empty to allow anywhere the vendor ships.
+            </p>
+            <div className="flex gap-2">
+              <select value={countryToAdd} onChange={e => setCountryToAdd(e.target.value)} className="flex-1 h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+                <option value="">Add a country…</option>
+                {COUNTRIES.filter(c => !allowedCountriesList.includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button
+                onClick={() => { if (!countryToAdd) return; setSettingsDirty(true); setAllowedCountriesList(list => list.includes(countryToAdd) ? list : [...list, countryToAdd]); setCountryToAdd(""); }}
+                disabled={!countryToAdd}
+                className="px-4 h-10 rounded-lg text-sm font-semibold disabled:opacity-50"
+                style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+              >
+                Add
+              </button>
+            </div>
+            {allowedCountriesList.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {allowedCountriesList.map(c => (
+                  <span key={c} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+                    {c}
+                    <button onClick={() => { setSettingsDirty(true); setAllowedCountriesList(list => list.filter(x => x !== c)); }} aria-label={`Remove ${c}`}>
+                      <X className="w-3 h-3" style={{ color: "var(--t-muted)" }} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={saveSettings}
+            disabled={busy === "settings" || !settingsDirty}
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
+            style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+          >
+            {busy === "settings" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Save limits &amp; rules
+          </button>
+        </div>
+      </section>
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Members</p>
+        <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+          {share.members.map(m => (
+            <div key={m.username} className="flex items-center justify-between gap-2 px-3 py-2.5">
+              <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
+                @{m.username.replace(/^@/, "")}
+                {m.isCreator && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>organiser</span>}
+                {m.isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>recipient</span>}
+                <span className="text-[11px] ml-2" style={{ color: "var(--t-muted)" }}>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
+              </span>
+              {m.canRemove ? (
+                <button
+                  onClick={() => removeMember(m.username)}
+                  disabled={busy === `remove:${m.username}`}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0"
+                  style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
+                >
+                  {busy === `remove:${m.username}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Remove
+                </button>
+              ) : (
+                <span className="text-[11px] shrink-0" style={{ color: "var(--t-muted)" }}>—</span>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
+          Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
+        </p>
+      </section>
+      <section className="space-y-2">
         <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
         <div className="rounded-xl p-4" style={card}>
           {organiserFeeBlock}
@@ -1578,41 +1792,6 @@ export default function WholesaleShared() {
               : <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No forwarding address yet.</p>}
             {m.onwardQr && (
               <img src={m.onwardQr} alt={`Delivery QR for ${m.username}`} className="w-28 h-28 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  ) : null;
-
-  // Order breakdown — visible to organiser and delivery recipient only.
-  const sectionOrderBreakdown = showOrderBreakdown ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Breakdown</p>
-      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
-        {share.members.map(m => (
-          <div key={m.username} className="px-3 py-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
-                @{m.username.replace(/^@/, "")}
-                {m.isYou && <span className="text-[10px] ml-1 font-normal" style={{ color: "var(--t-muted)" }}>(you)</span>}
-                {m.isRecipient && <span className="text-[10px] ml-1 font-semibold" style={{ color: "#15803d" }}> · recipient</span>}
-              </p>
-              <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
-                {m.kits} kit{m.kits === 1 ? "" : "s"} · {money(m.subtotal)}
-              </span>
-            </div>
-            {m.items.length > 0 ? (
-              <ul className="space-y-1">
-                {m.items.map((it, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
-                    <span className="min-w-0 truncate">{it.productName}</span>
-                    <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No items added yet.</p>
             )}
           </div>
         ))}
@@ -1842,7 +2021,6 @@ export default function WholesaleShared() {
               {sectionOrganiserLocked}
               {sectionFeeRoster}
               {sectionOnwardRoster}
-              {sectionOrderBreakdown}
             </div>
           </ExpandableCard>
         </div>
@@ -1920,6 +2098,14 @@ function Checklist({ ok, text }: { ok: boolean; text: string }) {
       <span style={{ color: ok ? "var(--t-text)" : "var(--t-muted)" }}>{text}</span>
     </div>
   );
+}
+
+// Convert an ISO timestamp to a value for <input type="datetime-local"> in local time.
+function toDatetimeLocal(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function formatChatTime(iso: string): string {

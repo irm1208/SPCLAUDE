@@ -250,6 +250,8 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderStatus: order?.status ?? null,
       paymentStatus: order?.paymentStatus ?? null,
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
+      // The organiser may remove any non-creator member while the order is open.
+      canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
     };
   });
 
@@ -315,6 +317,17 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     combinedSubtotal,
     totalVendorShipping: share.totalVendorShipping != null ? Number(share.totalVendorShipping) : null,
     totalKits: share.totalKits != null ? Number(share.totalKits) : null,
+    // True once a set deadline has passed (UI shows "deadline passed, waiting on…").
+    deadlinePassed: share.lockDeadline ? (share.lockDeadline as Date).getTime() <= Date.now() : false,
+    // ── Organiser-set order rules (limits, deadline, allowed countries) ────────
+    settings: {
+      minKitsPerMember: share.minKitsPerMember ?? null,
+      maxKitsPerMember: share.maxKitsPerMember ?? null,
+      maxTotalKits: share.maxTotalKits ?? null,
+      lockDeadline: share.lockDeadline ? (share.lockDeadline as Date).toISOString() : null,
+      allowedCountries: share.allowedCountries ?? null,
+      canManage: share.status === "open" && isCreatorViewer,
+    },
     // ── Optional organiser fee (paid directly to the organiser/creator) ────────
     fees: {
       organiserPaymentInfo: share.organiserPaymentInfo ?? null,
@@ -466,7 +479,15 @@ router.get("/wholesale-shares/:id", requireWholesale, async (req, res): Promise<
     res.status(403).json({ error: "You are not a member of this shared order.", creatorUsername: share.creatorUsername });
     return;
   }
-  res.json(await buildShareResponse(share, me));
+  // Lazy deadline lock: if the organiser set a deadline that has passed, attempt an
+  // auto-lock now as a best-effort backup to the scheduler. Failures (e.g. a member
+  // still has no items) leave the order open; the conditional update guards races.
+  let current = share;
+  if (current.status === "open" && current.lockDeadline && (current.lockDeadline as Date).getTime() <= Date.now()) {
+    await attemptLockShare(current, current.creatorUsername, "auto");
+    current = (await loadShare(current.id)) ?? current;
+  }
+  res.json(await buildShareResponse(current, me));
 });
 
 // GET /api/wholesale-shares/:id/messages — chat thread (members only)
@@ -643,9 +664,40 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     if (tip > 100000) { res.status(400).json({ error: "Tip too large." }); return; }
   }
 
-  await db.update(wholesaleShareMembersTable)
+  // ── Organiser-set kit caps ──
+  const newMemberKits = memberKits(cleanItems);
+  if (share.maxKitsPerMember && share.maxKitsPerMember > 0 && newMemberKits > share.maxKitsPerMember) {
+    res.status(400).json({ error: `This shared order allows at most ${share.maxKitsPerMember} kits per person.` });
+    return;
+  }
+  if (share.maxTotalKits && share.maxTotalKits > 0) {
+    const allMembers = await db
+      .select({ id: wholesaleShareMembersTable.id, items: wholesaleShareMembersTable.items })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    const othersKits = allMembers
+      .filter(m => m.id !== member.id)
+      .reduce((s, m) => s + memberKits(m.items ?? []), 0);
+    if (othersKits + newMemberKits > share.maxTotalKits) {
+      const remaining = Math.max(0, share.maxTotalKits - othersKits);
+      res.status(400).json({ error: `This shared order is limited to ${share.maxTotalKits} kits total — only ${remaining} kit(s) left for you.` });
+      return;
+    }
+  }
+
+  // Gate the write on the parent share STILL being open in the same statement, so a
+  // concurrent lock/cancel can't slip items in after the order is materialised.
+  const itemsUpdated = await db.update(wholesaleShareMembersTable)
     .set({ items: cleanItems, tip: tip.toFixed(2) })
-    .where(eq(wholesaleShareMembersTable.id, member.id));
+    .where(and(
+      eq(wholesaleShareMembersTable.id, member.id),
+      sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
+    ))
+    .returning({ id: wholesaleShareMembersTable.id });
+  if (itemsUpdated.length === 0) {
+    res.status(409).json({ error: "This shared order is locked — items can no longer be changed." });
+    return;
+  }
 
   res.json(await buildShareResponse(share, me));
 });
@@ -766,6 +818,11 @@ router.put("/wholesale-shares/:id/delivery-address", requireWholesale, async (re
     res.status(400).json({ error: `The current vendor doesn't ship to "${country}". Please choose a different destination.` });
     return;
   }
+  // Organiser country allow-list (if set) — the parcel may only go to listed countries.
+  if (!countryAllowed(share.allowedCountries, country)) {
+    res.status(400).json({ error: `This shared order can only ship to: ${(share.allowedCountries ?? []).join(", ")}.` });
+    return;
+  }
 
   const cityLine = [city, postcode].filter(Boolean).join(" ").trim();
   const address = [line1, line2, cityLine].filter(Boolean).join("\n");
@@ -822,16 +879,207 @@ router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Pr
   res.json(await buildShareResponse(updated!, me));
 });
 
-// POST /api/wholesale-shares/:id/lock — creator locks: validate + materialise per-member orders
-router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Promise<void> => {
+// PUT /api/wholesale-shares/:id/settings — organiser sets order limits & rules
+// (min/max kits per person, max total kits, a lock deadline, and an allowed-country
+// list). All fields are optional; null/empty clears that rule.
+router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
   if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
-    res.status(403).json({ error: "Only the organiser can lock the shared order." });
+    res.status(403).json({ error: "Only the organiser can change the order rules." });
     return;
   }
-  if (share.status !== "open") { res.status(409).json({ error: "This shared order is already locked." }); return; }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+
+  // Optional non-negative integer limit. null/"" clears it.
+  const parseLimit = (v: unknown, label: string, max = 100000):
+    | { ok: true; value: number | null }
+    | { ok: false; error: string } => {
+    if (v == null || v === "") return { ok: true, value: null };
+    const n = Number(v);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      return { ok: false, error: `${label} must be a whole number of 0 or more.` };
+    }
+    if (n > max) return { ok: false, error: `${label} is too large.` };
+    return { ok: true, value: n };
+  };
+
+  const minR = parseLimit(body.minKitsPerMember, "Minimum kits per person");
+  if (!minR.ok) { res.status(400).json({ error: minR.error }); return; }
+  const maxR = parseLimit(body.maxKitsPerMember, "Maximum kits per person");
+  if (!maxR.ok) { res.status(400).json({ error: maxR.error }); return; }
+  const totalR = parseLimit(body.maxTotalKits, "Maximum total kits");
+  if (!totalR.ok) { res.status(400).json({ error: totalR.error }); return; }
+  const minVal = minR.value;
+  const maxVal = maxR.value;
+  const totalVal = totalR.value;
+
+  if (minVal != null && maxVal != null && minVal > maxVal) {
+    res.status(400).json({ error: "Minimum kits per person can't be more than the maximum." });
+    return;
+  }
+  if (maxVal != null && totalVal != null && maxVal > totalVal) {
+    res.status(400).json({ error: "Maximum kits per person can't be more than the total kit limit." });
+    return;
+  }
+
+  // Deadline: null/"" clears it. Must parse; a slightly past time is allowed (means
+  // "lock as soon as it's ready"), but reject the distant past as a likely mistake.
+  let deadline: Date | null = null;
+  if (body.lockDeadline != null && body.lockDeadline !== "") {
+    const d = new Date(String(body.lockDeadline));
+    if (isNaN(d.getTime())) { res.status(400).json({ error: "The deadline isn't a valid date/time." }); return; }
+    if (d.getTime() < Date.now() - 365 * 24 * 60 * 60 * 1000) {
+      res.status(400).json({ error: "The deadline is too far in the past." });
+      return;
+    }
+    deadline = d;
+  }
+
+  // Allowed countries: optional list; null/empty = ship anywhere the vendor serves.
+  let allowedCountries: string[] | null = null;
+  if (Array.isArray(body.allowedCountries)) {
+    const cleaned = Array.from(new Set(
+      body.allowedCountries
+        .filter((c): c is string => typeof c === "string")
+        .map(c => c.trim().slice(0, 80))
+        .filter(Boolean),
+    )).slice(0, 100);
+    allowedCountries = cleaned.length > 0 ? cleaned : null;
+  }
+
+  // CONDITIONAL update gated on status='open' so a concurrent lock/cancel wins.
+  const changed = await db.update(wholesaleSharesTable)
+    .set({
+      minKitsPerMember: minVal,
+      maxKitsPerMember: maxVal,
+      maxTotalKits: totalVal,
+      lockDeadline: deadline,
+      allowedCountries,
+    })
+    .where(and(
+      eq(wholesaleSharesTable.id, share.id),
+      eq(wholesaleSharesTable.status, "open"),
+    ))
+    .returning({ id: wholesaleSharesTable.id });
+  if (changed.length === 0) {
+    res.status(409).json({ error: "This shared order is no longer open." });
+    return;
+  }
+
+  await writeLog("order", "info", "wholesale_share_settings_updated",
+    `Wholesale share ${share.id} rules updated by ${me}`,
+    { shareId: share.id, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/wholesale-shares/:id/remove-member — organiser removes a member from an
+// open shared order. The organiser/creator can't be removed (use Cancel instead).
+router.post("/wholesale-shares/:id/remove-member", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can remove members." });
+    return;
+  }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked — members can no longer be removed." }); return; }
+
+  const body = (req.body ?? {}) as { username?: unknown };
+  const username = typeof body.username === "string" ? body.username.trim() : "";
+  if (!username) { res.status(400).json({ error: "username is required" }); return; }
+  if (username.toLowerCase() === share.creatorUsername.toLowerCase()) {
+    res.status(400).json({ error: "The organiser can't be removed. Use Cancel to end the order." });
+    return;
+  }
+  const member = await loadMember(share.id, username);
+  if (!member) { res.status(404).json({ error: "That member isn't part of this shared order." }); return; }
+
+  // If the removed member was the chosen delivery recipient, clear the delivery
+  // snapshot AND every onward (reshipper) payout detail — otherwise the parcel and
+  // any forwarding payments would route to someone no longer in the order. This
+  // mirrors the /leave handler and the receiver-change path in PUT /delivery.
+  const wasDelivery = !!share.deliveryUsername
+    && share.deliveryUsername.toLowerCase() === member.username.toLowerCase();
+
+  // All writes run in one transaction, gated on the parent share STILL being open, so
+  // a concurrent lock/cancel can't leave a half-removed member or a recipient cleared
+  // on an already-locked order.
+  let conflict = false;
+  await db.transaction(async (tx) => {
+    const guard = await tx.update(wholesaleSharesTable)
+      .set(wasDelivery
+        ? {
+            deliveryUsername: null,
+            shippingName: null,
+            shippingPhone: null,
+            shippingEmail: null,
+            shippingAddress: null,
+            shippingCountry: null,
+            onwardShippingEnabled: false,
+            reshipperWalletAddress: null,
+            reshipperWalletCurrency: null,
+            reshipperAnonpay: null,
+            reshipperPaypal: null,
+            reshipperRevolut: null,
+            reshipperPaymentInfo: null,
+          }
+        : { updatedAt: new Date() })
+      .where(and(
+        eq(wholesaleSharesTable.id, share.id),
+        eq(wholesaleSharesTable.status, "open"),
+      ))
+      .returning({ id: wholesaleSharesTable.id });
+    if (guard.length === 0) { conflict = true; return; }
+
+    if (wasDelivery) {
+      // The recipient changed (cleared), so every prior "onward paid" confirmation is
+      // void — clear them all so nobody appears paid to a recipient that's now gone.
+      await tx.update(wholesaleShareMembersTable)
+        .set({ reshipperFeePaid: false })
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    }
+
+    await tx.delete(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.id, member.id));
+  });
+  if (conflict) {
+    res.status(409).json({ error: "This shared order is no longer open." });
+    return;
+  }
+
+  await writeLog("order", "info", "wholesale_share_member_removed",
+    `${me} removed ${member.username} from wholesale share ${share.id}`,
+    { shareId: share.id, removed: member.username, by: me }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// ── Shared lock service ────────────────────────────────────────────────────────
+// Validates an open share and materialises per-member orders. Used by the manual
+// POST /lock endpoint AND the deadline auto-lock scheduler / lazy GET trigger. It
+// returns a discriminated result instead of writing an Express response so both
+// callers can map it as they need; on success it writes the audit log itself.
+type LockResult = { ok: true } | { ok: false; status: number; error: string };
+
+// Case-insensitive country allow-list check. Empty/absent list = all countries.
+function countryAllowed(allowed: string[] | null | undefined, country: string | null | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  if (!country) return false;
+  const n = country.trim().toLowerCase();
+  return allowed.some(a => a.trim().toLowerCase() === n);
+}
+
+export async function attemptLockShare(share: ShareRow, actor: string, mode: "manual" | "auto"): Promise<LockResult> {
+  if (share.status !== "open") {
+    return { ok: false, status: 409, error: "This shared order is already locked." };
+  }
 
   const members = await db
     .select()
@@ -841,40 +1089,55 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
 
   // ── Validation ──
   if (members.length < 2) {
-    res.status(400).json({ error: "A shared order needs at least 2 members before it can be locked." });
-    return;
+    return { ok: false, status: 400, error: "A shared order needs at least 2 members before it can be locked." };
   }
   if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName || !share.shippingPhone) {
-    res.status(400).json({ error: "Set the delivery member and their full shipping address (including a contact phone) before locking." });
-    return;
+    return { ok: false, status: 400, error: "Set the delivery member and their full shipping address (including a contact phone) before locking." };
   }
   const deliveryIsMember = members.some(m => m.username.toLowerCase() === share.deliveryUsername!.toLowerCase());
   if (!deliveryIsMember) {
-    res.status(400).json({ error: "The chosen delivery member is no longer part of this shared order." });
-    return;
+    return { ok: false, status: 400, error: "The chosen delivery member is no longer part of this shared order." };
   }
-  const emptyMember = members.find(m => memberKits(m.items ?? []) <= 0);
-  if (emptyMember) {
-    res.status(400).json({ error: `Every member must add at least one item before locking (waiting on ${emptyMember.username}).` });
-    return;
+  // Per-person minimum (defaults to "at least one item"; honour an explicit higher min).
+  const minPer = share.minKitsPerMember && share.minKitsPerMember > 0 ? share.minKitsPerMember : 1;
+  const underMin = members.find(m => memberKits(m.items ?? []) < minPer);
+  if (underMin) {
+    return {
+      ok: false, status: 400,
+      error: minPer === 1
+        ? `Every member must add at least one item before locking (waiting on ${underMin.username}).`
+        : `Every member must have at least ${minPer} kits before locking (waiting on ${underMin.username}).`,
+    };
+  }
+  // Per-person maximum.
+  if (share.maxKitsPerMember && share.maxKitsPerMember > 0) {
+    const overMax = members.find(m => memberKits(m.items ?? []) > share.maxKitsPerMember!);
+    if (overMax) {
+      return { ok: false, status: 400, error: `${overMax.username} is over the ${share.maxKitsPerMember}-kit per-person limit — ask them to reduce before locking.` };
+    }
+  }
+  // Allowed-country restriction on the parcel's shipping country.
+  if (!countryAllowed(share.allowedCountries, share.shippingCountry)) {
+    return { ok: false, status: 400, error: `The parcel ships to "${share.shippingCountry}", which isn't in this order's allowed countries.` };
   }
 
   // ── Shipping ──
   const vendor = await getActiveWholesaleVendor();
   if (!vendor) {
-    res.status(400).json({ error: "No active wholesale vendor is configured. Please contact an admin." });
-    return;
+    return { ok: false, status: 400, error: "No active wholesale vendor is configured. Please contact an admin." };
   }
   const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry);
   if (!picked) {
-    res.status(400).json({ error: `No shipping region matches "${share.shippingCountry}" for the current vendor.` });
-    return;
+    return { ok: false, status: 400, error: `No shipping region matches "${share.shippingCountry}" for the current vendor.` };
   }
   const combinedKits = members.reduce((s, m) => s + memberKits(m.items ?? []), 0);
+  // Total kit cap (also enforced as members add items, re-checked here for safety).
+  if (share.maxTotalKits && share.maxTotalKits > 0 && combinedKits > share.maxTotalKits) {
+    return { ok: false, status: 400, error: `The combined order (${combinedKits} kits) is over the ${share.maxTotalKits}-kit total limit — reduce items before locking.` };
+  }
   const totalShipping = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
   if (totalShipping === null) {
-    res.status(400).json({ error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." });
-    return;
+    return { ok: false, status: 400, error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." };
   }
 
   const weights = members.map(m => memberKits(m.items ?? []));
@@ -884,58 +1147,58 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
   const codeBase = await nextOrderCodeBase();
   try {
     await db.transaction(async (tx) => {
-    for (let i = 0; i < members.length; i++) {
-      const m = members[i];
-      const items = m.items ?? [];
-      const shippingShare = shares[i] ?? 0;
-      const tip = Number(m.tip ?? 0);
-      const subtotal = memberSubtotal(items);
-      const grandTotal = Number((subtotal + shippingShare + tip).toFixed(2));
-      const orderId = randomUUID();
-      const code = String(codeBase + i);
-      const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        const items = m.items ?? [];
+        const shippingShare = shares[i] ?? 0;
+        const tip = Number(m.tip ?? 0);
+        const subtotal = memberSubtotal(items);
+        const grandTotal = Number((subtotal + shippingShare + tip).toFixed(2));
+        const orderId = randomUUID();
+        const code = String(codeBase + i);
+        const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
 
-      await tx.insert(ordersTable).values({
-        id: orderId,
-        code,
-        telegramUsername: memberTg,
-        deliveryMethod: "Vendor Shipping",
-        deliveryPrice: "0",
-        vendorShipping: shippingShare.toFixed(2),
-        productSubtotal: subtotal.toFixed(2),
-        tip: tip.toFixed(2),
-        grandTotal: grandTotal.toFixed(2),
-        status: "Submitted",
-        paymentStatus: "unpaid",
-        pin: randomPin(),
-        orderType: "wholesale_shared",
-        sharedOrderId: share.id,
-        // Whole parcel ships to the chosen delivery member — every member order
-        // carries that same shipping address snapshot.
-        shippingName: share.shippingName,
-        shippingPhone: share.shippingPhone,
-        shippingEmail: share.shippingEmail,
-        shippingAddress: share.shippingAddress,
-        shippingCountry: share.shippingCountry,
-        notes: `Shared wholesale order ${share.id} — delivery to ${share.deliveryUsername} (${picked.region.name})`,
-      });
+        await tx.insert(ordersTable).values({
+          id: orderId,
+          code,
+          telegramUsername: memberTg,
+          deliveryMethod: "Vendor Shipping",
+          deliveryPrice: "0",
+          vendorShipping: shippingShare.toFixed(2),
+          productSubtotal: subtotal.toFixed(2),
+          tip: tip.toFixed(2),
+          grandTotal: grandTotal.toFixed(2),
+          status: "Submitted",
+          paymentStatus: "unpaid",
+          pin: randomPin(),
+          orderType: "wholesale_shared",
+          sharedOrderId: share.id,
+          // Whole parcel ships to the chosen delivery member — every member order
+          // carries that same shipping address snapshot.
+          shippingName: share.shippingName,
+          shippingPhone: share.shippingPhone,
+          shippingEmail: share.shippingEmail,
+          shippingAddress: share.shippingAddress,
+          shippingCountry: share.shippingCountry,
+          notes: `Shared wholesale order ${share.id} — delivery to ${share.deliveryUsername} (${picked.region.name})`,
+        });
 
-      if (items.length > 0) {
-        await tx.insert(orderLineItemsTable).values(items.map(it => ({
-          id: randomUUID(),
-          orderId,
-          productId: it.productId,
-          productName: it.productName,
-          quantity: Number(it.quantity).toFixed(2),
-          unitPrice: Number(it.unitPrice).toFixed(2),
-          lineTotal: (Number(it.quantity) * Number(it.unitPrice)).toFixed(2),
-        })));
+        if (items.length > 0) {
+          await tx.insert(orderLineItemsTable).values(items.map(it => ({
+            id: randomUUID(),
+            orderId,
+            productId: it.productId,
+            productName: it.productName,
+            quantity: Number(it.quantity).toFixed(2),
+            unitPrice: Number(it.unitPrice).toFixed(2),
+            lineTotal: (Number(it.quantity) * Number(it.unitPrice)).toFixed(2),
+          })));
+        }
+
+        await tx.update(wholesaleShareMembersTable)
+          .set({ orderId, shippingShare: shippingShare.toFixed(2) })
+          .where(eq(wholesaleShareMembersTable.id, m.id));
       }
-
-      await tx.update(wholesaleShareMembersTable)
-        .set({ orderId, shippingShare: shippingShare.toFixed(2) })
-        .where(eq(wholesaleShareMembersTable.id, m.id));
-    }
 
       // CONDITIONAL parent transition: only lock if still "open". If a concurrent
       // cancel won the race, no row updates and we roll back the whole batch.
@@ -955,16 +1218,28 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
     });
   } catch (e) {
     if (e === LOCK_CONFLICT) {
-      res.status(409).json({ error: "This shared order is no longer open and can't be locked." });
-      return;
+      return { ok: false, status: 409, error: "This shared order is no longer open and can't be locked." };
     }
     throw e;
   }
 
   await writeLog("order", "info", "wholesale_share_locked",
-    `Wholesale share ${share.id} locked by ${me} — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
-    { shareId: share.id, members: members.length, combinedKits, totalShipping }, req.ip);
+    `Wholesale share ${share.id} locked by ${actor} (${mode}) — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
+    { shareId: share.id, members: members.length, combinedKits, totalShipping, mode }, undefined);
 
+  return { ok: true };
+}
+
+router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can lock the shared order." });
+    return;
+  }
+  const result = await attemptLockShare(share, me, "manual");
+  if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
 });

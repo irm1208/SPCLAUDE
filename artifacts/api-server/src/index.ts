@@ -3,6 +3,7 @@ import { seedIfEmpty } from "./seed";
 import { setWebhook, getTelegramStatus, buildWebhookUrl } from "./lib/telegram";
 import { startTrackingAutoRefresh } from "./lib/tracking-auto-refresh";
 import { startGbAutoClose } from "./lib/gb-auto-close";
+import { startWholesaleShareAutoLock } from "./lib/wholesale-share-auto-lock";
 import { startPoolPaymentAutoVerify } from "./lib/pool-payment-auto-verify";
 import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
@@ -827,6 +828,7 @@ app.listen(port, "0.0.0.0", () => {
   autoRegisterWebhook();
   startTrackingAutoRefresh();
   startGbAutoClose();
+  startWholesaleShareAutoLock();
   startPoolPaymentAutoVerify();
   startOrderPaymentAutoVerify();
   startQiyunleSync();

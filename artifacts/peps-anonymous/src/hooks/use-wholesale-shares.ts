@@ -36,6 +36,8 @@ export interface WholesaleShareMember {
   orderStatus: string | null;
   paymentStatus: string | null;
   hasDeliveryAddress: boolean;
+  // The organiser may remove this member while the order is open (never the creator).
+  canRemove: boolean;
 }
 
 export interface WholesaleShareFees {
@@ -86,6 +88,16 @@ export interface WholesaleShareVendor {
   regions: WholesaleShareVendorRegion[];
 }
 
+// Organiser-set order rules. Any field may be null (no limit / not set).
+export interface WholesaleShareSettings {
+  minKitsPerMember: number | null;
+  maxKitsPerMember: number | null;
+  maxTotalKits: number | null;
+  lockDeadline: string | null; // ISO timestamp
+  allowedCountries: string[] | null;
+  canManage: boolean; // organiser && share open
+}
+
 export interface WholesaleShareDetail {
   id: string;
   status: WholesaleShareStatus;
@@ -118,6 +130,9 @@ export interface WholesaleShareDetail {
   members: WholesaleShareMember[];
   memberCount: number;
   allPaid: boolean;
+  // Organiser-set rules + whether a set deadline has already passed.
+  settings: WholesaleShareSettings;
+  deadlinePassed: boolean;
   createdAt: string;
   lockedAt: string | null;
   submittedAt: string | null;
@@ -335,6 +350,31 @@ export function confirmWholesaleShareFee(
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees/confirm`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+// Organiser sets the order rules (limits, deadline, allowed countries). Any field
+// sent as null/"" clears that rule. Organiser-only and editable while open.
+export interface WholesaleShareSettingsInput {
+  minKitsPerMember?: number | null;
+  maxKitsPerMember?: number | null;
+  maxTotalKits?: number | null;
+  lockDeadline?: string | null; // ISO timestamp, or null/"" to clear
+  allowedCountries?: string[] | null;
+}
+
+export function setWholesaleShareSettings(id: string, payload: WholesaleShareSettingsInput) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/settings`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// Organiser removes a member from an open shared order (never the creator).
+export function removeWholesaleShareMember(id: string, username: string) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/remove-member`, {
+    method: "POST",
+    body: JSON.stringify({ username }),
   });
 }
 
