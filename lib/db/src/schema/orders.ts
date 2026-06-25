@@ -52,6 +52,10 @@ export const ordersTable = pgTable("orders", {
   groupBuyId: text("group_buy_id"),
   // Links a wholesale-shared order (orderType "wholesale_shared") to its parent wholesale_shares row.
   sharedOrderId: text("shared_order_id"),
+  // Non-null => this order is a free-shipping "addition" (top-up) of the referenced parent order.
+  // Additions always ride along with the parent's shipment: delivery/vendor/admin shipping fees are
+  // forced to 0 and the shipping address is locked to (copied from) the parent. Doubles as the marker.
+  additionOfOrderId: text("addition_of_order_id"),
   testingContribution: numeric("testing_contribution", { precision: 10, scale: 2 }).notNull().default("0"),
   testVote: text("test_vote"),
   refundStatus: text("refund_status"),
@@ -122,6 +126,7 @@ export const ordersTable = pgTable("orders", {
   index("orders_telegram_username_idx").on(t.telegramUsername),
   index("orders_group_buy_id_idx").on(t.groupBuyId),
   index("orders_shared_order_id_idx").on(t.sharedOrderId),
+  index("orders_addition_of_order_id_idx").on(t.additionOfOrderId),
   index("orders_shipping_country_idx").on(t.shippingCountry),
   index("orders_created_at_idx").on(t.createdAt),
   index("orders_deleted_at_idx").on(t.deletedAt),

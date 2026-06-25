@@ -56,7 +56,7 @@ export default function Review() {
   // orders only when they already carry a fee — matching the backend, which never adds a fee to an
   // order that never had one. This keeps the displayed total in sync with what gets saved.
   const recomputePercentFee = adminFeeIsPercent && (isNewOrder || (draft.adminFee ?? 0) > 0);
-  const adminFeeAmount = draft.directShippingRequested
+  const adminFeeAmount = draft.directShippingRequested || isTopUp
     ? 0
     : recomputePercentFee
       ? parseFloat(((productSubtotal * (activeGb!.adminFeeAmount as number)) / 100).toFixed(2))
@@ -68,8 +68,10 @@ export default function Review() {
     : isNewOrder
       ? (activeGb?.adminFeeLabel ?? null)
       : (draft.adminFeeLabel ?? null);
-  const vendorShippingIsKnown = isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null);
-  const vendorShippingIsTbd = isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null);
+  // Additions (top-ups) ride along with the parent's shipment — the server always saves
+  // vendor shipping as 0, so it must never be shown, marked TBD, or added to any total here.
+  const vendorShippingIsKnown = isTopUp ? false : (isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null));
+  const vendorShippingIsTbd = isTopUp ? false : (isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null));
   const paymentMessageEnabled = activeGb ? activeGb.paymentMessageEnabled : false;
   const paymentMessageText = activeGb?.paymentMessage ?? null;
 
@@ -162,6 +164,7 @@ export default function Review() {
       directShippingRequested: draft.directShippingRequested || undefined,
       directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
       reshipperCode: draft.reshipperCode || undefined,
+      additionOfOrderId: draft.additionOfOrderId ?? undefined,
       lineItems: draft.lineItems.map(item => ({
         productId: item.productId,
         productName: item.productName,
