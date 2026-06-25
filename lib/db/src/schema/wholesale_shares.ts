@@ -52,27 +52,11 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // Snapshots captured at lock for stable display
   totalVendorShipping: numeric("total_vendor_shipping", { precision: 10, scale: 2 }),
   totalKits: numeric("total_kits", { precision: 10, scale: 2 }),
-  // ── Optional peer-to-peer fees (paid separately, NOT to admin) ──────────────
-  // The organiser can charge each participant a custom organiser fee (paid to the
-  // organiser/creator) and a custom reshipper fee (paid to the parcel recipient
-  // for sorting out the deal). These are paid directly to the organiser/recipient
-  // and never enter the per-member order total that the admin/vendor collects.
-  // Free-text payment instructions shown to participants for each fee.
+  // ── Optional organiser fee (paid separately, NOT to admin) ──────────────────
+  // The organiser can charge each participant a custom organiser fee (paid directly
+  // to the organiser/creator). It never enters the per-member order total that the
+  // admin/vendor collects. Free-text payment instructions shown to participants.
   organiserPaymentInfo: text("organiser_payment_info"),
-  reshipperPaymentInfo: text("reshipper_payment_info"),
-  // ── Onward shipping (recipient re-ships each participant's items onward) ──────
-  // When the parcel recipient (delivery member) enables onward shipping, they set a
-  // custom per-participant onward charge (stored in the per-member reshipperFee) and
-  // publish their OWN payout methods below. These monies go directly to the recipient
-  // and NEVER enter any order total / admin / vendor accounting. The recipient marks
-  // each charge paid manually (no auto-verification).
-  onwardShippingEnabled: boolean("onward_shipping_enabled").notNull().default(false),
-  // Recipient's structured payout methods for the onward charge (any combination).
-  reshipperWalletAddress: text("reshipper_wallet_address"),
-  reshipperWalletCurrency: text("reshipper_wallet_currency"), // "USDT" | "USDC" (ERC-20 only)
-  reshipperAnonpay: text("reshipper_anonpay"),
-  reshipperPaypal: text("reshipper_paypal"),
-  reshipperRevolut: text("reshipper_revolut"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
@@ -98,20 +82,11 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   orderId: text("order_id"),
   // Per-member vendor-shipping share computed at lock (snapshot for display).
   shippingShare: numeric("shipping_share", { precision: 10, scale: 2 }),
-  // ── Optional peer-to-peer fees set by the organiser for THIS participant ─────
-  // organiserFee → paid to the organiser; reshipperFee → paid to the parcel
-  // recipient. The current recipient is exempt (effective fee treated as 0).
-  // Each fee tracks a "paid" flag confirmed by its payee (organiser/recipient).
+  // ── Optional organiser fee set by the organiser for THIS participant ─────────
+  // organiserFee → paid directly to the organiser. The current recipient is exempt
+  // (effective fee treated as 0). Tracks a "paid" flag confirmed by the organiser.
   organiserFee: numeric("organiser_fee", { precision: 10, scale: 2 }).notNull().default("0"),
-  reshipperFee: numeric("reshipper_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   organiserFeePaid: boolean("organiser_fee_paid").notNull().default(false),
-  reshipperFeePaid: boolean("reshipper_fee_paid").notNull().default(false),
-  // ── Onward shipping destination (provided by THIS participant) ───────────────
-  // Optional: where the recipient should forward this member's items. A written
-  // address and/or an uploaded courier DELIVERY QR image (e.g. Royal Mail/InPost),
-  // stored as an uncompressed data URL so it stays scannable. NOT a payment QR.
-  onwardAddress: text("onward_address"),
-  onwardQr: text("onward_qr"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [

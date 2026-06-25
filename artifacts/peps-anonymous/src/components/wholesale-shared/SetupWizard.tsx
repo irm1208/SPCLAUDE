@@ -16,7 +16,7 @@ function header(plan: GuidePlan, share: WholesaleShareDetail): { title: string; 
   if (plan.stage === "paying") return { title: "Time to pay", sub: "Pay your share and settle any extras. The parcel ships once everyone pays." };
   if (plan.stage === "done") return { title: "Order placed", sub: "Everyone's order is paid. Settle any remaining direct fees below." };
   if (plan.stage === "cancelled") return { title: "Order cancelled", sub: "This shared order was cancelled." };
-  if (share.delivery.canEditAddress) return { title: "You're the parcel recipient", sub: "Confirm where the parcel should go — and optionally forward items onward to others." };
+  if (share.delivery.canEditAddress) return { title: "You're the parcel recipient", sub: "Confirm where the parcel should go." };
   if (share.isCreator) return { title: "Set up your shared order", sub: "Invite people, pick who receives the parcel, then lock it so everyone can pay." };
   return { title: "Welcome to the shared order", sub: "Add your items now. When the organiser locks the order, you'll pay your share." };
 }

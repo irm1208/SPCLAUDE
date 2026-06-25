@@ -107,16 +107,6 @@ export function buildGuide(share: WholesaleShareDetail, me: WholesaleShareMember
         blocked: false,
         cta: { label: "Confirm address", target: { kind: "scroll", anchor: GUIDE_ANCHORS.address } },
       });
-      steps.push({
-        id: "onward",
-        role: "recipient",
-        title: "Set up onward forwarding",
-        description: "Optional — only if you'll post each member's items onward. You can skip this.",
-        done: share.onward.enabled,
-        optional: true,
-        blocked: false,
-        cta: { label: "Set up forwarding", target: { kind: "scroll", anchor: GUIDE_ANCHORS.manage } },
-      });
     }
 
     if (isCreator) {
@@ -152,10 +142,10 @@ export function buildGuide(share: WholesaleShareDetail, me: WholesaleShareMember
     });
   }
 
-  // Peer-to-peer fees are paid directly (to the organiser / parcel recipient),
-  // separate from the order. They only appear when actually owed, so when present
-  // they're real outstanding actions — NOT skippable — in both paying and done.
-  // This keeps the guidance in lockstep with the "What you owe" card.
+  // The organiser fee is paid directly to the organiser, separate from the order.
+  // It only appears when actually owed, so when present it's a real outstanding
+  // action — NOT skippable — in both paying and done. This keeps the guidance in
+  // lockstep with the "What you owe" card.
   if (stage === "paying" || stage === "done") {
     if (me.organiserFee > 0) {
       steps.push({
@@ -164,18 +154,6 @@ export function buildGuide(share: WholesaleShareDetail, me: WholesaleShareMember
         title: "Settle the organiser fee",
         description: "Paid directly to the organiser, separate from your order. See What you owe for how to pay.",
         done: me.organiserFeePaid,
-        optional: false,
-        blocked: false,
-        cta: { label: "View details", target: { kind: "scroll", anchor: GUIDE_ANCHORS.owe } },
-      });
-    }
-    if (me.reshipperFee > 0) {
-      steps.push({
-        id: "fee-onward",
-        role: "member",
-        title: "Settle onward shipping",
-        description: "Paid directly to the parcel recipient, separate from your order. See What you owe for how to pay.",
-        done: me.reshipperFeePaid,
         optional: false,
         blocked: false,
         cta: { label: "View details", target: { kind: "scroll", anchor: GUIDE_ANCHORS.owe } },

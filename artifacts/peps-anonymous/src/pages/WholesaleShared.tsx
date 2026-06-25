@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
-  ChevronDown, Info, MessageCircle, Send, Upload, X,
+  ChevronDown, Info, MessageCircle, Send, X,
   Package, MapPin, CreditCard,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
@@ -19,8 +19,6 @@ import {
   setWholesaleShareDeliveryAddress,
   setWholesaleShareSplit,
   setWholesaleShareFees,
-  setWholesaleShareOnward,
-  setWholesaleShareOnwardDestination,
   confirmWholesaleShareFee,
   lockWholesaleShare,
   cancelWholesaleShare,
@@ -161,31 +159,12 @@ export default function WholesaleShared() {
   const [delUser, setDelUser] = useState("");
   const deliverySeeded = useRef(false);
 
-  // Organiser-only optional peer-to-peer fee editor. Custom per-member organiser fee
-  // (paid to the organiser) and reshipper fee (paid to the parcel recipient). These
-  // are paid SEPARATELY and never enter the per-member order total.
+  // Organiser-only optional fee editor. Custom per-member organiser fee (paid to the
+  // organiser). Paid SEPARATELY and never enters the per-member order total.
   const [orgPayInfo, setOrgPayInfo] = useState("");
   const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({});
   const [feesDirty, setFeesDirty] = useState(false);
   const feesSeeded = useRef(false);
-
-  // Recipient-only onward shipping config: enable toggle, the recipient's OWN payout
-  // methods, and a custom onward charge per participant. Seeded from the share once
-  // and skipped while the recipient has unsaved edits (so polling can't clobber).
-  const [onwardEnabled, setOnwardEnabled] = useState(false);
-  const [onwardPay, setOnwardPay] = useState({
-    walletAddress: "", walletCurrency: "" as "" | "USDT" | "USDC",
-    anonpay: "", paypal: "", revolut: "", notes: "",
-  });
-  const [onwardCharges, setOnwardCharges] = useState<Record<string, string>>({});
-  const [onwardDirty, setOnwardDirty] = useState(false);
-  const onwardSeeded = useRef(false);
-
-  // Per-participant onward destination this member provides so the recipient knows
-  // where to forward their items (written address; the delivery QR uploads instantly).
-  const [destAddress, setDestAddress] = useState("");
-  const [destDirty, setDestDirty] = useState(false);
-  const destSeeded = useRef(false);
 
   // Organiser-only order rules: min/max kits per person, max total kits, an auto-lock
   // deadline, and an allowed-country list. Seeded from the share once and skipped
@@ -357,33 +336,6 @@ export default function WholesaleShared() {
     feesSeeded.current = true;
   }, [share, feesDirty]);
 
-  // Seed the recipient onward-shipping config once (recipient + open only).
-  useEffect(() => {
-    if (!share || !share.onward.canManage || onwardDirty || onwardSeeded.current) return;
-    setOnwardEnabled(share.onward.enabled);
-    setOnwardPay({
-      walletAddress: share.onward.payment.walletAddress ?? "",
-      walletCurrency: share.onward.payment.walletCurrency ?? "",
-      anonpay: share.onward.payment.anonpay ?? "",
-      paypal: share.onward.payment.paypal ?? "",
-      revolut: share.onward.payment.revolut ?? "",
-      notes: share.onward.payment.notes ?? "",
-    });
-    const seeded: Record<string, string> = {};
-    for (const c of share.onward.charges) seeded[c.username] = c.amount > 0 ? String(c.amount) : "";
-    setOnwardCharges(seeded);
-    onwardSeeded.current = true;
-  }, [share, onwardDirty]);
-
-  // Seed my own onward destination address once (only when I can set it).
-  useEffect(() => {
-    if (!share || destDirty || destSeeded.current) return;
-    if (!share.onward.canSetDestination) return;
-    const me = share.members.find(m => m.isYou);
-    setDestAddress(me?.onwardAddress ?? "");
-    destSeeded.current = true;
-  }, [share, destDirty]);
-
   // Seed the organiser order-rules form once (organiser + open only).
   useEffect(() => {
     if (!share || !share.settings.canManage || settingsDirty || settingsSeeded.current) return;
@@ -539,7 +491,6 @@ export default function WholesaleShared() {
   const stage = shareStage(share.status);
   const showOrganiserOpen = share.isCreator && isOpen;
   const showOrganiserLocked = share.isCreator && share.status === "locked";
-  const showOnwardRoster = share.onward.enabled && share.onward.canConfirm;
   const showFeeRoster = share.fees.canConfirmOrganiserFees && share.fees.active && share.fees.organiserFeeTotal > 0;
   const showOrderBreakdown = (share.isCreator || !!myMember?.isRecipient) && share.members.length > 0;
 
@@ -735,83 +686,10 @@ export default function WholesaleShared() {
     finally { setBusy(null); }
   };
 
-  const toggleFeePaid = async (username: string, feeType: "organiser" | "reshipper", paid: boolean) => {
+  const toggleFeePaid = async (username: string, feeType: "organiser", paid: boolean) => {
     if (!id) return;
     setActionError(""); setBusy(`feepaid:${feeType}:${username}`);
     try { await confirmWholesaleShareFee(id, { username, feeType, paid }); invalidate(id); }
-    catch (e) { setActionError((e as Error).message); }
-    finally { setBusy(null); }
-  };
-
-  const setOnwardCharge = (username: string, value: string) => {
-    setOnwardDirty(true);
-    setOnwardCharges(prev => ({ ...prev, [username]: value }));
-  };
-
-  // The recipient saves their onward shipping config (toggle + payout methods +
-  // per-participant charges). Validated and gated server-side.
-  const saveOnward = async () => {
-    if (!id || !share) return;
-    setActionError(""); setBusy("onward");
-    try {
-      const recipientLower = share.delivery.username?.toLowerCase() ?? null;
-      const charges = share.members
-        .filter(m => !(recipientLower != null && m.username.toLowerCase() === recipientLower))
-        .map(m => ({ username: m.username, amount: Math.max(0, parseFloat(onwardCharges[m.username] ?? "") || 0) }));
-      await setWholesaleShareOnward(id, {
-        enabled: onwardEnabled,
-        walletAddress: onwardPay.walletAddress.trim(),
-        walletCurrency: onwardPay.walletCurrency,
-        anonpay: onwardPay.anonpay.trim(),
-        paypal: onwardPay.paypal.trim(),
-        revolut: onwardPay.revolut.trim(),
-        notes: onwardPay.notes.trim(),
-        charges,
-      });
-      setOnwardDirty(false);
-      onwardSeeded.current = false;
-      invalidate(id);
-    } catch (e) { setActionError((e as Error).message); }
-    finally { setBusy(null); }
-  };
-
-  // A participant saves their written onward forwarding address.
-  const saveOnwardAddress = async () => {
-    if (!id) return;
-    setActionError(""); setBusy("onward-address");
-    try {
-      await setWholesaleShareOnwardDestination(id, { address: destAddress.trim() });
-      setDestDirty(false);
-      destSeeded.current = false;
-      invalidate(id);
-    } catch (e) { setActionError((e as Error).message); }
-    finally { setBusy(null); }
-  };
-
-  // Upload a courier DELIVERY QR image. Read as a data URL with NO canvas re-encode
-  // so the QR stays lossless and scannable; the server enforces a size cap.
-  const uploadOnwardQr = async (file: File) => {
-    if (!id) return;
-    if (!/^image\//.test(file.type)) { setActionError("Please upload an image file for the delivery QR."); return; }
-    if (file.size > 1_000_000) { setActionError("That image is too large — please upload a QR image under ~1MB."); return; }
-    setActionError(""); setBusy("onward-qr");
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("Couldn't read that image. Please try again."));
-        reader.readAsDataURL(file);
-      });
-      await setWholesaleShareOnwardDestination(id, { qr: dataUrl });
-      invalidate(id);
-    } catch (e) { setActionError((e as Error).message); }
-    finally { setBusy(null); }
-  };
-
-  const removeOnwardQr = async () => {
-    if (!id) return;
-    setActionError(""); setBusy("onward-qr");
-    try { await setWholesaleShareOnwardDestination(id, { qr: null }); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1210,75 +1088,6 @@ export default function WholesaleShared() {
     </div>
   ) : null;
 
-  const sectionOnwardDestination = share.onward.canSetDestination && myMember ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Onward Delivery</p>
-      <div className="rounded-xl p-4 space-y-3" style={card}>
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Where should your items go?</p>
-          {myMember.reshipperFee > 0 && (
-            <span className="text-xs font-bold" style={{ color: myMember.reshipperFeePaid ? "#15803d" : "var(--t-muted)" }}>
-              {myMember.reshipperFeePaid ? "Onward charge paid" : "Onward charge due"}
-            </span>
-          )}
-        </div>
-        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-          Tell the recipient where to forward your items — a written address and/or a courier delivery QR (e.g. Royal Mail or InPost). This is a delivery label, never a payment QR.
-        </p>
-        <div>
-          <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Forwarding address</label>
-          <textarea
-            value={destAddress}
-            onChange={e => { setDestDirty(true); setDestAddress(e.target.value); }}
-            placeholder="Name, street, city, postcode, country"
-            rows={3}
-            maxLength={2000}
-            className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-y"
-            style={field}
-          />
-          <button
-            onClick={saveOnwardAddress}
-            disabled={busy === "onward-address" || !destDirty}
-            className="mt-2 inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold disabled:opacity-50"
-            style={{ background: "var(--t-blue)", color: "#fff" }}
-          >
-            {busy === "onward-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Save address
-          </button>
-        </div>
-        <div>
-          <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Delivery QR (optional)</label>
-          {myMember.onwardQr ? (
-            <div className="flex items-center gap-3">
-              <img src={myMember.onwardQr} alt="Your delivery QR" className="w-24 h-24 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
-              <button
-                onClick={removeOnwardQr}
-                disabled={busy === "onward-qr"}
-                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-semibold disabled:opacity-50"
-                style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}
-              >
-                {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                Remove
-              </button>
-            </div>
-          ) : (
-            <label className="inline-flex items-center gap-2 px-4 h-9 rounded-xl text-sm font-bold cursor-pointer" style={{ background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
-              {busy === "onward-qr" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Upload QR image
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={busy === "onward-qr"}
-                onChange={e => { const f = e.target.files?.[0]; if (f) uploadOnwardQr(f); e.currentTarget.value = ""; }}
-              />
-            </label>
-          )}
-        </div>
-      </div>
-    </section>
-  ) : null;
-
   // ── Organiser-open control blocks (composed differently per view) ──
   // Split mode
   const orgSplitBlock = (
@@ -1416,8 +1225,8 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Organiser shipping & delivery card (split + recipient picker). Combined with
-  // the onward-shipping block below into the Shipping & Delivery section.
+  // Organiser shipping & delivery card (split + recipient picker), shown under the
+  // Shipping & Delivery section.
   const shippingDeliveryCard = (share.isCreator && isOpen) ? (
     <div className="rounded-xl p-4 space-y-4" style={card}>
       {orgSplitBlock}
@@ -1526,138 +1335,11 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  // Recipient onward-shipping setup (toggle + payout methods + per-member charges).
-  const sectionOnwardConfig = share.onward.canManage ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Onward Shipping (You Receive)</p>
-      <div className="rounded-xl p-4 space-y-4" style={card}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <label className="block text-sm font-semibold" style={{ color: "var(--t-text)" }}>Forward items to members</label>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-              You receive the whole parcel, then post each member's items onward. Switch this on to collect a custom charge per member and their forwarding details. Paid directly to you — never part of any order.
-            </p>
-          </div>
-          <button
-            role="switch"
-            aria-checked={onwardEnabled}
-            onClick={() => { setOnwardDirty(true); setOnwardEnabled(v => !v); }}
-            className="shrink-0 w-12 h-7 rounded-full transition-colors relative"
-            style={{ background: onwardEnabled ? "var(--t-blue)" : "var(--t-border)" }}
-          >
-            <span className="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white transition-transform" style={{ transform: onwardEnabled ? "translateX(20px)" : "translateX(0)" }} />
-          </button>
-        </div>
-
-        {onwardEnabled && (
-          <>
-            {/* Recipient's own payout methods — any combination. */}
-            <div className="space-y-3 pt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
-              <label className="block text-xs font-semibold pt-2" style={{ color: "var(--t-muted)" }}>How members pay you (any combination)</label>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Crypto wallet (ERC-20)</label>
-                  <input
-                    value={onwardPay.walletAddress}
-                    onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, walletAddress: e.target.value })); }}
-                    placeholder="0x… wallet address"
-                    maxLength={200}
-                    className="w-full h-10 px-3 rounded-lg border text-sm outline-none font-mono"
-                    style={field}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Coin</label>
-                  <select
-                    value={onwardPay.walletCurrency}
-                    onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, walletCurrency: e.target.value as "" | "USDT" | "USDC" })); }}
-                    className="h-10 px-2 rounded-lg border text-sm outline-none"
-                    style={field}
-                  >
-                    <option value="">—</option>
-                    <option value="USDT">USDT</option>
-                    <option value="USDC">USDC</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>anonPay</label>
-                  <input value={onwardPay.anonpay} onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, anonpay: e.target.value })); }} placeholder="anonPay link / ID" maxLength={200} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>PayPal</label>
-                  <input value={onwardPay.paypal} onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, paypal: e.target.value })); }} placeholder="PayPal email / link" maxLength={200} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Revolut</label>
-                  <input value={onwardPay.revolut} onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, revolut: e.target.value })); }} placeholder="@revtag / link" maxLength={200} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Other notes</label>
-                  <input value={onwardPay.notes} onChange={e => { setOnwardDirty(true); setOnwardPay(p => ({ ...p, notes: e.target.value })); }} placeholder="Any other instructions" maxLength={500} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-                </div>
-              </div>
-            </div>
-
-            {/* Per-participant onward charge. */}
-            <div className="space-y-2 pt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
-              <label className="block text-xs font-semibold pt-2" style={{ color: "var(--t-muted)" }}>Onward charge per member</label>
-              <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-                <div className="grid grid-cols-[1fr_auto] gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>
-                  <span>Member</span>
-                  <span className="w-24 text-center">Charge</span>
-                </div>
-                {share.members.map(m => {
-                  const isRecipient = !!share.delivery.username && m.username.toLowerCase() === share.delivery.username.toLowerCase();
-                  return (
-                    <div key={m.username} className="grid grid-cols-[1fr_auto] gap-2 px-3 py-2 items-center">
-                      <span className="text-sm truncate" style={{ color: "var(--t-text)" }}>
-                        @{m.username.replace(/^@/, "")}{isRecipient && <span className="text-[10px] ml-1" style={{ color: "#15803d" }}>you</span>}
-                      </span>
-                      {isRecipient ? (
-                        <span className="w-24 text-center text-xs" style={{ color: "var(--t-muted)" }}>—</span>
-                      ) : (
-                        <div className="w-24 flex items-center gap-1">
-                          <span className="text-xs" style={{ color: "var(--t-muted)" }}>$</span>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={onwardCharges[m.username] ?? ""}
-                            onChange={e => setOnwardCharge(m.username, e.target.value)}
-                            placeholder="0"
-                            className="w-full h-8 px-2 text-center rounded-lg border text-sm bg-transparent outline-none"
-                            style={field}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
-
-        <button
-          onClick={saveOnward}
-          disabled={busy === "onward" || !onwardDirty}
-          className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
-          style={{ background: "var(--t-blue)", color: "#fff" }}
-        >
-          {busy === "onward" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          Save onward shipping
-        </button>
-      </div>
-    </section>
-  ) : null;
-
-  // Combined Shipping & Delivery section: organiser split/recipient picker plus the
-  // recipient's onward-shipping setup, grouped under one header.
-  const sectionShippingDelivery = (shippingDeliveryCard || sectionOnwardConfig) ? (
+  // Shipping & Delivery section: organiser split + recipient picker under one header.
+  const sectionShippingDelivery = shippingDeliveryCard ? (
     <section id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)} className="space-y-2">
       <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping &amp; Delivery</p>
       {shippingDeliveryCard}
-      {sectionOnwardConfig}
     </section>
   ) : null;
 
@@ -1715,38 +1397,6 @@ export default function WholesaleShared() {
               busy={busy === `feepaid:organiser:${m.username}`}
               onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
             />
-          </div>
-        ))}
-      </div>
-    </section>
-  ) : null;
-
-  // Onward charges roster — recipient confirms each member's onward charge.
-  const sectionOnwardRoster = showOnwardRoster ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Onward Charges — Mark Paid</p>
-      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-        {share.members.filter(m => !(share.onward.recipientUsername && m.username.toLowerCase() === share.onward.recipientUsername.toLowerCase())).map(m => (
-          <div key={m.username} className="px-3 py-2.5 space-y-2">
-            <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
-              @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
-            </p>
-            {m.reshipperFee > 0 && (
-              <FeeLine
-                label="Onward charge"
-                amount={money(m.reshipperFee)}
-                paid={m.reshipperFeePaid}
-                canConfirm={share.onward.canConfirm}
-                busy={busy === `feepaid:reshipper:${m.username}`}
-                onToggle={() => toggleFeePaid(m.username, "reshipper", !m.reshipperFeePaid)}
-              />
-            )}
-            {m.onwardAddress
-              ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{m.onwardAddress}</p>
-              : <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No forwarding address yet.</p>}
-            {m.onwardQr && (
-              <img src={m.onwardQr} alt={`Delivery QR for ${m.username}`} className="w-28 h-28 rounded-lg object-contain" style={{ background: "#fff", border: "1px solid var(--t-border)" }} />
-            )}
           </div>
         ))}
       </div>
@@ -2015,13 +1665,11 @@ export default function WholesaleShared() {
       {sectionGroup}
       {sectionMyItems}
       {sectionWhatYouOwe}
-      {sectionOnwardDestination}
       {sectionShippingDelivery}
       {sectionOrderLimits}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionFeeRoster}
-      {sectionOnwardRoster}
       {sectionRecipientAddressPrompt}
       {sectionChat}
       {addressModal}
