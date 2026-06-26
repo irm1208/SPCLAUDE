@@ -3846,19 +3846,14 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   for (const li of vendorLineItems) {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    // Product-table vendor always takes precedence for consistent row keying.
-    // GB manufacturer is only used when the product has no vendor entry (custom/
-    // ad-hoc line items without a productId).  Without this, the same product
-    // gets two rows when some orders are in a GB (vendor = GB.manufacturer) and
-    // others aren't (vendor = products.vendor) and the two strings differ.
     const vendor = productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
-    // Key by NORMALISED name + vendor so the same product always merges into one
-    // row regardless of whether line items carry a productId or not.  Keying on
-    // productId caused duplicate rows when some orders had productId=null (custom/
-    // legacy entries) while others for the same product had a real UUID — the UUID
-    // and the literal name produced two different keys for the same product.
-    // Different vendors for the same name stay separate (correct).
-    const key = `${li.productName.toLowerCase().trim()}||${vendor ?? ""}`;
+    // Key by normalised product name ONLY (no vendor, no productId).
+    // Including vendor in the key caused every product to appear twice:
+    // GB orders resolved vendor from gb.manufacturer while standalone orders
+    // resolved from products.vendor — even for the same physical product.
+    // Vendor filtering is already handled by resolveVendor() above, so the
+    // key only needs to guarantee one row per distinct product name.
+    const key = li.productName.toLowerCase().trim();
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
     if (!productMap.has(key)) {
