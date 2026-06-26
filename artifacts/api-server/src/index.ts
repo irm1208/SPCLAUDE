@@ -776,6 +776,18 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS wholesale_invite_prompt_seen_at timestamptz`);
     // orders — top-up order reference (self-heal: added via direct SQL in deploy.sh)
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_of_order_id text`);
+    // wholesale_shares — organiser-configurable rules + organiser fee fields
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS min_kits_per_member integer`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS max_kits_per_member integer`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS max_total_kits integer`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lock_deadline timestamptz`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS allowed_countries jsonb`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS organiser_payment_info text`);
+    // wholesale_shares — max_members is nullable (no limit when null); drop NOT NULL if it exists
+    await db.execute(sql`ALTER TABLE wholesale_shares ALTER COLUMN max_members DROP NOT NULL`);
+    // wholesale_share_members — organiser fee per participant (paid peer-to-peer)
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee numeric(10,2) NOT NULL DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee_paid boolean NOT NULL DEFAULT false`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
