@@ -2103,25 +2103,6 @@ export default function AccountOrderDetail() {
                     {/* Dispatch photos uploaded by admin */}
                     <MemberDispatchImages orderId={order.id} />
 
-                    {/* GB parcel tracking (masked) — hidden for direct-shipping orders */}
-                    {isPaidOrder && order.groupBuyId && !isDirectOrder && (
-                      parcelsLoading ? (
-                        <div className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-center gap-3">
-                          <Loader2 className="w-4 h-4 text-blue-300 animate-spin shrink-0" />
-                          <p className="text-xs text-white/60">Loading parcel tracking…</p>
-                        </div>
-                      ) : parcels.length > 0 ? (
-                        <div className="space-y-2">
-                          <p className="text-xs font-bold text-blue-300 uppercase tracking-wide flex items-center gap-1.5">
-                            <ScanLine className="w-3.5 h-3.5" />
-                            Parcel Tracking
-                          </p>
-                          {parcels.map((parcel: GbParcel) => (
-                            <ParcelCard key={parcel.id} parcel={parcel} />
-                          ))}
-                        </div>
-                      ) : null
-                    )}
 
                     {/* Items */}
                     {order.lineItems?.length > 0 && (
