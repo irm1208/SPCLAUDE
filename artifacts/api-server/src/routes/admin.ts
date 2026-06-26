@@ -3852,11 +3852,13 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
     // gets two rows when some orders are in a GB (vendor = GB.manufacturer) and
     // others aren't (vendor = products.vendor) and the two strings differ.
     const vendor = productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
-    // Key by productId (or name) + vendor so the same product always merges into one
-    // row regardless of whether its orders are inside a group buy or not.  Keying on
-    // gbId caused duplicate rows when the same catalog product appeared in both GB and
-    // non-GB orders.  Different vendors for the same product ID stay separate (correct).
-    const key = `${li.productId ?? li.productName}||${vendor ?? ""}`;
+    // Key by NORMALISED name + vendor so the same product always merges into one
+    // row regardless of whether line items carry a productId or not.  Keying on
+    // productId caused duplicate rows when some orders had productId=null (custom/
+    // legacy entries) while others for the same product had a real UUID — the UUID
+    // and the literal name produced two different keys for the same product.
+    // Different vendors for the same name stay separate (correct).
+    const key = `${li.productName.toLowerCase().trim()}||${vendor ?? ""}`;
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
     if (!productMap.has(key)) {
