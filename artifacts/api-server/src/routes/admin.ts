@@ -3800,11 +3800,13 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   const productVendorMap = new Map(productRecords.map((p) => [p.id, p.vendor ?? null]));
   const productStockMap = new Map(productRecords.map((p) => [p.id, { stock: p.stock ?? null, lowStockThreshold: p.lowStockThreshold ?? null }]));
 
-  // Helper: resolve vendor for a line item (GB manufacturer takes precedence)
+  // Helper: resolve vendor for a line item.
+  // Product-table vendor takes precedence so the same product always maps to the
+  // same vendor string regardless of which GB (if any) the order belongs to.
   const resolveVendor = (li: { orderId: string; productId: string }) => {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    return gb?.vendor ?? productVendorMap.get(li.productId) ?? null;
+    return productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
   };
 
   // Apply vendor filter (after productVendorMap is built)
@@ -3844,7 +3846,12 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   for (const li of vendorLineItems) {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    const vendor = gb?.vendor ?? productVendorMap.get(li.productId) ?? null;
+    // Product-table vendor always takes precedence for consistent row keying.
+    // GB manufacturer is only used when the product has no vendor entry (custom/
+    // ad-hoc line items without a productId).  Without this, the same product
+    // gets two rows when some orders are in a GB (vendor = GB.manufacturer) and
+    // others aren't (vendor = products.vendor) and the two strings differ.
+    const vendor = productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
     // Key by productId (or name) + vendor so the same product always merges into one
     // row regardless of whether its orders are inside a group buy or not.  Keying on
     // gbId caused duplicate rows when the same catalog product appeared in both GB and
