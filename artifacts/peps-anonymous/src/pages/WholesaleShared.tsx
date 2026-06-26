@@ -326,8 +326,8 @@ export default function WholesaleShared() {
   // Seed the organiser fee editor once from the share's stored fee data. Skipped
   // once the organiser has unsaved edits, so live polling never clobbers their work.
   useEffect(() => {
-    if (!share || !share.fees.canManage || feesDirty || feesSeeded.current) return;
-    setOrgPayInfo(share.fees.organiserPaymentInfo ?? "");
+    if (!share || !share.fees?.canManage || feesDirty || feesSeeded.current) return;
+    setOrgPayInfo(share.fees?.organiserPaymentInfo ?? "");
     const seeded: Record<string, string> = {};
     for (const m of share.members) {
       seeded[m.username] = m.organiserFee > 0 ? String(m.organiserFee) : "";
@@ -338,7 +338,7 @@ export default function WholesaleShared() {
 
   // Seed the organiser order-rules form once (organiser + open only).
   useEffect(() => {
-    if (!share || !share.settings.canManage || settingsDirty || settingsSeeded.current) return;
+    if (!share || !share.settings?.canManage || settingsDirty || settingsSeeded.current) return;
     const s = share.settings;
     setSettingsForm({
       maxMembers: s.maxMembers != null ? String(s.maxMembers) : "",
@@ -491,7 +491,7 @@ export default function WholesaleShared() {
   const stage = shareStage(share.status);
   const showOrganiserOpen = share.isCreator && isOpen;
   const showOrganiserLocked = share.isCreator && share.status === "locked";
-  const showFeeRoster = share.fees.canConfirmOrganiserFees && share.fees.active && share.fees.organiserFeeTotal > 0;
+  const showFeeRoster = (share.fees?.canConfirmOrganiserFees ?? false) && (share.fees?.active ?? false) && (share.fees?.organiserFeeTotal ?? 0) > 0;
   const showOrderBreakdown = (share.isCreator || !!myMember?.isRecipient) && share.members.length > 0;
 
   const setQty = (pid: string, val: number) => {
@@ -1393,7 +1393,7 @@ export default function WholesaleShared() {
               label="Organiser fee"
               amount={money(m.organiserFee)}
               paid={m.organiserFeePaid}
-              canConfirm={share.fees.canConfirmOrganiserFees}
+              canConfirm={share.fees?.canConfirmOrganiserFees ?? false}
               busy={busy === `feepaid:organiser:${m.username}`}
               onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
             />
