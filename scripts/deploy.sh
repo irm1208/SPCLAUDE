@@ -14,7 +14,7 @@ $PNPM install --no-frozen-lockfile
 
 echo "[deploy] Running direct SQL migrations for columns drizzle-kit may miss..."
 node -e "
-const { Client } = require('pg');
+const { Client } = require('/home/runner/workspace/node_modules/.pnpm/pg@8.20.0/node_modules/pg');
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 async function run() {
   await client.connect();

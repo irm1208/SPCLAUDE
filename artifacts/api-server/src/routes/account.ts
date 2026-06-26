@@ -1725,6 +1725,18 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   if (order.inpostQrCode && !qrCodes["inpost"]) qrCodes["inpost"] = order.inpostQrCode;
   if (order.royalMailQrCode && !qrCodes["royal-mail"]) qrCodes["royal-mail"] = order.royalMailQrCode;
 
+  // Fetch reshipper info so the customer knows who to contact
+  let reshipperInfo: { country: string | null } | null = null;
+  if (order.reshipperUsername) {
+    const [reshipper] = await db
+      .select({ country: accountsTable.country })
+      .from(accountsTable)
+      .where(eq(accountsTable.telegramUsername, order.reshipperUsername));
+    if (reshipper) {
+      reshipperInfo = { country: reshipper.country ?? null };
+    }
+  }
+
   res.json({
     id: order.id,
     code: order.code,
@@ -1779,6 +1791,10 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     directShippingEnabled,
     directShippingRequested: order.directShippingRequested ?? false,
     directShippingCost: order.directShippingCost != null ? parseFloat(String(order.directShippingCost)) : null,
+    reshipperUsername: order.reshipperUsername ?? null,
+    reshipperInfo,
+    routingType: (order as any).routingType ?? null,
+    batchLocked: (order as any).batchLocked ?? false,
     createdAt: (order.createdAt as Date).toISOString(),
     updatedAt: (order.updatedAt as Date).toISOString(),
     lineItems: lineItems.map(li => ({

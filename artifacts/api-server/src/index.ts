@@ -772,6 +772,10 @@ async function runStartupMigrations(): Promise<void> {
         AND reshipper_username IS NOT NULL
         AND status IN ('Shipped', 'Completed')
     `);
+    // accounts — wholesale invite prompt seen timestamp (self-heal: drizzle may drop on push)
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS wholesale_invite_prompt_seen_at timestamptz`);
+    // orders — top-up order reference (self-heal: added via direct SQL in deploy.sh)
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_of_order_id text`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
