@@ -1340,11 +1340,8 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
     groupBuyHideCostBreakdownWhenClosed: gbHideCostBreakdownWhenClosed,
     groupBuyHideGrandTotalWhenClosed: gbHideGrandTotalWhenClosed,
     groupBuyStatus: gbStatus,
-<<<<<<< HEAD
     groupBuyOrganiser: gbOrganiser,
-=======
     reshipperInfo,
->>>>>>> cbdac291eff20e34d5bc9d56c4db2c31b8b13636
   });
 });
 
