@@ -234,12 +234,12 @@ export default function WholesaleShared() {
   const guide = useMemo(() => (share && myMember ? buildGuide(share, myMember) : null), [share, myMember]);
   const autoMoment = guide?.autoOpenMomentId ?? null;
 
-  // Progressive setup gate (presentation only). A brand-new order is set up in
-  // ordered sections — "Add your items", then (organiser only) "Shipping split &
-  // organiser fee". Completing one reveals the next; once they're done the full
-  // order opens. Derived purely from existing share data.
-  const setupSteps: string[] = guide?.stage === "building"
-    ? ["items", ...(share?.isCreator ? ["shipfee"] : [])]
+  // Progressive setup gate (presentation only). Only applies to non-creator
+  // members who need to be guided to add their items. Creators (organisers)
+  // always see the full view — they need access to settings, limits, fee config
+  // etc. from the start and should never be gated behind a wizard.
+  const setupSteps: string[] = guide?.stage === "building" && !share?.isCreator
+    ? ["items"]
     : [];
   const setupStepDone = (sid: string): boolean => {
     if (sid === "items") return (myMember?.kits ?? 0) > 0;
