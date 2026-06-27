@@ -6898,6 +6898,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [filterReshipper, setFilterReshipper] = useState("");
   const [routingOrders, setRoutingOrders] = useState<Fs3GbOrder[]>([]);
   const [routingOrdersLoading, setRoutingOrdersLoading] = useState(false);
+  const [bulkStatusApplying, setBulkStatusApplying] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [shareMeta, setShareMeta] = useState<Map<string, Fs3ShareMeta>>(new Map());
 
@@ -7527,6 +7528,27 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     a.download = `order-${slug}-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const setSelectedOrdersProcessing = async () => {
+    const ids = [...selectedOrderIds];
+    if (ids.length === 0) return;
+    setBulkStatusApplying(true);
+    await Promise.all(ids.map(async id => {
+      try {
+        const res = await fetch(apiUrl(`/admin/orders/${id}`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+          body: JSON.stringify({ status: "Processing" }),
+          credentials: "omit",
+        });
+        if (res.ok) {
+          setRoutingOrders(prev => prev.map(o => o.id === id ? { ...o, status: "Processing" } : o));
+        }
+      } catch { /* ignore individual failures */ }
+    }));
+    setBulkStatusApplying(false);
+    setSelectedOrderIds(new Set());
   };
 
   // ── Download multiple selected direct orders as one TXT ──
@@ -8270,6 +8292,17 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               )}
             </div>
             <div className="flex items-center gap-1.5">
+              {selectedOrderIds.size > 0 && (
+                <Button
+                  size="sm"
+                  className="text-xs h-7 gap-1.5"
+                  onClick={setSelectedOrdersProcessing}
+                  disabled={bulkStatusApplying}
+                >
+                  {bulkStatusApplying ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Set {selectedOrderIds.size} to Processing
+                </Button>
+              )}
               {selectedOrderIds.size > 0 && (
                 <Button
                   size="sm" variant="outline"
