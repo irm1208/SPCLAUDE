@@ -1939,7 +1939,7 @@ function OrdersTab({ secret }: { secret: string }) {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   className="w-full pl-9 pr-4 h-9 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Search username, code, TXID, tracking…"
+                  placeholder="Search name, email, phone, address, username, code, TXID, tracking…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />

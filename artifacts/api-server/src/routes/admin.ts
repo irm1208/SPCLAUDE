@@ -436,6 +436,11 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
         sql`lower(coalesce(${ordersTable.shippingName}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.shippingCountry}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.reshipperUsername}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingEmail}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingPhone}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingAddress}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingCity}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingPostcode}, '')) like ${"%" + q + "%"}`,
       )
     );
   }
@@ -763,6 +768,11 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
         sql`lower(coalesce(${ordersTable.shippingName}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.shippingCountry}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.reshipperUsername}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingEmail}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingPhone}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingAddress}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingCity}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.shippingPostcode}, '')) like ${"%" + q + "%"}`,
       ));
     }
     if (reshipper) {
