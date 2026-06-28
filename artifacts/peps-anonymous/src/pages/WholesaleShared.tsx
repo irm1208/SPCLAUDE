@@ -17,6 +17,7 @@ import {
   setWholesaleShareItems,
   setWholesaleShareDelivery,
   setWholesaleShareDeliveryAddress,
+  setWholesaleShareMyOnwardAddress,
   setWholesaleShareSplit,
   setWholesaleShareFees,
   confirmWholesaleShareFee,
@@ -183,6 +184,14 @@ export default function WholesaleShared() {
     name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
   });
   const addrSeeded = useRef(false);
+
+  // Onward shipping form — where the current member wants their items forwarded by
+  // the parcel recipient. Kept separate from the recipient delivery form above.
+  const [onwardModalOpen, setOnwardModalOpen] = useState(false);
+  const [onwardAddr, setOnwardAddr] = useState({
+    name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
+  });
+  const onwardSeeded = useRef(false);
 
   // Address autocomplete state for the recipient delivery form.
   const [addrQuery, setAddrQuery] = useState("");
@@ -380,6 +389,39 @@ export default function WholesaleShared() {
       });
     }
     addrSeeded.current = true;
+  }, [share, account]);
+
+  // Seed the onward address form once, for a member who can add one. Prefer any
+  // onward address already saved on my member row; otherwise fall back to my saved
+  // account address as a convenient starting point (freely editable).
+  useEffect(() => {
+    if (!share || onwardSeeded.current) return;
+    const mine = share.members.find(m => m.isYou);
+    if (!mine || !mine.canEditOnward) return;
+    if (mine.onward?.address) {
+      const lines = mine.onward.address.split("\n").map(s => s.trim()).filter(Boolean);
+      let line1 = "", line2 = "", cityLine = "";
+      if (lines.length >= 3) { [line1, line2, cityLine] = lines; }
+      else if (lines.length === 2) { [line1, cityLine] = lines; }
+      else if (lines.length === 1) { [line1] = lines; }
+      setOnwardAddr({
+        name: mine.onward.name ?? "",
+        line1, line2, city: cityLine, postcode: "",
+        country: mine.onward.country ?? "United Kingdom",
+        phone: mine.onward.phone ?? "",
+      });
+    } else if (account) {
+      setOnwardAddr({
+        name: account.telegramUsername?.replace(/^@/, "") ?? "",
+        line1: account.addressLine1 ?? "",
+        line2: account.addressLine2 ?? "",
+        city: account.addressCity ?? "",
+        postcode: account.addressPostcode ?? "",
+        country: account.country ?? account.addressCountry ?? "United Kingdom",
+        phone: [account.addressPhonePrefix, account.addressPhone].filter(Boolean).join(" "),
+      });
+    }
+    onwardSeeded.current = true;
   }, [share, account]);
 
   // Clear pending address-search timers on unmount.
@@ -622,6 +664,25 @@ export default function WholesaleShared() {
       });
       invalidate(id);
       setAddressModalOpen(false);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const saveOnwardAddress = async () => {
+    if (!id) return;
+    setActionError(""); setBusy("onward-address");
+    try {
+      await setWholesaleShareMyOnwardAddress(id, {
+        name: onwardAddr.name,
+        addressLine1: onwardAddr.line1,
+        addressLine2: onwardAddr.line2,
+        city: onwardAddr.city,
+        postcode: onwardAddr.postcode,
+        country: onwardAddr.country,
+        phone: onwardAddr.phone,
+      });
+      invalidate(id);
+      setOnwardModalOpen(false);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1431,6 +1492,164 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // My onward address — any participant (except the parcel recipient) can add where
+  // they want their items forwarded to. Private: only the recipient and they see it.
+  const myOnwardEditable = !!myMember?.canEditOnward;
+  const myOnward = myMember?.onward ?? null;
+  const sectionMyOnwardAddress = myOnwardEditable ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Your Onward Delivery Address</p>
+      <div className="rounded-xl p-4 space-y-3" style={card}>
+        <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+          Where should the parcel recipient forward your items once the order arrives?{" "}
+          {share.delivery.username
+            ? <>Only @{share.delivery.username.replace(/^@/, "")} (the recipient) can see this — not the organiser or other members.</>
+            : <>Only the chosen parcel recipient can see this — not the organiser or other members.</>}
+        </p>
+        {myOnward?.address ? (
+          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+            {myOnward.name && <p className="font-semibold" style={{ color: "var(--t-text)" }}>{myOnward.name}</p>}
+            <p className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{myOnward.address}</p>
+            {myOnward.country && <p style={{ color: "var(--t-text)" }}>{myOnward.country}</p>}
+            {myOnward.phone && <p style={{ color: "var(--t-muted)" }}>{myOnward.phone}</p>}
+          </div>
+        ) : (
+          <div className="rounded-lg p-3 text-xs flex items-start gap-2" style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "var(--t-text)" }}>
+            <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#eab308" }} />
+            <span>You haven't added an onward address yet — the recipient won't know where to forward your items.</span>
+          </div>
+        )}
+        <button
+          onClick={() => setOnwardModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 h-11 rounded-xl text-sm font-bold text-white"
+          style={{ background: "var(--t-blue)" }}
+        >
+          <MapPin className="w-4 h-4" /> {myOnward?.address ? "Edit onward address" : "Add onward address"}
+        </button>
+      </div>
+    </section>
+  ) : null;
+
+  // Onward roster — visible ONLY to the parcel recipient. Lists each other member's
+  // onward address so the recipient can forward their items after the parcel lands.
+  const sectionOnwardRoster = myMember?.isRecipient ? (() => {
+    const others = share.members.filter(m => !m.isRecipient);
+    return (
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Forwarding Addresses</p>
+        <div className="rounded-xl p-4 space-y-3" style={card}>
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+            You're receiving this parcel. Each member's onward address is shown below so you can forward their items. Only you can see these.
+          </p>
+          {others.length === 0 ? (
+            <p className="text-sm" style={{ color: "var(--t-muted)" }}>No other members yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {others.map(m => (
+                <div key={m.username} className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                  <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-muted)" }}>@{m.username.replace(/^@/, "")}</p>
+                  {m.onward?.address ? (
+                    <>
+                      {m.onward.name && <p className="font-semibold" style={{ color: "var(--t-text)" }}>{m.onward.name}</p>}
+                      <p className="whitespace-pre-line" style={{ color: "var(--t-text)" }}>{m.onward.address}</p>
+                      {m.onward.country && <p style={{ color: "var(--t-text)" }}>{m.onward.country}</p>}
+                      {m.onward.phone && <p style={{ color: "var(--t-muted)" }}>{m.onward.phone}</p>}
+                    </>
+                  ) : (
+                    <p className="text-xs flex items-center gap-1.5" style={{ color: "#b45309" }}>
+                      <Clock className="w-3.5 h-3.5 shrink-0" /> No onward address added yet.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  })() : null;
+
+  // Onward-address popup — a manual address form shown as a centred modal.
+  const onwardModal = (
+    <AnimatePresence>
+      {onwardModalOpen && myOnwardEditable && (
+        <>
+          <motion.div
+            key="onward-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setOnwardModalOpen(false)}
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
+          />
+          <motion.div
+            key="onward-modal"
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
+            role="dialog"
+            aria-modal="true"
+            className="fixed z-[61] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[88vh] overflow-y-auto rounded-2xl p-5 space-y-3 shadow-2xl"
+            style={card}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Your onward address</p>
+              <button onClick={() => setOnwardModalOpen(false)} aria-label="Close">
+                <X className="w-5 h-5" style={{ color: "var(--t-muted)" }} />
+              </button>
+            </div>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              Where the parcel recipient should forward your items. Only the recipient (and you) can see this — it won't change your account.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
+              <input value={onwardAddr.name} onChange={e => setOnwardAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>
+              <input value={onwardAddr.line1} onChange={e => setOnwardAddr(a => ({ ...a, line1: e.target.value }))} placeholder="Street address" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 2 (optional)</label>
+              <input value={onwardAddr.line2} onChange={e => setOnwardAddr(a => ({ ...a, line2: e.target.value }))} placeholder="Apartment, suite, etc." className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>City</label>
+                <input value={onwardAddr.city} onChange={e => setOnwardAddr(a => ({ ...a, city: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Postcode</label>
+                <input value={onwardAddr.postcode} onChange={e => setOnwardAddr(a => ({ ...a, postcode: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+              <select value={onwardAddr.country} onChange={e => setOnwardAddr(a => ({ ...a, country: e.target.value }))} className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+                <option value="">Select country…</option>
+                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone</label>
+              <input value={onwardAddr.phone} onChange={e => setOnwardAddr(a => ({ ...a, phone: e.target.value }))} placeholder="For delivery updates" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <button
+              onClick={saveOnwardAddress}
+              disabled={busy === "onward-address" || !onwardAddr.name.trim() || !onwardAddr.line1.trim() || !onwardAddr.country || !onwardAddr.phone.trim()}
+              className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+              style={{ background: "var(--t-blue)" }}
+            >
+              {busy === "onward-address" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save onward address
+            </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+
   // Delivery-address popup — the full address form shown as a centred modal.
   const addressModal = (
     <AnimatePresence>
@@ -1671,8 +1890,11 @@ export default function WholesaleShared() {
       {sectionOrganiserLocked}
       {sectionFeeRoster}
       {sectionRecipientAddressPrompt}
+      {sectionMyOnwardAddress}
+      {sectionOnwardRoster}
       {sectionChat}
       {addressModal}
+      {onwardModal}
     </>
   );
 

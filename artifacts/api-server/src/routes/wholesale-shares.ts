@@ -213,6 +213,15 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     const mLower = m.username.toLowerCase();
     const isRecipient = recipientLower != null && mLower === recipientLower;
     const organiserFee = isRecipient ? 0 : Number(m.organiserFee ?? 0);
+    // Onward shipping address privacy: each member enters their OWN onward address
+    // (where the recipient should forward their items). It is visible ONLY to the
+    // chosen parcel recipient and to the member themselves — never the organiser or
+    // other members. The mere existence flag is safe to expose so the UI can show
+    // who still needs to add one without leaking the address itself.
+    const isOwn = mLower === currentLower;
+    const isRecipientViewer = recipientLower != null && recipientLower === currentLower;
+    const canSeeOnward = isRecipientViewer || isOwn;
+    const hasOnwardAddress = !!(m.onwardAddress && m.onwardCountry);
     return {
       username: m.username,
       isCreator: m.isCreator,
@@ -238,6 +247,18 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
       // The organiser may remove any non-creator member while the order is open.
       canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
+      // Onward shipping address — exists flag for everyone; full address only for
+      // the recipient or the member themselves. The recipient (not the parcel
+      // receiver) never needs an onward address, so only non-recipients may edit one.
+      hasOnwardAddress,
+      onward: canSeeOnward ? {
+        name: m.onwardName ?? null,
+        phone: m.onwardPhone ?? null,
+        email: m.onwardEmail ?? null,
+        address: m.onwardAddress ?? null,
+        country: m.onwardCountry ?? null,
+      } : null,
+      canEditOnward: isOwn && !isRecipient && share.status !== "cancelled",
     };
   });
 
@@ -780,6 +801,77 @@ router.put("/wholesale-shares/:id/delivery-address", requireWholesale, async (re
     .returning({ id: wholesaleSharesTable.id });
   if (changed.length === 0) {
     res.status(409).json({ error: "This shared order is no longer open or you're no longer the chosen recipient." });
+    return;
+  }
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/my-onward-address — any member sets THEIR OWN
+// onward shipping address (where the chosen recipient should forward their items
+// after the combined parcel arrives). Self-service only: a member can only set
+// their own address, and it is readable only by the recipient and themselves
+// (enforced in buildShareResponse). Editable until the share is cancelled — the
+// recipient still needs it to forward items after the order is locked/submitted.
+// Unlike the parcel delivery address, the onward destination is NOT vendor-priced
+// (the recipient forwards it themselves), so we don't validate against vendor
+// regions or the organiser country allow-list.
+router.put("/wholesale-shares/:id/my-onward-address", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.status === "cancelled") { res.status(409).json({ error: "This shared order has been cancelled." }); return; }
+
+  const member = await loadMember(share.id, me);
+  if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  // The chosen parcel recipient receives the whole parcel directly — they have no
+  // onward leg, so they can't set an onward address for themselves.
+  if (share.deliveryUsername && share.deliveryUsername.toLowerCase() === me.toLowerCase()) {
+    res.status(400).json({ error: "You're the parcel recipient — you don't need an onward address." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const str = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const name = str(body.name, 120);
+  const line1 = str(body.addressLine1);
+  const line2 = str(body.addressLine2);
+  const city = str(body.city, 120);
+  const postcode = str(body.postcode, 40);
+  const country = str(body.country, 80);
+  const phone = str(body.phone, 60);
+  const email = str(body.email, 160);
+
+  if (!name) { res.status(400).json({ error: "Enter the recipient's name." }); return; }
+  if (!line1) { res.status(400).json({ error: "Enter the first line of the address." }); return; }
+  if (!country) { res.status(400).json({ error: "Choose the destination country." }); return; }
+  if (!phone) { res.status(400).json({ error: "Enter a contact phone number for delivery." }); return; }
+
+  const cityLine = [city, postcode].filter(Boolean).join(" ").trim();
+  const address = [line1, line2, cityLine].filter(Boolean).join("\n");
+
+  // CONDITIONAL update — re-checks at write time that the share isn't cancelled and
+  // that I'm still NOT the chosen recipient (the recipient has no onward leg). If a
+  // concurrent cancel, or the organiser making me the recipient, won the race after
+  // our precheck, no row updates and we respond 409 rather than persisting a stale
+  // onward address. Mirrors the delivery-address handler's race-safe pattern.
+  const changed = await db.update(wholesaleShareMembersTable)
+    .set({
+      onwardName: name,
+      onwardPhone: phone || null,
+      onwardEmail: email || null,
+      onwardAddress: address,
+      onwardCountry: country,
+    })
+    .where(and(
+      eq(wholesaleShareMembersTable.shareId, share.id),
+      sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`,
+      sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} s WHERE s.id = ${share.id} AND s.status <> 'cancelled' AND (s.delivery_username IS NULL OR lower(s.delivery_username) <> ${me.toLowerCase()}))`,
+    ))
+    .returning({ id: wholesaleShareMembersTable.id });
+  if (changed.length === 0) {
+    res.status(409).json({ error: "This shared order is no longer open to onward changes, or you're now the parcel recipient." });
     return;
   }
 

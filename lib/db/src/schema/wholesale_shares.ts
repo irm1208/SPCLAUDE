@@ -87,6 +87,16 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   // (effective fee treated as 0). Tracks a "paid" flag confirmed by the organiser.
   organiserFee: numeric("organiser_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   organiserFeePaid: boolean("organiser_fee_paid").notNull().default(false),
+  // ── Onward shipping address (where this member wants their items forwarded) ───
+  // Each participant may enter their OWN onward address. It is private: only the
+  // chosen parcel recipient (delivery member) and the member themselves can read it
+  // — never the organiser or other members. Used by the recipient to forward each
+  // member's items after the combined parcel arrives. Never priced/snapshotted.
+  onwardName: text("onward_name"),
+  onwardPhone: text("onward_phone"),
+  onwardEmail: text("onward_email"),
+  onwardAddress: text("onward_address"),
+  onwardCountry: text("onward_country"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [

@@ -32,6 +32,20 @@ export interface WholesaleShareMember {
   hasDeliveryAddress: boolean;
   // The organiser may remove this member while the order is open (never the creator).
   canRemove: boolean;
+  // Onward shipping — where this member wants their items forwarded by the recipient.
+  // Whether an onward address has been added (safe for everyone to see).
+  hasOnwardAddress: boolean;
+  // The onward address itself — populated ONLY when the viewer is the parcel
+  // recipient or this member themselves; null otherwise (privacy).
+  onward: {
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    country: string | null;
+  } | null;
+  // True only on YOUR own row when you may add/edit it (not the recipient, share not cancelled).
+  canEditOnward: boolean;
 }
 
 export interface WholesaleShareFees {
@@ -245,6 +259,16 @@ export interface WholesaleDeliveryAddressInput {
 // their account). Receiver-only on the server.
 export function setWholesaleShareDeliveryAddress(id: string, addr: WholesaleDeliveryAddressInput) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/delivery-address`, {
+    method: "PUT",
+    body: JSON.stringify(addr),
+  });
+}
+
+// A participant sets THEIR OWN onward shipping address — where the chosen parcel
+// recipient should forward their items after the combined parcel arrives. Private:
+// only the recipient and the member themselves can read it. Self-service only.
+export function setWholesaleShareMyOnwardAddress(id: string, addr: WholesaleDeliveryAddressInput) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/my-onward-address`, {
     method: "PUT",
     body: JSON.stringify(addr),
   });

@@ -36,3 +36,4 @@
 - [Wholesale draft autosave lifecycle](wholesale-draft-autosave-lifecycle.md) — clear draft only on submit success, save null when empty, clear timer on unmount/nav, abort in-flight PUTs (latest-write-wins) or a cleared/discarded draft resurrects.
 - [Onward shipping & body-limit gotcha](onward-shipping-body-limit.md) — wholesale onward charge is peer-to-peer (never in grandTotal); any base64-image route MUST join a high-limit express.json group or the global 64kb cap silently 413s it.
 - [Wholesale shared P2P fees](wholesale-p2p-fees.md) — optional organiser/reshipper fees paid peer-to-peer, NEVER in order totals; recipient exempt (dynamic); fee edits transactional + reset paid flag.
+- [Wholesale per-member onward address](wholesale-onward-member-address.md) — each member's onward forwarding address is private to recipient+owner only (gated in buildShareResponse); recipient can't set one; not vendor-priced; conditional status-gated write.
