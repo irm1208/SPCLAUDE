@@ -25,6 +25,41 @@ import {
 } from "../lib/wholesale-shipping";
 import { writeLog } from "../lib/audit-log";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
+import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
+
+// Fully opaque tracking-number mask — show no real characters so participants (and
+// anyone they share a screenshot with) cannot identify the carrier or origin of the
+// onward leg. Mirrors maskTrackingNumber() used for public GB parcel tracking.
+function maskTrackingNumber(tn: string): string {
+  return "•".repeat(Math.min(Math.max(tn.length, 6), 12));
+}
+
+// Coarsely classify a carrier event description into a controlled status enum. Used to
+// strip free-text descriptions (which can embed exact cities/addresses) before sending
+// onward-tracking events to a PARTICIPANT — they only ever see a phase label, never the
+// raw carrier text. The dispatching recipient keeps the full event text.
+function classifyOnwardEvent(text: string): string {
+  const t = (text ?? "").toLowerCase();
+  if (/out for delivery|with (the )?courier|loaded for delivery/.test(t)) return "out_for_delivery";
+  if (/attempt|notice left|no answer|not at home|reschedul|redeliver/.test(t)) return "attempted";
+  if (/delivered|signed|received by|picked up by (the )?recipient|collected/.test(t)) return "delivered";
+  if (/except|fail|return|refus|held|customs|delay|undeliver|lost|damaged/.test(t)) return "exception";
+  if (/expired/.test(t)) return "expired";
+  if (/pending|info received|label created|awaiting|electronic|pre-?advice|order processed/.test(t)) return "pending";
+  return "in_transit";
+}
+
+type OnwardEvent = { date: string; status: string; location: string };
+
+// Re-shape stored (already country-masked) events for a participant: replace the
+// free-text status with a coarse phase label and keep only the country-level location.
+function sanitizeOnwardEventsForParticipant(events: OnwardEvent[]): OnwardEvent[] {
+  return events.map(ev => ({
+    date: ev.date,
+    status: classifyOnwardEvent(ev.status),
+    location: ev.location ?? "",
+  }));
+}
 
 const router: IRouter = Router();
 
@@ -259,6 +294,28 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
         country: m.onwardCountry ?? null,
       } : null,
       canEditOnward: isOwn && !isRecipient && share.status !== "cancelled",
+      // Onward parcel tracking: visible to the member themselves (their own parcel)
+      // and to the dispatching recipient (who manages every member's forwarding).
+      // Events are stored already masked. The raw number/carrier are exposed ONLY to
+      // the dispatching recipient; the participant sees a fully-masked number so the
+      // carrier/origin of the onward leg can't be identified.
+      onwardTracking: (isOwn || isRecipientViewer) ? {
+        hasTracking: !!m.onwardTrackingNumber,
+        trackingNumber: m.onwardTrackingNumber
+          ? (isRecipientViewer ? m.onwardTrackingNumber : maskTrackingNumber(m.onwardTrackingNumber))
+          : null,
+        carrier: isRecipientViewer ? (m.onwardCarrier ?? null) : null,
+        status: m.onwardTrackingStatus ?? null,
+        statusCode: m.onwardTrackingStatusCode ?? null,
+        events: isRecipientViewer
+          ? (m.onwardTrackingEvents ?? [])
+          : sanitizeOnwardEventsForParticipant(m.onwardTrackingEvents ?? []),
+        lastChecked: m.onwardTrackingChecked ? (m.onwardTrackingChecked as Date).toISOString() : null,
+      } : null,
+      // Only the dispatching recipient may set/update onward tracking, and only once
+      // the combined order is submitted (everyone paid → forwarding can begin). The
+      // recipient has no onward leg of their own, so never for the recipient row.
+      canEditTracking: isRecipientViewer && !isRecipient && share.status === "submitted",
     };
   });
 
@@ -877,6 +934,119 @@ router.put("/wholesale-shares/:id/my-onward-address", requireWholesale, async (r
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/members/:username/tracking — the dispatching recipient
+// records (or updates/clears) the onward tracking number for one participant's parcel.
+// Only available once the combined order is submitted (everyone paid → forwarding has
+// begun). On save we best-effort register + fetch the latest MASKED status from 17track
+// so the organiser and the participant see updates immediately; the scheduled refresh
+// keeps them current thereafter. Sending an empty tracking number clears the tracking.
+router.put("/wholesale-shares/:id/members/:username/tracking", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+
+  // Only the chosen parcel recipient forwards items, so only they manage onward tracking.
+  if (!share.deliveryUsername || share.deliveryUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the parcel recipient can manage onward tracking." });
+    return;
+  }
+  if (share.status !== "submitted") {
+    res.status(409).json({ error: "Onward tracking can only be set once everyone has paid and the order is submitted." });
+    return;
+  }
+
+  const targetUsername = decodeURIComponent(String(req.params.username)).replace(/^@/, "");
+  if (targetUsername.toLowerCase() === me.toLowerCase()) {
+    res.status(400).json({ error: "You're the parcel recipient — your parcel has no onward leg to track." });
+    return;
+  }
+  const target = await loadMember(share.id, targetUsername);
+  if (!target) { res.status(404).json({ error: "That member is not part of this shared order." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const trackingNumber = typeof body.trackingNumber === "string" ? body.trackingNumber.trim().slice(0, 80) : "";
+  const carrier = typeof body.carrier === "string" ? body.carrier.trim().slice(0, 80) : "";
+
+  // CONDITIONAL guard re-checked at write time: the share must still be submitted and
+  // I must still be the recipient, and the target must still NOT be the recipient. If a
+  // concurrent recipient change / cancel won the race after our precheck, no row updates
+  // and we respond 409 rather than persisting stale tracking. Mirrors the onward-address
+  // handler's race-safe pattern.
+  const trackingGuard = sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} s WHERE s.id = ${share.id} AND s.status = 'submitted' AND lower(s.delivery_username) = ${me.toLowerCase()} AND lower(s.delivery_username) <> ${target.username.toLowerCase()})`;
+
+  // Empty number → clear all onward tracking for this member.
+  if (!trackingNumber) {
+    const cleared = await db.update(wholesaleShareMembersTable)
+      .set({
+        onwardTrackingNumber: null,
+        onwardCarrier: null,
+        onwardTrackingStatus: null,
+        onwardTrackingStatusCode: null,
+        onwardTrackingEvents: [],
+        onwardTrackingChecked: null,
+      })
+      .where(and(eq(wholesaleShareMembersTable.id, target.id), trackingGuard))
+      .returning({ id: wholesaleShareMembersTable.id });
+    if (cleared.length === 0) {
+      res.status(409).json({ error: "This shared order is no longer accepting onward tracking changes." });
+      return;
+    }
+    await writeLog("order", "info", "wholesale_share_tracking_cleared",
+      `Onward tracking cleared for ${target.username} in share ${share.id}`,
+      { shareId: share.id, member: target.username }, req.ip);
+    const clearedShare = await loadShare(share.id);
+    res.json(await buildShareResponse(clearedShare!, me));
+    return;
+  }
+
+  // Persist the number first so it isn't lost if the 17track lookup fails, then attempt
+  // an immediate masked fetch for instant feedback.
+  const saved = await db.update(wholesaleShareMembersTable)
+    .set({
+      onwardTrackingNumber: trackingNumber,
+      onwardCarrier: carrier || null,
+      onwardTrackingStatus: target.onwardTrackingNumber === trackingNumber ? target.onwardTrackingStatus : "pending",
+      onwardTrackingStatusCode: target.onwardTrackingNumber === trackingNumber ? target.onwardTrackingStatusCode : 0,
+      onwardTrackingEvents: target.onwardTrackingNumber === trackingNumber ? (target.onwardTrackingEvents ?? []) : [],
+      onwardTrackingChecked: null,
+    })
+    .where(and(eq(wholesaleShareMembersTable.id, target.id), trackingGuard))
+    .returning({ id: wholesaleShareMembersTable.id });
+  if (saved.length === 0) {
+    res.status(409).json({ error: "This shared order is no longer accepting onward tracking changes." });
+    return;
+  }
+
+  try {
+    const result = await fetchOnwardTracking(trackingNumber, carrier || null);
+    if (result) {
+      // Conditional on the number we just saved still being current — if a newer
+      // tracking update raced ahead of this async fetch, this stale result must not
+      // overwrite it. Keying on the tracking number is enough (it changes per save).
+      await db.update(wholesaleShareMembersTable)
+        .set({
+          onwardTrackingStatus: result.status,
+          onwardTrackingStatusCode: result.statusCode,
+          onwardTrackingEvents: result.events,
+          onwardTrackingChecked: new Date(),
+        })
+        .where(and(
+          eq(wholesaleShareMembersTable.id, target.id),
+          eq(wholesaleShareMembersTable.onwardTrackingNumber, trackingNumber),
+        ));
+    }
+  } catch (err) {
+    console.error(`[wholesale-shares] Initial onward tracking fetch failed for ${target.username}:`, err);
+  }
+
+  await writeLog("order", "info", "wholesale_share_tracking_set",
+    `Onward tracking set for ${target.username} in share ${share.id}`,
+    { shareId: share.id, member: target.username, carrier: carrier || "auto" }, req.ip);
+
+  const updatedShare = await loadShare(share.id);
+  res.json(await buildShareResponse(updatedShare!, me));
 });
 
 // PUT /api/wholesale-shares/:id/split — creator sets the shipping split mode

@@ -18,6 +18,7 @@ import {
   setWholesaleShareDelivery,
   setWholesaleShareDeliveryAddress,
   setWholesaleShareMyOnwardAddress,
+  setWholesaleShareTracking,
   setWholesaleShareSplit,
   setWholesaleShareFees,
   confirmWholesaleShareFee,
@@ -31,6 +32,7 @@ import {
   postWholesaleShareMessage,
   useInvalidateWholesaleShareMessages,
   type WholesaleShareDetail,
+  type WholesaleShareMember,
   type WholesaleSplitMode,
 } from "@/hooks/use-wholesale-shares";
 import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
@@ -138,6 +140,30 @@ function StatusBadge({ status }: { status: WholesaleShareDetail["status"] }) {
   );
 }
 
+// Masked onward-tracking status → human label + colour (mirrors GB parcel statuses).
+const TRACK_STATUS_META: Record<string, { label: string; color: string }> = {
+  pending: { label: "Awaiting pickup", color: "var(--t-muted)" },
+  in_transit: { label: "In transit", color: "var(--t-blue)" },
+  out_for_delivery: { label: "Out for delivery", color: "#8b5cf6" },
+  attempted: { label: "Delivery attempted", color: "#f97316" },
+  delivered: { label: "Delivered", color: "#22c55e" },
+  exception: { label: "Exception", color: "#ef4444" },
+  expired: { label: "Expired", color: "#ef4444" },
+  undeliverable: { label: "Undeliverable", color: "#ef4444" },
+};
+
+function trackStatusMeta(status: string | null | undefined): { label: string; color: string } {
+  if (!status) return { label: "Awaiting pickup", color: "var(--t-muted)" };
+  return TRACK_STATUS_META[status] ?? { label: status.replace(/_/g, " "), color: "var(--t-muted)" };
+}
+
+function formatTrackDate(raw: string): string {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 export default function WholesaleShared() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/wholesale/shared/:id");
@@ -189,6 +215,8 @@ export default function WholesaleShared() {
   // the parcel recipient. Kept separate from the recipient delivery form above.
   const [onwardModalOpen, setOnwardModalOpen] = useState(false);
   const [dispatchPrintOpen, setDispatchPrintOpen] = useState(false);
+  // Per-member onward tracking inputs (dispatcher only): keyed by member username.
+  const [trackInputs, setTrackInputs] = useState<Record<string, { num: string; carrier: string }>>({});
   const [onwardAddr, setOnwardAddr] = useState({
     name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
   });
@@ -713,6 +741,94 @@ export default function WholesaleShared() {
       setOnwardModalOpen(false);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
+  };
+
+  // Dispatcher records (or clears) one member's onward tracking number. The server
+  // immediately fetches the latest masked status from 17track.
+  const saveTracking = async (username: string, trackingNumber: string, carrier: string) => {
+    if (!id) return;
+    setActionError(""); setBusy(`track-${username}`);
+    try {
+      await setWholesaleShareTracking(id, username, { trackingNumber: trackingNumber.trim(), carrier: carrier.trim() });
+      invalidate(id);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  // Per-member onward tracking controls, shown to whoever the server says may edit
+  // tracking (the dispatching recipient — creator or not) or whenever a number exists.
+  const renderMemberTracking = (m: WholesaleShareMember) => {
+    if (!m.canEditTracking && !m.onwardTracking?.hasTracking) return null;
+    const t = m.onwardTracking;
+    const draft = trackInputs[m.username] ?? {
+      num: t?.trackingNumber ?? "",
+      carrier: t?.carrier ?? "",
+    };
+    const setDraft = (patch: Partial<{ num: string; carrier: string }>) =>
+      setTrackInputs(prev => ({ ...prev, [m.username]: { ...draft, ...patch } }));
+    const saving = busy === `track-${m.username}`;
+    const meta = trackStatusMeta(t?.status);
+    return (
+      <div className="pt-2 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
+        <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "var(--t-muted)" }}>
+          <Truck className="w-3.5 h-3.5 shrink-0" /> Onward tracking
+        </p>
+        {t?.hasTracking && (
+          <div className="rounded-lg p-2.5 text-xs space-y-1" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold" style={{ color: meta.color }}>{meta.label}</span>
+              {t.trackingNumber && (
+                <span className="font-mono" style={{ color: "var(--t-muted)" }}>{t.trackingNumber}</span>
+              )}
+            </div>
+            {t.lastChecked && (
+              <p style={{ color: "var(--t-muted)" }}>Updated {formatTrackDate(t.lastChecked)}</p>
+            )}
+          </div>
+        )}
+        {m.canEditTracking && (
+          <>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                value={draft.num}
+                onChange={e => setDraft({ num: e.target.value })}
+                placeholder="Tracking number"
+                className="flex-1 h-10 px-3 rounded-lg text-sm font-mono"
+                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+              />
+              <input
+                value={draft.carrier}
+                onChange={e => setDraft({ carrier: e.target.value })}
+                placeholder="Carrier (optional)"
+                className="sm:w-40 h-10 px-3 rounded-lg text-sm"
+                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => saveTracking(m.username, draft.num, draft.carrier)}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold text-white disabled:opacity-50"
+                style={{ background: "var(--t-blue)" }}
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {t?.hasTracking ? "Update tracking" : "Save tracking"}
+              </button>
+              {t?.hasTracking && (
+                <button
+                  onClick={() => saveTracking(m.username, "", "")}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold disabled:opacity-50"
+                  style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
+                >
+                  <X className="w-3.5 h-3.5" /> Clear
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   const changeSplit = async (mode: WholesaleSplitMode) => {
@@ -1345,6 +1461,7 @@ export default function WholesaleShared() {
                       <Clock className="w-3.5 h-3.5 shrink-0" /> No onward address — can't print a slip yet.
                     </p>
                   )}
+                  {renderMemberTracking(m)}
                 </div>
               ))}
             </div>
@@ -1735,6 +1852,56 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // Shipping updates — visible to a participant (not the recipient) once the recipient
+  // has forwarded their parcel and recorded a tracking number. Status + events are
+  // masked: the participant never sees the raw tracking number or precise locations.
+  const sectionMyTracking = (myMember && !myMember.isRecipient && myMember.onwardTracking?.hasTracking) ? (() => {
+    const t = myMember.onwardTracking!;
+    const meta = trackStatusMeta(t.status);
+    const events = t.events ?? [];
+    return (
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping Updates</p>
+        <div className="rounded-xl p-4 space-y-3" style={card}>
+          <div className="flex items-center gap-2.5">
+            <Truck className="w-5 h-5 shrink-0" style={{ color: meta.color }} />
+            <div className="min-w-0">
+              <p className="text-sm font-bold" style={{ color: meta.color }}>{meta.label}</p>
+              <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                Your forwarded parcel{t.lastChecked ? <> · updated {formatTrackDate(t.lastChecked)}</> : null}
+              </p>
+            </div>
+          </div>
+          {events.length > 0 ? (
+            <div className="space-y-0">
+              {events.map((ev, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0" style={{ background: i === 0 ? meta.color : "var(--t-border)" }} />
+                    {i < events.length - 1 && <div className="w-px flex-1" style={{ background: "var(--t-border)" }} />}
+                  </div>
+                  <div className="pb-3 min-w-0">
+                    <p className="text-sm" style={{ color: "var(--t-text)" }}>{trackStatusMeta(ev.status).label}</p>
+                    <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                      {ev.location ? <>{ev.location} · </> : null}{formatTrackDate(ev.date)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs flex items-start gap-2 rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+              <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" /> No detailed updates yet — check back soon.
+            </p>
+          )}
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+            For privacy, the tracking number and exact addresses are hidden.
+          </p>
+        </div>
+      </section>
+    );
+  })() : null;
+
   // Onward roster — visible ONLY to the parcel recipient. Lists each other member's
   // onward address so the recipient can forward their items after the parcel lands.
   const sectionOnwardRoster = myMember?.isRecipient ? (() => {
@@ -1765,6 +1932,7 @@ export default function WholesaleShared() {
                       <Clock className="w-3.5 h-3.5 shrink-0" /> No onward address added yet.
                     </p>
                   )}
+                  {renderMemberTracking(m)}
                 </div>
               ))}
             </div>
@@ -2103,6 +2271,7 @@ export default function WholesaleShared() {
       {sectionFeeRoster}
       {sectionRecipientAddressPrompt}
       {sectionMyOnwardAddress}
+      {sectionMyTracking}
       {canDispatch ? sectionDispatch : sectionOnwardRoster}
       {sectionChat}
       {addressModal}

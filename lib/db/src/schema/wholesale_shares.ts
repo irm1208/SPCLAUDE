@@ -26,6 +26,11 @@ export type WholesaleShareItem = {
   unitPrice: number;
 };
 
+// A single masked onward-tracking event (mirrors ParcelEvent shape used for GB parcels).
+// Location is masked to country-only and status descriptions are cleaned of names/addresses
+// before storage, so this is always safe to surface to the participant.
+export type WholesaleOnwardTrackingEvent = { date: string; status: string; location: string };
+
 export const wholesaleSharesTable = pgTable("wholesale_shares", {
   id: text("id").primaryKey(), // short uppercase share code, also used as the invite/join code
   creatorUsername: text("creator_username").notNull(),
@@ -97,6 +102,18 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   onwardEmail: text("onward_email"),
   onwardAddress: text("onward_address"),
   onwardCountry: text("onward_country"),
+  // ── Onward parcel tracking (set by the organiser/recipient who forwards items) ─
+  // After the combined parcel arrives, the recipient forwards each member's items
+  // and records the onward tracking number here. Events are fetched from 17track and
+  // MASKED (country-only location, names/addresses stripped) before storage so they
+  // are safe to show the participant. The raw number/carrier are exposed only to the
+  // dispatching recipient; participants see a masked number plus the status timeline.
+  onwardTrackingNumber: text("onward_tracking_number"),
+  onwardCarrier: text("onward_carrier"),
+  onwardTrackingStatus: text("onward_tracking_status"),
+  onwardTrackingStatusCode: integer("onward_tracking_status_code"),
+  onwardTrackingEvents: jsonb("onward_tracking_events").$type<WholesaleOnwardTrackingEvent[]>().notNull().default([]),
+  onwardTrackingChecked: timestamp("onward_tracking_checked", { withTimezone: true }),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [

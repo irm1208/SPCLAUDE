@@ -46,6 +46,21 @@ export interface WholesaleShareMember {
   } | null;
   // True only on YOUR own row when you may add/edit it (not the recipient, share not cancelled).
   canEditOnward: boolean;
+  // Masked onward parcel tracking for this member's forwarded items. Populated only
+  // for the member themselves and the dispatching recipient; null otherwise (privacy).
+  // The raw trackingNumber/carrier are present only for the dispatching recipient — a
+  // participant sees a fully-masked number plus the masked status timeline.
+  onwardTracking: {
+    hasTracking: boolean;
+    trackingNumber: string | null;
+    carrier: string | null;
+    status: string | null;
+    statusCode: number | null;
+    events: { date: string; status: string; location: string }[];
+    lastChecked: string | null;
+  } | null;
+  // True only for the dispatching recipient, once the order is submitted.
+  canEditTracking: boolean;
 }
 
 export interface WholesaleShareFees {
@@ -271,6 +286,20 @@ export function setWholesaleShareMyOnwardAddress(id: string, addr: WholesaleDeli
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/my-onward-address`, {
     method: "PUT",
     body: JSON.stringify(addr),
+  });
+}
+
+// The dispatching recipient sets/updates/clears the onward tracking number for one
+// participant's forwarded parcel. Pass an empty trackingNumber to clear it. The server
+// fetches the latest masked status from 17track immediately.
+export function setWholesaleShareTracking(
+  id: string,
+  username: string,
+  payload: { trackingNumber: string; carrier?: string },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/members/${encodeURIComponent(username)}/tracking`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
 }
 

@@ -794,6 +794,13 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_email text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_address text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_country text`);
+    // wholesale_share_members — masked onward parcel tracking (set by the recipient/organiser)
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_tracking_number text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_carrier text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_tracking_status text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_tracking_status_code integer`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_tracking_events jsonb NOT NULL DEFAULT '[]'::jsonb`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_tracking_checked timestamptz`);
     // One-time: clear stale locked paymentUsdAmount for order 10342 (admin edited items
     // after the rate was locked, leaving 372.91 USD for a €519 order — stale EUR→USD
     // conversion). Safe to run repeatedly; idempotent once order is confirmed.

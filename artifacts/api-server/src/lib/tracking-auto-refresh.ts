@@ -2,7 +2,7 @@
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
  */
-import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable } from "@workspace/db";
+import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable, wholesaleShareMembersTable } from "@workspace/db";
 import { eq, and, ne, or, isNull, lt, inArray } from "drizzle-orm";
 import { sendTelegramMessageFull, getTemplate, renderTemplate } from "./telegram";
 import type { TrackingPackage, TrackingEvent } from "@workspace/db";
@@ -411,7 +411,8 @@ async function runRefresh(): Promise<void> {
   try {
     const parcelCount = await refreshGbParcels();
     const packageCount = await refreshTrackingLinks();
-    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s) updated`);
+    const onwardCount = await refreshWholesaleOnwardParcels();
+    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s) updated`);
   } catch (err) {
     console.error("[tracking-auto-refresh] Run failed:", err);
   }
@@ -432,6 +433,97 @@ export async function fetchTrackingEventsForNumber(trackingNumber: string): Prom
   if (!accepted) return { status: "pending", events: [] };
   const { status, events } = parseTrack17Response(accepted);
   return { status, events };
+}
+
+/**
+ * Register + fetch + parse MASKED tracking for an onward wholesale-share parcel.
+ * Returns the normalised status, numeric code, and masked event list (country-only
+ * locations, names/addresses stripped) — safe to surface to the participant.
+ */
+export async function fetchOnwardTracking(trackingNumber: string, carrier: string | null | undefined): Promise<{
+  status: string;
+  statusCode: number;
+  events: { date: string; status: string; location: string }[];
+} | null> {
+  const tn = trackingNumber.trim();
+  if (!tn) return null;
+  const carrierCode = resolveCarrierCode(carrier ?? "");
+  let registered = await track17Register(tn, carrierCode);
+  // Fall back to auto-detect if the specific carrier code was rejected.
+  const effectiveCode = (!registered && carrierCode > 0)
+    ? (await track17Register(tn, 0) ? 0 : carrierCode)
+    : carrierCode;
+  if (!registered) registered = effectiveCode === 0;
+  await sleep(500);
+  const accepted = await track17GetInfo(tn, effectiveCode);
+  if (!accepted) return null;
+  return parseTrack17Response(accepted);
+}
+
+/**
+ * Refresh stale, non-terminal onward parcel tracking for wholesale-share members.
+ * The combined order must be submitted for forwarding to have begun, so we only scan
+ * members of submitted shares that carry a tracking number.
+ */
+async function refreshWholesaleOnwardParcels(): Promise<number> {
+  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+
+  const members = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(
+      and(
+        ne(wholesaleShareMembersTable.onwardTrackingNumber, ""),
+        or(
+          isNull(wholesaleShareMembersTable.onwardTrackingStatus),
+          eq(wholesaleShareMembersTable.onwardTrackingStatus, "pending"),
+          eq(wholesaleShareMembersTable.onwardTrackingStatus, "in_transit"),
+          eq(wholesaleShareMembersTable.onwardTrackingStatus, "out_for_delivery"),
+          eq(wholesaleShareMembersTable.onwardTrackingStatus, "attempted"),
+          eq(wholesaleShareMembersTable.onwardTrackingStatus, "exception"),
+        ),
+        or(
+          isNull(wholesaleShareMembersTable.onwardTrackingChecked),
+          lt(wholesaleShareMembersTable.onwardTrackingChecked, staleThreshold),
+        ),
+      ),
+    );
+
+  if (members.length === 0) {
+    console.log("[tracking-auto-refresh] No stale wholesale onward parcels to refresh");
+    return 0;
+  }
+
+  console.log(`[tracking-auto-refresh] Refreshing ${members.length} stale wholesale onward parcel(s)`);
+  let refreshed = 0;
+
+  for (const m of members) {
+    const tn = m.onwardTrackingNumber?.trim();
+    if (!tn) continue;
+    try {
+      const result = await fetchOnwardTracking(tn, m.onwardCarrier);
+      if (!result) {
+        await db.update(wholesaleShareMembersTable)
+          .set({ onwardTrackingChecked: new Date() })
+          .where(eq(wholesaleShareMembersTable.id, m.id));
+      } else {
+        await db.update(wholesaleShareMembersTable)
+          .set({
+            onwardTrackingStatus: result.status,
+            onwardTrackingStatusCode: result.statusCode,
+            onwardTrackingEvents: result.events,
+            onwardTrackingChecked: new Date(),
+          })
+          .where(eq(wholesaleShareMembersTable.id, m.id));
+        refreshed++;
+      }
+    } catch (err) {
+      console.error(`[tracking-auto-refresh] Error refreshing onward parcel for member ${m.id}:`, err);
+    }
+    await sleep(API_CALL_DELAY_MS);
+  }
+
+  return refreshed;
 }
 
 export async function refreshSingleGbParcel(parcelId: string): Promise<{ status: string; updated: boolean }> {
