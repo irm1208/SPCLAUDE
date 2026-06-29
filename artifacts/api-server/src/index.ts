@@ -788,6 +788,12 @@ async function runStartupMigrations(): Promise<void> {
     // wholesale_share_members — organiser fee per participant (paid peer-to-peer)
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee_paid boolean NOT NULL DEFAULT false`);
+    // wholesale_share_members — onward shipping address fields (recipient's delivery details)
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_name text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_phone text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_email text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_address text`);
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_country text`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
