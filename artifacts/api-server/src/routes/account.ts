@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable } from "@workspace/db";
+import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
@@ -3142,6 +3142,90 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
   }));
 
   res.json(masked);
+});
+
+// ── DELETE /api/account — permanently delete own account and all data ─────────
+router.delete("/account", requireAccount, async (req: any, res: any): Promise<void> => {
+  const { password } = req.body ?? {};
+  const username: string = req.account.telegramUsername;
+
+  if (!password || typeof password !== "string") {
+    res.status(400).json({ error: "Password is required to confirm account deletion" });
+    return;
+  }
+
+  try {
+    // Verify password before doing anything destructive
+    const [acct] = await db
+      .select({ passwordHash: accountsTable.passwordHash })
+      .from(accountsTable)
+      .where(eq(accountsTable.telegramUsername, username));
+
+    if (!acct?.passwordHash) {
+      res.status(400).json({ error: "Cannot delete account: no password set" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(password, acct.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Incorrect password" });
+      return;
+    }
+
+    // Normalize to match both "@user" and "user" variants stored in plain-text columns
+    const bare = username.replace(/^@/, "").toLowerCase();
+    const withAt = `@${bare}`;
+
+    const usernameMatch = (col: any) =>
+      or(
+        eq(sql`lower(${col})`, bare),
+        eq(sql`lower(${col})`, withAt),
+      );
+
+    // ── Step 1: Order-dependent records (orders have no FK to accounts) ───────
+    const userOrders = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(usernameMatch(ordersTable.telegramUsername));
+
+    if (userOrders.length > 0) {
+      const orderIds = userOrders.map(o => o.id);
+      await db.delete(orderNotesTable).where(inArray(orderNotesTable.orderId, orderIds));
+      await db.delete(orderMessagesTable).where(inArray(orderMessagesTable.orderId, orderIds));
+      await db.delete(orderDispatchImagesTable).where(inArray(orderDispatchImagesTable.orderId, orderIds));
+      await db.delete(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds));
+    }
+    await db.delete(ordersTable).where(usernameMatch(ordersTable.telegramUsername));
+
+    // ── Step 2: RESTRICT FK — must delete before the accounts row ────────────
+    await db.delete(customerActivityLogsTable).where(usernameMatch(customerActivityLogsTable.telegramUsername));
+
+    // ── Step 3: Plain-text username records (no FK to accounts) ──────────────
+    await db.delete(healthInsightLogsTable).where(usernameMatch(healthInsightLogsTable.telegramUsername));
+    await db.delete(compoundLogsTable).where(usernameMatch(compoundLogsTable.telegramUsername));
+    await db.delete(wholesaleShareMembersTable).where(usernameMatch(wholesaleShareMembersTable.username));
+    await db.delete(customersTable).where(usernameMatch(customersTable.telegramUsername));
+
+    // ── Step 4: Delete the account row — cascades the rest ───────────────────
+    // Cascade-deleted automatically: accountGroupBuys, gbWaitlist, organiserAuditLog,
+    // ruleAcceptances, glp1Logs, plotterCycles, btConversations,
+    // bloodTestSessions (→ bloodTestValues), creditTransactions
+    await db.delete(accountsTable).where(usernameMatch(accountsTable.telegramUsername));
+
+    // ── Step 5: Revoke session ────────────────────────────────────────────────
+    const jti = extractJtiFromCookie(req);
+    if (jti) await revokeToken(jti);
+    res.clearCookie("account_token", { path: "/" });
+
+    await writeLog("change", "info", "self_delete_account",
+      `Account @${bare} permanently self-deleted`,
+      { username: bare });
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[account DELETE /account]", err);
+    res.status(500).json({ error: "Failed to delete account", detail: err?.message });
+  }
 });
 
 export default router;

@@ -6809,6 +6809,12 @@ export default function CustomerPortal() {
   const [showPwdConfirm, setShowPwdConfirm] = useState(false);
   const [showUsernamePwd, setShowUsernamePwd] = useState(false);
 
+  const [deleteStep, setDeleteStep] = useState<null | "confirm">(null);
+  const [deletePwd, setDeletePwd] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showDeletePwd, setShowDeletePwd] = useState(false);
+
   const [healthConsent, setHealthConsent] = useState<boolean | null>(null);
   const [consentSaving, setConsentSaving] = useState(false);
 
@@ -8997,6 +9003,111 @@ export default function CustomerPortal() {
                 {passwordSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Change Password
               </button>
+            </div>
+          </motion.div>
+
+          {/* ── Danger Zone ── */}
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
+            className="rounded-2xl overflow-hidden shadow-sm"
+            style={{ background: T.surface, border: "1px solid rgba(239,68,68,0.25)" }}>
+            <div className="px-5 py-4 flex items-center gap-3"
+                 style={{ borderBottom: "1px solid rgba(239,68,68,0.15)" }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                   style={{ background: "rgba(239,68,68,0.08)" }}>
+                <Trash2 className="w-4 h-4" style={{ color: "#DC2626" }} />
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest leading-none mb-0.5"
+                   style={{ color: "#DC2626", opacity: 0.7 }}>Danger Zone</p>
+                <h3 className="text-sm font-bold leading-tight" style={{ color: T.text }}>Remove Account</h3>
+              </div>
+            </div>
+            <div className="p-5">
+              {deleteStep === null ? (
+                <div className="space-y-3">
+                  <p className="text-xs leading-relaxed" style={{ color: T.muted }}>
+                    Permanently deletes your account, all orders, addresses, health data, and everything else. This cannot be undone.
+                  </p>
+                  <button
+                    onClick={() => { setDeleteStep("confirm"); setDeleteError(null); setDeletePwd(""); }}
+                    className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-opacity"
+                    style={{ background: "rgba(239,68,68,0.08)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.25)" }}>
+                    <Trash2 className="w-4 h-4" />
+                    Delete My Account
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-xl px-4 py-3 text-xs leading-relaxed font-medium"
+                       style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", color: "#DC2626" }}>
+                    This will permanently delete every order, address, health log, and all other data linked to your account. There is no going back.
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5"
+                           style={{ color: T.muted }}>Confirm with your password</label>
+                    <div className="relative">
+                      <input
+                        type={showDeletePwd ? "text" : "password"}
+                        placeholder="Enter your password"
+                        className="w-full h-11 rounded-xl border px-4 pr-11 text-sm focus:outline-none transition-colors"
+                        style={{ background: T.surface2, borderColor: "rgba(239,68,68,0.3)", color: T.text }}
+                        value={deletePwd}
+                        onChange={e => { setDeletePwd(e.target.value); setDeleteError(null); }}
+                        onKeyDown={async e => {
+                          if (e.key === "Enter" && deletePwd) {
+                            setDeleteLoading(true);
+                            setDeleteError(null);
+                            try {
+                              const r = await fetch("/api/account", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: deletePwd }), credentials: "include" });
+                              if (!r.ok) { const d = await r.json(); setDeleteError(d.error ?? "Failed to delete account"); }
+                              else { window.location.href = "/"; }
+                            } catch { setDeleteError("Network error — please try again"); }
+                            setDeleteLoading(false);
+                          }
+                        }}
+                      />
+                      <button type="button" onClick={() => setShowDeletePwd(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
+                        style={{ color: T.muted }}>
+                        {showDeletePwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  {deleteError && (
+                    <div className="flex items-center gap-2 rounded-xl px-3.5 py-2.5"
+                         style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" style={{ color: "#EF4444" }} />
+                      <p className="text-xs font-semibold" style={{ color: "#EF4444" }}>{deleteError}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setDeleteStep(null); setDeletePwd(""); setDeleteError(null); }}
+                      disabled={deleteLoading}
+                      className="flex-1 h-11 rounded-xl text-sm font-bold transition-opacity disabled:opacity-50"
+                      style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                      Cancel
+                    </button>
+                    <button
+                      disabled={deleteLoading || !deletePwd}
+                      onClick={async () => {
+                        setDeleteLoading(true);
+                        setDeleteError(null);
+                        try {
+                          const r = await fetch("/api/account", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: deletePwd }), credentials: "include" });
+                          if (!r.ok) { const d = await r.json(); setDeleteError(d.error ?? "Failed to delete account"); }
+                          else { window.location.href = "/"; }
+                        } catch { setDeleteError("Network error — please try again"); }
+                        setDeleteLoading(false);
+                      }}
+                      className="flex-1 h-11 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
+                      style={{ background: "#DC2626" }}>
+                      {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Delete Everything
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
 
