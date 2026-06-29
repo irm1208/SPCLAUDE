@@ -1323,6 +1323,16 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // If grandTotal changed and the order is not yet confirmed, clear the locked
+  // paymentUsdAmount so the payment panel recalculates it fresh (prevents stale
+  // fiat→USD conversions from being reused after an admin edits the order total).
+  if (
+    updates.grandTotal !== undefined &&
+    !["confirmed"].includes(existing.paymentStatus ?? "")
+  ) {
+    updates.paymentUsdAmount = null;
+  }
+
   const [updated] = await db
     .update(ordersTable)
     .set(updates)

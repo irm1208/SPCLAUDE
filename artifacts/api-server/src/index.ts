@@ -794,6 +794,10 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_email text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_address text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_country text`);
+    // One-time: clear stale locked paymentUsdAmount for order 10342 (admin edited items
+    // after the rate was locked, leaving 372.91 USD for a €519 order — stale EUR→USD
+    // conversion). Safe to run repeatedly; idempotent once order is confirmed.
+    await db.execute(sql`UPDATE orders SET payment_usd_amount = NULL WHERE code::text = '10342' AND payment_status NOT IN ('confirmed', 'waived')`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
