@@ -1155,6 +1155,43 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // Read-only "My Items" — once the order is no longer open (locked / submitted /
+  // cancelled) the editor above disappears, so members and the organiser still need
+  // to see exactly what they ordered. Renders straight from the saved member items.
+  const sectionMyItemsReadOnly = !canEditItems && myMember && myMember.items.length > 0 ? (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>My Items</p>
+        <span className="text-[11px] font-semibold" style={{ color: "var(--t-muted)" }}>
+          {share.status === "cancelled" ? "Order cancelled" : share.status === "locked" ? "Order locked · view only" : "Order submitted · view only"}
+        </span>
+      </div>
+      <div className="rounded-xl p-4 space-y-2.5" style={card}>
+        <div className="divide-y" style={{ borderColor: "var(--t-border)" }}>
+          {myMember.items.map(it => (
+            <div key={it.productId} className="flex items-center justify-between gap-3 py-2 first:pt-0">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{it.productName}</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>{it.quantity} × {money(it.unitPrice)}</p>
+              </div>
+              <span className="text-sm font-semibold shrink-0" style={{ color: "var(--t-text)" }}>{money(it.quantity * it.unitPrice)}</span>
+            </div>
+          ))}
+        </div>
+        {myMember.tip > 0 && (
+          <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: "var(--t-border)" }}>
+            <span className="text-sm" style={{ color: "var(--t-muted)" }}>Tip</span>
+            <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{money(myMember.tip)}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: "var(--t-border)" }}>
+          <span className="text-sm" style={{ color: "var(--t-muted)" }}>{myMember.kits} kit{myMember.kits === 1 ? "" : "s"}</span>
+          <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{money(myMember.subtotal + myMember.tip)}</span>
+        </div>
+      </div>
+    </section>
+  ) : null;
+
   const sectionWhatYouOwe = (stage === "paying" || stage === "done") && myMember ? (
     <div id={GUIDE_ANCHORS.owe} style={flashStyle(GUIDE_ANCHORS.owe)}>
       <WhatYouOwe
@@ -1899,6 +1936,7 @@ export default function WholesaleShared() {
       {sectionHowItWorks}
       {sectionGroup}
       {sectionMyItems}
+      {sectionMyItemsReadOnly}
       {sectionWhatYouOwe}
       {sectionShippingDelivery}
       {sectionOrderLimits}
