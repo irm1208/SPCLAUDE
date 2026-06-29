@@ -1265,13 +1265,19 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
     : 0;
   const creditsApplied = order.creditsApplied ? parseFloat(String(order.creditsApplied)) : 0;
 
-  // Use the rate that was locked when the payment panel opened (paymentUsdAmount).
-  // This prevents verification failing due to FX movement between display and submission.
-  // Fall back to a fresh rate fetch only when no lock exists (e.g. legacy orders).
-  // Because the expected amount is now the exact coin amount the buyer was shown,
-  // the on-chain check uses the standard ~1% tolerance (network dust only).
+  // Always compute the current fiat→USD value of the grand total. The locked
+  // amount (paymentUsdAmount) is honoured only when it is within 3% of the
+  // current total — enough to absorb normal FX drift between panel-open and
+  // submission. A larger gap means the order was edited after the rate was
+  // locked; the fresh total is used instead to prevent a stale-lock exploit
+  // where a customer could pay a lower pre-edit amount and get confirmed.
+  const currentGrandTotalUsd = await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
   const lockedUsdTotal = order.paymentUsdAmount ? parseFloat(String(order.paymentUsdAmount)) : null;
-  const grandTotalUsd = lockedUsdTotal ?? await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
+  const lockIsStale = lockedUsdTotal != null && lockedUsdTotal < currentGrandTotalUsd * 0.97;
+  if (lockIsStale) {
+    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
+  }
+  const grandTotalUsd = (lockedUsdTotal != null && !lockIsStale) ? lockedUsdTotal : currentGrandTotalUsd;
 
   // Subtract any credits the customer applied at order time — the payment panel
   // already shows the reduced amount, so the on-chain verification must match.

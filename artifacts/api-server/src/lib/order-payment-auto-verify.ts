@@ -22,7 +22,7 @@ import {
   isValidBtcAddress,
   effectiveStableCurrency,
 } from "./payment-verify";
-import { isStablecoin, roundCrypto, fetchUsdPerCoin } from "./crypto-pricing";
+import { isStablecoin, roundCrypto, fetchUsdPerCoin, fetchFiatToUsd } from "./crypto-pricing";
 import { registerScheduler } from "./scheduler-registry";
 import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
@@ -215,10 +215,24 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
       ? parseFloat(String(order.paymentTestAmount))
       : 0;
 
-  // Use the locked USD amount when available (set when customer opens the payment panel).
-  // Fall back to grandTotal, treating it as USD. The expected amount is the exact coin
-  // amount the buyer was shown, so verification uses the standard ~1% tolerance.
-  const grandTotalUsd = lockedUsd ?? grandTotalRaw;
+  // Compute the current fiat→USD value of the order total (used for stale-lock detection).
+  let currentGrandTotalUsd = grandTotalRaw;
+  if (order.groupBuyId) {
+    const [gb] = await db.select({ currency: groupBuysTable.currency }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
+    const cur = (gb?.currency ?? "USD").toUpperCase();
+    if (gb && cur !== "USD") {
+      const rate = await fetchFiatToUsd(cur);
+      currentGrandTotalUsd = Math.round(grandTotalRaw * rate * 100) / 100;
+    }
+  }
+  // Security: if the locked USD amount is more than 3% below the current grand total,
+  // the order was edited after the rate was locked. Use the fresh total so auto-verify
+  // never confirms a payment at a stale lower price.
+  const lockIsStale = lockedUsd != null && lockedUsd < currentGrandTotalUsd * 0.97;
+  if (lockIsStale) {
+    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
+  }
+  const grandTotalUsd = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentGrandTotalUsd;
   const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
 
   // Convert USD → coin using the locked rate (falls back to a live fetch for
