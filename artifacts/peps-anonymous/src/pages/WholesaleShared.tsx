@@ -556,6 +556,9 @@ export default function WholesaleShared() {
   // the page into a streamlined post-paid view (combined order box, no invite/help).
   const everyonePaid = share.status === "submitted";
   const organiserDone = share.isCreator && everyonePaid;
+  // A participant has paid once their own order payment is confirmed (or the whole
+  // share is submitted). Used to hide onboarding help they no longer need.
+  const myPaid = myMember?.paymentStatus === "confirmed" || everyonePaid;
   // The organiser only holds every member's onward (forwarding) address when they are
   // ALSO the parcel recipient — addresses stay private to the recipient otherwise. So
   // forwarding addresses + dispatch slips are gated on the organiser being the recipient.
@@ -2088,7 +2091,7 @@ export default function WholesaleShared() {
 
   const fullView = (
     <>
-      {!organiserDone && sectionHowItWorks}
+      {!organiserDone && !myPaid && sectionHowItWorks}
       {sectionGroup}
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
