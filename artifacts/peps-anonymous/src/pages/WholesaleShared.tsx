@@ -2077,6 +2077,12 @@ export default function WholesaleShared() {
       })}
 
       {groupTrackerCard}
+
+      {leaveButton && (
+        <div className="flex justify-center pt-1">
+          {leaveButton}
+        </div>
+      )}
     </div>
   );
 
