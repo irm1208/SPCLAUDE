@@ -5,7 +5,7 @@ import {
   Loader2, Copy, Check, Users, Truck, Lock, Unlock, Plus, Minus, Search,
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, X,
-  Package, MapPin, CreditCard,
+  Package, MapPin, CreditCard, RefreshCw,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -466,10 +466,15 @@ export default function WholesaleShared() {
   }
   if (!account || !account.isWholesale) return null;
 
-  // ── Not found / not a member yet ──
+  // ── Not found / not a member / load error ──
   if (result && !result.ok) {
     const notFound = result.status === 404;
-    const canJoin = result.status === 403 && !notFound;
+    const canJoin = result.status === 403;
+    // Only a real 403 means "not a member, you may join". A 404 means the code is
+    // wrong. ANY other outcome (network error → status 0, or a 5xx server error) is
+    // a transient failure — show a retry, never a misleading "Join" screen, or a
+    // working member's own order looks like an invite they haven't accepted.
+    const loadError = !notFound && !canJoin;
     return (
       <PageLayout>
         <main className="px-4 py-8 max-w-md mx-auto w-full">
@@ -478,16 +483,18 @@ export default function WholesaleShared() {
           </button>
           <div className="rounded-2xl p-6 text-center space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
             <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: "var(--t-blue-08)" }}>
-              {notFound ? <AlertCircle className="w-6 h-6" style={{ color: "var(--t-blue)" }} /> : <Users className="w-6 h-6" style={{ color: "var(--t-blue)" }} />}
+              {canJoin ? <Users className="w-6 h-6" style={{ color: "var(--t-blue)" }} /> : <AlertCircle className="w-6 h-6" style={{ color: "var(--t-blue)" }} />}
             </div>
             <div>
               <h1 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
-                {notFound ? "Shared order not found" : "Join shared wholesale order"}
+                {notFound ? "Shared order not found" : loadError ? "Couldn't load this shared order" : "Join shared wholesale order"}
               </h1>
               <p className="text-sm mt-1" style={{ color: "var(--t-muted)" }}>
                 {notFound
                   ? "This code doesn't match any shared order. Double-check the code with the organiser."
-                  : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>{result.creatorUsername ? <> by the order lead ({result.creatorUsername})</> : null}. Join to add your own items.</>}
+                  : loadError
+                    ? "Something went wrong loading this shared order. Check your connection and try again — your items and details are safe."
+                    : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>{result.creatorUsername ? <> by the order lead ({result.creatorUsername})</> : null}. Join to add your own items.</>}
               </p>
             </div>
             {canJoin && (
@@ -508,6 +515,15 @@ export default function WholesaleShared() {
                   Join this shared order
                 </button>
               </>
+            )}
+            {loadError && (
+              <button
+                onClick={() => invalidate(id!)}
+                className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2"
+                style={{ background: "var(--t-blue)" }}
+              >
+                <RefreshCw className="w-4 h-4" /> Try again
+              </button>
             )}
           </div>
         </main>

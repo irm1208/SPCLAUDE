@@ -30,3 +30,12 @@ Never the organiser, never other members.
 editable until cancellation; and the address is genuinely private shipping PII that
 only the forwarder needs — leaking it to the organiser/other members was the explicit
 thing to avoid.
+
+## Don't render a "Join" screen on transient fetch errors
+WholesaleShared.tsx (only consumer of `useWholesaleShare`) must treat the share-fetch
+outcome as THREE states, not two: 404 = not found, 403 = genuine non-member → show Join
+button, everything else (network error → status 0, or 5xx) = load error → show retry,
+NEVER the Join screen. **Why:** when the dev server was briefly down, the old two-way
+branch showed already-joined organisers/members a buttonless "Join shared wholesale
+order" screen, making a working feature look broken. The hook maps unknown errors to
+`status: err.status ?? 0`; the query also has `refetchInterval: 6000` so it self-heals.
