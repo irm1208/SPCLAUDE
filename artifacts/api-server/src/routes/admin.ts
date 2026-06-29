@@ -1969,6 +1969,7 @@ router.post("/admin/orders/mark-oos", async (req, res): Promise<void> => {
         .set({
           productSubtotal: newProductSubtotal.toFixed(2) as any,
           grandTotal: newGrandTotal.toFixed(2) as any,
+          ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
         })
         .where(eq(ordersTable.id, orderId));
     }
@@ -2072,6 +2073,7 @@ router.post("/admin/orders/unmark-oos", async (req, res): Promise<void> => {
       await tx.update(ordersTable).set({
         productSubtotal: newProductSubtotal.toFixed(2) as any,
         grandTotal: newGrandTotal.toFixed(2) as any,
+        ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
       }).where(eq(ordersTable.id, orderId));
     }
   });
@@ -3095,9 +3097,19 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
   const tip = parseFloat(String(existing.tip ?? "0"));
   const grandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip).toFixed(2));
 
+  const itemEditSet: Record<string, any> = {
+    productSubtotal: productSubtotal.toFixed(2),
+    grandTotal: grandTotal.toFixed(2),
+  };
+  // Clear the locked fiat→USD conversion so the payment panel recalculates
+  // fresh. Preserve it for confirmed orders (it records what was actually paid).
+  if (!["confirmed"].includes(existing.paymentStatus ?? "")) {
+    itemEditSet.paymentUsdAmount = null;
+  }
+
   const [updated] = await db
     .update(ordersTable)
-    .set({ productSubtotal: productSubtotal.toFixed(2), grandTotal: grandTotal.toFixed(2) })
+    .set(itemEditSet)
     .where(eq(ordersTable.id, req.params.id))
     .returning();
 
@@ -5796,7 +5808,7 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
   for (const orderId of orderIds) {
     // Verify order belongs to this GB
     const [order] = await db
-      .select({ id: ordersTable.id, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution })
+      .select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution })
       .from(ordersTable)
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
     if (!order) { skipped++; continue; }
@@ -5825,7 +5837,11 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
     const newSubtotal = parseFloat(allItems.reduce((s, li) => s + parseFloat(String(li.lineTotal)), 0).toFixed(2));
     const extras = parseFloat(String(order.deliveryPrice ?? 0)) + parseFloat(String(order.vendorShipping ?? 0)) + parseFloat(String(order.tip ?? 0)) + parseFloat(String(order.testingContribution ?? 0));
     const newGrandTotal = parseFloat((newSubtotal + extras).toFixed(2));
-    await db.update(ordersTable).set({ productSubtotal: String(newSubtotal) as any, grandTotal: String(newGrandTotal) as any }).where(eq(ordersTable.id, orderId));
+    await db.update(ordersTable).set({
+      productSubtotal: String(newSubtotal) as any,
+      grandTotal: String(newGrandTotal) as any,
+      ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
+    }).where(eq(ordersTable.id, orderId));
 
     added++;
   }
