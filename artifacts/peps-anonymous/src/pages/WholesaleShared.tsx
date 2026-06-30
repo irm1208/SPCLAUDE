@@ -1642,16 +1642,8 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Organiser shipping & delivery card (split + recipient picker), shown under the
-  // Shipping & Delivery section.
-  const shippingDeliveryCard = (share.isCreator && isOpen) ? (
-    <div className="rounded-xl p-4 space-y-4" style={card}>
-      {orgSplitBlock}
-      {deliveryPickerBlock}
-    </div>
-  ) : null;
-
-  // Order limits & rules — its own section.
+  // Order limits & rules — its own section. Shipping split + recipient picker are
+  // nested inside this card (see the "Shipping & delivery" subsection below).
   const isPublic = share.publicGroup?.isPublic === true;
   const canManagePublic = share.publicGroup?.canManage === true;
   const limitsConfigured = !!(share.isCreator && share.settings && (
@@ -1845,6 +1837,19 @@ export default function WholesaleShared() {
             {busy === "settings" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Save limits &amp; rules
           </button>
+
+          <div
+            id={GUIDE_ANCHORS.manage}
+            className="pt-4 mt-1 border-t space-y-4"
+            style={{ borderColor: "var(--t-border)", ...(flashStyle(GUIDE_ANCHORS.manage) ?? {}) }}
+          >
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
+              <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Shipping &amp; delivery</p>
+            </div>
+            {orgSplitBlock}
+            {deliveryPickerBlock}
+          </div>
         </div>
     </ExpandableCard>
   ) : null;
@@ -1859,13 +1864,6 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  // Shipping & Delivery section: organiser split + recipient picker under one header.
-  const sectionShippingDelivery = shippingDeliveryCard ? (
-    <section id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)} className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping &amp; Delivery</p>
-      {shippingDeliveryCard}
-    </section>
-  ) : null;
 
   // Locked: organiser can still unlock / cancel if a member never pays.
   const sectionOrganiserLocked = showOrganiserLocked ? (
@@ -2406,7 +2404,6 @@ export default function WholesaleShared() {
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
       {!organiserDone && sectionWhatYouOwe}
-      {sectionShippingDelivery}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionFeeRoster}
