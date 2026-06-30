@@ -1757,7 +1757,6 @@ export default function WholesaleShared() {
 
           {canManagePublic && (
             <div className="space-y-4">
-            <div className="h-px -mx-4" style={{ background: "var(--t-border)" }} />
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2 min-w-0">
                 <Globe className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
