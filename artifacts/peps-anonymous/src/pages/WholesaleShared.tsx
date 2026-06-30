@@ -1745,16 +1745,6 @@ export default function WholesaleShared() {
               </div>
             )}
           </div>
-          <button
-            onClick={saveSettings}
-            disabled={busy === "settings" || !settingsDirty}
-            className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
-            style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
-          >
-            {busy === "settings" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Save limits &amp; rules
-          </button>
-
           {canManagePublic && (
             <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -1820,6 +1810,15 @@ export default function WholesaleShared() {
             )}
             </div>
           )}
+          <button
+            onClick={saveSettings}
+            disabled={busy === "settings" || !settingsDirty}
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
+            style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+          >
+            {busy === "settings" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Save limits &amp; rules
+          </button>
         </div>
       </section>
   ) : null;
