@@ -762,10 +762,15 @@ export default function OrderForm() {
   // When GB delivery methods finish loading, validate the persisted delivery selection.
   // If the saved method is not part of this group buy's configured methods (e.g. stale
   // selection from a previous GB, a custom shipping option from a different GB, or from
-  // the global order form), clear it — and also clear isTopUp so the user can pick a
-  // valid method rather than being stuck with a locked "Included from previous order" UI.
+  // the global order form), clear it.
   useEffect(() => {
     if (!gbId || isLoadingMethods || isLoadingGbInfo) return;
+    // Top-up orders ride along with the parent's shipment — delivery is always free and
+    // the stored deliveryMethodId is informational only. Skip validation entirely: for GBs
+    // that use shipping-options (not relational delivery methods), gbDeliveryMethods is
+    // cached as [] and isLoadingGbMethods is false on a second visit within the stale
+    // window, which previously caused clearTopUp() to fire and strip the isTopUp flag.
+    if (draft.isTopUp) return;
     if (draft.deliveryMethodId) {
       // "__direct_shipping" is a virtual method — never in deliveryMethods list, so skip validation
       if (draft.deliveryMethodId === "__direct_shipping") return;
@@ -779,11 +784,8 @@ export default function OrderForm() {
       } else if (currentMethod.price !== draft.deliveryPrice || currentMethod.name !== draft.deliveryMethod) {
         draft.setDeliveryMethod(currentMethod.id, currentMethod.name, currentMethod.price);
       }
-    } else if (draft.isTopUp) {
-      // deliveryMethodId is already empty but isTopUp is still set — clear it
-      draft.clearTopUp();
     }
-  }, [gbId, isLoadingMethods, isLoadingGbInfo, deliveryMethods]);
+  }, [gbId, isLoadingMethods, isLoadingGbInfo, deliveryMethods, draft.isTopUp]);
 
   // Auto-select the only delivery method when there's exactly one option and none is chosen yet
   useEffect(() => {
