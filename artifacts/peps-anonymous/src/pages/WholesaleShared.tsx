@@ -200,18 +200,13 @@ export default function WholesaleShared() {
   // while the organiser has unsaved edits (so polling can't clobber typing).
   const [settingsForm, setSettingsForm] = useState({
     maxMembers: "", minKitsPerMember: "", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
+    // Max packages + flat per-person organiser fee live with the rest of the rules.
+    maxPackages: "", organiserFlatFee: "",
   });
   const [allowedCountriesList, setAllowedCountriesList] = useState<string[]>([]);
   const [countryToAdd, setCountryToAdd] = useState("");
   const [settingsDirty, setSettingsDirty] = useState(false);
   const settingsSeeded = useRef(false);
-
-  // Public group listing form (organiser-only). Seeded once from share.publicGroup.
-  const [publicForm, setPublicForm] = useState({
-    maxPackages: "", organiserFlatFee: "",
-  });
-  const [publicDirty, setPublicDirty] = useState(false);
-  const publicSeeded = useRef(false);
 
   // Recipient-only address form — the designated delivery member can enter a one-off
   // address for this parcel instead of being stuck with their saved account address.
@@ -393,21 +388,12 @@ export default function WholesaleShared() {
       maxKitsPerMember: s.maxKitsPerMember != null ? String(s.maxKitsPerMember) : "",
       maxTotalKits: s.maxTotalKits != null ? String(s.maxTotalKits) : "",
       lockDeadline: s.lockDeadline ? toDatetimeLocal(s.lockDeadline) : "",
+      maxPackages: s.maxPackages != null ? String(s.maxPackages) : "",
+      organiserFlatFee: s.organiserFlatFee != null ? String(s.organiserFlatFee) : "",
     });
     setAllowedCountriesList(s.allowedCountries ?? []);
     settingsSeeded.current = true;
   }, [share, settingsDirty]);
-
-  // Seed the public group form once from the share (and the order rules it shares).
-  useEffect(() => {
-    if (!share || !share.publicGroup?.canManage || publicDirty || publicSeeded.current) return;
-    const p = share.publicGroup;
-    setPublicForm({
-      maxPackages: p.maxPackages != null ? String(p.maxPackages) : "",
-      organiserFlatFee: p.organiserFlatFee != null ? String(p.organiserFlatFee) : "",
-    });
-    publicSeeded.current = true;
-  }, [share, publicDirty]);
 
   // Seed the recipient address form once, when I'm the chosen recipient. Prefer any
   // address already saved on the share; otherwise fall back to my saved account
@@ -870,6 +856,8 @@ export default function WholesaleShared() {
         maxTotalKits: settingsForm.maxTotalKits.trim() === "" ? null : Number(settingsForm.maxTotalKits),
         lockDeadline: settingsForm.lockDeadline ? new Date(settingsForm.lockDeadline).toISOString() : null,
         allowedCountries: allowedCountriesList.length > 0 ? allowedCountriesList : null,
+        maxPackages: settingsForm.maxPackages.trim() === "" ? null : Number(settingsForm.maxPackages),
+        organiserFlatFee: settingsForm.organiserFlatFee.trim() === "" ? null : Number(settingsForm.organiserFlatFee),
       });
       setSettingsDirty(false);
       settingsSeeded.current = false;
@@ -887,16 +875,15 @@ export default function WholesaleShared() {
         country: allowedCountriesList[0] ?? "",
         maxMembers: settingsForm.maxMembers.trim() === "" ? null : Number(settingsForm.maxMembers),
         maxTotalKits: settingsForm.maxTotalKits.trim() === "" ? null : Number(settingsForm.maxTotalKits),
-        maxPackages: publicForm.maxPackages.trim() === "" ? null : Number(publicForm.maxPackages),
-        organiserFlatFee: publicForm.organiserFlatFee.trim() === "" ? null : Number(publicForm.organiserFlatFee),
+        maxPackages: settingsForm.maxPackages.trim() === "" ? null : Number(settingsForm.maxPackages),
+        organiserFlatFee: settingsForm.organiserFlatFee.trim() === "" ? null : Number(settingsForm.organiserFlatFee),
       } : { public: false });
-      // The forms already hold exactly what we just submitted, so DON'T reset the
-      // "seeded" refs here. Resetting would let the seed effects re-run against the
+      // The form already holds exactly what we just submitted, so DON'T reset the
+      // "seeded" ref here. Resetting would let the seed effect re-run against the
       // still-stale cached share (before the refetch lands) and clobber the form
-      // back to pre-save values. We also never clear settingsDirty — publish only
-      // persists maxMembers/maxTotalKits/allowedCountries, not the per-person kit
-      // limits or lock deadline, so those edits must stay dirty until saved.
-      setPublicDirty(false);
+      // back to pre-save values. We also never clear settingsDirty — publishing
+      // persists the public card fields from the form, but the per-person kit limits
+      // and lock deadline are only saved by "Save limits & rules".
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
@@ -1700,6 +1687,23 @@ export default function WholesaleShared() {
               onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, maxTotalKits: e.target.value })); }}
               placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max packages</label>
+              <input type="number" min="1" step="1" value={settingsForm.maxPackages}
+                onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, maxPackages: e.target.value })); }}
+                placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Organiser fee ($/person)</label>
+              <input type="number" min="0" step="0.01" value={settingsForm.organiserFlatFee}
+                onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, organiserFlatFee: e.target.value })); }}
+                placeholder="None" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            </div>
+          </div>
+          <p className="text-[11px] -mt-2" style={{ color: "var(--t-muted)" }}>
+            Max packages and the flat organiser fee apply when this order is public. The fee is charged to each person who joins (paid to you directly) — leave it blank for none.
+          </p>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Auto-lock deadline</label>
             <input type="datetime-local" value={settingsForm.lockDeadline}
@@ -1806,37 +1810,10 @@ export default function WholesaleShared() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max packages</label>
-                <input type="number" min="1" step="1" value={publicForm.maxPackages}
-                  onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, maxPackages: e.target.value })); }}
-                  placeholder="Optional" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Organiser fee ($/person)</label>
-                <input type="number" min="0" step="0.01" value={publicForm.organiserFlatFee}
-                  onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, organiserFlatFee: e.target.value })); }}
-                  placeholder="None" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-              </div>
-            </div>
             <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-              The flat organiser fee is charged to each person who joins (paid to you directly). Leave blank for none. The public card uses the limits above; the first allowed country is shown.
+              The public card uses the limits set in "Order Limits &amp; Rules" above (max people, max kits, max packages and the organiser fee); the first allowed country is shown.
             </p>
 
-            {isPublic && publicDirty && (
-              <div>
-                <button
-                  onClick={() => savePublic(true)}
-                  disabled={busy === "publish" || allowedCountriesList.length === 0}
-                  className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                  style={{ background: "var(--t-blue)" }}
-                >
-                  {busy === "publish" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Save public changes
-                </button>
-              </div>
-            )}
             {allowedCountriesList.length === 0 && (
               <p className="text-[11px]" style={{ color: "#f59e0b" }}>
                 Add at least one allowed country above before you can turn this order public.

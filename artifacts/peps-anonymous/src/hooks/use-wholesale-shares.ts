@@ -97,6 +97,7 @@ export interface WholesaleShareSettings {
   maxKitsPerMember: number | null;
   maxTotalKits: number | null;
   maxPackages: number | null; // max parcel count; null = not set
+  organiserFlatFee: number | null; // flat per-person fee (public orders); null = none
   lockDeadline: string | null; // ISO timestamp
   allowedCountries: string[] | null;
   canManage: boolean; // organiser && share open
@@ -387,6 +388,8 @@ export interface WholesaleShareSettingsInput {
   maxTotalKits?: number | null;
   lockDeadline?: string | null; // ISO timestamp, or null/"" to clear
   allowedCountries?: string[] | null;
+  maxPackages?: number | null; // max parcel count; null/"" to clear
+  organiserFlatFee?: number | null; // flat per-person fee (public orders); null/"" to clear
 }
 
 export function setWholesaleShareSettings(id: string, payload: WholesaleShareSettingsInput) {

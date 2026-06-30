@@ -382,6 +382,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       maxKitsPerMember: share.maxKitsPerMember ?? null,
       maxTotalKits: share.maxTotalKits ?? null,
       maxPackages: share.maxPackages ?? null,
+      // Flat per-person organiser fee — applies to public orders, set alongside the
+      // rest of the order rules.
+      organiserFlatFee: share.organiserFlatFee != null ? Number(share.organiserFlatFee) : null,
       lockDeadline: share.lockDeadline ? (share.lockDeadline as Date).toISOString() : null,
       allowedCountries: share.allowedCountries ?? null,
       canManage: share.status === "open" && isCreatorViewer,
@@ -1252,29 +1255,85 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
     maxMembers = m;
   }
 
-  // CONDITIONAL update gated on status='open' so a concurrent lock/cancel wins.
-  const changed = await db.update(wholesaleSharesTable)
-    .set({
-      maxMembers,
-      minKitsPerMember: minVal,
-      maxKitsPerMember: maxVal,
-      maxTotalKits: totalVal,
-      lockDeadline: deadline,
-      allowedCountries,
-    })
-    .where(and(
-      eq(wholesaleSharesTable.id, share.id),
-      eq(wholesaleSharesTable.status, "open"),
-    ))
-    .returning({ id: wholesaleSharesTable.id });
-  if (changed.length === 0) {
-    res.status(409).json({ error: "This shared order is no longer open." });
-    return;
+  // Max packages: optional whole number of 1 or more (or blank). Shown on the public
+  // card; lives with the rest of the rules now.
+  let maxPackages: number | null = null;
+  if (body.maxPackages != null && body.maxPackages !== "") {
+    const p = Number(body.maxPackages);
+    if (!Number.isFinite(p) || !Number.isInteger(p) || p < 1) {
+      res.status(400).json({ error: "Max packages must be a whole number of 1 or more (or blank)." });
+      return;
+    }
+    if (p > 10000) { res.status(400).json({ error: "Max packages is too large." }); return; }
+    maxPackages = p;
+  }
+
+  // Flat per-person organiser fee (optional). null/"" = no fee. Only applies to public
+  // orders, where it's resolved onto every member except the organiser and recipient.
+  let flatFee: number | null = null;
+  if (body.organiserFlatFee != null && body.organiserFlatFee !== "") {
+    const f = Number(body.organiserFlatFee);
+    if (!Number.isFinite(f) || f < 0) { res.status(400).json({ error: "Organiser fee must be 0 or more (or blank)." }); return; }
+    flatFee = Number(Math.min(f, 100000).toFixed(2));
+  }
+
+  const creatorLower = share.creatorUsername.toLowerCase();
+
+  // Persist the rules, then (only when this order is public) re-resolve the flat fee
+  // onto each member. Done in one transaction under a row lock so a concurrent
+  // lock/cancel wins (FEES_CONFLICT) and fee changes stay atomic — mirrors the
+  // publish handler. The resolution loop is idempotent (skips unchanged members) and
+  // resets the paid flag whenever an amount changes.
+  try {
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic, deliveryUsername: wholesaleSharesTable.deliveryUsername })
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+
+      await tx.update(wholesaleSharesTable)
+        .set({
+          maxMembers,
+          minKitsPerMember: minVal,
+          maxKitsPerMember: maxVal,
+          maxTotalKits: totalVal,
+          maxPackages,
+          organiserFlatFee: flatFee != null ? flatFee.toFixed(2) : null,
+          lockDeadline: deadline,
+          allowedCountries,
+        })
+        .where(eq(wholesaleSharesTable.id, share.id));
+
+      if (locked.isPublic === true) {
+        // Recipient read under the row lock so a concurrent /delivery change can't
+        // leave the wrong member exempt from the flat fee.
+        const recipientLower = locked.deliveryUsername?.toLowerCase() ?? null;
+        const members = await tx
+          .select()
+          .from(wholesaleShareMembersTable)
+          .where(eq(wholesaleShareMembersTable.shareId, share.id));
+        for (const member of members) {
+          const uname = member.username.toLowerCase();
+          const exempt = uname === creatorLower || (recipientLower != null && uname === recipientLower);
+          const target = exempt ? 0 : (flatFee ?? 0);
+          const prev = Number(member.organiserFee ?? 0);
+          if (target === prev) continue;
+          await tx.update(wholesaleShareMembersTable)
+            .set({ organiserFee: target.toFixed(2), organiserFeePaid: false })
+            .where(eq(wholesaleShareMembersTable.id, member.id));
+        }
+      }
+    });
+  } catch (e) {
+    if (e === FEES_CONFLICT) { res.status(409).json({ error: "This shared order is no longer open." }); return; }
+    throw e;
   }
 
   await writeLog("order", "info", "wholesale_share_settings_updated",
     `Wholesale share ${share.id} rules updated by ${me}`,
-    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, maxPackages, organiserFlatFee: flatFee, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -1358,7 +1417,6 @@ router.put("/wholesale-shares/:id/publish", requireWholesale, async (req, res): 
     }
   }
 
-  const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
   const creatorLower = share.creatorUsername.toLowerCase();
 
   // Detected under the row lock inside the transaction so concurrent publish
@@ -1368,12 +1426,15 @@ router.put("/wholesale-shares/:id/publish", requireWholesale, async (req, res): 
   try {
     await db.transaction(async (tx) => {
       const [locked] = await tx
-        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic })
+        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic, deliveryUsername: wholesaleSharesTable.deliveryUsername })
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))
         .for("update");
       if (!locked || locked.status !== "open") throw FEES_CONFLICT;
       wasPublic = locked.isPublic === true;
+      // Recipient read under the row lock so a concurrent /delivery change can't leave
+      // the wrong member exempt from the flat fee.
+      const recipientLower = locked.deliveryUsername?.toLowerCase() ?? null;
 
       await tx.update(wholesaleSharesTable)
         .set({
