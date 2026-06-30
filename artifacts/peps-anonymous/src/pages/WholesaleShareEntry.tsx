@@ -184,7 +184,7 @@ export default function WholesaleShareEntry() {
               )}
 
               {openGroups.length > 0 && (
-                <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-blue-05)", border: "1px solid var(--t-blue-15)" }}>
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <Globe className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
