@@ -1646,8 +1646,10 @@ export default function WholesaleShared() {
   // picker) is a separate section below (sectionShippingDelivery).
   const isPublic = share.publicGroup?.isPublic === true;
   const canManagePublic = share.publicGroup?.canManage === true;
+  // Note: maxMembers is intentionally excluded — it carries a legacy default (10) on
+  // every share, so it's not a reliable signal that the organiser configured any rules.
+  // Without this, the card would always count as "configured" and never auto-open.
   const limitsConfigured = !!(share.isCreator && share.settings && (
-    share.settings.maxMembers != null ||
     share.settings.minKitsPerMember != null ||
     share.settings.maxKitsPerMember != null ||
     share.settings.maxTotalKits != null ||
