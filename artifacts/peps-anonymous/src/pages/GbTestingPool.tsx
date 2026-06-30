@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FlaskConical, Loader2, AlertCircle, TestTube, RefreshCw,
   Lock, Unlock, CheckCircle2, Clock, XCircle, ChevronDown,
-  ExternalLink, Users, ChevronLeft,
+  ExternalLink, Users, ChevronLeft, Trophy,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
@@ -962,6 +962,63 @@ export default function GbTestingPool() {
             </div>
           </div>
         </motion.div>
+
+        {/* ── Community Vote Result — winning compound (with batch) + test, shown once voting closes ── */}
+        {isClosed && (() => {
+          const winner = data.thresholds?.leadingPeptide || null;
+          const winnerBatch = winner ? (peptideBatches?.[winner] ?? null) : null;
+          const rankedTests = Object.entries(testVotes).sort((a, b) => b[1] - a[1]).map(([t]) => t);
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="relative overflow-hidden mb-4 sm:mb-6"
+              style={{ borderRadius: 8, background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}
+            >
+              <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: "linear-gradient(180deg, #f59e0b, #f97316)" }} />
+              <div className="px-4 sm:px-6 py-4 sm:py-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Trophy className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
+                  <span className="text-[9px] font-bold tracking-[0.2em] uppercase" style={{ color: "var(--t-muted)" }}>Community Vote Result</span>
+                </div>
+                {winner ? (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-[10px] font-bold tracking-[0.12em] uppercase mb-1" style={{ color: "var(--t-muted)" }}>Winning compound</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xl sm:text-2xl font-extrabold leading-tight break-words min-w-0" style={{ color: "var(--t-text)" }}>{winner}</span>
+                        {winnerBatch && (
+                          <span className="inline-flex items-center text-[11px] font-bold px-2 py-0.5 tabular-nums shrink-0"
+                            style={{ borderRadius: 4, background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}>
+                            Batch {winnerBatch}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {rankedTests.length > 0 && (
+                      <div className="pt-3 border-t" style={{ borderColor: "var(--t-border)" }}>
+                        <p className="text-[10px] font-bold tracking-[0.12em] uppercase mb-1.5" style={{ color: "var(--t-muted)" }}>
+                          Winning test{rankedTests.length > 1 ? "s" : ""}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {rankedTests.map((t, i) => (
+                            <span key={t} className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5"
+                              style={{ borderRadius: 4, background: i === 0 ? "rgba(16,185,129,0.1)" : "var(--t-bg)", color: i === 0 ? HIT : "var(--t-muted)", border: `1px solid ${i === 0 ? "rgba(16,185,129,0.25)" : "var(--t-border)"}` }}>
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: "var(--t-muted)" }}>No votes were cast in this round.</p>
+                )}
+              </div>
+            </motion.div>
+          );
+        })()}
 
         {/* ── Milestone Step Cards (responsive grid — all visible, no horizontal scroll) ── */}
         {milestones.length > 0 && (
