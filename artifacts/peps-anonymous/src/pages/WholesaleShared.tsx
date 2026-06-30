@@ -1851,7 +1851,14 @@ export default function WholesaleShared() {
     <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
       <ExpandableCard
         key={deliverySet ? "ship-set" : "ship-empty"}
-        title="Shipping & delivery"
+        title={
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            Shipping &amp; delivery
+            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: "var(--t-blue-12, rgba(59,130,246,0.12))", color: "var(--t-blue)" }}>
+              Required
+            </span>
+          </span>
+        }
         icon={<Truck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
         summary={deliverySet ? `Delivering to @${(share.delivery.username ?? "").replace(/^@/, "")}` : "Not set"}
         defaultOpen={!deliverySet}
