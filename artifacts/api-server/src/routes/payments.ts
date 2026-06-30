@@ -968,10 +968,14 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
     await db.update(ordersTable).set({ paymentCryptoCurrency: currency.toUpperCase() }).where(eq(ordersTable.id, order.id));
   }
 
-  // Lock the USD total (fiat → USD) once; reuse it if the panel is re-opened.
-  let usdAmount = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
-  if (usdAmount == null) {
-    usdAmount = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
+  // Lock the USD total (fiat → USD). Re-use a cached value only when it is
+  // still within 3% of the current total — the same staleness check used in
+  // /pay so the displayed amount can never lag behind an edited grandTotal.
+  const currentUsd = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
+  const lockedUsd = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
+  const lockIsStale = lockedUsd != null && lockedUsd < currentUsd * 0.97;
+  const usdAmount = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentUsd;
+  if (lockedUsd == null || lockIsStale) {
     await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(eq(ordersTable.id, order.id));
   }
 
