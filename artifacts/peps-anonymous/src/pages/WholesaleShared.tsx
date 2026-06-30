@@ -1642,8 +1642,8 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Order limits & rules — its own section. Shipping split + recipient picker are
-  // nested inside this card (see the "Shipping & delivery" subsection below).
+  // Order limits & rules — its own section. Shipping & delivery (split + recipient
+  // picker) is a separate section below (sectionShippingDelivery).
   const isPublic = share.publicGroup?.isPublic === true;
   const canManagePublic = share.publicGroup?.canManage === true;
   const limitsConfigured = !!(share.isCreator && share.settings && (
@@ -1841,21 +1841,27 @@ export default function WholesaleShared() {
             {busy === "settings" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Save limits &amp; rules
           </button>
-
-          <div
-            id={GUIDE_ANCHORS.manage}
-            className="pt-4 mt-1 border-t space-y-4"
-            style={{ borderColor: "var(--t-border)", ...(flashStyle(GUIDE_ANCHORS.manage) ?? {}) }}
-          >
-            <div className="flex items-center gap-2">
-              <Truck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-              <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Shipping &amp; delivery</p>
-            </div>
-            {orgSplitBlock}
-            {deliveryPickerBlock}
-          </div>
         </div>
     </ExpandableCard>
+  ) : null;
+
+  // Shipping & delivery — its own section (shipping split + recipient picker).
+  // Opens automatically until a delivery member + address are set.
+  const sectionShippingDelivery = (share.isCreator && isOpen) ? (
+    <div id={GUIDE_ANCHORS.manage} style={flashStyle(GUIDE_ANCHORS.manage)}>
+      <ExpandableCard
+        key={deliverySet ? "ship-set" : "ship-empty"}
+        title="Shipping & delivery"
+        icon={<Truck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
+        summary={deliverySet ? `Delivering to @${(share.delivery.username ?? "").replace(/^@/, "")}` : "Not set"}
+        defaultOpen={!deliverySet}
+      >
+        <div className="space-y-4">
+          {orgSplitBlock}
+          {deliveryPickerBlock}
+        </div>
+      </ExpandableCard>
+    </div>
   ) : null;
 
   // Organiser fee — its own section.
@@ -2404,6 +2410,7 @@ export default function WholesaleShared() {
     <>
       {!organiserDone && !myPaid && sectionHowItWorks}
       {sectionOrderLimits}
+      {sectionShippingDelivery}
       {sectionGroup}
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
