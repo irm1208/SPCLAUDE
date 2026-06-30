@@ -842,7 +842,9 @@ export default function PaymentPanel({
         body: JSON.stringify({ txHash: testTx.trim() }),
       });
       const d = await res.json();
-      if (d.pending) {
+      if (!res.ok) {
+        setError(d.error || "Something went wrong. Please try again.");
+      } else if (d.pending) {
         setPendingTx(true);
         setError("Transaction not yet mined — wait ~1 minute then try again.");
       } else if (!d.verified) {
@@ -865,7 +867,9 @@ export default function PaymentPanel({
         body: JSON.stringify({ txHash: fullTx.trim() }),
       });
       const d = await res.json();
-      if (d.pending) {
+      if (!res.ok) {
+        setError(d.error || "Something went wrong. Please try again.");
+      } else if (d.pending) {
         setPendingTx(true);
         setError("Transaction not yet mined — wait ~1 minute then try again.");
       } else if (d.underpayment) {

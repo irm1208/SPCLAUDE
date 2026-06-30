@@ -261,7 +261,11 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
     if ((result as any).pending) {
       console.log(`[order-auto-verify] Crypto pending for order ${order.code}: ${result.reason}`);
     } else {
-      console.log(`[order-auto-verify] Crypto not verified for order ${order.code}: ${result.reason}`);
+      console.log(
+        `[order-auto-verify] Crypto not verified for order ${order.code}: ${result.reason}` +
+        ` | txHash=${txHash} wallet=${walletAddress} currency=${currency} network=${network}` +
+        ` expectedAmount=${expectedAmount} netUsd=${netUsd} lockedUsd=${lockedUsd} grandTotalUsd=${grandTotalUsd}`,
+      );
     }
     return;
   }
