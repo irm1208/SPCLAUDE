@@ -6,7 +6,7 @@ import {
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, X,
   Package, MapPin, CreditCard, RefreshCw, Printer,
-  Globe, ShieldAlert,
+  Globe, ShieldAlert, SlidersHorizontal,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -1651,10 +1651,33 @@ export default function WholesaleShared() {
   // Order limits & rules — its own section.
   const isPublic = share.publicGroup?.isPublic === true;
   const canManagePublic = share.publicGroup?.canManage === true;
+  const limitsConfigured = !!(share.isCreator && share.settings && (
+    share.settings.maxMembers != null ||
+    share.settings.minKitsPerMember != null ||
+    share.settings.maxKitsPerMember != null ||
+    share.settings.maxTotalKits != null ||
+    share.settings.maxPackages != null ||
+    share.settings.organiserFlatFee != null ||
+    share.settings.lockDeadline != null ||
+    (share.settings.allowedCountries?.length ?? 0) > 0 ||
+    isPublic
+  ));
+  const limitsSummary = limitsConfigured
+    ? ([
+        isPublic ? "Public" : null,
+        share.settings?.maxMembers != null ? `${share.settings.maxMembers} max` : null,
+        share.settings?.organiserFlatFee != null ? `$${share.settings.organiserFlatFee} fee` : null,
+      ].filter(Boolean).join(" · ") || "Set")
+    : "Optional";
   const sectionOrderLimits = (share.isCreator && isOpen) ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Limits &amp; Rules</p>
-      <div className="rounded-xl p-4 space-y-4" style={card}>
+    <ExpandableCard
+      key={limitsConfigured ? "limits-set" : "limits-empty"}
+      title="Order Limits & Rules"
+      icon={<SlidersHorizontal className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
+      summary={limitsSummary}
+      defaultOpen={!limitsConfigured}
+    >
+      <div className="space-y-4">
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
             Optional limits for this shared order. Leave a field blank for no limit.
           </p>
@@ -1820,7 +1843,7 @@ export default function WholesaleShared() {
             Save limits &amp; rules
           </button>
         </div>
-      </section>
+    </ExpandableCard>
   ) : null;
 
   // Organiser fee — its own section.
@@ -2375,12 +2398,12 @@ export default function WholesaleShared() {
   const fullView = (
     <>
       {!organiserDone && !myPaid && sectionHowItWorks}
+      {sectionOrderLimits}
       {sectionGroup}
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
       {!organiserDone && sectionWhatYouOwe}
       {sectionShippingDelivery}
-      {sectionOrderLimits}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionFeeRoster}
