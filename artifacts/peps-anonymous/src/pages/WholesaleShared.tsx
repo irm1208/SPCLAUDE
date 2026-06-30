@@ -513,8 +513,8 @@ export default function WholesaleShared() {
     return (
       <PageLayout>
         <main className="px-4 py-8 max-w-md mx-auto w-full">
-          <button onClick={() => setLocation("/wholesale")} className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "var(--t-muted)" }}>
-            <ArrowLeft className="w-4 h-4" /> Back to wholesale
+          <button onClick={() => setLocation("/wholesale/shared")} className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "var(--t-muted)" }}>
+            <ArrowLeft className="w-4 h-4" /> Back to shared orders
           </button>
           <div className="rounded-2xl p-6 text-center space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
             <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: "var(--t-blue-08)" }}>
@@ -2434,8 +2434,8 @@ export default function WholesaleShared() {
         <main className="px-4 py-5 pb-36 max-w-3xl mx-auto w-full space-y-5">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
-            <button onClick={() => setLocation("/wholesale")} className="flex items-center gap-1.5 text-sm" style={{ color: "var(--t-muted)" }}>
-              <ArrowLeft className="w-4 h-4" /> Back to wholesale
+            <button onClick={() => setLocation("/wholesale/shared")} className="flex items-center gap-1.5 text-sm" style={{ color: "var(--t-muted)" }}>
+              <ArrowLeft className="w-4 h-4" /> Back to shared orders
             </button>
 
             {sectionHeader}
