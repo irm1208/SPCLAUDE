@@ -860,7 +860,10 @@ export default function WholesaleShared() {
         organiserFlatFee: settingsForm.organiserFlatFee.trim() === "" ? null : Number(settingsForm.organiserFlatFee),
       });
       setSettingsDirty(false);
-      settingsSeeded.current = false;
+      // Don't reset settingsSeeded here. The form already holds exactly what we just
+      // submitted, so re-enabling the seed effect would let it run against the still-stale
+      // cached share (before the refetch lands) and clobber the form — most visibly wiping
+      // the allowed-countries list, which also disables the "list publicly" toggle.
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }

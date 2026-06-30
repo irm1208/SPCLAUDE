@@ -157,6 +157,32 @@ export default function WholesaleShareEntry() {
                 </div>
               </div>
 
+              {activeShares.length > 0 && (
+                <div className="rounded-xl p-4 space-y-1.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Your shared orders</p>
+                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Pick up where you left off — your saved items and delivery details are kept.</p>
+                  </div>
+                  {activeShares.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
+                      className="w-full flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
+                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
+                        <span style={{ color: "var(--t-muted)" }}>{s.memberCount}{s.maxMembers != null ? `/${s.maxMembers}` : ""} · {s.isCreator ? "organiser" : "member"}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>
+                        <ArrowRight className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {openGroups.length > 0 && (
                 <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                   <div className="space-y-0.5">
@@ -216,32 +242,6 @@ export default function WholesaleShareEntry() {
                       );
                     })}
                   </div>
-                </div>
-              )}
-
-              {activeShares.length > 0 && (
-                <div className="rounded-xl p-4 space-y-1.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Your shared orders</p>
-                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Pick up where you left off — your saved items and delivery details are kept.</p>
-                  </div>
-                  {activeShares.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
-                      className="w-full flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
-                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
-                        <span style={{ color: "var(--t-muted)" }}>{s.memberCount}{s.maxMembers != null ? `/${s.maxMembers}` : ""} · {s.isCreator ? "organiser" : "member"}</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>
-                        <ArrowRight className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-                      </span>
-                    </button>
-                  ))}
                 </div>
               )}
             </div>
