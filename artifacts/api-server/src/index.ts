@@ -783,6 +783,11 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lock_deadline timestamptz`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS allowed_countries jsonb`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS organiser_payment_info text`);
+    // wholesale_shares — public group listing + parcel count + flat organiser fee
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS max_packages integer`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS is_public boolean NOT NULL DEFAULT false`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS organiser_flat_fee numeric(10,2)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_public_idx ON wholesale_shares(is_public, status)`);
     // wholesale_shares — max_members is nullable (no limit when null); drop NOT NULL if it exists
     await db.execute(sql`ALTER TABLE wholesale_shares ALTER COLUMN max_members DROP NOT NULL`);
     // wholesale_share_members — organiser fee per participant (paid peer-to-peer)

@@ -44,8 +44,18 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   minKitsPerMember: integer("min_kits_per_member"),
   maxKitsPerMember: integer("max_kits_per_member"),
   maxTotalKits: integer("max_total_kits"),
+  // Max number of parcels the combined order will be split into. Distinct from
+  // maxTotalKits (which is a quantity of kits) — this is a count of parcels.
+  // Displayed on the public group card; null = not set.
+  maxPackages: integer("max_packages"),
   lockDeadline: timestamp("lock_deadline", { withTimezone: true }),
   allowedCountries: jsonb("allowed_countries").$type<string[]>(),
+  // ── Public group listing ────────────────────────────────────────────────────
+  // When true, this shared order is listed publicly so any wholesale member can
+  // discover and join it (no approval needed). organiserFlatFee is a flat per-person
+  // fee shown on the public card and applied to each member who joins.
+  isPublic: boolean("is_public").notNull().default(false),
+  organiserFlatFee: numeric("organiser_flat_fee", { precision: 10, scale: 2 }),
   vendorId: text("vendor_id"), // snapshot of the active wholesale vendor at creation time
   // Chosen delivery member + their address snapshot (whole parcel ships here)
   deliveryUsername: text("delivery_username"),
@@ -70,6 +80,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
 }, (t) => [
   index("wholesale_shares_creator_idx").on(t.creatorUsername),
   index("wholesale_shares_status_idx").on(t.status),
+  index("wholesale_shares_public_idx").on(t.isPublic, t.status),
 ]);
 
 export type WholesaleShare = typeof wholesaleSharesTable.$inferSelect;

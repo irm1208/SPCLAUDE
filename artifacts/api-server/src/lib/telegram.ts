@@ -294,6 +294,28 @@ export async function sendAdminMessageFull(text: string): Promise<{ ok: boolean;
 }
 
 /**
+ * Announce a newly-published public wholesale group to a dedicated Telegram group
+ * topic. Destination is configured via the PUBLIC_GROUPS_CHAT_ID (group chat id)
+ * and PUBLIC_GROUPS_TOPIC_ID (forum topic / message_thread_id) env vars. Both are
+ * optional: if either is missing the announcement is silently skipped so publishing
+ * never fails on Telegram config. Best-effort — failures are logged, not thrown.
+ */
+export async function announcePublicWholesaleGroup(text: string): Promise<{ ok: boolean }> {
+  const chatId = (process.env["PUBLIC_GROUPS_CHAT_ID"] ?? "").trim();
+  const topicId = (process.env["PUBLIC_GROUPS_TOPIC_ID"] ?? "").trim();
+  if (!chatId || !topicId) return { ok: false };
+  const threadId = Number(topicId);
+  if (!Number.isFinite(threadId)) return { ok: false };
+  const extra: Record<string, unknown> = { message_thread_id: threadId };
+  try {
+    return await sendTelegramMessageFull(chatId, text, "HTML", { recipientType: "admin" }, extra);
+  } catch (err) {
+    console.error("[telegram] public group announcement failed:", err);
+    return { ok: false };
+  }
+}
+
+/**
  * Send a ticket notification to the admin chat with an inline "💬 Reply" button.
  * When admin taps Reply, the bot sends a ForceReply prompt in the same chat —
  * admin types their message, which routes back to the ticket automatically.

@@ -96,8 +96,18 @@ export interface WholesaleShareSettings {
   minKitsPerMember: number | null;
   maxKitsPerMember: number | null;
   maxTotalKits: number | null;
+  maxPackages: number | null; // max parcel count; null = not set
   lockDeadline: string | null; // ISO timestamp
   allowedCountries: string[] | null;
+  canManage: boolean; // organiser && share open
+}
+
+// Public group listing status for a single shared order (organiser view).
+export interface WholesaleSharePublicGroup {
+  isPublic: boolean;
+  organiserFlatFee: number | null;
+  maxPackages: number | null;
+  country: string | null;
   canManage: boolean; // organiser && share open
 }
 
@@ -134,6 +144,8 @@ export interface WholesaleShareDetail {
   allPaid: boolean;
   // Organiser-set rules + whether a set deadline has already passed.
   settings: WholesaleShareSettings;
+  // Public group listing status (organiser-managed).
+  publicGroup: WholesaleSharePublicGroup;
   deadlinePassed: boolean;
   createdAt: string;
   lockedAt: string | null;
@@ -148,6 +160,23 @@ export interface WholesaleShareSummary {
   isCreator: boolean;
   memberCount: number;
   maxMembers: number | null;
+  createdAt: string;
+}
+
+// A card on the public groups list — open, public shared orders anyone may join.
+export interface WholesalePublicGroup {
+  id: string;
+  organiserUsername: string;
+  country: string | null;
+  maxMembers: number | null;
+  maxTotalKits: number | null;
+  maxPackages: number | null;
+  organiserFlatFee: number | null;
+  memberCount: number;
+  totalKits: number;
+  isFull: boolean;
+  isMember: boolean;
+  isCreator: boolean;
   createdAt: string;
 }
 
@@ -186,6 +215,17 @@ export function useWholesaleShares(enabled = true) {
   return useQuery<WholesaleShareSummary[]>({
     queryKey: ["wholesale-shares"],
     queryFn: () => request<WholesaleShareSummary[]>("/api/wholesale-shares"),
+    staleTime: 30 * 1000,
+    retry: false,
+    enabled,
+  });
+}
+
+// Browse open PUBLIC shared orders (cards anyone in wholesale may join).
+export function useWholesalePublicGroups(enabled = true) {
+  return useQuery<WholesalePublicGroup[]>({
+    queryKey: ["wholesale-public-groups"],
+    queryFn: () => request<WholesalePublicGroup[]>("/api/wholesale-shares/public"),
     staleTime: 30 * 1000,
     retry: false,
     enabled,
@@ -351,6 +391,24 @@ export interface WholesaleShareSettingsInput {
 
 export function setWholesaleShareSettings(id: string, payload: WholesaleShareSettingsInput) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/settings`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// Organiser publishes (or de-lists) a shared order on the public groups page.
+// When publishing, supply the card details. Instant — no approval required.
+export interface WholesalePublishInput {
+  public: boolean;
+  country?: string;
+  maxMembers?: number | null;
+  maxTotalKits?: number | null;
+  maxPackages?: number | null;
+  organiserFlatFee?: number | null;
+}
+
+export function publishWholesaleShare(id: string, payload: WholesalePublishInput) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/publish`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

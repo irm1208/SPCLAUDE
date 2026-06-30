@@ -6,6 +6,7 @@ import {
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, X,
   Package, MapPin, CreditCard, RefreshCw, Printer,
+  Globe, ShieldAlert,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -26,6 +27,7 @@ import {
   cancelWholesaleShare,
   unlockWholesaleShare,
   setWholesaleShareSettings,
+  publishWholesaleShare,
   removeWholesaleShareMember,
   useInvalidateWholesaleShare,
   useWholesaleShareMessages,
@@ -203,6 +205,13 @@ export default function WholesaleShared() {
   const [countryToAdd, setCountryToAdd] = useState("");
   const [settingsDirty, setSettingsDirty] = useState(false);
   const settingsSeeded = useRef(false);
+
+  // Public group listing form (organiser-only). Seeded once from share.publicGroup.
+  const [publicForm, setPublicForm] = useState({
+    country: "", maxMembers: "", maxTotalKits: "", maxPackages: "", organiserFlatFee: "",
+  });
+  const [publicDirty, setPublicDirty] = useState(false);
+  const publicSeeded = useRef(false);
 
   // Recipient-only address form — the designated delivery member can enter a one-off
   // address for this parcel instead of being stuck with their saved account address.
@@ -388,6 +397,21 @@ export default function WholesaleShared() {
     setAllowedCountriesList(s.allowedCountries ?? []);
     settingsSeeded.current = true;
   }, [share, settingsDirty]);
+
+  // Seed the public group form once from the share (and the order rules it shares).
+  useEffect(() => {
+    if (!share || !share.publicGroup?.canManage || publicDirty || publicSeeded.current) return;
+    const p = share.publicGroup;
+    const s = share.settings;
+    setPublicForm({
+      country: p.country ?? (s.allowedCountries && s.allowedCountries.length > 0 ? s.allowedCountries[0] : ""),
+      maxMembers: s.maxMembers != null ? String(s.maxMembers) : "",
+      maxTotalKits: s.maxTotalKits != null ? String(s.maxTotalKits) : "",
+      maxPackages: p.maxPackages != null ? String(p.maxPackages) : "",
+      organiserFlatFee: p.organiserFlatFee != null ? String(p.organiserFlatFee) : "",
+    });
+    publicSeeded.current = true;
+  }, [share, publicDirty]);
 
   // Seed the recipient address form once, when I'm the chosen recipient. Prefer any
   // address already saved on the share; otherwise fall back to my saved account
@@ -852,6 +876,26 @@ export default function WholesaleShared() {
         allowedCountries: allowedCountriesList.length > 0 ? allowedCountriesList : null,
       });
       setSettingsDirty(false);
+      settingsSeeded.current = false;
+      invalidate(id);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const savePublic = async (makePublic: boolean) => {
+    if (!id) return;
+    setActionError(""); setBusy("publish");
+    try {
+      await publishWholesaleShare(id, makePublic ? {
+        public: true,
+        country: publicForm.country.trim(),
+        maxMembers: publicForm.maxMembers.trim() === "" ? null : Number(publicForm.maxMembers),
+        maxTotalKits: publicForm.maxTotalKits.trim() === "" ? null : Number(publicForm.maxTotalKits),
+        maxPackages: publicForm.maxPackages.trim() === "" ? null : Number(publicForm.maxPackages),
+        organiserFlatFee: publicForm.organiserFlatFee.trim() === "" ? null : Number(publicForm.organiserFlatFee),
+      } : { public: false });
+      setPublicDirty(false);
+      publicSeeded.current = false;
       settingsSeeded.current = false;
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
@@ -1708,6 +1752,99 @@ export default function WholesaleShared() {
       </section>
   ) : null;
 
+  // Public group listing — organiser can publish this order to the public groups page.
+  const isPublic = share.publicGroup?.isPublic === true;
+  const sectionPublicGroup = (share.publicGroup?.canManage) ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Public Group</p>
+      <div className="rounded-xl p-4 space-y-4" style={card}>
+        <div className="flex items-start gap-2">
+          <Globe className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
+          <div className="space-y-0.5">
+            <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>
+              {isPublic ? "This order is public" : "List this order publicly"}
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+              {isPublic
+                ? "It's shown as a card on the shared orders page — anyone in wholesale can join. Publishing is instant."
+                : "Show it as a card on the shared orders page so anyone in wholesale can find and join. No approval needed — it goes live instantly."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "var(--t-amber-08, rgba(245,158,11,0.08))", border: "1px solid var(--t-border)" }}>
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f59e0b" }} />
+          <p className="text-[11px] leading-snug" style={{ color: "var(--t-muted)" }}>
+            Only share orders with people you trust — members will pay you directly for their share and any organiser fee.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+          <select value={publicForm.country}
+            onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, country: e.target.value })); }}
+            className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field}>
+            <option value="">Choose a country…</option>
+            {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <p className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>Where the parcel will ship. Shown on the card and limits who can join.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max people</label>
+            <input type="number" min="2" step="1" value={publicForm.maxMembers}
+              onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, maxMembers: e.target.value })); }}
+              placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max kits</label>
+            <input type="number" min="1" step="1" value={publicForm.maxTotalKits}
+              onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, maxTotalKits: e.target.value })); }}
+              placeholder="No limit" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max packages</label>
+            <input type="number" min="1" step="1" value={publicForm.maxPackages}
+              onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, maxPackages: e.target.value })); }}
+              placeholder="Optional" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Organiser fee ($/person)</label>
+            <input type="number" min="0" step="0.01" value={publicForm.organiserFlatFee}
+              onChange={e => { setPublicDirty(true); setPublicForm(f => ({ ...f, organiserFlatFee: e.target.value })); }}
+              placeholder="None" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+          </div>
+        </div>
+        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+          The flat organiser fee is charged to each person who joins (paid to you directly). Leave blank for none.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => savePublic(true)}
+            disabled={busy === "publish" || !publicForm.country.trim()}
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: "var(--t-blue)" }}
+          >
+            {busy === "publish" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+            {isPublic ? "Save public details" : "Publish to public groups"}
+          </button>
+          {isPublic && (
+            <button
+              onClick={() => savePublic(false)}
+              disabled={busy === "publish"}
+              className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
+              style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+            >
+              Make private
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  ) : null;
+
   // Organiser fee — its own section.
   const sectionOrganiserFee = (share.isCreator && isOpen) ? (
     <section className="space-y-2">
@@ -2266,6 +2403,7 @@ export default function WholesaleShared() {
       {!organiserDone && sectionWhatYouOwe}
       {sectionShippingDelivery}
       {sectionOrderLimits}
+      {sectionPublicGroup}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionFeeRoster}

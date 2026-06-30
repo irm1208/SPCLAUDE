@@ -26,6 +26,7 @@ import {
 import { writeLog } from "../lib/audit-log";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
+import { announcePublicWholesaleGroup } from "../lib/telegram";
 
 // Fully opaque tracking-number mask — show no real characters so participants (and
 // anyone they share a screenshot with) cannot identify the carrier or origin of the
@@ -380,8 +381,20 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       minKitsPerMember: share.minKitsPerMember ?? null,
       maxKitsPerMember: share.maxKitsPerMember ?? null,
       maxTotalKits: share.maxTotalKits ?? null,
+      maxPackages: share.maxPackages ?? null,
       lockDeadline: share.lockDeadline ? (share.lockDeadline as Date).toISOString() : null,
       allowedCountries: share.allowedCountries ?? null,
+      canManage: share.status === "open" && isCreatorViewer,
+    },
+    // ── Public group listing ──────────────────────────────────────────────────
+    // When public, this shared order is discoverable on the public groups list.
+    // organiserFlatFee is the flat per-person fee shown on the card. Only the
+    // organiser may publish/unpublish, and only while the order is open.
+    publicGroup: {
+      isPublic: share.isPublic === true,
+      organiserFlatFee: share.organiserFlatFee != null ? Number(share.organiserFlatFee) : null,
+      maxPackages: share.maxPackages ?? null,
+      country: (share.allowedCountries && share.allowedCountries.length > 0) ? share.allowedCountries[0] : null,
       canManage: share.status === "open" && isCreatorViewer,
     },
     // ── Optional organiser fee (paid directly to the organiser/creator) ────────
@@ -456,6 +469,69 @@ router.get("/wholesale-shares", requireWholesale, async (req, res): Promise<void
     maxMembers: s.maxMembers,
     createdAt: (s.createdAt as Date).toISOString(),
   })));
+});
+
+// GET /api/wholesale-shares/public — browse open PUBLIC shared orders (cards).
+// Any wholesale member may discover and join these. Returns the card fields plus
+// live availability so the UI can show "3/8 people · 40 kits left" and disable a
+// full group. MUST be registered before "/wholesale-shares/:id" so "public" isn't
+// captured as an :id.
+router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const meLower = me.toLowerCase();
+
+  const shares = await db
+    .select()
+    .from(wholesaleSharesTable)
+    .where(and(
+      eq(wholesaleSharesTable.isPublic, true),
+      eq(wholesaleSharesTable.status, "open"),
+    ))
+    .orderBy(desc(wholesaleSharesTable.createdAt));
+
+  if (shares.length === 0) { res.json([]); return; }
+
+  const shareIds = shares.map(s => s.id);
+  const members = await db
+    .select({
+      shareId: wholesaleShareMembersTable.shareId,
+      username: wholesaleShareMembersTable.username,
+      items: wholesaleShareMembersTable.items,
+    })
+    .from(wholesaleShareMembersTable)
+    .where(sql`${wholesaleShareMembersTable.shareId} IN (${sql.join(shareIds.map(id => sql`${id}`), sql`, `)})`);
+
+  const countMap = new Map<string, number>();
+  const kitsMap = new Map<string, number>();
+  const mineSet = new Set<string>();
+  for (const m of members) {
+    countMap.set(m.shareId, (countMap.get(m.shareId) ?? 0) + 1);
+    kitsMap.set(m.shareId, (kitsMap.get(m.shareId) ?? 0) + memberKits(m.items ?? []));
+    if (m.username.toLowerCase() === meLower) mineSet.add(m.shareId);
+  }
+
+  res.json(shares.map(s => {
+    const memberCount = countMap.get(s.id) ?? 0;
+    const totalKits = kitsMap.get(s.id) ?? 0;
+    const isFull =
+      (s.maxMembers != null && memberCount >= s.maxMembers) ||
+      (s.maxTotalKits != null && totalKits >= s.maxTotalKits);
+    return {
+      id: s.id,
+      organiserUsername: s.creatorUsername,
+      country: (s.allowedCountries && s.allowedCountries.length > 0) ? s.allowedCountries[0] : null,
+      maxMembers: s.maxMembers ?? null,
+      maxTotalKits: s.maxTotalKits ?? null,
+      maxPackages: s.maxPackages ?? null,
+      organiserFlatFee: s.organiserFlatFee != null ? Number(s.organiserFlatFee) : null,
+      memberCount,
+      totalKits,
+      isFull,
+      isMember: mineSet.has(s.id),
+      isCreator: s.creatorUsername.toLowerCase() === meLower,
+      createdAt: (s.createdAt as Date).toISOString(),
+    };
+  }));
 });
 
 // POST /api/wholesale-shares — create a new shared order; creator becomes first member
@@ -581,6 +657,14 @@ router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Pr
     return;
   }
 
+  // Public groups can carry a flat per-person organiser fee. Resolve it onto the
+  // joining member now (store the resolved amount, mirroring how fees are stored
+  // elsewhere). The recipient is exempt — but a fresh joiner is never the recipient,
+  // and buildShareResponse forces the recipient's fee to 0 anyway.
+  const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
+    ? Number(share.organiserFlatFee).toFixed(2)
+    : "0";
+
   try {
     await db.insert(wholesaleShareMembersTable).values({
       id: randomUUID(),
@@ -589,6 +673,7 @@ router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Pr
       isCreator: false,
       items: [],
       tip: "0",
+      organiserFee: joinOrganiserFee,
     });
   } catch {
     // Unique (shareId, username) — already joined via a race; fall through to response.
@@ -1190,6 +1275,160 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
   await writeLog("order", "info", "wholesale_share_settings_updated",
     `Wholesale share ${share.id} rules updated by ${me}`,
     { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// PUT /api/wholesale-shares/:id/publish — organiser lists (or de-lists) this shared
+// order on the public groups page. Instant — no approval. When publishing, the
+// organiser supplies the card details (country, max people, max kits, max packages,
+// flat per-person fee). The flat fee is resolved onto every current member (except
+// the recipient and the organiser themselves) and onto each future joiner. On the
+// first publish (false → true transition) we best-effort announce the group to the
+// configured public Telegram topic.
+router.put("/wholesale-shares/:id/publish", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can publish this shared order." });
+    return;
+  }
+  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const makePublic = body.public === true || body.public === "true";
+
+  // Unpublish: just flip the flag off, leaving the rules/fee untouched.
+  if (!makePublic) {
+    const changed = await db.update(wholesaleSharesTable)
+      .set({ isPublic: false })
+      .where(and(eq(wholesaleSharesTable.id, share.id), eq(wholesaleSharesTable.status, "open")))
+      .returning({ id: wholesaleSharesTable.id });
+    if (changed.length === 0) { res.status(409).json({ error: "This shared order is no longer open." }); return; }
+    await writeLog("order", "info", "wholesale_share_unpublished",
+      `Wholesale share ${share.id} removed from public groups by ${me}`, { shareId: share.id }, req.ip);
+    const updatedOff = await loadShare(share.id);
+    res.json(await buildShareResponse(updatedOff!, me));
+    return;
+  }
+
+  // Country is required for a public listing (the card shows it and it scopes who
+  // can join). Stored as the single-entry allowed-countries list.
+  const country = typeof body.country === "string" ? body.country.trim().slice(0, 80) : "";
+  if (!country) { res.status(400).json({ error: "Please choose the destination country for this group." }); return; }
+
+  const parseIntField = (v: unknown, label: string, min: number, max = 100000):
+    | { ok: true; value: number | null }
+    | { ok: false; error: string } => {
+    if (v == null || v === "") return { ok: true, value: null };
+    const n = Number(v);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < min) {
+      return { ok: false, error: `${label} must be a whole number of ${min} or more (or blank).` };
+    }
+    if (n > max) return { ok: false, error: `${label} is too large.` };
+    return { ok: true, value: n };
+  };
+
+  const membersR = parseIntField(body.maxMembers, "Max people", 2, 1000);
+  if (!membersR.ok) { res.status(400).json({ error: membersR.error }); return; }
+  const kitsR = parseIntField(body.maxTotalKits, "Max kits", 1);
+  if (!kitsR.ok) { res.status(400).json({ error: kitsR.error }); return; }
+  const pkgsR = parseIntField(body.maxPackages, "Max packages", 1, 10000);
+  if (!pkgsR.ok) { res.status(400).json({ error: pkgsR.error }); return; }
+
+  // Flat per-person organiser fee (optional). null/"" = no fee.
+  let flatFee: number | null = null;
+  if (body.organiserFlatFee != null && body.organiserFlatFee !== "") {
+    const f = Number(body.organiserFlatFee);
+    if (!Number.isFinite(f) || f < 0) { res.status(400).json({ error: "Organiser fee must be 0 or more (or blank)." }); return; }
+    flatFee = Number(Math.min(f, 100000).toFixed(2));
+  }
+
+  // Can't set max people below the members already in the order.
+  if (membersR.value != null) {
+    const [{ c }] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    if (membersR.value < c) {
+      res.status(400).json({ error: `Max people can't be below the ${c} member${c === 1 ? "" : "s"} already in this order.` });
+      return;
+    }
+  }
+
+  const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
+  const creatorLower = share.creatorUsername.toLowerCase();
+
+  // Detected under the row lock inside the transaction so concurrent publish
+  // requests can't both fire the first-publish announcement.
+  let wasPublic = true;
+
+  try {
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic })
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+      wasPublic = locked.isPublic === true;
+
+      await tx.update(wholesaleSharesTable)
+        .set({
+          isPublic: true,
+          allowedCountries: [country],
+          maxMembers: membersR.value,
+          maxTotalKits: kitsR.value,
+          maxPackages: pkgsR.value,
+          organiserFlatFee: flatFee != null ? flatFee.toFixed(2) : null,
+        })
+        .where(eq(wholesaleSharesTable.id, share.id));
+
+      // Resolve the flat fee onto every current member except the recipient (exempt)
+      // and the organiser (they receive the fee). Clear the paid flag when the amount
+      // changes, mirroring the fees route.
+      const members = await tx
+        .select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      for (const member of members) {
+        const uname = member.username.toLowerCase();
+        const exempt = uname === creatorLower || (recipientLower != null && uname === recipientLower);
+        const target = exempt ? 0 : (flatFee ?? 0);
+        const prev = Number(member.organiserFee ?? 0);
+        if (target === prev) continue;
+        await tx.update(wholesaleShareMembersTable)
+          .set({ organiserFee: target.toFixed(2), organiserFeePaid: false })
+          .where(eq(wholesaleShareMembersTable.id, member.id));
+      }
+    });
+  } catch (e) {
+    if (e === FEES_CONFLICT) { res.status(409).json({ error: "This shared order is no longer open." }); return; }
+    throw e;
+  }
+
+  await writeLog("order", "info", "wholesale_share_published",
+    `Wholesale share ${share.id} published to public groups by ${me}`,
+    { shareId: share.id, country, maxMembers: membersR.value, maxTotalKits: kitsR.value, maxPackages: pkgsR.value, organiserFlatFee: flatFee }, req.ip);
+
+  // First publish only: best-effort announcement to the public Telegram topic.
+  if (!wasPublic) {
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const lines = [
+      `🛒 <b>New public wholesale group</b>`,
+      `Organiser: @${esc(share.creatorUsername)}`,
+      `Country: ${esc(country)}`,
+    ];
+    if (membersR.value != null) lines.push(`Max people: ${membersR.value}`);
+    if (kitsR.value != null) lines.push(`Max kits: ${kitsR.value}`);
+    if (pkgsR.value != null) lines.push(`Max packages: ${pkgsR.value}`);
+    lines.push(`Organiser fee: ${flatFee != null && flatFee > 0 ? `$${flatFee.toFixed(2)} per person` : "none"}`);
+    lines.push("");
+    lines.push("⚠️ Only join shared orders with people you trust.");
+    announcePublicWholesaleGroup(lines.join("\n")).catch(() => {});
+  }
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
