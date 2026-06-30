@@ -199,7 +199,7 @@ export default function WholesaleShared() {
   // deadline, and an allowed-country list. Seeded from the share once and skipped
   // while the organiser has unsaved edits (so polling can't clobber typing).
   const [settingsForm, setSettingsForm] = useState({
-    maxMembers: "", minKitsPerMember: "", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
+    maxMembers: "", minKitsPerMember: "1", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
     // Max packages + flat per-person organiser fee live with the rest of the rules.
     maxPackages: "", organiserFlatFee: "",
   });
@@ -384,7 +384,7 @@ export default function WholesaleShared() {
     const s = share.settings;
     setSettingsForm({
       maxMembers: s.maxMembers != null ? String(s.maxMembers) : "",
-      minKitsPerMember: s.minKitsPerMember != null ? String(s.minKitsPerMember) : "",
+      minKitsPerMember: s.minKitsPerMember != null ? String(s.minKitsPerMember) : "1",
       maxKitsPerMember: s.maxKitsPerMember != null ? String(s.maxKitsPerMember) : "",
       maxTotalKits: s.maxTotalKits != null ? String(s.maxTotalKits) : "",
       lockDeadline: s.lockDeadline ? toDatetimeLocal(s.lockDeadline) : "",
@@ -1663,18 +1663,25 @@ export default function WholesaleShared() {
         share.settings?.maxMembers != null ? `${share.settings.maxMembers} max` : null,
         share.settings?.organiserFlatFee != null ? `$${share.settings.organiserFlatFee} fee` : null,
       ].filter(Boolean).join(" · ") || "Set")
-    : "Optional";
+    : "Not set";
   const sectionOrderLimits = (share.isCreator && isOpen) ? (
     <ExpandableCard
       key={limitsConfigured ? "limits-set" : "limits-empty"}
-      title="Order Limits & Rules"
+      title={
+        <span className="inline-flex items-center gap-2 flex-wrap">
+          Order Limits &amp; Rules
+          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: "var(--t-blue-12, rgba(59,130,246,0.12))", color: "var(--t-blue)" }}>
+            Required
+          </span>
+        </span>
+      }
       icon={<SlidersHorizontal className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
       summary={limitsSummary}
       defaultOpen={!limitsConfigured}
     >
       <div className="space-y-4">
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-            Optional limits for this shared order. Leave a field blank for no limit.
+            Set the rules for this shared order. Leave a field blank for no limit.
           </p>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max people</label>
@@ -1764,68 +1771,65 @@ export default function WholesaleShared() {
             )}
           </div>
           {canManagePublic && (
-            <div className="space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2 min-w-0">
-                <Globe className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
-                <div className="space-y-0.5">
-                  <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>
-                    {isPublic ? "This order is public" : "List this order publicly"}
-                  </p>
-                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                    {isPublic
-                      ? "It's shown as a card on the shared orders page — anyone in wholesale can join. Publishing is instant."
-                      : "Show it as a card on the shared orders page so anyone in wholesale can find and join. No approval needed — it goes live instantly."}
-                  </p>
-                  <p className="text-[11px] font-semibold" style={{ color: "var(--t-text)" }}>
-                    Members will pay the admin for public orders.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isPublic}
-                aria-label={isPublic ? "Make this order private" : "Make this order public"}
-                onClick={() => savePublic(!isPublic)}
-                disabled={busy === "publish" || (!isPublic && allowedCountriesList.length === 0)}
-                className="relative shrink-0 inline-flex items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-0.5"
-                style={{
-                  width: 44, height: 24,
-                  background: isPublic ? "var(--t-blue)" : "var(--t-surface2)",
-                  border: "1px solid var(--t-border)",
-                }}
-              >
-                <span
-                  className="inline-flex items-center justify-center rounded-full transition-transform"
+            <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--t-blue-06, rgba(59,130,246,0.06))", border: "1px solid var(--t-border)" }}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 min-w-0 text-sm font-bold" style={{ color: "var(--t-text)" }}>
+                  <Globe className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
+                  <span className="truncate">{isPublic ? "This order is public" : "List this order publicly"}</span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isPublic}
+                  aria-label={isPublic ? "Make this order private" : "Make this order public"}
+                  onClick={() => savePublic(!isPublic)}
+                  disabled={busy === "publish" || (!isPublic && allowedCountriesList.length === 0)}
+                  className="relative shrink-0 inline-flex items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{
-                    width: 18, height: 18,
-                    background: "#fff",
-                    transform: isPublic ? "translateX(22px)" : "translateX(2px)",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+                    width: 44, height: 24,
+                    background: isPublic ? "var(--t-blue)" : "var(--t-surface2)",
+                    border: "1px solid var(--t-border)",
                   }}
                 >
-                  {busy === "publish" && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-blue)" }} />}
-                </span>
-              </button>
-            </div>
+                  <span
+                    className="inline-flex items-center justify-center rounded-full transition-transform"
+                    style={{
+                      width: 18, height: 18,
+                      background: "#fff",
+                      transform: isPublic ? "translateX(22px)" : "translateX(2px)",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+                    }}
+                  >
+                    {busy === "publish" && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-blue)" }} />}
+                  </span>
+                </button>
+              </div>
 
-            <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "var(--t-amber-08, rgba(245,158,11,0.08))", border: "1px solid var(--t-border)" }}>
-              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f59e0b" }} />
-              <p className="text-[11px] leading-snug" style={{ color: "var(--t-muted)" }}>
-                Only share orders with people you trust — members will pay you directly for their share and any organiser fee.
+              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                {isPublic
+                  ? "It's shown as a card on the shared orders page — anyone in wholesale can join. Publishing is instant."
+                  : "Show it as a card on the shared orders page so anyone in wholesale can find and join. No approval needed — it goes live instantly."}
               </p>
-            </div>
-
-            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-              The public card uses the limits set in "Order Limits &amp; Rules" above (max people, max kits, max packages and the organiser fee); the first allowed country is shown.
-            </p>
-
-            {allowedCountriesList.length === 0 && (
-              <p className="text-[11px]" style={{ color: "#f59e0b" }}>
-                Add at least one allowed country above before you can turn this order public.
+              <p className="text-[11px] font-semibold" style={{ color: "var(--t-text)" }}>
+                Members will pay the admin for public orders.
               </p>
-            )}
+
+              <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "var(--t-amber-08, rgba(245,158,11,0.08))", border: "1px solid var(--t-border)" }}>
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f59e0b" }} />
+                <p className="text-[11px] leading-snug" style={{ color: "var(--t-muted)" }}>
+                  Only share orders with people you trust — members will pay you directly for their share and any organiser fee.
+                </p>
+              </div>
+
+              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                The public card uses the limits set in "Order Limits &amp; Rules" above (max people, max kits, max packages and the organiser fee); the first allowed country is shown.
+              </p>
+
+              {allowedCountriesList.length === 0 && (
+                <p className="text-[11px]" style={{ color: "#f59e0b" }}>
+                  Add at least one allowed country above before you can turn this order public.
+                </p>
+              )}
             </div>
           )}
           <button
