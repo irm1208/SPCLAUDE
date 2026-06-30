@@ -38,4 +38,5 @@
 - [Wholesale shared P2P fees](wholesale-p2p-fees.md) — optional organiser/reshipper fees paid peer-to-peer, NEVER in order totals; recipient exempt (dynamic); fee edits transactional + reset paid flag.
 - [Wholesale onward tracking (masked)](wholesale-onward-tracking.md) — mask server-side in buildShareResponse; UI gate on server canEditTracking not creator flag; conditional writes + per-number guard on async fetch.
 - [Wholesale per-member onward address](wholesale-onward-member-address.md) — each member's onward forwarding address is private to recipient+owner only (gated in buildShareResponse); recipient can't set one; not vendor-priced; conditional status-gated write.
+- [Wholesale publish vs settings persistence](wholesale-publish-settings-persistence.md) — publish saves only maxMembers/maxTotalKits/allowedCountries(+public extras), NOT min/max-kits-per-person or lockDeadline; never clear settingsDirty on publish or unsaved edits drop on reseed.
 - [Wholesale public groups](wholesale-public-groups.md) — public shared orders: first-publish Telegram announce detected under row lock; topic needs BOTH chat+topic envs; creator+recipient fee-exempt.
