@@ -132,17 +132,22 @@ function nanoid() {
 }
 
 // Derive the leading compound, vial count, and test order from votes.
-function getLeadingVote(votes: { peptideName: string; vialCount: number; testSelections: string[] }[]): {
+function getLeadingVote(votes: { peptideName: string; peptideNames?: string[] | null; vialCount: number; testSelections: string[] }[]): {
   peptideName: string | null;
   vialCount: number;
   testOrder: string[]; // most-voted tests first
 } {
   if (votes.length === 0) return { peptideName: null, vialCount: 1, testOrder: [] };
 
-  // Leading compound
+  // Leading compound — count every selected compound (matches the public vote
+  // summary), not just each voter's first pick, so multi-compound ballots resolve
+  // to the same winner that members see.
   const peptideCounts: Record<string, number> = {};
   for (const v of votes) {
-    peptideCounts[v.peptideName] = (peptideCounts[v.peptideName] ?? 0) + 1;
+    const compounds = (v.peptideNames && v.peptideNames.length > 0) ? v.peptideNames : [v.peptideName];
+    for (const c of compounds) {
+      peptideCounts[c] = (peptideCounts[c] ?? 0) + 1;
+    }
   }
   const topPeptide = Object.entries(peptideCounts).sort((a, b) => b[1] - a[1])[0][0];
 
@@ -169,6 +174,11 @@ function getLeadingVote(votes: { peptideName: string; vialCount: number; testSel
     .map(([name]) => name);
 
   return { peptideName: topPeptide, vialCount: topVials, testOrder };
+}
+
+// Escape dynamic text before embedding it in a Telegram parse_mode=HTML message.
+function escapeTgHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ── GET /api/group-buys/:gbId/info — lightweight public GB info ─
@@ -258,7 +268,7 @@ router.get("/group-buys/:gbId/testing", async (req, res): Promise<void> => {
     vialVotes[vk] = (vialVotes[vk] ?? 0) + 1;
   }
 
-  const leading = getLeadingVote(voteRows as { peptideName: string; vialCount: number; testSelections: string[] }[]);
+  const leading = getLeadingVote(voteRows as { peptideName: string; peptideNames: string[] | null; vialCount: number; testSelections: string[] }[]);
 
   // Use round's testOptions as the ballot; if votes have arrived use vote-derived order,
   // otherwise fall back to ballot order as-is.
@@ -791,7 +801,7 @@ router.get("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> =>
     vote: voteRows.find(v => v.orderId === o.id) ?? null,
   }));
 
-  const typedVoteRows = voteRows as { peptideName: string; vialCount: number; testSelections: string[] }[];
+  const typedVoteRows = voteRows as { peptideName: string; peptideNames: string[] | null; vialCount: number; testSelections: string[] }[];
   const leading = getLeadingVote(typedVoteRows);
 
   const configuredTestOptions = (round.testOptions && Array.isArray(round.testOptions) && round.testOptions.length > 0)
@@ -884,6 +894,7 @@ router.get("/admin/group-buys/:gbId/testing", async (req, res): Promise<void> =>
       leadingPeptide: leading.peptideName,
       leadingVials: leading.vialCount,
       testOrder,
+      votedTests: leading.testOrder.filter(t => configuredTestOptions.includes(t)),
     },
     peptideOptions: adminPeptideOptions,
     allPeptideOptions,
@@ -1401,6 +1412,90 @@ router.post("/admin/group-buys/:gbId/testing/send-vote-reminder", async (req, re
   } catch (e) {
     console.error("[gb-testing send-vote-reminder]", e);
     res.status(500).json({ error: "Failed to send reminders" });
+  }
+});
+
+// ─── POST /admin/group-buys/:gbId/testing/notify-result ─────────────────────
+// Notifies every contributor of the testing outcome (winning compound + test).
+// The winner is computed server-side from the votes so the message is authoritative.
+router.post("/admin/group-buys/:gbId/testing/notify-result", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { gbId } = req.params as { gbId: string };
+
+    const [round] = await db
+      .select()
+      .from(gbTestingRoundsTable)
+      .where(eq(gbTestingRoundsTable.groupBuyId, gbId))
+      .orderBy(sql`${gbTestingRoundsTable.createdAt} DESC`)
+      .limit(1);
+
+    if (!round) { res.status(404).json({ error: "No testing round found" }); return; }
+
+    // Voting must be closed before the result can be announced.
+    if (round.status === "active") {
+      res.status(400).json({ error: "Close the voting round before notifying participants of the result" });
+      return;
+    }
+
+    // Determine the winning compound + test from the votes (server-authoritative).
+    const voteRows = await db
+      .select()
+      .from(gbTestingVotesTable)
+      .where(eq(gbTestingVotesTable.roundId, round.id));
+    const leading = getLeadingVote(
+      voteRows as { peptideName: string; peptideNames: string[] | null; vialCount: number; testSelections: string[] }[]
+    );
+
+    if (!leading.peptideName) {
+      res.status(400).json({ error: "No votes have been cast — there is no winning compound to announce" });
+      return;
+    }
+
+    const batches = ((round as any).peptideBatches as Record<string, string> | null) ?? {};
+    const batch = batches[leading.peptideName] || null;
+
+    const configuredTestOptions = (round.testOptions && Array.isArray(round.testOptions) && round.testOptions.length > 0)
+      ? round.testOptions as string[]
+      : DEFAULT_TEST_OPTIONS;
+    const winningTest = leading.testOrder.filter(t => configuredTestOptions.includes(t))[0] ?? null;
+
+    // Every contributor with a Telegram username.
+    const contributorRows = await db
+      .select({ id: ordersTable.id, telegramUsername: ordersTable.telegramUsername })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, gbId), gt(ordersTable.testingContribution, "0"), isNull(ordersTable.deletedAt)));
+
+    const recipients = contributorRows.filter(c => c.telegramUsername);
+    if (recipients.length === 0) { res.json({ sent: 0, failed: 0, skipped: 0 }); return; }
+
+    const [gb] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
+    const gbName = gb?.name ?? "the group buy";
+    const url = `https://saltandpeps.co.uk/testing/${gbId}`;
+
+    const message =
+      `🧪 <b>Testing result — ${escapeTgHtml(gbName)}</b>\n\n` +
+      `The community vote selected:\n` +
+      `• Compound: <b>${escapeTgHtml(leading.peptideName)}</b>${batch ? ` (Batch ${escapeTgHtml(batch)})` : ""}\n` +
+      (winningTest ? `• Test: <b>${escapeTgHtml(winningTest)}</b>\n` : "") +
+      `\nFull details and any results:\n<a href="${url}">${url}</a>\n\n` +
+      `Thank you for contributing! 🙏`;
+
+    let sent = 0, failed = 0, skipped = 0;
+    for (const c of recipients) {
+      if (!c.telegramUsername) { skipped++; continue; }
+      try {
+        const result = await notifyUserFull(c.telegramUsername, "status", message);
+        if (result.ok) sent++; else failed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    res.json({ sent, failed, skipped });
+  } catch (e) {
+    console.error("[gb-testing notify-result]", e);
+    res.status(500).json({ error: "Failed to notify participants" });
   }
 });
 

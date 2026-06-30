@@ -7641,6 +7641,7 @@ interface TestingAdminData {
   contributors: TestingContributor[];
   ballotTestPrices?: Record<string, number | null>;
   allTestOptions?: string[];
+  thresholds?: { leadingPeptide: string | null; leadingVials: number; testOrder: string[]; votedTests: string[] };
 }
 
 function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
@@ -7684,6 +7685,10 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   // Vote reminder
   const [sendingReminder, setSendingReminder] = useState(false);
   const [reminderMsg, setReminderMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Notify participants of the vote result
+  const [notifyingResult, setNotifyingResult] = useState(false);
+  const [notifyResultMsg, setNotifyResultMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Pending contributions
   type PendingContrib = { id: string; order_id: string; amount: number; payment_method: string; tx_hash: string | null; status: string; rejection_reason: string | null; created_at: string; code: string; telegram_username: string };
@@ -7858,6 +7863,30 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
       setTimeout(() => setResultsSaved(false), 3000);
       await load();
     } finally { setSavingResults(false); }
+  }
+
+  async function handleNotifyResult() {
+    setNotifyingResult(true);
+    setNotifyResultMsg(null);
+    try {
+      const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/testing/notify-result`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const d = await r.json();
+      if (!r.ok) { setNotifyResultMsg({ ok: false, text: d.error ?? "Failed to notify participants" }); return; }
+      setNotifyResultMsg({
+        ok: true,
+        text: `Notified ${d.sent} contributor${d.sent !== 1 ? "s" : ""}`
+          + (d.failed ? ` · ${d.failed} failed` : "")
+          + (d.skipped ? ` · ${d.skipped} skipped (no Telegram)` : "")
+          + ".",
+      });
+    } catch {
+      setNotifyResultMsg({ ok: false, text: "Failed to notify participants" });
+    } finally {
+      setNotifyingResult(false);
+    }
   }
 
   async function handleRunOcr() {
@@ -8060,6 +8089,68 @@ function TestingSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
               Open = members can opt in &amp; vote. Closed = locked. Set &ldquo;Results in&rdquo; once you&rsquo;ve added results below to share them with contributors.
             </p>
           </div>
+
+          {/* Vote Result — winning compound (with batch), test, and notify button. Shown once voting is closed. */}
+          {round.status !== "active" && (() => {
+            const winner = data?.thresholds?.leadingPeptide ?? null;
+            const batch = winner ? (round.peptideBatches?.[winner] ?? null) : null;
+            const votedTests = data?.thresholds?.votedTests ?? [];
+            const topTest = votedTests[0] ?? null;
+            return (
+              <div className="border border-border rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vote Result</p>
+                {winner ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Winning compound</p>
+                        <p className="text-base font-bold leading-tight">{winner}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Batch:{" "}
+                          {batch
+                            ? <span className="font-medium text-foreground tabular-nums">{batch}</span>
+                            : <span className="text-orange-600 dark:text-orange-400">not set — add it in the Compound Ballot below</span>}
+                        </p>
+                      </div>
+                      <div className="pt-2 border-t border-border">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Winning test{votedTests.length > 1 ? "s" : ""}
+                        </p>
+                        {topTest ? (
+                          <p className="text-sm font-semibold">
+                            {topTest}
+                            {votedTests.length > 1 && (
+                              <span className="font-normal text-muted-foreground"> · {votedTests.slice(1).join(", ")}</span>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No test votes cast</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Button size="sm" onClick={handleNotifyResult} disabled={notifyingResult} className="gap-1.5">
+                        {notifyingResult ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                        Notify participants of result
+                      </Button>
+                      <p className="text-[10px] text-muted-foreground">
+                        Sends a Telegram message to every contributor announcing the winning compound and test.
+                      </p>
+                      {notifyResultMsg && (
+                        <p className={cn("text-xs", notifyResultMsg.ok ? "text-green-600 dark:text-green-400" : "text-red-500")}>
+                          {notifyResultMsg.text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No votes were cast in this round, so there&rsquo;s no winning compound to show.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Funding Reconciliation */}
           <div className="border border-border rounded-lg p-4 space-y-3">
