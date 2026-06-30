@@ -21,7 +21,9 @@ export default function Review() {
   const { account } = useAccount();
 
   const isNewOrder = !draft.orderId;
-  const { isTopUp } = draft;
+  // Derived from the single source of truth — additionOfOrderId being set means this is a
+  // top-up. Never stored as a separate boolean so the two can never fall out of sync.
+  const isTopUp = draft.additionOfOrderId !== null;
 
   const { data: myGroupBuys } = useMyGroupBuys();
   const activeGb = draft.groupBuyId ? myGroupBuys?.find(g => g.id === draft.groupBuyId) : null;

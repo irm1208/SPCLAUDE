@@ -333,7 +333,6 @@ export default function WholesaleOrder() {
         notes,
         selectedRegion ? `Shipping region: ${selectedRegion.name}` : "",
       ].filter(Boolean).join("\n"),
-      isTopUp: false,
       testingContribution: 0,
       shippingName: fullName.trim(),
       shippingPhone: phone.trim(),

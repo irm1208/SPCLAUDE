@@ -769,8 +769,8 @@ export default function OrderForm() {
     // the stored deliveryMethodId is informational only. Skip validation entirely: for GBs
     // that use shipping-options (not relational delivery methods), gbDeliveryMethods is
     // cached as [] and isLoadingGbMethods is false on a second visit within the stale
-    // window, which previously caused clearTopUp() to fire and strip the isTopUp flag.
-    if (draft.isTopUp) return;
+    // window, which would otherwise call clearTopUp() and wipe the addition link.
+    if (draft.additionOfOrderId !== null) return;
     if (draft.deliveryMethodId) {
       // "__direct_shipping" is a virtual method — never in deliveryMethods list, so skip validation
       if (draft.deliveryMethodId === "__direct_shipping") return;
@@ -785,7 +785,7 @@ export default function OrderForm() {
         draft.setDeliveryMethod(currentMethod.id, currentMethod.name, currentMethod.price);
       }
     }
-  }, [gbId, isLoadingMethods, isLoadingGbInfo, deliveryMethods, draft.isTopUp]);
+  }, [gbId, isLoadingMethods, isLoadingGbInfo, deliveryMethods, draft.additionOfOrderId]);
 
   // Auto-select the only delivery method when there's exactly one option and none is chosen yet
   useEffect(() => {
@@ -799,7 +799,7 @@ export default function OrderForm() {
     draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
   );
   const grandTotal = parseFloat(
-    (productSubtotal + (draft.isTopUp ? 0 : draft.deliveryPrice) + (productSubtotal > 0 ? draft.vendorShipping : 0) + draft.tip + draft.testingContribution).toFixed(2)
+    (productSubtotal + (draft.additionOfOrderId !== null ? 0 : draft.deliveryPrice) + (productSubtotal > 0 ? draft.vendorShipping : 0) + draft.tip + draft.testingContribution).toFixed(2)
   );
 
   const fuzzyPrice = (name: string): number => {
@@ -1517,7 +1517,7 @@ export default function OrderForm() {
         <section className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Delivery</p>
 
-          {draft.isTopUp ? (
+          {draft.additionOfOrderId !== null ? (
             <div className="rounded-xl p-4 border-2 border-green-500/30 bg-green-50/50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
