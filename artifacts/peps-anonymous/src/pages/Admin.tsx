@@ -2897,6 +2897,10 @@ function OrdersTab({ secret }: { secret: string }) {
                   {order.status}
                 </span>
                 <span className="font-mono font-bold text-sm shrink-0">{order.code}</span>
+                <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap inline-flex items-center gap-1">
+                  <CalendarDays className="w-3 h-3 opacity-50" />
+                  {new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
+                </span>
                 <span className="text-sm text-muted-foreground flex-1 flex items-center gap-1 min-w-0">
                   <User className="w-3 h-3 shrink-0 opacity-50" />
                   <span className="truncate">{order.telegramUsername}</span>
@@ -7855,6 +7859,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           className="rounded border-input accent-primary"
         />
         <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+        <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap inline-flex items-center gap-0.5">
+          <CalendarDays className="w-2.5 h-2.5" />
+          {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
+        </span>
         {isOrganiser && <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">Organiser</span>}
         {(o.vendorShipping != null && o.vendorShipping > 0) && (
           <span className="text-[10px] text-slate-500 shrink-0">+${parseFloat(String(o.vendorShipping)).toFixed(2)} ship</span>
