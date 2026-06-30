@@ -7221,6 +7221,10 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const confirmedCount = confirmedOrders.length;
   const totalTips = confirmedOrders.reduce((s, o) => s + (o.tip ?? 0), 0);
   const tipCount = confirmedOrders.filter(o => (o.tip ?? 0) > 0).length;
+  // Outstanding total still owed — unpaid orders, excluding cancelled/draft which won't be collected.
+  const unpaidOrders = orders.filter(o => o.paymentStatus === "unpaid" && o.status !== "Cancelled" && o.status !== "Draft");
+  const totalUnpaid = unpaidOrders.reduce((s, o) => s + o.grandTotal, 0);
+  const unpaidCount = unpaidOrders.length;
 
   return (
     <div className="space-y-4">
@@ -7364,10 +7368,14 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex gap-4 mt-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
           <div><p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Total</p><p className="text-lg font-bold" style={{ color: "var(--t-text)" }}>{orders.length}</p></div>
           <div><p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Confirmed Paid</p><p className="text-lg font-bold" style={{ color: "#16A34A" }}>{confirmedCount}</p></div>
           <div><p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Revenue</p><p className="text-lg font-bold" style={{ color: "var(--t-text)" }}>{gb.currency} {totalRevenue.toFixed(2)}</p></div>
+          <div title={`${unpaidCount} ${unpaidCount === 1 ? "order" : "orders"} unpaid (excludes cancelled & draft)`}>
+            <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Unpaid</p>
+            <p className="text-lg font-bold" style={{ color: totalUnpaid > 0 ? "#EA580C" : "var(--t-text)" }}>{gb.currency} {totalUnpaid.toFixed(2)}</p>
+          </div>
           <div title={`${tipCount} ${tipCount === 1 ? "order" : "orders"} tipped`}>
             <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Tips</p>
             <p className="text-lg font-bold" style={{ color: totalTips > 0 ? "#D97706" : "var(--t-text)" }}>{gb.currency} {totalTips.toFixed(2)}</p>
