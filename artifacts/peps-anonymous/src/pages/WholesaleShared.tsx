@@ -890,13 +890,13 @@ export default function WholesaleShared() {
         maxPackages: publicForm.maxPackages.trim() === "" ? null : Number(publicForm.maxPackages),
         organiserFlatFee: publicForm.organiserFlatFee.trim() === "" ? null : Number(publicForm.organiserFlatFee),
       } : { public: false });
+      // The forms already hold exactly what we just submitted, so DON'T reset the
+      // "seeded" refs here. Resetting would let the seed effects re-run against the
+      // still-stale cached share (before the refetch lands) and clobber the form
+      // back to pre-save values. We also never clear settingsDirty — publish only
+      // persists maxMembers/maxTotalKits/allowedCountries, not the per-person kit
+      // limits or lock deadline, so those edits must stay dirty until saved.
       setPublicDirty(false);
-      publicSeeded.current = false;
-      // NOTE: don't clear settingsDirty here — publish only persists maxMembers,
-      // maxTotalKits and allowedCountries, not min/max kits-per-person or the lock
-      // deadline. Clearing it would drop those unsaved edits on reseed. Only reseed
-      // the settings form when it has no unsaved edits (the effect guards on dirty).
-      settingsSeeded.current = false;
       invalidate(id);
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
@@ -1754,21 +1754,49 @@ export default function WholesaleShared() {
           {canManagePublic && (
             <div className="space-y-4">
             <div className="h-px -mx-4" style={{ background: "var(--t-border)" }} />
-            <div className="flex items-start gap-2">
-              <Globe className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
-              <div className="space-y-0.5">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>
-                  {isPublic ? "This order is public" : "List this order publicly"}
-                </p>
-                <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                  {isPublic
-                    ? "It's shown as a card on the shared orders page — anyone in wholesale can join. Publishing is instant."
-                    : "Show it as a card on the shared orders page so anyone in wholesale can find and join. No approval needed — it goes live instantly."}
-                </p>
-                <p className="text-[11px] font-semibold" style={{ color: "var(--t-text)" }}>
-                  Members will pay the admin for public orders.
-                </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 min-w-0">
+                <Globe className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
+                <div className="space-y-0.5">
+                  <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>
+                    {isPublic ? "This order is public" : "List this order publicly"}
+                  </p>
+                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                    {isPublic
+                      ? "It's shown as a card on the shared orders page — anyone in wholesale can join. Publishing is instant."
+                      : "Show it as a card on the shared orders page so anyone in wholesale can find and join. No approval needed — it goes live instantly."}
+                  </p>
+                  <p className="text-[11px] font-semibold" style={{ color: "var(--t-text)" }}>
+                    Members will pay the admin for public orders.
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isPublic}
+                aria-label={isPublic ? "Make this order private" : "Make this order public"}
+                onClick={() => savePublic(!isPublic)}
+                disabled={busy === "publish" || (!isPublic && allowedCountriesList.length === 0)}
+                className="relative shrink-0 inline-flex items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-0.5"
+                style={{
+                  width: 44, height: 24,
+                  background: isPublic ? "var(--t-blue)" : "var(--t-surface2)",
+                  border: "1px solid var(--t-border)",
+                }}
+              >
+                <span
+                  className="inline-flex items-center justify-center rounded-full transition-transform"
+                  style={{
+                    width: 18, height: 18,
+                    background: "#fff",
+                    transform: isPublic ? "translateX(22px)" : "translateX(2px)",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {busy === "publish" && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-blue)" }} />}
+                </span>
+              </button>
             </div>
 
             <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "var(--t-amber-08, rgba(245,158,11,0.08))", border: "1px solid var(--t-border)" }}>
@@ -1796,30 +1824,22 @@ export default function WholesaleShared() {
               The flat organiser fee is charged to each person who joins (paid to you directly). Leave blank for none. The public card uses the limits above; the first allowed country is shown.
             </p>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => savePublic(true)}
-                disabled={busy === "publish" || allowedCountriesList.length === 0}
-                className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                style={{ background: "var(--t-blue)" }}
-              >
-                {busy === "publish" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
-                {isPublic ? "Save public details" : "Publish to public groups"}
-              </button>
-              {isPublic && (
+            {isPublic && publicDirty && (
+              <div>
                 <button
-                  onClick={() => savePublic(false)}
-                  disabled={busy === "publish"}
-                  className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
-                  style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+                  onClick={() => savePublic(true)}
+                  disabled={busy === "publish" || allowedCountriesList.length === 0}
+                  className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                  style={{ background: "var(--t-blue)" }}
                 >
-                  Make private
+                  {busy === "publish" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Save public changes
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             {allowedCountriesList.length === 0 && (
               <p className="text-[11px]" style={{ color: "#f59e0b" }}>
-                Add at least one allowed country above to publish this order.
+                Add at least one allowed country above before you can turn this order public.
               </p>
             )}
             </div>
