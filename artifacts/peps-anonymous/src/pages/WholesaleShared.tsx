@@ -1963,9 +1963,10 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  // My onward address — any participant (except the parcel recipient) can add where
-  // they want their items forwarded to. Private: only the recipient and they see it.
-  const myOnwardEditable = !!myMember?.canEditOnward;
+  // My onward address — shown only once a delivery recipient is nominated AND the
+  // viewer isn't that recipient (the whole parcel goes to the recipient, so they
+  // never forward to themselves). Private: only the recipient and the member see it.
+  const myOnwardEditable = !!myMember?.canEditOnward && !!share.delivery.username;
   const myOnward = myMember?.onward ?? null;
   const sectionMyOnwardAddress = myOnwardEditable ? (
     <section className="space-y-2">
