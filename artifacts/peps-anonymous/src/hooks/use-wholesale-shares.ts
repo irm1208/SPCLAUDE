@@ -112,13 +112,11 @@ export interface WholesaleSharePublicGroup {
   canManage: boolean; // organiser && share open
 }
 
-// Masked main-parcel (vendor → recipient) tracking for the shared order. Populated
-// once admin adds the combined-order tracking number. The raw trackingNumber/carrier
-// are present ONLY for the parcel recipient; every other participant receives a fully-
-// masked number, carrier null, and coarse status labels. NOTE: to match the onward
-// participant view, the UI does not render even the masked number for non-recipients —
-// it shows a privacy note instead — so trackingNumber is effectively recipient-only on
-// screen.
+// Masked main-parcel (vendor → recipient) tracking for the shared order, presented like
+// the public GB parcel tracking. Populated once admin adds the combined-order tracking
+// number. The RAW trackingNumber is present only for the parcel recipient; every other
+// participant gets a fully-dotted masked number. The carrier, coarse status, and
+// country-masked events are shown to everyone.
 export interface WholesaleMainTracking {
   hasTracking: boolean;
   trackingNumber: string | null;

@@ -331,12 +331,13 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
 
   // ── Main parcel tracking (vendor → recipient), masked for participants ───────
   // orders.trackingNumber is the source of truth; share.mainTracking* is a cache of
-  // that combined parcel's masked 17track feed. Show the raw number/carrier ONLY to
-  // the parcel recipient; everyone else (including a non-recipient organiser) receives a
-  // fully-masked number, no carrier, and coarse phase labels (the UI hides the number and
-  // shows a privacy note, matching the onward participant view). Cached events are only
-  // trusted while the cache key still matches the live order number (otherwise the
-  // feed is being rebuilt for a newly-changed number).
+  // that combined parcel's masked 17track feed. Presented like the public GB parcel
+  // tracking: the recipient sees the RAW number; everyone else sees a fully-dotted
+  // masked number. The carrier, coarse status, and country-masked events are shown to
+  // ALL members (events are already country-only + address-stripped at fetch time, so
+  // they never leak the recipient's city). Cached status/events are only trusted while
+  // the cache key still matches the live order number (otherwise the feed is being
+  // rebuilt for a newly-changed number).
   const canonicalMainTracking = (() => {
     for (const m of members) {
       const o = m.orderId ? orderById.get(m.orderId) : undefined;
@@ -355,7 +356,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     trackingNumber: canonicalMainTracking
       ? (mainIsRecipientViewer ? canonicalMainTracking : maskTrackingNumber(canonicalMainTracking))
       : null,
-    carrier: (canonicalMainTracking && mainIsRecipientViewer) ? (share.mainTrackingCarrier ?? null) : null,
+    carrier: mainCacheMatches ? (share.mainTrackingCarrier ?? null) : null,
     status: mainCacheMatches ? (share.mainTrackingStatus ?? null) : null,
     statusCode: mainCacheMatches ? (share.mainTrackingStatusCode ?? null) : null,
     events: mainCacheMatches

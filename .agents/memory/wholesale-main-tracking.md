@@ -1,6 +1,6 @@
 ---
 name: Wholesale shared main-parcel masked tracking
-description: How the vendor→recipient MAIN parcel tracking is cached, masked, and refreshed for wholesale SHARED orders (reuses the onward masked system).
+description: How the vendor→recipient MAIN parcel tracking is cached, masked, and refreshed for wholesale SHARED orders (presented like the public GB parcel tracking).
 ---
 
 # Wholesale shared MAIN-parcel masked tracking
@@ -8,7 +8,8 @@ description: How the vendor→recipient MAIN parcel tracking is cached, masked, 
 Lets every participant of a wholesale SHARED order see the MAIN parcel (vendor → the
 one recipient) tracking that admin adds on the Shared Orders group header. Reuses the
 onward masked-tracking plumbing (`maskTrackingNumber`, `sanitizeOnwardEventsForParticipant`,
-`fetchOnwardTracking`).
+`fetchOnwardTracking`) but is PRESENTED like the public GB parcel tracking (dotted number
++ carrier + status + events visible to all members).
 
 ## Source of truth vs cache
 - `orders.trackingNumber` (on the `wholesale_shared` member orders) is the SOURCE OF
@@ -19,16 +20,21 @@ onward masked-tracking plumbing (`maskTrackingNumber`, `sanitizeOnwardEventsForP
   rebuilt for a newly-changed number). Canonical resolver prefers `trackingNumber`, then
   `trackingNumbers[0]`.
 
-## Masking / privacy (mirror the onward view exactly)
-- Only the parcel recipient (and admin) get the RAW number + carrier + full events.
-- Every other participant (incl. a non-recipient organiser) gets a masked number, null
-  carrier, coarse phase labels, sanitized events.
-- **UI does NOT render even the masked number to non-recipients** — it shows a privacy
-  note ("the tracking number and exact addresses are hidden"), exactly like the onward
-  participant view (`sectionMyTracking`). The API still returns a masked value, but the
-  screen hides it. **Why:** the task required reusing AND staying consistent with the
-  onward system; rendering a masked number would break that consistency. A code review
-  suggested rendering it — rejected on these grounds.
+## Masking / privacy (presented like the public GB parcel tracking)
+- Only the parcel recipient sees the RAW number. Everyone else gets a fully-dotted masked
+  number (`maskTrackingNumber`, identical to GB's `"•"`×6–12).
+- The carrier, coarse status, and country-masked events ARE shown to ALL members (the UI
+  renders the dotted number + carrier block for non-recipients too, with a small "the full
+  tracking number is hidden for privacy" note). **Why safe:** `fetchOnwardTracking` already
+  stores events with country-only locations and names/addresses stripped (`maskLocation`),
+  so non-recipients never see the recipient's city; for non-recipients `sanitizeOnwardEvents
+  ForParticipant` further collapses free-text statuses to a controlled enum.
+- Carrier is gated on `mainCacheMatches` (same as status/events) so an admin number change
+  doesn't briefly flash a stale carrier.
+- **History:** originally mirrored the onward view (number+carrier HIDDEN from non-recipients,
+  privacy note). Changed on explicit user request to "make it like the GB parcels masked
+  shipping" → now shows the dotted number + carrier to all. Do NOT add a `trackingUrl` link
+  for non-recipients — it would expose the raw number and defeat the mask.
 
 ## Refresh pipeline (no fetch in the hot path)
 - **Never** fetch 17track inside the 6s-polled share GET. Refresh happens only via

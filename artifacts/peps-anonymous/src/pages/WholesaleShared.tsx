@@ -2012,9 +2012,9 @@ export default function WholesaleShared() {
   ) : null;
 
   // Main parcel (vendor → recipient) tracking, shown to EVERY member once admin adds
-  // the combined-order tracking number. The recipient sees the real number + carrier;
-  // every other participant sees coarse status labels + sanitized events only — the
-  // number is NOT rendered for them (privacy note instead), matching the onward view.
+  // the combined-order tracking number — presented like the public GB parcel tracking.
+  // The recipient sees the real number; everyone else sees a fully-dotted masked number.
+  // Carrier, coarse status, and country-masked events are shown to all.
   const sectionOrderTracking = share.mainTracking?.hasTracking ? (() => {
     const t = share.mainTracking;
     const meta = trackStatusMeta(t.status);
@@ -2033,9 +2033,9 @@ export default function WholesaleShared() {
               </p>
             </div>
           </div>
-          {isRecipientViewer && t.trackingNumber ? (
+          {t.trackingNumber ? (
             <div className="text-xs rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}>
-              Tracking: <span className="font-mono">{t.trackingNumber}</span>{t.carrier ? <span style={{ color: "var(--t-muted)" }}> · {t.carrier}</span> : null}
+              Tracking: <span className="font-mono tracking-tight">{t.trackingNumber}</span>{t.carrier ? <span style={{ color: "var(--t-muted)" }}> · {t.carrier}</span> : null}
             </div>
           ) : null}
           {events.length > 0 ? (
@@ -2062,7 +2062,7 @@ export default function WholesaleShared() {
           )}
           {!isRecipientViewer && (
             <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-              For privacy, the tracking number and exact addresses are hidden.
+              The full tracking number is hidden for privacy.
             </p>
           )}
         </div>
