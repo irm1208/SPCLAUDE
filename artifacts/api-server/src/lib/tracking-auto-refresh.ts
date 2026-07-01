@@ -2,8 +2,8 @@
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
  */
-import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable, wholesaleShareMembersTable } from "@workspace/db";
-import { eq, and, ne, or, isNull, lt, inArray } from "drizzle-orm";
+import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable, wholesaleShareMembersTable, wholesaleSharesTable, ordersTable } from "@workspace/db";
+import { eq, and, ne, or, isNull, lt, inArray, sql } from "drizzle-orm";
 import { sendTelegramMessageFull, getTemplate, renderTemplate } from "./telegram";
 import type { TrackingPackage, TrackingEvent } from "@workspace/db";
 import { registerScheduler } from "./scheduler-registry";
@@ -412,7 +412,8 @@ async function runRefresh(): Promise<void> {
     const parcelCount = await refreshGbParcels();
     const packageCount = await refreshTrackingLinks();
     const onwardCount = await refreshWholesaleOnwardParcels();
-    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s) updated`);
+    const mainCount = await refreshWholesaleMainParcels();
+    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s), ${mainCount} shared main parcel(s) updated`);
   } catch (err) {
     console.error("[tracking-auto-refresh] Run failed:", err);
   }
@@ -523,6 +524,219 @@ async function refreshWholesaleOnwardParcels(): Promise<number> {
     await sleep(API_CALL_DELAY_MS);
   }
 
+  return refreshed;
+}
+
+// Collapses concurrent refreshes for the SAME share into one. When admin sets the
+// tracking number it is written to every member order, firing one PATCH (and one
+// one-shot refresh) per member — without this guard they would all hit 17track for
+// the same number at once. Also stops a scheduled run from overlapping an admin one-shot.
+const mainRefreshInFlight = new Set<string>();
+// Marks a share whose refresh was requested WHILE one was already in flight (same
+// process). The in-flight run re-checks this flag when it finishes and re-runs once,
+// so an admin number change during a fetch is never silently dropped.
+const mainRefreshDirty = new Set<string>();
+
+// Resolve the canonical main-parcel tracking number for a share from its member
+// orders (orders.trackingNumber is the source of truth; admin writes the same number
+// to every member order). Returns null when no member order carries a tracking number.
+async function loadCanonicalMainTracking(shareId: string): Promise<{ number: string; carrier: string | null } | null> {
+  const rows = await db
+    .select({ tn: ordersTable.trackingNumber, tns: ordersTable.trackingNumbers, carrier: ordersTable.shippingCarrier })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.sharedOrderId, shareId), eq(ordersTable.orderType, "wholesale_shared")));
+  for (const r of rows) {
+    const single = r.tn?.trim();
+    if (single) return { number: single, carrier: r.carrier ?? null };
+    const first = Array.isArray(r.tns) && r.tns.length ? String(r.tns[0]).trim() : "";
+    if (first) return { number: first, carrier: r.carrier ?? null };
+  }
+  return null;
+}
+
+/**
+ * Refresh the MASKED main-parcel (vendor → recipient) tracking cache for one share.
+ * orders.trackingNumber is the source of truth; wholesale_shares.mainTracking* is a
+ * cache keyed by mainTrackingNumber. Collapses concurrent calls for the same share
+ * (in-flight guard) but re-runs once if another call arrived mid-fetch (dirty flag),
+ * so an admin number change during a fetch is never dropped.
+ */
+export async function refreshWholesaleMainParcelForShare(shareId: string): Promise<{ updated: boolean }> {
+  if (mainRefreshInFlight.has(shareId)) {
+    // A refresh is already running for this share; remember another was requested so
+    // the running one re-checks after it finishes (see the loop below).
+    mainRefreshDirty.add(shareId);
+    return { updated: false };
+  }
+  mainRefreshInFlight.add(shareId);
+  try {
+    let updated = false;
+    // Track the number already fetched THIS cycle so a dirty re-run for the SAME
+    // unchanged number collapses to a single 17track call (the common admin-burst case).
+    let fetchedNumber: string | null = null;
+    do {
+      mainRefreshDirty.delete(shareId);
+      const r = await reconcileAndFetchMainParcelOnce(shareId, fetchedNumber);
+      updated = updated || r.updated;
+      fetchedNumber = r.fetchedNumber;
+    } while (mainRefreshDirty.has(shareId));
+    return { updated };
+  } catch (err) {
+    console.error(`[tracking-auto-refresh] Error refreshing main parcel for share ${shareId}:`, err);
+    return { updated: false };
+  } finally {
+    mainRefreshDirty.delete(shareId);
+    mainRefreshInFlight.delete(shareId);
+  }
+}
+
+/**
+ * One reconcile+fetch pass for a share's main-parcel cache. All cache writes are
+ * CONDITIONAL on the previously-observed cache key (null-safe) and check the affected
+ * row count, so a concurrent (even cross-process) writer that already moved the key to
+ * a newer number can never be clobbered. Returns the number actually fetched so the
+ * caller can skip a redundant fetch on a dirty re-run.
+ */
+async function reconcileAndFetchMainParcelOnce(
+  shareId: string,
+  alreadyFetchedNumber: string | null,
+): Promise<{ updated: boolean; fetchedNumber: string | null }> {
+  const [share] = await db.select().from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id, shareId));
+  if (!share) return { updated: false, fetchedNumber: alreadyFetchedNumber };
+
+  const canonical = await loadCanonicalMainTracking(shareId);
+
+  // Null-safe guard on the cache key we just read, so our write only lands if nobody
+  // else moved the key in the meantime.
+  const oldKeyMatch = share.mainTrackingNumber == null
+    ? isNull(wholesaleSharesTable.mainTrackingNumber)
+    : eq(wholesaleSharesTable.mainTrackingNumber, share.mainTrackingNumber);
+
+  // Number cleared/absent → drop the cached feed so a stale timeline never shows.
+  if (!canonical) {
+    if (share.mainTrackingNumber) {
+      await db.update(wholesaleSharesTable)
+        .set({
+          mainTrackingNumber: null,
+          mainTrackingCarrier: null,
+          mainTrackingStatus: null,
+          mainTrackingStatusCode: null,
+          mainTrackingEvents: [],
+          mainTrackingChecked: null,
+        })
+        .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch));
+    }
+    return { updated: false, fetchedNumber: null };
+  }
+
+  // Already fetched this exact number this cycle and it hasn't changed → skip a
+  // redundant 17track call (collapses an admin burst into a single fetch).
+  if (canonical.number === alreadyFetchedNumber && share.mainTrackingNumber === canonical.number) {
+    return { updated: false, fetchedNumber: alreadyFetchedNumber };
+  }
+
+  // Admin changed the number → reset the cache to the new key BEFORE fetching, guarded
+  // on the old key. If no row matched, another writer already reconciled → bail.
+  if (share.mainTrackingNumber !== canonical.number) {
+    const reset = await db.update(wholesaleSharesTable)
+      .set({
+        mainTrackingNumber: canonical.number,
+        mainTrackingCarrier: canonical.carrier,
+        mainTrackingStatus: null,
+        mainTrackingStatusCode: null,
+        mainTrackingEvents: [],
+        mainTrackingChecked: null,
+      })
+      .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch))
+      .returning({ id: wholesaleSharesTable.id });
+    if (reset.length === 0) return { updated: false, fetchedNumber: alreadyFetchedNumber };
+  }
+
+  const result = await fetchOnwardTracking(canonical.number, canonical.carrier);
+  if (!result) {
+    // Couldn't fetch — just stamp checked (guarded on the cache key).
+    await db.update(wholesaleSharesTable)
+      .set({ mainTrackingChecked: new Date() })
+      .where(and(eq(wholesaleSharesTable.id, shareId), eq(wholesaleSharesTable.mainTrackingNumber, canonical.number)));
+    return { updated: false, fetchedNumber: canonical.number };
+  }
+
+  const write = await db.update(wholesaleSharesTable)
+    .set({
+      mainTrackingStatus: result.status,
+      mainTrackingStatusCode: result.statusCode,
+      mainTrackingEvents: result.events,
+      mainTrackingCarrier: canonical.carrier,
+      mainTrackingChecked: new Date(),
+    })
+    .where(and(eq(wholesaleSharesTable.id, shareId), eq(wholesaleSharesTable.mainTrackingNumber, canonical.number)))
+    .returning({ id: wholesaleSharesTable.id });
+  return { updated: write.length > 0, fetchedNumber: canonical.number };
+}
+
+/**
+ * Refresh stale, non-terminal main-parcel tracking for submitted wholesale shares.
+ * Scans from the member orders (the source of truth) so a share is picked up even if
+ * its cache was never populated. The combined parcel only ships once the order is
+ * submitted (everyone paid), so we only scan submitted shares.
+ */
+async function refreshWholesaleMainParcels(): Promise<number> {
+  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+
+  const shares = await db
+    .selectDistinct({ id: wholesaleSharesTable.id })
+    .from(wholesaleSharesTable)
+    .innerJoin(ordersTable, eq(ordersTable.sharedOrderId, wholesaleSharesTable.id))
+    .where(
+      and(
+        eq(wholesaleSharesTable.status, "submitted"),
+        eq(ordersTable.orderType, "wholesale_shared"),
+        // A member order carries a usable number (single non-empty OR a non-empty
+        // array) — mirrors loadCanonicalMainTracking so array-only rows aren't missed.
+        or(
+          ne(ordersTable.trackingNumber, ""),
+          sql`jsonb_array_length(coalesce(${ordersTable.trackingNumbers}, '[]'::jsonb)) > 0`,
+        ),
+        // Refresh when the cached status is non-terminal (or never fetched), OR when the
+        // cache key is stale vs a member order's live number. The latter self-heals the
+        // rare multi-process case where a guarded reset lost its race and the cache is
+        // now pinned to a stale (possibly terminal) number that the status filter alone
+        // would never pick up again.
+        or(
+          isNull(wholesaleSharesTable.mainTrackingStatus),
+          eq(wholesaleSharesTable.mainTrackingStatus, "pending"),
+          eq(wholesaleSharesTable.mainTrackingStatus, "in_transit"),
+          eq(wholesaleSharesTable.mainTrackingStatus, "out_for_delivery"),
+          eq(wholesaleSharesTable.mainTrackingStatus, "attempted"),
+          eq(wholesaleSharesTable.mainTrackingStatus, "exception"),
+          and(
+            ne(ordersTable.trackingNumber, ""),
+            sql`${wholesaleSharesTable.mainTrackingNumber} IS DISTINCT FROM ${ordersTable.trackingNumber}`,
+          ),
+        ),
+        or(
+          isNull(wholesaleSharesTable.mainTrackingChecked),
+          lt(wholesaleSharesTable.mainTrackingChecked, staleThreshold),
+        ),
+      ),
+    );
+
+  if (shares.length === 0) {
+    console.log("[tracking-auto-refresh] No stale wholesale main parcels to refresh");
+    return 0;
+  }
+
+  console.log(`[tracking-auto-refresh] Refreshing ${shares.length} stale wholesale main parcel(s)`);
+  let refreshed = 0;
+  for (const s of shares) {
+    try {
+      const r = await refreshWholesaleMainParcelForShare(s.id);
+      if (r.updated) refreshed++;
+    } catch (err) {
+      console.error(`[tracking-auto-refresh] Error refreshing main parcel for share ${s.id}:`, err);
+    }
+    await sleep(API_CALL_DELAY_MS);
+  }
   return refreshed;
 }
 

@@ -2011,6 +2011,65 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // Main parcel (vendor → recipient) tracking, shown to EVERY member once admin adds
+  // the combined-order tracking number. The recipient sees the real number + carrier;
+  // every other participant sees coarse status labels + sanitized events only — the
+  // number is NOT rendered for them (privacy note instead), matching the onward view.
+  const sectionOrderTracking = share.mainTracking?.hasTracking ? (() => {
+    const t = share.mainTracking;
+    const meta = trackStatusMeta(t.status);
+    const events = t.events ?? [];
+    const isRecipientViewer = !!myMember?.isRecipient;
+    return (
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Order Shipment</p>
+        <div className="rounded-xl p-4 space-y-3" style={card}>
+          <div className="flex items-center gap-2.5">
+            <Truck className="w-5 h-5 shrink-0" style={{ color: meta.color }} />
+            <div className="min-w-0">
+              <p className="text-sm font-bold" style={{ color: meta.color }}>{meta.label}</p>
+              <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                {isRecipientViewer ? "Your combined parcel" : "The group's combined parcel"}{t.lastChecked ? <> · updated {formatTrackDate(t.lastChecked)}</> : null}
+              </p>
+            </div>
+          </div>
+          {isRecipientViewer && t.trackingNumber ? (
+            <div className="text-xs rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}>
+              Tracking: <span className="font-mono">{t.trackingNumber}</span>{t.carrier ? <span style={{ color: "var(--t-muted)" }}> · {t.carrier}</span> : null}
+            </div>
+          ) : null}
+          {events.length > 0 ? (
+            <div className="space-y-0">
+              {events.map((ev, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0" style={{ background: i === 0 ? meta.color : "var(--t-border)" }} />
+                    {i < events.length - 1 && <div className="w-px flex-1" style={{ background: "var(--t-border)" }} />}
+                  </div>
+                  <div className="pb-3 min-w-0">
+                    <p className="text-sm" style={{ color: "var(--t-text)" }}>{trackStatusMeta(ev.status).label}</p>
+                    <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                      {ev.location ? <>{ev.location} · </> : null}{formatTrackDate(ev.date)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs flex items-start gap-2 rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+              <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" /> No detailed updates yet — check back soon.
+            </p>
+          )}
+          {!isRecipientViewer && (
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+              For privacy, the tracking number and exact addresses are hidden.
+            </p>
+          )}
+        </div>
+      </section>
+    );
+  })() : null;
+
   // Shipping updates — visible to a participant (not the recipient) once the recipient
   // has forwarded their parcel and recorded a tracking number. Status + events are
   // masked: the participant never sees the raw tracking number or precise locations.
@@ -2429,6 +2488,7 @@ export default function WholesaleShared() {
       {sectionOrganiserLocked}
       {sectionFeeRoster}
       {sectionRecipientAddressPrompt}
+      {sectionOrderTracking}
       {sectionMyOnwardAddress}
       {sectionMyTracking}
       {canDispatch ? sectionDispatch : sectionOnwardRoster}

@@ -72,6 +72,19 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // to the organiser/creator). It never enters the per-member order total that the
   // admin/vendor collects. Free-text payment instructions shown to participants.
   organiserPaymentInfo: text("organiser_payment_info"),
+  // ── Main parcel tracking (vendor → recipient) cache ─────────────────────────
+  // Admin sets ONE tracking number for the whole shared order, written to every
+  // member order (orders.trackingNumber is the source of truth). These columns are a
+  // CACHE of that combined parcel's 17track feed, keyed by mainTrackingNumber. Events
+  // are masked (country-only location, names/addresses stripped) BEFORE storage, so
+  // they are safe to surface to every participant. The raw number/carrier are exposed
+  // in the API only to the parcel recipient (and admin-only order routes).
+  mainTrackingNumber: text("main_tracking_number"),
+  mainTrackingCarrier: text("main_tracking_carrier"),
+  mainTrackingStatus: text("main_tracking_status"),
+  mainTrackingStatusCode: integer("main_tracking_status_code"),
+  mainTrackingEvents: jsonb("main_tracking_events").$type<WholesaleOnwardTrackingEvent[]>().notNull().default([]),
+  mainTrackingChecked: timestamp("main_tracking_checked", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),

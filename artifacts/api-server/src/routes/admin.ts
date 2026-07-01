@@ -54,6 +54,7 @@ import { createAlert } from "../lib/create-alert";
 import { calculateVendorShipping } from "../lib/vendor-shipping";
 import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
+import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
 import { logCustomerActivity } from "../lib/activity-log";
 
 function escapeHtml(str: string): string {
@@ -1556,6 +1557,14 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
       ].join("\n");
       notifyUser(existing.telegramUsername, "status", trackMsg).catch(() => {});
     }
+  }
+
+  // Shared-order main parcel: keep the participant-visible masked tracking feed in
+  // sync with the number just written to the member orders. Admin writes the same
+  // number to every member order, so each PATCH fires this one-shot; in-flight de-dup
+  // collapses them into a single 17track fetch. The scheduled refresh keeps it fresh.
+  if (trackingChanged && existing.orderType === "wholesale_shared" && existing.sharedOrderId) {
+    void refreshWholesaleMainParcelForShare(existing.sharedOrderId).catch(() => {});
   }
 
   // Recompute the effective address / QR requirement so the admin UI reflects the saved override.
