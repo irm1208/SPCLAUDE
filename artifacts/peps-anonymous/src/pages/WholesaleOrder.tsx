@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
+import { LabReportPopup } from "@/components/LabTestsPopup";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
 
@@ -61,6 +62,9 @@ export default function WholesaleOrder() {
 
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string } | null>(null);
+  const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
+  const labTestsInFlight = useRef<Set<string>>(new Set());
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [productSearch, setProductSearch] = useState("");
@@ -231,6 +235,25 @@ export default function WholesaleOrder() {
       })
       .catch(() => {});
   }, []);
+
+  // Mirror the group-buy listing: probe which products actually have historic lab
+  // reports so we only show a "Reports" button for peptides that have CoA results.
+  // Wholesale has no per-product vendor, so we check across all suppliers by name.
+  useEffect(() => {
+    if (!account?.isWholesale) return;
+    if (productsLoading || products.length === 0) return;
+    products.forEach(p => {
+      const name = p.name;
+      if (!name || labTestsInFlight.current.has(name)) return;
+      labTestsInFlight.current.add(name);
+      const params = new URLSearchParams({ limit: "1" });
+      params.set("peptide", name);
+      fetch(`/api/lab-tests?${params}`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setProductLabTestsMap(prev => ({ ...prev, [name]: Array.isArray(data) && data.length > 0 })))
+        .catch(() => setProductLabTestsMap(prev => ({ ...prev, [name]: false })));
+    });
+  }, [productsLoading, products, account?.isWholesale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (accountLoading) {
     return (
@@ -922,6 +945,17 @@ export default function WholesaleOrder() {
                                     = ${(product.price * qty).toFixed(2)}
                                   </p>
                                 )}
+                                {/* Lab reports — historic CoA results for this peptide */}
+                                {productLabTestsMap[product.name] === true && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: product.name }); }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97]"
+                                    style={{ color: "var(--t-blue)", background: "color-mix(in srgb, var(--t-blue) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)" }}
+                                  >
+                                    <TestTube className="w-3 h-3" /> Lab Reports
+                                  </button>
+                                )}
                               </div>
                               <div className="hidden sm:block text-right pr-3">
                                 <span className="text-xs" style={{ color: "var(--t-muted)" }}>
@@ -1056,6 +1090,15 @@ export default function WholesaleOrder() {
           </div>
         </TotalBarShell>
       </div>
+
+      <AnimatePresence>
+        {labTestsProduct && (
+          <LabReportPopup
+            productName={labTestsProduct.productName}
+            onClose={() => setLabTestsProduct(null)}
+          />
+        )}
+      </AnimatePresence>
     </PageLayout>
   );
 }
