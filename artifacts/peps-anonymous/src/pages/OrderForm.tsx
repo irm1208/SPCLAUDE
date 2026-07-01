@@ -750,7 +750,7 @@ export default function OrderForm() {
       if (labTestsInFlight.current.has(key)) return;
       labTestsInFlight.current.add(key);
       const params = new URLSearchParams({ limit: "1" });
-      params.set("peptide", encodeURIComponent(name));
+      params.set("peptide", name);
       if (vendor) params.set("supplier", vendor);
       fetch(`/api/lab-tests?${params}`, { credentials: "include" })
         .then(r => r.ok ? r.json() : [])

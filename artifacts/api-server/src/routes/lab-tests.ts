@@ -187,6 +187,19 @@ function resolveUtherName(supplier: string, batchCode: string | null | undefined
 // ── Image/PDF fetching is handled by gemini-lab-extract lib ──────────────────
 // fetchJanoshikImagesLib, resolvePreviewInfo, downloadLabFile are imported above.
 
+// ── GET /api/lab-tests/peptide-names — distinct peptide names with approved tests ──
+router.get("/lab-tests/peptide-names", async (req, res) => {
+  try {
+    const rows = await db
+      .selectDistinct({ peptideName: labTestsTable.peptideName })
+      .from(labTestsTable)
+      .where(and(eq(labTestsTable.pending, false), isNotNull(labTestsTable.peptideName)));
+    res.json(rows.map(r => r.peptideName).filter(Boolean));
+  } catch {
+    res.status(500).json({ error: "Failed to fetch peptide names" });
+  }
+});
+
 // ── GET /api/lab-tests — list / search (public — excludes pending) ────────────
 router.get("/lab-tests", async (req, res) => {
   try {

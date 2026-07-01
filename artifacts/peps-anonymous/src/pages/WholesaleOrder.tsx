@@ -236,23 +236,28 @@ export default function WholesaleOrder() {
       .catch(() => {});
   }, []);
 
-  // Mirror the group-buy listing: probe which products actually have historic lab
-  // reports so we only show a "Reports" button for peptides that have CoA results.
-  // Wholesale has no per-product vendor, so we check across all suppliers by name.
+  // Fetch the set of distinct peptide names that have approved lab tests in a single
+  // request, then build the badge-visibility map client-side using the same prefix
+  // matching logic the server uses.  This replaces one-per-product concurrent fetches
+  // which caused silent failures under load for large catalogs.
   useEffect(() => {
     if (!account?.isWholesale) return;
     if (productsLoading || products.length === 0) return;
-    products.forEach(p => {
-      const name = p.name;
-      if (!name || labTestsInFlight.current.has(name)) return;
-      labTestsInFlight.current.add(name);
-      const params = new URLSearchParams({ limit: "1" });
-      params.set("peptide", name);
-      fetch(`/api/lab-tests?${params}`, { credentials: "include" })
-        .then(r => r.ok ? r.json() : [])
-        .then(data => setProductLabTestsMap(prev => ({ ...prev, [name]: Array.isArray(data) && data.length > 0 })))
-        .catch(() => setProductLabTestsMap(prev => ({ ...prev, [name]: false })));
-    });
+    const normalize = (s: string) => s.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    fetch("/api/lab-tests/peptide-names", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((names: string[]) => {
+        const map: Record<string, boolean> = {};
+        for (const p of products) {
+          const normProduct = normalize(p.name);
+          map[p.name] = names.some(n => {
+            const normTest = normalize(n);
+            return normTest.startsWith(normProduct) || normProduct.startsWith(normTest);
+          });
+        }
+        setProductLabTestsMap(map);
+      })
+      .catch(() => {});
   }, [productsLoading, products, account?.isWholesale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (accountLoading) {
