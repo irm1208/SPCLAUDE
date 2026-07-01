@@ -16,91 +16,111 @@
 export interface BatchPrefixEntry {
   prefix: string;
   compound: string;
+  /** Canonical per-vial dose, e.g. "10mg", "10iu". Omitted for blends/unknown. */
+  dose?: string;
 }
 
-// Source of truth: vendor prefix → compound table.
+// Source of truth: vendor prefix → compound → dose table.
 export const BATCH_PREFIX_TABLE: BatchPrefixEntry[] = [
-  { prefix: "51Q10", compound: "5-Amino-1-methylquinolinium" },
-  { prefix: "51Q50", compound: "5-Amino-1-methylquinolinium" },
-  { prefix: "A05", compound: "AOD-9604" },
-  { prefix: "AR16", compound: "ARA-290" },
-  { prefix: "ARA16", compound: "ARA-290" },
-  { prefix: "BP10", compound: "BPC-157" },
-  { prefix: "BP20", compound: "BPC-157" },
-  { prefix: "CAG10", compound: "Cagrilintide" },
-  { prefix: "CAG5", compound: "Cagrilintide" },
+  { prefix: "51Q10", compound: "5-Amino-1-methylquinolinium", dose: "10mg" },
+  { prefix: "51Q50", compound: "5-Amino-1-methylquinolinium", dose: "50mg" },
+  { prefix: "A05", compound: "AOD-9604", dose: "5mg" },
+  { prefix: "AR16", compound: "ARA-290", dose: "16mg" },
+  { prefix: "ARA16", compound: "ARA-290", dose: "16mg" },
+  { prefix: "BP10", compound: "BPC-157", dose: "10mg" },
+  { prefix: "BP20", compound: "BPC-157", dose: "20mg" },
+  { prefix: "CAG10", compound: "Cagrilintide", dose: "10mg" },
+  { prefix: "CAG5", compound: "Cagrilintide", dose: "5mg" },
   { prefix: "CI1010", compound: "CJC DAC/Ipamorelin" },
-  { prefix: "CJD5", compound: "CJC-1295 DAC" },
+  { prefix: "CJD5", compound: "CJC-1295 DAC", dose: "5mg" },
   { prefix: "CJND", compound: "CJC no DAC/Ipamorelin" },
-  { prefix: "DS10", compound: "DSIP" },
-  { prefix: "DS5", compound: "DSIP" },
-  { prefix: "EP10", compound: "Epithalon" },
-  { prefix: "EP50", compound: "Epithalon" },
-  { prefix: "FOX10", compound: "Fox-04" },
-  { prefix: "G10", compound: "Human Growth Hormone" },
-  { prefix: "G210", compound: "GHRP-2" },
-  { prefix: "G610", compound: "GHRP-6" },
+  { prefix: "DS10", compound: "DSIP", dose: "10mg" },
+  { prefix: "DS5", compound: "DSIP", dose: "5mg" },
+  { prefix: "EP10", compound: "Epithalon", dose: "10mg" },
+  { prefix: "EP50", compound: "Epithalon", dose: "50mg" },
+  { prefix: "FOX10", compound: "Fox-04", dose: "10mg" },
+  { prefix: "G10", compound: "Human Growth Hormone", dose: "10iu" },
+  { prefix: "G210", compound: "GHRP-2", dose: "10mg" },
+  { prefix: "G610", compound: "GHRP-6", dose: "10mg" },
   { prefix: "GLO80", compound: "GLOW blend" },
-  { prefix: "H10", compound: "Human Growth Hormone" },
+  { prefix: "H10", compound: "Human Growth Hormone", dose: "10mg" },
   { prefix: "HK/KP50/20", compound: "GHK-Cu/KPV" },
-  { prefix: "HK100", compound: "GHK-Cu" },
-  { prefix: "HK50", compound: "GHK-Cu" },
-  { prefix: "IG1", compound: "IGF-1 LR3" },
+  { prefix: "HK100", compound: "GHK-Cu", dose: "100mg" },
+  { prefix: "HK50", compound: "GHK-Cu", dose: "50mg" },
+  { prefix: "IG1", compound: "IGF-1 LR3", dose: "1mg" },
   { prefix: "ILLUM", compound: "illumineeuro" },
-  { prefix: "IP10", compound: "Ipamorelin" },
+  { prefix: "IP10", compound: "Ipamorelin", dose: "10mg" },
   { prefix: "KL080", compound: "GHK-Cu/BPC-157/TB-500/KPV" },
   { prefix: "KLO80", compound: "KLOW blend" },
-  { prefix: "KP10", compound: "KPV" },
-  { prefix: "KP30", compound: "KPV" },
-  { prefix: "M010", compound: "MOTS-C" },
-  { prefix: "M040", compound: "MOTS-C" },
-  { prefix: "MO10", compound: "MOTS-C" },
-  { prefix: "MO20", compound: "MOTS-C" },
-  { prefix: "MT1", compound: "Melanotan I" },
-  { prefix: "MT2", compound: "Melanotan II" },
-  { prefix: "MT210", compound: "Melanotan 2" },
-  { prefix: "NA500", compound: "NAD+" },
-  { prefix: "NASK10", compound: "N-Acetyl Selank Amidate" },
-  { prefix: "NASK50", compound: "N-Acetyl Selank" },
-  { prefix: "NASX10", compound: "N-Acetyl Semax" },
-  { prefix: "NASX50", compound: "N-Acetyl Semax" },
-  { prefix: "OZ10", compound: "Semaglutide" },
-  { prefix: "OZ20", compound: "Semaglutide" },
-  { prefix: "OZ5", compound: "Semaglutide" },
-  { prefix: "PE10", compound: "PE-22-28" },
-  { prefix: "PT10", compound: "PT-141" },
-  { prefix: "RE10", compound: "Retatrutide" },
-  { prefix: "RE20", compound: "Retatrutide" },
-  { prefix: "RE30", compound: "Retatrutide" },
-  { prefix: "RE40", compound: "Retatrutide" },
-  { prefix: "RE50", compound: "Retatrutide" },
-  { prefix: "RE60", compound: "Retatrutide" },
-  { prefix: "SK10", compound: "Selank" },
-  { prefix: "SN10", compound: "Snap-8" },
-  { prefix: "SR5", compound: "Sermorelin" },
-  { prefix: "SS10", compound: "SS-31" },
-  { prefix: "SS30", compound: "SS-31" },
-  { prefix: "SS50", compound: "Elamipretide (SS-31)" },
-  { prefix: "SUR10", compound: "Survotide" },
-  { prefix: "SX10", compound: "Semax" },
+  { prefix: "KP10", compound: "KPV", dose: "10mg" },
+  { prefix: "KP30", compound: "KPV", dose: "30mg" },
+  { prefix: "M010", compound: "MOTS-C", dose: "10mg" },
+  { prefix: "M040", compound: "MOTS-C", dose: "40mg" },
+  { prefix: "MO10", compound: "MOTS-C", dose: "10mg" },
+  { prefix: "MO20", compound: "MOTS-C", dose: "20mg" },
+  { prefix: "MT1", compound: "Melanotan I", dose: "10mg" },
+  { prefix: "MT2", compound: "Melanotan II", dose: "10mg" },
+  { prefix: "MT210", compound: "Melanotan 2", dose: "10mg" },
+  { prefix: "NA500", compound: "NAD+", dose: "500mg" },
+  { prefix: "NASK10", compound: "N-Acetyl Selank Amidate", dose: "10mg" },
+  { prefix: "NASK50", compound: "N-Acetyl Selank", dose: "50mg" },
+  { prefix: "NASX10", compound: "N-Acetyl Semax", dose: "10mg" },
+  { prefix: "NASX50", compound: "N-Acetyl Semax", dose: "50mg" },
+  { prefix: "OZ10", compound: "Semaglutide", dose: "10mg" },
+  { prefix: "OZ20", compound: "Semaglutide", dose: "20mg" },
+  { prefix: "OZ5", compound: "Semaglutide", dose: "5mg" },
+  { prefix: "PE10", compound: "PE-22-28", dose: "10mg" },
+  { prefix: "PT10", compound: "PT-141", dose: "10mg" },
+  { prefix: "RE10", compound: "Retatrutide", dose: "10mg" },
+  { prefix: "RE20", compound: "Retatrutide", dose: "20mg" },
+  { prefix: "RE30", compound: "Retatrutide", dose: "30mg" },
+  { prefix: "RE40", compound: "Retatrutide", dose: "40mg" },
+  { prefix: "RE50", compound: "Retatrutide", dose: "50mg" },
+  { prefix: "RE60", compound: "Retatrutide", dose: "60mg" },
+  { prefix: "SK10", compound: "Selank", dose: "10mg" },
+  { prefix: "SN10", compound: "Snap-8", dose: "10mg" },
+  { prefix: "SR5", compound: "Sermorelin", dose: "5mg" },
+  { prefix: "SS10", compound: "SS-31", dose: "10mg" },
+  { prefix: "SS30", compound: "SS-31", dose: "30mg" },
+  { prefix: "SS50", compound: "Elamipretide (SS-31)", dose: "50mg" },
+  { prefix: "SUR10", compound: "Survotide", dose: "10mg" },
+  { prefix: "SX10", compound: "Semax", dose: "10mg" },
   { prefix: "T/155", compound: "Tesamorelin/Ipamorelin" },
   { prefix: "T/B1010", compound: "BPC-157/TB-500 (TB4)" },
   { prefix: "T/B55", compound: "BPC-157/TB-500" },
-  { prefix: "TA110", compound: "Thymosin Alpha-1" },
-  { prefix: "TB10", compound: "TB-500" },
-  { prefix: "TB20", compound: "TB-500" },
-  { prefix: "TB410", compound: "TB-500 (TB4)" },
-  { prefix: "TBF10", compound: "TB-500 Fragment" },
-  { prefix: "TE10", compound: "Tesamorelin" },
-  { prefix: "TE20", compound: "Tesamorelin" },
-  { prefix: "VIP", compound: "VIP" },
-  { prefix: "ZE10", compound: "Tirzepatide" },
-  { prefix: "ZE100", compound: "Tirzepatide" },
-  { prefix: "ZE15", compound: "Tirzepatide" },
-  { prefix: "ZE20", compound: "Tirzepatide" },
-  { prefix: "ZE30", compound: "Tirzepatide" },
-  { prefix: "ZE45", compound: "Tirzepatide" },
-  { prefix: "ZE60", compound: "Tirzepatide" },
+  { prefix: "TA110", compound: "Thymosin Alpha-1", dose: "10mg" },
+  { prefix: "TB10", compound: "TB-500", dose: "10mg" },
+  { prefix: "TB20", compound: "TB-500", dose: "20mg" },
+  { prefix: "TB410", compound: "TB-500 (TB4)", dose: "10mg" },
+  { prefix: "TBF10", compound: "TB-500 Fragment", dose: "10mg" },
+  { prefix: "TE10", compound: "Tesamorelin", dose: "10mg" },
+  { prefix: "TE20", compound: "Tesamorelin", dose: "20mg" },
+  { prefix: "VIP", compound: "VIP", dose: "10mg" },
+  { prefix: "ZE10", compound: "Tirzepatide", dose: "10mg" },
+  { prefix: "ZE100", compound: "Tirzepatide", dose: "100mg" },
+  { prefix: "ZE15", compound: "Tirzepatide", dose: "15mg" },
+  { prefix: "ZE20", compound: "Tirzepatide", dose: "20mg" },
+  { prefix: "ZE30", compound: "Tirzepatide", dose: "30mg" },
+  { prefix: "ZE45", compound: "Tirzepatide", dose: "45mg" },
+  { prefix: "ZE60", compound: "Tirzepatide", dose: "60mg" },
+  // ── Live-data additions ────────────────────────────────────────────────────
+  // Prefixes below are absent from the vendor's static table but confirmed in
+  // real lab data (batch code + peptide label verified in the DB).
+  { prefix: "BP40", compound: "BPC-157", dose: "40mg" },
+  { prefix: "RE100", compound: "Retatrutide", dose: "100mg" },
+  { prefix: "RE15", compound: "Retatrutide", dose: "15mg" },
+  { prefix: "ZE90", compound: "Tirzepatide", dose: "90mg" },
+  { prefix: "EPI10", compound: "Epithalon", dose: "10mg" },
+  { prefix: "EPI50", compound: "Epithalon", dose: "50mg" },
+  { prefix: "IPA10", compound: "Ipamorelin", dose: "10mg" },
+  { prefix: "NAD500", compound: "NAD+", dose: "500mg" },
+  { prefix: "M020", compound: "MOTS-C", dose: "20mg" },
+  { prefix: "MT110", compound: "Melanotan I", dose: "10mg" },
+  { prefix: "VIP10", compound: "VIP", dose: "10mg" },
+  { prefix: "TB420", compound: "TB-500 (TB4)", dose: "20mg" },
+  { prefix: "SS100", compound: "Elamipretide (SS-31)", dose: "100mg" },
+  { prefix: "KIS10", compound: "Kisspeptin", dose: "10mg" },
+  { prefix: "KS10", compound: "Kisspeptin", dose: "10mg" },
 ];
 
 // Compound alias buckets (canonical → alias forms). Both product names and the
@@ -139,6 +159,7 @@ const COMPOUND_ALIASES: Record<string, string[]> = {
   snap8: ["snap8"],
   sermorelin: ["sermorelin"],
   survotide: ["survotide"],
+  kisspeptin: ["kisspeptin", "kisspeptin10", "kiss"],
   vip: ["vip"],
   thymosinalpha1: ["thymosinalpha1", "ta1"],
   ghrp2: ["ghrp2"],
@@ -187,45 +208,79 @@ function compoundIdentity(raw: string): string {
 const _tableWithIdentity = BATCH_PREFIX_TABLE.map(e => ({
   prefix: e.prefix,
   identity: compoundIdentity(e.compound),
+  dose: e.dose,
 }));
+
+/**
+ * Extract the per-vial dose from a product name as a canonical token, e.g.
+ * "Tirzepatide 10mg" → "10mg", "HGH 10iu Kit" → "10iu". Parenthetical content
+ * is ignored so "(10 vials)" style suffixes don't confuse it. Returns null
+ * when no dose is present in the name.
+ */
+function extractDose(raw: string): string | null {
+  const s = raw.replace(/\([^)]*\)/g, "");
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(mg|iu|mcg)\b/i);
+  if (!m) return null;
+  return m[1] + m[2].toLowerCase();
+}
 
 // Blend rules: multi-active blends can't be reduced to one alias bucket, so map
 // them directly to their observed batch-code prefixes. Rules are checked in
 // order and the first match wins (GLOW/KLOW listed first so they don't also
 // trip the BPC/TB or KPV/GHK rules, since their names contain those actives).
+// The BPC/TB rule is dose-aware: 5/5 → T/B55, 10/10 → T/B1010, 30/30 → T/B3030.
 // Some prefixes here (GLO70, T/B3030) post-date the static prefix table but are
 // confirmed in live lab data.
 interface BlendRule {
   test: (name: string) => boolean;
-  prefixes: string[];
+  resolve: (name: string) => string[];
 }
 const BLEND_RULES: BlendRule[] = [
-  { test: s => /\bglow\b/.test(s), prefixes: ["GLO70", "GLO80"] },
-  { test: s => /\bklow\b/.test(s), prefixes: ["KL080", "KLO80"] },
-  { test: s => /kpv/.test(s) && /ghk/.test(s), prefixes: ["HK/KP50/20", "HK50/KP20"] },
-  { test: s => /bpc/.test(s) && (/\btb\b/.test(s) || /\btb-?\d/.test(s)), prefixes: ["T/B55", "T/B1010", "T/B3030"] },
+  { test: s => /\bglow\b/.test(s), resolve: () => ["GLO70", "GLO80", "GL70", "GL070"] },
+  { test: s => /\bklow\b/.test(s), resolve: () => ["KL080", "KLO80", "KL80"] },
+  { test: s => /kpv/.test(s) && /ghk/.test(s), resolve: () => ["HK/KP50/20", "HK50/KP20", "HK50KP20", "CUKP5020"] },
+  {
+    test: s => /bpc/.test(s) && (/\btb\b/.test(s) || /\btb-?\d/.test(s)),
+    resolve: s => {
+      const m = s.match(/(\d+(?:\.\d+)?)\s*mg\b/);
+      if (!m) return ["T/B55", "T/B1010", "T/B3030"];
+      const byDose: Record<string, string> = { "5": "T/B55", "10": "T/B1010", "30": "T/B3030" };
+      const hit = byDose[m[1]];
+      return hit ? [hit] : [];
+    },
+  },
 ];
 
 function resolveBlendPrefixes(productName: string): string[] {
   const s = productName.toLowerCase();
   for (const rule of BLEND_RULES) {
-    if (rule.test(s)) return rule.prefixes;
+    if (rule.test(s)) return rule.resolve(s);
   }
   return [];
 }
 
 /**
  * Returns the batch-code prefix(es) that correspond to a wholesale product.
- * Matches at the compound level (all doses), so e.g. "Retatrutide 10mg" resolves
- * to every Retatrutide prefix (RE10, RE20, …). Blends resolve to their blend
- * batch prefixes. Returns [] for non-peptides / unmapped blends.
+ * Matching is DOSE-LEVEL: "Tirzepatide 10mg" resolves to ZE10 only, never
+ * ZE30/ZE100. When the product name carries no parseable dose, all prefixes
+ * for the compound are returned (better than hiding everything). When the
+ * dose is parseable but the table has no prefix for that exact strength,
+ * nothing is returned — showing a different strength's CoA would be wrong.
+ * Blends resolve via BLEND_RULES. Returns [] for non-peptides.
  */
 export function resolveProductBatchPrefixes(productName: string): string[] {
   const blend = resolveBlendPrefixes(productName);
   if (blend.length) return blend;
   const id = compoundIdentity(productName);
   if (!id) return [];
-  return _tableWithIdentity.filter(e => e.identity === id).map(e => e.prefix);
+  const candidates = _tableWithIdentity.filter(e => e.identity === id);
+  if (candidates.length === 0) return [];
+  const dose = extractDose(productName);
+  if (dose) {
+    const exact = candidates.filter(e => e.dose === dose);
+    return exact.map(e => e.prefix);
+  }
+  return candidates.map(e => e.prefix);
 }
 
 function escapeRegExp(s: string): string {
