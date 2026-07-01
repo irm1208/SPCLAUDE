@@ -810,6 +810,13 @@ async function runStartupMigrations(): Promise<void> {
     // after the rate was locked, leaving 372.91 USD for a €519 order — stale EUR→USD
     // conversion). Safe to run repeatedly; idempotent once order is confirmed.
     await db.execute(sql`UPDATE orders SET payment_usd_amount = NULL WHERE code::text = '10342' AND payment_status NOT IN ('confirmed', 'waived')`);
+    // wholesale_shares — main parcel tracking columns (17track combined feed)
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_number text`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_carrier text`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_status text`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_status_code integer`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_events jsonb NOT NULL DEFAULT '[]'::jsonb`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_checked timestamptz`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
