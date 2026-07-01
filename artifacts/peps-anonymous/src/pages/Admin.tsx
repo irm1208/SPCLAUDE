@@ -643,6 +643,8 @@ function OrdersTab({ secret }: { secret: string }) {
   const [orderTab, setOrderTab] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [sharedTracking, setSharedTracking] = useState<Record<string, string>>({});
+  const [savingSharedTracking, setSavingSharedTracking] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectAllPages, setSelectAllPages] = useState(false);
@@ -1231,6 +1233,50 @@ function OrdersTab({ secret }: { secret: string }) {
   const toggleGroup = (id: string) =>
     setExpandedGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // Whole-order tracking for a shared group: a shared order ships as ONE parcel to ONE
+  // address, so a single tracking number is written to every member order at once.
+  const memberTracking = (m: Order) =>
+    ((m.trackingNumbers?.length ? m.trackingNumbers[0] : m.trackingNumber) ?? "").trim();
+  const saveSharedTracking = async (group: SharedGroup, value: string) => {
+    setSavingSharedTracking(group.id);
+    const trimmed = value.trim();
+    const body = JSON.stringify({ trackingNumbers: trimmed ? [trimmed] : [] });
+    const clearDraft = () => setSharedTracking(prev => { const n = { ...prev }; delete n[group.id]; return n; });
+    // Only touch members whose tracking actually differs — saving the same value
+    // again would re-fire the per-member customer notification / status change.
+    const targets = group.members.filter(m => memberTracking(m) !== trimmed);
+    if (targets.length === 0) {
+      clearDraft();
+      setSavingSharedTracking(null);
+      setMsg("Tracking already up to date"); setTimeout(() => setMsg(""), 2000);
+      return;
+    }
+    try {
+      const results = await Promise.all(targets.map(m =>
+        fetch(apiUrl(`/admin/orders/${m.id}`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+          body,
+        }).then(async r => ({ ok: r.ok, data: r.ok ? await r.json().catch(() => null) : null })),
+      ));
+      const failed = results.filter(r => !r.ok).length;
+      setOrders(prev => prev.map(o => {
+        const hit = results.find(r => r.ok && r.data && r.data.id === o.id);
+        return hit ? hit.data : o;
+      }));
+      if (failed) {
+        setMsg(`Tracking save failed for ${failed} order(s)`); setTimeout(() => setMsg(""), 3000);
+      } else {
+        clearDraft();
+        setMsg("Tracking saved ✓"); setTimeout(() => setMsg(""), 2000);
+      }
+    } catch {
+      setMsg("Network error"); setTimeout(() => setMsg(""), 3000);
+    } finally {
+      setSavingSharedTracking(null);
+    }
+  };
+
   const renderSharedHeader = (
     group: SharedGroup,
     renderOrderCard: (order: Order, nested?: boolean) => React.ReactNode,
@@ -1255,6 +1301,17 @@ function OrdersTab({ secret }: { secret: string }) {
         else memberIds.forEach(mid => n.add(mid));
         return n;
       });
+    const existingTracking = (() => {
+      for (const m of members) {
+        if (m.trackingNumbers?.length) return m.trackingNumbers[0] ?? "";
+        if (m.trackingNumber) return m.trackingNumber;
+      }
+      return "";
+    })();
+    const trackingDraft = sharedTracking[id] ?? existingTracking;
+    // Consistent only when EVERY member already carries the draft value; an
+    // inconsistent group (e.g. after a partial save) stays saveable to re-sync.
+    const trackingConsistent = members.every(m => memberTracking(m) === trackingDraft.trim());
     return (
       <Card key={`share-${id}`} className={cn("overflow-hidden transition-colors", someSel && "ring-2 ring-primary/40")}>
         <div className="flex items-center gap-2 p-4">
@@ -1294,6 +1351,24 @@ function OrdersTab({ secret }: { secret: string }) {
             </span>
             {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
           </button>
+        </div>
+        <div className="flex items-center gap-2 px-4 pb-3 -mt-1">
+          <Truck className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          <span className="text-[11px] font-semibold text-muted-foreground shrink-0 hidden sm:inline whitespace-nowrap">Tracking</span>
+          <Input
+            className="h-8 text-sm font-mono flex-1 min-w-0"
+            placeholder="Tracking number for the whole order — e.g. AB123456789GB"
+            value={trackingDraft}
+            onChange={e => setSharedTracking(prev => ({ ...prev, [id]: e.target.value }))}
+          />
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => saveSharedTracking(group, trackingDraft)}
+            disabled={savingSharedTracking === id || trackingConsistent}
+          >
+            {savingSharedTracking === id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+          </Button>
         </div>
         <AnimatePresence>
           {isOpen && (
