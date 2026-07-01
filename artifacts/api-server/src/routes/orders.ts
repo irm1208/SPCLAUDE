@@ -30,6 +30,38 @@ import { createAlert } from "../lib/create-alert";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { getJwtSecret } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
+import { getActiveWholesaleVendor } from "./config";
+import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
+
+// ── Server-authoritative wholesale shipping ──────────────────────────────────
+// Wholesale shipping is priced by kit-count tiers per destination region, so it must
+// never be trusted from the client: otherwise a customer could order 5 kits, then edit
+// the order to add more kits while keeping the cheaper (or zero) shipping they first sent.
+// This recomputes the charge from the active vendor's tier table using the order's
+// destination country and total kit count (sum of line-item quantities), exactly like the
+// shared-order path. Falls back to the clamped client value only when shipping cannot be
+// auto-calculated (no active vendor, country not mapped to a region, or custom/per-kg pricing).
+async function resolveWholesaleShipping(
+  clientVendorShipping: unknown,
+  shippingCountry: unknown,
+  lineItems: unknown,
+): Promise<number> {
+  const clientVal = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  const country = typeof shippingCountry === "string" ? shippingCountry.trim() : "";
+  if (!country) return clientVal;
+  const vendor = await getActiveWholesaleVendor();
+  if (!vendor) return clientVal;
+  const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, country);
+  if (!picked) return clientVal;
+  const items = Array.isArray(lineItems) ? lineItems : [];
+  const kits = items.reduce(
+    // Clamp per-item so a crafted negative quantity can't shrink the kit count into a cheaper tier.
+    (s: number, li: { quantity?: number | string }) => s + Math.max(0, Number(li?.quantity) || 0),
+    0,
+  );
+  const computed = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, kits);
+  return computed !== null ? computed : clientVal;
+}
 
 // ── Multer: receive QR files as binary multipart uploads ──────
 const _qrMulter = multer({
@@ -460,7 +492,12 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const deliveryPrice = parseFloat(deliveryMethodRecord.price);
   let vendorShipping = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
-  if (additionParent) vendorShipping = 0; // additions ride along free — no vendor shipping
+  if (additionParent) {
+    vendorShipping = 0; // additions ride along free — no vendor shipping
+  } else if (isWholesaleOrder) {
+    // Never trust the client's wholesale shipping — recompute it server-side.
+    vendorShipping = await resolveWholesaleShipping(clientVendorShipping, clientShippingCountry, clientLineItems);
+  }
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0)); // cap tip at $20
   const testingContribution = Math.max(0, parseFloat(String(clientTestingContribution)) || 0);
 
@@ -1580,7 +1617,17 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
   // client-sent delivery price / vendor shipping and force every shipping charge to 0.
   const isAddition = !!order.additionOfOrderId;
   const deliveryPrice = isAddition ? 0 : parseFloat(deliveryMethodRecord.price);
-  const vendorShipping = isAddition ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  let vendorShipping = isAddition ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  if (!isAddition && isWholesaleOrder) {
+    // Never trust the client's wholesale shipping — recompute it server-side against the new
+    // kit count so adding kits on edit can't dodge the higher tier. Fall back to the stored
+    // destination country when the edit omits it.
+    vendorShipping = await resolveWholesaleShipping(
+      clientVendorShipping,
+      clientShippingCountry ?? order.shippingCountry,
+      clientLineItems,
+    );
+  }
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0));
 
   if (!Array.isArray(clientLineItems) || clientLineItems.length > MAX_LINE_ITEMS) {
