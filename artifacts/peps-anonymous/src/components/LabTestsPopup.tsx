@@ -329,10 +329,11 @@ function resolveSearchInfo(productName: string): {
   return { searchTerms, useExact, displayTitle, mgAmount, filteredMgAmount };
 }
 
-export function LabReportPopup({ productName, vendor, gbLabSupplier, onClose }: {
+export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnly, onClose }: {
   productName: string;
   vendor?: string;
   gbLabSupplier?: string | null;
+  janoshikOnly?: boolean;
   onClose: () => void;
 }) {
   const [allTests, setAllTests] = useState<LabTest[]>([]);
@@ -383,9 +384,11 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, onClose }: 
   }, [searchKey, effectiveSupplier, filteredMgAmount]);
 
   const supplierFiltered = useMemo(() => {
-    if (!isProtocolContext || !supplierFilter) return allTests;
-    return allTests.filter(t => t.supplier === supplierFilter);
-  }, [allTests, supplierFilter, isProtocolContext]);
+    let base = allTests;
+    if (janoshikOnly) base = base.filter(t => t.janoshikId != null && t.janoshikId !== "");
+    if (!isProtocolContext || !supplierFilter) return base;
+    return base.filter(t => t.supplier === supplierFilter);
+  }, [allTests, supplierFilter, isProtocolContext, janoshikOnly]);
 
   const uniqueSuppliers = useMemo(() => {
     if (!isProtocolContext) return [];

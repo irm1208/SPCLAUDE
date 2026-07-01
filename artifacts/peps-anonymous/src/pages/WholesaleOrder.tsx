@@ -1100,6 +1100,7 @@ export default function WholesaleOrder() {
         {labTestsProduct && (
           <LabReportPopup
             productName={labTestsProduct.productName}
+            janoshikOnly
             onClose={() => setLabTestsProduct(null)}
           />
         )}
