@@ -8,6 +8,7 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
 
@@ -62,9 +63,9 @@ export default function WholesaleOrder() {
 
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
-  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string } | null>(null);
+  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
   const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
-  const labTestsInFlight = useRef<Set<string>>(new Set());
+  const productPrefixesRef = useRef<Record<string, string[]>>({});
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [productSearch, setProductSearch] = useState("");
@@ -236,28 +237,31 @@ export default function WholesaleOrder() {
       .catch(() => {});
   }, []);
 
-  // Fetch the set of distinct peptide names that have approved lab tests in a single
-  // request, then build the badge-visibility map client-side using the same prefix
-  // matching logic the server uses.  This replaces one-per-product concurrent fetches
-  // which caused silent failures under load for large catalogs.
+  // Fetch the set of distinct lab-test batch codes in a single request, then build
+  // the badge-visibility map client-side by resolving each product to its batch-code
+  // prefix(es) and checking whether any test's batch code matches.  Batch-code
+  // matching is authoritative (products are named inconsistently, but batch codes
+  // reliably encode the compound + dose).
   useEffect(() => {
     if (!account?.isWholesale) return;
     if (productsLoading || products.length === 0) return;
-    const normalize = (s: string) => s.replace(/[^a-z0-9]/gi, "").toLowerCase();
-    fetch("/api/lab-tests/peptide-names", { credentials: "include" })
+    let cancelled = false;
+    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
-      .then((names: string[]) => {
+      .then((codes: string[]) => {
+        if (cancelled || !Array.isArray(codes)) return;
         const map: Record<string, boolean> = {};
+        const prefMap: Record<string, string[]> = {};
         for (const p of products) {
-          const normProduct = normalize(p.name);
-          map[p.name] = names.some(n => {
-            const normTest = normalize(n);
-            return normTest.startsWith(normProduct) || normProduct.startsWith(normTest);
-          });
+          const prefixes = resolveProductBatchPrefixes(p.name);
+          prefMap[p.name] = prefixes;
+          map[p.name] = anyBatchCodeMatches(codes, prefixes);
         }
+        productPrefixesRef.current = prefMap;
         setProductLabTestsMap(map);
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [productsLoading, products, account?.isWholesale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (accountLoading) {
@@ -954,7 +958,7 @@ export default function WholesaleOrder() {
                                 {productLabTestsMap[product.name] === true && (
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: product.name }); }}
+                                    onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [] }); }}
                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97]"
                                     style={{ color: "var(--t-blue)", background: "color-mix(in srgb, var(--t-blue) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)" }}
                                   >
@@ -1100,7 +1104,7 @@ export default function WholesaleOrder() {
         {labTestsProduct && (
           <LabReportPopup
             productName={labTestsProduct.productName}
-            janoshikOnly
+            batchPrefixes={labTestsProduct.batchPrefixes}
             onClose={() => setLabTestsProduct(null)}
           />
         )}

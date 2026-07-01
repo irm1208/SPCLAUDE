@@ -329,11 +329,13 @@ function resolveSearchInfo(productName: string): {
   return { searchTerms, useExact, displayTitle, mgAmount, filteredMgAmount };
 }
 
-export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnly, onClose }: {
+export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnly, batchPrefixes, onClose }: {
   productName: string;
   vendor?: string;
   gbLabSupplier?: string | null;
   janoshikOnly?: boolean;
+  /** When provided, tests are matched by batch-code prefix instead of by name. */
+  batchPrefixes?: string[];
   onClose: () => void;
 }) {
   const [allTests, setAllTests] = useState<LabTest[]>([]);
@@ -347,10 +349,26 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
   const effectiveSupplier = gbLabSupplier?.trim() || (vendor?.trim() ?? "");
   const isProtocolContext = !effectiveSupplier;
 
+  const prefixMode = Array.isArray(batchPrefixes) && batchPrefixes.length > 0;
+  const prefixKey = prefixMode ? batchPrefixes!.join(",") : "";
   const searchKey = searchTerms.join("|") + (useExact ? ":exact" : "");
 
   useEffect(() => {
     setLoading(true);
+
+    // Batch-prefix mode: a single query matching by batch code (used by the
+    // wholesale page, where product names don't reliably match test names).
+    if (prefixMode) {
+      const params = new URLSearchParams({ limit: "200", batchPrefix: prefixKey });
+      if (effectiveSupplier) params.set("supplier", effectiveSupplier);
+      fetch(`/api/lab-tests?${params.toString()}`)
+        .then(r => r.json())
+        .then(d => setAllTests((Array.isArray(d) ? d : []) as LabTest[]))
+        .catch(() => setAllTests([]))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     const fetches = searchTerms.map(term => {
       const params = new URLSearchParams({ limit: "200" });
       if (useExact) {
@@ -381,7 +399,7 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
       })
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchKey, effectiveSupplier, filteredMgAmount]);
+  }, [prefixMode, prefixKey, searchKey, effectiveSupplier, filteredMgAmount]);
 
   const supplierFiltered = useMemo(() => {
     let base = allTests;

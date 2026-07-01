@@ -200,11 +200,26 @@ router.get("/lab-tests/peptide-names", async (req, res) => {
   }
 });
 
+// ── GET /api/lab-tests/batch-codes — distinct batch codes with approved tests ──
+// Used by the wholesale page to determine (client-side) which products have lab
+// reports, by matching each product's batch-code prefix(es) against this list.
+router.get("/lab-tests/batch-codes", async (_req, res) => {
+  try {
+    const rows = await db
+      .selectDistinct({ batchCode: labTestsTable.batchCode })
+      .from(labTestsTable)
+      .where(and(eq(labTestsTable.pending, false), isNotNull(labTestsTable.batchCode)));
+    res.json(rows.map(r => r.batchCode).filter((b): b is string => !!b && b.trim() !== ""));
+  } catch {
+    res.status(500).json({ error: "Failed to fetch batch codes" });
+  }
+});
+
 // ── GET /api/lab-tests — list / search (public — excludes pending) ────────────
 router.get("/lab-tests", async (req, res) => {
   try {
     const {
-      q, peptide, supplier, labName, testType, productCategory,
+      q, peptide, batchPrefix, supplier, labName, testType, productCategory,
       isThirdParty, mgAmount: mgAmountStr, limit: limitStr, offset: offsetStr
     } = req.query;
 
@@ -228,6 +243,24 @@ router.get("/lab-tests", async (req, res) => {
         // product name is a prefix of the lab test name (e.g. product="Tirzepatide", lab="Tirzepatide 10mg")
         sql`regexp_replace(lower(${labTestsTable.peptideName}), '[^a-z0-9]', '', 'g') like ${normPeptide + "%"}`,
       ) as SQL<unknown>);
+    }
+
+    // Batch-code prefix match: comma-separated prefixes; a test matches when its
+    // batch code starts with a prefix followed by a boundary (non-alphanumeric or
+    // end), so "RE10" matches "RE10-0603" but not "RE100-…".
+    if (batchPrefix && typeof batchPrefix === "string" && batchPrefix.trim()) {
+      const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const prefixes = batchPrefix
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean)
+        .slice(0, 60);
+      if (prefixes.length > 0) {
+        const ors = prefixes.map(
+          p => sql`coalesce(${labTestsTable.batchCode}, '') ~* ${"^" + escapeRe(p) + "([^a-z0-9]|$)"}`,
+        );
+        conditions.push((ors.length === 1 ? ors[0] : or(...ors)) as SQL<unknown>);
+      }
     }
 
     if (supplier && typeof supplier === "string" && supplier.trim()) {
