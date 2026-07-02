@@ -6,9 +6,11 @@ import {
   ArrowLeft, CheckCircle2, Clock, Share2, Ban, AlertCircle,
   ChevronDown, Info, MessageCircle, Send, X,
   Package, MapPin, CreditCard, RefreshCw, Printer,
-  Globe, ShieldAlert, SlidersHorizontal,
+  Globe, ShieldAlert, SlidersHorizontal, TestTube,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { LabReportPopup } from "@/components/LabTestsPopup";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
@@ -178,6 +180,10 @@ export default function WholesaleShared() {
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  // Lab reports (historic CoA results) for products in the shared order
+  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
+  const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
+  const productPrefixesRef = useRef<Record<string, string[]>>({});
 
   // Local editor state for the current member's items + tip
   const [myItems, setMyItems] = useState<Record<string, number>>({});
@@ -267,6 +273,28 @@ export default function WholesaleShared() {
       .then(d => setProducts(Array.isArray(d) ? d : []))
       .catch(() => {});
   }, []);
+
+  // Map which products have matching lab reports by batch-code prefix
+  useEffect(() => {
+    if (products.length === 0) return;
+    let cancelled = false;
+    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
+      .then(r => (r.ok ? r.json() : []))
+      .then((codes: string[]) => {
+        if (cancelled || !Array.isArray(codes)) return;
+        const map: Record<string, boolean> = {};
+        const prefMap: Record<string, string[]> = {};
+        for (const p of products) {
+          const prefixes = resolveProductBatchPrefixes(p.name);
+          prefMap[p.name] = prefixes;
+          map[p.name] = anyBatchCodeMatches(codes, prefixes);
+        }
+        productPrefixesRef.current = prefMap;
+        setProductLabTestsMap(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [products]);
 
   const myMember = useMemo(() => share?.members.find(m => m.isYou) ?? null, [share]);
 
@@ -1272,6 +1300,16 @@ export default function WholesaleShared() {
                       </span>
                     )}
                   </div>
+                  {productLabTestsMap[p.name] === true && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: p.name, batchPrefixes: productPrefixesRef.current[p.name] ?? [] }); }}
+                      className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97]"
+                      style={{ color: "var(--t-blue)", background: "var(--t-blue-08)", border: "1px solid var(--t-blue-25)" }}
+                    >
+                      <TestTube className="w-3 h-3" /> Lab Reports
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button onClick={() => setQty(p.id, qty - 1)} disabled={qty <= 0} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
@@ -2541,6 +2579,16 @@ export default function WholesaleShared() {
           </motion.div>
         </main>
       </div>
+
+      <AnimatePresence>
+        {labTestsProduct && (
+          <LabReportPopup
+            productName={labTestsProduct.productName}
+            batchPrefixes={labTestsProduct.batchPrefixes}
+            onClose={() => setLabTestsProduct(null)}
+          />
+        )}
+      </AnimatePresence>
     </PageLayout>
   );
 }

@@ -422,8 +422,8 @@ export function ReportModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.65)" }}
+      className="fixed inset-x-0 bottom-0 z-50 flex items-end md:items-center justify-center"
+      style={{ height: "100dvh", background: "rgba(0,0,0,0.65)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Separate backdrop blur so it never bleeds into the modal content */}
@@ -450,7 +450,7 @@ export function ReportModal({
           style={{ borderColor: "#f1f5f9" }}
         >
           {/* Mobile: compact header — close + nav + count */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2 md:pt-4 md:pb-3 md:px-4">
+          <div className="flex items-center gap-2 px-3 pb-2 md:pb-3 md:px-4" style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)" }}>
             <button onClick={onClose}
               className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-slate-100 hover:bg-slate-200 transition-colors">
               <X className="w-4 h-4 text-slate-600" />
