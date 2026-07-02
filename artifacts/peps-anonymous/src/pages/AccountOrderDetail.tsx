@@ -1821,6 +1821,9 @@ export default function AccountOrderDetail() {
 
   const handleEdit = () => {
     if (!order) return;
+    // Shared wholesale orders are managed from the shared order page — their items and
+    // shipping split are frozen at lock time and can't be edited individually.
+    if (order.orderType === "wholesale_shared") return;
     if (order.orderType === "wholesale") {
       const quantities: Record<string, number> = {};
       for (const li of order.lineItems) {
@@ -2565,6 +2568,10 @@ export default function AccountOrderDetail() {
                     >
                       <Plus className="w-5 h-5" /> Place Another Order
                     </button>
+                  ) : order.orderType === "wholesale_shared" ? (
+                    <div className="text-center text-sm text-muted-foreground p-3 bg-muted/40 rounded-xl">
+                      This is a shared wholesale order. Items and shipping are managed from the shared order page.
+                    </div>
                   ) : EDITABLE_STATUSES.includes(order.status) ? (
                     <button
                       className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.98] hover:brightness-110"

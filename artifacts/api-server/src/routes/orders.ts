@@ -1560,6 +1560,16 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
     return;
   }
 
+  // Shared wholesale orders are materialised from a locked shared parcel. Their items
+  // and per-member shipping split are frozen at lock time and managed at the share
+  // level — editing an individual order here would drop the cross-member shipping
+  // split (it can't be recomputed from one order's kit count) and desync the parcel
+  // from the vendor. Manage shared orders from the shared order page instead.
+  if (order.orderType === "wholesale_shared") {
+    res.status(403).json({ error: "This order is part of a shared wholesale parcel and can't be edited individually. Manage it from the shared order page." });
+    return;
+  }
+
   if (!EDITABLE_STATUSES.includes(order.status as OrderStatus)) {
     res.status(403).json({
       error: `This order cannot be edited (status: ${order.status}).`,

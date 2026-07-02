@@ -1628,6 +1628,44 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, order.id));
 
+  // Shared wholesale orders carry a per-member shipping split that is snapshotted onto
+  // the share member row at lock time. A stale materialised order (e.g. one edited via
+  // the generic order form before shared-order edits were blocked) can have that split
+  // dropped from vendor_shipping/grand_total. Reconcile it back from the snapshot so the
+  // displayed and payable total always matches the share. Only touch unpaid orders.
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId &&
+      !["confirmed", "test_confirmed"].includes(order.paymentStatus)) {
+    const [member] = await db
+      .select({ shippingShare: wholesaleShareMembersTable.shippingShare })
+      .from(wholesaleShareMembersTable)
+      .where(and(
+        eq(wholesaleShareMembersTable.shareId, order.sharedOrderId),
+        sql`lower(${wholesaleShareMembersTable.username}) IN (${tgWithAt}, ${tgBare})`,
+      ));
+    if (member?.shippingShare != null) {
+      const snapshotShipping = Number(member.shippingShare);
+      const subtotal = parseFloat(String(order.productSubtotal ?? "0"));
+      const tip = parseFloat(String(order.tip ?? "0"));
+      const expectedTotal = Number((subtotal + snapshotShipping + tip).toFixed(2));
+      const currentShipping = parseFloat(String(order.vendorShipping ?? "0"));
+      const currentTotal = parseFloat(String(order.grandTotal ?? "0"));
+      if (Math.abs(currentShipping - snapshotShipping) > 0.001 || Math.abs(currentTotal - expectedTotal) > 0.001) {
+        // Gate the write on unpaid status too (not just the initial read) so a payment
+        // confirmed between read and write can't be mutated. Clear any locked crypto
+        // amount since the total changed, mirroring the edit-path crypto-lock reset.
+        await db.update(ordersTable)
+          .set({ vendorShipping: snapshotShipping.toFixed(2), grandTotal: expectedTotal.toFixed(2), paymentUsdAmount: null })
+          .where(and(
+            eq(ordersTable.id, order.id),
+            sql`${ordersTable.paymentStatus} NOT IN ('confirmed', 'test_confirmed')`,
+          ));
+        order.vendorShipping = snapshotShipping.toFixed(2);
+        order.grandTotal = expectedTotal.toFixed(2);
+        order.paymentUsdAmount = null;
+      }
+    }
+  }
+
   let groupBuyPaymentsEnabled: boolean | null = null;
   let groupBuyDirectShippingPaymentsEnabled: boolean | null = null;
   let groupBuyAllowOrderAddons = true;
