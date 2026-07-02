@@ -438,7 +438,7 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 30, stiffness: 320 }}
         className="fixed bottom-0 left-0 right-0 z-[101] flex flex-col rounded-t-3xl overflow-hidden"
-        style={{ maxHeight: "88vh", background: "var(--t-surface, #FFFFFF)", border: "1px solid var(--t-border, #E2E8F0)" }}
+        style={{ maxHeight: "88dvh", background: "var(--t-surface, #FFFFFF)", border: "1px solid var(--t-border, #E2E8F0)" }}
       >
         {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-0.5 shrink-0">
@@ -631,7 +631,7 @@ export function LabTestsListPopup({ productName, vendor, gbLabSupplier, onClose 
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
         className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl overflow-hidden flex flex-col"
-        style={{ maxHeight: "80vh", background: "var(--t-surface, #FFFFFF)", border: "1px solid var(--t-border, #E2E8F0)" }}
+        style={{ maxHeight: "80dvh", background: "var(--t-surface, #FFFFFF)", border: "1px solid var(--t-border, #E2E8F0)" }}
       >
         <div className="flex justify-center pt-3 pb-1 shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: "var(--t-border, #E2E8F0)" }} />

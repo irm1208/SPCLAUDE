@@ -25,6 +25,7 @@ export const BATCH_PREFIXES: BatchPrefix[] = [
   { prefix: "G210",    compound: "GHRP-2",                      dose: "10mg" },
   { prefix: "G610",    compound: "GHRP-6",                      dose: "10mg" },
   { prefix: "GLO80",   compound: "GLOW blend",                  dose: "80mg" },
+  { prefix: "G10",     compound: "Human Growth Hormone",        dose: "10mg" },
   { prefix: "H10",     compound: "Human Growth Hormone",        dose: "10mg" },
   { prefix: "HK/KP50/20", compound: "GHK-Cu/KPV",              dose: "50/20mg" },
   { prefix: "HK100",   compound: "GHK-Cu",                      dose: "100mg" },

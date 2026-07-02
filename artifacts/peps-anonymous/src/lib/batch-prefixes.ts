@@ -211,6 +211,13 @@ const _tableWithIdentity = BATCH_PREFIX_TABLE.map(e => ({
   dose: e.dose,
 }));
 
+// Compound identities whose prefixes must never be split by parsed dose because
+// the vendor labels one physical strength in two unit systems (iu vs mg).
+// HGH: G10 ("10iu") and H10 ("10mg") are the same product.
+const DOSE_AGNOSTIC_IDENTITIES = new Set<string>([
+  compoundIdentity("Human Growth Hormone"),
+].filter(Boolean));
+
 /**
  * Extract the per-vial dose from a product name as a canonical token, e.g.
  * "Tirzepatide 10mg" → "10mg", "HGH 10iu Kit" → "10iu". Parenthetical content
@@ -275,6 +282,11 @@ export function resolveProductBatchPrefixes(productName: string): string[] {
   if (!id) return [];
   const candidates = _tableWithIdentity.filter(e => e.identity === id);
   if (candidates.length === 0) return [];
+  // Dose-agnostic compounds are sold under a single strength but dual-labelled
+  // in different units (e.g. HGH batch prefixes G10 = "10iu" and H10 = "10mg"
+  // are the same product). Never split these by the parsed dose — return every
+  // prefix for the compound so both G10 and H10 CoAs group together.
+  if (DOSE_AGNOSTIC_IDENTITIES.has(id)) return candidates.map(e => e.prefix);
   const dose = extractDose(productName);
   if (dose) {
     const exact = candidates.filter(e => e.dose === dose);
