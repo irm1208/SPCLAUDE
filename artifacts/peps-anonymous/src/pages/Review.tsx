@@ -179,20 +179,40 @@ export default function Review() {
     const existingOrderId = draft.orderId;
     const existingCode = draft.code;
 
-    const onSuccess = (data: { code: string; id?: string }) => {
+    const onSuccess = (data: {
+      code: string; id?: string;
+      deliveryPrice?: number; vendorShipping?: number; productSubtotal?: number;
+      tip?: number; testingContribution?: number; grandTotal?: number;
+      creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
+      notes?: string | null;
+      lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
+    }) => {
       const oid = data.id ?? existingOrderId ?? "";
+      // Prefer the totals the SERVER computed and persisted over the client's pre-submission
+      // estimate. The server independently recomputes wholesale shipping tiers, percentage-based
+      // admin fees, etc. on every edit — if we trust the local draft numbers instead, the payment
+      // screen can show (and charge) a stale amount whenever the server's recompute differs from
+      // what the client guessed before the edit was even submitted.
+      const serverGrandTotal = data.grandTotal ?? grandTotal;
+      const serverCreditsApplied = data.creditsApplied ?? creditsApplied;
+      const serverAdminFee = data.adminFee ?? adminFeeAmount;
+      // Note: the server always coerces vendorShipping to a number (0 when unset), so it can
+      // never signal TBD on its own — TBD-ness stays a purely local/display concern based on the
+      // draft's own GB config, while the actual dollar figure (when known) prefers the server's
+      // freshly recomputed value.
+      const serverVendorShipping = vendorShippingIsTbd ? null : (data.vendorShipping ?? (vendorShippingIsKnown ? vendorShippingAmount : null));
       localStorage.setItem("peps:lastReceipt", JSON.stringify({
         code: data.code,
         telegramUsername: draft.telegramUsername,
         deliveryMethod: draft.deliveryMethod,
-        deliveryPrice: draft.deliveryPrice,
-        productSubtotal,
-        tip: draft.tip,
-        grandTotal,
-        creditsApplied,
-        amountDue,
-        notes: draft.notes || null,
-        lineItems: draft.lineItems.map(item => ({
+        deliveryPrice: data.deliveryPrice ?? effectiveDeliveryPrice,
+        productSubtotal: data.productSubtotal ?? productSubtotal,
+        tip: data.tip ?? draft.tip,
+        grandTotal: serverGrandTotal,
+        creditsApplied: serverCreditsApplied,
+        amountDue: parseFloat((serverGrandTotal - serverCreditsApplied).toFixed(2)),
+        notes: data.notes ?? (draft.notes || null),
+        lineItems: (data.lineItems ?? draft.lineItems).map(item => ({
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
@@ -206,12 +226,12 @@ export default function Review() {
               ? (activeGb.directShippingPaymentsEnabled !== false)
               : (activeGb.paymentsEnabled !== false))
           : undefined,
-        vendorShippingAmount: vendorShippingIsKnown ? vendorShippingAmount : null,
-        vendorShippingIsTbd: vendorShippingIsTbd,
+        vendorShippingAmount: serverVendorShipping,
+        vendorShippingIsTbd: isWholesale ? false : vendorShippingIsTbd,
         isWholesale: isWholesale,
         hidePrices: activeGb?.hidePricesOnInvoice ?? false,
-        adminFeeAmount: adminFeeAmount > 0 ? adminFeeAmount : null,
-        adminFeeLabel: adminFeeAmount > 0 ? (adminFeeLabel ?? null) : null,
+        adminFeeAmount: serverAdminFee > 0 ? serverAdminFee : null,
+        adminFeeLabel: serverAdminFee > 0 ? (data.adminFeeLabel ?? adminFeeLabel ?? null) : null,
       }));
       draft.clearDraft();
       if (isWholesale) {
