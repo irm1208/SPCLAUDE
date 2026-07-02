@@ -2007,6 +2007,10 @@ router.patch("/account/orders/:id/direct-shipping", requireAccount, async (req, 
       directShippingCost: directShippingCost != null ? directShippingCost.toFixed(2) : null,
       vendorShipping: newVendorShipping.toFixed(2),
       grandTotal: newGrandTotal.toFixed(2),
+      // Toggling direct shipping changes the total (adds/removes the shipping fee),
+      // so the previously-locked crypto USD amount is now stale. Clear it (the order
+      // is guaranteed unpaid here) so the payment panel re-locks to the new total.
+      paymentUsdAmount: null,
       updatedAt: new Date(),
     })
     .where(eq(ordersTable.id, id));

@@ -1726,6 +1726,12 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
       testingContribution: normalizedUpdateContribution.toFixed(2),
       grandTotal: grandTotal.toFixed(2),
       adminFee: resolvedAdminFee.toFixed(2),
+      // Editing the order changes the total, so any previously-locked crypto USD
+      // amount is now stale. Clear it (unless the order is paid-like) so the payment
+      // panel re-locks to the exact new total on next open — never showing a stale
+      // coin amount from before the edit. "test_confirmed" counts as paid-like here
+      // (a test payment was already sent), matching the app's PAID status set.
+      ...(!["confirmed", "test_confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
       ...(recomputedAdminFeeLabel !== undefined && { adminFeeLabel: recomputedAdminFeeLabel }),
       notes: notes ? String(notes).trim().slice(0, MAX_NOTES_LENGTH) : null,
       directShippingRequested: isAddition ? (order.directShippingRequested ?? false) : clientDirectShippingRequested === true,
