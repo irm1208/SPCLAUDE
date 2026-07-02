@@ -225,10 +225,11 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
       currentGrandTotalUsd = Math.round(grandTotalRaw * rate * 100) / 100;
     }
   }
-  // Security: if the locked USD amount is more than 3% below the current grand total,
-  // the order was edited after the rate was locked. Use the fresh total so auto-verify
-  // never confirms a payment at a stale lower price.
-  const lockIsStale = lockedUsd != null && lockedUsd < currentGrandTotalUsd * 0.97;
+  // Security: if the locked USD amount drifts more than 3% from the current grand
+  // total in EITHER direction, the order was edited after the rate was locked. Use
+  // the fresh total so auto-verify never confirms a payment at a stale lower price,
+  // nor demands a stale higher price after an order is edited down.
+  const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentGrandTotalUsd) > currentGrandTotalUsd * 0.03;
   if (lockIsStale) {
     await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
   }

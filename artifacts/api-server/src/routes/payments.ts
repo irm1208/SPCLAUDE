@@ -971,9 +971,13 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   // Lock the USD total (fiat → USD). Re-use a cached value only when it is
   // still within 3% of the current total — the same staleness check used in
   // /pay so the displayed amount can never lag behind an edited grandTotal.
+  // The drift is checked in BOTH directions: an order edited DOWN leaves a
+  // higher stale lock (buyer would be shown/charged too much), an order edited
+  // UP leaves a lower stale lock (buyer would pay too little). Either way we
+  // re-lock to the fresh total.
   const currentUsd = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
   const lockedUsd = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
-  const lockIsStale = lockedUsd != null && lockedUsd < currentUsd * 0.97;
+  const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentUsd) > currentUsd * 0.03;
   const usdAmount = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentUsd;
   if (lockedUsd == null || lockIsStale) {
     await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(eq(ordersTable.id, order.id));
@@ -1272,12 +1276,14 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   // Always compute the current fiat→USD value of the grand total. The locked
   // amount (paymentUsdAmount) is honoured only when it is within 3% of the
   // current total — enough to absorb normal FX drift between panel-open and
-  // submission. A larger gap means the order was edited after the rate was
-  // locked; the fresh total is used instead to prevent a stale-lock exploit
-  // where a customer could pay a lower pre-edit amount and get confirmed.
+  // submission. A larger gap in EITHER direction means the order was edited
+  // after the rate was locked; the fresh total is used instead. This prevents
+  // a stale-lock exploit where a customer pays a lower pre-edit amount and gets
+  // confirmed, and also stops verify from demanding a higher pre-edit amount
+  // after an order is edited down.
   const currentGrandTotalUsd = await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
   const lockedUsdTotal = order.paymentUsdAmount ? parseFloat(String(order.paymentUsdAmount)) : null;
-  const lockIsStale = lockedUsdTotal != null && lockedUsdTotal < currentGrandTotalUsd * 0.97;
+  const lockIsStale = lockedUsdTotal != null && Math.abs(lockedUsdTotal - currentGrandTotalUsd) > currentGrandTotalUsd * 0.03;
   if (lockIsStale) {
     await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
   }
