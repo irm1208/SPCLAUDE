@@ -11,13 +11,15 @@ import {
   AlertCircle, Globe, Lock, SendHorizonal, Truck,
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield,
-  ArrowUp, ArrowDown, Eye, EyeOff,
+  ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { IntlShippingTab } from "@/components/IntlShippingTab";
 import { GbQrCodesPanel } from "@/components/GbQrCodesPanel";
+import { LabReportPopup } from "@/components/LabTestsPopup";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
@@ -6672,6 +6674,12 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [unmkResult, setUnmkResult] = useState<{ affectedLineItems: number; affectedOrders: number } | null>(null);
   const [unmkError, setUnmkError] = useState("");
 
+  // Lab reports — same batch-code prefix matching used on the wholesale order
+  // page, so an organiser sees the exact same CoAs a wholesale buyer would.
+  const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
+  const productPrefixesRef = useRef<Record<string, string[]>>({});
+  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
+
   // Deleted orders (trash) panel
   const [showTrash, setShowTrash] = useState(false);
   type TrashOrder = { id: string; code: string; telegramUsername: string; status: string; grandTotal: number | null; deletedAt: string; deletedBy: string | null; expiresAt: string; lineItems: { productName: string; quantity: number }[] };
@@ -6868,6 +6876,41 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       .then((d: { reshipperUsername: string }[]) => setGbReshippers(d))
       .catch(() => {});
   }, [gb.id]);
+
+  // Lab reports — mirrors the wholesale order page: fetch the set of distinct
+  // lab-test batch codes once, then resolve each order line item's product
+  // name to its batch-code prefix(es) and check for a match. Batch-code
+  // matching is authoritative (product names are inconsistent across GBs).
+  const orderProductNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const o of orders) {
+      for (const li of o.lineItems) names.add(li.productName);
+    }
+    return Array.from(names);
+  }, [orders]);
+  const orderProductNamesKey = orderProductNames.join("|");
+
+  useEffect(() => {
+    if (orderProductNames.length === 0) return;
+    let cancelled = false;
+    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((codes: string[]) => {
+        if (cancelled || !Array.isArray(codes)) return;
+        const map: Record<string, boolean> = {};
+        const prefMap: Record<string, string[]> = {};
+        for (const name of orderProductNames) {
+          const prefixes = resolveProductBatchPrefixes(name);
+          prefMap[name] = prefixes;
+          map[name] = anyBatchCodeMatches(codes, prefixes);
+        }
+        productPrefixesRef.current = prefMap;
+        setProductLabTestsMap(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderProductNamesKey]);
 
   const reassignReshipper = async (o: OrgOrder) => {
     const username = reassignTarget[o.id] !== undefined ? reassignTarget[o.id] : (o.reshipperUsername ?? "");
@@ -8309,6 +8352,15 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                               <span style={{ fontSize: 10, fontWeight: 700, color: "#059669", background: "rgba(5,150,105,0.12)", borderRadius: 4, padding: "1px 6px", flexShrink: 0, textDecoration: li.isOos ? "line-through" : "none" }}>{li.quantity}×</span>
                               <span style={{ fontSize: 11, color: "var(--t-text)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: li.isOos ? "line-through" : "none" }}>{li.productName}</span>
                               {li.isOos && <span style={{ fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 10, background: "rgba(220,38,38,0.1)", color: "#DC2626", flexShrink: 0 }}>OOS</span>}
+                              {productLabTestsMap[li.productName] === true && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: li.productName, batchPrefixes: productPrefixesRef.current[li.productName] ?? [] }); }}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 6px", borderRadius: 10, fontSize: 9, fontWeight: 700, color: "var(--t-blue)", background: "color-mix(in srgb, var(--t-blue) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", flexShrink: 0 }}
+                                >
+                                  <TestTube className="w-2.5 h-2.5" /> Lab
+                                </button>
+                              )}
                             </div>
                             <span style={{ fontSize: 11, fontWeight: 700, color: "var(--t-text)", fontVariantNumeric: "tabular-nums", flexShrink: 0, textDecoration: li.isOos ? "line-through" : "none" }}>{gb.currency} {li.lineTotal.toFixed(2)}</span>
                           </div>
@@ -8816,6 +8868,16 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           <img src={balanceProofUrl} alt="Balance payment proof" className="max-h-full max-w-full rounded-lg" />
         </div>
       )}
+
+      <AnimatePresence>
+        {labTestsProduct && (
+          <LabReportPopup
+            productName={labTestsProduct.productName}
+            batchPrefixes={labTestsProduct.batchPrefixes}
+            onClose={() => setLabTestsProduct(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
