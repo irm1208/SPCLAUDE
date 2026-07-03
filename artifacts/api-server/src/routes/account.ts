@@ -975,6 +975,26 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
   await db.execute(sql`UPDATE telegram_message_logs SET recipient_username = ${newTgWithAt} WHERE lower(recipient_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await db.execute(sql`UPDATE pool_participants SET account_username = ${newTgWithAt} WHERE lower(account_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await db.execute(sql`UPDATE testing_pools SET leader_username = ${newTgWithAt} WHERE lower(leader_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  // wholesale_share_members.username has a UNIQUE(share_id, username) constraint and no FK,
+  // so it isn't touched by the accounts cascade above. Guard the update with a NOT EXISTS
+  // check so we never violate that constraint (e.g. if the new username was somehow already
+  // a member of the same share) — in that edge case the old row is simply left as-is rather
+  // than aborting the whole username change.
+  await db.execute(sql`
+    UPDATE wholesale_share_members SET username = ${newTg}
+    WHERE lower(username) IN (${oldTgBare}, ${oldTgWithAt})
+      AND NOT EXISTS (
+        SELECT 1 FROM wholesale_share_members m2
+        WHERE m2.share_id = wholesale_share_members.share_id AND lower(m2.username) = ${newTg}
+      )
+  `);
+  await db.execute(sql`UPDATE wholesale_share_messages SET username = ${newTg} WHERE lower(username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  // wholesale_shares.creator_username drives isCreator/organiser permission checks in
+  // wholesale-shares.ts; delivery_username identifies the chosen parcel recipient. Neither
+  // has a FK, so both must be migrated explicitly or a renamed organiser/recipient loses
+  // their role on the share.
+  await db.execute(sql`UPDATE wholesale_shares SET creator_username = ${newTg} WHERE lower(creator_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await db.execute(sql`UPDATE wholesale_shares SET delivery_username = ${newTg} WHERE lower(delivery_username) IN (${oldTgBare}, ${oldTgWithAt})`);
 
   issueAccountCookie(res, newTg);
 

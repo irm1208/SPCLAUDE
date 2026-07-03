@@ -17,6 +17,7 @@ import { randomUUID } from "crypto";
 import { requireWholesale } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
 import { getActiveWholesaleVendor } from "./config";
+import { normalizeTg } from "../lib/normalize";
 import {
   calcTotalShipping,
   pickRegionForCountry,
@@ -466,6 +467,35 @@ async function loadShare(id: string): Promise<ShareRow | null> {
   return share ?? null;
 }
 
+// wholesale_share_members.username has no FK to accounts, so an account rename (via
+// /account/change-username) doesn't cascade to it and a stale row can strand the member
+// out of their own shared order. Self-heal by matching through the member's materialised
+// order — orders.telegramUsername IS kept current by the rename route (orders_telegram_
+// username_idx makes the join cheap) — and repairing the stale username in place so future
+// lookups match directly without needing this fallback. Set-based (no N+1 loop); the
+// UNIQUE(share_id, username) guard means the UPDATE only ever affects rows it can safely
+// claim, and we only ever report a member as healed when the DB confirms the write, never
+// synthetically — otherwise a failed/blocked update could be mistaken for authorization.
+async function healStaleMemberUsernames(username: string, scopeShareId?: string): Promise<string[]> {
+  const meNorm = normalizeTg(username);
+  const result = await db.execute(sql`
+    UPDATE wholesale_share_members m
+    SET username = ${username}
+    FROM orders o
+    WHERE m.order_id = o.id
+      AND lower(m.username) != ${meNorm}
+      AND lower(o.telegram_username) IN (${meNorm}, ${`@${meNorm}`})
+      ${scopeShareId ? sql`AND m.share_id = ${scopeShareId}` : sql``}
+      AND NOT EXISTS (
+        SELECT 1 FROM wholesale_share_members m2
+        WHERE m2.share_id = m.share_id AND lower(m2.username) = ${meNorm} AND m2.id != m.id
+      )
+    RETURNING m.share_id
+  `);
+  const rows = result.rows as { share_id: string }[];
+  return rows.map(r => r.share_id);
+}
+
 async function loadMember(shareId: string, username: string): Promise<MemberRow | null> {
   const [m] = await db
     .select()
@@ -474,7 +504,17 @@ async function loadMember(shareId: string, username: string): Promise<MemberRow 
       eq(wholesaleShareMembersTable.shareId, shareId),
       sql`lower(${wholesaleShareMembersTable.username}) = ${username.toLowerCase()}`,
     ));
-  return m ?? null;
+  if (m) return m;
+  const healedShareIds = await healStaleMemberUsernames(username, shareId);
+  if (healedShareIds.length === 0) return null;
+  const [healed] = await db
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(and(
+      eq(wholesaleShareMembersTable.shareId, shareId),
+      sql`lower(${wholesaleShareMembersTable.username}) = ${username.toLowerCase()}`,
+    ));
+  return healed ?? null;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -487,7 +527,14 @@ router.get("/wholesale-shares", requireWholesale, async (req, res): Promise<void
     .from(wholesaleShareMembersTable)
     .where(sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`);
 
-  const shareIds = myMemberships.map(m => m.shareId);
+  // Self-heal any membership stranded under a since-renamed username (see
+  // healStaleMemberUsernames) before falling back to an empty/incomplete list.
+  // Single set-based UPDATE across all shares for this user — not per-row/per-share.
+  const knownShareIds = new Set(myMemberships.map(m => m.shareId));
+  const healedShareIds = await healStaleMemberUsernames(me);
+  for (const id of healedShareIds) knownShareIds.add(id);
+
+  const shareIds = Array.from(knownShareIds);
   if (shareIds.length === 0) { res.json([]); return; }
 
   const shares = await db
