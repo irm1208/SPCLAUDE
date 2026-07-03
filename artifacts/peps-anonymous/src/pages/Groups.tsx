@@ -12,6 +12,7 @@ import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupB
 import { RulesetModal } from "@/components/RulesetModal";
 import { PageLayout } from "@/components/PageLayout";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
 const STATUS_DOT: Record<string, string> = {
   draft:    "#94A3B8",
@@ -230,12 +231,13 @@ function formatPostedAt(iso: string): string {
 function GBInfoModal({ gb, onClose, onShowLabReport }: {
   gb: GroupBuySummary;
   onClose: () => void;
-  onShowLabReport: (product: { name: string; vendor: string }) => void;
+  onShowLabReport: (product: { name: string; batchPrefixes: string[] }) => void;
 }) {
   const cards = gb.infoCards ?? [];
   const [products, setProducts] = useState<GBProduct[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
+  const productPrefixesRef = useRef<Record<string, string[]>>({});
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [showStockModal, setShowStockModal] = useState(false);
 
@@ -254,8 +256,6 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
       .catch(() => {});
   }, []);
 
-  const labTestsInFlight = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     setProductsLoading(true);
     fetch(`/api/group-buys/${gb.id}/products`, { credentials: "include" })
@@ -265,21 +265,33 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
       .finally(() => setProductsLoading(false));
   }, [gb.id]);
 
+  // Fetch the set of distinct lab-test batch codes once, then build the
+  // badge-visibility map client-side by resolving each product to its
+  // batch-code prefix(es) and checking whether any test's batch code
+  // matches. Batch-code matching is authoritative (products are named
+  // inconsistently and measured mg amounts rarely equal the nominal dose,
+  // but batch codes reliably encode the compound + dose) — mirrors the
+  // wholesale order page's implementation.
   useEffect(() => {
     if (productsLoading || products.length === 0) return;
-    products.forEach(p => {
-      const key = p.vendor ? `${p.name}::${p.vendor}` : p.name;
-      if (labTestsInFlight.current.has(key)) return;
-      labTestsInFlight.current.add(key);
-      const params = new URLSearchParams({ limit: "1" });
-      params.set("peptide", p.name);
-      if (p.vendor) params.set("supplier", p.vendor);
-      fetch(`/api/lab-tests?${params}`, { credentials: "include" })
-        .then(r => r.ok ? r.json() : [])
-        .then(data => setProductLabTestsMap(prev => ({ ...prev, [p.name]: Array.isArray(data) && data.length > 0 })))
-        .catch(() => setProductLabTestsMap(prev => ({ ...prev, [p.name]: false })));
-    });
-  }, [productsLoading, products]); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((codes: string[]) => {
+        if (cancelled || !Array.isArray(codes)) return;
+        const map: Record<string, boolean> = {};
+        const prefMap: Record<string, string[]> = {};
+        for (const p of products) {
+          const prefixes = resolveProductBatchPrefixes(p.name);
+          prefMap[p.name] = prefixes;
+          map[p.name] = anyBatchCodeMatches(codes, prefixes);
+        }
+        productPrefixesRef.current = prefMap;
+        setProductLabTestsMap(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [productsLoading, products]);
 
   return (
     <>
@@ -363,7 +375,7 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
                         <div className="flex items-center gap-2 shrink-0">
                           {productLabTestsMap[p.name] === true && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); onShowLabReport({ name: p.name, vendor: p.vendor }); }}
+                              onClick={(e) => { e.stopPropagation(); onShowLabReport({ name: p.name, batchPrefixes: productPrefixesRef.current[p.name] ?? [] }); }}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 whitespace-nowrap"
                             >
                               <TestTube className="w-3 h-3" /> Reports
@@ -1050,7 +1062,7 @@ export default function Groups() {
   const logout = useLogout();
   const [infoGb, setInfoGb] = useState<GroupBuySummary | null>(null);
   const [showJoin, setShowJoin] = useState(false);
-  const [labReportProduct, setLabReportProduct] = useState<{ name: string; vendor: string; gbLabSupplier?: string | null } | null>(null);
+  const [labReportProduct, setLabReportProduct] = useState<{ name: string; batchPrefixes: string[] } | null>(null);
 
   const handleLogout = async () => {
     await logout.mutateAsync();
@@ -1175,9 +1187,7 @@ export default function Groups() {
           <GBInfoModal
             gb={infoGb}
             onClose={() => setInfoGb(null)}
-            onShowLabReport={(product) =>
-              setLabReportProduct({ ...product, gbLabSupplier: infoGb.labTestSupplier })
-            }
+            onShowLabReport={(product) => setLabReportProduct(product)}
           />
         )}
       </AnimatePresence>
@@ -1186,8 +1196,7 @@ export default function Groups() {
         {labReportProduct && (
           <LabReportPopup
             productName={labReportProduct.name}
-            vendor={labReportProduct.vendor}
-            gbLabSupplier={labReportProduct.gbLabSupplier}
+            batchPrefixes={labReportProduct.batchPrefixes}
             onClose={() => setLabReportProduct(null)}
           />
         )}

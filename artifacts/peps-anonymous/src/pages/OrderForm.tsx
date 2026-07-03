@@ -6,6 +6,7 @@ import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight
 import { findProtocol, type Protocol } from "@/data/protocols";
 import { COUNTRIES } from "@/data/countries";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
@@ -682,12 +683,12 @@ export default function OrderForm() {
   const [gbLabTestSupplier, setGbLabTestSupplier] = React.useState<string | null>(null);
   const [gbTestingContributionAmount, setGbTestingContributionAmount] = React.useState(15);
   const [infoProtocol, setInfoProtocol] = React.useState<Protocol | null>(null);
-  const [labTestsProduct, setLabTestsProduct] = React.useState<{ productName: string; vendor?: string | null; gbLabSupplier?: string | null } | null>(null);
+  const [labTestsProduct, setLabTestsProduct] = React.useState<{ productName: string; batchPrefixes: string[] } | null>(null);
   const [stockModalOpen, setStockModalOpen] = React.useState(false);
   const [stockSearch, setStockSearch] = React.useState("");
   const [stockFilter, setStockFilter] = React.useState<"available" | "limited" | "low" | "full" | null>(null);
   const [productLabTestsMap, setProductLabTestsMap] = React.useState<Record<string, boolean>>({});
-  const labTestsInFlight = React.useRef<Set<string>>(new Set());
+  const productPrefixesRef = React.useRef<Record<string, string[]>>({});
   const sidebarExpanded = useSidebarExpanded();
   const [isMdPlus, setIsMdPlus] = React.useState(() =>
     typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
@@ -739,25 +740,33 @@ export default function OrderForm() {
     }
   }, []);
 
-  // Check whether each selected product has lab reports for its specific vendor; hide button if not
+  // Fetch the set of distinct lab-test batch codes once, then build the
+  // badge-visibility map client-side by resolving each product to its
+  // batch-code prefix(es) and checking whether any test's batch code
+  // matches. Batch-code matching is authoritative (products/line items are
+  // named inconsistently and measured mg amounts rarely equal the nominal
+  // dose, but batch codes reliably encode the compound + dose) — mirrors
+  // the wholesale order page's implementation.
   useEffect(() => {
-    draft.lineItems.forEach(item => {
-      const name = item.productName;
-      if (!name) return;
-      const found = products.find(p => p.id === item.productId);
-      const vendor: string = (found as any)?.vendor ?? gbLabTestSupplier ?? "";
-      const key = vendor ? `${name}::${vendor}` : name;
-      if (labTestsInFlight.current.has(key)) return;
-      labTestsInFlight.current.add(key);
-      const params = new URLSearchParams({ limit: "1" });
-      params.set("peptide", name);
-      if (vendor) params.set("supplier", vendor);
-      fetch(`/api/lab-tests?${params}`, { credentials: "include" })
-        .then(r => r.ok ? r.json() : [])
-        .then(data => setProductLabTestsMap(prev => ({ ...prev, [name]: Array.isArray(data) && data.length > 0 })))
-        .catch(() => setProductLabTestsMap(prev => ({ ...prev, [name]: false })));
-    });
-  }, [draft.lineItems, products]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (products.length === 0) return;
+    let cancelled = false;
+    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((codes: string[]) => {
+        if (cancelled || !Array.isArray(codes)) return;
+        const map: Record<string, boolean> = {};
+        const prefMap: Record<string, string[]> = {};
+        for (const p of products) {
+          const prefixes = resolveProductBatchPrefixes(p.name);
+          prefMap[p.name] = prefixes;
+          map[p.name] = anyBatchCodeMatches(codes, prefixes);
+        }
+        productPrefixesRef.current = prefMap;
+        setProductLabTestsMap(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [products]);
 
   // When GB delivery methods finish loading, validate the persisted delivery selection.
   // If the saved method is not part of this group buy's configured methods (e.g. stale
@@ -1266,8 +1275,7 @@ export default function OrderForm() {
                             <button
                               type="button"
                               onClick={() => {
-                                const found = products.find(p => p.id === item.productId);
-                                setLabTestsProduct({ productName: item.productName || "", vendor: (found as any)?.vendor ?? null, gbLabSupplier: gbLabTestSupplier });
+                                setLabTestsProduct({ productName: item.productName || "", batchPrefixes: productPrefixesRef.current[item.productName || ""] ?? [] });
                               }}
                               className="flex items-center gap-1.5 text-sm font-medium transition-colors"
                               style={{ color: "#5B8DEF" }}
@@ -2126,8 +2134,7 @@ export default function OrderForm() {
         {labTestsProduct && (
           <LabReportPopup
             productName={labTestsProduct.productName}
-            vendor={labTestsProduct.vendor ?? undefined}
-            gbLabSupplier={labTestsProduct.gbLabSupplier}
+            batchPrefixes={labTestsProduct.batchPrefixes}
             onClose={() => setLabTestsProduct(null)}
           />
         )}
