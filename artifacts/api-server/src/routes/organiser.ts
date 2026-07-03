@@ -29,6 +29,27 @@ import { GoogleGenAI } from "../lib/google-genai";
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
 
+// ── Admin fee resolution helper ────────────────────────────────────────────────
+// Mirrors the customer-facing edit logic in orders.ts: fixed fees keep the stored
+// amount, percentage fees track the current product subtotal. A fee is only ever
+// recomputed (never newly added) when the order already carries one — organiser
+// total-recompute paths must never introduce a fee an order never had.
+function resolveAdminFeeOnRecompute(
+  storedAdminFeeRaw: unknown,
+  storedAdminFeeLabel: string | null | undefined,
+  gbFeeSettings: { adminFeeEnabled?: boolean | null; adminFeeType?: string | null; adminFeeAmount?: unknown; adminFeeLabel?: string | null },
+  newProductSubtotal: number,
+): { resolvedAdminFee: number; resolvedAdminFeeLabel: string | null } {
+  const storedAdminFee = parseFloat(String(storedAdminFeeRaw ?? "0"));
+  let resolvedAdminFee = storedAdminFee;
+  let resolvedAdminFeeLabel = storedAdminFeeLabel ?? null;
+  if (storedAdminFee > 0 && gbFeeSettings.adminFeeEnabled && gbFeeSettings.adminFeeType === "percent" && gbFeeSettings.adminFeeAmount != null) {
+    resolvedAdminFee = Number(((newProductSubtotal * parseFloat(String(gbFeeSettings.adminFeeAmount))) / 100).toFixed(2));
+    resolvedAdminFeeLabel = resolvedAdminFee > 0 ? (gbFeeSettings.adminFeeLabel ?? null) : null;
+  }
+  return { resolvedAdminFee, resolvedAdminFeeLabel };
+}
+
 // ── Lab-test duplicate helper ─────────────────────────────────────────────────
 async function findLabTestDuplicate(
   url: string | null | undefined,
@@ -2169,6 +2190,10 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       organiserCanEditNotes: groupBuysTable.organiserCanEditNotes,
       organiserCanEditTxId: groupBuysTable.organiserCanEditTxId,
       organiserCanEditQuantities: groupBuysTable.organiserCanEditQuantities,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
     })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
@@ -2189,6 +2214,8 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       vendorShipping: ordersTable.vendorShipping,
       tip: ordersTable.tip,
       testingContribution: ordersTable.testingContribution,
+      adminFee: ordersTable.adminFee,
+      adminFeeLabel: ordersTable.adminFeeLabel,
     })
     .from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
@@ -2352,9 +2379,14 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
     // Recalculate order totals
     const newProductSubtotal = parseFloat(updatedLineItems.reduce((s, li) => s + li.lineTotal, 0).toFixed(2));
     const extras = parseFloat(String(order.deliveryPrice ?? 0)) + parseFloat(String(order.vendorShipping ?? 0)) + parseFloat(String(order.tip ?? 0)) + parseFloat(String(order.testingContribution ?? 0));
-    const newGrandTotal = parseFloat((newProductSubtotal + extras).toFixed(2));
+
+    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(order.adminFee, order.adminFeeLabel, gb, newProductSubtotal);
+
+    const newGrandTotal = parseFloat((newProductSubtotal + extras + resolvedAdminFee).toFixed(2));
     updates.productSubtotal = String(newProductSubtotal) as any;
     updates.grandTotal = String(newGrandTotal) as any;
+    updates.adminFee = resolvedAdminFee.toFixed(2);
+    updates.adminFeeLabel = resolvedAdminFeeLabel;
 
     // Re-fetch all items with correct current values for response
     const allItems = await db
@@ -3337,7 +3369,13 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
   const id = String(req.params["id"]);
 
   const [gb] = await db
-    .select({ id: groupBuysTable.id })
+    .select({
+      id: groupBuysTable.id,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
+    })
     .from(groupBuysTable)
     .where(gbOwner(req, id));
 
@@ -3396,7 +3434,7 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
   const equalAmount = (ep / 100) * shipping;
   const weightedAmount = (wp / 100) * shipping;
 
-  const updates: Array<{ orderId: string; vendorShipping: number; newGrandTotal: number; username: string }> = [];
+  const updates: Array<{ orderId: string; vendorShipping: number; newGrandTotal: number; username: string; resolvedAdminFee: number; resolvedAdminFeeLabel: string | null }> = [];
 
   for (const order of orders) {
     const orderQty = orderQtyMap.get(order.id) ?? 0;
@@ -3407,9 +3445,11 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
     const productSubtotal = parseFloat(String(order.productSubtotal));
     const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
     const tip = parseFloat(String(order.tip ?? "0"));
-    const newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip).toFixed(2));
+    const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
+    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+    const newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
 
-    updates.push({ orderId: order.id, vendorShipping, newGrandTotal, username: order.telegramUsername });
+    updates.push({ orderId: order.id, vendorShipping, newGrandTotal, username: order.telegramUsername, resolvedAdminFee, resolvedAdminFeeLabel });
   }
 
   for (const u of updates) {
@@ -3418,6 +3458,8 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
       .set({
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
+        adminFee: u.resolvedAdminFee.toFixed(2) as any,
+        adminFeeLabel: u.resolvedAdminFeeLabel as any,
       })
       .where(eq(ordersTable.id, u.orderId));
   }
@@ -3471,7 +3513,16 @@ router.post("/organiser/group-buys/:gbId/orders/mark-oos", requireOrganiser, asy
   const gbId = String(req.params["gbId"]);
 
   const [gb] = await db
-    .select({ id: groupBuysTable.id, name: groupBuysTable.name, currency: groupBuysTable.currency, organiserCanMarkOos: groupBuysTable.organiserCanMarkOos })
+    .select({
+      id: groupBuysTable.id,
+      name: groupBuysTable.name,
+      currency: groupBuysTable.currency,
+      organiserCanMarkOos: groupBuysTable.organiserCanMarkOos,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
+    })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
 
@@ -3514,8 +3565,9 @@ router.post("/organiser/group-buys/:gbId/orders/mark-oos", requireOrganiser, asy
       if (!order) continue;
       const allItems = await tx.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
       const newProductSubtotal = allItems.filter(li => !li.isOos).reduce((sum, li) => sum + parseFloat(String(li.lineTotal)), 0);
-      const newGrandTotal = newProductSubtotal + parseFloat(String(order.deliveryPrice ?? "0")) + parseFloat(String(order.vendorShipping ?? "0")) + parseFloat(String(order.tip ?? "0")) + parseFloat(String((order as any).testingContribution ?? "0"));
-      await tx.update(ordersTable).set({ productSubtotal: newProductSubtotal.toFixed(2) as any, grandTotal: newGrandTotal.toFixed(2) as any }).where(eq(ordersTable.id, orderId));
+      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, newProductSubtotal);
+      const newGrandTotal = newProductSubtotal + parseFloat(String(order.deliveryPrice ?? "0")) + parseFloat(String(order.vendorShipping ?? "0")) + parseFloat(String(order.tip ?? "0")) + parseFloat(String((order as any).testingContribution ?? "0")) + resolvedAdminFee;
+      await tx.update(ordersTable).set({ productSubtotal: newProductSubtotal.toFixed(2) as any, grandTotal: newGrandTotal.toFixed(2) as any, adminFee: resolvedAdminFee.toFixed(2) as any, adminFeeLabel: resolvedAdminFeeLabel as any }).where(eq(ordersTable.id, orderId));
     }
   });
 
@@ -3559,7 +3611,16 @@ router.post("/organiser/group-buys/:gbId/orders/unmark-oos", requireOrganiser, a
   const gbId = String(req.params["gbId"]);
 
   const [gb] = await db
-    .select({ id: groupBuysTable.id, name: groupBuysTable.name, currency: groupBuysTable.currency, organiserCanMarkOos: groupBuysTable.organiserCanMarkOos })
+    .select({
+      id: groupBuysTable.id,
+      name: groupBuysTable.name,
+      currency: groupBuysTable.currency,
+      organiserCanMarkOos: groupBuysTable.organiserCanMarkOos,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
+    })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
 
@@ -3602,8 +3663,9 @@ router.post("/organiser/group-buys/:gbId/orders/unmark-oos", requireOrganiser, a
       if (!order) continue;
       const allItems = await tx.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
       const newProductSubtotal = allItems.filter(li => !li.isOos).reduce((sum, li) => sum + parseFloat(String(li.lineTotal)), 0);
-      const newGrandTotal = newProductSubtotal + parseFloat(String(order.deliveryPrice ?? "0")) + parseFloat(String(order.vendorShipping ?? "0")) + parseFloat(String(order.tip ?? "0")) + parseFloat(String((order as any).testingContribution ?? "0"));
-      await tx.update(ordersTable).set({ productSubtotal: newProductSubtotal.toFixed(2) as any, grandTotal: newGrandTotal.toFixed(2) as any }).where(eq(ordersTable.id, orderId));
+      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, newProductSubtotal);
+      const newGrandTotal = newProductSubtotal + parseFloat(String(order.deliveryPrice ?? "0")) + parseFloat(String(order.vendorShipping ?? "0")) + parseFloat(String(order.tip ?? "0")) + parseFloat(String((order as any).testingContribution ?? "0")) + resolvedAdminFee;
+      await tx.update(ordersTable).set({ productSubtotal: newProductSubtotal.toFixed(2) as any, grandTotal: newGrandTotal.toFixed(2) as any, adminFee: resolvedAdminFee.toFixed(2) as any, adminFeeLabel: resolvedAdminFeeLabel as any }).where(eq(ordersTable.id, orderId));
     }
   });
 
@@ -3756,6 +3818,10 @@ router.post("/organiser/group-buys/:gbId/orders/bulk-add-product", requireOrgani
       id: groupBuysTable.id,
       organiserOrderEditEnabled: groupBuysTable.organiserOrderEditEnabled,
       organiserCanEditQuantities: groupBuysTable.organiserCanEditQuantities,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
     })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
@@ -3787,7 +3853,7 @@ router.post("/organiser/group-buys/:gbId/orders/bulk-add-product", requireOrgani
 
   for (const orderId of orderIds) {
     const [order] = await db
-      .select({ id: ordersTable.id, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution })
+      .select({ id: ordersTable.id, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution, adminFee: ordersTable.adminFee, adminFeeLabel: ordersTable.adminFeeLabel })
       .from(ordersTable)
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
     if (!order) { skipped++; continue; }
@@ -3812,8 +3878,9 @@ router.post("/organiser/group-buys/:gbId/orders/bulk-add-product", requireOrgani
     const allItems = await db.select({ lineTotal: orderLineItemsTable.lineTotal }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
     const newSubtotal = parseFloat(allItems.reduce((s, li) => s + parseFloat(String(li.lineTotal)), 0).toFixed(2));
     const extras = parseFloat(String(order.deliveryPrice ?? 0)) + parseFloat(String(order.vendorShipping ?? 0)) + parseFloat(String(order.tip ?? 0)) + parseFloat(String(order.testingContribution ?? 0));
-    const newGrandTotal = parseFloat((newSubtotal + extras).toFixed(2));
-    await db.update(ordersTable).set({ productSubtotal: String(newSubtotal) as any, grandTotal: String(newGrandTotal) as any }).where(eq(ordersTable.id, orderId));
+    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(order.adminFee, order.adminFeeLabel, gb, newSubtotal);
+    const newGrandTotal = parseFloat((newSubtotal + extras + resolvedAdminFee).toFixed(2));
+    await db.update(ordersTable).set({ productSubtotal: String(newSubtotal) as any, grandTotal: String(newGrandTotal) as any, adminFee: resolvedAdminFee.toFixed(2) as any, adminFeeLabel: resolvedAdminFeeLabel as any }).where(eq(ordersTable.id, orderId));
 
     added++;
   }
@@ -3831,7 +3898,15 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
   const isPaid = paid === true;
 
   const [gb] = await db
-    .select({ id: groupBuysTable.id, currency: groupBuysTable.currency, name: groupBuysTable.name })
+    .select({
+      id: groupBuysTable.id,
+      currency: groupBuysTable.currency,
+      name: groupBuysTable.name,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
+    })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
@@ -3863,7 +3938,8 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
     const vendorShipping = parseFloat(String(order.vendorShipping ?? "0"));
     const tip = parseFloat(String(order.tip ?? "0"));
     const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
-    const newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution).toFixed(2));
+    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+    const newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
     const prevAmountDue = parseFloat(String((order as any).amountDue ?? "0"));
     const newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
 
@@ -3871,6 +3947,8 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
       deliveryPrice: ratePrice.toFixed(2) as any,
       grandTotal: newGrandTotal.toFixed(2) as any,
       amountDue: newAmountDue.toFixed(2) as any,
+      adminFee: resolvedAdminFee.toFixed(2) as any,
+      adminFeeLabel: resolvedAdminFeeLabel as any,
     }).where(eq(ordersTable.id, order.id));
 
     updatedOrders.push({ id: order.id, telegramUsername: order.telegramUsername, newGrandTotal, newAmountDue });

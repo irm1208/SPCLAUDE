@@ -31,3 +31,18 @@ markup on the product subtotal matches what they already did.
   (`stored admin_fee > 0`). This mirrors the fixed path (which preserves the
   stored amount) and prevents an edit from retroactively adding a fee to a
   legacy order that never had one. The Review page applies the same gate.
+
+**Every `grandTotal`/`productSubtotal` recompute site must include the admin fee, not just the "main" edit endpoint.**
+Organiser-side order mutation surface is scattered across many small endpoints
+(quantity edit, shipping split, mark/unmark OOS, bulk-add-product, apply-intl-
+shipping, etc.), each doing its own inline `newGrandTotal = subtotal + extras`
+arithmetic. It's easy to add a new one (or patch an old one) that forgets the
+fee term — this is exactly how a customer's 10% fee got silently dropped when
+an organiser edited their order.
+**How to apply:** whenever you touch/add any endpoint that recomputes an
+order's totals, grep the file for other `newGrandTotal =` / `newProductSubtotal
+=` sites and route all of them through one shared helper (e.g.
+`resolveAdminFeeOnRecompute` in `organiser.ts`) that applies the fixed-vs-
+percent + "never add a fee that wasn't already there" rule, and make sure the
+resolved fee is both included in the total AND persisted back to
+`orders.admin_fee`/`admin_fee_label` (not just reflected in `grandTotal`).
