@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ReceiptText, UsersRound, HeartPulse, ClipboardList,
   Search, Bell, ChevronDown, ChevronRight, ChevronLeft, Plus, ArrowUp,
   MoreVertical, Star, Heart, Package, CheckCircle2, Award, FlaskConical,
-  Clock, Truck, Sun, Moon, PanelLeft, SlidersHorizontal, Syringe, Send,
+  Clock, Sun, Moon, PanelLeft, SlidersHorizontal, Syringe, Send,
   Wallet, QrCode, MapPin, Store, ArrowRight,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
@@ -61,24 +61,24 @@ function palette(dark: boolean) {
         sidebar: "#121216",
       }
     : {
-        page: "#F9F9FB", panel: "#FFFFFF", panel2: "#FBFBFC",
-        border: "#ECECEF", borderSoft: "#F2F2F4",
-        text: "#1A1A22", muted: "#6B6B76", subtle: "#9CA0A8",
-        track: "#EFEFF2", chip: "#F4F4F6",
+        page: "#F3F3F3", panel: "#FFFFFF", panel2: "#FAFAF9",
+        border: "#DDDBDA", borderSoft: "#EDEBE9",
+        text: "#181818", muted: "#5C5C5C", subtle: "#8C8C8C",
+        track: "#ECEBEA", chip: "#F3F3F3",
         sidebar: "#FFFFFF",
       };
 }
 
-const ACCENT = "#6C5CE7";
-const ACCENT_GRAD = "linear-gradient(135deg,#7C6FF5 0%,#5A48E0 100%)";
-const HERO_GRAD = "linear-gradient(120deg,#26252C 0%,#161519 60%,#131218 100%)";
+const ACCENT = "#0176D3";
+const ACCENT_SOFT = "rgba(1,118,211,0.10)";
+const HERO_GRAD = "linear-gradient(115deg,#032D60 0%,#0B5CAB 55%,#0176D3 100%)";
 const STAR_AMBER = "#F5A623";
 const LIVE_RED = "#EF4444";
 
-const FONT = "'Plus Jakarta Sans','Inter',sans-serif";
+const FONT = "'Inter','Salesforce Sans','Helvetica Neue',Arial,sans-serif";
 
 const COMPOUND_COLOR: Record<string, string> = {
-  AAS: "#DC2626", TRT: "#2D6BCC", Peptide: "#16A34A",
+  AAS: "#BA0517", TRT: "#0176D3", Peptide: "#2E844A",
   Supplement: "#0891B2", Other: ACCENT,
 };
 
@@ -86,23 +86,10 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string; p
   Draft:      { label: "Draft",      color: "#64748B", bg: "rgba(100,116,139,0.12)", pct: 5 },
   Submitted:  { label: "Submitted",  color: "#B4770E", bg: "rgba(245,166,35,0.14)",  pct: 25 },
   Processing: { label: "Processing", color: "#B4770E", bg: "rgba(245,166,35,0.14)",  pct: 55 },
-  Shipped:    { label: "Shipped",    color: ACCENT,    bg: "rgba(108,92,231,0.12)",  pct: 80 },
+  Shipped:    { label: "Shipped",    color: ACCENT,    bg: "rgba(1,118,211,0.12)",   pct: 80 },
   Completed:  { label: "Completed",  color: "#0E9F6E", bg: "rgba(16,185,129,0.14)",  pct: 100 },
   Cancelled:  { label: "Cancelled",  color: "#DC2626", bg: "rgba(220,38,38,0.12)",   pct: 0 },
 };
-
-// ─── Small sparkle used in the hero ──────────────────────────────────────────
-
-function Sparkle({ size, style }: { size: number; style?: React.CSSProperties }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={style} aria-hidden>
-      <path
-        d="M50 0 C51.5 39 61 48.5 100 50 C61 51.5 51.5 61 50 100 C48.5 61 39 51.5 0 50 C39 48.5 48.5 39 50 0 Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
 
 function daysSince(iso: string) {
   const start = new Date((iso.length <= 10 ? iso + "T00:00:00" : iso)).getTime();
@@ -169,8 +156,8 @@ export function DashboardHome({
   const cardStyle: React.CSSProperties = {
     background: T.panel,
     border: `1px solid ${T.border}`,
-    borderRadius: 18,
-    boxShadow: dark ? "none" : "0 1px 2px rgba(16,17,33,0.04)",
+    borderRadius: 8,
+    boxShadow: dark ? "none" : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
   };
 
   const kebab = (
@@ -187,7 +174,7 @@ export function DashboardHome({
     <div className="flex w-full min-h-screen" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
       <style>{`
         .dh-nav:hover { background: ${T.chip} !important; }
-        .dh-rail:hover { background: ${T.chip} !important; }
+        .dh-rail:hover { background: rgba(255,255,255,0.10) !important; }
         .dh-scroll::-webkit-scrollbar { height: 0; width: 6px; }
         .dh-scroll::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
         .dh-card-hover { transition: transform .18s ease, box-shadow .18s ease; }
@@ -202,11 +189,11 @@ export function DashboardHome({
         {/* Icon rail */}
         <div
           className="flex flex-col items-center shrink-0"
-          style={{ width: RAIL_W, background: T.sidebar, borderRight: `1px solid ${T.border}`, paddingTop: 18, paddingBottom: 16 }}
+          style={{ width: RAIL_W, background: "#032D60", paddingTop: 18, paddingBottom: 16 }}
         >
           <div
             className="flex items-center justify-center shrink-0"
-            style={{ width: 38, height: 38, borderRadius: 12, background: ACCENT_GRAD, color: "#fff", fontWeight: 800, fontSize: 12, boxShadow: "0 6px 16px rgba(108,92,231,.32)" }}
+            style={{ width: 38, height: 38, borderRadius: 8, background: "#0176D3", color: "#fff", fontWeight: 800, fontSize: 12 }}
           >
             S&amp;P
           </div>
@@ -221,10 +208,10 @@ export function DashboardHome({
                 aria-current={active ? "page" : undefined}
                 className={active ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
                 style={{
-                  width: 40, height: 40, borderRadius: 12,
-                  background: active ? ACCENT_GRAD : "transparent",
-                  color: active ? "#fff" : T.subtle,
-                  boxShadow: active ? "0 8px 18px rgba(108,92,231,.32)" : "none",
+                  width: 40, height: 40, borderRadius: 6,
+                  background: active ? "rgba(255,255,255,0.16)" : "transparent",
+                  color: active ? "#fff" : "rgba(255,255,255,0.62)",
+                  boxShadow: "none",
                 }}
               >
                 <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
@@ -238,7 +225,7 @@ export function DashboardHome({
               title="Shop"
               aria-label="Shop"
               className="dh-rail flex items-center justify-center transition-all"
-              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+              style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
             >
               <Store className="w-[19px] h-[19px]" />
             </button>
@@ -247,7 +234,7 @@ export function DashboardHome({
               title={dark ? "Light mode" : "Dark mode"}
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               className="dh-rail flex items-center justify-center transition-all"
-              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+              style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
             >
               {dark ? <Sun className="w-[19px] h-[19px]" /> : <Moon className="w-[19px] h-[19px]" />}
             </button>
@@ -257,7 +244,7 @@ export function DashboardHome({
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-expanded={!collapsed}
               className="dh-rail flex items-center justify-center transition-all"
-              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+              style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
             >
               <PanelLeft className="w-[19px] h-[19px]" style={{ transform: collapsed ? "rotate(180deg)" : "none" }} />
             </button>
@@ -279,10 +266,10 @@ export function DashboardHome({
                   <button
                     key={id}
                     onClick={() => onSection(id)}
-                    className={active ? "relative w-full flex items-center rounded-xl transition-all text-left" : "dh-nav relative w-full flex items-center rounded-xl transition-all text-left"}
+                    className={active ? "relative w-full flex items-center rounded-md transition-all text-left" : "dh-nav relative w-full flex items-center rounded-md transition-all text-left"}
                     style={{
-                      gap: 11, padding: "0 12px", height: 42,
-                      background: active ? (dark ? "rgba(124,111,245,0.16)" : "rgba(108,92,231,0.10)") : "transparent",
+                      gap: 11, padding: "0 12px", height: 40,
+                      background: active ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent",
                       color: active ? ACCENT : T.muted,
                       fontWeight: active ? 700 : 600, fontSize: 13.5,
                     }}
@@ -303,7 +290,7 @@ export function DashboardHome({
                   <button
                     key={c.id}
                     onClick={() => onSection("compounds")}
-                    className="dh-nav w-full flex items-center gap-3 rounded-xl px-3 text-left"
+                    className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
                     style={{ height: 40, color: T.text, fontWeight: 600, fontSize: 13 }}
                   >
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COMPOUND_COLOR[c.compoundType] ?? ACCENT }} />
@@ -323,12 +310,12 @@ export function DashboardHome({
                   <button
                     key={g.id}
                     onClick={() => onSection("groups")}
-                    className="dh-nav w-full flex items-center gap-3 rounded-xl px-3 text-left"
+                    className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
                     style={{ height: 42, color: T.text, fontWeight: 600, fontSize: 13 }}
                   >
                     <span
-                      className="flex items-center justify-center shrink-0 rounded-full text-white"
-                      style={{ width: 26, height: 26, fontSize: 11, fontWeight: 700, background: ACCENT_GRAD }}
+                      className="flex items-center justify-center shrink-0 rounded-md text-white"
+                      style={{ width: 26, height: 26, fontSize: 11, fontWeight: 700, background: ACCENT }}
                     >
                       {g.name.slice(0, 1).toUpperCase()}
                     </span>
@@ -343,15 +330,14 @@ export function DashboardHome({
           {!collapsed && (
             <button
               onClick={() => onSection("telegram")}
-              className="dh-card-hover w-full text-left mt-6 rounded-2xl relative overflow-hidden"
-              style={{ background: "linear-gradient(160deg,#232228 0%,#141318 100%)", padding: 16, color: "#fff" }}
+              className="dh-card-hover w-full text-left mt-6 rounded-lg relative overflow-hidden"
+              style={{ background: T.panel2, border: `1px solid ${T.border}`, padding: 16, color: T.text }}
             >
-              <Sparkle size={80} style={{ position: "absolute", right: -14, top: -10, color: "rgba(255,255,255,.10)" }} />
-              <div className="flex items-center justify-center rounded-xl mb-8" style={{ width: 34, height: 34, background: "rgba(255,255,255,.12)" }}>
+              <div className="flex items-center justify-center rounded-md mb-3" style={{ width: 34, height: 34, background: ACCENT_SOFT, color: ACCENT }}>
                 <Send className="w-4 h-4" />
               </div>
-              <p className="font-bold leading-tight" style={{ fontSize: 14 }}>Take Salt &amp; Peps<br />Everywhere</p>
-              <span className="inline-flex items-center gap-1 mt-3 rounded-full font-semibold" style={{ fontSize: 11, padding: "6px 12px", background: ACCENT_GRAD }}>
+              <p className="font-bold leading-tight" style={{ fontSize: 13.5 }}>Take Salt &amp; Peps Everywhere</p>
+              <span className="inline-flex items-center gap-1 mt-3 rounded-md font-semibold text-white" style={{ fontSize: 11, padding: "6px 12px", background: ACCENT }}>
                 Connect Telegram <ChevronRight className="w-3 h-3" />
               </span>
             </button>
@@ -369,13 +355,13 @@ export function DashboardHome({
             {/* Top bar */}
             <header
               className="sticky top-0 z-10 flex items-center gap-3 px-4 md:px-7"
-              style={{ height: 72, background: T.page, borderBottom: `1px solid ${T.border}` }}
+              style={{ height: 72, background: T.panel, borderBottom: `1px solid ${T.border}` }}
             >
               <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>Dashboard</h1>
 
               <div className="flex-1 flex justify-center min-w-0 px-2">
                 <div
-                  className="hidden sm:flex items-center gap-2.5 w-full max-w-[420px] rounded-full"
+                  className="hidden sm:flex items-center gap-2.5 w-full max-w-[460px] rounded-md"
                   style={{ height: 42, padding: "0 14px", background: T.panel, border: `1px solid ${T.border}` }}
                 >
                   <Search className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
@@ -395,7 +381,7 @@ export function DashboardHome({
                 {typeof credits === "number" && (
                   <button
                     onClick={() => onSection("orders")}
-                    className="flex items-center gap-2 rounded-full pl-2.5 pr-3.5"
+                    className="flex items-center gap-2 rounded-md pl-2.5 pr-3.5"
                     style={{ height: 40, background: T.panel, border: `1px solid ${T.border}` }}
                     title="Store credits"
                   >
@@ -405,7 +391,7 @@ export function DashboardHome({
                 )}
                 <button
                   onClick={toggleTheme}
-                  className="flex items-center justify-center rounded-full transition-colors"
+                  className="flex items-center justify-center rounded-md transition-colors"
                   style={{ width: 40, height: 40, background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}
                   title={dark ? "Light mode" : "Dark mode"}
                 >
@@ -413,7 +399,7 @@ export function DashboardHome({
                 </button>
                 <button
                   onClick={() => onSection("orders")}
-                  className="relative flex items-center justify-center rounded-full transition-colors"
+                  className="relative flex items-center justify-center rounded-md transition-colors"
                   style={{ width: 40, height: 40, background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}
                   title="Notifications"
                 >
@@ -422,10 +408,10 @@ export function DashboardHome({
                 </button>
                 <button
                   onClick={() => onSection("profile")}
-                  className="flex items-center gap-2 rounded-full pl-1 pr-2"
+                  className="flex items-center gap-2 rounded-md pl-1 pr-2"
                   style={{ height: 44, background: T.panel, border: `1px solid ${T.border}` }}
                 >
-                  <span className="flex items-center justify-center rounded-full text-white shrink-0" style={{ width: 34, height: 34, background: ACCENT_GRAD, fontWeight: 700, fontSize: 14 }}>{initial}</span>
+                  <span className="flex items-center justify-center rounded-full text-white shrink-0" style={{ width: 34, height: 34, background: ACCENT, fontWeight: 700, fontSize: 14 }}>{initial}</span>
                   <span className="hidden md:flex flex-col items-start leading-tight min-w-0">
                     <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{username}</span>
                     <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{username}</span>
@@ -442,21 +428,19 @@ export function DashboardHome({
               <div className="flex-1 min-w-0 flex flex-col gap-5">
 
                 {/* Hero */}
-                <div className="relative overflow-hidden" style={{ borderRadius: 22, background: HERO_GRAD, padding: "34px 34px 28px" }}>
-                  <Sparkle size={220} style={{ position: "absolute", right: 30, top: -30, color: "rgba(255,255,255,.09)" }} />
-                  <Sparkle size={90} style={{ position: "absolute", right: 200, top: 90, color: "rgba(255,255,255,.07)" }} />
-                  <div className="relative" style={{ maxWidth: 560 }}>
-                    <h2 className="font-extrabold text-white" style={{ fontSize: 38, lineHeight: 1.08, letterSpacing: "-0.02em" }}>
-                      Meet Sage, Your<br />Health Buddy
+                <div className="relative overflow-hidden" style={{ borderRadius: 8, background: HERO_GRAD, padding: "26px 28px 24px" }}>
+                  <div className="relative" style={{ maxWidth: 620 }}>
+                    <h2 className="font-bold text-white" style={{ fontSize: 26, lineHeight: 1.15, letterSpacing: "-0.01em" }}>
+                      Meet Sage, your health assistant
                     </h2>
                     <p style={{ color: "rgba(255,255,255,.66)", fontSize: 15, marginTop: 14, lineHeight: 1.5, maxWidth: 440 }}>
                       Ask anything about your compounds, bloodwork, or protocols.
                     </p>
                     <div
-                      className="flex items-center gap-3 mt-7 rounded-2xl"
-                      style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", padding: 10 }}
+                      className="flex items-center gap-3 mt-6 rounded-md"
+                      style={{ background: "rgba(255,255,255,.10)", border: "1px solid rgba(255,255,255,.16)", padding: 8 }}
                     >
-                      <span className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 42, height: 42, background: "#fff", color: "#161519" }}>
+                      <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 40, height: 40, background: "#fff", color: "#032D60" }}>
                         <Plus className="w-5 h-5" />
                       </span>
                       <input
@@ -469,8 +453,8 @@ export function DashboardHome({
                       />
                       <button
                         onClick={() => onSection("blood-tests")}
-                        className="flex items-center justify-center rounded-xl shrink-0 transition-transform hover:scale-105 active:scale-95"
-                        style={{ width: 42, height: 42, background: ACCENT_GRAD, color: "#fff", boxShadow: "0 8px 18px rgba(108,92,231,.4)" }}
+                        className="flex items-center justify-center rounded-md shrink-0 transition-transform active:scale-95"
+                        style={{ width: 40, height: 40, background: ACCENT, color: "#fff" }}
                         title="Ask Sage"
                       >
                         <ArrowUp className="w-5 h-5" />
@@ -489,15 +473,15 @@ export function DashboardHome({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => carouselRef.current?.scrollBy({ left: -320, behavior: "smooth" })}
-                        className="flex items-center justify-center rounded-full transition-colors"
+                        className="flex items-center justify-center rounded-md transition-colors"
                         style={{ width: 34, height: 34, background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}
                       >
                         <ChevronLeft className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => carouselRef.current?.scrollBy({ left: 320, behavior: "smooth" })}
-                        className="flex items-center justify-center rounded-full transition-colors"
-                        style={{ width: 34, height: 34, background: ACCENT_GRAD, color: "#fff", boxShadow: "0 6px 16px rgba(108,92,231,.3)" }}
+                        className="flex items-center justify-center rounded-md transition-colors"
+                        style={{ width: 34, height: 34, background: ACCENT, color: "#fff" }}
                       >
                         <ChevronRight className="w-4 h-4" />
                       </button>
@@ -510,7 +494,7 @@ export function DashboardHome({
                       className="dh-card-hover w-full text-left flex items-center gap-4"
                       style={{ ...cardStyle, padding: 22 }}
                     >
-                      <span className="flex items-center justify-center rounded-2xl shrink-0" style={{ width: 52, height: 52, background: "rgba(108,92,231,.12)", color: ACCENT }}>
+                      <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 52, height: 52, background: ACCENT_SOFT, color: ACCENT }}>
                         <Plus className="w-6 h-6" />
                       </span>
                       <div>
@@ -531,17 +515,16 @@ export function DashboardHome({
                             className="dh-card-hover text-left shrink-0"
                             style={{ ...cardStyle, width: 300, padding: 0, overflow: "hidden", scrollSnapAlign: "start" }}
                           >
-                            <div className="relative" style={{ height: 150, background: `linear-gradient(140deg, ${color}22 0%, ${color}0a 55%, ${T.panel} 100%)` }}>
-                              <Sparkle size={124} style={{ position: "absolute", right: -24, bottom: -28, color: `${color}1f` }} />
+                            <div className="relative" style={{ height: 120, background: `linear-gradient(140deg, ${color}18 0%, ${color}08 55%, ${T.panel} 100%)` }}>
                               <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="flex items-center justify-center rounded-2xl" style={{ width: 58, height: 58, background: T.panel, color, boxShadow: `0 10px 24px ${color}30` }}>
-                                  <Syringe className="w-7 h-7" />
+                                <span className="flex items-center justify-center rounded-lg" style={{ width: 52, height: 52, background: T.panel, color, border: `1px solid ${T.border}` }}>
+                                  <Syringe className="w-6 h-6" />
                                 </span>
                               </div>
-                              <span className="absolute flex items-center justify-center rounded-full" style={{ top: 12, right: 12, width: 32, height: 32, background: T.panel, color, boxShadow: dark ? "none" : "0 2px 6px rgba(16,17,33,.08)" }}>
+                              <span className="absolute flex items-center justify-center rounded-md" style={{ top: 12, right: 12, width: 30, height: 30, background: T.panel, color, border: `1px solid ${T.border}` }}>
                                 <Heart className="w-4 h-4" fill={color} />
                               </span>
-                              <span className="absolute rounded-full font-bold" style={{ top: 14, left: 14, fontSize: 10.5, padding: "4px 10px", background: T.panel, color, boxShadow: dark ? "none" : "0 2px 6px rgba(16,17,33,.08)" }}>
+                              <span className="absolute rounded font-bold" style={{ top: 12, left: 12, fontSize: 10.5, padding: "3px 9px", background: T.panel, color, border: `1px solid ${T.border}` }}>
                                 {c.compoundType}
                               </span>
                             </div>
@@ -559,7 +542,7 @@ export function DashboardHome({
                                 <span style={{ fontSize: 12, color: T.muted }}>{c.frequency}{c.route ? ` · ${c.route}` : ""}</span>
                               </div>
                               <div className="mt-3 rounded-full overflow-hidden" style={{ height: 7, background: T.track }}>
-                                <div style={{ width: `${pct}%`, height: "100%", background: ACCENT_GRAD }} />
+                                <div style={{ width: `${pct}%`, height: "100%", background: ACCENT }} />
                               </div>
                               <div className="flex items-center justify-between mt-2.5" style={{ fontSize: 11.5, color: T.muted }}>
                                 <span className="flex items-center gap-1"><FlaskConical className="w-3.5 h-3.5" /> {c.doseAmount}{c.doseUnit}</span>
@@ -582,10 +565,10 @@ export function DashboardHome({
                       <span className="font-extrabold" style={{ fontSize: 16 }}>Recent Orders</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="flex items-center gap-1.5 rounded-full font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.chip, color: T.muted }}>
+                      <button className="flex items-center gap-1.5 rounded-md font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}>
                         <SlidersHorizontal className="w-3.5 h-3.5" /> Filter
                       </button>
-                      <button onClick={() => onSection("orders")} className="flex items-center gap-1 rounded-full font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.chip, color: ACCENT }}>
+                      <button onClick={() => onSection("orders")} className="flex items-center gap-1 rounded-md font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.panel, border: `1px solid ${ACCENT}`, color: ACCENT }}>
                         See all orders
                       </button>
                     </div>
@@ -593,11 +576,11 @@ export function DashboardHome({
 
                   {recentOrders.length === 0 ? (
                     <div className="flex flex-col items-center text-center py-8">
-                      <span className="flex items-center justify-center rounded-2xl mb-3" style={{ width: 48, height: 48, background: T.chip, color: T.subtle }}>
+                      <span className="flex items-center justify-center rounded-lg mb-3" style={{ width: 48, height: 48, background: T.chip, color: T.subtle }}>
                         <Package className="w-6 h-6" />
                       </span>
                       <p className="font-semibold" style={{ fontSize: 13.5 }}>No orders yet</p>
-                      <button onClick={() => navigate("/shop")} className="mt-3 rounded-full font-semibold text-white" style={{ fontSize: 12.5, padding: "8px 18px", background: ACCENT_GRAD }}>Browse the shop</button>
+                      <button onClick={() => navigate("/shop")} className="mt-3 rounded-md font-semibold text-white" style={{ fontSize: 12.5, padding: "8px 18px", background: ACCENT }}>Browse the shop</button>
                     </div>
                   ) : (
                     <div className="overflow-x-auto dh-scroll">
@@ -607,8 +590,8 @@ export function DashboardHome({
                             {["Order ID", "Items", "Status", "Method", "Fulfilment"].map((h, i) => (
                               <th key={h} className="text-left font-semibold" style={{
                                 fontSize: 11, color: T.muted, padding: "10px 14px",
-                                borderTopLeftRadius: i === 0 ? 10 : 0, borderBottomLeftRadius: i === 0 ? 10 : 0,
-                                borderTopRightRadius: i === 4 ? 10 : 0, borderBottomRightRadius: i === 4 ? 10 : 0,
+                                borderTopLeftRadius: i === 0 ? 6 : 0, borderBottomLeftRadius: i === 0 ? 6 : 0,
+                                borderTopRightRadius: i === 4 ? 6 : 0, borderBottomRightRadius: i === 4 ? 6 : 0,
                               }}>{h}</th>
                             ))}
                           </tr>
@@ -627,7 +610,7 @@ export function DashboardHome({
                                   <span className="font-semibold" style={{ fontSize: 12.5 }}>{first}{more > 0 ? ` +${more}` : ""}</span>
                                 </td>
                                 <td style={{ padding: "13px 14px", borderBottom: `1px solid ${T.borderSoft}` }}>
-                                  <span className="rounded-full font-bold" style={{ fontSize: 10.5, padding: "4px 10px", background: st.bg, color: st.color }}>{st.label}</span>
+                                  <span className="rounded font-bold" style={{ fontSize: 10.5, padding: "3px 9px", background: st.bg, color: st.color }}>{st.label}</span>
                                 </td>
                                 <td style={{ padding: "13px 14px", borderBottom: `1px solid ${T.borderSoft}` }}>
                                   <span className="font-semibold" style={{ fontSize: 12.5, color: T.muted }}>{o.deliveryMethod || "—"}</span>
@@ -635,7 +618,7 @@ export function DashboardHome({
                                 <td style={{ padding: "13px 14px", borderBottom: `1px solid ${T.borderSoft}` }}>
                                   <div className="flex items-center gap-2">
                                     <div className="rounded-full overflow-hidden flex-1" style={{ height: 6, background: T.track, minWidth: 44 }}>
-                                      <div style={{ width: `${st.pct}%`, height: "100%", background: ACCENT_GRAD }} />
+                                      <div style={{ width: `${st.pct}%`, height: "100%", background: ACCENT }} />
                                     </div>
                                     <span className="font-bold tabular-nums" style={{ fontSize: 12 }}>{st.pct}%</span>
                                   </div>
@@ -665,7 +648,7 @@ export function DashboardHome({
                 <div style={{ ...cardStyle, padding: 22 }}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="flex items-center justify-center rounded-lg" style={{ width: 26, height: 26, background: "rgba(108,92,231,.12)", color: ACCENT }}>
+                      <span className="flex items-center justify-center rounded-md" style={{ width: 26, height: 26, background: ACCENT_SOFT, color: ACCENT }}>
                         <HeartPulse className="w-4 h-4" />
                       </span>
                       <span className="font-extrabold" style={{ fontSize: 15 }}>Statistic</span>
@@ -685,13 +668,13 @@ export function DashboardHome({
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="flex items-center justify-center rounded-full" style={{ width: 90, height: 90, background: dark ? "rgba(124,111,245,0.20)" : "#EDEBFF", color: ACCENT, fontSize: 34, fontWeight: 800 }}>{initial}</span>
+                        <span className="flex items-center justify-center rounded-full" style={{ width: 90, height: 90, background: dark ? "rgba(1,118,211,0.22)" : "#E5F1FB", color: ACCENT, fontSize: 34, fontWeight: 800 }}>{initial}</span>
                       </div>
-                      <span className="absolute flex items-center justify-center rounded-full text-white font-bold" style={{ top: 4, right: 2, fontSize: 11, padding: "4px 9px", background: ACCENT, boxShadow: "0 4px 12px rgba(108,92,231,.4)" }}>{completionPct}%</span>
+                      <span className="absolute flex items-center justify-center rounded-md text-white font-bold" style={{ top: 4, right: 2, fontSize: 11, padding: "4px 9px", background: ACCENT, boxShadow: "none" }}>{completionPct}%</span>
                     </div>
                   </div>
 
-                  <p className="text-center font-extrabold mt-2" style={{ fontSize: 18 }}>{greeting} {username}! 👋</p>
+                  <p className="text-center font-extrabold mt-2" style={{ fontSize: 18 }}>{greeting}, {username}</p>
                   <p className="text-center" style={{ fontSize: 12.5, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
                     {orders.length > 0
                       ? `You've completed ${completedCount} of ${orders.length} orders. Keep tracking your protocols.`
@@ -705,9 +688,9 @@ export function DashboardHome({
                         <CartesianGrid vertical={false} stroke={T.borderSoft} />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: T.subtle }} />
                         <YAxis domain={[0, barMax]} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: T.subtle }} width={30} />
-                        <Bar dataKey="v" radius={[6, 6, 6, 6]}>
+                        <Bar dataKey="v" radius={[2, 2, 0, 0]}>
                           {weekBars.map((b, i) => (
-                            <Cell key={i} fill={b.current ? ACCENT : (dark ? "rgba(108,92,231,.28)" : "#E7E3FB")} />
+                            <Cell key={i} fill={b.current ? ACCENT : (dark ? "rgba(1,118,211,0.28)" : "#D6E9FA")} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -730,14 +713,14 @@ export function DashboardHome({
                   ) : (
                     <div className="flex flex-col gap-2">
                       {activeGbs.slice(0, 2).map(g => (
-                        <button key={g.id} onClick={() => onSection("groups")} className="dh-nav flex items-center gap-3 rounded-xl text-left" style={{ padding: 10 }}>
-                          <span className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: "rgba(108,92,231,.12)", color: ACCENT }}>
+                        <button key={g.id} onClick={() => onSection("groups")} className="dh-nav flex items-center gap-3 rounded-md text-left" style={{ padding: 10 }}>
+                          <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 38, height: 38, background: ACCENT_SOFT, color: ACCENT }}>
                             <UsersRound className="w-4 h-4" />
                           </span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="font-bold truncate" style={{ fontSize: 13 }}>{g.name}</p>
-                              <span className="rounded-full font-bold shrink-0" style={{ fontSize: 9, padding: "2px 7px", background: "rgba(239,68,68,.14)", color: LIVE_RED }}>Live</span>
+                              <span className="rounded font-bold shrink-0" style={{ fontSize: 9, padding: "2px 7px", background: "rgba(239,68,68,.14)", color: LIVE_RED }}>Live</span>
                             </div>
                             <p className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{g.productCount} products{g.closeDate ? ` · closes ${new Date(g.closeDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : ""}</p>
                           </div>
@@ -745,8 +728,8 @@ export function DashboardHome({
                         </button>
                       ))}
                       {glp1Streak > 0 && (
-                        <button onClick={() => onSection("glp1")} className="dh-nav flex items-center gap-3 rounded-xl text-left" style={{ padding: 10 }}>
-                          <span className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: "rgba(8,145,178,.12)", color: "#0891B2" }}>
+                        <button onClick={() => onSection("glp1")} className="dh-nav flex items-center gap-3 rounded-md text-left" style={{ padding: 10 }}>
+                          <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 38, height: 38, background: "rgba(8,145,178,.12)", color: "#0891B2" }}>
                             <HeartPulse className="w-4 h-4" />
                           </span>
                           <div className="flex-1 min-w-0">
@@ -777,7 +760,7 @@ export function DashboardHome({
                         { label: "Draft", value: organiserGb?.draft ?? 0, color: "#F5A623" },
                         { label: "Total", value: organiserGb?.total ?? 0, color: ACCENT },
                       ].map(m => (
-                        <div key={m.label} className="rounded-xl text-center" style={{ padding: "12px 6px", background: T.panel2, border: `1px solid ${T.border}` }}>
+                        <div key={m.label} className="rounded-md text-center" style={{ padding: "12px 6px", background: T.panel2, border: `1px solid ${T.border}` }}>
                           <p className="font-extrabold" style={{ fontSize: 20, color: m.color, letterSpacing: "-0.02em" }}>{m.value}</p>
                           <p className="font-semibold uppercase" style={{ fontSize: 9.5, color: T.muted, letterSpacing: "0.04em", marginTop: 2 }}>{m.label}</p>
                         </div>
@@ -794,16 +777,16 @@ export function DashboardHome({
                     </div>
                     <div className="flex flex-col gap-2">
                       {viewerAccess.map(v => (
-                        <div key={v.id} className="flex items-center justify-between gap-2 rounded-xl" style={{ padding: 10, background: T.panel2, border: `1px solid ${T.border}` }}>
+                        <div key={v.id} className="flex items-center justify-between gap-2 rounded-md" style={{ padding: 10, background: T.panel2, border: `1px solid ${T.border}` }}>
                           <p className="font-semibold truncate" style={{ fontSize: 12.5, color: T.text }}>{v.name}</p>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {v.hasQrAccess && (
-                              <button onClick={() => navigate(`/qr-viewer/${v.id}`)} className="inline-flex items-center gap-1 rounded-full font-bold transition-opacity hover:opacity-75" style={{ fontSize: 10.5, padding: "4px 9px", background: "rgba(22,163,74,0.10)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.22)" }}>
+                              <button onClick={() => navigate(`/qr-viewer/${v.id}`)} className="inline-flex items-center gap-1 rounded-md font-bold transition-opacity hover:opacity-75" style={{ fontSize: 10.5, padding: "4px 9px", background: "rgba(22,163,74,0.10)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.22)" }}>
                                 <QrCode className="w-3 h-3" /> QR
                               </button>
                             )}
                             {v.hasLegAccess && (
-                              <button onClick={() => navigate(`/leg-view/${v.id}`)} className="inline-flex items-center gap-1 rounded-full font-bold transition-opacity hover:opacity-75" style={{ fontSize: 10.5, padding: "4px 9px", background: "rgba(124,58,237,0.10)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.22)" }}>
+                              <button onClick={() => navigate(`/leg-view/${v.id}`)} className="inline-flex items-center gap-1 rounded-md font-bold transition-opacity hover:opacity-75" style={{ fontSize: 10.5, padding: "4px 9px", background: "rgba(1,118,211,0.10)", color: ACCENT, border: "1px solid rgba(1,118,211,0.22)" }}>
                                 <MapPin className="w-3 h-3" /> Leg
                               </button>
                             )}
@@ -837,23 +820,27 @@ function StatCard({
   label: string; value: number; Icon: React.ElementType;
   highlight?: boolean; iconColor?: string; onClick?: () => void;
 }) {
+  const tile = iconColor ?? ACCENT;
   return (
     <button
       onClick={onClick}
-      className="dh-card-hover text-left flex flex-col justify-between"
+      className="dh-card-hover text-left flex flex-col gap-3 relative overflow-hidden"
       style={{
-        height: 108, padding: 18, borderRadius: 18,
-        background: highlight ? ACCENT_GRAD : T.panel,
-        border: highlight ? "none" : `1px solid ${T.border}`,
-        boxShadow: highlight ? "0 10px 26px rgba(108,92,231,.32)" : (T.panel === "#FFFFFF" ? "0 1px 2px rgba(16,17,33,0.04)" : "none"),
-        color: highlight ? "#fff" : T.text,
+        height: 104, padding: 16, borderRadius: 8,
+        background: T.panel,
+        border: `1px solid ${T.border}`,
+        boxShadow: T.panel === "#FFFFFF" ? "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" : "none",
+        color: T.text,
       }}
     >
+      {highlight && <span className="absolute left-0 top-0 bottom-0" style={{ width: 3, background: ACCENT }} />}
       <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4" style={{ color: highlight ? "#fff" : (iconColor ?? ACCENT) }} strokeWidth={2.2} />
-        <span className="font-semibold" style={{ fontSize: 12.5, color: highlight ? "rgba(255,255,255,.9)" : T.muted }}>{label}</span>
+        <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 28, height: 28, background: `${tile}1A`, color: tile }}>
+          <Icon className="w-[15px] h-[15px]" strokeWidth={2.2} />
+        </span>
+        <span className="font-semibold" style={{ fontSize: 12, color: T.muted }}>{label}</span>
       </div>
-      <span className="font-extrabold" style={{ fontSize: 32, letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</span>
+      <span className="font-extrabold" style={{ fontSize: 30, letterSpacing: "-0.02em", lineHeight: 1, color: highlight ? ACCENT : T.text }}>{value}</span>
     </button>
   );
 }
