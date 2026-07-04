@@ -77,6 +77,23 @@ const STAR_AMBER = "#F5A623";
 const LIVE_RED = "#EF4444";
 const SEARCH_GROUPS = ["Orders", "Compounds", "Group Buys", "Shop", "Lab Tests"] as const;
 
+const AVATAR_GRADIENTS: [string, string][] = [
+  ["#2D6BCC", "#1B3A7A"], ["#2E844A", "#166534"], ["#0891B2", "#0E7490"],
+  ["#E9A020", "#B4770E"], ["#7C3AED", "#5B21B6"], ["#DB2777", "#9D174D"],
+];
+function seedIndex(s: string, mod: number) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % mod;
+}
+function SecIcon({ Icon }: { Icon: React.ElementType }) {
+  return (
+    <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 28, height: 28, background: ACCENT_SOFT, color: ACCENT }}>
+      <Icon className="w-[16px] h-[16px]" />
+    </span>
+  );
+}
+
 const FONT = "'Inter','Salesforce Sans','Helvetica Neue',Arial,sans-serif";
 
 const COMPOUND_COLOR: Record<string, string> = {
@@ -449,22 +466,25 @@ export function DashboardHome({
             <>
               <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Group Buys</p>
               <div className="flex flex-col gap-0.5">
-                {groupBuys.slice(0, 5).map(g => (
-                  <button
-                    key={g.id}
-                    onClick={() => onSection("groups")}
-                    className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
-                    style={{ height: 42, color: T.text, fontWeight: 600, fontSize: 13 }}
-                  >
-                    <span
-                      className="flex items-center justify-center shrink-0 rounded-md text-white"
-                      style={{ width: 26, height: 26, fontSize: 11, fontWeight: 700, background: ACCENT }}
+                {groupBuys.slice(0, 5).map(g => {
+                  const [gc1, gc2] = AVATAR_GRADIENTS[seedIndex(g.name, AVATAR_GRADIENTS.length)];
+                  return (
+                    <button
+                      key={g.id}
+                      onClick={() => onSection("groups")}
+                      className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
+                      style={{ height: 42, color: T.text, fontWeight: 600, fontSize: 13 }}
                     >
-                      {g.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="truncate">{g.name}</span>
-                  </button>
-                ))}
+                      <span
+                        className="flex items-center justify-center shrink-0 rounded-xl text-white"
+                        style={{ width: 30, height: 30, fontSize: 12, fontWeight: 800, background: `linear-gradient(135deg, ${gc1}, ${gc2})`, boxShadow: `0 2px 8px ${gc1}44` }}
+                      >
+                        {g.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="truncate">{g.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
@@ -473,16 +493,20 @@ export function DashboardHome({
           {!collapsed && (
             <button
               onClick={() => onSection("telegram")}
-              className="dh-card-hover w-full text-left mt-6 rounded-lg relative overflow-hidden"
-              style={{ background: T.panel2, border: `1px solid ${T.border}`, padding: 16, color: T.text }}
+              className="dh-card-hover w-full text-left mt-6 rounded-xl relative overflow-hidden"
+              style={{ background: HERO_GRAD, padding: 16, color: "#fff" }}
             >
-              <div className="flex items-center justify-center rounded-md mb-3" style={{ width: 34, height: 34, background: ACCENT_SOFT, color: ACCENT }}>
-                <Send className="w-4 h-4" />
+              <div className="absolute" style={{ top: -28, right: -22, width: 108, height: 108, borderRadius: 9999, background: "rgba(255,255,255,.14)", filter: "blur(26px)", pointerEvents: "none" }} />
+              <div className="relative">
+                <div className="flex items-center justify-center rounded-lg mb-3" style={{ width: 36, height: 36, background: "rgba(255,255,255,.18)", border: "1px solid rgba(255,255,255,.28)", color: "#fff" }}>
+                  <Send className="w-[18px] h-[18px]" />
+                </div>
+                <p className="font-bold leading-tight" style={{ fontSize: 14 }}>Take Salt &amp; Peps Everywhere</p>
+                <p style={{ fontSize: 11.5, color: "rgba(255,255,255,.72)", marginTop: 4, lineHeight: 1.4 }}>Order updates &amp; alerts on Telegram.</p>
+                <span className="inline-flex items-center gap-1.5 mt-3 rounded-lg font-bold" style={{ fontSize: 11.5, padding: "8px 12px", background: "#fff", color: "#1B3A7A" }}>
+                  Connect Telegram <ChevronRight className="w-3.5 h-3.5" />
+                </span>
               </div>
-              <p className="font-bold leading-tight" style={{ fontSize: 13.5 }}>Take Salt &amp; Peps Everywhere</p>
-              <span className="inline-flex items-center gap-1 mt-3 rounded-md font-semibold text-white" style={{ fontSize: 11, padding: "6px 12px", background: ACCENT }}>
-                Connect Telegram <ChevronRight className="w-3 h-3" />
-              </span>
             </button>
           )}
             </div>
@@ -597,12 +621,17 @@ export function DashboardHome({
                 {typeof credits === "number" && (
                   <button
                     onClick={() => onSection("orders")}
-                    className="flex items-center gap-2 rounded-md pl-2.5 pr-3.5"
-                    style={{ height: 40, background: T.panel, border: `1px solid ${T.border}` }}
+                    className="flex items-center gap-2 rounded-lg pl-2 pr-3 transition-colors"
+                    style={{ height: 40, background: dark ? "rgba(45,107,204,.14)" : "rgba(45,107,204,.08)", border: `1px solid ${dark ? "rgba(45,107,204,.3)" : "rgba(45,107,204,.18)"}` }}
                     title="Store credits"
                   >
-                    <Wallet className="w-4 h-4 shrink-0" style={{ color: "#2D6BCC" }} />
-                    <span className="font-extrabold" style={{ fontSize: 13, color: T.text, letterSpacing: "-0.01em" }}>${credits.toFixed(2)}</span>
+                    <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 26, height: 26, background: "#fff", color: "#2D6BCC", border: "1px solid rgba(45,107,204,.18)" }}>
+                      <Wallet className="w-[15px] h-[15px]" />
+                    </span>
+                    <span className="flex flex-col items-start leading-none">
+                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "#2D6BCC" }}>Credits</span>
+                      <span className="font-extrabold" style={{ fontSize: 13, color: T.text, letterSpacing: "-0.01em", marginTop: 2 }}>${credits.toFixed(2)}</span>
+                    </span>
                   </button>
                 )}
                 <button
@@ -773,8 +802,8 @@ export function DashboardHome({
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <FlaskConical className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
-                      <span className="font-extrabold" style={{ fontSize: 16 }}>My Compounds</span>
+                      <SecIcon Icon={FlaskConical} />
+                      <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>My Compounds</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -867,8 +896,8 @@ export function DashboardHome({
                 <div style={{ ...cardStyle, padding: 22 }}>
                   <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <ReceiptText className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
-                      <span className="font-extrabold" style={{ fontSize: 16 }}>Recent Orders</span>
+                      <SecIcon Icon={ReceiptText} />
+                      <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>Recent Orders</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="relative">
@@ -1044,8 +1073,8 @@ export function DashboardHome({
                 <div style={{ ...cardStyle, padding: 22 }}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Clock className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
-                      <span className="font-extrabold" style={{ fontSize: 15 }}>Today</span>
+                      <SecIcon Icon={Clock} />
+                      <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>Today</span>
                     </div>
                     {cardMenu("today", [
                       { label: "View group buys", run: () => onSection("groups") },
@@ -1092,8 +1121,8 @@ export function DashboardHome({
                   <div style={{ ...cardStyle, padding: 22 }}>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <Store className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
-                        <span className="font-extrabold" style={{ fontSize: 15 }}>GB Metrics</span>
+                        <SecIcon Icon={Store} />
+                        <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>GB Metrics</span>
                       </div>
                       <button onClick={() => navigate("/gborganiser")} className="flex items-center gap-1 font-semibold transition-opacity hover:opacity-60" style={{ fontSize: 11.5, color: ACCENT }}>
                         Organiser <ArrowRight className="w-3 h-3" />
@@ -1117,8 +1146,8 @@ export function DashboardHome({
                 {viewerAccess.length > 0 && (
                   <div style={{ ...cardStyle, padding: 22 }}>
                     <div className="flex items-center gap-2 mb-3">
-                      <QrCode className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
-                      <span className="font-extrabold" style={{ fontSize: 15 }}>Special Access</span>
+                      <SecIcon Icon={QrCode} />
+                      <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>Special Access</span>
                     </div>
                     <div className="flex flex-col gap-2">
                       {viewerAccess.map(v => (
