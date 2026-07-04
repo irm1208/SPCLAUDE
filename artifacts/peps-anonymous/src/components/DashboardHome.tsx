@@ -163,7 +163,8 @@ export function DashboardHome({
     { id: "lab-tests",  label: "Lab Tests",  Icon: ClipboardList,   active: false },
   ];
 
-  const SIDEBAR_W = collapsed ? 78 : 250;
+  const RAIL_W = 56;
+  const SIDEBAR_W = collapsed ? RAIL_W : 250;
 
   const cardStyle: React.CSSProperties = {
     background: T.panel,
@@ -186,74 +187,112 @@ export function DashboardHome({
     <div className="flex w-full min-h-screen" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
       <style>{`
         .dh-nav:hover { background: ${T.chip} !important; }
+        .dh-rail:hover { background: ${T.chip} !important; }
         .dh-scroll::-webkit-scrollbar { height: 0; width: 6px; }
         .dh-scroll::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
         .dh-card-hover { transition: transform .18s ease, box-shadow .18s ease; }
         .dh-card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(16,17,33,.10); }
       `}</style>
 
-      {/* ══ Sidebar ══ */}
+      {/* ══ Sidebar (dual-tier: icon rail + labelled panel) ══ */}
       <aside
-        className="hidden lg:flex flex-col shrink-0 fixed inset-y-0 left-0 z-20"
-        style={{ width: SIDEBAR_W, background: T.sidebar, borderRight: `1px solid ${T.border}`, transition: "width .2s ease" }}
+        className="hidden lg:flex shrink-0 fixed inset-y-0 left-0 z-20"
+        style={{ width: SIDEBAR_W, transition: "width .2s ease" }}
       >
-        {/* Brand */}
-        <div className="flex items-center gap-2.5 px-4" style={{ height: 72 }}>
+        {/* Icon rail */}
+        <div
+          className="flex flex-col items-center shrink-0"
+          style={{ width: RAIL_W, background: T.sidebar, borderRight: `1px solid ${T.border}`, paddingTop: 18, paddingBottom: 16 }}
+        >
           <div
             className="flex items-center justify-center shrink-0"
-            style={{ width: 36, height: 36, borderRadius: 11, background: ACCENT_GRAD, color: "#fff", fontWeight: 800, fontSize: 13, boxShadow: "0 6px 16px rgba(108,92,231,.32)" }}
+            style={{ width: 38, height: 38, borderRadius: 12, background: ACCENT_GRAD, color: "#fff", fontWeight: 800, fontSize: 12, boxShadow: "0 6px 16px rgba(108,92,231,.32)" }}
           >
-            S&P
+            S&amp;P
           </div>
-          {!collapsed && (
-            <span className="font-extrabold tracking-tight truncate" style={{ fontSize: 19, flex: 1 }}>Salt &amp; Peps</span>
-          )}
-          {!collapsed && (
-            <button
-              onClick={() => setCollapsed(true)}
-              className="flex items-center justify-center rounded-lg transition-colors"
-              style={{ width: 28, height: 28, color: T.subtle }}
-              title="Collapse"
-            >
-              <PanelLeft className="w-4 h-4" />
-            </button>
-          )}
-        </div>
 
-        <div className="flex-1 overflow-y-auto dh-scroll px-3 pb-4">
-          {collapsed && (
-            <button
-              onClick={() => setCollapsed(false)}
-              className="dh-nav w-full flex items-center justify-center rounded-xl mb-2"
-              style={{ height: 40, color: T.subtle }}
-              title="Expand"
-            >
-              <PanelLeft className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Main nav */}
-          <nav className="flex flex-col gap-1">
+          <nav className="flex flex-col items-center gap-1.5" style={{ marginTop: 22 }}>
             {navItems.map(({ id, label, Icon, active }) => (
               <button
                 key={id}
                 onClick={() => onSection(id)}
-                title={collapsed ? label : undefined}
-                className="dh-nav w-full flex items-center rounded-xl transition-all text-left"
+                title={label}
+                aria-label={label}
+                aria-current={active ? "page" : undefined}
+                className={active ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
                 style={{
-                  gap: 12, padding: collapsed ? "0" : "0 12px",
-                  height: 44, justifyContent: collapsed ? "center" : "flex-start",
+                  width: 40, height: 40, borderRadius: 12,
                   background: active ? ACCENT_GRAD : "transparent",
-                  color: active ? "#fff" : T.muted,
-                  fontWeight: active ? 700 : 600, fontSize: 13.5,
-                  boxShadow: active ? "0 8px 20px rgba(108,92,231,.30)" : "none",
+                  color: active ? "#fff" : T.subtle,
+                  boxShadow: active ? "0 8px 18px rgba(108,92,231,.32)" : "none",
                 }}
               >
-                <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
-                {!collapsed && <span className="truncate">{label}</span>}
+                <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
               </button>
             ))}
           </nav>
+
+          <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
+            <button
+              onClick={() => navigate("/shop")}
+              title="Shop"
+              aria-label="Shop"
+              className="dh-rail flex items-center justify-center transition-all"
+              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+            >
+              <Store className="w-[19px] h-[19px]" />
+            </button>
+            <button
+              onClick={toggleTheme}
+              title={dark ? "Light mode" : "Dark mode"}
+              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+              className="dh-rail flex items-center justify-center transition-all"
+              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+            >
+              {dark ? <Sun className="w-[19px] h-[19px]" /> : <Moon className="w-[19px] h-[19px]" />}
+            </button>
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? "Expand" : "Collapse"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              className="dh-rail flex items-center justify-center transition-all"
+              style={{ width: 40, height: 40, borderRadius: 12, color: T.subtle }}
+            >
+              <PanelLeft className="w-[19px] h-[19px]" style={{ transform: collapsed ? "rotate(180deg)" : "none" }} />
+            </button>
+          </div>
+        </div>
+
+        {/* Labelled panel */}
+        {!collapsed && (
+          <div className="flex flex-col flex-1 min-w-0" style={{ background: T.sidebar, borderRight: `1px solid ${T.border}` }}>
+            {/* Brand */}
+            <div className="flex items-center px-4" style={{ height: 72 }}>
+              <span className="font-extrabold tracking-tight truncate" style={{ fontSize: 20 }}>Salt &amp; Peps</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto dh-scroll px-3 pb-4">
+              {/* Main nav */}
+              <nav className="flex flex-col gap-0.5">
+                {navItems.map(({ id, label, Icon, active }) => (
+                  <button
+                    key={id}
+                    onClick={() => onSection(id)}
+                    className={active ? "relative w-full flex items-center rounded-xl transition-all text-left" : "dh-nav relative w-full flex items-center rounded-xl transition-all text-left"}
+                    style={{
+                      gap: 11, padding: "0 12px", height: 42,
+                      background: active ? (dark ? "rgba(124,111,245,0.16)" : "rgba(108,92,231,0.10)") : "transparent",
+                      color: active ? ACCENT : T.muted,
+                      fontWeight: active ? 700 : 600, fontSize: 13.5,
+                    }}
+                  >
+                    {active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
+                    <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
 
           {/* Compounds (Favorites analog) */}
           {!collapsed && activeCompounds.length > 0 && (
@@ -317,7 +356,9 @@ export function DashboardHome({
               </span>
             </button>
           )}
-        </div>
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* ══ Main ══ */}
@@ -490,14 +531,17 @@ export function DashboardHome({
                             className="dh-card-hover text-left shrink-0"
                             style={{ ...cardStyle, width: 300, padding: 0, overflow: "hidden", scrollSnapAlign: "start" }}
                           >
-                            <div className="relative" style={{ height: 150, background: `linear-gradient(140deg, ${color}26 0%, ${color}0d 100%)` }}>
+                            <div className="relative" style={{ height: 150, background: `linear-gradient(140deg, ${color}22 0%, ${color}0a 55%, ${T.panel} 100%)` }}>
+                              <Sparkle size={124} style={{ position: "absolute", right: -24, bottom: -28, color: `${color}1f` }} />
                               <div className="absolute inset-0 flex items-center justify-center">
-                                <Syringe className="w-14 h-14" style={{ color, opacity: 0.5 }} />
+                                <span className="flex items-center justify-center rounded-2xl" style={{ width: 58, height: 58, background: T.panel, color, boxShadow: `0 10px 24px ${color}30` }}>
+                                  <Syringe className="w-7 h-7" />
+                                </span>
                               </div>
-                              <span className="absolute flex items-center justify-center rounded-full" style={{ top: 12, right: 12, width: 32, height: 32, background: T.panel, color }}>
+                              <span className="absolute flex items-center justify-center rounded-full" style={{ top: 12, right: 12, width: 32, height: 32, background: T.panel, color, boxShadow: dark ? "none" : "0 2px 6px rgba(16,17,33,.08)" }}>
                                 <Heart className="w-4 h-4" fill={color} />
                               </span>
-                              <span className="absolute rounded-full font-bold" style={{ top: 14, left: 14, fontSize: 10.5, padding: "4px 10px", background: T.panel, color }}>
+                              <span className="absolute rounded-full font-bold" style={{ top: 14, left: 14, fontSize: 10.5, padding: "4px 10px", background: T.panel, color, boxShadow: dark ? "none" : "0 2px 6px rgba(16,17,33,.08)" }}>
                                 {c.compoundType}
                               </span>
                             </div>
