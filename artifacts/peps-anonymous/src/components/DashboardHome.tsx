@@ -297,7 +297,7 @@ export function DashboardHome({
           {/* Compounds (Favorites analog) */}
           {!collapsed && activeCompounds.length > 0 && (
             <>
-              <p className="px-3 mt-6 mb-2 font-bold uppercase" style={{ fontSize: 11, letterSpacing: ".06em", color: T.subtle }}>Compounds</p>
+              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Compounds</p>
               <div className="flex flex-col gap-0.5">
                 {activeCompounds.slice(0, 3).map(c => (
                   <button
@@ -317,7 +317,7 @@ export function DashboardHome({
           {/* Group Buys (Friends analog) */}
           {!collapsed && groupBuys.length > 0 && (
             <>
-              <p className="px-3 mt-6 mb-2 font-bold uppercase" style={{ fontSize: 11, letterSpacing: ".06em", color: T.subtle }}>Group Buys</p>
+              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Group Buys</p>
               <div className="flex flex-col gap-0.5">
                 {groupBuys.slice(0, 5).map(g => (
                   <button
@@ -685,7 +685,7 @@ export function DashboardHome({
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="flex items-center justify-center rounded-full text-white" style={{ width: 96, height: 96, background: ACCENT_GRAD, fontSize: 36, fontWeight: 800 }}>{initial}</span>
+                        <span className="flex items-center justify-center rounded-full" style={{ width: 90, height: 90, background: dark ? "rgba(124,111,245,0.20)" : "#EDEBFF", color: ACCENT, fontSize: 34, fontWeight: 800 }}>{initial}</span>
                       </div>
                       <span className="absolute flex items-center justify-center rounded-full text-white font-bold" style={{ top: 4, right: 2, fontSize: 11, padding: "4px 9px", background: ACCENT, boxShadow: "0 4px 12px rgba(108,92,231,.4)" }}>{completionPct}%</span>
                     </div>

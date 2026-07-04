@@ -30,6 +30,7 @@ import Shop from "@/pages/Shop";
 import ShopCheckout from "@/pages/ShopCheckout";
 import SellerDashboard from "@/pages/SellerDashboard";
 import CustomerPortal from "@/pages/CustomerPortal";
+import DashPreview from "@/pages/__DashPreview";
 import AccountOrderDetail from "@/pages/AccountOrderDetail";
 import Login from "@/pages/Login";
 import AccountOrders from "@/pages/AccountOrders";
@@ -127,6 +128,7 @@ function Router() {
       <Route path="/seller" component={SellerDashboard} />
       <Route path="/account/orders/:id" component={AccountOrderDetail} />
       <Route path="/account" component={CustomerPortal} />
+      <Route path="/__dash-preview" component={DashPreview} />
       <Route path="/login" component={Login} />
       <Route path="/groups">{() => { useEffect(() => { window.location.replace("/account?s=groups"); }, []); return null; }}</Route>
       <Route path="/my-orders" component={AccountOrders} />
