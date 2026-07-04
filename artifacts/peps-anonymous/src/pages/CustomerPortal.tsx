@@ -67,6 +67,7 @@ import { T } from "@/lib/theme";
 import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
 import { HubBottomNav } from "@/components/HubBottomNav";
+import { DashboardHome } from "@/components/DashboardHome";
 import Protocols from "@/pages/Protocols";
 import PublicTestingPools from "@/pages/PublicTestingPools";
 import LabTests from "@/pages/LabTests";
@@ -6076,7 +6077,7 @@ function MyHistorySection({ onBack }: { onBack: () => void }) {
 
 // ─── Layout helpers (must live outside CustomerPortal to avoid re-mount on every re-render) ──
 
-interface PortalNavProps {
+export interface PortalNavProps {
   section: Section;
   setSection: (s: Section) => void;
   hubMoreOpen: boolean;
@@ -7202,340 +7203,26 @@ export default function CustomerPortal() {
   // ─── Home dashboard ──────────────────────────────────────────────────────────
 
   if (section === "home") {
-    const cardStyle: React.CSSProperties = {
-      background: T.surface,
-      border: `1px solid ${T.border}`,
-      boxShadow: T.shadow,
-      borderRadius: "12px",
-    };
-
-    const statTiles = [
-      { id: "orders" as Section, label: "My Orders", count: orders.length, color: "var(--t-blue)", Icon: Package },
-      { id: "compounds" as Section, label: "Active Compounds", count: activeCompounds.length, color: "#16A34A", Icon: Syringe },
-      { id: "blood-tests" as Section, label: "Blood Tests", count: bloodTests.length, color: "#7C3AED", Icon: FlaskConical },
-    ];
-
-    const glp1SparkData = [...glp1Logs]
-      .sort((a, b) => a.loggedDate.localeCompare(b.loggedDate))
-      .filter(l => l.weightKg != null)
-      .slice(-8)
-      .map((l, i) => ({ i, w: parseFloat(l.weightKg!) }));
-
-    const recentOrders = [...orders]
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 3);
-
-    const recentCompounds = activeCompounds.slice(0, 3);
-
-    const isOrganiser = account?.organiserStatus === "approved";
-    const activeGbCount = organiserGbs.filter(g => g.status === "active").length;
-    const draftGbCount = organiserGbs.filter(g => g.status === "draft").length;
-    const totalGbCount = organiserGbs.filter(g => g.status !== "archived").length;
-
     return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-
-          {/* ── Full-width: Hero + Tiles + Recent Orders + Active Compounds ─── */}
-          <div
-            className="flex flex-col w-full"
-            style={{ padding: "28px 32px 32px", maxWidth: "860px" }}
-          >
-            {/* Hero */}
-            <div style={{ marginBottom: "28px", paddingBottom: "22px", borderBottom: `1px solid ${T.border}` }}>
-              <p className="section-label" style={{ marginBottom: "12px" }}>Profile Hub</p>
-              <h1 className="font-display font-extrabold" style={{ fontSize: "40px", color: T.text, letterSpacing: "-0.02em", lineHeight: 1 }}>
-                Welcome back, <span style={{ color: "var(--t-blue)" }}>@{username}</span>
-              </h1>
-            </div>
-
-            {/* ── Overview ── */}
-            <p className="section-label" style={{ marginBottom: "10px" }}>Overview</p>
-
-            {/* Stat tiles: 2×2 mobile → 4×1 lg */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" style={{ marginBottom: "20px" }}>
-              {statTiles.map(({ id, label, count, color, Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setSection(id)}
-                  className="relative flex flex-col items-start text-left rounded-xl p-4 transition-opacity hover:opacity-75"
-                  style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}
-                >
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-3" style={{ background: T.surface2 }}>
-                    <Icon className="w-3.5 h-3.5" style={{ color }} />
-                  </div>
-                  <p className="text-[26px] font-extrabold leading-none" style={{ color: T.text, letterSpacing: "-0.02em" }}>{count}</p>
-                  <p className="text-[10px] font-semibold mt-1 leading-tight" style={{ color: T.muted }}>{label}</p>
-                  <ArrowRight className="absolute top-3.5 right-3.5 w-3 h-3" style={{ color: T.subtle }} />
-                </button>
-              ))}
-              {/* GLP-1 sparkline tile */}
-              <button
-                onClick={() => setSection("glp1")}
-                className="relative flex flex-col items-start text-left rounded-xl p-4 transition-opacity hover:opacity-75 overflow-hidden"
-                style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}
-              >
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-3" style={{ background: T.surface2 }}>
-                  <Scale className="w-3.5 h-3.5" style={{ color: "#0891B2" }} />
-                </div>
-                <p className="text-[26px] font-extrabold leading-none" style={{ color: T.text, letterSpacing: "-0.02em" }}>{glp1Logs.length}</p>
-                <p className="text-[10px] font-semibold mt-1 leading-tight" style={{ color: T.muted }}>GLP-1 Entries</p>
-                <ArrowRight className="absolute top-3.5 right-3.5 w-3 h-3" style={{ color: T.subtle }} />
-                {glp1SparkData.length >= 2 && (
-                  <div className="absolute bottom-0 left-0 right-0 h-10 opacity-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={glp1SparkData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#0891B2" stopOpacity={0.3} />
-                            <stop offset="100%" stopColor="#0891B2" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <Area type="monotone" dataKey="w" stroke="#0891B2" strokeWidth={1.5} fill="url(#sparkGrad)" dot={false} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </button>
-            </div>
-
-            {/* Credits balance banner — show when account has any credits or a non-zero amount */}
-            {account && typeof account.credits === "number" && (
-              <div
-                className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4"
-                style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}
-              >
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-08)" }}>
-                  <Wallet className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--t-blue)" }}>Store Credits</p>
-                  <p className="text-lg font-extrabold leading-tight" style={{ color: T.text, letterSpacing: "-0.02em" }}>
-                    ${account.credits.toFixed(2)}
-                  </p>
-                </div>
-                <p className="text-xs shrink-0" style={{ color: T.muted }}>Available balance</p>
-              </div>
-            )}
-
-            {/* ── Special Access Grants ── */}
-            {viewerAccessList.length > 0 && (
-              <div className="mb-4">
-                <p className="section-label" style={{ marginBottom: "10px" }}>Special Access</p>
-                <div className="flex flex-col gap-2">
-                  {viewerAccessList.map((entry: ViewerAccessEntry) => (
-                    <div key={entry.id}
-                      className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
-                      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
-                      <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{entry.name}</p>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {entry.hasQrAccess && (
-                          <button
-                            onClick={() => setLocation(`/qr-viewer/${entry.id}`)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-opacity hover:opacity-75"
-                            style={{ background: "rgba(22,163,74,0.10)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.2)" }}>
-                            <QrCode className="w-3 h-3" /> QR Viewer
-                          </button>
-                        )}
-                        {entry.hasLegAccess && (
-                          <button
-                            onClick={() => setLocation(`/leg-view/${entry.id}`)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-opacity hover:opacity-75"
-                            style={{ background: "rgba(124,58,237,0.10)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>
-                            <MapPin className="w-3 h-3" /> Leg Viewer
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* GB Metrics — only for approved organisers */}
-            {isOrganiser && (
-              <div
-                style={{
-                  marginBottom: "16px",
-                  borderRadius: "12px",
-                  background: "var(--t-blue-08)",
-                  border: "1px solid var(--t-blue-20)",
-                  boxShadow: T.shadow,
-                  overflow: "hidden",
-                }}
-              >
-                {/* Card header */}
-                <div
-                  className="flex items-center justify-between px-5 py-3"
-                  style={{ borderBottom: "1px solid var(--t-blue-20)" }}
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-5 h-5 rounded-md flex items-center justify-center"
-                      style={{ background: "var(--t-blue-deep)" }}
-                    >
-                      <Store className="w-3 h-3 text-white" />
-                    </div>
-                    <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--t-blue-deep)" }}>
-                      GB Metrics
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setLocation("/gborganiser")}
-                    className="text-[11px] font-semibold flex items-center gap-1 transition-opacity hover:opacity-60"
-                    style={{ color: "var(--t-blue-deep)" }}
-                  >
-                    Go to Organiser <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Metric columns */}
-                <div className="grid grid-cols-3">
-                  {[
-                    { label: "Active GBs", value: activeGbCount, color: "#16A34A" },
-                    { label: "Draft GBs", value: draftGbCount, color: "var(--t-blue-deep)" },
-                    { label: "Total GBs", value: totalGbCount, color: T.text },
-                  ].map(({ label, value, color }, i) => (
-                    <div
-                      key={label}
-                      className="flex flex-col items-center py-4 px-2"
-                      style={i > 0 ? { borderLeft: "1px solid var(--t-blue-20)" } : {}}
-                    >
-                      <p className="text-[28px] font-extrabold leading-none tabular-nums" style={{ color, letterSpacing: "-0.02em" }}>{value}</p>
-                      <p className="text-[10px] font-semibold mt-1 text-center" style={{ color: T.muted }}>{label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Activity ── */}
-            <p className="section-label" style={{ marginBottom: "10px", marginTop: "8px" }}>Activity</p>
-
-            {/* Recent Orders */}
-            <div style={{ ...cardStyle, padding: "16px 20px", marginBottom: "16px" }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: "12px", paddingBottom: "10px", borderBottom: `1px solid ${T.border}` }}>
-                <span className="section-label">Recent Orders</span>
-                {orders.length > 0 && (
-                  <button
-                    onClick={() => setSection("orders")}
-                    className="text-[11px] font-semibold flex items-center gap-1 transition-opacity hover:opacity-60"
-                    style={{ color: "var(--t-blue)" }}
-                  >
-                    View all <ArrowRight className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {recentOrders.length === 0 ? (
-                <p className="text-[12px] py-3 text-center" style={{ color: T.muted }}>No orders yet</p>
-              ) : (
-                recentOrders.map((order, i) => {
-                  const sm = STATUS_META[order.status] ?? { label: order.status, color: T.muted, bg: T.surface2, icon: FileText };
-                  const SmIcon = sm.icon;
-                  return (
-                    <button
-                      key={order.id}
-                      onClick={() => setSection("orders")}
-                      className="w-full flex items-center gap-3 py-3 text-left transition-opacity hover:opacity-75"
-                      style={{ borderBottom: i < recentOrders.length - 1 ? `1px solid ${T.border}` : "none" }}
-                    >
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: sm.bg }}>
-                        <SmIcon className="w-3.5 h-3.5" style={{ color: sm.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-bold" style={{ color: T.text }}>{order.code}</p>
-                        <span
-                          className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none"
-                          style={{ background: sm.bg, color: sm.color }}
-                        >{sm.label}</span>
-                      </div>
-                      <p className="text-[12px] font-semibold shrink-0" style={{ color: T.text }}>{fmtC(order.grandTotal, order.currency)}</p>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Active Compounds */}
-            <div style={{ ...cardStyle, padding: "16px 20px" }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: "12px", paddingBottom: "10px", borderBottom: `1px solid ${T.border}` }}>
-                <span className="section-label">Active Compounds</span>
-                {activeCompounds.length > 0 && (
-                  <button
-                    onClick={() => setSection("compounds")}
-                    className="text-[11px] font-semibold flex items-center gap-1 transition-opacity hover:opacity-60"
-                    style={{ color: "#16A34A" }}
-                  >
-                    View all <ArrowRight className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {recentCompounds.length === 0 ? (
-                <p className="text-[12px] py-3 text-center" style={{ color: T.muted }}>No active compounds</p>
-              ) : (
-                recentCompounds.map((c, i) => {
-                  const meta = TYPE_META[c.compoundType] ?? TYPE_META["Other"];
-                  const CIcon = meta.Icon;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSection("compounds")}
-                      className="w-full flex items-center gap-3 py-3 text-left transition-opacity hover:opacity-75"
-                      style={{ borderBottom: i < recentCompounds.length - 1 ? `1px solid ${T.border}` : "none" }}
-                    >
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: T.surface2 }}>
-                        <CIcon className="w-3.5 h-3.5" style={{ color: meta.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-semibold truncate" style={{ color: T.text }}>{c.compoundName}</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: T.muted }}>{c.doseAmount}{c.doseUnit} · {c.frequency}</p>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {/* ── Quick Access ── */}
-            <p className="section-label" style={{ marginBottom: "10px", marginTop: "24px" }}>Quick Access</p>
-            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: "8px" }}>
-              {[
-                { label: "Shop",        sub: "Browse vials",    Icon: Store,          action: () => setLocation("/shop"),           color: "var(--t-blue)",  bg: "var(--t-blue-08)" },
-                { label: "Group Buys",  sub: "Join a pool",     Icon: UsersRound,     action: () => setSection("groups"),           color: "#16A34A",        bg: "rgba(22,163,74,0.08)" },
-                { label: "Lab Pool",    sub: "Testing pools",   Icon: TestTube,       action: () => setSection("lab-pool"),         color: "#8B5CF6",        bg: "rgba(139,92,246,0.08)" },
-                { label: "Health Hub",  sub: "Health areas",    Icon: HeartPulse,     action: () => setSection("health-hub"),       color: "#7C3AED",        bg: "rgba(124,58,237,0.08)" },
-              ].map(({ label, sub, Icon, action, color, bg }) => (
-                <button
-                  key={label}
-                  onClick={action}
-                  className="flex flex-col items-start rounded-xl p-4 transition-opacity hover:opacity-75 text-left"
-                  style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}
-                >
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3" style={{ background: bg }}>
-                    <Icon className="w-4 h-4" style={{ color }} />
-                  </div>
-                  <p className="text-[12px] font-bold leading-tight" style={{ color: T.text }}>{label}</p>
-                  <p className="text-[10px] mt-0.5 leading-tight" style={{ color: T.muted }}>{sub}</p>
-                </button>
-              ))}
-            </div>
-
-            {/* Sign out */}
-            <div className="pt-6 mt-2">
-              <div className="flex items-center pt-5" style={{ borderTop: `1px solid ${T.border}` }}>
-                <button
-                  onClick={handleLogout}
-                  className="text-[10px] transition-opacity hover:opacity-50"
-                  style={{ color: T.subtle }}
-                >
-                  Sign out
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
+      <DashboardHome
+        username={username}
+        credits={account?.credits ?? null}
+        orders={orders}
+        activeCompounds={activeCompounds}
+        bloodTestCount={bloodTests.length}
+        glp1Logs={glp1Logs}
+        groupBuys={groupBuys}
+        onSection={(s) => setSection(s as Section)}
+        onLogout={handleLogout}
+        navProps={navProps}
+        viewerAccess={viewerAccessList}
+        isOrganiser={account?.organiserStatus === "approved"}
+        organiserGb={{
+          active: organiserGbs.filter(g => g.status === "active").length,
+          draft: organiserGbs.filter(g => g.status === "draft").length,
+          total: organiserGbs.filter(g => g.status !== "archived").length,
+        }}
+      />
     );
   }
 

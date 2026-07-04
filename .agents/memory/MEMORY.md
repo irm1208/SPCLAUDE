@@ -51,3 +51,4 @@
 - [Wholesale publish vs settings persistence](wholesale-publish-settings-persistence.md) — maxPackages/organiserFlatFee live in main settings form; flat-fee re-resolution (settings+publish) must be txn+row-lock, isPublic-gated, reset paid flag, idempotent, recipient read from LOCKED row; never clear settingsDirty on publish.
 - [Wholesale public groups](wholesale-public-groups.md) — public shared orders: first-publish Telegram announce detected under row lock; topic needs BOTH chat+topic envs; creator+recipient fee-exempt.
 - [Lab report batch-prefix matching](lab-report-batch-prefix-matching.md) — lab_tests.mgAmount is measured potency not label dose; always match reports via batch-code prefix, never exact mgAmount/name.
+- [Customer home sole-entry-point widgets](customer-home-orphan-entrypoints.md) — home redesigns must keep Special Access (/qr-viewer,/leg-view — no other link), store credits, and organiser GB Metrics (/gborganiser) or those flows orphan.
