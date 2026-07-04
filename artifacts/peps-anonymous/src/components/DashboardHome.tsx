@@ -6,6 +6,7 @@ import {
   MoreVertical, Star, Heart, Package, CheckCircle2, Award, FlaskConical,
   Clock, Sun, Moon, PanelLeft, SlidersHorizontal, Syringe, Send,
   Wallet, QrCode, MapPin, Store, ArrowRight, User, LogOut, Check, X,
+  Sparkles, Droplet,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
@@ -71,7 +72,7 @@ function palette(dark: boolean) {
 
 const ACCENT = "#0176D3";
 const ACCENT_SOFT = "rgba(1,118,211,0.10)";
-const HERO_GRAD = "linear-gradient(115deg,#032D60 0%,#0B5CAB 55%,#0176D3 100%)";
+const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
 const STAR_AMBER = "#F5A623";
 const LIVE_RED = "#EF4444";
 const SEARCH_GROUPS = ["Orders", "Compounds", "Group Buys", "Shop", "Lab Tests"] as const;
@@ -108,6 +109,7 @@ export function DashboardHome({
   const T = palette(dark);
   const [collapsed, setCollapsed] = useState(false);
   const [heroQ, setHeroQ] = useState("");
+  const [heroFocused, setHeroFocused] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // ── Global search + dropdown menus ──
@@ -304,6 +306,22 @@ export function DashboardHome({
         .dh-scroll::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
         .dh-card-hover { transition: transform .18s ease, box-shadow .18s ease; }
         .dh-card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(16,17,33,.10); }
+        .dh-rise { opacity: 0; transform: translateY(10px); animation: dhRise .5s cubic-bezier(.22,1,.36,1) forwards; }
+        @keyframes dhRise { to { opacity: 1; transform: translateY(0); } }
+        .dh-orb { position: absolute; border-radius: 9999px; filter: blur(44px); pointer-events: none; opacity: .8; }
+        .dh-float-a { animation: dhFloatA 9s ease-in-out infinite; }
+        .dh-float-b { animation: dhFloatB 11s ease-in-out infinite; }
+        @keyframes dhFloatA { 0%,100% { transform: translate(0,0); } 50% { transform: translate(20px,-16px); } }
+        @keyframes dhFloatB { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-18px,14px); } }
+        .dh-sage-ring { animation: dhGlow 2.8s ease-in-out infinite; }
+        @keyframes dhGlow { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.35); } 50% { box-shadow: 0 0 0 7px rgba(255,255,255,0); } }
+        .dh-chip { transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+        .dh-chip:hover { background: rgba(255,255,255,.2) !important; border-color: rgba(255,255,255,.45) !important; transform: translateY(-1px); }
+        .dh-send { transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease; }
+        .dh-send:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(1,118,211,.5); }
+        @media (prefers-reduced-motion: reduce) {
+          .dh-rise, .dh-float-a, .dh-float-b, .dh-sage-ring { animation: none !important; opacity: 1 !important; transform: none !important; }
+        }
       `}</style>
 
       {/* ══ Sidebar (dual-tier: icon rail + labelled panel) ══ */}
@@ -669,38 +687,84 @@ export function DashboardHome({
               {/* LEFT column */}
               <div className="flex-1 min-w-0 flex flex-col gap-5">
 
-                {/* Hero */}
-                <div className="relative overflow-hidden" style={{ borderRadius: 8, background: HERO_GRAD, padding: "26px 28px 24px" }}>
-                  <div className="relative" style={{ maxWidth: 620 }}>
-                    <h2 className="font-bold text-white" style={{ fontSize: 26, lineHeight: 1.15, letterSpacing: "-0.01em" }}>
+                {/* Hero — Meet Sage */}
+                <div className="relative overflow-hidden" style={{ borderRadius: 14, background: HERO_GRAD, padding: "24px 28px 22px" }}>
+                  {/* Atmosphere */}
+                  <div className="dh-orb dh-float-a" style={{ top: -60, right: -20, width: 230, height: 230, background: "rgba(45,107,204,.55)" }} />
+                  <div className="dh-orb dh-float-b" style={{ bottom: -80, right: 130, width: 190, height: 190, background: "rgba(1,118,211,.4)" }} />
+                  <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.12), transparent 55%)", pointerEvents: "none" }} />
+
+                  <div className="relative" style={{ maxWidth: 640 }}>
+                    {/* Assistant identity */}
+                    <div className="dh-rise flex items-center gap-2.5" style={{ animationDelay: "0ms" }}>
+                      <span className="dh-sage-ring flex items-center justify-center rounded-full shrink-0" style={{ width: 38, height: 38, background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.28)" }}>
+                        <Sparkles className="w-[18px] h-[18px]" style={{ color: "#fff" }} />
+                      </span>
+                      <div className="flex flex-col leading-none">
+                        <span className="font-bold text-white" style={{ fontSize: 13.5 }}>Sage</span>
+                        <span className="flex items-center gap-1.5" style={{ fontSize: 11, color: "rgba(255,255,255,.72)", marginTop: 4 }}>
+                          <span className="rounded-full" style={{ width: 6, height: 6, background: "#22c55e" }} /> Online
+                        </span>
+                      </div>
+                    </div>
+
+                    <h2 className="dh-rise font-bold text-white" style={{ fontSize: 26, lineHeight: 1.15, letterSpacing: "-0.01em", marginTop: 16, animationDelay: "60ms" }}>
                       Meet Sage, your health assistant
                     </h2>
-                    <p style={{ color: "rgba(255,255,255,.66)", fontSize: 15, marginTop: 14, lineHeight: 1.5, maxWidth: 440 }}>
+                    <p className="dh-rise" style={{ color: "rgba(255,255,255,.7)", fontSize: 15, marginTop: 10, lineHeight: 1.5, maxWidth: 440, animationDelay: "120ms" }}>
                       Ask anything about your compounds, bloodwork, or protocols.
                     </p>
+
                     <div
-                      className="flex items-center gap-3 mt-6 rounded-md"
-                      style={{ background: "rgba(255,255,255,.10)", border: "1px solid rgba(255,255,255,.16)", padding: 8 }}
+                      className="dh-rise flex items-center gap-2.5 mt-5 rounded-xl"
+                      style={{
+                        background: "rgba(255,255,255,.12)",
+                        border: `1px solid ${heroFocused ? "rgba(255,255,255,.5)" : "rgba(255,255,255,.18)"}`,
+                        boxShadow: heroFocused ? "0 0 0 3px rgba(255,255,255,.14)" : "none",
+                        padding: 8, animationDelay: "180ms",
+                        transition: "border-color .15s ease, box-shadow .15s ease",
+                      }}
                     >
-                      <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 40, height: 40, background: "#fff", color: "#032D60" }}>
+                      <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 40, height: 40, background: "#fff", color: "#1B3A7A" }}>
                         <Plus className="w-5 h-5" />
                       </span>
                       <input
                         value={heroQ}
                         onChange={e => setHeroQ(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") onSection("blood-tests"); }}
-                        placeholder="Type your question here or ask about your bloodwork..."
+                        onFocus={() => setHeroFocused(true)}
+                        onBlur={() => setHeroFocused(false)}
+                        onKeyDown={e => { if (e.key === "Enter" && heroQ.trim()) onSection("blood-tests"); }}
+                        placeholder="Type your question or ask about your bloodwork…"
                         className="flex-1 min-w-0 bg-transparent outline-none"
                         style={{ color: "#fff", fontSize: 13.5 }}
                       />
                       <button
                         onClick={() => onSection("blood-tests")}
-                        className="flex items-center justify-center rounded-md shrink-0 transition-transform active:scale-95"
-                        style={{ width: 40, height: 40, background: ACCENT, color: "#fff" }}
+                        disabled={!heroQ.trim()}
+                        className="dh-send flex items-center justify-center rounded-lg shrink-0 active:scale-95"
+                        style={{ width: 40, height: 40, background: ACCENT, color: "#fff", opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
                         title="Ask Sage"
                       >
                         <ArrowUp className="w-5 h-5" />
                       </button>
+                    </div>
+
+                    {/* Quick prompts */}
+                    <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
+                      {([
+                        { label: "Analyse my bloodwork", Icon: Droplet, section: "blood-tests" },
+                        { label: "Review a protocol", Icon: ClipboardList, section: "protocols" },
+                        { label: "My compounds", Icon: FlaskConical, section: "compounds" },
+                      ] as { label: string; Icon: React.ElementType; section: string }[]).map(chip => (
+                        <button
+                          key={chip.label}
+                          onClick={() => onSection(chip.section)}
+                          className="dh-chip flex items-center gap-1.5 rounded-full"
+                          style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", padding: "9px 14px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)" }}
+                        >
+                          <chip.Icon className="w-3.5 h-3.5" /> {chip.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
