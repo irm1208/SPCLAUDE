@@ -78,9 +78,27 @@ export function HubBottomNav({
   }, [open, setOpen]);
 
   useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [open]);
+    // The drawer (and its backdrop/close button) is mobile-only via `md:hidden`.
+    // Only lock body scroll while the drawer is actually shown. On desktop the
+    // drawer is hidden, so never lock scroll there — and auto-close any stale
+    // open state so a leftover `open` can't strand desktop users on a page that
+    // can no longer scroll or reveal a close control.
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => {
+      if (mq.matches) {
+        document.body.style.overflow = "";
+        if (open) setOpen(false);
+      } else {
+        document.body.style.overflow = open ? "hidden" : "";
+      }
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => {
+      mq.removeEventListener("change", apply);
+      document.body.style.overflow = "";
+    };
+  }, [open, setOpen]);
 
   const navigate = (sectionId: HubSection) => {
     setSection(sectionId);
@@ -432,7 +450,7 @@ export function HubBottomNav({
 
         {/* More button */}
         <button
-          onClick={() => setOpen(o => !o)}
+          onClick={() => setOpen(!open)}
           className="relative flex-1 flex flex-col items-center justify-center gap-0.5 transition-all"
           style={{ color: isMoreActive ? activeColor : dark ? "rgba(255,255,255,0.45)" : "var(--t-subtle)" }}
         >
