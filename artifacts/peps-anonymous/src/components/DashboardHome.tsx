@@ -1,17 +1,17 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard, ReceiptText, UsersRound, HeartPulse, ClipboardList,
   Search, Bell, ChevronDown, ChevronRight, ChevronLeft, Plus, ArrowUp,
   MoreVertical, Star, Heart, Package, CheckCircle2, Award, FlaskConical,
   Clock, Sun, Moon, PanelLeft, SlidersHorizontal, Syringe, Send,
-  Wallet, QrCode, MapPin, Store, ArrowRight,
+  Wallet, QrCode, MapPin, Store, ArrowRight, User, LogOut, Check, X,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
+import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
-import { fmtC } from "@/lib/currency";
 
 // ─── Props (structural — accepts the real portal objects) ────────────────────
 
@@ -74,6 +74,7 @@ const ACCENT_SOFT = "rgba(1,118,211,0.10)";
 const HERO_GRAD = "linear-gradient(115deg,#032D60 0%,#0B5CAB 55%,#0176D3 100%)";
 const STAR_AMBER = "#F5A623";
 const LIVE_RED = "#EF4444";
+const SEARCH_GROUPS = ["Orders", "Compounds", "Group Buys", "Shop", "Lab Tests"] as const;
 
 const FONT = "'Inter','Salesforce Sans','Helvetica Neue',Arial,sans-serif";
 
@@ -109,6 +110,34 @@ export function DashboardHome({
   const [heroQ, setHeroQ] = useState("");
   const carouselRef = useRef<HTMLDivElement>(null);
 
+  // ── Global search + dropdown menus ──
+  const [searchQ, setSearchQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [dq, setDq] = useState("");
+  const [menu, setMenu] = useState<null | "profile" | "filter" | "stat" | "today">(null);
+  const [orderFilter, setOrderFilter] = useState<string>("all");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the search query so we don't hit the APIs on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDq(searchQ.trim()), 160);
+    return () => clearTimeout(t);
+  }, [searchQ]);
+
+  // ⌘K / Ctrl+K focuses the global search; Esc closes any open dropdown.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setSearchOpen(true);
+      }
+      if (e.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const initial = (username || "U").slice(0, 1).toUpperCase();
 
   // ── Derived stats ──
@@ -116,10 +145,11 @@ export function DashboardHome({
   const ongoingCount = orders.filter(o => o.status !== "Completed" && o.status !== "Cancelled").length;
   const completionPct = orders.length ? Math.round((completedCount / orders.length) * 100) : 0;
 
-  const recentOrders = useMemo(
-    () => [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5),
-    [orders],
-  );
+  const recentOrders = useMemo(() => {
+    const sorted = [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const filtered = orderFilter === "all" ? sorted : sorted.filter(o => o.status === orderFilter);
+    return filtered.slice(0, 5);
+  }, [orders, orderFilter]);
 
   const weekBars = useMemo(() => {
     const now = Date.now();
@@ -141,6 +171,78 @@ export function DashboardHome({
     return h < 12 ? "Good Morning" : h < 18 ? "Good Afternoon" : "Good Evening";
   })();
 
+  // ── Live global search (local data + product & lab-test APIs) ──
+  const searching = dq.length > 0;
+  const { data: products = [], isFetching: productsFetching } =
+    useGetProducts({ query: { enabled: searching } });
+  const { data: labTests = [], isFetching: labTestsFetching } =
+    useListLabTests({ q: dq }, { query: { enabled: dq.length > 1 } });
+
+  type SearchHit = {
+    key: string; group: (typeof SEARCH_GROUPS)[number]; label: string; sub?: string;
+    Icon: React.ElementType; color: string; onSelect: () => void;
+  };
+
+  const searchHits = useMemo<SearchHit[]>(() => {
+    if (!searching) return [];
+    const q = dq.toLowerCase();
+    const hits: SearchHit[] = [];
+
+    orders
+      .filter(o =>
+        o.code.toLowerCase().includes(q) ||
+        o.status.toLowerCase().includes(q) ||
+        o.lineItems.some(li => li.productName.toLowerCase().includes(q)))
+      .slice(0, 4)
+      .forEach(o => hits.push({
+        key: `o-${o.id}`, group: "Orders", label: o.code,
+        sub: `${o.lineItems[0]?.productName ?? "Order"}${o.lineItems.length > 1 ? ` +${o.lineItems.length - 1}` : ""} · ${o.status}`,
+        Icon: ReceiptText, color: ACCENT, onSelect: () => onSection("orders"),
+      }));
+
+    activeCompounds
+      .filter(c =>
+        c.compoundName.toLowerCase().includes(q) ||
+        c.compoundType.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach(c => hits.push({
+        key: `c-${c.id}`, group: "Compounds", label: c.compoundName,
+        sub: `${c.compoundType} · ${c.doseAmount}${c.doseUnit}`,
+        Icon: FlaskConical, color: COMPOUND_COLOR[c.compoundType] ?? ACCENT,
+        onSelect: () => onSection("compounds"),
+      }));
+
+    groupBuys
+      .filter(g => g.name.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach(g => hits.push({
+        key: `g-${g.id}`, group: "Group Buys", label: g.name,
+        sub: `${g.productCount} product${g.productCount === 1 ? "" : "s"} · ${g.status}`,
+        Icon: UsersRound, color: ACCENT, onSelect: () => onSection("groups"),
+      }));
+
+    products
+      .filter(p => p.name.toLowerCase().includes(q))
+      .slice(0, 5)
+      .forEach(p => hits.push({
+        key: `p-${p.id}`, group: "Shop", label: p.name,
+        sub: `$${Number(p.price).toFixed(2)}`,
+        Icon: Store, color: "#2E844A", onSelect: () => navigate("/shop"),
+      }));
+
+    labTests
+      .slice(0, 5)
+      .forEach(t => hits.push({
+        key: `l-${t.id}`, group: "Lab Tests", label: t.peptideName,
+        sub: `${t.supplier}${t.batchCode ? ` · ${t.batchCode}` : ""}`,
+        Icon: Award, color: "#2D6BCC", onSelect: () => onSection("lab-tests"),
+      }));
+
+    return hits;
+  }, [searching, dq, orders, activeCompounds, groupBuys, products, labTests, navigate, onSection]);
+
+  const searchLoading = searching && (productsFetching || labTestsFetching);
+
   // ── Sidebar nav model ──
   const navItems = [
     { id: "home",       label: "Dashboard",  Icon: LayoutDashboard, active: true },
@@ -160,14 +262,37 @@ export function DashboardHome({
     boxShadow: dark ? "none" : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
   };
 
-  const kebab = (
-    <button
-      className="flex items-center justify-center rounded-lg transition-colors shrink-0"
-      style={{ width: 26, height: 26, color: T.subtle }}
-      title="More"
-    >
-      <MoreVertical className="w-4 h-4" />
-    </button>
+  const cardMenu = (id: "stat" | "today", items: { label: string; run: () => void }[]) => (
+    <div className="relative">
+      <button
+        onClick={() => { setSearchOpen(false); setMenu(m => (m === id ? null : id)); }}
+        className="flex items-center justify-center rounded-lg transition-colors shrink-0"
+        style={{ width: 26, height: 26, color: menu === id ? ACCENT : T.subtle }}
+        title="More"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+      {menu === id && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+          <div
+            className="absolute right-0 z-50 mt-2 rounded-lg overflow-hidden py-1.5"
+            style={{ top: "100%", width: 190, background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)" }}
+          >
+            {items.map(it => (
+              <button
+                key={it.label}
+                onClick={() => { it.run(); setMenu(null); }}
+                className="dh-nav w-full flex items-center px-3.5 text-left"
+                style={{ height: 38, fontSize: 12.5, color: T.text, fontWeight: 600 }}
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 
   return (
@@ -360,20 +485,93 @@ export function DashboardHome({
               <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>Dashboard</h1>
 
               <div className="flex-1 flex justify-center min-w-0 px-2">
-                <div
-                  className="hidden sm:flex items-center gap-2.5 w-full max-w-[460px] rounded-md"
-                  style={{ height: 42, padding: "0 14px", background: T.panel, border: `1px solid ${T.border}` }}
-                >
-                  <Search className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
-                  <input
-                    placeholder="Search anything..."
-                    className="flex-1 min-w-0 bg-transparent outline-none"
-                    style={{ fontSize: 13.5, color: T.text }}
-                  />
-                  <span
-                    className="hidden md:flex items-center gap-1 rounded-md font-semibold shrink-0"
-                    style={{ fontSize: 11, padding: "3px 7px", background: T.chip, color: T.subtle }}
-                  >⌘ K</span>
+                <div className="relative hidden sm:block w-full max-w-[460px]">
+                  <div
+                    className="flex items-center gap-2.5 w-full rounded-md"
+                    style={{
+                      height: 42, padding: "0 14px", background: T.panel,
+                      border: `1px solid ${searchOpen ? ACCENT : T.border}`,
+                      boxShadow: searchOpen ? `0 0 0 3px ${ACCENT_SOFT}` : "none",
+                      transition: "border-color .15s ease, box-shadow .15s ease",
+                    }}
+                  >
+                    <Search className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
+                    <input
+                      ref={searchInputRef}
+                      value={searchQ}
+                      onChange={e => { setSearchQ(e.target.value); setSearchOpen(true); }}
+                      onFocus={() => { setSearchOpen(true); setMenu(null); }}
+                      onKeyDown={e => {
+                        if (e.key === "Escape") { setSearchOpen(false); searchInputRef.current?.blur(); }
+                        if (e.key === "Enter" && searchHits[0]) { searchHits[0].onSelect(); setSearchOpen(false); setSearchQ(""); }
+                      }}
+                      placeholder="Search orders, compounds, group buys, products..."
+                      className="flex-1 min-w-0 bg-transparent outline-none"
+                      style={{ fontSize: 13.5, color: T.text }}
+                    />
+                    {searchQ ? (
+                      <button
+                        onClick={() => { setSearchQ(""); searchInputRef.current?.focus(); }}
+                        className="flex items-center justify-center rounded shrink-0"
+                        style={{ width: 20, height: 20, color: T.subtle }}
+                        title="Clear"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <span
+                        className="hidden md:flex items-center gap-1 rounded-md font-semibold shrink-0"
+                        style={{ fontSize: 11, padding: "3px 7px", background: T.chip, color: T.subtle }}
+                      >⌘ K</span>
+                    )}
+                  </div>
+
+                  {searchOpen && searchQ.length > 0 && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setSearchOpen(false)} />
+                      <div
+                        className="absolute left-0 right-0 z-50 mt-2 rounded-lg dh-scroll"
+                        style={{ top: "100%", background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)", maxHeight: 440, overflowY: "auto" }}
+                      >
+                        {searchLoading && searchHits.length === 0 && (
+                          <div className="px-4 py-5 text-center" style={{ fontSize: 12.5, color: T.muted }}>Searching…</div>
+                        )}
+                        {!searchLoading && searchHits.length === 0 && (
+                          <div className="px-4 py-6 text-center">
+                            <p className="font-semibold" style={{ fontSize: 13 }}>No matches for “{searchQ}”</p>
+                            <p style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>Try an order code, compound, or product name.</p>
+                          </div>
+                        )}
+                        {SEARCH_GROUPS.map(group => {
+                          const groupHits = searchHits.filter(h => h.group === group);
+                          if (groupHits.length === 0) return null;
+                          return (
+                            <div key={group}>
+                              <p className="px-4 pt-3 pb-1.5 font-semibold uppercase" style={{ fontSize: 10.5, letterSpacing: ".04em", color: T.subtle }}>{group}</p>
+                              {groupHits.map(h => (
+                                <button
+                                  key={h.key}
+                                  onMouseDown={e => e.preventDefault()}
+                                  onClick={() => { h.onSelect(); setSearchOpen(false); setSearchQ(""); }}
+                                  className="dh-nav w-full flex items-center gap-3 px-4 text-left"
+                                  style={{ height: 48 }}
+                                >
+                                  <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 30, height: 30, background: `${h.color}1A`, color: h.color }}>
+                                    <h.Icon className="w-4 h-4" />
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block font-semibold truncate" style={{ fontSize: 13, color: T.text }}>{h.label}</span>
+                                    {h.sub && <span className="block truncate" style={{ fontSize: 11.5, color: T.muted }}>{h.sub}</span>}
+                                  </span>
+                                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -406,18 +604,62 @@ export function DashboardHome({
                   <Bell className="w-4 h-4" />
                   <span className="absolute rounded-full" style={{ top: 9, right: 10, width: 7, height: 7, background: LIVE_RED, border: `2px solid ${T.panel}` }} />
                 </button>
-                <button
-                  onClick={() => onSection("profile")}
-                  className="flex items-center gap-2 rounded-md pl-1 pr-2"
-                  style={{ height: 44, background: T.panel, border: `1px solid ${T.border}` }}
-                >
-                  <span className="flex items-center justify-center rounded-full text-white shrink-0" style={{ width: 34, height: 34, background: ACCENT, fontWeight: 700, fontSize: 14 }}>{initial}</span>
-                  <span className="hidden md:flex flex-col items-start leading-tight min-w-0">
-                    <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{username}</span>
-                    <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{username}</span>
-                  </span>
-                  <ChevronDown className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => { setSearchOpen(false); setMenu(m => (m === "profile" ? null : "profile")); }}
+                    className="flex items-center gap-2 rounded-md pl-1 pr-2"
+                    style={{ height: 44, background: T.panel, border: `1px solid ${menu === "profile" ? ACCENT : T.border}` }}
+                  >
+                    <span className="flex items-center justify-center rounded-full text-white shrink-0" style={{ width: 34, height: 34, background: ACCENT, fontWeight: 700, fontSize: 14 }}>{initial}</span>
+                    <span className="hidden md:flex flex-col items-start leading-tight min-w-0">
+                      <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{username}</span>
+                      <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{username}</span>
+                    </span>
+                    <ChevronDown className="w-4 h-4 shrink-0 transition-transform" style={{ color: T.subtle, transform: menu === "profile" ? "rotate(180deg)" : "none" }} />
+                  </button>
+                  {menu === "profile" && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                      <div className="absolute right-0 z-50 mt-2 rounded-lg overflow-hidden" style={{ top: "100%", width: 220, background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)" }}>
+                        <div className="px-3.5 py-3" style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                          <p className="font-bold truncate" style={{ fontSize: 13 }}>{username}</p>
+                          <p className="truncate" style={{ fontSize: 11.5, color: T.subtle }}>@{username}</p>
+                        </div>
+                        <div className="py-1.5">
+                          {([
+                            { label: "View profile", Icon: User, run: () => onSection("profile"), keepOpen: false },
+                            { label: "My orders", Icon: ReceiptText, run: () => onSection("orders"), keepOpen: false },
+                            { label: "Group buys", Icon: UsersRound, run: () => onSection("groups"), keepOpen: false },
+                            { label: "Lab tests", Icon: ClipboardList, run: () => onSection("lab-tests"), keepOpen: false },
+                            { label: dark ? "Light mode" : "Dark mode", Icon: dark ? Sun : Moon, run: toggleTheme, keepOpen: true },
+                          ] as { label: string; Icon: React.ElementType; run: () => void; keepOpen: boolean }[]).map(item => (
+                            <button
+                              key={item.label}
+                              onClick={() => { item.run(); if (!item.keepOpen) setMenu(null); }}
+                              className="dh-nav w-full flex items-center gap-3 px-3.5 text-left"
+                              style={{ height: 40, fontSize: 13, color: T.text, fontWeight: 600 }}
+                            >
+                              <item.Icon className="w-4 h-4 shrink-0" style={{ color: T.muted }} />
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                        {onLogout && (
+                          <div className="py-1.5" style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                            <button
+                              onClick={() => { setMenu(null); onLogout(); }}
+                              className="dh-nav w-full flex items-center gap-3 px-3.5 text-left"
+                              style={{ height: 40, fontSize: 13, color: "#DC2626", fontWeight: 600 }}
+                            >
+                              <LogOut className="w-4 h-4 shrink-0" />
+                              Sign out
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </header>
 
@@ -565,9 +807,41 @@ export function DashboardHome({
                       <span className="font-extrabold" style={{ fontSize: 16 }}>Recent Orders</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="flex items-center gap-1.5 rounded-md font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}>
-                        <SlidersHorizontal className="w-3.5 h-3.5" /> Filter
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => { setSearchOpen(false); setMenu(m => (m === "filter" ? null : "filter")); }}
+                          className="flex items-center gap-1.5 rounded-md font-semibold"
+                          style={{
+                            fontSize: 12, padding: "7px 14px",
+                            background: orderFilter === "all" ? T.panel : ACCENT_SOFT,
+                            border: `1px solid ${menu === "filter" || orderFilter !== "all" ? ACCENT : T.border}`,
+                            color: orderFilter === "all" ? T.muted : ACCENT,
+                          }}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" /> {orderFilter === "all" ? "Filter" : (STATUS_STYLE[orderFilter]?.label ?? orderFilter)}
+                        </button>
+                        {menu === "filter" && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                            <div className="absolute right-0 z-50 mt-2 rounded-lg overflow-hidden py-1.5" style={{ top: "100%", width: 184, background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)" }}>
+                              {["all", ...Object.keys(STATUS_STYLE)].map(st => {
+                                const isActive = orderFilter === st;
+                                return (
+                                  <button
+                                    key={st}
+                                    onClick={() => { setOrderFilter(st); setMenu(null); }}
+                                    className="dh-nav w-full flex items-center justify-between px-3.5 text-left"
+                                    style={{ height: 38, fontSize: 12.5, color: isActive ? ACCENT : T.text, fontWeight: isActive ? 700 : 600 }}
+                                  >
+                                    {st === "all" ? "All orders" : (STATUS_STYLE[st]?.label ?? st)}
+                                    {isActive && <Check className="w-4 h-4 shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
                       <button onClick={() => onSection("orders")} className="flex items-center gap-1 rounded-md font-semibold" style={{ fontSize: 12, padding: "7px 14px", background: T.panel, border: `1px solid ${ACCENT}`, color: ACCENT }}>
                         See all orders
                       </button>
@@ -653,7 +927,11 @@ export function DashboardHome({
                       </span>
                       <span className="font-extrabold" style={{ fontSize: 15 }}>Statistic</span>
                     </div>
-                    {kebab}
+                    {cardMenu("stat", [
+                      { label: "View all orders", run: () => onSection("orders") },
+                      { label: "View compounds", run: () => onSection("compounds") },
+                      { label: "View blood tests", run: () => onSection("blood-tests") },
+                    ])}
                   </div>
 
                   {/* Ring */}
@@ -705,7 +983,10 @@ export function DashboardHome({
                       <Clock className="w-[18px] h-[18px]" style={{ color: ACCENT }} />
                       <span className="font-extrabold" style={{ fontSize: 15 }}>Today</span>
                     </div>
-                    {kebab}
+                    {cardMenu("today", [
+                      { label: "View group buys", run: () => onSection("groups") },
+                      { label: "Open GLP-1 tracker", run: () => onSection("glp1") },
+                    ])}
                   </div>
 
                   {activeGbs.length === 0 && glp1Streak === 0 ? (
