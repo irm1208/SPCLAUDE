@@ -201,17 +201,12 @@ export function HubBottomNav({
         onClick={() => navigate(item.id)}
         aria-label={item.label}
         aria-current={active ? "page" : undefined}
-        className="flex-1 h-full flex items-center justify-center transition-all"
+        className="flex-1 h-full flex flex-col items-center justify-center gap-1 transition-all"
+        style={{ color: active ? ACCENT : (dark ? "rgba(255,255,255,0.60)" : "#3B3B3B") }}
       >
-        <span
-          className="flex items-center justify-center rounded-full transition-all"
-          style={{
-            width: 40, height: 40,
-            background: active ? activeBg : "transparent",
-            color: active ? ACCENT : (dark ? "rgba(255,255,255,0.60)" : "#3B3B3B"),
-          }}
-        >
-          <Icon className="w-[22px] h-[22px]" strokeWidth={active ? 2.4 : 2} />
+        <Icon className="w-[21px] h-[21px]" strokeWidth={active ? 2.4 : 2} />
+        <span className="leading-none" style={{ fontSize: 10, fontWeight: active ? 700 : 600 }}>
+          {item.label}
         </span>
       </button>
     );
@@ -242,7 +237,7 @@ export function HubBottomNav({
         className={`fixed z-[60] ${hiddenCls}`}
         style={{
           left: 16, right: 16,
-          bottom: "calc(96px + env(safe-area-inset-bottom))",
+          bottom: "calc(88px + env(safe-area-inset-bottom))",
           maxWidth: 400, margin: "0 auto",
           fontFamily: FONT,
           opacity: open ? 1 : 0,
@@ -339,7 +334,7 @@ export function HubBottomNav({
         className={`fixed z-[65] ${hiddenCls}`}
         style={{
           left: 16, right: 16,
-          bottom: "calc(14px + env(safe-area-inset-bottom))",
+          bottom: "calc(6px + env(safe-area-inset-bottom))",
           maxWidth: 420, margin: "0 auto",
           fontFamily: FONT,
         }}
