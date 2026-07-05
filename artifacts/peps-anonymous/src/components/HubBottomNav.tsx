@@ -3,9 +3,10 @@ import { useLocation } from "wouter";
 import {
   LayoutDashboard, Syringe, FlaskConical, HeartPulse,
   Scale, LineChart, Users, UsersRound, User, MessageCircle, History,
-  Store, TestTube, LogOut, Sun, Moon, Home, Plus,
+  Store, TestTube, LogOut, Sun, Moon, Home,
   ReceiptText, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
 } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
 import { useLogout } from "@/hooks/use-account";
@@ -368,9 +369,8 @@ export function HubBottomNav({
               boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
             }}
           >
-            <Plus
-              className="w-5 h-5"
-              strokeWidth={2.5}
+            <BrandLogo
+              size={22}
               style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform 220ms ease" }}
             />
           </button>
