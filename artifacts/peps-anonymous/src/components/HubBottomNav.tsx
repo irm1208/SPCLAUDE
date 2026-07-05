@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard, Syringe, FlaskConical, HeartPulse,
   Scale, LineChart, Users, UsersRound, User, MessageCircle, History,
-  Store, TestTube, X, LogOut, Sun, Moon,
-  ReceiptText, MoreHorizontal, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
+  Store, TestTube, LogOut, Sun, Moon, Home, Plus,
+  ReceiptText, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
@@ -30,11 +30,13 @@ export const HUB_SECTION_ALL_META: { id: HubSection; label: string; icon: React.
   { id: "health-hub",  label: "Health Hub",      icon: HeartPulse },
 ];
 
-const BOTTOM_NAV_ITEMS: { id: HubSection; label: string; icon: React.ElementType }[] = [
-  { id: "home",       label: "Home",   icon: LayoutDashboard },
-  { id: "orders",     label: "Orders", icon: ReceiptText },
-  { id: "groups",     label: "Groups", icon: UsersRound },
-  { id: "health-hub", label: "Health", icon: HeartPulse },
+const BAR_LEFT: { id: HubSection; label: string; icon: React.ElementType }[] = [
+  { id: "home",   label: "Home",   icon: Home },
+  { id: "orders", label: "Orders", icon: ReceiptText },
+];
+const BAR_RIGHT: { id: HubSection; label: string; icon: React.ElementType }[] = [
+  { id: "groups",  label: "Group Buys", icon: UsersRound },
+  { id: "profile", label: "Profile",    icon: User },
 ];
 
 interface HubBottomNavProps {
@@ -44,11 +46,11 @@ interface HubBottomNavProps {
   setHubMoreOpen: (open: boolean) => void;
   account?: { organiserStatus?: string | null; reshipperStatus?: string | null; isWholesale?: boolean } | null;
   navOrder?: HubSection[];
-  /** Breakpoint at which the bottom bar/drawer hide. "md" (default) hides ≥768px; "lg" keeps them visible through tablet and hides ≥1024px. */
+  /** Breakpoint at which the bottom bar/menu hide. "md" (default) hides ≥768px; "lg" keeps them visible through tablet and hides ≥1024px. */
   hideAt?: "md" | "lg";
 }
 
-type DrawerItem = {
+type MenuItem = {
   key: string;
   label: string;
   Icon: React.ElementType;
@@ -68,7 +70,6 @@ export function HubBottomNav({
   const { dark, toggle: toggleTheme } = useThemeStore();
   const { open, setOpen } = useHubDrawerStore();
   const logout = useLogout();
-  const drawerRef = useRef<HTMLDivElement>(null);
 
   const T = palette(dark);
   const activeBg = dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)";
@@ -81,9 +82,9 @@ export function HubBottomNav({
   }, [open, setOpen]);
 
   useEffect(() => {
-    // The drawer (and its backdrop/close button) is hidden above the `hideAt`
-    // breakpoint. Only lock body scroll while the drawer is actually shown. On
-    // desktop the drawer is hidden, so never lock scroll there — and auto-close
+    // The popover menu (and its backdrop) is hidden above the `hideAt`
+    // breakpoint. Only lock body scroll while the menu is actually shown. On
+    // desktop the menu is hidden, so never lock scroll there — and auto-close
     // any stale open state so a leftover `open` can't strand desktop users on a
     // page that can no longer scroll or reveal a close control.
     const mq = window.matchMedia(`(min-width: ${hideMinWidth}px)`);
@@ -113,10 +114,8 @@ export function HubBottomNav({
     setLocation(path);
   };
 
-  const isMoreActive = open || !BOTTOM_NAV_ITEMS.some(i => i.id === section);
-
-  // ── Drawer nav model (mirrors the desktop sidebar) ──
-  const roleItems: DrawerItem[] = [
+  // ── Popover menu model (mirrors the desktop sidebar) ──
+  const roleItems: MenuItem[] = [
     ...(account?.organiserStatus === "approved"
       ? [{ key: "organiser", label: "GB Organiser", Icon: Store, onClick: () => go("/gborganiser") }]
       : []),
@@ -131,7 +130,7 @@ export function HubBottomNav({
       : []),
   ];
 
-  const drawerGroups: { label?: string; items: DrawerItem[] }[] = [
+  const menuGroups: { label?: string; items: MenuItem[] }[] = [
     {
       items: [
         { key: "home",       label: "Dashboard",  Icon: LayoutDashboard, active: section === "home",       onClick: () => navigate("home") },
@@ -171,7 +170,7 @@ export function HubBottomNav({
     },
   ];
 
-  const renderRow = (item: DrawerItem) => {
+  const renderRow = (item: MenuItem) => {
     const Icon = item.Icon;
     return (
       <button
@@ -179,25 +178,43 @@ export function HubBottomNav({
         onClick={item.onClick}
         aria-current={item.active ? "page" : undefined}
         className={item.active
-          ? "relative w-full flex items-center rounded-md transition-all text-left"
-          : "hbn-row relative w-full flex items-center rounded-md transition-all text-left"}
+          ? "w-full flex items-center transition-all text-left"
+          : "hbn-row w-full flex items-center transition-all text-left"}
         style={{
-          gap: 11, padding: "0 12px", height: 40,
+          gap: 14, padding: "0 14px", height: 46, borderRadius: 14,
           background: item.active ? activeBg : "transparent",
-          color: item.active ? ACCENT : T.muted,
-          fontWeight: item.active ? 700 : 600, fontSize: 13.5,
+          color: T.text, fontWeight: 600, fontSize: 14.5,
         }}
       >
-        {item.active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
-        <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={item.active ? 2.4 : 2} />
+        <Icon className="w-5 h-5 shrink-0" strokeWidth={2} style={{ color: ACCENT }} />
         <span className="truncate">{item.label}</span>
       </button>
     );
   };
 
-  const chipBtn: React.CSSProperties = {
-    height: 38, borderRadius: 6, border: `1px solid ${T.border}`,
-    background: T.chip, color: T.muted, fontSize: 12.5, fontWeight: 600,
+  const barItem = (item: { id: HubSection; label: string; icon: React.ElementType }) => {
+    const Icon = item.icon;
+    const active = section === item.id && !open;
+    return (
+      <button
+        key={item.id}
+        onClick={() => navigate(item.id)}
+        aria-label={item.label}
+        aria-current={active ? "page" : undefined}
+        className="flex-1 h-full flex items-center justify-center transition-all"
+      >
+        <span
+          className="flex items-center justify-center rounded-full transition-all"
+          style={{
+            width: 40, height: 40,
+            background: active ? activeBg : "transparent",
+            color: active ? ACCENT : (dark ? "rgba(255,255,255,0.60)" : "#3B3B3B"),
+          }}
+        >
+          <Icon className="w-[22px] h-[22px]" strokeWidth={active ? 2.4 : 2} />
+        </span>
+      </button>
+    );
   };
 
   return (
@@ -210,8 +227,9 @@ export function HubBottomNav({
       <div
         className={`fixed inset-0 z-[55] ${hiddenCls}`}
         style={{
-          background: "rgba(3,45,96,0.45)",
-          backdropFilter: "blur(2px)",
+          background: "rgba(3,45,96,0.35)",
+          backdropFilter: "blur(4px)",
+          WebkitBackdropFilter: "blur(4px)",
           opacity: open ? 1 : 0,
           pointerEvents: open ? "auto" : "none",
           transition: "opacity 220ms ease",
@@ -219,158 +237,151 @@ export function HubBottomNav({
         onClick={() => setOpen(false)}
       />
 
-      {/* Slide-out drawer */}
+      {/* ── Floating popover menu ── */}
       <div
-        ref={drawerRef}
-        className={`fixed top-0 left-0 bottom-0 z-[60] flex flex-col ${hiddenCls}`}
+        className={`fixed z-[60] ${hiddenCls}`}
         style={{
-          width: 280,
-          background: T.sidebar,
-          borderRight: `1px solid ${T.border}`,
+          left: 16, right: 16,
+          bottom: "calc(96px + env(safe-area-inset-bottom))",
+          maxWidth: 400, margin: "0 auto",
           fontFamily: FONT,
-          transform: open ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 240ms cubic-bezier(0.32,0,0.15,1)",
-          willChange: "transform",
-          overflowY: "auto",
-          overflowX: "hidden",
+          opacity: open ? 1 : 0,
+          transform: open ? "translateY(0) scale(1)" : "translateY(14px) scale(0.97)",
+          transformOrigin: "50% 100%",
+          pointerEvents: open ? "auto" : "none",
+          visibility: open ? "visible" : "hidden",
+          transition: "opacity 200ms ease, transform 240ms cubic-bezier(.22,1,.36,1), visibility 0s linear " + (open ? "0s" : "240ms"),
         }}
+        aria-hidden={!open}
       >
-        {/* Brand header */}
-        <div
-          className="flex items-center justify-between px-4 shrink-0"
-          style={{ height: 64, borderBottom: `1px solid ${T.border}` }}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="flex items-center justify-center shrink-0 select-none"
-              style={{ width: 34, height: 34, borderRadius: 8, background: ACCENT, color: "#fff", fontWeight: 800, fontSize: 11 }}
-            >
-              S&amp;P
-            </div>
-            <span className="font-extrabold tracking-tight truncate" style={{ fontSize: 17, color: T.text }}>Salt &amp; Peps</span>
-          </div>
-          <button
-            onClick={() => setOpen(false)}
-            aria-label="Close menu"
-            className="hbn-row flex items-center justify-center rounded-md shrink-0"
-            style={{ width: 30, height: 30, color: T.subtle }}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Nav groups */}
-        <nav className="flex-1 px-3 py-3 overflow-y-auto">
-          {drawerGroups.map((group, gi) => (
-            <React.Fragment key={group.label ?? "main"}>
-              {group.label && (
-                <p
-                  className="px-3 font-semibold select-none"
-                  style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle, marginTop: gi > 0 ? 20 : 0, marginBottom: 6 }}
-                >
-                  {group.label}
-                </p>
-              )}
-              <div className="flex flex-col gap-0.5">
-                {group.items.map(renderRow)}
-              </div>
-            </React.Fragment>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        <div className="px-3 pb-4 pt-3 shrink-0" style={{ borderTop: `1px solid ${T.border}` }}>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={toggleTheme}
-              className="flex items-center justify-center gap-2 transition-all"
-              style={chipBtn}
-            >
-              {dark ? <Sun className="w-4 h-4" strokeWidth={2} /> : <Moon className="w-4 h-4" strokeWidth={2} />}
-              {dark ? "Light mode" : "Dark mode"}
-            </button>
-            <button
-              onClick={() => go("/")}
-              className="flex items-center justify-center gap-2 transition-all"
-              style={chipBtn}
-            >
-              <Store className="w-4 h-4" strokeWidth={2} />
-              Store
-            </button>
-          </div>
-          <button
-            onClick={() => { logout.mutate(); setLocation("/"); setOpen(false); }}
-            className="w-full flex items-center justify-center gap-2 mt-2 transition-all"
+        <div className="relative">
+          <div
+            className="flex flex-col overflow-hidden"
             style={{
-              height: 38, borderRadius: 6, fontSize: 12.5, fontWeight: 700,
-              color: dark ? "rgba(255,120,120,0.9)" : "#BA0517",
-              border: `1px solid ${dark ? "rgba(220,38,38,0.25)" : "rgba(186,5,23,0.20)"}`,
-              background: dark ? "rgba(220,38,38,0.08)" : "rgba(186,5,23,0.04)",
+              background: T.panel,
+              border: `1px solid ${T.border}`,
+              borderRadius: 24,
+              boxShadow: "0 18px 48px rgba(16,17,33,0.28)",
+              maxHeight: "min(62vh, 540px)",
             }}
           >
-            <LogOut className="w-4 h-4" strokeWidth={2} />
-            Sign out
-          </button>
+            <nav className="flex-1 overflow-y-auto" style={{ padding: "10px 8px" }}>
+              {menuGroups.map((group, gi) => (
+                <React.Fragment key={group.label ?? "main"}>
+                  {group.label && (
+                    <p
+                      className="select-none font-bold uppercase"
+                      style={{ fontSize: 10.5, letterSpacing: ".05em", color: T.subtle, padding: "12px 14px 4px", marginTop: gi > 0 ? 2 : 0 }}
+                    >
+                      {group.label}
+                    </p>
+                  )}
+                  <div className="flex flex-col gap-0.5">
+                    {group.items.map(renderRow)}
+                  </div>
+                </React.Fragment>
+              ))}
+            </nav>
+
+            {/* Footer */}
+            <div
+              className="grid grid-cols-3 gap-1.5 shrink-0"
+              style={{ padding: 8, borderTop: `1px solid ${T.border}` }}
+            >
+              <button
+                onClick={toggleTheme}
+                className="flex items-center justify-center gap-1.5 transition-all"
+                style={{ height: 38, borderRadius: 12, background: T.chip, color: T.muted, fontSize: 12, fontWeight: 600 }}
+              >
+                {dark ? <Sun className="w-4 h-4" strokeWidth={2} /> : <Moon className="w-4 h-4" strokeWidth={2} />}
+                {dark ? "Light" : "Dark"}
+              </button>
+              <button
+                onClick={() => go("/")}
+                className="flex items-center justify-center gap-1.5 transition-all"
+                style={{ height: 38, borderRadius: 12, background: T.chip, color: T.muted, fontSize: 12, fontWeight: 600 }}
+              >
+                <Store className="w-4 h-4" strokeWidth={2} />
+                Store
+              </button>
+              <button
+                onClick={() => { logout.mutate(); setLocation("/"); setOpen(false); }}
+                className="flex items-center justify-center gap-1.5 transition-all"
+                style={{
+                  height: 38, borderRadius: 12, fontSize: 12, fontWeight: 700,
+                  color: dark ? "rgba(255,120,120,0.9)" : "#BA0517",
+                  background: dark ? "rgba(220,38,38,0.08)" : "rgba(186,5,23,0.05)",
+                }}
+              >
+                <LogOut className="w-4 h-4" strokeWidth={2} />
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          {/* Pointer tail */}
+          <div
+            className="absolute"
+            style={{
+              left: "50%", bottom: -7, width: 16, height: 16,
+              transform: "translateX(-50%) rotate(45deg)",
+              background: T.panel,
+              borderRight: `1px solid ${T.border}`,
+              borderBottom: `1px solid ${T.border}`,
+              borderBottomRightRadius: 4,
+            }}
+          />
         </div>
       </div>
 
-      {/* ── Fixed bottom navigation bar ── */}
+      {/* ── Floating pill bottom bar (above the backdrop, like the reference FAB) ── */}
       <div
-        className={`fixed bottom-0 left-0 right-0 z-[50] ${hiddenCls} flex items-stretch`}
+        className={`fixed z-[65] ${hiddenCls}`}
         style={{
-          height: 58,
-          background: dark ? "rgba(18,18,22,0.97)" : "rgba(255,255,255,0.97)",
-          borderTop: `1px solid ${T.border}`,
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          paddingBottom: "env(safe-area-inset-bottom)",
+          left: 16, right: 16,
+          bottom: "calc(14px + env(safe-area-inset-bottom))",
+          maxWidth: 420, margin: "0 auto",
           fontFamily: FONT,
         }}
       >
-        {BOTTOM_NAV_ITEMS.map(item => {
-          const Icon = item.icon;
-          const active = section === item.id && !open;
-          return (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.id)}
-              aria-current={active ? "page" : undefined}
-              className="relative flex-1 flex flex-col items-center justify-center gap-1 transition-all"
-              style={{ color: active ? ACCENT : T.subtle }}
-            >
-              {active && (
-                <span
-                  className="absolute top-0 rounded-b-full"
-                  style={{ width: 26, height: 3, background: ACCENT }}
-                />
-              )}
-              <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
-              <span className="leading-none" style={{ fontSize: 10, fontWeight: active ? 700 : 600 }}>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-
-        {/* More button */}
-        <button
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          aria-label="More navigation options"
-          className="relative flex-1 flex flex-col items-center justify-center gap-1 transition-all"
-          style={{ color: isMoreActive ? ACCENT : T.subtle }}
+        <div
+          className="flex items-center"
+          style={{
+            height: 64,
+            padding: "0 10px",
+            background: dark ? "rgba(23,23,28,0.97)" : "rgba(255,255,255,0.97)",
+            border: `1px solid ${T.border}`,
+            borderRadius: 9999,
+            boxShadow: "0 12px 32px rgba(16,17,33,0.18)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+          }}
         >
-          {isMoreActive && !open && (
-            <span
-              className="absolute top-0 rounded-b-full"
-              style={{ width: 26, height: 3, background: ACCENT }}
+          {BAR_LEFT.map(barItem)}
+
+          {/* Center menu button */}
+          <button
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={open ? "Close menu" : "Open menu"}
+            className="flex items-center justify-center rounded-full shrink-0 transition-all"
+            style={{
+              width: 52, height: 52,
+              margin: "0 6px",
+              background: ACCENT,
+              color: "#fff",
+              boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
+            }}
+          >
+            <Plus
+              className="w-6 h-6"
+              strokeWidth={2.5}
+              style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform 220ms ease" }}
             />
-          )}
-          <MoreHorizontal className="w-[19px] h-[19px]" strokeWidth={isMoreActive ? 2.4 : 2} />
-          <span className="leading-none" style={{ fontSize: 10, fontWeight: isMoreActive ? 700 : 600 }}>
-            More
-          </span>
-        </button>
+          </button>
+
+          {BAR_RIGHT.map(barItem)}
+        </div>
       </div>
     </>
   );

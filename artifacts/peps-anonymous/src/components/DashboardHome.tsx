@@ -145,7 +145,7 @@ export function DashboardHome({
       navProps={navProps}
     >
       {/* Content grid */}
-      <div className="px-4 md:px-7 py-6 flex flex-col xl:flex-row gap-5 pb-24 lg:pb-8">
+      <div className="px-4 md:px-7 py-6 flex flex-col xl:flex-row gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
 
         {/* LEFT column */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">

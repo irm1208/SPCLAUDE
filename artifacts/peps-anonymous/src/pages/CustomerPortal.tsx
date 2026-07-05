@@ -3589,7 +3589,7 @@ function BtDashboardTab({ sessions, username, onGoToDiscuss }: { sessions: Blood
         )}
 
         {/* Biomarker list */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-24">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-[calc(96px_+_env(safe-area-inset-bottom))]">
           {filteredItems.map(item => (
             <BtBiomarkerCard key={item.name}
               name={item.name} value={item.value} unit={item.unit}
@@ -7709,7 +7709,7 @@ export default function CustomerPortal() {
         onLogout={handleLogout}
         navProps={navProps}
       >
-        <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-24 lg:pb-8">
+        <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
 
           {/* ── Header: subtitle ── */}
           <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
@@ -9780,7 +9780,7 @@ export default function CustomerPortal() {
             <Loader2 className="w-7 h-7 animate-spin" style={{ color: TEAL }} />
           </div>
         ) : (
-          <div className="pb-24 md:pb-6 -mx-5 px-4 pt-4" style={{ background: PAGE_BG, minHeight: "calc(100vh - 120px)" }}>
+          <div className="pb-[calc(96px_+_env(safe-area-inset-bottom))] md:pb-6 -mx-5 px-4 pt-4" style={{ background: PAGE_BG, minHeight: "calc(100vh - 120px)" }}>
 
             {/* ═════════════════════════ SUMMARY TAB ══════════════════════════ */}
             {glp1SubTab === "summary" && (
