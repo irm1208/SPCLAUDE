@@ -6,7 +6,6 @@ import {
   Store, TestTube, LogOut, Sun, Moon, Home,
   ReceiptText, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
 } from "lucide-react";
-import { BrandLogo } from "@/components/BrandLogo";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
 import { useLogout } from "@/hooks/use-account";
@@ -369,10 +368,16 @@ export function HubBottomNav({
               boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
             }}
           >
-            <BrandLogo
-              size={22}
-              style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform 220ms ease" }}
-            />
+            <span
+              className="select-none"
+              style={{
+                fontWeight: 800, fontSize: 12.5, letterSpacing: "-0.02em",
+                transform: open ? "scale(0.85)" : "scale(1)",
+                transition: "transform 220ms ease",
+              }}
+            >
+              S&amp;P
+            </span>
           </button>
 
           {BAR_RIGHT.map(barItem)}
