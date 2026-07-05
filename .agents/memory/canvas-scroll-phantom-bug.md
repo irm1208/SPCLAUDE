@@ -1,42 +1,62 @@
 ---
-name: Canvas/preview scroll phantom bug
-description: "Won't scroll" where scrollbar-drag works but trackpad/wheel doesn't = Replit board capturing wheel, not an app bug.
+name: Canvas/preview scroll phantom bug + real sidebar scroll-trap
+description: Separate two scroll complaints — Replit board wheel-capture (not an app bug) vs a REAL fixed-sidebar inner-overflow trap that reproduces in a real tab.
 ---
 
-# "Dashboard won't scroll" is usually the canvas, not the app
+# Dashboard "scroll" complaints are TWO different things
 
-**Symptom that identifies it:** dragging the scrollbar DOES scroll, but two-finger
-trackpad / mouse-wheel swipe does NOT. Often paired with "no left sidebar" in a
-screenshot (the tile renders the app at a narrower width than a real window).
+There are two distinct causes that get reported together. Diagnose which one before touching code.
 
-**Strongest fingerprint:** an INNER scroll container (e.g. the sidebar nav's
-`overflow-y-auto dh-scroll`) DOES scroll with the trackpad inside the board, and
-once it bottoms out the scroll "spills"/chains into the page — but scrolling over
-the main body-scroll area does nothing. That's because the board captures wheel at
-the document level to pan itself, while an inner scroll container consumes the
-wheel first. This proves it's the board, not the app.
+## 1. Board/canvas wheel-capture — NOT an app bug
 
-**Do NOT "fix" it by converting the app/dashboard to inner-scroll** (`h-screen` +
-`overflow-y-auto`): it would make the trackpad work in the board but degrades the
-real mobile experience (100vh vs dynamic viewport, browser chrome no longer hides
-on scroll, fixed bottom-nav overlap). The board is a dev/preview surface; don't
-trade real-customer mobile UX for it.
+**Symptoms:** scroll is choppy/slow; two-finger trackpad / mouse-wheel swipe does
+nothing while dragging the scrollbar DOES scroll; often paired with "no left sidebar"
+(the tile renders the app narrower than a real window).
 
-**Cause:** when the app is viewed inside a Replit board/canvas iframe tile (or an
-embedded preview), the parent canvas captures wheel/trackpad gestures to pan the
-board, so they never reach the page inside the tile. A scrollbar drag is a direct
-pointer interaction on the app itself, so it still works.
+**Cause:** viewed inside a Replit board/canvas iframe tile, the parent canvas captures
+wheel/trackpad gestures to pan the board and re-composites the big live tile every
+frame (hence choppy). A scrollbar drag is a direct pointer interaction so it still works.
 
-**Why it's not an app bug:** the peps-anonymous frontend uses natural body scroll —
-DashboardHome root is `flex w-full min-h-screen` (grows with content, no vertical
-clip), `html`/`body`/`#root` have no `overflow-y:hidden` and no fixed height, the
-App shell (ErrorBoundary → providers → Router) adds no wrapping div, and there is
-**no** `wheel`/`touchmove`/`onWheel` `preventDefault` anywhere in `src`. The page
-scrolls at every width and in a real browser tab.
+**Fix for the user:** open the app in its own browser tab (the ↗ "Open in new tab" on
+the preview). Do NOT fix this in code — it's a preview-surface artifact. Confirmed with
+the user that it's smooth in a real tab.
 
-**Fix for the user:** open the app in its own browser tab (the "Open in new tab" ↗
-on the preview tile). Do NOT try to fix this in code.
+## 2. Fixed-sidebar inner-overflow trap — a REAL app bug (reproduces in a real tab)
 
-**Dead ends already ruled out (don't re-try):** body-scroll-lock in HubBottomNav
-(only locks the mobile drawer <768px and the QuickViews aren't on the dashboard);
-global CSS; layout height/overflow clip in DashboardHome; scroll-hijacking JS.
+**Do not mistake this for #1.** Fingerprint: scrolling while the cursor is over the
+LEFT SIDEBAR scrolls the sidebar nav to its bottom FIRST, then the page scrolls. This
+happens in a real browser tab too. The canvas wheel-capture can sit on top and make it
+look like #1, but the trap itself is real.
+
+**Cause:** the desktop sidebar (`<aside>` `fixed inset-y-0`, 100vh, DashboardHome.tsx)
+has an inner `overflow-y-auto dh-scroll` region holding brand + nav + Compounds + Group
+Buys + Telegram promo. That stack is ~860–880px; on typical laptop viewport heights
+(1366×768≈660, 1440×900≈790, 1536×864≈750) it overflows and becomes an independent
+scroll container that eats the wheel until it bottoms out. A persistent full-height
+sidebar with overflowing content MUST either scroll internally (this trap) or clip —
+there is no pure-CSS "scroll the page while cursor is over an overflowing scroll box".
+
+**Fix applied (architect-approved Option B):** keep everything structural (fixed aside,
+icon-rail `marginTop:auto` footer, main `lg:ml-[var(--dh-ml)]`, and `overflow-y-auto`
+as a last-resort fallback). Add `min-width:1024px` + `max-height` media queries that
+drop the lowest-priority sidebar sections as the viewport shortens so the nav fits and
+never scrolls internally (promo ≤960px, Group Buys ≤720px, Compounds ≤560px) via hook
+classes `dh-side-promo` / `dh-side-gb` / `dh-side-compounds`.
+
+**Gotcha that blocked the first pass:** anything you hide this way must not be its only
+entry point. Telegram's `onSection("telegram")` existed ONLY in the promo card on
+desktop — the `{ id: "telegram" }` portal nav item is consumed solely by HubBottomNav,
+which is `md:hidden` (mobile only). Hiding the promo orphaned Telegram on desktop until
+a Send-icon Telegram button was added to the icon-rail footer (zero vertical budget,
+always visible). Group Buys (main nav) and Compounds (Health Hub / "View compounds")
+were already safe.
+
+## Shared dead end — don't re-try
+
+**Do NOT "fix" either by converting the app/dashboard to a global inner-scroll shell**
+(`h-screen` + `overflow-y-auto`): it would make the trackpad work in the board but
+degrades real mobile UX (100vh vs dynamic viewport, browser chrome no longer hides on
+scroll, fixed bottom-nav overlap). The rest of the app uses natural body scroll on
+purpose. Also ruled out: `overscroll-behavior:contain` (fully traps, worse); a sticky
+in-flow sidebar (taller-than-viewport sticky pins at top and its bottom items become
+unreachable without JS); JS wheel-forwarding (breaks keyboard/touch consistency).

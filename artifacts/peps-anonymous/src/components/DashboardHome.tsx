@@ -339,6 +339,26 @@ export function DashboardHome({
         @media (prefers-reduced-motion: reduce) {
           .dh-rise, .dh-float-a, .dh-float-b, .dh-sage-ring { animation: none !important; opacity: 1 !important; transform: none !important; }
         }
+        /* Desktop sidebar height budget: the fixed 100vh sidebar's inner nav
+           (brand + 5 nav + Compounds + Group Buys + Telegram promo) is ~850px tall.
+           On shorter viewports that would overflow and turn the nav into an inner
+           scroll container that traps the mouse wheel (page won't scroll while the
+           cursor is over the sidebar). To keep ONE unified page scroll, we drop the
+           lowest-priority sections as the viewport gets shorter so the nav fits and
+           never scrolls internally. overflow-y-auto stays as a last-resort fallback.
+           Everything dropped here stays reachable: Telegram via the icon-rail
+           button (always visible), Group Buys via the main nav, Compounds via the
+           Health Hub / "View compounds" actions.
+           If new sidebar sections are added, re-check these thresholds. */
+        @media (min-width: 1024px) and (max-height: 960px) {
+          .dh-side-promo { display: none; }
+        }
+        @media (min-width: 1024px) and (max-height: 720px) {
+          .dh-side-gb { display: none; }
+        }
+        @media (min-width: 1024px) and (max-height: 560px) {
+          .dh-side-compounds { display: none; }
+        }
       `}</style>
 
       {/* ══ Sidebar (dual-tier: icon rail + labelled panel) ══ */}
@@ -380,6 +400,15 @@ export function DashboardHome({
           </nav>
 
           <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
+            <button
+              onClick={() => onSection("telegram")}
+              title="Telegram"
+              aria-label="Telegram notifications"
+              className="dh-rail flex items-center justify-center transition-all"
+              style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
+            >
+              <Send className="w-[19px] h-[19px]" />
+            </button>
             <button
               onClick={() => navigate("/shop")}
               title="Shop"
@@ -443,7 +472,7 @@ export function DashboardHome({
 
           {/* Compounds (Favorites analog) */}
           {!collapsed && activeCompounds.length > 0 && (
-            <>
+            <div className="dh-side-compounds">
               <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Compounds</p>
               <div className="flex flex-col gap-0.5">
                 {activeCompounds.slice(0, 3).map(c => (
@@ -458,12 +487,12 @@ export function DashboardHome({
                   </button>
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           {/* Group Buys (Friends analog) */}
           {!collapsed && groupBuys.length > 0 && (
-            <>
+            <div className="dh-side-gb">
               <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Group Buys</p>
               <div className="flex flex-col gap-0.5">
                 {groupBuys.slice(0, 5).map(g => {
@@ -486,14 +515,14 @@ export function DashboardHome({
                   );
                 })}
               </div>
-            </>
+            </div>
           )}
 
           {/* Bottom promo card */}
           {!collapsed && (
             <button
               onClick={() => onSection("telegram")}
-              className="dh-card-hover w-full text-left mt-6 rounded-xl relative overflow-hidden"
+              className="dh-card-hover dh-side-promo w-full text-left mt-6 rounded-xl relative overflow-hidden"
               style={{ background: HERO_GRAD, padding: 16, color: "#fff" }}
             >
               <div className="absolute" style={{ top: -28, right: -22, width: 108, height: 108, borderRadius: 9999, background: "rgba(255,255,255,.14)", filter: "blur(26px)", pointerEvents: "none" }} />
