@@ -115,6 +115,12 @@ function daysSince(iso: string) {
   return Math.max(0, Math.round((Date.now() - start) / 86_400_000));
 }
 
+const CUR_SYM: Record<string, string> = { USD: "$", GBP: "£", EUR: "€", "$": "$", "£": "£", "€": "€" };
+function fmtMoney(n: number, cur?: string | null) {
+  const sym = (cur && CUR_SYM[cur]) || "$";
+  return `${sym}${(n ?? 0).toFixed(2)}`;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DashboardHome({
@@ -135,6 +141,8 @@ export function DashboardHome({
   const [dq, setDq] = useState("");
   const [menu, setMenu] = useState<null | "profile" | "filter" | "stat" | "today">(null);
   const [orderFilter, setOrderFilter] = useState<string>("all");
+  // Rail quick-view flyout: which section is peeking, and the y-offset to anchor it.
+  const [quickView, setQuickView] = useState<{ id: string; top: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Debounce the search query so we don't hit the APIs on every keystroke.
@@ -151,7 +159,7 @@ export function DashboardHome({
         searchInputRef.current?.focus();
         setSearchOpen(true);
       }
-      if (e.key === "Escape") setMenu(null);
+      if (e.key === "Escape") { setMenu(null); setQuickView(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -196,6 +204,10 @@ export function DashboardHome({
     useGetProducts({ query: { enabled: searching } });
   const { data: labTests = [], isFetching: labTestsFetching } =
     useListLabTests({ q: dq }, { query: { enabled: dq.length > 1 } });
+
+  // Lab tests for the rail quick-view flyout — fetched only while that flyout is open.
+  const { data: qvLabTests = [], isFetching: qvLabFetching } =
+    useListLabTests(undefined, { query: { enabled: quickView?.id === "lab-tests" } });
 
   type SearchHit = {
     key: string; group: (typeof SEARCH_GROUPS)[number]; label: string; sub?: string;
@@ -314,6 +326,116 @@ export function DashboardHome({
     </div>
   );
 
+  // ── Rail quick-view flyout ──
+  const QV_TITLE: Record<string, string> = {
+    orders: "Recent Orders", groups: "Group Buys",
+    "health-hub": "Health Hub", "lab-tests": "Lab Tests",
+  };
+  const qvRow = "dh-nav w-full flex items-center gap-2.5 rounded-lg text-left transition-colors";
+
+  const qvEmpty = (Icon: React.ElementType, text: string) => (
+    <div className="flex flex-col items-center justify-center text-center" style={{ padding: "28px 16px", color: T.subtle }}>
+      <Icon className="w-6 h-6" style={{ marginBottom: 8, opacity: 0.55 }} />
+      <span style={{ fontSize: 12.5 }}>{text}</span>
+    </div>
+  );
+
+  const openQuickView = (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (id === "home") { onSection("home"); setQuickView(null); return; }
+    setMenu(null);
+    setSearchOpen(false);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const top = Math.max(12, Math.min(rect.top - 4, window.innerHeight - 300));
+    setQuickView(qv => (qv?.id === id ? null : { id, top }));
+  };
+
+  const quickBody = (id: string): React.ReactNode => {
+    if (id === "orders") {
+      const items = [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
+      if (!items.length) return qvEmpty(ReceiptText, "No orders yet");
+      return items.map(o => {
+        const st = STATUS_STYLE[o.status] ?? STATUS_STYLE.Submitted;
+        return (
+          <button key={o.id} onClick={() => { onSection("orders"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+            <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 32, height: 32, background: T.chip, color: ACCENT }}>
+              <ReceiptText className="w-4 h-4" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate font-semibold" style={{ fontSize: 13 }}>{o.code}</span>
+                <span className="shrink-0 font-bold" style={{ fontSize: 12.5 }}>{fmtMoney(o.grandTotal, o.currency)}</span>
+              </span>
+              <span className="flex items-center justify-between gap-2" style={{ marginTop: 2 }}>
+                <span className="truncate" style={{ fontSize: 11.5, color: T.subtle }}>
+                  {o.lineItems[0]?.productName ?? "Order"}{o.lineItems.length > 1 ? ` +${o.lineItems.length - 1}` : ""}
+                </span>
+                <span className="shrink-0 rounded-full font-semibold" style={{ fontSize: 10, padding: "1px 7px", color: st.color, background: st.bg }}>{st.label}</span>
+              </span>
+            </span>
+          </button>
+        );
+      });
+    }
+    if (id === "groups") {
+      const items = groupBuys.slice(0, 6);
+      if (!items.length) return qvEmpty(UsersRound, "No group buys yet");
+      return items.map(g => {
+        const [gc1, gc2] = AVATAR_GRADIENTS[seedIndex(g.name, AVATAR_GRADIENTS.length)];
+        return (
+          <button key={g.id} onClick={() => { onSection("groups"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+            <span className="flex items-center justify-center shrink-0 rounded-xl text-white" style={{ width: 32, height: 32, fontSize: 12.5, fontWeight: 800, background: `linear-gradient(135deg, ${gc1}, ${gc2})` }}>
+              {g.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block truncate font-semibold" style={{ fontSize: 13 }}>{g.name}</span>
+              <span className="block truncate" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>
+                {g.productCount} product{g.productCount === 1 ? "" : "s"} · {g.status}
+              </span>
+            </span>
+          </button>
+        );
+      });
+    }
+    if (id === "health-hub") {
+      if (!activeCompounds.length && !bloodTestCount) return qvEmpty(HeartPulse, "No health data yet");
+      return (
+        <>
+          {activeCompounds.slice(0, 5).map(c => (
+            <button key={c.id} onClick={() => { onSection("health-hub"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+              <span className="shrink-0 rounded-full" style={{ width: 10, height: 10, marginLeft: 11, marginRight: 11, background: COMPOUND_COLOR[c.compoundType] ?? ACCENT }} />
+              <span className="flex-1 min-w-0">
+                <span className="block truncate font-semibold" style={{ fontSize: 13 }}>{c.compoundName}</span>
+                <span className="block truncate" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>{c.compoundType} · {c.doseAmount}{c.doseUnit}</span>
+              </span>
+            </button>
+          ))}
+          <button onClick={() => { onSection("health-hub"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+            <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 32, height: 32, background: "rgba(220,38,38,0.10)", color: "#DC2626" }}><Droplet className="w-4 h-4" /></span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-semibold" style={{ fontSize: 13 }}>Blood tests</span>
+              <span className="block" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>{bloodTestCount} on file</span>
+            </span>
+          </button>
+        </>
+      );
+    }
+    if (id === "lab-tests") {
+      if (qvLabFetching && !qvLabTests.length) return qvEmpty(Clock, "Loading reports…");
+      const items = qvLabTests.slice(0, 6);
+      if (!items.length) return qvEmpty(Award, "No lab tests yet");
+      return items.map(t => (
+        <button key={t.id} onClick={() => { onSection("lab-tests"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+          <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 32, height: 32, background: "rgba(45,107,204,.12)", color: "#2D6BCC" }}><Award className="w-4 h-4" /></span>
+          <span className="flex-1 min-w-0">
+            <span className="block truncate font-semibold" style={{ fontSize: 13 }}>{t.peptideName}</span>
+            <span className="block truncate" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>{t.supplier}{t.batchCode ? ` · ${t.batchCode}` : ""}</span>
+          </span>
+        </button>
+      ));
+    }
+    return null;
+  };
+
   return (
     <div className="flex w-full min-h-screen lg:h-screen lg:overflow-hidden" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
       <style>{`
@@ -374,24 +496,28 @@ export function DashboardHome({
           </div>
 
           <nav className="flex flex-col items-center gap-1.5" style={{ marginTop: 22 }}>
-            {navItems.map(({ id, label, Icon, active }) => (
+            {navItems.map(({ id, label, Icon, active }) => {
+              const on = active || quickView?.id === id;
+              return (
               <button
                 key={id}
-                onClick={() => onSection(id)}
+                onClick={(e) => openQuickView(id, e)}
                 title={label}
                 aria-label={label}
                 aria-current={active ? "page" : undefined}
-                className={active ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
+                aria-expanded={quickView?.id === id}
+                className={on ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
                 style={{
                   width: 40, height: 40, borderRadius: 6,
-                  background: active ? "rgba(255,255,255,0.16)" : "transparent",
-                  color: active ? "#fff" : "rgba(255,255,255,0.62)",
+                  background: on ? "rgba(255,255,255,0.16)" : "transparent",
+                  color: on ? "#fff" : "rgba(255,255,255,0.62)",
                   boxShadow: "none",
                 }}
               >
-                <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
+                <Icon className="w-[19px] h-[19px]" strokeWidth={on ? 2.4 : 2} />
               </button>
-            ))}
+              );
+            })}
           </nav>
 
           <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
@@ -537,6 +663,39 @@ export function DashboardHome({
           </div>
         )}
       </aside>
+
+      {/* ══ Rail quick-view flyout (desktop) ══ */}
+      {quickView && (
+        <div className="hidden lg:block">
+          <div className="fixed inset-y-0 right-0 z-30" style={{ left: SIDEBAR_W }} onClick={() => setQuickView(null)} />
+          <div
+            className="fixed z-40 dh-rise flex flex-col"
+            style={{
+              left: SIDEBAR_W + 10, top: quickView.top, width: 320,
+              maxHeight: `min(520px, calc(100vh - ${quickView.top}px - 12px))`,
+              background: T.panel, border: `1px solid ${T.border}`, borderRadius: 12,
+              boxShadow: "0 18px 48px rgba(16,17,33,.24)", overflow: "hidden",
+            }}
+          >
+            <div className="flex items-center justify-between shrink-0" style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}` }}>
+              <span className="font-bold" style={{ fontSize: 13.5, color: T.text }}>{QV_TITLE[quickView.id]}</span>
+              <button onClick={() => setQuickView(null)} className="flex items-center justify-center rounded-md" style={{ width: 26, height: 26, color: T.subtle }} aria-label="Close">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto dh-scroll" style={{ padding: 6 }}>
+              {quickBody(quickView.id)}
+            </div>
+            <button
+              onClick={() => { onSection(quickView.id); setQuickView(null); }}
+              className="dh-nav shrink-0 flex items-center justify-center gap-1.5 font-semibold"
+              style={{ padding: "11px 14px", borderTop: `1px solid ${T.border}`, color: ACCENT, fontSize: 12.5 }}
+            >
+              View all <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ══ Main ══ */}
       <div className="flex-1 min-w-0 lg:h-screen lg:overflow-y-auto lg:overflow-x-hidden dh-scroll" style={{ marginLeft: 0 }}>
