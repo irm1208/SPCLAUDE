@@ -20,7 +20,7 @@ import {
   SlidersHorizontal, Sparkles, RotateCcw, GripVertical,
   Navigation, MapPin, Box, UsersRound, Eye, EyeOff, QrCode,
   LayoutList, LayoutGrid, Store, Star, RefreshCcw, Hash, Wallet, Boxes, Pencil,
-  Download, Maximize2, Archive, ArchiveRestore,
+  Download, Maximize2, Archive, ArchiveRestore, MoreHorizontal,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -1309,6 +1309,51 @@ function formatCPPostedAt(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+type GbCardMenuAction = {
+  label: string;
+  icon: React.ElementType;
+  onClick: () => void;
+  danger?: boolean;
+  loading?: boolean;
+};
+
+function GbCardMenu({ actions }: { actions: GbCardMenuAction[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button onClick={() => setOpen(v => !v)}
+        title="More actions"
+        className="h-8 w-9 rounded-full flex items-center justify-center"
+        style={{ background: "rgba(255,255,255,0.12)" }}>
+        <MoreHorizontal className="w-4 h-4" style={{ color: "rgba(255,255,255,0.85)" }} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-9 z-30 w-44 rounded-xl p-1.5 flex flex-col gap-0.5"
+            style={{ background: "#17171C", border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 12px 32px rgba(0,0,0,0.5)" }}>
+            {actions.map(a => {
+              const ActionIcon = a.icon;
+              return (
+                <button key={a.label}
+                  onClick={() => { setOpen(false); a.onClick(); }}
+                  disabled={a.loading}
+                  className="flex items-center gap-2 h-9 px-2.5 rounded-lg text-[12.5px] font-medium text-left hover:bg-white/5"
+                  style={{ color: a.danger ? "#F87171" : "rgba(255,255,255,0.85)" }}>
+                  {a.loading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <ActionIcon className="w-3.5 h-3.5" />}
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function WaitlistToggleButton({ gbId }: { gbId: string }) {
@@ -8009,150 +8054,141 @@ export default function CustomerPortal() {
             const paid    = gbOrders.filter(o => ["paid", "confirmed", "test_confirmed"].includes(o.paymentStatus));
             const pending = gbOrders.filter(o => o.paymentStatus === "pending_confirmation");
             const unpaid  = gbOrders.filter(o => o.paymentStatus === "unpaid");
-            const failed  = gbOrders.filter(o => ["failed", "refunded"].includes(o.paymentStatus));
 
             const closeDateBadge = getGBCloseDateBadge(gb.closeDate);
-            const chips: Array<{ label: string }> = [];
-            if (gb.productCount > 0) chips.push({ label: `${gb.productCount} product${gb.productCount !== 1 ? "s" : ""}` });
-            if (gb.currency) chips.push({ label: gb.currency.toUpperCase() });
-
             const dotColor = GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
             const statusLabel = GB_STATUS_LABEL[gb.status] ?? gb.status;
 
+            const orderState = unpaid.length > 0
+              ? { label: `${unpaid.length} unpaid`, color: "#F87171" }
+              : pending.length > 0
+                ? { label: `${pending.length} pending`, color: "#FBBF24" }
+                : paid.length > 0
+                  ? { label: `${paid.length} paid`, color: "#34D399" }
+                  : null;
+
+            const menuActions: GbCardMenuAction[] = [
+              ...(portalStockItems.length > 0
+                ? [{ label: "Check stock", icon: Boxes, onClick: () => setShowPortalStockModal(true) }]
+                : []),
+              { label: "Details", icon: Info, onClick: () => setInfoGb(gb) },
+              {
+                label: "Archive", icon: Archive, loading: pendingArchiveId === gb.id,
+                onClick: async () => {
+                  setPendingArchiveId(gb.id);
+                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
+                  catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                  finally { setPendingArchiveId(null); }
+                },
+              },
+              { label: "Leave group buy", icon: X, danger: true, onClick: () => setLeaveConfirmGb(gb) },
+            ];
+
             return (
               <motion.div key={gb.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }}
-                className="rounded-2xl overflow-hidden relative"
-                style={{ background: palette.gradient, boxShadow: "0 4px 20px rgba(0,0,0,0.25)" }}>
+                className="relative overflow-hidden flex flex-col"
+                style={{ background: "#0B0B0F", borderRadius: 24, boxShadow: "0 16px 40px rgba(0,0,0,0.35)" }}>
 
-                {/* Decorative blob */}
-                <div className="absolute top-0 right-0 w-40 h-40 rounded-full -translate-y-16 translate-x-16 pointer-events-none"
-                  style={{ background: palette.blobColor }} />
+                {/* Aurora glow — right edge */}
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      "radial-gradient(55% 40% at 106% 6%, rgba(255,146,72,0.5) 0%, transparent 70%)," +
+                      "radial-gradient(50% 38% at 108% 42%, rgba(236,72,153,0.42) 0%, transparent 70%)," +
+                      "radial-gradient(55% 45% at 106% 78%, rgba(139,92,246,0.38) 0%, transparent 72%)",
+                  }} />
 
-                <div className="relative p-4 flex flex-col" style={{ minHeight: 0 }}>
-                  {/* Close date badge — top right */}
-                  {closeDateBadge && (
-                    <div className="absolute top-4 right-4 text-right pointer-events-none z-10">
-                      <p className="text-[20px] font-bold text-white leading-tight">{closeDateBadge.dateStr}</p>
-                      <p className="text-[13px] font-medium leading-tight mt-0.5" style={{ color: "rgba(255,255,255,0.50)" }}>{closeDateBadge.daysStr}</p>
+                {/* Header: icon tile + eyebrow/title + pills */}
+                <div className="relative p-5 pb-0 flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                      style={{ background: "rgba(255,255,255,0.14)" }}>
+                      <GBIcon className="w-5 h-5" style={{ color: "#fff" }} />
                     </div>
-                  )}
-
-                  {/* Icon + label row */}
-                  <div className="flex items-center gap-1.5 mb-3" style={{ paddingRight: closeDateBadge ? "80px" : undefined }}>
-                    <GBIcon className="w-3.5 h-3.5" style={{ color: palette.accent }} />
-                    <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: palette.accent }}>
-                      Group Buy
-                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-medium truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        Group Buy{gb.manufacturer ? ` · ${gb.manufacturer}` : ""}
+                      </p>
+                      <h3 className="text-[16px] font-bold text-white leading-snug truncate">{gb.name}</h3>
+                    </div>
                   </div>
-
-                  {/* Name + manufacturer + organiser */}
-                  <h3 className="text-[18px] font-bold text-white leading-snug mb-0.5 line-clamp-2">{gb.name}</h3>
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      {gb.manufacturer && (
-                        <span className="text-[11px] leading-tight line-clamp-1" style={{ color: "rgba(255,255,255,0.50)" }}>
-                          {gb.manufacturer}
-                        </span>
-                      )}
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.55)" }}>
-                        by {gb.organiserId ?? "Admin"}
-                      </span>
-                      {gb.manufacturerCountry && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.55)" }}>
-                          <MapPin className="w-2.5 h-2.5" /> {gb.manufacturerCountry}
-                        </span>
-                      )}
-                    </div>
-
-                  {/* Info section with label */}
-                  {infoContent && (
-                    <div className="mb-3">
-                      <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                        {infoCards.length > 0 ? "Key Info" : "About"}
-                      </p>
-                      <p className="text-[11px] leading-relaxed line-clamp-1" style={{ color: "rgba(255,255,255,0.60)" }}>
-                        {infoContent}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Chips */}
-                  {chips.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {chips.map((chip, ci) => (
-                        <span key={ci}
-                          className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium"
-                          style={{ background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.70)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                          {chip.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-
-                </div>
-
-                {/* Footer bar — Order CTA + status */}
-                <div className="relative px-3.5 pt-3 pb-3 space-y-2.5"
-                  style={{ background: "rgba(0,0,0,0.28)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                  {/* Full-width CTA */}
-                  <button
-                    onClick={() => isOrderable ? setLocation(`/order?gbId=${gb.id}`) : setLocation("/account?s=orders")}
-                    className="w-full h-9 rounded-full text-[12px] font-bold text-white flex items-center justify-center gap-1.5 transition-opacity active:opacity-80"
-                    style={{ background: isOrderable ? palette.accent : "rgba(255,255,255,0.15)" }}>
-                    {isOrderable ? "Order" : "My Orders"}
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                  {/* Waitlist toggle for non-orderable GBs */}
-                  {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
-                  {/* Status + info */}
-                  <div className="flex items-center justify-between">
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                      style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.75)", border: "1px solid rgba(255,255,255,0.10)" }}
-                    >
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[11.5px] font-semibold"
+                      style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)" }}>
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
                       {statusLabel}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      {portalStockItems.length > 0 && (
-                        <button onClick={() => setShowPortalStockModal(true)}
-                          title="Check stock availability"
-                          className="w-6 h-6 rounded-full flex items-center justify-center"
-                          style={{ background: "rgba(255,255,255,0.10)" }}>
-                          <Boxes className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />
-                        </button>
-                      )}
-                      <button onClick={() => setInfoGb(gb)}
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ background: "rgba(255,255,255,0.10)" }}>
-                        <Info className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />
-                      </button>
-                      <button
-                        onClick={async () => {
-                          setPendingArchiveId(gb.id);
-                          try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
-                          catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
-                          finally { setPendingArchiveId(null); }
-                        }}
-                        disabled={pendingArchiveId === gb.id}
-                        title="Archive — hide from this list"
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ background: "rgba(255,255,255,0.10)" }}>
-                        {pendingArchiveId === gb.id
-                          ? <Loader2 className="w-3 h-3 animate-spin" style={{ color: "rgba(255,255,255,0.55)" }} />
-                          : <Archive className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setLeaveConfirmGb(gb);
-                        }}
-                        title="Leave this group buy"
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ background: "rgba(255,255,255,0.10)" }}>
-                        <X className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />
-                      </button>
-                    </div>
+                    <GbCardMenu actions={menuActions} />
                   </div>
+                </div>
+
+                {/* Hero: close date (or product count) */}
+                <div className="relative px-5 pt-6">
+                  {closeDateBadge ? (
+                    <>
+                      <p className="text-[34px] font-bold text-white leading-none tracking-tight">{closeDateBadge.dateStr}</p>
+                      <p className="text-[12.5px] mt-1.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        {closeDateBadge.daysStr === "Closed" ? "Closed" : `Closes · ${closeDateBadge.daysStr}`}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[34px] font-bold text-white leading-none tracking-tight">{gb.productCount}</p>
+                      <p className="text-[12.5px] mt-1.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        product{gb.productCount !== 1 ? "s" : ""} available
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Stat rows */}
+                <div className="relative px-5 pt-5 flex flex-col gap-2.5 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Organiser</span>
+                    <span className="text-[13px] truncate" style={{ color: "rgba(255,255,255,0.5)" }}>{gb.organiserId ?? "Admin"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Products</span>
+                    <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                      {gb.productCount}{gb.currency ? ` · ${gb.currency.toUpperCase()}` : ""}
+                    </span>
+                  </div>
+                  {gb.manufacturerCountry && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Ships from</span>
+                      <span className="text-[13px] inline-flex items-center gap-1" style={{ color: "rgba(255,255,255,0.5)" }}>
+                        <MapPin className="w-3 h-3" /> {gb.manufacturerCountry}
+                      </span>
+                    </div>
+                  )}
+                  {gbOrders.length > 0 && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>My orders</span>
+                      <span className="text-[13px] flex items-center gap-2" style={{ color: "rgba(255,255,255,0.5)" }}>
+                        {gbOrders.length}
+                        {orderState && (
+                          <span className="font-semibold" style={{ color: orderState.color }}>{orderState.label}</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {infoContent && (
+                    <p className="text-[11.5px] leading-relaxed line-clamp-1" style={{ color: "rgba(255,255,255,0.38)" }}>
+                      {infoContent}
+                    </p>
+                  )}
+                </div>
+
+                {/* Footer: CTA */}
+                <div className="relative px-5 pt-5 pb-5 space-y-2.5">
+                  <button
+                    onClick={() => isOrderable ? setLocation(`/order?gbId=${gb.id}`) : setLocation("/account?s=orders")}
+                    className="w-full h-10 rounded-full text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90 active:opacity-80"
+                    style={{ background: "#FFFFFF", color: "#0B0B0F" }}>
+                    {isOrderable ? "Order" : "My Orders"}
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
                 </div>
               </motion.div>
             );
