@@ -68,7 +68,7 @@ import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import { DashboardHome } from "@/components/DashboardHome";
-import { DashboardShell, StatCard, palette } from "@/components/DashboardShell";
+import { DashboardShell, StatCard, palette, ACCENT } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
 import Protocols from "@/pages/Protocols";
 import PublicTestingPools from "@/pages/PublicTestingPools";
@@ -7916,52 +7916,43 @@ export default function CustomerPortal() {
     const activeGbs = groupBuys.filter(g => !g.archived);
     const archivedGbs = groupBuys.filter(g => g.archived);
     return (
-      <PortalLayout navProps={navProps}>
-        {/* ════════════════════ BRANDED GRADIENT HEADER ════════════════════════ */}
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
-             style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
-          <div className="absolute inset-0 opacity-10"
-               style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
-          <div className="relative px-5 pt-5 pb-6 lg:px-8 lg:pt-6">
-            <div className="flex items-center justify-between mb-5">
-              <button onClick={() => setSection("home")}
-                      className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold"
-                      style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)" }}>
-                <ChevronLeft className="w-4 h-4" style={{ color: "rgba(255,255,255,0.9)" }} />
-                Dashboard
-              </button>
-              <div className="flex items-center gap-2">
-                <button onClick={() => refetchGb()} disabled={gbLoading}
-                        className="w-9 h-9 rounded-xl flex items-center justify-center"
-                        style={{ background: "rgba(255,255,255,0.12)" }}>
-                  <RefreshCw className={`w-4 h-4 ${gbLoading ? "animate-spin" : ""}`}
-                             style={{ color: "rgba(255,255,255,0.9)" }} />
-                </button>
-                <button onClick={() => setShowJoin(true)}
-                        className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold"
-                        style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)" }}>
-                  <Users className="w-3.5 h-3.5" /> Join a Group Buy
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-                   style={{ background: "rgba(255,255,255,0.15)" }}>
-                <UsersRound className="w-4 h-4 text-white" />
-              </div>
-              <p className="text-xs font-semibold uppercase tracking-widest"
-                 style={{ color: "rgba(255,255,255,0.6)" }}>Group Buys</p>
-            </div>
-            <h1 className="text-2xl font-bold text-white leading-tight">My Group Buys</h1>
-            <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>
-              {activeGbs.length} group buy{activeGbs.length !== 1 ? "s" : ""}
-            </p>
+      <DashboardShell
+        activeSection="groups"
+        title="Group Buys"
+        username={username}
+        credits={account?.credits ?? null}
+        orders={orders}
+        activeCompounds={activeCompounds}
+        groupBuys={groupBuys}
+        onSection={(s) => setSection(s as Section)}
+        onLogout={handleLogout}
+        navProps={navProps}
+      >
+        <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
+
+        {/* ── Header: subtitle + actions ── */}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px]" style={{ color: T.subtle }}>
+            {activeGbs.length} active group buy{activeGbs.length !== 1 ? "s" : ""}
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => refetchGb()} disabled={gbLoading}
+              title="Refresh"
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <RefreshCw className={`w-4 h-4 ${gbLoading ? "animate-spin" : ""}`} style={{ color: T.muted }} />
+            </button>
+            <button onClick={() => setShowJoin(true)}
+              className="flex items-center gap-1.5 h-10 px-4 rounded-xl text-[12.5px] font-bold text-white"
+              style={{ background: ACCENT, boxShadow: "0 2px 8px rgba(1,118,211,0.3)" }}>
+              <Users className="w-3.5 h-3.5" /> Join a Group Buy
+            </button>
           </div>
         </div>
 
         {groupBuysPageMessage && !gbMsgDismissed && (
           <div
-            className="relative flex items-center justify-center gap-3 mt-4 px-12 py-4"
+            className="relative flex items-center justify-center gap-3 px-12 py-4"
             style={{ background: "#1C1C1C", borderRadius: "14px" }}
           >
             <div
@@ -7982,14 +7973,14 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {gbLoading && (
-            <div className="col-span-2 flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
+            <div className="col-span-full flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
           )}
 
           {!gbLoading && activeGbs.length === 0 && archivedGbs.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="col-span-2 rounded-xl p-8 text-center shadow-sm" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              className="col-span-full rounded-xl p-8 text-center shadow-sm" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <div className="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: "var(--t-blue-08)" }}>
                 <Users className="w-7 h-7" style={{ color: "var(--t-blue)" }} />
               </div>
@@ -8169,7 +8160,7 @@ export default function CustomerPortal() {
         </div>
 
         {!gbLoading && archivedGbs.length > 0 && (
-          <div className="pt-5">
+          <div>
             <button
               onClick={() => setShowArchivedGbs(v => !v)}
               className="w-full flex items-center justify-between px-4 py-3 rounded-xl"
@@ -8342,7 +8333,8 @@ export default function CustomerPortal() {
             </>
           )}
         </AnimatePresence>
-      </PortalLayout>
+        </div>
+      </DashboardShell>
     );
   }
 
