@@ -432,29 +432,6 @@ export function DashboardShell({
             })}
           </nav>
 
-          <nav
-            className="flex flex-col items-center gap-1.5"
-            style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.14)" }}
-          >
-            {[...workspaceItems, ...moreItems].map(({ id, label, Icon, active, go }) => (
-              <button
-                key={id}
-                onClick={() => { setQuickView(null); go(); }}
-                title={label}
-                aria-label={label}
-                aria-current={active ? "page" : undefined}
-                className={active ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
-                style={{
-                  width: 40, height: 40, borderRadius: 6,
-                  background: active ? "rgba(255,255,255,0.16)" : "transparent",
-                  color: active ? "#fff" : "rgba(255,255,255,0.62)",
-                }}
-              >
-                <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
-              </button>
-            ))}
-          </nav>
-
           <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
             <button
               onClick={() => onSection("telegram")}
