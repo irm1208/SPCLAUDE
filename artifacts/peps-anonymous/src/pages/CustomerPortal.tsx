@@ -8220,7 +8220,6 @@ export default function CustomerPortal() {
                         ["Group Buy", ""],
                         ["Organiser", "hidden md:table-cell"],
                         ["Status", "hidden sm:table-cell"],
-                        ["Products", "hidden lg:table-cell"],
                         ["Closes", "hidden sm:table-cell"],
                         ["My orders", "hidden lg:table-cell"],
                         ["", ""],
@@ -8255,7 +8254,7 @@ export default function CustomerPortal() {
                               <div className="w-8 h-8 rounded-lg hidden sm:flex items-center justify-center shrink-0" style={{ background: hexToRgba(palette.accent, 0.12) }}>
                                 <GBIcon className="w-4 h-4" style={{ color: palette.accent }} />
                               </div>
-                              <div className="min-w-0 max-w-[220px]">
+                              <div className="min-w-0 max-w-[150px]">
                                 <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>{gb.name}</p>
                                 {gb.manufacturer && <p className="text-[11px] truncate hidden sm:block" style={{ color: T.subtle }}>{gb.manufacturer}</p>}
                                 {/* Mobile-only: status dot + closes info under the name */}
@@ -8269,14 +8268,7 @@ export default function CustomerPortal() {
                           </td>
                           <td className="px-4 py-3 text-[12.5px] font-bold whitespace-nowrap hidden md:table-cell" style={{ color: T.text }}>{gb.organiserId ?? "Admin"}</td>
                           <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                              style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
-                              {statusLabel}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap hidden lg:table-cell" style={{ color: T.muted }}>
-                            {gb.productCount}{gb.currency ? ` · ${gb.currency.toUpperCase()}` : ""}
+                            <span title={statusLabel} className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: dotColor }} />
                           </td>
                           <td className="px-4 py-3 text-[12.5px] whitespace-nowrap hidden sm:table-cell" style={{ color: T.muted }}>
                             {closeDateBadge
