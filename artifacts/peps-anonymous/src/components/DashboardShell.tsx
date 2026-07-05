@@ -418,7 +418,7 @@ export function DashboardShell({
           </div>
 
           <nav className="flex flex-col items-center gap-1.5" style={{ marginTop: 22 }}>
-            {navItems.map(({ id, label, Icon, active }) => {
+            {navItems.filter(({ id }) => id === "home" || id === "lab-tests").map(({ id, label, Icon, active }) => {
               const on = active || quickView?.id === id;
               return (
               <button
@@ -434,6 +434,33 @@ export function DashboardShell({
                   background: on ? "rgba(255,255,255,0.16)" : "transparent",
                   color: on ? "#fff" : "rgba(255,255,255,0.62)",
                   boxShadow: "none",
+                }}
+              >
+                <Icon className="w-[19px] h-[19px]" strokeWidth={on ? 2.4 : 2} />
+              </button>
+              );
+            })}
+          </nav>
+
+          {/* Health Hub apps */}
+          <nav
+            className="flex flex-col items-center gap-1.5"
+            style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.14)" }}
+          >
+            {HEALTH_APPS.map(({ id, label, Icon }) => {
+              const on = activeSection === id;
+              return (
+              <button
+                key={id}
+                onClick={() => { setQuickView(null); onSection(id); }}
+                {...railTipProps(label)}
+                aria-label={label}
+                aria-current={on ? "page" : undefined}
+                className={on ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
+                style={{
+                  width: 40, height: 40, borderRadius: 6,
+                  background: on ? "rgba(255,255,255,0.16)" : "transparent",
+                  color: on ? "#fff" : "rgba(255,255,255,0.62)",
                 }}
               >
                 <Icon className="w-[19px] h-[19px]" strokeWidth={on ? 2.4 : 2} />
