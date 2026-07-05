@@ -6,7 +6,7 @@ import {
   MoreVertical, Star, Heart, Package, CheckCircle2, Award, FlaskConical,
   Clock, Sun, Moon, PanelLeft, SlidersHorizontal, Syringe, Send,
   Wallet, QrCode, MapPin, Store, ArrowRight, User, LogOut, Check, X,
-  Sparkles, Droplet,
+  Sparkles, Droplet, Scale, TrendingUp, Activity,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
@@ -109,6 +109,17 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string; p
   Completed:  { label: "Completed",  color: "#0E9F6E", bg: "rgba(16,185,129,0.14)",  pct: 100 },
   Cancelled:  { label: "Cancelled",  color: "#DC2626", bg: "rgba(220,38,38,0.12)",   pct: 0 },
 };
+
+// Health Hub apps — mirrors the tiles on the Health Hub page (CustomerPortal "health-hub").
+const HEALTH_APPS: { id: string; label: string; Icon: React.ElementType; color: string; bg: string }[] = [
+  { id: "glp1",               label: "GLP-1 Tracker",              Icon: Scale,       color: "#0891B2", bg: "rgba(8,145,178,0.12)"  },
+  { id: "compounds",          label: "Compounds & Protocols",      Icon: FlaskConical, color: "#16A34A", bg: "rgba(22,163,74,0.12)"  },
+  { id: "blood-tests",        label: "Blood Tests",                Icon: Droplet,      color: "#7C3AED", bg: "rgba(124,58,237,0.12)" },
+  { id: "health",             label: "Health Insights",            Icon: HeartPulse,   color: "#DC2626", bg: "rgba(220,38,38,0.12)"  },
+  { id: "plotter",            label: "Cycle Plotter",              Icon: TrendingUp,   color: ACCENT,    bg: ACCENT_SOFT             },
+  { id: "fh-risk",            label: "Inherited Cholesterol Risk", Icon: HeartPulse,   color: "#DC2626", bg: "rgba(220,38,38,0.12)"  },
+  { id: "insulin-resistance", label: "Insulin Resistance Score",   Icon: Activity,     color: "#0891B2", bg: "rgba(8,145,178,0.12)"  },
+];
 
 function daysSince(iso: string) {
   const start = new Date((iso.length <= 10 ? iso + "T00:00:00" : iso)).getTime();
@@ -397,27 +408,14 @@ export function DashboardHome({
       });
     }
     if (id === "health-hub") {
-      if (!activeCompounds.length && !bloodTestCount) return qvEmpty(HeartPulse, "No health data yet");
-      return (
-        <>
-          {activeCompounds.slice(0, 5).map(c => (
-            <button key={c.id} onClick={() => { onSection("health-hub"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
-              <span className="shrink-0 rounded-full" style={{ width: 10, height: 10, marginLeft: 11, marginRight: 11, background: COMPOUND_COLOR[c.compoundType] ?? ACCENT }} />
-              <span className="flex-1 min-w-0">
-                <span className="block truncate font-semibold" style={{ fontSize: 13 }}>{c.compoundName}</span>
-                <span className="block truncate" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>{c.compoundType} · {c.doseAmount}{c.doseUnit}</span>
-              </span>
-            </button>
-          ))}
-          <button onClick={() => { onSection("health-hub"); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
-            <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 32, height: 32, background: "rgba(220,38,38,0.10)", color: "#DC2626" }}><Droplet className="w-4 h-4" /></span>
-            <span className="flex-1 min-w-0">
-              <span className="block font-semibold" style={{ fontSize: 13 }}>Blood tests</span>
-              <span className="block" style={{ fontSize: 11.5, color: T.subtle, marginTop: 2 }}>{bloodTestCount} on file</span>
-            </span>
-          </button>
-        </>
-      );
+      return HEALTH_APPS.map(({ id: aid, label, Icon, color, bg }) => (
+        <button key={aid} onClick={() => { onSection(aid); setQuickView(null); }} className={qvRow} style={{ padding: "8px 10px", color: T.text }}>
+          <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 32, height: 32, background: bg, color }}>
+            <Icon className="w-4 h-4" />
+          </span>
+          <span className="flex-1 min-w-0 truncate font-semibold" style={{ fontSize: 13 }}>{label}</span>
+        </button>
+      ));
     }
     if (id === "lab-tests") {
       if (qvLabFetching && !qvLabTests.length) return qvEmpty(Clock, "Loading reports…");
