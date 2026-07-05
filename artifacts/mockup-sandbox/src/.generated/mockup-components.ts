@@ -264,6 +264,7 @@ export const modules: ModuleMap = {
   "./components/mockups/order-vibes/DarkImmersive.tsx": () => import("../components/mockups/order-vibes/DarkImmersive.tsx"),
   "./components/mockups/order-vibes/ProgressiveReveal.tsx": () => import("../components/mockups/order-vibes/ProgressiveReveal.tsx"),
   "./components/mockups/orders-redesign/Current.tsx": () => import("../components/mockups/orders-redesign/Current.tsx"),
+  "./components/mockups/orders-redesign/OrdersDashboard.tsx": () => import("../components/mockups/orders-redesign/OrdersDashboard.tsx"),
   "./components/mockups/orders-redesign/Redesign.tsx": () => import("../components/mockups/orders-redesign/Redesign.tsx"),
   "./components/mockups/peps-concepts/Editorial.tsx": () => import("../components/mockups/peps-concepts/Editorial.tsx"),
   "./components/mockups/peps-concepts/IntentRouter.tsx": () => import("../components/mockups/peps-concepts/IntentRouter.tsx"),

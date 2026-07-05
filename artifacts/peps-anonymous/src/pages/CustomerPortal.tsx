@@ -257,6 +257,153 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// ─── Relative time ("2 days ago") ───────────────────────────────────────────────
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.floor((Date.now() - then) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60); if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h} hour${h > 1 ? "s" : ""} ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d} day${d > 1 ? "s" : ""} ago`;
+  const w = Math.floor(d / 7); if (d < 30) return `${w} week${w > 1 ? "s" : ""} ago`;
+  const mo = Math.floor(d / 30); if (d < 365) return `${mo} month${mo > 1 ? "s" : ""} ago`;
+  const y = Math.floor(d / 365); return `${y} year${y > 1 ? "s" : ""} ago`;
+}
+
+// ─── Order grid card (dashboard-style) ───────────────────────────────────────────
+type OrderCardKind = "gb" | "wholesale" | "shop";
+const ORDER_KIND_META: Record<OrderCardKind, { label: string; Icon: React.ElementType }> = {
+  gb:        { label: "Group Buy", Icon: Users },
+  wholesale: { label: "Wholesale", Icon: Boxes },
+  shop:      { label: "Shop",      Icon: ShoppingBag },
+};
+
+function OrderGridCard({
+  order, kind, title, accent, onManage, onReorder, onTracking,
+}: {
+  order: Order;
+  kind: OrderCardKind;
+  title: string;
+  accent: string;
+  onManage: () => void;
+  onReorder?: () => void;
+  onTracking?: () => void;
+}) {
+  const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
+  const pMeta = PAYMENT_META[order.paymentStatus] ?? PAYMENT_META.unpaid!;
+  const { label: kindLabel, Icon } = ORDER_KIND_META[kind];
+  const visible = order.lineItems.slice(0, 3);
+  const extra = order.lineItems.length - visible.length;
+  const done = order.status === "Completed";
+  const cancelled = order.status === "Cancelled";
+  const terminal = done || cancelled;
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col h-full"
+      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
+      {/* header: avatar + title + status */}
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: hexToRgba(accent, 0.12), border: `1px solid ${hexToRgba(accent, 0.22)}` }}>
+          <Icon className="w-[18px] h-[18px]" style={{ color: accent }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[14px] font-bold truncate" style={{ color: T.text }}>{title}</p>
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full shrink-0"
+              style={{ color: sMeta.color, background: `color-mix(in srgb, ${sMeta.color} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${sMeta.color} 28%, transparent)` }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
+              {sMeta.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1 text-[11.5px]" style={{ color: T.subtle }}>
+            <Icon className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-medium">{kindLabel}</span>
+            <span className="truncate">· {timeAgo(order.createdAt)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* info: code + payment */}
+      <div className="flex items-center justify-between gap-2 mt-3.5 pb-3.5" style={{ borderBottom: `1px dashed ${T.border}` }}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider shrink-0" style={{ color: T.subtle }}>Code</span>
+          <span className="text-[12px] font-semibold truncate" style={{ color: T.muted }}>#{order.code}</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: T.subtle }}>Payment</span>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+            style={{ color: pMeta.color, background: `color-mix(in srgb, ${pMeta.color} 12%, transparent)` }}>{pMeta.label}</span>
+        </div>
+      </div>
+
+      {/* line items */}
+      <div className="flex flex-col gap-2 mt-3.5 flex-1">
+        {visible.map((li, i) => (
+          <div key={i} className="flex items-center gap-2 text-[12.5px]">
+            <span className="w-6 shrink-0 font-semibold" style={{ color: T.subtle }}>{li.quantity}×</span>
+            <span className="flex-1 truncate" style={{ color: T.text }}>{li.productName}</span>
+            <span className="font-semibold shrink-0" style={{ color: T.muted }}>{fmtC(li.lineTotal, order.currency)}</span>
+          </div>
+        ))}
+        {extra > 0 && (
+          <span className="text-[11px] pl-8" style={{ color: T.subtle }}>+{extra} more item{extra > 1 ? "s" : ""}</span>
+        )}
+        {visible.length === 0 && (
+          <span className="text-[11.5px]" style={{ color: T.subtle }}>No items</span>
+        )}
+      </div>
+
+      {/* total */}
+      <div className="flex items-center justify-between mt-3.5 pt-3.5" style={{ borderTop: `1px solid ${T.border}` }}>
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: T.subtle }}>Total</span>
+        <span className="text-[16px] font-extrabold" style={{ color: T.text }}>{fmtC(order.grandTotal, order.currency)}</span>
+      </div>
+
+      {/* actions */}
+      <div className="mt-4">
+        {terminal ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 text-center text-[11.5px] font-medium py-2.5 rounded-xl"
+              style={done
+                ? { color: "#16A34A", background: hexToRgba("#16A34A", 0.08) }
+                : { color: "#DC2626", background: hexToRgba("#DC2626", 0.07) }}>
+              {done ? "Order completed" : "Order cancelled"}
+            </div>
+            <button onClick={onManage}
+              className="flex-1 h-10 rounded-xl text-[12.5px] font-bold flex items-center justify-center gap-1.5"
+              style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+              Details <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            {onReorder ? (
+              <button onClick={onReorder}
+                className="flex-1 h-10 rounded-xl text-[12.5px] font-semibold flex items-center justify-center gap-1.5"
+                style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                <RotateCcw className="w-3.5 h-3.5" />Reorder
+              </button>
+            ) : onTracking ? (
+              <button onClick={onTracking}
+                className="flex-1 h-10 rounded-xl text-[12.5px] font-semibold flex items-center justify-center gap-1.5"
+                style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                <Package className="w-3.5 h-3.5" />Tracking
+              </button>
+            ) : null}
+            <button onClick={onManage}
+              className="flex-1 h-10 rounded-xl text-[12.5px] font-bold text-white flex items-center justify-center gap-1.5"
+              style={{ background: T.blueDeep }}>
+              Manage <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -6697,6 +6844,11 @@ export default function CustomerPortal() {
 
   const dark = useThemeStore((s) => s.dark);
   const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "wholesale" | "shop">("all");
+  const [ordersSearch, setOrdersSearch] = useState("");
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState<string>("all");
+  const [ordersView, setOrdersView] = useState<"grid" | "list">("grid");
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [orderTypeFilterOpen, setOrderTypeFilterOpen] = useState(false);
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
   const [showCompoundHistory, setShowCompoundHistory] = useState(false);
@@ -7493,23 +7645,61 @@ export default function CustomerPortal() {
   // ─── Orders section ──────────────────────────────────────────────────────────
 
   if (section === "orders") {
-    const totalActive   = regularActive.length + gbActiveCount;
-    const totalOrders   = filteredByGb.length;
-    const completed     = filteredByGb.filter(o => o.status === "Completed").length;
+    // Flatten every order (GB, wholesale, shop) into a single card model, newest first.
+    const allCards: { order: Order; kind: OrderCardKind; title: string; accent: string; gb: GroupBuySummary | null; gbOrders: Order[] }[] = [];
+    for (const g of gbOrderGroups) {
+      const acc = gbAccentColor(g.gbId);
+      for (const o of g.orders) allCards.push({ order: o, kind: "gb", title: g.gb?.name ?? "Group Buy", accent: acc, gb: g.gb, gbOrders: g.orders });
+    }
+    for (const o of wholesaleOrders) allCards.push({ order: o, kind: "wholesale", title: "Wholesale Order", accent: WHOLESALE_ACCENT, gb: null, gbOrders: [] });
+    for (const o of shopOrders) allCards.push({ order: o, kind: "shop", title: "Shop Order", accent: SHOP_ACCENT, gb: null, gbOrders: [] });
+    allCards.sort((a, b) => (b.order.createdAt || "").localeCompare(a.order.createdAt || ""));
 
-    const hasGb        = gbOrderGroups.length > 0;
-    const hasWholesale = wholesaleOrders.length > 0;
-    const hasShop      = shopOrders.length > 0;
-    const showGb        = hasGb        && (typeFilter === "all" || typeFilter === "gb");
-    const showWholesale = hasWholesale && (typeFilter === "all" || typeFilter === "wholesale");
-    const showShop      = hasShop      && (typeFilter === "all" || typeFilter === "shop");
-    const nothingAtAll  = !ordersLoading && !showGb && !showWholesale && !showShop;
+    // Status tabs (only statuses that are actually present), each with a count.
+    const STATUS_TAB_ORDER = ["Draft", "Submitted", "Processing", "Shipped", "Completed", "Cancelled"];
+    const statusTabs = [
+      { id: "all", label: "All", count: allCards.length },
+      ...STATUS_TAB_ORDER
+        .filter(s => allCards.some(c => c.order.status === s))
+        .map(s => ({ id: s, label: STATUS_META[s]?.label ?? s, count: allCards.filter(c => c.order.status === s).length })),
+    ];
 
-    const dashT = palette(dark);
+    const typeOptions: { id: "all" | "gb" | "wholesale" | "shop"; label: string }[] = [
+      { id: "all", label: "All types" },
+      { id: "gb", label: "Group Buys" },
+      ...(account?.isWholesale ? [{ id: "wholesale" as const, label: "Wholesale" }] : []),
+      { id: "shop", label: "Shop" },
+    ];
+    const typeLabel = typeOptions.find(t => t.id === typeFilter)?.label ?? "All types";
+
+    const q = ordersSearch.trim().toLowerCase();
+    const filteredCards = allCards.filter(c => {
+      if (typeFilter !== "all" && c.kind !== typeFilter) return false;
+      if (ordersStatusFilter !== "all" && c.order.status !== ordersStatusFilter) return false;
+      if (q) {
+        const hay = `${c.title} ${c.order.code} ${c.order.lineItems.map(li => li.productName).join(" ")}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const PER_PAGE = 12;
+    const totalPages = Math.max(1, Math.ceil(filteredCards.length / PER_PAGE));
+    const page = Math.min(ordersPage, totalPages);
+    const pageCards = filteredCards.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    const pageNumbers: number[] = [];
+    {
+      const maxBtns = 5;
+      let startP = Math.max(1, page - 2);
+      const endP = Math.min(totalPages, startP + maxBtns - 1);
+      startP = Math.max(1, endP - maxBtns + 1);
+      for (let p = startP; p <= endP; p++) pageNumbers.push(p);
+    }
+    const clearFilters = () => { setTypeFilter("all"); setOrdersStatusFilter("all"); setOrdersSearch(""); setOrdersPage(1); };
     return (
       <DashboardShell
         activeSection="orders"
-        title="My Orders"
+        title="Orders"
         username={username}
         credits={account?.credits ?? null}
         orders={orders}
@@ -7521,40 +7711,113 @@ export default function CustomerPortal() {
       >
         <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-24 lg:pb-8">
 
-          {/* ── Stat tiles ── */}
-          <div className="grid grid-cols-3 gap-3">
-            <StatCard T={dashT} label="Total" value={totalOrders} Icon={Package} />
-            <StatCard T={dashT} label="Active" value={totalActive} Icon={Clock} highlight />
-            <StatCard T={dashT} label="Done" value={completed} Icon={CheckCircle2} iconColor="#16A34A" />
-          </div>
-
-          {/* ── Type filter pills + refresh ── */}
-          <div className="flex items-center gap-1.5">
-            {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buys" }, ...(account?.isWholesale ? [{ id: "wholesale" as const, label: "Wholesale" }] : []), { id: "shop" as const, label: "Shop" } ]).map(opt => (
-              <button key={opt.id} onClick={() => setTypeFilter(opt.id)}
-                className="flex-1 h-8 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap"
-                style={typeFilter === opt.id
-                  ? { background: "var(--t-blue)", color: "white" }
-                  : { background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
-                {opt.label}
-              </button>
-            ))}
-            <button onClick={() => refetch()} disabled={ordersLoading}
-              className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
-              style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
-              <RefreshCw className={`w-3.5 h-3.5 ${ordersLoading ? "animate-spin" : ""}`} style={{ color: T.subtle }} />
+          {/* ── Header: subtitle + New Order ── */}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
+            <button onClick={() => setLocation("/shop")}
+              className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-semibold text-white shrink-0"
+              style={{ background: T.blueDeep }}>
+              <Plus className="w-4 h-4" /> New Order
             </button>
           </div>
 
+          {/* ── Status tabs + toolbar ── */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1 lg:pb-0">
+              {statusTabs.map(t => {
+                const active = ordersStatusFilter === t.id;
+                return (
+                  <button key={t.id}
+                    onClick={() => { setOrdersStatusFilter(t.id); setOrdersPage(1); }}
+                    className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[12.5px] font-semibold whitespace-nowrap transition-all shrink-0"
+                    style={active
+                      ? { background: T.surface, color: T.text, boxShadow: T.shadow, border: `1px solid ${T.border}` }
+                      : { background: "transparent", color: T.subtle, border: "1px solid transparent" }}>
+                    {t.label}
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={active
+                        ? { background: hexToRgba("#2D6BCC", 0.1), color: "var(--t-blue)" }
+                        : { background: T.surface2, color: T.subtle }}>{t.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 h-10 px-3 rounded-xl flex-1 lg:w-[240px] lg:flex-none"
+                style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                <Search className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
+                <input value={ordersSearch}
+                  onChange={e => { setOrdersSearch(e.target.value); setOrdersPage(1); }}
+                  placeholder="Search orders…"
+                  className="text-[12.5px] flex-1 bg-transparent outline-none min-w-0"
+                  style={{ color: T.text }} />
+                {ordersSearch && (
+                  <button onClick={() => { setOrdersSearch(""); setOrdersPage(1); }} className="shrink-0">
+                    <X className="w-3.5 h-3.5" style={{ color: T.subtle }} />
+                  </button>
+                )}
+              </div>
+
+              <div className="relative shrink-0">
+                <button onClick={() => setOrderTypeFilterOpen(v => !v)}
+                  className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[12.5px] font-semibold"
+                  style={typeFilter !== "all"
+                    ? { background: hexToRgba("#2D6BCC", 0.08), color: "var(--t-blue)", border: `1px solid ${hexToRgba("#2D6BCC", 0.3)}` }
+                    : { background: T.surface, color: T.muted, border: `1px solid ${T.border}` }}>
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{typeFilter === "all" ? "Filter" : typeLabel}</span>
+                </button>
+                {orderTypeFilterOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setOrderTypeFilterOpen(false)} />
+                    <div className="absolute right-0 top-11 z-20 w-44 rounded-xl p-1.5 flex flex-col gap-0.5"
+                      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.14)" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: T.subtle }}>Order type</p>
+                      {typeOptions.map(opt => (
+                        <button key={opt.id}
+                          onClick={() => { setTypeFilter(opt.id); setOrdersPage(1); setOrderTypeFilterOpen(false); }}
+                          className="flex items-center justify-between h-9 px-2.5 rounded-lg text-[12.5px] font-medium text-left"
+                          style={typeFilter === opt.id
+                            ? { background: hexToRgba("#2D6BCC", 0.08), color: "var(--t-blue)" }
+                            : { color: T.muted }}>
+                          {opt.label}
+                          {typeFilter === opt.id && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl shrink-0" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                <button onClick={() => setOrdersView("grid")} className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={ordersView === "grid" ? { background: hexToRgba("#2D6BCC", 0.1) } : {}}>
+                  <LayoutGrid className="w-4 h-4" style={{ color: ordersView === "grid" ? "var(--t-blue)" : T.subtle }} />
+                </button>
+                <button onClick={() => setOrdersView("list")} className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={ordersView === "list" ? { background: hexToRgba("#2D6BCC", 0.1) } : {}}>
+                  <LayoutList className="w-4 h-4" style={{ color: ordersView === "list" ? "var(--t-blue)" : T.subtle }} />
+                </button>
+              </div>
+
+              <button onClick={() => refetch()} disabled={ordersLoading}
+                className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center"
+                style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                <RefreshCw className={`w-4 h-4 ${ordersLoading ? "animate-spin" : ""}`} style={{ color: T.subtle }} />
+              </button>
+            </div>
+          </div>
+
           {/* ── Loading ── */}
-          {ordersLoading && totalOrders === 0 && (
+          {ordersLoading && allCards.length === 0 && (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-7 h-7 animate-spin" style={{ color: T.subtle }} />
             </div>
           )}
 
-          {/* ── Empty state ── */}
-          {nothingAtAll && (
+          {/* ── Empty: no orders at all ── */}
+          {!ordersLoading && allCards.length === 0 && (
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
               className="flex flex-col items-center justify-center py-16 text-center rounded-3xl"
               style={{ background: T.surface, border: `1px solid ${T.border}` }}>
@@ -7562,118 +7825,52 @@ export default function CustomerPortal() {
                 <ShoppingBag className="w-7 h-7" style={{ color: T.subtle }} />
               </div>
               <p className="text-sm font-bold mb-1" style={{ color: T.text }}>No orders yet</p>
-              <p className="text-xs mb-5" style={{ color: T.subtle }}>
-                {typeFilter === "gb" ? "You haven't placed any group buy orders yet."
-                  : typeFilter === "wholesale" ? "You haven't placed any wholesale orders yet."
-                  : typeFilter === "shop" ? "You haven't placed any shop orders yet."
-                  : "Your orders will appear here"}
-              </p>
-              {typeFilter === "gb" ? (
-                <button onClick={() => setSection("groups")}
-                  className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
-                  style={{ background: "var(--t-blue-deep)" }}>
-                  Make an Order <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              ) : typeFilter === "wholesale" ? (
-                <button onClick={() => setLocation("/wholesale")}
-                  className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
-                  style={{ background: "var(--t-blue-deep)" }}>
-                  Place an Order <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <button onClick={() => setLocation("/shop")}
-                  className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
-                  style={{ background: "var(--t-blue-deep)" }}>
-                  Place an Order <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <p className="text-xs mb-5" style={{ color: T.subtle }}>Your orders will appear here</p>
+              <button onClick={() => setLocation("/shop")}
+                className="h-10 px-6 rounded-xl text-xs font-bold text-white flex items-center gap-2"
+                style={{ background: "var(--t-blue-deep)" }}>
+                Place an Order <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </motion.div>
           )}
 
-          {/* ── Group Buy Orders section ── */}
-          {showGb && typeFilter === "all" && (
-            <div className="flex items-center gap-2 px-0.5 pt-1">
-              <div className="w-6 h-px flex-1" style={{ background: T.border }} />
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2" style={{ color: T.subtle }}>Group Buy Orders</span>
-              <div className="w-6 h-px flex-1" style={{ background: T.border }} />
-            </div>
-          )}
-          {showGb && gbOrderGroups.map(({ gbId: groupBuyId, gb, orders: gbOrders }) => {
-            const shown = gbOrders;
-            if (shown.length === 0) return null;
-            const gbStatus = gb?.status ?? "active";
-            const dotColor = GB_STATUS_DOT[gbStatus] ?? "#94A3B8";
-            const gbLabel  = GB_STATUS_LABEL[gbStatus] ?? gbStatus;
-            const hasPaid  = gbOrders.some(o => ["confirmed", "test_confirmed"].includes(o.paymentStatus));
-            const accent   = gbAccentColor(groupBuyId);
-            return (
-              <div key={groupBuyId} className="rounded-2xl p-3 space-y-3"
-                style={{ background: hexToRgba(accent, 0.05), border: `1px solid ${hexToRgba(accent, 0.18)}` }}>
-                {/* Group buy header */}
-                <div className="flex items-center gap-3 px-0.5">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: hexToRgba(accent, 0.14), border: `1px solid ${hexToRgba(accent, 0.25)}` }}>
-                      <Users className="w-4 h-4" style={{ color: accent }} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>
-                        {gb?.name ?? "Group Buy"}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
-                        <span className="text-[10px] font-semibold" style={{ color: T.subtle }}>{gbLabel}</span>
-                        <span className="text-[10px]" style={{ color: T.subtle }}>· {shown.length} order{shown.length !== 1 ? "s" : ""}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {gb && hasPaid && (
-                    <button onClick={() => { setParcelsGb(gb); setParcelsOrders(shown); }}
-                      className="flex items-center gap-1.5 h-8 px-3.5 rounded-full text-xs font-bold shrink-0"
-                      style={{ background: "var(--t-blue-deep)", color: "white" }}>
-                      <Package className="w-3.5 h-3.5" />
-                      Tracking
-                    </button>
-                  )}
-                </div>
-
-                {/* Orders under this group buy */}
-                <div className="space-y-3">
-                  <AnimatePresence>
-                    {shown.map((order, i) => (
-                      <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                        <OrderCard order={order} onManage={() => handleManage(order)} groupBuyName={gb?.name ?? undefined} accent={accent} />
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
+          {/* ── Empty: filters exclude everything ── */}
+          {!ordersLoading && allCards.length > 0 && filteredCards.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-center rounded-3xl"
+              style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: T.surface2 }}>
+                <Search className="w-7 h-7" style={{ color: T.subtle }} />
               </div>
-            );
-          })}
+              <p className="text-sm font-bold mb-1" style={{ color: T.text }}>No matching orders</p>
+              <p className="text-xs mb-5" style={{ color: T.subtle }}>Try adjusting your search or filters</p>
+              <button onClick={clearFilters}
+                className="h-10 px-6 rounded-xl text-xs font-bold flex items-center gap-2"
+                style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                Clear filters
+              </button>
+            </div>
+          )}
 
-          {/* ── Wholesale Orders section ── */}
-          {showWholesale && (
-            <div className="space-y-5">
-              {typeFilter === "all" && (
-                <div className="flex items-center gap-2 px-1">
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: hexToRgba(WHOLESALE_ACCENT, 0.12), border: `1px solid ${hexToRgba(WHOLESALE_ACCENT, 0.25)}` }}>
-                    <Boxes className="w-4 h-4" style={{ color: WHOLESALE_ACCENT }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold" style={{ color: T.text }}>Wholesale Orders</p>
-                    <p className="text-[10px]" style={{ color: T.subtle }}>{wholesaleOrders.length} order{wholesaleOrders.length !== 1 ? "s" : ""}</p>
-                  </div>
-                </div>
-              )}
-              <AnimatePresence>
-                {wholesaleOrders.map((order, i) => (
-                  <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <OrderCard
-                      order={order}
-                      onManage={() => handleManage(order)}
-                      accent={WHOLESALE_ACCENT}
-                      onReorder={order.orderType === "wholesale" ? () => handleReorder(order) : undefined}
+          {/* ── Orders grid ── */}
+          {pageCards.length > 0 && (
+            <div className={ordersView === "grid"
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+              : "grid grid-cols-1 gap-3"}>
+              <AnimatePresence mode="popLayout">
+                {pageCards.map((c, i) => (
+                  <motion.div key={c.order.id} layout
+                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(i * 0.03, 0.25) }}>
+                    <OrderGridCard
+                      order={c.order}
+                      kind={c.kind}
+                      title={c.title}
+                      accent={c.accent}
+                      onManage={() => handleManage(c.order)}
+                      onReorder={c.kind === "wholesale" && c.order.orderType === "wholesale" ? () => handleReorder(c.order) : undefined}
+                      onTracking={c.kind === "gb" && c.gb && ["confirmed", "test_confirmed"].includes(c.order.paymentStatus)
+                        ? () => { setParcelsGb(c.gb); setParcelsOrders(c.gbOrders); }
+                        : undefined}
                     />
                   </motion.div>
                 ))}
@@ -7681,32 +7878,38 @@ export default function CustomerPortal() {
             </div>
           )}
 
-          {/* ── Shop Orders section ── */}
-          {showShop && (
-            <div className="space-y-5">
-              {typeFilter === "all" && (
-                <div className="flex items-center gap-2 px-1">
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: hexToRgba(SHOP_ACCENT, 0.12), border: `1px solid ${hexToRgba(SHOP_ACCENT, 0.25)}` }}>
-                    <ShoppingBag className="w-4 h-4" style={{ color: SHOP_ACCENT }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold" style={{ color: T.text }}>Shop Orders</p>
-                    <p className="text-[10px]" style={{ color: T.subtle }}>{shopOrders.length} order{shopOrders.length !== 1 ? "s" : ""}</p>
-                  </div>
+          {/* ── Pagination ── */}
+          {filteredCards.length > 0 && (
+            <div className="flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl flex-wrap"
+              style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
+              <span className="text-[12.5px]" style={{ color: T.subtle }}>
+                Showing <span style={{ color: T.text, fontWeight: 600 }}>{(page - 1) * PER_PAGE + 1}</span>
+                {" to "}<span style={{ color: T.text, fontWeight: 600 }}>{Math.min(page * PER_PAGE, filteredCards.length)}</span>
+                {" of "}<span style={{ color: T.text, fontWeight: 600 }}>{filteredCards.length}</span> order{filteredCards.length !== 1 ? "s" : ""}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setOrdersPage(Math.max(1, page - 1))} disabled={page === 1}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-40"
+                    style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <ChevronLeft className="w-4 h-4" style={{ color: T.subtle }} />
+                  </button>
+                  {pageNumbers.map(p => (
+                    <button key={p} onClick={() => setOrdersPage(p)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[12.5px] font-semibold"
+                      style={p === page
+                        ? { background: T.blueDeep, color: "#fff" }
+                        : { color: T.muted, background: T.surface, border: `1px solid ${T.border}` }}>
+                      {p}
+                    </button>
+                  ))}
+                  <button onClick={() => setOrdersPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-40"
+                    style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <ChevronRight className="w-4 h-4" style={{ color: T.subtle }} />
+                  </button>
                 </div>
               )}
-              <AnimatePresence>
-                {shopOrders.map((order, i) => (
-                  <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                    <OrderCard
-                      order={order}
-                      onManage={() => handleManage(order)}
-                      accent={SHOP_ACCENT}
-                    />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
             </div>
           )}
 
