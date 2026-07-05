@@ -31,6 +31,7 @@ type LeaderPool = {
   pendingCount: number;
   paymentMethods: Array<{ type: string; [k: string]: any }>;
   contributorNamedReportEnabled: boolean;
+  namedReportCap: number | null;
   fixedOptInFeeUsd: number | null;
 };
 
@@ -89,14 +90,14 @@ export function PoolLeaderDashboard() {
 
   if (!status || !status.status) {
     return (
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
-        <h3 className="text-sm font-bold mb-2">Become a Pool Leader</h3>
-        <p className="text-xs text-slate-600 mb-4">
+      <div className="rounded-xl p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+        <h3 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Become a Pool Leader</h3>
+        <p className="text-xs mb-4" style={{ color: "var(--t-muted)" }}>
           Apply to lead standalone testing pools. You'll receive crypto contributions to your wallet and coordinate lab tests for the community.
         </p>
         <button
           onClick={() => setShowApply(true)}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold"
+          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold transition-opacity hover:opacity-90"
         >
           Apply to be a leader
         </button>
@@ -107,24 +108,24 @@ export function PoolLeaderDashboard() {
 
   if (status.status === "applied") {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
-        <h3 className="text-sm font-bold mb-1">Application pending</h3>
-        <p className="text-xs text-slate-600">Your pool leader application is awaiting admin review.</p>
+      <div className="rounded-xl p-5" style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.3)" }}>
+        <h3 className="text-sm font-bold mb-1" style={{ color: "var(--t-text)" }}>Application pending</h3>
+        <p className="text-xs" style={{ color: "var(--t-muted)" }}>Your pool leader application is awaiting admin review.</p>
       </div>
     );
   }
 
   if (status.status === "rejected") {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-5">
-        <h3 className="text-sm font-bold mb-1">Application rejected</h3>
-        <p className="text-xs text-slate-600">Contact an admin for details.</p>
+      <div className="rounded-xl p-5" style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.25)" }}>
+        <h3 className="text-sm font-bold mb-1" style={{ color: "var(--t-text)" }}>Application rejected</h3>
+        <p className="text-xs" style={{ color: "var(--t-muted)" }}>Contact an admin for details.</p>
       </div>
     );
   }
 
   if (status.status !== "approved") {
-    return <div className="text-sm text-slate-600">Status: {status.status}</div>;
+    return <div className="text-sm" style={{ color: "var(--t-muted)" }}>Status: {status.status}</div>;
   }
 
   return (
@@ -163,7 +164,7 @@ export function PoolLeaderDashboard() {
       </div>
 
       {pools.length === 0 ? (
-        <div className="text-center py-8 text-sm text-slate-500">No pools yet. Create your first one.</div>
+        <div className="text-center py-8 text-sm" style={{ color: "var(--t-muted)" }}>No pools yet. Create your first one.</div>
       ) : (
         <div className="space-y-3">
           {pools.map(p => <PoolCard key={p.id} pool={p} onEdit={() => setEditPool(p)} />)}
@@ -240,34 +241,34 @@ function PoolCard({ pool, onEdit }: { pool: LeaderPool; onEdit: () => void }) {
   if (pool.status === "results_received") nextStatuses.push({ s: "closed", label: "Close pool" });
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
       <div className="p-4 flex items-center gap-3">
         <button onClick={() => setExpanded(e => !e)} className="flex-1 min-w-0 text-left">
-          <p className="text-sm font-bold truncate">{pool.title}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-sm font-bold truncate" style={{ color: "var(--t-text)" }}>{pool.title}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
             {POOL_STATUS_LABEL[pool.status] ?? pool.status} · ${pool.raisedUsd.toFixed(2)} / ${pool.targetAmountUsd.toFixed(2)} · {pool.contributorCount} contributors
             {pool.pendingCount > 0 && <span className="text-amber-600"> · {pool.pendingCount} pending</span>}
           </p>
         </button>
-        <button onClick={onEdit} className="p-1.5 hover:bg-slate-100 rounded" title="Edit pool details">
-          <Pencil className="w-4 h-4 text-slate-400" />
+        <button onClick={onEdit} className="p-1.5 hover:bg-[var(--t-bg)] rounded-lg" title="Edit pool details">
+          <Pencil className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
         </button>
-        <a href={`/pool/${pool.slug}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded" title="Public page">
-          <ExternalLink className="w-4 h-4 text-slate-400" />
+        <a href={`/pool/${pool.slug}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-[var(--t-bg)] rounded-lg" title="Public page">
+          <ExternalLink className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
         </a>
-        <button onClick={() => setExpanded(e => !e)} className="p-1.5 hover:bg-slate-100 rounded">
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        <button onClick={() => setExpanded(e => !e)} className="p-1.5 hover:bg-[var(--t-bg)] rounded-lg">
+          {expanded ? <ChevronUp className="w-4 h-4" style={{ color: "var(--t-muted)" }} /> : <ChevronDown className="w-4 h-4" style={{ color: "var(--t-muted)" }} />}
         </button>
       </div>
       {expanded && (
-        <div className="border-t border-slate-200 p-4 space-y-4 bg-slate-50">
+        <div className="p-4 space-y-4" style={{ borderTop: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
           {nextStatuses.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {nextStatuses.map(t => (
                 <button
                   key={t.s}
                   onClick={() => transitions.mutate(t.s)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded ${t.s === "cancelled" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-opacity hover:opacity-90 ${t.s === "cancelled" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}
                 >
                   {t.label}
                 </button>
@@ -354,23 +355,23 @@ function ParticipantsPanel({ poolId }: { poolId: string }) {
 
   return (
     <div>
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2 inline-flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5" /> Participants ({parts.length})
+      <p className="text-[11px] font-bold uppercase tracking-widest mb-2 inline-flex items-center gap-1.5" style={{ color: "var(--t-text)" }}>
+        <Users className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} /> Participants ({parts.length})
       </p>
       {parts.length === 0 ? (
-        <p className="text-xs text-slate-500 italic">No contributions yet.</p>
+        <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No contributions yet.</p>
       ) : (
         <div className="space-y-1.5">
           {parts.map(p => (
-            <div key={p.id} className="bg-white border border-slate-200 rounded p-2.5 text-xs">
+            <div key={p.id} className="rounded-lg p-2.5 text-xs" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
               <div className="flex justify-between items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="font-semibold truncate">
+                    <p className="font-semibold truncate" style={{ color: "var(--t-text)" }}>
                       {p.displayName || p.accountUsername || p.contactTelegram || p.contactEmail || "Anonymous"}
                     </p>
                     {p.paymentMethod && (
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "var(--t-tag-bg)", color: "var(--t-tag-text)" }}>
                         {METHOD_ICON[p.paymentMethod] ?? "💳"} {p.paymentMethod}
                       </span>
                     )}
@@ -380,7 +381,7 @@ function ParticipantsPanel({ poolId }: { poolId: string }) {
                       </span>
                     )}
                   </div>
-                  <p className="text-slate-500 mt-0.5 truncate">
+                  <p className="mt-0.5 truncate" style={{ color: "var(--t-muted)" }}>
                     ${p.amountUsd.toFixed(2)} · <span className={
                       p.paymentStatus === "verified" ? "text-emerald-600 font-semibold" :
                       p.paymentStatus === "rejected" ? "text-red-600 font-semibold" :
@@ -389,7 +390,7 @@ function ParticipantsPanel({ poolId }: { poolId: string }) {
                     {p.contactEmail && ` · ${p.contactEmail}`}
                     {p.contactTelegram && ` · ${p.contactTelegram}`}
                   </p>
-                  {p.paymentTxHash && <p className="font-mono text-[10px] text-slate-500 truncate mt-0.5">tx: {p.paymentTxHash}</p>}
+                  {p.paymentTxHash && <p className="font-mono text-[10px] truncate mt-0.5" style={{ color: "var(--t-muted)" }}>tx: {p.paymentTxHash}</p>}
                   {(p.paymentMethod === "revolut" || p.paymentMethod === "paypal") && (
                     <p className="font-mono text-[10px] mt-0.5 font-bold" style={{ color: "#92400e" }}>
                       Ref: POOL-{p.id.slice(0, 4).toUpperCase()}-{p.id.slice(4, 8).toUpperCase()}
@@ -410,10 +411,10 @@ function ParticipantsPanel({ poolId }: { poolId: string }) {
                 </div>
                 <div className="flex gap-1 shrink-0 flex-col items-end">
                   {p.paymentStatus !== "verified" && (
-                    <button onClick={() => review.mutate({ id: p.id, status: "verified" })} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-semibold">Verify</button>
+                    <button onClick={() => review.mutate({ id: p.id, status: "verified" })} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-semibold transition-opacity hover:opacity-90">Verify</button>
                   )}
                   {p.paymentStatus !== "rejected" && p.paymentStatus !== "refunded" && (
-                    <button onClick={() => review.mutate({ id: p.id, status: "rejected" })} className="px-2 py-0.5 bg-red-600 text-white rounded text-[10px] font-semibold">Reject</button>
+                    <button onClick={() => review.mutate({ id: p.id, status: "rejected" })} className="px-2 py-0.5 bg-red-600 text-white rounded text-[10px] font-semibold transition-opacity hover:opacity-90">Reject</button>
                   )}
                 </div>
               </div>
@@ -523,32 +524,32 @@ function ResultsPanel({ poolId, slug }: { poolId: string; slug: string }) {
 
   return (
     <div>
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-3 inline-flex items-center gap-1.5">
-        <FileCheck className="w-3.5 h-3.5" /> Publish results
+      <p className="text-[11px] font-bold uppercase tracking-widest mb-3 inline-flex items-center gap-1.5" style={{ color: "var(--t-text)" }}>
+        <FileCheck className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} /> Publish results
       </p>
       <div className="space-y-3">
         {perTest.length > 0 && (
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <p className="text-[10px] uppercase font-bold text-slate-500 bg-slate-50 px-3 py-1.5 border-b border-slate-200">Per-test results</p>
-            <div className="divide-y divide-slate-100">
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--t-border)" }}>
+            <p className="text-[10px] uppercase font-bold px-3 py-1.5" style={{ color: "var(--t-muted)", background: "var(--t-surface2, var(--t-bg))", borderBottom: "1px solid var(--t-border)" }}>Per-test results</p>
+            <div className="divide-y" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
               {perTest.map((r, i) => (
                 <div key={r.poolTestId} className="px-3 py-2.5 space-y-2">
-                  <p className="text-xs font-semibold text-slate-700 truncate">{r.testName}</p>
+                  <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{r.testName}</p>
                   <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
-                    <select value={r.passed} onChange={e => updateRow(i, { passed: e.target.value as PerTestEdit["passed"] })} className="px-1.5 py-1 border border-slate-300 rounded text-xs bg-white">
+                    <select value={r.passed} onChange={e => updateRow(i, { passed: e.target.value as PerTestEdit["passed"] })} className="px-1.5 py-1 rounded-lg text-xs" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }}>
                       <option value="">—</option>
                       <option value="true">PASS</option>
                       <option value="false">FAIL</option>
                     </select>
-                    <input value={r.result} onChange={e => updateRow(i, { result: e.target.value })} placeholder="Result detail" className="px-2 py-1 border border-slate-300 rounded text-xs w-full" />
+                    <input value={r.result} onChange={e => updateRow(i, { result: e.target.value })} placeholder="Result detail" className="px-2 py-1 rounded-lg text-xs w-full" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }} />
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
-                    <input value={r.resultPdfUrl} onChange={e => updateRow(i, { resultPdfUrl: e.target.value })} placeholder="PDF / result URL for this test (optional)" className="flex-1 px-2 py-1 border border-slate-200 rounded text-[11px] text-slate-600 bg-slate-50" />
+                    <ExternalLink className="w-3 h-3 shrink-0" style={{ color: "var(--t-muted)" }} />
+                    <input value={r.resultPdfUrl} onChange={e => updateRow(i, { resultPdfUrl: e.target.value })} placeholder="PDF / result URL for this test (optional)" className="flex-1 px-2 py-1 rounded-lg text-[11px]" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)", color: "var(--t-text)" }} />
                   </div>
                   <div className="flex items-center gap-1.5">
                     <FlaskConical className="w-3 h-3 text-violet-400 shrink-0" />
-                    <input value={r.janoshikUrl} onChange={e => updateRow(i, { janoshikUrl: e.target.value })} placeholder="Janoshik report URL for this test (optional)" className="flex-1 px-2 py-1 border border-slate-200 rounded text-[11px] text-slate-600 bg-slate-50" />
+                    <input value={r.janoshikUrl} onChange={e => updateRow(i, { janoshikUrl: e.target.value })} placeholder="Janoshik report URL for this test (optional)" className="flex-1 px-2 py-1 rounded-lg text-[11px]" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)", color: "var(--t-text)" }} />
                   </div>
                 </div>
               ))}
@@ -556,15 +557,15 @@ function ResultsPanel({ poolId, slug }: { poolId: string; slug: string }) {
           </div>
         )}
         <div className="space-y-2">
-          <p className="text-[10px] uppercase font-bold text-slate-500">Overall</p>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Overall lab notes / summary" className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
+          <p className="text-[10px] uppercase font-bold" style={{ color: "var(--t-muted)" }}>Overall</p>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Overall lab notes / summary" className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }} />
           <div className="flex items-center gap-1.5">
-            <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
-            <input value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="Overall report PDF URL" className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs" />
+            <ExternalLink className="w-3 h-3 shrink-0" style={{ color: "var(--t-muted)" }} />
+            <input value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="Overall report PDF URL" className="flex-1 px-2 py-1.5 rounded-lg text-xs" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }} />
           </div>
-          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Results password (set/update — leave blank to skip)" className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs" />
+          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Results password (set/update — leave blank to skip)" className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }} />
         </div>
-        <button onClick={submit} disabled={submitting} className="w-full px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button onClick={submit} disabled={submitting} className="w-full px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 transition-opacity hover:opacity-90">
           {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : "Publish results"}
         </button>
       </div>
@@ -615,9 +616,10 @@ function MessagingPanel({ poolId }: { poolId: string }) {
     <div>
       <button
         onClick={() => setOpen(o => !o)}
-        className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2 inline-flex items-center gap-1.5"
+        className="text-[11px] font-bold uppercase tracking-widest mb-2 inline-flex items-center gap-1.5"
+        style={{ color: "var(--t-text)" }}
       >
-        <MessageSquare className="w-3.5 h-3.5" /> Messages to group ({messages.length})
+        <MessageSquare className="w-3.5 h-3.5" style={{ color: "var(--t-blue)" }} /> Messages to group ({messages.length})
         {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
       {open && (
@@ -628,25 +630,26 @@ function MessagingPanel({ poolId }: { poolId: string }) {
               onChange={e => setDraft(e.target.value)}
               rows={3}
               placeholder="Write a message to all participants in this pool…"
-              className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs resize-none"
+              className="flex-1 px-2 py-1.5 rounded-lg text-xs resize-none"
+              style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }}
             />
             <button
               onClick={send}
               disabled={sending || !draft.trim()}
-              className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-semibold disabled:opacity-50 inline-flex flex-col items-center gap-1 self-stretch"
+              className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 inline-flex flex-col items-center gap-1 self-stretch transition-opacity hover:opacity-90"
             >
               {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               <span>Send</span>
             </button>
           </div>
           {messages.length === 0 ? (
-            <p className="text-xs text-slate-400 italic">No messages sent yet.</p>
+            <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No messages sent yet.</p>
           ) : (
             <div className="space-y-1.5 max-h-40 overflow-y-auto">
               {messages.map(m => (
-                <div key={m.id} className="bg-white border border-slate-200 rounded p-2">
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap">{m.message}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{new Date(m.createdAt).toLocaleString()}</p>
+                <div key={m.id} className="rounded-lg p-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <p className="text-xs whitespace-pre-wrap" style={{ color: "var(--t-text)" }}>{m.message}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--t-muted)" }}>{new Date(m.createdAt).toLocaleString()}</p>
                 </div>
               ))}
             </div>
@@ -685,21 +688,21 @@ function ApplyModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg max-w-md w-full p-6 my-8">
+      <div className="rounded-2xl max-w-md w-full p-6 my-8" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <div className="flex justify-between items-start mb-4">
-          <h3 className="text-base font-bold">Pool Leader Application</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
+          <h3 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Pool Leader Application</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center transition-opacity hover:opacity-70" style={{ background: "var(--t-bg)" }}><X className="w-4 h-4" style={{ color: "var(--t-muted)" }} /></button>
         </div>
         <div className="space-y-4">
-          <p className="text-xs text-slate-600">
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>
             Apply to lead standalone testing pools. Once approved you'll set up your payment details when creating your first pool.
           </p>
           <label className="block text-xs">
-            <span className="text-slate-700 font-medium">About you (optional)</span>
-            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm" placeholder="Tell the admins a bit about yourself and why you'd like to lead pools..." />
+            <span className="font-medium" style={{ color: "var(--t-text)" }}>About you (optional)</span>
+            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className="mt-1 w-full px-3 py-2 rounded-lg text-sm" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }} placeholder="Tell the admins a bit about yourself and why you'd like to lead pools..." />
           </label>
 
-          <button onClick={submit} disabled={submitting} className="w-full px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={submit} disabled={submitting} className="w-full px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50 transition-opacity hover:opacity-90">
             {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : "Submit application"}
           </button>
         </div>
@@ -992,8 +995,8 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
 
   if (catalog.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
-        <p className="text-xs text-slate-400 italic">No tests in catalog yet — admin must add them first.</p>
+      <div className="rounded-xl p-4 text-center" style={{ border: "1px dashed var(--t-border)" }}>
+        <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No tests in catalog yet — admin must add them first.</p>
       </div>
     );
   }
@@ -1016,18 +1019,18 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
       <button
         onMouseDown={e => { e.preventDefault(); if (!added) { onAdd(c); setQuery(""); } }}
         className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors ${
-          added ? "opacity-50 cursor-default" : "hover:bg-slate-50 cursor-pointer"
+          added ? "opacity-50 cursor-default" : "hover:bg-[var(--t-bg)] cursor-pointer"
         }`}
       >
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
-          <p className="text-[11px] text-slate-400">{c.unitLabel}</p>
+          <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text)" }}>{c.name}</p>
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>{c.unitLabel}</p>
         </div>
         <div className="shrink-0 flex items-center gap-2 ml-3">
-          <span className="text-sm font-bold text-slate-700">${c.defaultPriceUsd.toFixed(2)}</span>
+          <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>${c.defaultPriceUsd.toFixed(2)}</span>
           {added
             ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            : <Plus className="w-4 h-4 text-slate-300" />
+            : <Plus className="w-4 h-4" style={{ color: "var(--t-subtle, var(--t-muted))" }} />
           }
         </div>
       </button>
@@ -1038,35 +1041,36 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
     <div className="relative">
       {/* Search input */}
       <div className="relative">
-        <FlaskConical className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <FlaskConical className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--t-muted)" }} />
         <input
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="Search tests to add (e.g. GLP1, Endotoxin…)"
-          className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white placeholder:text-slate-400"
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 placeholder:text-[var(--t-subtle,var(--t-muted))]"
+          style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }}
         />
         {query && (
           <button
             onMouseDown={e => { e.preventDefault(); setQuery(""); }}
             className="absolute right-3 top-1/2 -translate-y-1/2"
           >
-            <X className="w-3.5 h-3.5 text-slate-400" />
+            <X className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
           </button>
         )}
       </div>
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-20 w-full mt-1 bg-white rounded-xl border border-slate-200 shadow-lg max-h-72 overflow-y-auto">
+        <div className="absolute z-20 w-full mt-1 rounded-xl shadow-lg max-h-72 overflow-y-auto" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
           {!hasResults ? (
-            <p className="px-3 py-4 text-xs text-slate-400 italic text-center">No tests match "{query}"</p>
+            <p className="px-3 py-4 text-xs italic text-center" style={{ color: "var(--t-muted)" }}>No tests match "{query}"</p>
           ) : (
             <>
               {filteredMass.length > 0 && (
                 <div>
-                  <div className="sticky top-0 px-3 pt-2.5 pb-1 bg-white border-b border-slate-100">
+                  <div className="sticky top-0 px-3 pt-2.5 pb-1" style={{ background: "var(--t-surface)", borderBottom: "1px solid var(--t-border)" }}>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Mass / Purity</span>
                   </div>
                   {filteredMass.map(c => (
@@ -1076,7 +1080,7 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
               )}
               {filteredAdditional.length > 0 && (
                 <div>
-                  <div className="sticky top-0 px-3 pt-2.5 pb-1 bg-white border-b border-slate-100">
+                  <div className="sticky top-0 px-3 pt-2.5 pb-1" style={{ background: "var(--t-surface)", borderBottom: "1px solid var(--t-border)" }}>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-violet-500">Additional Tests</span>
                   </div>
                   {filteredAdditional.map(c => (
@@ -1096,7 +1100,7 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
             <button
               key={c.id}
               onClick={() => { onAdd(c); }}
-              className="text-[11px] px-2.5 py-1 rounded-full border border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+              className="text-[11px] px-2.5 py-1 rounded-full border border-[var(--t-border)] text-[var(--t-muted)] hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
             >
               {c.name}
             </button>
@@ -1104,7 +1108,7 @@ function TestSearchDropdown({ catalog, tests, onAdd }: {
           {catalog.filter(c => !tests.some(t => t.catalogId === c.id)).length > 5 && (
             <button
               onClick={() => setOpen(true)}
-              className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-slate-200 text-slate-400 hover:border-slate-300 transition-colors"
+              className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-[var(--t-border)] text-[var(--t-subtle,var(--t-muted))] transition-colors hover:opacity-80"
             >
               + more
             </button>
@@ -1145,7 +1149,7 @@ function PaymentMethodPicker({
   if (ppEmail) available.push({ type: "paypal", label: "PayPal", detail: ppEmail, icon: "🅿️" });
 
   if (available.length === 0) {
-    return <p className="text-xs text-slate-500 italic">No payment methods on your profile yet.</p>;
+    return <p className="text-xs italic" style={{ color: "var(--t-muted)" }}>No payment methods on your profile yet.</p>;
   }
 
   return (
@@ -1876,6 +1880,7 @@ function EditPoolModal({
   const [manufacturer, setManufacturer] = useState(pool.manufacturer ?? "");
   const [description, setDescription] = useState(pool.description ?? "");
   const [namedReportEnabled, setNamedReportEnabled] = useState(pool.contributorNamedReportEnabled);
+  const [namedReportCap, setNamedReportCap] = useState(pool.namedReportCap != null ? String(pool.namedReportCap) : "");
   const [allowVialContribution, setAllowVialContribution] = useState((pool as any).allowVialContribution ?? false);
   const [pageMessage, setPageMessage] = useState((pool as any).pageMessage ?? "");
   const existingJanoshik = pool.paymentMethods.find((m: any) => m.type === "janoshik");
@@ -2038,6 +2043,21 @@ function EditPoolModal({
                 </p>
               </div>
             </button>
+            {namedReportEnabled && (
+              <div className="mt-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--t-muted)" }}>Named Report Cap (blank = unlimited)</p>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={namedReportCap}
+                  onChange={e => setNamedReportCap(e.target.value)}
+                  placeholder="e.g. 10"
+                  className={INPUT_CLS}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            )}
           </section>
 
           <section>

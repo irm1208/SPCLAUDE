@@ -306,31 +306,24 @@ function CarrierInput({ value, onChange }: { value: string; onChange: (v: string
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, color = "var(--t-text)" }: { label: string; value: string | number; sub?: string; color?: string }) {
+function StatCard({ label, value, sub, color = "var(--t-text)", icon: Icon }: { label: string; value: string | number; sub?: string; color?: string; icon?: React.ElementType }) {
+  const tile = color === "var(--t-text)" ? "var(--t-blue-deep)" : color;
   return (
-    <div className="rounded-2xl p-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-      <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--t-subtle)" }}>{label}</p>
-      <p className="text-2xl font-bold tabular-nums" style={{ color }}>{value}</p>
-      {sub && <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{sub}</p>}
+    <div className="rounded-xl p-4 flex flex-col gap-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+      <div className="flex items-center gap-2">
+        {Icon && (
+          <span className="flex items-center justify-center rounded-md shrink-0 w-7 h-7"
+            style={{ background: `color-mix(in srgb, ${tile} 10%, transparent)`, color: tile }}>
+            <Icon className="w-[15px] h-[15px]" strokeWidth={2.2} />
+          </span>
+        )}
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>{label}</p>
+      </div>
+      <div>
+        <p className="text-2xl font-bold tabular-nums leading-none" style={{ color }}>{value}</p>
+        {sub && <p className="text-[11px] mt-1" style={{ color: "var(--t-subtle)" }}>{sub}</p>}
+      </div>
     </div>
-  );
-}
-
-// ─── Tab Button ───────────────────────────────────────────────────────────────
-
-function TabBtn({ id, label, icon: Icon, active, onClick }: {
-  id: string; label: string; icon: React.ElementType; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick}
-      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap"
-      style={active
-        ? { background: "var(--t-blue-deep)", color: "white" }
-        : { background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }
-      }>
-      <Icon className="w-4 h-4 shrink-0" />
-      {label}
-    </button>
   );
 }
 
@@ -358,13 +351,13 @@ function OverviewTab({ orders, gbName, country, currency }: { orders: ROrder[]; 
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard label="Total Orders" value={total} />
-        <StatCard label="Paid" value={paid} color="#16A34A" />
-        <StatCard label="Unpaid" value={unpaid} color="#94A3B8" />
-        <StatCard label="Pending" value={pending} color="#D97706" sub="Submitted / Processing" />
-        <StatCard label="Shipped" value={shipped} color="#7C3AED" />
-        <StatCard label="Completed" value={completed} color="#16A34A" />
-        <StatCard label="Revenue" value={`${sym}${fmtCurrency(revenue)}`} color="var(--t-blue-deep)" />
+        <StatCard label="Total Orders" value={total} icon={Package} />
+        <StatCard label="Paid" value={paid} color="#16A34A" icon={CheckCircle2} />
+        <StatCard label="Unpaid" value={unpaid} color="#94A3B8" icon={Wallet} />
+        <StatCard label="Pending" value={pending} color="#D97706" sub="Submitted / Processing" icon={Inbox} />
+        <StatCard label="Shipped" value={shipped} color="#7C3AED" icon={Truck} />
+        <StatCard label="Completed" value={completed} color="#16A34A" icon={Check} />
+        <StatCard label="Revenue" value={`${sym}${fmtCurrency(revenue)}`} color="var(--t-blue-deep)" icon={BarChart3} />
       </div>
     </div>
   );
@@ -4091,7 +4084,7 @@ export default function ReshipperPage() {
 
         {/* ── GB picker row (multiple assignments) ── */}
         {assignments.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0 bg-[#f7f7f7]" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
             {assignments.map(a => (
               <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
                 className="flex items-center gap-1 px-3 h-7 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
