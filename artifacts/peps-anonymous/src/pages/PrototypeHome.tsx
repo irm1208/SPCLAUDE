@@ -43,7 +43,7 @@ export default function PrototypeHome() {
     <div style={{
       minHeight: "100vh",
       background: T.pageBg,
-      fontFamily: "'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       color: T.textPrimary,
     }}>
 

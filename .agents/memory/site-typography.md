@@ -1,16 +1,17 @@
 ---
-name: Site typography
-description: Font pairing, loading rules, and the Instrument Sans weight cap for Salt&Peps.
+name: Site typography attempts
+description: Rejected font-swap attempt and rules for future de-AI design work on Salt&Peps.
 ---
 
-# Site typography (de-AI pass, July 2026)
+# Site typography — rejected blanket swap (July 2026)
 
-Body = Instrument Sans, display = Bricolage Grotesque (headings h1–h6, dashboard wordmark/page titles/StatCard numbers via `FONT_DISPLAY` in dashboard-theme.ts). Replaced Inter + DM Serif Display everywhere.
+A site-wide swap (Instrument Sans body + Bricolage Grotesque headings + grain texture on dashboard bg) was built, then REVERTED — user reacted "it looks horrible."
 
-**Rules:**
-- Fonts load ONLY via the Google Fonts `<link>` in `artifacts/peps-anonymous/index.html`. A stale CSS `@import` in index.css once double-shipped Inter/DM Serif — don't reintroduce one.
-- Instrument Sans has NO weight above 700: `font-extrabold`/`fontWeight: 800` on body text clamps to 700 (browsers do not fall back per-weight). If a true 800 is needed, use `FONT_DISPLAY` (Bricolage loads up to 800).
-- `--font-display` drives Tailwind's `font-display` utility used by ~15 files (Home.tsx aliases it as `SERIF`, admin, lookup, portal h1s) — changing it restyles public + admin pages, not just the dashboard.
-- Dashboard page background has a subtle SVG noise via `grain(dark)` in dashboard-theme.ts (data-URI, covered by `img-src data:` in the CSP).
+**Rule:** never blanket-swap fonts/styles site-wide to fix the "AI-generated look." Brainstorm direction first, show side-by-side canvas mockups, get approval, then apply.
 
-**Why:** user asked to remove the "made by AI" look; frontend-design skill flags Inter-everywhere + zero texture as the top tells.
+**Why:** the user's complaint is holistic (icons, text colors, boxes/cards, texture, "no human feel") — a font change alone reads as arbitrary and worse. Direction must come from the user reacting to rendered options.
+
+**Technical notes still valid if fonts change later:**
+- Fonts load in TWO places: `index.html` Google Fonts `<link>` (Inter + Plus Jakarta Sans) AND a CSS `@import` at top of index.css (DM Serif Display + Inter 300–800). Both must stay in sync; h1–h6 use `--font-sans`, `--font-display` (DM Serif) drives Tailwind `font-display` used by ~15 files (Home.tsx aliases it `SERIF`).
+- Instrument Sans has no weight above 700 — `font-extrabold` clamps.
+- SVG-noise data-URIs are fine under the CSP (`img-src data:`).

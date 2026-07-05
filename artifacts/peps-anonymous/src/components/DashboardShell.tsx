@@ -32,8 +32,8 @@ type NavProps = PortalNavProps;
 
 // ─── Palette (exact hex, flips light/dark) ───────────────────────────────────
 
-import { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT, FONT_DISPLAY, grain } from "./dashboard-theme";
-export { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT, FONT_DISPLAY };
+import { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT } from "./dashboard-theme";
+export { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT };
 export const STAR_AMBER = "#F5A623";
 export const LIVE_RED = "#EF4444";
 export const SEARCH_GROUPS = ["Orders", "Compounds", "Group Buys", "Shop", "Lab Tests"] as const;
@@ -335,7 +335,7 @@ export function DashboardShell({
   };
 
   return (
-    <div className="flex w-full min-h-screen lg:h-screen lg:overflow-hidden" style={{ backgroundColor: T.page, backgroundImage: grain(dark), fontFamily: FONT, color: T.text }}>
+    <div className="flex w-full min-h-screen lg:h-screen lg:overflow-hidden" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
       <style>{`
         .dh-nav:hover { background: ${T.chip} !important; }
         .dh-rail:hover { background: rgba(255,255,255,0.10) !important; }
@@ -455,7 +455,7 @@ export function DashboardShell({
           <div className="flex flex-col flex-1 min-w-0" style={{ background: T.sidebar, borderRight: `1px solid ${T.border}` }}>
             {/* Brand */}
             <div className="flex items-center px-4" style={{ height: 72 }}>
-              <span className="font-extrabold tracking-tight truncate" style={{ fontSize: 20, fontFamily: FONT_DISPLAY }}>Salt &amp; Peps</span>
+              <span className="font-extrabold tracking-tight truncate" style={{ fontSize: 20 }}>Salt &amp; Peps</span>
             </div>
 
             <div className="flex-1 overflow-y-auto dh-scroll px-3 pb-4">
@@ -596,7 +596,7 @@ export function DashboardShell({
               className="sticky top-0 z-10 flex items-center gap-3 px-3 md:px-7"
               style={{ height: 72, background: T.panel, borderBottom: `1px solid ${T.border}` }}
             >
-              <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21, fontFamily: FONT_DISPLAY }}>{title}</h1>
+              <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>{title}</h1>
 
               <div className="flex-1 flex justify-center min-w-0 sm:px-2">
                 <div className="relative hidden sm:block w-full max-w-[460px]">
@@ -822,7 +822,7 @@ export function StatCard({
         </span>
         <span className="font-semibold" style={{ fontSize: 12, color: T.muted }}>{label}</span>
       </div>
-      <span className="font-extrabold" style={{ fontSize: 30, letterSpacing: "-0.02em", lineHeight: 1, fontFamily: FONT_DISPLAY, fontVariantNumeric: "tabular-nums", color: highlight ? ACCENT : T.text }}>{value}</span>
+      <span className="font-extrabold" style={{ fontSize: 30, letterSpacing: "-0.02em", lineHeight: 1, color: highlight ? ACCENT : T.text }}>{value}</span>
     </button>
   );
 }

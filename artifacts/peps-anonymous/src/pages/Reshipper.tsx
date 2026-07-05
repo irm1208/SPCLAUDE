@@ -4059,7 +4059,7 @@ export default function ReshipperPage() {
 
   return (
     <PageLayout>
-      <div className="flex flex-col flex-1" style={{ fontFamily: "'Instrument Sans', sans-serif", background: "var(--t-bg)" }}>
+      <div className="flex flex-col flex-1" style={{ fontFamily: "'Inter', sans-serif", background: "var(--t-bg)" }}>
 
         {/* ── Header ── */}
         <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
