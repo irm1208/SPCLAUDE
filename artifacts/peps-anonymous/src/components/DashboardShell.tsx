@@ -126,6 +126,16 @@ export function DashboardShell({
   const [menu, setMenu] = useState<null | "profile">(null);
   // Rail quick-view flyout: which section is peeking, and the y-offset to anchor it.
   const [quickView, setQuickView] = useState<{ id: string; top: number } | null>(null);
+  // Rail hover tooltip: page name shown beside the blue icon rail.
+  const [railTip, setRailTip] = useState<{ label: string; top: number } | null>(null);
+  const railTipProps = (label: string) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLButtonElement>) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      setRailTip({ label, top: r.top + r.height / 2 });
+    },
+    onMouseLeave: () => setRailTip(null),
+    onMouseDown: () => setRailTip(null),
+  });
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Debounce the search query so we don't hit the APIs on every keystroke.
@@ -414,7 +424,7 @@ export function DashboardShell({
               <button
                 key={id}
                 onClick={(e) => openQuickView(id, e)}
-                title={label}
+                {...railTipProps(label)}
                 aria-label={label}
                 aria-current={active ? "page" : undefined}
                 aria-expanded={quickView?.id === id}
@@ -435,7 +445,7 @@ export function DashboardShell({
           <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
             <button
               onClick={() => onSection("telegram")}
-              title="Telegram"
+              {...railTipProps("Telegram")}
               aria-label="Telegram notifications"
               className="dh-rail flex items-center justify-center transition-all"
               style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
@@ -444,7 +454,7 @@ export function DashboardShell({
             </button>
             <button
               onClick={() => navigate("/shop")}
-              title="Shop"
+              {...railTipProps("Shop")}
               aria-label="Shop"
               className="dh-rail flex items-center justify-center transition-all"
               style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
@@ -453,7 +463,7 @@ export function DashboardShell({
             </button>
             <button
               onClick={toggleTheme}
-              title={dark ? "Light mode" : "Dark mode"}
+              {...railTipProps(dark ? "Light mode" : "Dark mode")}
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               className="dh-rail flex items-center justify-center transition-all"
               style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
@@ -462,7 +472,7 @@ export function DashboardShell({
             </button>
             <button
               onClick={() => setCollapsed(c => !c)}
-              title={collapsed ? "Expand" : "Collapse"}
+              {...railTipProps(collapsed ? "Expand" : "Collapse")}
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-expanded={!collapsed}
               className="dh-rail flex items-center justify-center transition-all"
@@ -617,6 +627,21 @@ export function DashboardShell({
           </div>
         )}
       </aside>
+
+      {/* ══ Rail hover tooltip (desktop) ══ */}
+      {railTip && !quickView && (
+        <div
+          className="hidden lg:block fixed z-50 pointer-events-none whitespace-nowrap"
+          style={{
+            left: RAIL_W + 10, top: railTip.top, transform: "translateY(-50%)",
+            background: "#032D60", color: "#fff", fontSize: 12, fontWeight: 600,
+            padding: "5px 10px", borderRadius: 6,
+            boxShadow: "0 6px 18px rgba(3,45,96,.35)",
+          }}
+        >
+          {railTip.label}
+        </div>
+      )}
 
       {/* ══ Rail quick-view flyout (desktop) ══ */}
       {quickView && (
