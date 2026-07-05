@@ -4,9 +4,10 @@ import {
   LayoutDashboard, ReceiptText, UsersRound, HeartPulse, ClipboardList,
   Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
-  Droplet, Scale, TrendingUp, Activity,
+  Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
+import { useAccount } from "@/hooks/use-account";
 import { useThemeStore } from "@/hooks/use-theme";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
@@ -234,6 +235,28 @@ export function DashboardShell({
     { id: "lab-tests",  label: "Lab Tests",  Icon: ClipboardList,   active: activeSection === "lab-tests" },
   ];
 
+  // ── Role-gated workspaces + extra sections (mirrors the mobile "More" menu) ──
+  const { account } = useAccount();
+  type SideLink = { id: string; label: string; Icon: React.ElementType; active?: boolean; go: () => void };
+  const workspaceItems: SideLink[] = [
+    ...(account?.organiserStatus === "approved"
+      ? [{ id: "gborganiser", label: "GB Organiser", Icon: Store, go: () => navigate("/gborganiser") }]
+      : []),
+    ...(account?.reshipperStatus === "approved"
+      ? [{ id: "reshipper", label: "Reshipper", Icon: Truck, go: () => navigate("/reshipper") }]
+      : []),
+    ...(account?.isWholesale
+      ? [
+          { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, go: () => navigate("/wholesale") },
+          { id: "shared-orders", label: "Shared Orders", Icon: Users, go: () => navigate("/wholesale/shared") },
+        ]
+      : []),
+  ];
+  const moreItems: SideLink[] = [
+    { id: "lab-pool", label: "Pool Leaders", Icon: TestTube, active: activeSection === "lab-pool", go: () => onSection("lab-pool") },
+    { id: "support",  label: "Tickets",      Icon: LifeBuoy, active: activeSection === "support",  go: () => onSection("support") },
+  ];
+
   const RAIL_W = 56;
   const SIDEBAR_W = collapsed ? RAIL_W : 250;
 
@@ -409,6 +432,29 @@ export function DashboardShell({
             })}
           </nav>
 
+          <nav
+            className="flex flex-col items-center gap-1.5"
+            style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.14)" }}
+          >
+            {[...workspaceItems, ...moreItems].map(({ id, label, Icon, active, go }) => (
+              <button
+                key={id}
+                onClick={() => { setQuickView(null); go(); }}
+                title={label}
+                aria-label={label}
+                aria-current={active ? "page" : undefined}
+                className={active ? "flex items-center justify-center transition-all" : "dh-rail flex items-center justify-center transition-all"}
+                style={{
+                  width: 40, height: 40, borderRadius: 6,
+                  background: active ? "rgba(255,255,255,0.16)" : "transparent",
+                  color: active ? "#fff" : "rgba(255,255,255,0.62)",
+                }}
+              >
+                <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
+              </button>
+            ))}
+          </nav>
+
           <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
             <button
               onClick={() => onSection("telegram")}
@@ -465,6 +511,48 @@ export function DashboardShell({
                   <button
                     key={id}
                     onClick={() => onSection(id)}
+                    className={active ? "relative w-full flex items-center rounded-md transition-all text-left" : "dh-nav relative w-full flex items-center rounded-md transition-all text-left"}
+                    style={{
+                      gap: 11, padding: "0 12px", height: 40,
+                      background: active ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent",
+                      color: active ? ACCENT : T.muted,
+                      fontWeight: active ? 700 : 600, fontSize: 13.5,
+                    }}
+                  >
+                    {active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
+                    <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
+
+              {/* Workspaces (role-gated) */}
+              {workspaceItems.length > 0 && (
+                <>
+                  <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Workspaces</p>
+                  <nav className="flex flex-col gap-0.5">
+                    {workspaceItems.map(({ id, label, Icon, go }) => (
+                      <button
+                        key={id}
+                        onClick={go}
+                        className="dh-nav relative w-full flex items-center rounded-md transition-all text-left"
+                        style={{ gap: 11, padding: "0 12px", height: 40, background: "transparent", color: T.muted, fontWeight: 600, fontSize: 13.5 }}
+                      >
+                        <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+                        <span className="truncate">{label}</span>
+                      </button>
+                    ))}
+                  </nav>
+                </>
+              )}
+
+              {/* More */}
+              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>More</p>
+              <nav className="flex flex-col gap-0.5">
+                {moreItems.map(({ id, label, Icon, active, go }) => (
+                  <button
+                    key={id}
+                    onClick={go}
                     className={active ? "relative w-full flex items-center rounded-md transition-all text-left" : "dh-nav relative w-full flex items-center rounded-md transition-all text-left"}
                     style={{
                       gap: 11, padding: "0 12px", height: 40,
