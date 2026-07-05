@@ -247,43 +247,42 @@ function SearchableProductSelect({
         className="w-full text-left flex items-center gap-2 px-4"
         style={{
           minHeight: 44,
-          color: isDisabled ? "var(--t-muted)" : isSelected ? "var(--t-blue)" : "var(--t-text)",
-          background: isSelected ? "var(--t-blue-08)" : "transparent",
+          color: isDisabled ? "rgba(255,255,255,0.25)" : isSelected ? "#5B8DEF" : "rgba(255,255,255,0.88)",
+          background: isSelected ? "rgba(91,141,239,0.12)" : "transparent",
           cursor: isDisabled ? "not-allowed" : "pointer",
           fontSize: 14,
           paddingTop: 10,
           paddingBottom: 10,
-          transition: "background 0.15s, color 0.15s",
-          borderBottom: "1px solid var(--t-border)",
-          opacity: isDisabled ? 0.5 : 1,
+          transition: "background 0.1s",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
         }}
-        onMouseEnter={e => { if (!isDisabled) (e.currentTarget as HTMLElement).style.background = isSelected ? "var(--t-blue-12)" : "var(--t-surface2)"; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSelected ? "var(--t-blue-08)" : "transparent"; }}
+        onMouseEnter={e => { if (!isDisabled) (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.18)" : "rgba(255,255,255,0.05)"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.12)" : "transparent"; }}
       >
         {/* Left slot: medal emoji for top 3, stock dot otherwise */}
         {showLeftSlot && (
           medal
-            ? <span style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, userSelect: "none" }}>{medal}</span>
-            : <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", background: dotColor ?? "var(--t-border)" }} />
+            ? <span style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, userSelect: "none", opacity: isDisabled ? 0.35 : 1 }}>{medal}</span>
+            : <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", background: dotColor ?? "rgba(255,255,255,0.12)", opacity: isDisabled ? 0.35 : 1 }} />
         )}
 
-        <span style={{ flex: 1, wordBreak: "break-word", fontWeight: isSelected ? 500 : 400 }}>
+        <span style={{ flex: 1, wordBreak: "break-word" }}>
           {p.name}{p.mgSize ? ` - ${p.mgSize}` : ""}
         </span>
 
         {dotLabel && (
-          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: dotColor ?? undefined }}>
+          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: dotColor ?? undefined, opacity: isDisabled ? 0.35 : 1 }}>
             {dotLabel}
           </span>
         )}
 
         {!hidePrices && (
-          <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums", color: isSelected ? "var(--t-blue)" : "var(--t-subtle)" }}>
+          <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums", color: isDisabled ? "rgba(255,255,255,0.15)" : isSelected ? "#5B8DEF" : "rgba(255,255,255,0.45)" }}>
             {formatPrice(p.price)}
           </span>
         )}
         {isSelected && (
-          <span style={{ flexShrink: 0, color: "var(--t-blue)", fontWeight: 600 }}>✓</span>
+          <span style={{ flexShrink: 0, color: "#5B8DEF", fontWeight: 600 }}>✓</span>
         )}
       </button>
     );
@@ -296,29 +295,29 @@ function SearchableProductSelect({
         ...panelStyle,
         borderRadius: 12,
         overflow: "hidden",
-        background: "var(--t-surface)",
-        border: "1px solid var(--t-border)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+        background: "#162231",
+        border: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
         maxHeight: 320,
         display: "flex",
         flexDirection: "column",
       }}
       role="listbox"
     >
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--t-border)", flexShrink: 0 }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
         <input
           ref={searchRef}
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search products…"
-          style={{ width: "100%", background: "transparent", border: "none", outline: "none", color: "var(--t-text)", fontSize: 16, lineHeight: "1.4" }}
-          className="placeholder:text-muted-foreground"
+          style={{ width: "100%", background: "transparent", border: "none", outline: "none", color: "#ffffff", fontSize: 16, lineHeight: "1.4" }}
+          className="placeholder:text-white/35"
         />
       </div>
       <div style={{ overflowY: "auto", flex: 1 }}>
         {filtered.length === 0 && (
-          <p style={{ padding: "12px 16px", fontSize: 14, color: "var(--t-subtle)" }}>No products match "{query}"</p>
+          <p style={{ padding: "12px 16px", fontSize: 14, color: "rgba(255,255,255,0.4)" }}>No products match "{query}"</p>
         )}
         {cats.length === 0
           ? filtered.map(renderRow)
@@ -326,7 +325,7 @@ function SearchableProductSelect({
             <>
               {cats.map(cat => (
                 <div key={cat}>
-                  <div style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--t-subtle)", position: "sticky", top: 0, background: "var(--t-surface2)" }}>
+                  <div style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "rgba(255,255,255,0.32)", position: "sticky", top: 0, background: "#162231" }}>
                     {cat}
                   </div>
                   {categorised[cat].map(renderRow)}
@@ -334,7 +333,7 @@ function SearchableProductSelect({
               ))}
               {uncategorised.length > 0 && (
                 <div>
-                  <div style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--t-subtle)", position: "sticky", top: 0, background: "var(--t-surface2)" }}>
+                  <div style={{ padding: "6px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "rgba(255,255,255,0.32)", position: "sticky", top: 0, background: "#162231" }}>
                     Other
                   </div>
                   {uncategorised.map(renderRow)}
@@ -354,26 +353,26 @@ function SearchableProductSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(o => !o)}
-        className="w-full text-left focus:outline-none flex items-start transition-all duration-200"
+        className="w-full text-left focus:outline-none flex items-start"
         style={{
           minHeight: 48,
-          borderRadius: 8,
+          borderRadius: 12,
           paddingLeft: 16,
           paddingRight: 40,
           paddingTop: 13,
           paddingBottom: 13,
           fontSize: 14,
-          background: "var(--t-surface2)",
-          border: open ? "1px solid var(--t-blue)" : "1px solid var(--t-border)",
-          color: selected ? "var(--t-text)" : "var(--t-muted)",
+          background: "#162231",
+          border: open ? "1px solid rgba(91,141,239,0.5)" : "1px solid rgba(255,255,255,0.08)",
+          color: selected ? "#ffffff" : "rgba(255,255,255,0.75)",
+          transition: "border-color 0.15s",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.6 : 1,
-          boxShadow: open ? "0 0 0 1px var(--t-blue-20)" : "none",
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span style={{ flex: 1, wordBreak: "break-word", lineHeight: "1.4", fontWeight: selected ? 500 : 400 }}>
+        <span style={{ flex: 1, wordBreak: "break-word", lineHeight: "1.4" }}>
           {disabled ? "Loading products…" : selected ? `${selected.name}${selected.mgSize ? ` - ${selected.mgSize}` : ""}` : "Select a product…"}
         </span>
       </button>
@@ -1202,19 +1201,19 @@ export default function OrderForm() {
           </div>
         )}
 
-        <section className="space-y-4">
-          <div className="rounded-2xl p-5 relative overflow-hidden shadow-sm" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Your Products</p>
+        <section className="space-y-3">
+          <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: "#1C2B3D" }}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Your Products</p>
               {gbId && stockViewEnabled && gbCapacity.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setStockModalOpen(true)}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md transition-colors border shadow-sm"
-                  style={{ background: "var(--t-surface2)", color: "var(--t-text)", borderColor: "var(--t-border)" }}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.55)" }}
                   title="View stock levels"
                 >
-                  <BarChart2 className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                  <BarChart2 className="w-3 h-3" />
                   Stock levels
                 </button>
               )}
@@ -1314,12 +1313,12 @@ export default function OrderForm() {
                                              { text: "#93C5FD", label: "In Stock" };
 
                         return (
-                          <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--t-blue-04)", border: "1px solid var(--t-blue-08)" }}>
+                          <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.12)" }}>
                             <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 rounded-full overflow-hidden flex" style={{ background: "var(--t-blue-08)" }}>
+                              <div className="flex-1 h-2 rounded-full overflow-hidden flex" style={{ background: "rgba(59,130,246,0.12)" }}>
                                 {/* Blue = inventory filled by others */}
                                 {othersFillPct > 0 && (
-                                  <div className="h-full transition-all duration-300" style={{ width: `${othersFillPct}%`, background: "var(--t-blue)", opacity: 0.65 }} />
+                                  <div className="h-full transition-all duration-300" style={{ width: `${othersFillPct}%`, background: "#3B82F6", opacity: 0.65 }} />
                                 )}
                                 {/* Amber = my order (reacts to +/−) */}
                                 {myFillPct > 0 && (
@@ -1330,12 +1329,12 @@ export default function OrderForm() {
                             </div>
                             <div className="flex items-center gap-3 mt-1.5">
                               <div className="flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "var(--t-blue)", opacity: 0.65 }} />
-                                <span className="text-[9px]" style={{ color: "var(--t-subtle)" }}>GB order</span>
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "#3B82F6", opacity: 0.65 }} />
+                                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.35)" }}>GB order</span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "#FBBF24" }} />
-                                <span className="text-[9px]" style={{ color: "var(--t-subtle)" }}>My order</span>
+                                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.35)" }}>My order</span>
                               </div>
                             </div>
                           </div>
@@ -1345,13 +1344,13 @@ export default function OrderForm() {
                       <div className="flex items-center gap-3">
                         <div className="flex flex-col items-center shrink-0">
                           <div
-                            className="flex items-center h-11 rounded-md overflow-hidden shadow-sm"
-                            style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
+                            className="flex items-center h-11 rounded-xl overflow-hidden"
+                            style={{ background: "#162231", border: "1px solid rgba(255,255,255,0.08)" }}
                           >
                             <button
                               type="button"
-                              className="px-3.5 h-full text-lg transition-colors hover:bg-slate-500/10"
-                              style={{ color: "var(--t-text)" }}
+                              className="px-3.5 h-full text-lg transition-colors"
+                              style={{ color: "rgba(255,255,255,0.85)" }}
                               onClick={() => draft.updateLineItem(item.id, { quantity: itemAllowHalfKits ? prevQty(item.quantity) : Math.max(1, item.quantity - 1) })}
                             >−</button>
                             <input
@@ -1364,25 +1363,25 @@ export default function OrderForm() {
                                 if (!isNaN(v) && v > 0) draft.updateLineItem(item.id, { quantity: v });
                               }}
                               className="w-10 text-center text-sm font-bold"
-                              style={{ color: "var(--t-text)", background: "transparent", border: "none", outline: "none", appearance: "textfield", MozAppearance: "textfield" } as React.CSSProperties}
+                              style={{ color: "#ffffff", background: "transparent", border: "none", outline: "none", appearance: "textfield", MozAppearance: "textfield" } as React.CSSProperties}
                             />
                             <button
                               type="button"
-                              className="px-3.5 h-full text-lg transition-colors hover:bg-slate-500/10"
-                              style={{ color: "var(--t-text)" }}
+                              className="px-3.5 h-full text-lg transition-colors"
+                              style={{ color: "rgba(255,255,255,0.85)" }}
                               onClick={() => draft.updateLineItem(item.id, { quantity: nextQty(item.quantity) })}
                             >+</button>
                           </div>
                           {itemAllowHalfKits && (
-                            <p className="text-[10px] mt-1.5 leading-none font-medium" style={{ color: "var(--t-subtle)" }}>Half kits OK (.5)</p>
+                            <p className="text-xs mt-1 leading-none" style={{ color: "rgba(255,255,255,0.75)" }}>For half kits add .5</p>
                           )}
                         </div>
 
                         {!hideOrderFormPrices && (
                           <div className="flex-1 text-right">
-                            <p className="font-bold text-base" style={{ color: "var(--t-text)" }}>{formatPrice(item.lineTotal)}</p>
+                            <p className="font-bold text-base" style={{ color: "#ffffff" }}>{formatPrice(item.lineTotal)}</p>
                             {item.unitPrice > 0 && (
-                              <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>{formatPrice(item.unitPrice)} each</p>
+                              <p className="text-sm" style={{ color: "rgba(255,255,255,0.75)" }}>{formatPrice(item.unitPrice)} each</p>
                             )}
                           </div>
                         )}
@@ -1390,18 +1389,18 @@ export default function OrderForm() {
                         {draft.lineItems.length > 1 && (
                           <button
                             type="button"
-                            className="p-2 rounded-lg transition-colors hover:bg-red-500/10"
-                            style={{ color: "var(--t-muted)" }}
+                            className="p-2 rounded-lg transition-colors"
+                            style={{ color: "rgba(255,255,255,0.75)" }}
                             onClick={() => draft.removeLineItem(item.id)}
                           >
-                            <Trash2 className="w-4 h-4 hover:text-red-500 transition-colors" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
                     </div>
                     ); })()}
                     {draft.lineItems.length > 1 && item !== draft.lineItems[draft.lineItems.length - 1] && (
-                      <div className="my-4" style={{ borderTop: "1px solid var(--t-border)" }} />
+                      <div className="my-3" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
                     )}
                   </motion.div>
                 ))}
@@ -1411,14 +1410,14 @@ export default function OrderForm() {
             <button
               type="button"
               onClick={draft.addLineItem}
-              className="w-full h-11 mt-4 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:bg-slate-500/10"
+              className="w-full h-10 mt-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
               style={{
-                border: "1px dashed var(--t-border)",
-                color: "var(--t-blue)",
+                border: "1px dashed rgba(255,255,255,0.35)",
+                color: "rgba(255,255,255,0.75)",
                 background: "transparent",
               }}
             >
-              <Plus className="w-4 h-4" /> Add another product
+              <Plus className="w-3 h-3" /> Add another product
             </button>
 
             {/* Real-time kit limit warnings */}
@@ -1432,12 +1431,12 @@ export default function OrderForm() {
               if (!perCustomerExceeded && !totalExceeded) return null;
 
               return (
-                <div className="mt-4 rounded-md px-4 py-3 flex items-start gap-2.5 shadow-sm"
-                  style={{ background: "var(--t-surface2)", border: "1px solid #f87171" }}>
+                <div className="mt-3 rounded-xl px-4 py-3 flex items-start gap-2.5"
+                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)" }}>
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
                   <div className="flex flex-col gap-1">
                     {perCustomerExceeded && gbMaxKitsPerCustomer != null && (
-                      <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
+                      <p className="text-sm font-medium" style={{ color: "#fca5a5" }}>
                         You can order at most <strong>{gbMaxKitsPerCustomer}</strong> kit{gbMaxKitsPerCustomer !== 1 ? "s" : ""} from this group buy.
                         {gbKitsOrderedByUser > 0 && (
                           <> You already have <strong>{gbKitsOrderedByUser}</strong>, leaving <strong>{Math.max(0, gbMaxKitsPerCustomer - gbKitsOrderedByUser)}</strong> available.</>
@@ -1445,7 +1444,7 @@ export default function OrderForm() {
                       </p>
                     )}
                     {totalExceeded && gbMaxKitsTotal != null && (
-                      <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
+                      <p className="text-sm font-medium" style={{ color: "#fca5a5" }}>
                         This group buy only has <strong>{Math.max(0, gbMaxKitsTotal - gbKitsOrderedTotal)}</strong> kit{Math.max(0, gbMaxKitsTotal - gbKitsOrderedTotal) !== 1 ? "s" : ""} remaining in total.
                       </p>
                     )}
@@ -1459,26 +1458,23 @@ export default function OrderForm() {
 
         {/* Lab Test Contribution — only for group-buy orders where testing is enabled */}
         {gbId && gbTestingEnabled && (
-          <section className="space-y-3">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Lab Testing</p>
+          <section className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Lab Testing</p>
             <div
-              className="rounded-2xl border px-5 py-4 transition-all shadow-sm cursor-pointer hover:bg-slate-500/10"
+              className="rounded-xl border px-4 py-3 transition-all"
               style={{
-                borderColor: draft.testingContribution > 0 ? "var(--t-blue)" : "var(--t-border)",
-                background: draft.testingContribution > 0 ? "var(--t-blue-04)" : "var(--t-surface)",
+                borderColor: draft.testingContribution > 0 ? "var(--t-blue-25)" : "#D0DAE4",
+                background: draft.testingContribution > 0 ? "var(--t-blue-03)" : "transparent",
               }}
-              onClick={() => draft.setTestingContribution(draft.testingContribution > 0 ? 0 : gbTestingContributionAmount)}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: draft.testingContribution > 0 ? "var(--t-blue)" : "var(--t-surface2)" }}>
-                    <TestTube className="w-5 h-5 shrink-0" style={{ color: draft.testingContribution > 0 ? "#fff" : "var(--t-muted)" }} />
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <TestTube className="w-4 h-4 shrink-0" style={{ color: draft.testingContribution > 0 ? "var(--t-blue)" : "#8A9AAA" }} />
                   <div className="min-w-0">
-                    <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>
+                    <p className="text-sm font-semibold" style={{ color: draft.testingContribution > 0 ? "var(--t-blue)" : "#374151" }}>
                       Contribute to lab testing
                     </p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                    <p className="text-xs" style={{ color: "#8A9AAA" }}>
                       {draft.testingContribution > 0 ? `${formatPrice(gbTestingContributionAmount)} added to your order` : `${formatPrice(gbTestingContributionAmount)} · Help fund batch quality testing`}
                     </p>
                   </div>
@@ -1486,7 +1482,8 @@ export default function OrderForm() {
                 {/* Toggle switch */}
                 <button
                   type="button"
-                  className="shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none pointer-events-none"
+                  onClick={() => draft.setTestingContribution(draft.testingContribution > 0 ? 0 : gbTestingContributionAmount)}
+                  className="shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none"
                   style={{ background: draft.testingContribution > 0 ? "var(--t-blue)" : "#D1D5DB" }}
                   aria-pressed={draft.testingContribution > 0}
                 >
@@ -1504,22 +1501,20 @@ export default function OrderForm() {
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--t-blue-12)" }} onClick={(e) => e.stopPropagation()}>
-                      <p className="text-xs leading-relaxed" style={{ color: "var(--t-subtle)" }}>
-                        After your order is confirmed, visit the{" "}
-                        <a
-                          href={gbId ? `/testing/${gbId}` : "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-semibold hover:underline"
-                          style={{ color: "var(--t-blue)" }}
-                          onClick={e => e.stopPropagation()}
-                        >
-                          testing pool page
-                        </a>
-                        {" "}to vote for which product gets tested.
-                      </p>
-                    </div>
+                    <p className="text-xs text-slate-500 italic mt-2.5 pt-2.5 border-t border-slate-200">
+                      After your order is confirmed, visit the{" "}
+                      <a
+                        href={gbId ? `/testing/${gbId}` : "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline font-medium"
+                        style={{ color: "var(--t-blue)" }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        testing pool page
+                      </a>
+                      {" "}to vote for which product gets tested.
+                    </p>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1527,28 +1522,26 @@ export default function OrderForm() {
           </section>
         )}
 
-        <section className="space-y-4">
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Delivery</p>
+        <section className="space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Delivery</p>
 
           {draft.additionOfOrderId !== null ? (
-            <div className="rounded-2xl p-4 shadow-sm" style={{ border: "2px solid #22c55e", background: "rgba(34,197,94,0.05)" }}>
+            <div className="rounded-xl p-4 border-2 border-green-500/30 bg-green-50/50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#22c55e" }}>
-                    <Package className="w-5 h-5 text-white" />
-                  </div>
+                  <Package className="w-5 h-5 text-green-600" />
                   <div>
-                    <p className="font-bold text-sm" style={{ color: "var(--t-text)" }}>{draft.deliveryMethod}</p>
-                    <p className="text-xs mt-0.5" style={{ color: "#22c55e" }}>Included from your previous order</p>
+                    <p className="font-bold text-sm text-green-900">{draft.deliveryMethod}</p>
+                    <p className="text-xs text-green-600">Included from your previous order</p>
                   </div>
                 </div>
-                <span className="font-bold text-sm" style={{ color: "#22c55e" }}>Free</span>
+                <span className="font-bold text-sm text-green-600">Free</span>
               </div>
             </div>
           ) : isLoadingMethods ? (
-            <div className="h-24 flex items-center justify-center text-sm font-medium rounded-2xl border border-dashed" style={{ color: "var(--t-subtle)", borderColor: "var(--t-border)" }}>Loading delivery options…</div>
+            <div className="h-20 flex items-center justify-center text-sm" style={{ color: "#8A9AAA" }}>Loading…</div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {deliveryMethods.map(method => {
                 const isSelected = draft.deliveryMethodId === method.id;
                 const brand = getDeliveryBrand(method.name);
@@ -1558,43 +1551,41 @@ export default function OrderForm() {
                 const methodInfoEnabled = (method as any).infoEnabled === true;
                 const infoText = (method as any).infoText || (method as any).description || getDeliveryFallbackInfo(method.name);
                 return (
-                  <div key={method.id} className="rounded-2xl overflow-hidden shadow-sm transition-all" style={{ border: `1px solid ${isSelected ? "var(--t-blue)" : "var(--t-border)"}`, boxShadow: isSelected ? "0 4px 12px var(--t-blue-12)" : undefined }}>
+                  <div key={method.id} className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${isSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-border, #E4E4E7)"}`, boxShadow: isSelected ? "0 1px 3px rgba(45,107,204,0.10)" : undefined }}>
                     {/* Row: selection area + info button + price */}
                     <div
-                      className="flex items-center gap-3 px-4 py-4 transition-all"
-                      style={{ background: isSelected ? "var(--t-blue-04)" : "var(--t-surface)" }}
+                      className="flex items-center gap-3 px-3.5 py-3 transition-all"
+                      style={{ background: isSelected ? "var(--t-blue-08, rgba(45,107,204,0.08))" : "var(--t-surface, #fff)" }}
                     >
                       {/* Clickable selection area (radio + icon tile + name) */}
                       <button
                         type="button"
                         onClick={() => handleDeliverySelect(method.id)}
-                        className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left"
                       >
                         {/* Radio indicator */}
                         <div
                           className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all"
                           style={{
-                            background: isSelected ? "var(--t-blue)" : "transparent",
-                            border: `2px solid ${isSelected ? "var(--t-blue)" : "var(--t-border)"}`,
+                            background: isSelected ? "var(--t-blue, #2D6BCC)" : "transparent",
+                            border: `1.5px solid ${isSelected ? "var(--t-blue, #2D6BCC)" : "#D0DAE4"}`,
                           }}
                         >
-                          {isSelected && <Check className="w-3.5 h-3.5" style={{ color: "#fff" }} strokeWidth={3} />}
+                          {isSelected && <Check className="w-3 h-3" style={{ color: "#fff" }} strokeWidth={3} />}
                         </div>
 
                         {/* Icon tile */}
                         <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
-                          style={{ background: isSelected ? "var(--t-blue)" : "var(--t-surface2)" }}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: isSelected ? "rgba(255,255,255,0.7)" : "var(--t-surface2, #F4F4F5)" }}
                         >
-                          <Icon className="w-5 h-5" style={{ color: isSelected ? "#fff" : "var(--t-muted)" }} />
+                          <Icon className="w-4 h-4" style={{ color: isSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-muted, #374151)" }} />
                         </div>
 
                         {/* Name */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold truncate" style={{ color: "var(--t-text)" }}>
-                            {method.name}
-                          </p>
-                        </div>
+                        <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text, #1A1D1F)" }}>
+                          {method.name}
+                        </p>
                       </button>
 
                       {/* Info icon button — only shown when enabled in admin */}
@@ -1602,37 +1593,28 @@ export default function OrderForm() {
                         <button
                           type="button"
                           onClick={() => setInfoOpenId(isInfoOpen ? null : method.id)}
-                          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors hover:bg-slate-100/10"
-                          style={{ background: isInfoOpen ? "var(--t-blue-12)" : "transparent" }}
+                          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors"
+                          style={{ background: isInfoOpen ? "rgba(45,107,204,0.12)" : "transparent" }}
                           aria-label="Delivery info"
                         >
-                          <Info className="w-4 h-4" style={{ color: isInfoOpen ? "var(--t-blue)" : "var(--t-subtle)" }} />
+                          <Info className="w-4 h-4" style={{ color: isInfoOpen ? "var(--t-blue, #2D6BCC)" : "#9CA3AF" }} />
                         </button>
                       )}
 
                       {/* Price */}
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-bold" style={{ color: isFree ? "#059669" : "var(--t-text)" }}>
+                        <p className="text-sm font-bold" style={{ color: isFree ? "#059669" : "var(--t-text, #1A1D1F)" }}>
                           {isFree ? "Free" : formatPrice(method.price)}
                         </p>
                       </div>
                     </div>
 
                     {/* Expandable info panel */}
-                    <AnimatePresence>
-                      {methodInfoEnabled && isInfoOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <div className="px-5 pb-4 pt-3 border-t" style={{ background: isSelected ? "var(--t-blue-03)" : "var(--t-surface)", borderColor: isSelected ? "var(--t-blue-12)" : "var(--t-border)" }}>
-                            <p className="text-sm leading-relaxed" style={{ color: "var(--t-subtle)" }}>{infoText}</p>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {methodInfoEnabled && isInfoOpen && (
+                      <div className="px-4 pb-3 pt-2" style={{ background: isSelected ? "rgba(45,107,204,0.04)" : "var(--t-surface2, #F8F9FA)", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
+                        <p className="text-xs leading-relaxed" style={{ color: "var(--t-subtle, #6B7280)" }}>{infoText}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1856,67 +1838,59 @@ export default function OrderForm() {
         </section>
 
         {(draft.directShippingRequested || !gbId) && (
-          <section className="space-y-4">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Shipping Details</p>
-            <div className="rounded-2xl p-5 shadow-sm space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+          <section className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping Details</p>
+            <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm space-y-3">
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide mb-1.5 block" style={{ color: "var(--t-muted)" }}>Full Name <span style={{ color: "#ef4444" }}>*</span></label>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Full Name <span className="text-red-400">*</span></label>
                 <input
                   type="text"
                   placeholder="Jane Smith"
                   value={draft.shippingName}
                   onChange={e => draft.setShippingName(e.target.value)}
-                  className="w-full rounded-xl px-4 py-3 text-sm transition-colors focus:outline-none"
-                  style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}
+                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide mb-1.5 block" style={{ color: "var(--t-muted)" }}>Street Address <span style={{ color: "#ef4444" }}>*</span></label>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Street Address <span className="text-red-400">*</span></label>
                 <textarea
                   placeholder={"123 Example Street\nCity, Postcode"}
                   value={draft.shippingAddress}
                   onChange={e => draft.setShippingAddress(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-xl px-4 py-3 text-sm transition-colors focus:outline-none resize-none"
-                  style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}
+                  rows={2}
+                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200 resize-none"
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide mb-1.5 block" style={{ color: "var(--t-muted)" }}>Country</label>
-                <div className="relative">
-                  <select
-                    value={draft.shippingCountry}
-                    onChange={e => draft.setShippingCountry(e.target.value)}
-                    className="w-full appearance-none rounded-xl px-4 py-3 pr-10 text-sm transition-colors focus:outline-none"
-                    style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}
-                  >
-                    <option value="">Select country…</option>
-                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-4 top-3.5 w-4 h-4 pointer-events-none" style={{ color: "var(--t-muted)" }} />
-                </div>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Country</label>
+                <select
+                  value={draft.shippingCountry}
+                  onChange={e => draft.setShippingCountry(e.target.value)}
+                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 focus:outline-none focus:border-blue-200"
+                >
+                  <option value="">Select country…</option>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide mb-1.5 block" style={{ color: "var(--t-muted)" }}>Phone</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Phone</label>
                   <input
                     type="tel"
                     placeholder="+44 7700 900000"
                     value={draft.shippingPhone}
                     onChange={e => draft.setShippingPhone(e.target.value)}
-                    className="w-full rounded-xl px-4 py-3 text-sm transition-colors focus:outline-none"
-                    style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}
+                    className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide mb-1.5 block" style={{ color: "var(--t-muted)" }}>Email</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Email</label>
                   <input
                     type="email"
                     placeholder="jane@example.com"
                     value={draft.shippingEmail}
                     onChange={e => draft.setShippingEmail(e.target.value)}
-                    className="w-full rounded-xl px-4 py-3 text-sm transition-colors focus:outline-none"
-                    style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}
+                    className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
                   />
                 </div>
               </div>
@@ -1924,12 +1898,11 @@ export default function OrderForm() {
           </section>
         )}
 
-        <section className="space-y-4">
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Additional Notes</p>
-          <div className="rounded-2xl p-2 shadow-sm" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+        <section className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Additional Notes</p>
+          <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm">
             <textarea
-              className="w-full text-sm resize-none rounded-xl p-3 min-h-[100px] focus:outline-none transition-colors"
-              style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+              className="w-full text-sm resize-none rounded-xl p-3 min-h-[80px] bg-gray-50 border border-gray-200 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
               placeholder="Any special instructions? (Optional)"
               value={draft.notes}
               onChange={(e) => draft.setNotes(e.target.value)}
@@ -1937,31 +1910,29 @@ export default function OrderForm() {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue)" }}>Tip</p>
+        <section className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Tip</p>
           <button
             type="button"
             onClick={handleTipToggle}
-            className="w-full flex items-center justify-between px-5 py-4 rounded-2xl transition-all shadow-sm cursor-pointer hover:bg-slate-500/10"
+            className="w-full flex items-center justify-between px-4 py-2 rounded-xl border transition-all text-sm font-medium"
             style={{
-              border: `1px solid ${showTip ? "var(--t-blue)" : "var(--t-border)"}`,
-              background: showTip ? "var(--t-blue-04)" : "var(--t-surface)",
+              borderColor: showTip ? "var(--t-blue-25)" : "#D0DAE4",
+              borderStyle: showTip ? "solid" : "dashed",
+              background: showTip ? "var(--t-blue-03)" : "transparent",
+              color: showTip ? "var(--t-blue)" : "#8A9AAA",
             }}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: showTip ? "var(--t-blue)" : "var(--t-surface2)" }}>
-                <Heart className="w-5 h-5 shrink-0" style={{ color: showTip ? "#fff" : "var(--t-muted)" }} />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{showTip ? "Tip added" : "Add a tip?"}</p>
-                {!showTip && <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>I've added it only because you wanted it</p>}
-              </div>
+            <div className="flex items-center gap-1.5">
+              <Heart className="w-3 h-3" style={{ color: showTip ? "var(--t-blue)" : "#8A9AAA" }} />
+              <span>{showTip ? "Tip added" : "Add a tip?"}</span>
+              {!showTip && <span className="text-xs font-normal opacity-70">I've added it only because you wanted it</span>}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
               {showTip && draft.tip > 0 && (
-                <span className="font-bold text-sm" style={{ color: "var(--t-blue)" }}>{formatPrice(draft.tip)}</span>
+                <span className="font-bold" style={{ color: "var(--t-blue)" }}>{formatPrice(draft.tip)}</span>
               )}
-              <ChevronDown className="w-5 h-5 transition-transform" style={{ color: "var(--t-muted)", transform: showTip ? "rotate(180deg)" : "none" }} />
+              <ChevronDown className="w-3 h-3 transition-transform" style={{ transform: showTip ? "rotate(180deg)" : "none" }} />
             </div>
           </button>
 
@@ -1973,12 +1944,11 @@ export default function OrderForm() {
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <div className="mt-3 rounded-2xl p-4 shadow-sm" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                  <p className="text-xs mb-3 italic" style={{ color: "var(--t-subtle)" }}>I've added it only because you wanted it</p>
+                <div className="rounded-xl mt-1.5 p-3 overflow-hidden bg-slate-50 border border-slate-200">
+                  <p className="text-xs text-slate-500 mb-2 italic">I've added it only because you wanted it</p>
                   <div className="relative">
                     <select
-                      className="w-full appearance-none h-12 rounded-xl px-4 pr-10 text-sm focus:outline-none transition-colors"
-                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+                      className="w-full appearance-none h-10 rounded-lg px-4 pr-10 text-sm bg-white border border-slate-200 text-slate-800 focus:outline-none focus:border-blue-200"
                       value={draft.tip}
                       onChange={(e) => draft.setTip(parseFloat(e.target.value))}
                     >
@@ -1988,7 +1958,7 @@ export default function OrderForm() {
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-4 top-3.5 w-5 h-5 pointer-events-none" style={{ color: "var(--t-muted)" }} />
+                    <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 pointer-events-none text-slate-400" />
                   </div>
                 </div>
               </motion.div>
@@ -2049,49 +2019,49 @@ export default function OrderForm() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 32 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="w-full max-w-sm rounded-2xl overflow-hidden flex flex-col shadow-2xl"
-                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", maxHeight: "80vh" }}
+                className="w-full max-w-sm rounded-2xl overflow-hidden flex flex-col"
+                style={{ background: "#1C2B3D", border: "1px solid rgba(255,255,255,0.1)", maxHeight: "80vh" }}
                 onClick={e => e.stopPropagation()}
               >
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+                <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
                   <div className="flex items-center gap-2">
-                    <BarChart2 className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-                    <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Stock Levels</span>
+                    <BarChart2 className="w-4 h-4" style={{ color: "#E9A020" }} />
+                    <span className="text-sm font-bold" style={{ color: "#fff" }}>Stock Levels</span>
                   </div>
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-slate-500/10"
-                    style={{ color: "var(--t-muted)", background: "transparent" }}
+                    className="p-1.5 rounded-lg"
+                    style={{ color: "rgba(255,255,255,0.45)", background: "rgba(255,255,255,0.06)" }}
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
                 {/* Search */}
-                <div className="px-5 py-3 shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface)" }}>
+                <div className="px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--t-muted)" }} />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "rgba(255,255,255,0.3)" }} />
                     <input
                       type="text"
                       value={stockSearch}
                       onChange={e => setStockSearch(e.target.value)}
                       placeholder="Search products…"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl text-sm outline-none transition-colors"
-                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+                      className="w-full pl-8 pr-3 py-2 rounded-xl text-sm outline-none"
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
                     />
                   </div>
                 </div>
                 {/* Filter chips */}
-                <div className="px-5 py-2.5 flex items-center gap-2 flex-wrap shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface)" }}>
+                <div className="px-4 py-2 flex items-center gap-2 flex-wrap shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.02)" }}>
                   <button
                     type="button"
                     onClick={() => setStockFilter(null)}
-                    className="px-3 py-1 rounded-full text-xs font-bold transition-all"
+                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
                     style={{
-                      background: stockFilter === null ? "var(--t-blue)" : "var(--t-surface2)",
-                      color: stockFilter === null ? "#fff" : "var(--t-text)",
-                      border: `1px solid ${stockFilter === null ? "var(--t-blue)" : "var(--t-border)"}`,
+                      background: stockFilter === null ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.07)",
+                      color: stockFilter === null ? "#fff" : "rgba(255,255,255,0.45)",
+                      border: `1px solid ${stockFilter === null ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)"}`,
                     }}
                   >All</button>
                   {FILTER_CHIPS.map(({ key, label, color }) => (
@@ -2099,32 +2069,32 @@ export default function OrderForm() {
                       key={key}
                       type="button"
                       onClick={() => setStockFilter(stockFilter === key ? null : key)}
-                      className="px-3 py-1 rounded-full text-xs font-bold transition-all"
+                      className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
                       style={{
-                        background: stockFilter === key ? "var(--t-surface2)" : "var(--t-surface2)",
-                        color: stockFilter === key ? color : "var(--t-muted)",
-                        border: `1px solid ${stockFilter === key ? color : "var(--t-border)"}`,
+                        background: stockFilter === key ? `${MODAL_S[key].bar}22` : "rgba(255,255,255,0.07)",
+                        color: stockFilter === key ? color : "rgba(255,255,255,0.45)",
+                        border: `1px solid ${stockFilter === key ? `${MODAL_S[key].bar}55` : "rgba(255,255,255,0.08)"}`,
                       }}
                     >{label}</button>
                   ))}
                 </div>
                 {/* Items */}
-                <div className="overflow-y-auto flex-1 bg-[var(--t-surface)]">
+                <div className="overflow-y-auto flex-1">
                   {visibleItems.length === 0 ? (
-                    <p className="text-center py-8 text-xs font-medium" style={{ color: "var(--t-subtle)" }}>No products found</p>
+                    <p className="text-center py-8 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>No products found</p>
                   ) : (
-                    <div className="px-5 py-4 space-y-5">
+                    <div className="px-5 py-3 space-y-4">
                       {visibleItems.map(({ cap, othersFillPct, myFillPct, liveStatus }) => {
                         const s = MODAL_S[liveStatus];
                         return (
                           <div key={cap.productName}>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-bold truncate pr-2" style={{ color: "var(--t-text)" }}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-sm font-medium truncate pr-2" style={{ color: "rgba(255,255,255,0.85)" }}>
                                 {cap.productName}
                               </span>
-                              <span className="text-xs font-bold shrink-0 px-2 py-0.5 rounded-md" style={{ color: s.text, background: `${s.bar}15` }}>{s.label}</span>
+                              <span className="text-[11px] font-bold shrink-0" style={{ color: s.text }}>{s.label}</span>
                             </div>
-                            <div className="h-2 rounded-full overflow-hidden flex" style={{ background: "var(--t-surface2)" }}>
+                            <div className="h-2 rounded-full overflow-hidden flex" style={{ background: "rgba(255,255,255,0.07)" }}>
                               {othersFillPct > 0 && (
                                 <div className="h-full transition-all duration-300" style={{ width: `${othersFillPct}%`, background: s.bar, opacity: 0.45 }} />
                               )}
@@ -2132,14 +2102,14 @@ export default function OrderForm() {
                                 <div className="h-full rounded-r-full transition-all duration-300" style={{ width: `${myFillPct}%`, background: s.bar }} />
                               )}
                             </div>
-                            <div className="flex items-center gap-4 mt-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.bar, opacity: 0.45 }} />
-                                <span className="text-[10px] font-semibold" style={{ color: "var(--t-muted)" }}>GB order</span>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <div className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.bar, opacity: 0.45 }} />
+                                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>GB order</span>
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.bar }} />
-                                <span className="text-[10px] font-semibold" style={{ color: "var(--t-muted)" }}>My order</span>
+                              <div className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.bar }} />
+                                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>My order</span>
                               </div>
                             </div>
                           </div>
@@ -2148,8 +2118,8 @@ export default function OrderForm() {
                     </div>
                   )}
                 </div>
-                <div className="px-5 pb-5 pt-3 shrink-0" style={{ borderTop: "1px solid var(--t-border)", background: "var(--t-surface)" }}>
-                  <p className="text-[10px] font-medium" style={{ color: "var(--t-subtle)" }}>
+                <div className="px-5 pb-4 pt-2 shrink-0" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                  <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>
                     Your order shown in full colour · GB order in dim · updates every 30s
                   </p>
                 </div>
@@ -2170,7 +2140,7 @@ export default function OrderForm() {
         )}
       </AnimatePresence>
       <div
-        className="fixed bottom-0 right-0 z-20 backdrop-blur-xl border-t shadow-[0_-8px_30px_rgba(0,0,0,0.04)]"
+        className="fixed bottom-0 right-0 z-20 backdrop-blur-xl border-t shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
         style={{
           left: isMdPlus ? (sidebarExpanded ? 240 : 56) : 0,
           transition: "left 220ms ease",
@@ -2178,13 +2148,13 @@ export default function OrderForm() {
           borderColor: "var(--t-border)",
         }}
       >
-        <div className="max-w-2xl mx-auto px-5 pt-4" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+        <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
           <div className="flex items-center justify-between gap-4 mb-2">
             {!hideOrderTotal && (
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Grand Total</p>
-                <p className="text-2xl font-bold truncate tracking-tight mt-0.5" style={{ color: "var(--t-text)" }}>{formatPrice(grandTotal)}</p>
-                <p className="text-xs mt-1 font-medium" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Grand Total</p>
+                <p className="text-xl font-bold truncate" style={{ color: "var(--t-text)" }}>{formatPrice(grandTotal)}</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>
                   {draft.deliveryMethod ? `incl. ${draft.deliveryMethod}` : "Choose a delivery method"}
                   {productSubtotal > 0 && draft.vendorShipping > 0 && ` + ${formatPrice(draft.vendorShipping)} vendor shipping`}
                 </p>
@@ -2192,10 +2162,10 @@ export default function OrderForm() {
             )}
             <button
               onClick={handleReview}
-              className="h-14 px-8 rounded-xl text-sm font-bold text-white flex items-center gap-2 shrink-0 hover:brightness-110 active:scale-[0.98] transition-all shadow-md"
-              style={{ background: "var(--t-gradient)" }}
+              className="h-12 px-7 rounded-xl text-sm font-bold text-white flex items-center gap-2 shrink-0 hover:brightness-110 active:scale-[0.98] transition-all"
+              style={{ background: "var(--t-blue-deep)" }}
             >
-              Review <ArrowRight className="w-5 h-5" />
+              Review <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
