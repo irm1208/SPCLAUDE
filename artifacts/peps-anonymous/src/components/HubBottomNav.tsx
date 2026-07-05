@@ -204,8 +204,8 @@ export function HubBottomNav({
         className="flex-1 h-full flex flex-col items-center justify-center gap-1 transition-all"
         style={{ color: active ? ACCENT : (dark ? "rgba(255,255,255,0.60)" : "#3B3B3B") }}
       >
-        <Icon className="w-[21px] h-[21px]" strokeWidth={active ? 2.4 : 2} />
-        <span className="leading-none" style={{ fontSize: 10, fontWeight: active ? 700 : 600 }}>
+        <Icon className="w-[19px] h-[19px]" strokeWidth={active ? 2.4 : 2} />
+        <span className="leading-none" style={{ fontSize: 9.5, fontWeight: active ? 700 : 600 }}>
           {item.label}
         </span>
       </button>
@@ -237,7 +237,7 @@ export function HubBottomNav({
         className={`fixed z-[60] ${hiddenCls}`}
         style={{
           left: 16, right: 16,
-          bottom: "calc(88px + env(safe-area-inset-bottom))",
+          bottom: "calc(78px + env(safe-area-inset-bottom))",
           maxWidth: 400, margin: "0 auto",
           fontFamily: FONT,
           opacity: open ? 1 : 0,
@@ -342,8 +342,8 @@ export function HubBottomNav({
         <div
           className="flex items-center"
           style={{
-            height: 64,
-            padding: "0 10px",
+            height: 56,
+            padding: "0 8px",
             background: dark ? "rgba(23,23,28,0.97)" : "rgba(255,255,255,0.97)",
             border: `1px solid ${T.border}`,
             borderRadius: 9999,
@@ -361,7 +361,7 @@ export function HubBottomNav({
             aria-label={open ? "Close menu" : "Open menu"}
             className="flex items-center justify-center rounded-full shrink-0 transition-all"
             style={{
-              width: 52, height: 52,
+              width: 44, height: 44,
               margin: "0 6px",
               background: ACCENT,
               color: "#fff",
@@ -369,7 +369,7 @@ export function HubBottomNav({
             }}
           >
             <Plus
-              className="w-6 h-6"
+              className="w-5 h-5"
               strokeWidth={2.5}
               style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform 220ms ease" }}
             />
