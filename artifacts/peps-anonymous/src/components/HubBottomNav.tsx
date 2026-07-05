@@ -55,6 +55,8 @@ interface HubBottomNavProps {
   setHubMoreOpen: (open: boolean) => void;
   account?: { organiserStatus?: string | null; reshipperStatus?: string | null; isWholesale?: boolean } | null;
   navOrder?: HubSection[];
+  /** Breakpoint at which the bottom bar/drawer hide. "md" (default) hides ≥768px; "lg" keeps them visible through tablet and hides ≥1024px. */
+  hideAt?: "md" | "lg";
 }
 
 const BRAND_NAVY = "var(--t-blue-deep)";
@@ -63,7 +65,10 @@ export function HubBottomNav({
   section,
   setSection,
   account,
+  hideAt = "md",
 }: HubBottomNavProps) {
+  const hiddenCls = hideAt === "lg" ? "lg:hidden" : "md:hidden";
+  const hideMinWidth = hideAt === "lg" ? 1024 : 768;
   const [, setLocation] = useLocation();
   const { dark, toggle: toggleTheme } = useThemeStore();
   const { open, setOpen } = useHubDrawerStore();
@@ -78,12 +83,12 @@ export function HubBottomNav({
   }, [open, setOpen]);
 
   useEffect(() => {
-    // The drawer (and its backdrop/close button) is mobile-only via `md:hidden`.
-    // Only lock body scroll while the drawer is actually shown. On desktop the
-    // drawer is hidden, so never lock scroll there — and auto-close any stale
-    // open state so a leftover `open` can't strand desktop users on a page that
-    // can no longer scroll or reveal a close control.
-    const mq = window.matchMedia("(min-width: 768px)");
+    // The drawer (and its backdrop/close button) is hidden above the `hideAt`
+    // breakpoint. Only lock body scroll while the drawer is actually shown. On
+    // desktop the drawer is hidden, so never lock scroll there — and auto-close
+    // any stale open state so a leftover `open` can't strand desktop users on a
+    // page that can no longer scroll or reveal a close control.
+    const mq = window.matchMedia(`(min-width: ${hideMinWidth}px)`);
     const apply = () => {
       if (mq.matches) {
         document.body.style.overflow = "";
@@ -98,7 +103,7 @@ export function HubBottomNav({
       mq.removeEventListener("change", apply);
       document.body.style.overflow = "";
     };
-  }, [open, setOpen]);
+  }, [open, setOpen, hideMinWidth]);
 
   const navigate = (sectionId: HubSection) => {
     setSection(sectionId);
@@ -114,7 +119,7 @@ export function HubBottomNav({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-[55] md:hidden"
+        className={`fixed inset-0 z-[55] ${hiddenCls}`}
         style={{
           background: "rgba(0,0,0,0.45)",
           backdropFilter: "blur(2px)",
@@ -128,7 +133,7 @@ export function HubBottomNav({
       {/* Slide-out drawer */}
       <div
         ref={drawerRef}
-        className="fixed top-0 left-0 bottom-0 z-[60] flex flex-col md:hidden"
+        className={`fixed top-0 left-0 bottom-0 z-[60] flex flex-col ${hiddenCls}`}
         style={{
           width: 272,
           background: "var(--t-surface)",
@@ -404,7 +409,7 @@ export function HubBottomNav({
 
       {/* ── Fixed bottom navigation bar ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[50] md:hidden flex items-stretch"
+        className={`fixed bottom-0 left-0 right-0 z-[50] ${hiddenCls} flex items-stretch`}
         style={{
           height: 56,
           background: dark ? "rgba(15,20,30,0.97)" : "rgba(255,255,255,0.97)",

@@ -809,7 +809,7 @@ export function DashboardShell({
         </div>
       </div>
 
-      {navProps && <HubBottomNav {...(navProps as unknown as React.ComponentProps<typeof HubBottomNav>)} />}
+      {navProps && <HubBottomNav {...(navProps as unknown as React.ComponentProps<typeof HubBottomNav>)} hideAt="lg" />}
     </div>
   );
 }
