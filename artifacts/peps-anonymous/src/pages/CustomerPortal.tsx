@@ -7711,15 +7711,8 @@ export default function CustomerPortal() {
       >
         <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-24 lg:pb-8">
 
-          {/* ── Header: subtitle + New Order ── */}
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
-            <button onClick={() => setLocation("/shop")}
-              className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-semibold text-white shrink-0"
-              style={{ background: T.blueDeep }}>
-              <Plus className="w-4 h-4" /> New Order
-            </button>
-          </div>
+          {/* ── Header: subtitle ── */}
+          <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
 
           {/* ── Status tabs + toolbar ── */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -7734,10 +7727,6 @@ export default function CustomerPortal() {
                       ? { background: T.surface, color: T.text, boxShadow: T.shadow, border: `1px solid ${T.border}` }
                       : { background: "transparent", color: T.subtle, border: "1px solid transparent" }}>
                     {t.label}
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                      style={active
-                        ? { background: hexToRgba("#2D6BCC", 0.1), color: "var(--t-blue)" }
-                        : { background: T.surface2, color: T.subtle }}>{t.count}</span>
                   </button>
                 );
               })}
@@ -7890,21 +7879,21 @@ export default function CustomerPortal() {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <button onClick={() => setOrdersPage(Math.max(1, page - 1))} disabled={page === 1}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-40"
+                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-40"
                     style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                     <ChevronLeft className="w-4 h-4" style={{ color: T.subtle }} />
                   </button>
                   {pageNumbers.map(p => (
                     <button key={p} onClick={() => setOrdersPage(p)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[12.5px] font-semibold"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-[12.5px] font-semibold"
                       style={p === page
                         ? { background: T.blueDeep, color: "#fff" }
-                        : { color: T.muted, background: T.surface, border: `1px solid ${T.border}` }}>
+                        : { color: T.muted, background: "transparent" }}>
                       {p}
                     </button>
                   ))}
                   <button onClick={() => setOrdersPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-40"
+                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-40"
                     style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                     <ChevronRight className="w-4 h-4" style={{ color: T.subtle }} />
                   </button>
