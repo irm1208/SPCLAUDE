@@ -68,6 +68,8 @@ import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import { DashboardHome } from "@/components/DashboardHome";
+import { DashboardShell, StatCard, palette } from "@/components/DashboardShell";
+import { useThemeStore } from "@/hooks/use-theme";
 import Protocols from "@/pages/Protocols";
 import PublicTestingPools from "@/pages/PublicTestingPools";
 import LabTests from "@/pages/LabTests";
@@ -6693,6 +6695,7 @@ export default function CustomerPortal() {
       .catch(() => {});
   }, []);
 
+  const dark = useThemeStore((s) => s.dark);
   const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "wholesale" | "shop">("all");
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
@@ -7491,7 +7494,6 @@ export default function CustomerPortal() {
 
   if (section === "orders") {
     const totalActive   = regularActive.length + gbActiveCount;
-    const totalPrevious = regularPrevious.length + gbPreviousCount;
     const totalOrders   = filteredByGb.length;
     const completed     = filteredByGb.filter(o => o.status === "Completed").length;
 
@@ -7503,59 +7505,31 @@ export default function CustomerPortal() {
     const showShop      = hasShop      && (typeFilter === "all" || typeFilter === "shop");
     const nothingAtAll  = !ordersLoading && !showGb && !showWholesale && !showShop;
 
+    const dashT = palette(dark);
     return (
-      <PortalLayout navProps={navProps}>
-        {/* ── Gradient hero header (full-bleed) ── */}
-        <div
-          className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
-          style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}
-        >
-          <div className="absolute inset-0 opacity-10"
-            style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
-          <div className="relative px-5 pt-5 pb-8 lg:px-8 lg:pt-6">
-            {/* Back + refresh */}
-            <div className="flex items-center justify-between mb-5">
-              <button onClick={() => setSection("home")}
-                className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: "rgba(255,255,255,0.12)" }}>
-                <ArrowLeft className="w-4 h-4" style={{ color: "rgba(255,255,255,0.9)" }} />
-              </button>
-              <button onClick={() => refetch()} disabled={ordersLoading}
-                className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: "rgba(255,255,255,0.12)" }}>
-                <RefreshCw className={`w-4 h-4 ${ordersLoading ? "animate-spin" : ""}`} style={{ color: "rgba(255,255,255,0.7)" }} />
-              </button>
-            </div>
-            {/* Title */}
-            <div className="mb-5">
-              <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.6)" }}>Customer Portal</p>
-              <h1 className="text-2xl font-bold text-white leading-tight">My Orders</h1>
-            </div>
-            {/* Inline stats */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "Total",  value: totalOrders },
-                { label: "Active", value: totalActive  },
-                { label: "Done",   value: completed    },
-              ].map(s => (
-                <div key={s.label} className="rounded-2xl p-3 text-center" style={{ background: "rgba(255,255,255,0.12)" }}>
-                  <p className="text-[22px] font-bold text-white leading-none mb-1">{s.value}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.6)" }}>{s.label}</p>
-                </div>
-              ))}
-            </div>
+      <DashboardShell
+        activeSection="orders"
+        title="My Orders"
+        username={username}
+        credits={account?.credits ?? null}
+        orders={orders}
+        activeCompounds={activeCompounds}
+        groupBuys={groupBuys}
+        onSection={(s) => setSection(s as Section)}
+        onLogout={handleLogout}
+        navProps={navProps}
+      >
+        <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-24 lg:pb-8">
+
+          {/* ── Stat tiles ── */}
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard T={dashT} label="Total" value={totalOrders} Icon={Package} />
+            <StatCard T={dashT} label="Active" value={totalActive} Icon={Clock} highlight />
+            <StatCard T={dashT} label="Done" value={completed} Icon={CheckCircle2} iconColor="#16A34A" />
           </div>
-          {/* Bottom curve into content */}
-          <div className="absolute bottom-0 left-0 right-0 h-5"
-            style={{ background: T.bg, borderRadius: "20px 20px 0 0" }} />
-        </div>
 
-        {/* ── Content area with light background ── */}
-        <div className="-mx-5 lg:-mx-8 px-5 lg:px-8 pb-8" style={{ background: T.bg }}>
-        <div className="space-y-4 pt-2">
-
-          {/* ── Type filter pills ── */}
-          <div className="flex gap-1.5">
+          {/* ── Type filter pills + refresh ── */}
+          <div className="flex items-center gap-1.5">
             {([ { id: "all" as const, label: "All" }, { id: "gb" as const, label: "Group Buys" }, ...(account?.isWholesale ? [{ id: "wholesale" as const, label: "Wholesale" }] : []), { id: "shop" as const, label: "Shop" } ]).map(opt => (
               <button key={opt.id} onClick={() => setTypeFilter(opt.id)}
                 className="flex-1 h-8 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap"
@@ -7565,6 +7539,11 @@ export default function CustomerPortal() {
                 {opt.label}
               </button>
             ))}
+            <button onClick={() => refetch()} disabled={ordersLoading}
+              className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
+              style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
+              <RefreshCw className={`w-3.5 h-3.5 ${ordersLoading ? "animate-spin" : ""}`} style={{ color: T.subtle }} />
+            </button>
           </div>
 
           {/* ── Loading ── */}
@@ -7732,11 +7711,10 @@ export default function CustomerPortal() {
           )}
 
         </div>
-        </div>
         <AnimatePresence>
           {parcelsGb && <GBParcelsModal gb={parcelsGb} orders={parcelsOrders} onClose={() => setParcelsGb(null)} />}
         </AnimatePresence>
-      </PortalLayout>
+      </DashboardShell>
     );
   }
 
