@@ -339,22 +339,17 @@ export function DashboardHome({
         @media (prefers-reduced-motion: reduce) {
           .dh-rise, .dh-float-a, .dh-float-b, .dh-sage-ring { animation: none !important; opacity: 1 !important; transform: none !important; }
         }
-        /* Desktop sidebar height budget: the fixed 100vh sidebar's inner nav
-           (brand + 5 nav + Compounds + Group Buys + Telegram promo) is ~850px tall.
-           On shorter viewports that would overflow and turn the nav into an inner
-           scroll container that traps the mouse wheel (page won't scroll while the
-           cursor is over the sidebar). To keep ONE unified page scroll, we drop the
-           lowest-priority sections as the viewport gets shorter so the nav fits and
-           never scrolls internally. overflow-y-auto stays as a last-resort fallback.
-           Everything dropped here stays reachable: Telegram via the icon-rail
-           button (always visible), Group Buys via the main nav, Compounds via the
-           Health Hub / "View compounds" actions.
+        /* Desktop sidebar height budget: the fixed 100vh sidebar's inner nav can
+           exceed the viewport on short screens. The sidebar panel has its own
+           overflow-y-auto (below) and the main content scrolls independently, so an
+           inner sidebar scroll no longer traps the page wheel. We still drop the
+           lowest-priority *decorative* sections on short viewports to reduce
+           clutter: the Telegram promo (reachable via the icon-rail button) and, on
+           very short screens, the Compounds shortcut (reachable via Health Hub).
+           Group Buys stays visible in the sidebar nav at every height.
            If new sidebar sections are added, re-check these thresholds. */
         @media (min-width: 1024px) and (max-height: 960px) {
           .dh-side-promo { display: none; }
-        }
-        @media (min-width: 1024px) and (max-height: 720px) {
-          .dh-side-gb { display: none; }
         }
         @media (min-width: 1024px) and (max-height: 560px) {
           .dh-side-compounds { display: none; }
