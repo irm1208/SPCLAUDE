@@ -38,7 +38,6 @@ import {
 } from "recharts";
 import { SteroidPlotter } from "@/components/SteroidPlotter";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
-import { PageLayout } from "@/components/PageLayout";
 import { RulesetModal } from "@/components/RulesetModal";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -66,7 +65,6 @@ import { Glp1ShotForm } from "@/components/Glp1ShotForm";
 import { T } from "@/lib/theme";
 import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
-import { HubBottomNav } from "@/components/HubBottomNav";
 import { DashboardHome } from "@/components/DashboardHome";
 import { DashboardShell, StatCard, palette, ACCENT } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -2492,29 +2490,6 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
-
-// ─── Section page title ────────────────────────────────────────────────────────
-
-function PageTitle({ title, subtitle, action, onBack }: { title: string; subtitle?: string; action?: React.ReactNode; onBack?: () => void }) {
-  return (
-    <div className="flex items-center justify-between mb-5">
-      <div className="flex items-center gap-3 min-w-0">
-        {onBack && (
-          <button onClick={onBack}
-            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
-            style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
-            <ArrowLeft className="w-4 h-4" style={{ color: T.muted }} />
-          </button>
-        )}
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold" style={{ color: T.text }}>{title}</h2>
-          {subtitle && <p className="text-xs mt-0.5" style={{ color: T.muted }}>{subtitle}</p>}
-        </div>
-      </div>
-      {action}
-    </div>
-  );
-}
 
 // ─── Blood Test Hub: Biomarker catalogue & helpers ────────────────────────────
 
@@ -5947,7 +5922,7 @@ function BloodTestPortalHubWithBanner({ sessions, username, onBack }: { sessions
   return (
     <>
       {showBanner && (
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
+        <div className="-mx-4 md:-mx-7 -mt-6 relative overflow-hidden"
              style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
           <div className="absolute inset-0 opacity-10"
                style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
@@ -6404,7 +6379,7 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
   return (
     <div>
       {/* ── Gradient hero header ── */}
-      <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
+      <div className="-mx-4 md:-mx-7 -mt-6 relative overflow-hidden"
         style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
         <div className="absolute inset-0 opacity-10"
           style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
@@ -6435,7 +6410,7 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
       </div>
 
       {/* ── Content ── */}
-      <div className="-mx-5 lg:-mx-8 px-5 lg:px-8 pb-8" style={{ background: T.bg }}>
+      <div className="-mx-4 md:-mx-7 px-4 md:px-7 pb-8" style={{ background: T.bg }}>
         <div className="space-y-4 pt-2">
           {loading ? (
             <div className="flex items-center justify-center py-10">
@@ -6596,7 +6571,7 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
   return (
     <div>
       {/* ── Gradient hero header (full-bleed) ── */}
-      <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
+      <div className="-mx-4 md:-mx-7 -mt-6 relative overflow-hidden"
         style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
         <div className="absolute inset-0 opacity-10"
           style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
@@ -6638,7 +6613,7 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
       </div>
 
       {/* ── Content area ── */}
-      <div className="-mx-5 lg:-mx-8 px-5 lg:px-8 pb-8" style={{ background: T.bg }}>
+      <div className="-mx-4 md:-mx-7 px-4 md:px-7 pb-8" style={{ background: T.bg }}>
         <div className="space-y-4 pt-2">
 
           {view === "new" && (
@@ -6790,24 +6765,6 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
   );
 }
 
-
-function PortalLayout({
-  children, showHubNav = true, relative = false, navProps,
-}: {
-  children: React.ReactNode;
-  showHubNav?: boolean;
-  relative?: boolean;
-  navProps: PortalNavProps;
-}) {
-  return (
-    <PageLayout>
-      <div className={`px-5 pt-6 lg:px-8 lg:pt-7 flex-1${relative ? " relative md:overflow-hidden" : ""}`}>
-        {children}
-      </div>
-      {showHubNav && <HubBottomNav {...navProps} />}
-    </PageLayout>
-  );
-}
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -7401,6 +7358,28 @@ export default function CustomerPortal() {
 
   const navProps: PortalNavProps = { section, setSection, hubMoreOpen, setHubMoreOpen, account, navOrder: _sortedNav };
 
+  // Shared DashboardShell wrapper for portal sections (plain function, NOT a
+  // nested component — avoids remounting children on every render).
+  const inShell = (id: string, title: string, node: React.ReactNode, opts?: { hideHubNav?: boolean }) => (
+    <DashboardShell
+      activeSection={id}
+      title={title}
+      username={username}
+      credits={account?.credits ?? null}
+      orders={orders}
+      activeCompounds={activeCompounds}
+      groupBuys={groupBuys}
+      onSection={(s) => setSection(s as Section)}
+      onLogout={handleLogout}
+      navProps={navProps}
+      hideHubNav={opts?.hideHubNav}
+    >
+      <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
+        {node}
+      </div>
+    </DashboardShell>
+  );
+
   // ─── Home dashboard ──────────────────────────────────────────────────────────
 
   if (section === "home") {
@@ -7439,28 +7418,12 @@ export default function CustomerPortal() {
       { id: "fh-risk",            label: "Inherited Cholesterol Risk", description: "Assess your risk of Familial Hypercholesterolaemia using Simon Broome or Dutch DLCN criteria.", Icon: HeartPulse, color: "#DC2626", bg: "rgba(220,38,38,0.08)" },
       { id: "insulin-resistance", label: "Insulin Resistance Score",   description: "Estimate your metabolic risk using the HOMA-IR model with fasting glucose and insulin levels.",   Icon: Activity,  color: "#0891B2", bg: "rgba(8,145,178,0.08)"  },
     ];
-    return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-          <div className="flex flex-col w-full" style={{ padding: "28px 32px 32px", maxWidth: "860px" }}>
-            <div style={{ marginBottom: "28px", paddingBottom: "22px", borderBottom: `1px solid ${T.border}` }}>
-              <button
-                onClick={() => setSection("home")}
-                className="flex items-center gap-1.5 text-[11px] font-semibold mb-4 transition-opacity hover:opacity-60"
-                style={{ color: "var(--t-blue)" }}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                Back to Hub
-              </button>
-              <p className="section-label" style={{ marginBottom: "8px" }}>Health</p>
-              <h1 className="font-display font-extrabold" style={{ fontSize: "32px", color: T.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                Your Health Areas
-              </h1>
-              <p className="text-[13px] mt-2" style={{ color: T.muted }}>
-                Track, analyse, and manage all aspects of your health in one place.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3">
+    return inShell("health-hub", "Health Hub", (
+      <>
+        <p className="text-[13px]" style={{ color: T.subtle }}>
+          Track, analyse, and manage all aspects of your health in one place.
+        </p>
+        <div className="flex flex-col gap-3 w-full max-w-[860px]">
               {HEALTH_AREAS.map(({ id, label, description, Icon, color, bg }) => (
                 <button
                   key={id}
@@ -7478,102 +7441,49 @@ export default function CustomerPortal() {
                   <ChevronRight className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
                 </button>
               ))}
-            </div>
-          </div>
         </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+      </>
+    ));
   }
 
   // ─── FH Risk Calculator section ──────────────────────────────────────────────
 
   if (section === "fh-risk") {
-    return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-          <div className="flex flex-col w-full" style={{ padding: "20px 16px 32px", maxWidth: "640px" }}>
-            <button
-              onClick={() => setSection("health-hub")}
-              className="flex items-center gap-1.5 text-[11px] font-semibold mb-4 transition-opacity hover:opacity-60"
-              style={{ color: "var(--t-blue)" }}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              Back to Health
-            </button>
-            <FHRiskContent />
-          </div>
-        </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+    return inShell("fh-risk", "Inherited Cholesterol Risk", (
+      <div className="w-full max-w-[640px]">
+        <FHRiskContent />
+      </div>
+    ));
   }
 
   // ─── Insulin Resistance section ──────────────────────────────────────────────
 
   if (section === "insulin-resistance") {
-    return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-          <div className="flex flex-col w-full" style={{ padding: "20px 16px 32px", maxWidth: "640px" }}>
-            <button
-              onClick={() => setSection("health-hub")}
-              className="flex items-center gap-1.5 text-[11px] font-semibold mb-4 transition-opacity hover:opacity-60"
-              style={{ color: "var(--t-blue)" }}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              Back to Health
-            </button>
-            <InsulinResistanceContent />
-          </div>
-        </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+    return inShell("insulin-resistance", "Insulin Resistance Score", (
+      <div className="w-full max-w-[640px]">
+        <InsulinResistanceContent />
+      </div>
+    ));
   }
 
   // ─── Lab Pool section ────────────────────────────────────────────────────────
 
   if (section === "lab-pool") {
-    return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-          <div className="flex flex-col w-full" style={{ padding: "28px 32px 32px", maxWidth: "860px" }}>
-            <div style={{ marginBottom: "28px", paddingBottom: "22px", borderBottom: `1px solid ${T.border}` }}>
-              <button
-                onClick={() => setSection("home")}
-                className="flex items-center gap-1.5 text-[11px] font-semibold mb-4 transition-opacity hover:opacity-60"
-                style={{ color: "var(--t-blue)" }}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                Back to Hub
-              </button>
-              <p className="section-label" style={{ marginBottom: "8px" }}>Lab Testing</p>
-              <h1 className="font-display font-extrabold" style={{ fontSize: "32px", color: T.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                Apply to become a Testing Pool Leader
-              </h1>
-              <p className="text-[13px] mt-2" style={{ color: T.muted }}>
-                Run community-funded third-party lab testing rounds. View your contributions and manage your standalone pools below.
-              </p>
-            </div>
-
-            {/* ── My Contributions ── */}
-            <div style={{ marginBottom: 28 }}>
-              <p className="section-label" style={{ marginBottom: 12 }}>My Contributions</p>
-              <AccountPoolContributions />
-            </div>
-
-            {/* ── Pool Leader dashboard ── */}
-            <div style={{ marginBottom: 28 }}>
-              <p className="section-label" style={{ marginBottom: 12 }}>Standalone Testing Pools</p>
-              <PoolLeaderDashboard />
-            </div>
-
-          </div>
+    return inShell("lab-pool", "Pool Leaders", (
+      <>
+        <p className="text-[13px]" style={{ color: T.subtle }}>
+          Run community-funded third-party lab testing rounds. View your contributions and manage your standalone pools below.
+        </p>
+        <div className="w-full max-w-[860px]">
+          <p className="section-label" style={{ marginBottom: 12 }}>My Contributions</p>
+          <AccountPoolContributions />
         </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+        <div className="w-full max-w-[860px]">
+          <p className="section-label" style={{ marginBottom: 12 }}>Standalone Testing Pools</p>
+          <PoolLeaderDashboard />
+        </div>
+      </>
+    ));
   }
 
   // ─── GB Testing section ──────────────────────────────────────────────────────
@@ -7586,28 +7496,12 @@ export default function CustomerPortal() {
       closed: "Closed",
       results_received: "Results in",
     };
-    return (
-      <PageLayout>
-        <div className="flex flex-col" style={{ background: T.bg }}>
-          <div className="flex flex-col w-full" style={{ padding: "28px 32px 32px", maxWidth: "860px" }}>
-            <div style={{ marginBottom: "28px", paddingBottom: "22px", borderBottom: `1px solid ${T.border}` }}>
-              <button
-                onClick={() => setSection("home")}
-                className="flex items-center gap-1.5 text-[11px] font-semibold mb-4 transition-opacity hover:opacity-60"
-                style={{ color: "var(--t-blue)" }}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                Back to Hub
-              </button>
-              <p className="section-label" style={{ marginBottom: "8px" }}>Lab Testing</p>
-              <h1 className="font-display font-extrabold" style={{ fontSize: "32px", color: T.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                GB Testing
-              </h1>
-              <p className="text-[13px] mt-2" style={{ color: T.muted }}>
-                Lab testing pools for group buys you're part of.
-              </p>
-            </div>
-
+    return inShell("gb-testing", "GB Testing", (
+      <>
+        <p className="text-[13px]" style={{ color: T.subtle }}>
+          Lab testing pools for group buys you're part of.
+        </p>
+        <div className="w-full max-w-[860px]">
             {gbPools.length === 0 ? (
               <div className="text-center py-16">
                 <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-20" style={{ color: T.muted }} />
@@ -7681,11 +7575,9 @@ export default function CustomerPortal() {
                 })}
               </div>
             )}
-          </div>
         </div>
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+      </>
+    ));
   }
 
   // ─── Orders section ──────────────────────────────────────────────────────────
@@ -8507,33 +8399,18 @@ export default function CustomerPortal() {
   // ─── Compounds section ────────────────────────────────────────────────────────
 
   if (section === "compounds") {
-    return (
-      <PortalLayout navProps={navProps}>
-        {/* ════════════════════ BRANDED GRADIENT HEADER ════════════════════════ */}
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
-             style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
-          <div className="absolute inset-0 opacity-10"
-               style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
-          <div className="relative px-5 pt-5 pb-6 lg:px-8 lg:pt-6">
-            <div className="flex items-center justify-between mb-5">
-              <button onClick={() => setSection("home")}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center"
-                      style={{ background: "rgba(255,255,255,0.12)" }}>
-                <ChevronLeft className="w-5 h-5" style={{ color: "rgba(255,255,255,0.9)" }} />
-              </button>
-              <button onClick={() => setShowCompoundForm(true)}
-                      className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm font-semibold"
-                      style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)" }}>
-                <Plus className="w-3.5 h-3.5" /> Log
-              </button>
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1"
-               style={{ color: "rgba(255,255,255,0.6)" }}>Customer Portal</p>
-            <h1 className="text-2xl font-bold text-white leading-tight">Compounds &amp; Protocols</h1>
-          </div>
+    return inShell("compounds", "Compounds & Protocols", (
+      <>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px]" style={{ color: T.subtle }}>Track your active compounds, doses, and cycling protocols</p>
+          <button onClick={() => setShowCompoundForm(true)}
+                  className="h-9 px-4 rounded-lg flex items-center gap-1.5 text-sm font-semibold text-white shrink-0"
+                  style={{ background: "var(--t-blue)" }}>
+            <Plus className="w-3.5 h-3.5" /> Log
+          </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 w-full max-w-[860px]">
           {compoundsLoading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-7 h-7 animate-spin" style={{ color: T.subtle }} />
@@ -8605,8 +8482,8 @@ export default function CustomerPortal() {
         <AnimatePresence>
           {showCompoundForm && <LogCompoundForm onClose={() => setShowCompoundForm(false)} />}
         </AnimatePresence>
-      </PortalLayout>
-    );
+      </>
+    ));
   }
 
   // ─── Blood Tests section ──────────────────────────────────────────────────────
@@ -8614,43 +8491,21 @@ export default function CustomerPortal() {
   if (section === "blood-tests") {
     const sortedTests = [...bloodTests].sort((a, b) => b.testDate.localeCompare(a.testDate));
 
-    return (
-      <PortalLayout navProps={navProps}>
-        <BloodTestPortalHubWithBanner
-          sessions={sortedTests}
-          username={username}
-          onBack={() => setSection("home")}
-        />
-      </PortalLayout>
-    );
+    return inShell("blood-tests", "Blood Tests", (
+      <BloodTestPortalHubWithBanner
+        sessions={sortedTests}
+        username={username}
+        onBack={() => setSection("home")}
+      />
+    ));
   }
 
   // ─── Cycle Plotter section ────────────────────────────────────────────────────
 
   if (section === "plotter") {
-    return (
-      <PortalLayout navProps={navProps}>
-        {/* ════════════════════ BRANDED GRADIENT HEADER ════════════════════════ */}
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
-             style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
-          <div className="absolute inset-0 opacity-10"
-               style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
-          <div className="relative px-5 pt-5 pb-6 lg:px-8 lg:pt-6">
-            <div className="flex items-center justify-between mb-5">
-              <button onClick={() => setSection("home")}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center"
-                      style={{ background: "rgba(255,255,255,0.12)" }}>
-                <ChevronLeft className="w-5 h-5" style={{ color: "rgba(255,255,255,0.9)" }} />
-              </button>
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1"
-               style={{ color: "rgba(255,255,255,0.6)" }}>Health</p>
-            <h1 className="text-2xl font-bold text-white leading-tight">Cycle Plotter</h1>
-          </div>
-        </div>
-        <SteroidPlotter hideHeader username={username} />
-      </PortalLayout>
-    );
+    return inShell("plotter", "Cycle Plotter", (
+      <SteroidPlotter hideHeader username={username} />
+    ));
   }
 
   // ─── Profile section ──────────────────────────────────────────────────────────
@@ -8669,64 +8524,41 @@ export default function CustomerPortal() {
       ? new Date(account.createdAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
       : null;
 
-    return (
-      <PortalLayout navProps={navProps}>
-        {/* ════════ HERO (outer wrapper is relative so avatar can overflow) ════════ */}
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative" style={{ zIndex: 1 }}>
-          {/* Gradient band — overflow-hidden scopes the decorative blobs */}
-          <div className="relative overflow-hidden"
-               style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
-            <div className="absolute inset-0 pointer-events-none opacity-[0.07]"
-                 style={{ backgroundImage: "radial-gradient(circle at 80% 20%, white 0%, transparent 50%)" }} />
-            <div className="absolute -bottom-10 -right-8 w-48 h-48 rounded-full pointer-events-none"
-                 style={{ background: "var(--t-blue-35)" }} />
-            <div className="relative px-5 pt-5 pb-10 lg:px-8 lg:pt-6">
-              {/* Back row */}
-              <div className="flex items-center mb-5">
-                <button onClick={() => setSection("home")}
-                        className="w-9 h-9 rounded-xl flex items-center justify-center"
-                        style={{ background: "rgba(255,255,255,0.12)" }}>
-                  <ChevronLeft className="w-5 h-5" style={{ color: "rgba(255,255,255,0.9)" }} />
-                </button>
-              </div>
-              {/* Title only — avatar lives at the hero's bottom edge */}
-              <div className="mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                   style={{ color: "rgba(255,255,255,0.45)" }}>My Profile</p>
-                <h1 className="text-2xl font-black text-white leading-tight">@{username}</h1>
-                {tgStatusPortal !== undefined && (
-                  <div className="mt-2">
-                    {portalLinked ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
-                            style={{ background: "rgba(22,163,74,0.25)", color: "#4ADE80", border: "1px solid rgba(74,222,128,0.3)" }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                        Telegram Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
-                            style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                        <Unlink className="w-3 h-3 shrink-0" />
-                        Not linked to Telegram
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+    return inShell("profile", "My Profile", (
+      <>
+        {/* ════════ HEADER ════════ */}
+        <div className="flex items-center gap-4">
+          <div className="w-[56px] h-[56px] rounded-full flex items-center justify-center text-lg font-black select-none shrink-0"
+               style={{ background: "var(--t-blue-deep)", color: "white" }}>
+            {initials}
           </div>
-
-          {/* Avatar — overlaps the hero's bottom edge into the card below */}
-          <div className="absolute bottom-0 left-5 translate-y-1/2 z-10">
-            <div className="w-[64px] h-[64px] rounded-full flex items-center justify-center text-xl font-black select-none"
-                 style={{ background: "var(--t-blue-deep)", border: "3px solid white", color: "white",
-                          boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
-              {initials}
+          <div className="min-w-0">
+            <h1 className="text-xl font-black leading-tight" style={{ color: T.text }}>@{username}</h1>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {tgStatusPortal !== undefined && (
+                portalLinked ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+                        style={{ background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                    Telegram Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+                        style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                    <Unlink className="w-3 h-3 shrink-0" />
+                    Not linked to Telegram
+                  </span>
+                )
+              )}
+              {memberSince && (
+                <span className="text-[11px]" style={{ color: T.subtle }}>Member since {memberSince}</span>
+              )}
             </div>
           </div>
         </div>
 
         {/* ════════ FORM CARDS ════════ */}
-        <div className="space-y-6 mt-10">
+        <div className="space-y-6 w-full max-w-[860px]">
 
           {/* ── Name & Email ── */}
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
@@ -9127,8 +8959,8 @@ export default function CustomerPortal() {
           </motion.div>
 
         </div>
-      </PortalLayout>
-    );
+      </>
+    ));
   }
 
   // ─── Health Intelligence section ──────────────────────────────────────────────
@@ -9301,23 +9133,22 @@ export default function CustomerPortal() {
     ];
     const labelFor = (key: string) => DASH_SECTIONS.find(s => s.key === key)?.label ?? key;
 
-    return (
-      <PortalLayout navProps={navProps}>
-        <PageTitle
-          title="Health Insights"
-          subtitle={lastTestLabel ? `Last test: ${lastTestLabel}` : "Based on your blood test data"}
-          action={
-            biomarkers.length > 0 ? (
-              <button
-                onClick={() => setShowDashCustomise(v => !v)}
-                className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-[11px] font-semibold transition-all"
-                style={{ background: showDashCustomise ? "var(--t-blue)" : T.surface, color: showDashCustomise ? "#fff" : T.muted, border: `1px solid ${showDashCustomise ? "var(--t-blue)" : T.border}` }}>
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Customise
-              </button>
-            ) : undefined
-          }
-        />
+    return inShell("health", "Health Insights", (
+      <>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px]" style={{ color: T.subtle }}>
+            {lastTestLabel ? `Last test: ${lastTestLabel}` : "Based on your blood test data"}
+          </p>
+          {biomarkers.length > 0 && (
+            <button
+              onClick={() => setShowDashCustomise(v => !v)}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-[11px] font-semibold transition-all shrink-0"
+              style={{ background: showDashCustomise ? "var(--t-blue)" : T.surface, color: showDashCustomise ? "#fff" : T.muted, border: `1px solid ${showDashCustomise ? "var(--t-blue)" : T.border}` }}>
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Customise
+            </button>
+          )}
+        </div>
 
         {/* ── Dashboard customise panel ── */}
         <AnimatePresence>
@@ -9705,8 +9536,8 @@ export default function CustomerPortal() {
             </>
           )}
         </div>
-      </PortalLayout>
-    );
+      </>
+    ));
   }
 
   // ─── GLP-1 Tracker section ────────────────────────────────────────────────────
@@ -9874,8 +9705,8 @@ export default function CustomerPortal() {
     const toGoalPct = (toGoalKg != null && firstKg != null && goalKg != null && (firstKg - goalKg) > 0)
       ? (1 - toGoalKg / (firstKg - goalKg)) * 100 : null;
 
-    return (
-      <PortalLayout showHubNav={false} navProps={navProps}>
+    return inShell("glp1", "GLP-1 Tracker", (
+      <>
 
         {/* ═══════════════════ ADD SHOT OVERLAY ════════════════════════════════ */}
         <AnimatePresence>
@@ -9889,36 +9720,22 @@ export default function CustomerPortal() {
           )}
         </AnimatePresence>
 
-        {/* ════════════════════ UNIFIED GRADIENT HEADER ════════════════════════ */}
-        <div className="-mx-5 -mt-6 lg:-mx-8 lg:-mt-7 relative overflow-hidden"
-             style={{ background: "linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-blue) 100%)" }}>
-          <div className="absolute inset-0 opacity-10"
-               style={{ backgroundImage: "radial-gradient(circle at 70% 50%, white 0%, transparent 60%)" }} />
-          <div className="relative px-5 pt-5 pb-6 lg:px-8 lg:pt-6">
-            <div className="flex items-center justify-between mb-5">
-              <button onClick={() => setSection("home")}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center"
-                      style={{ background: "rgba(255,255,255,0.12)" }}>
-                <ChevronLeft className="w-5 h-5" style={{ color: "rgba(255,255,255,0.9)" }} />
-              </button>
-              {glp1SubTab === "shots" && (
-                <button
-                  onClick={() => setShowGlp1Form(true)}
-                  className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm font-semibold"
-                  style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)" }}
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add shot
-                </button>
-              )}
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1"
-               style={{ color: "rgba(255,255,255,0.6)" }}>CUSTOMER PORTAL</p>
-            <h1 className="text-2xl font-bold text-white leading-tight">GLP-1 Tracker</h1>
-          </div>
+        {/* ════════════════════ HEADER ROW ═════════════════════════════════════ */}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px]" style={{ color: T.subtle }}>Track your shots, weight and progress</p>
+          {glp1SubTab === "shots" && (
+            <button
+              onClick={() => setShowGlp1Form(true)}
+              className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm font-semibold text-white shrink-0"
+              style={{ background: "var(--t-blue)" }}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add shot
+            </button>
+          )}
         </div>
 
         {/* ════════════════════ SUB-TAB BAR ════════════════════════════════════ */}
-        <div className="-mx-5 lg:-mx-8 px-4 py-2" style={{ background: T.surface }}>
+        <div>
           <div className="flex gap-0.5 p-1 rounded-xl" style={{ background: T.surface2 }}>
             {(["summary", "shots", "settings"] as const).map(tab => (
               <button key={tab} onClick={() => setGlp1SubTab(tab)}
@@ -9938,7 +9755,7 @@ export default function CustomerPortal() {
             <Loader2 className="w-7 h-7 animate-spin" style={{ color: TEAL }} />
           </div>
         ) : (
-          <div className="pb-[calc(96px_+_env(safe-area-inset-bottom))] md:pb-6 -mx-5 px-4 pt-4" style={{ background: PAGE_BG, minHeight: "calc(100vh - 120px)" }}>
+          <div style={{ background: PAGE_BG }}>
 
             {/* ═════════════════════════ SUMMARY TAB ══════════════════════════ */}
             {glp1SubTab === "summary" && (
@@ -10504,79 +10321,60 @@ export default function CustomerPortal() {
           ))}
         </div>
 
-      </PortalLayout>
-    );
+      </>
+    ), { hideHubNav: true });
   }
 
   // ─── My History section ───────────────────────────────────────────────────────
   if (section === "history") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <PageTitle title="My History" subtitle={`@${username}`} />
-        <MyHistorySection onBack={() => setSection("home")} />
-      </PortalLayout>
-    );
+    return inShell("history", "My History", (
+      <MyHistorySection onBack={() => setSection("home")} />
+    ));
   }
 
   // ─── Explore sections (rendered bare inside the hub) ─────────────────────────
 
   if (section === "protocols") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <Protocols bare />
-      </PortalLayout>
-    );
+    return inShell("protocols", "Protocols", (
+      <Protocols bare />
+    ));
   }
 
   if (section === "medications") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <Protocols bare initialTrack="medications" />
-      </PortalLayout>
-    );
+    return inShell("medications", "Medications", (
+      <Protocols bare initialTrack="medications" />
+    ));
   }
 
   if (section === "trtaas") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <Protocols bare initialTrack="trtaas" />
-      </PortalLayout>
-    );
+    return inShell("trtaas", "TRT & AAS", (
+      <Protocols bare initialTrack="trtaas" />
+    ));
   }
 
   if (section === "community-testing") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <PublicTestingPools bare />
-      </PortalLayout>
-    );
+    return inShell("community-testing", "Community Testing", (
+      <PublicTestingPools bare />
+    ));
   }
 
   if (section === "lab-tests") {
-    return (
-      <PageLayout>
-        <LabTests bare />
-        <HubBottomNav {...navProps} />
-      </PageLayout>
-    );
+    return inShell("lab-tests", "Lab Tests", (
+      <LabTests bare />
+    ));
   }
 
   if (section === "support") {
-    return (
-      <PortalLayout navProps={navProps}>
-        <SupportSection username={username} onBack={() => setSection("home")} initialTicketId={_initTicketId ?? undefined} />
-      </PortalLayout>
-    );
+    return inShell("support", "Support", (
+      <SupportSection username={username} onBack={() => setSection("home")} initialTicketId={_initTicketId ?? undefined} />
+    ));
   }
 
   // ─── Telegram section ─────────────────────────────────────────────────────────
 
-  return (
-    <PortalLayout navProps={navProps}>
-      <PageTitle title="Telegram Notifications" subtitle={`@${username}`} />
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-        <TelegramCard />
-      </motion.div>
-    </PortalLayout>
-  );
+  return inShell("telegram", "Telegram Notifications", (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+      <TelegramCard />
+    </motion.div>
+  ));
 }

@@ -5,9 +5,11 @@ description: How CustomerPortal sections adopt the reusable dashboard shell (nav
 
 # Reusable dashboard shell for CustomerPortal sections
 
-The customer portal is migrating each `section` (orders first; groups/health/lab-tests
-to follow) from the old `PortalLayout` + gradient-hero header to a shared
-`DashboardShell` (sidebar rail + flyouts + topbar + ⌘K search + HubBottomNav).
+ALL CustomerPortal sections now render inside the shared `DashboardShell`
+(sidebar rail + flyouts + topbar + ⌘K search + HubBottomNav). The old
+`PortalLayout`/`PageTitle` wrappers are deleted; new sections must use the
+`inShell(id, title, node, opts?)` helper (a plain function, NOT a nested
+component — nesting would remount children every render).
 
 **How to migrate a section:**
 - Wrap the section's returned JSX in `<DashboardShell activeSection="<section>" title="..." ...navProps />`.
@@ -30,3 +32,13 @@ track a single dark-mode flag. Do not try to thread `dark` into `T`-based conten
 - 3 pre-existing ambient `queryKey` codegen type-errors on the shell's search hooks are
   copied verbatim from the original; build is decoupled from typecheck so they don't block.
 - User once reverted an OrderForm redesign — keep migrations byte-faithful on content.
+- Full-bleed heroes/bands inside shell content must negate the shell container's
+  padding EXACTLY: `-mx-4 md:-mx-7` (container is `px-4 md:px-7`). The old
+  `-mx-5 lg:-mx-8` values were for PortalLayout padding and cause a 4px horizontal
+  overshoot → mobile horizontal scroll (shell only sets overflow-x-hidden at lg).
+- A section with its OWN mobile bottom bar (e.g. GLP-1's iOS tab bar) must pass
+  `{ hideHubNav: true }` to inShell (→ DashboardShell `hideHubNav` prop) or the
+  shell's HubBottomNav overlaps it below lg.
+- Don't double bottom padding: the inShell container already has
+  `pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8`; inner content divs
+  should not repeat it.

@@ -105,6 +105,7 @@ interface DashboardShellProps {
   onSection: (s: string) => void;
   onLogout?: () => void;
   navProps?: NavProps;
+  hideHubNav?: boolean;
   children: React.ReactNode;
 }
 
@@ -112,7 +113,7 @@ interface DashboardShellProps {
 
 export function DashboardShell({
   activeSection, title, username, credits, orders, activeCompounds, groupBuys,
-  onSection, onLogout, navProps, children,
+  onSection, onLogout, navProps, hideHubNav, children,
 }: DashboardShellProps) {
   const { dark, toggle: toggleTheme } = useThemeStore();
   const [, navigate] = useLocation();
@@ -905,7 +906,7 @@ export function DashboardShell({
         </div>
       </div>
 
-      {navProps && <HubBottomNav {...(navProps as unknown as React.ComponentProps<typeof HubBottomNav>)} hideAt="lg" />}
+      {navProps && !hideHubNav && <HubBottomNav {...(navProps as unknown as React.ComponentProps<typeof HubBottomNav>)} hideAt="lg" />}
     </div>
   );
 }
