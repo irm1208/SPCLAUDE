@@ -60,3 +60,4 @@
 - [Dashboard shell section pattern](dashboard-shell-section-pattern.md) — CustomerPortal sections migrate to shared DashboardShell (palette(dark) chrome + T-based content untouched); one [data-theme] flag drives both; 3-col StatCards need SHORT labels.
 - [hexToRgba vs CSS-var colors](hexToRgba-vs-css-var-colors.md) — STATUS_META/PAYMENT_META colors are CSS vars (var(--t-blue)); hexToRgba on them → rgba(NaN) dropped; use color-mix for tints, hexToRgba only for hex accents.
 - [Hub nav breakpoint pairing](hub-nav-breakpoint-pairing.md) — HubBottomNav hideAt must match host layout's sidebar breakpoint (PageLayout=md, DashboardShell=lg) or tablet loses all nav; class + matchMedia in lockstep.
+- [Site typography](site-typography.md) — Instrument Sans body (caps at 700!) + Bricolage Grotesque display; fonts load only via index.html link, never CSS @import; grain(dark) noise on dashboard bg.

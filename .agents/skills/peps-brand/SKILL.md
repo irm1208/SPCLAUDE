@@ -75,7 +75,10 @@ Used on: customer portal headers (My Orders, Account pages), group buy cards, ad
 
 ## Typography
 
-- Font family: `'Inter', sans-serif`
+- Body font: `'Instrument Sans', sans-serif` (weights 400–700; the family has no 800 — `font-extrabold` clamps to 700)
+- Display font (headings, hero numbers, wordmark): `'Bricolage Grotesque', sans-serif` (weights 400–800)
+- Loaded once via the Google Fonts `<link>` in `index.html` — never add CSS `@import` font loads
+- Tailwind: `font-sans` → Instrument Sans, `font-display` → Bricolage Grotesque; all `h1–h6` default to the display font
 - Section labels: `text-[10px] font-bold uppercase tracking-widest` in Navy or `#8A9AAA`
 - Card headings: `text-xl font-bold` in `#0F1F38`
 - Step indicators: `text-[9px] font-bold` in white (active) or Navy (inactive)

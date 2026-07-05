@@ -933,7 +933,7 @@ export default function OrderForm() {
 
   return (
     <PageLayout>
-    <div className="flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Inter', sans-serif" }}>
+    <div className="flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Instrument Sans', sans-serif" }}>
       <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
         <SiteAnnouncements />
       </div>

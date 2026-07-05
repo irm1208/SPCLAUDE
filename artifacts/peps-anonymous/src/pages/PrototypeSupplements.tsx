@@ -880,7 +880,7 @@ export default function PrototypeSupplements() {
   return (
     <div style={{
       minHeight: "100vh", background: "#FAFAFA",
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      fontFamily: "'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
       {/* Detail panel */}
       {selected && <DetailPanel supp={selected} onClose={() => setSelected(null)} />}

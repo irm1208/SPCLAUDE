@@ -12724,7 +12724,7 @@ export default function GbOrganiser() {
 
   return (
     <PageLayout>
-      <div className="flex flex-col flex-1 min-h-0" style={{ fontFamily: "'Inter', sans-serif", background: "var(--t-bg)" }}>
+      <div className="flex flex-col flex-1 min-h-0" style={{ fontFamily: "'Instrument Sans', sans-serif", background: "var(--t-bg)" }}>
         <AnimatePresence mode="wait">
           {isLoading && (
             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-center py-32">
