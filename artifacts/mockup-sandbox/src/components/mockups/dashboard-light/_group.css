@@ -1,0 +1,85 @@
+/* Fonts — from peps-anonymous index.css + index.html */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+/* ── Theme tokens the dashboard relies on (from peps-anonymous src/index.css) ── */
+:root, [data-theme="light"] {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #374151;
+  --t-subtle:   #4B5563;
+  --t-nav:      #2D6BCC;
+  --brand-navy: #1B3A7A;
+  --brand-blue: #2D6BCC;
+  --t-blue:     #2D6BCC;
+  --t-blue-deep: #1B3A7A;
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+  color-scheme: light;
+
+  --salt-bg: #F4F4F5;
+  --salt-surface: #FFFFFF;
+  --salt-border: #E4E4E7;
+  --salt-text: #1A1D1F;
+  --salt-text-muted: #374151;
+  --salt-text-subtle: #4B5563;
+  --salt-nav-active: #2D6BCC;
+  --salt-card-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --salt-home-content-bg: #F7F7F9;
+}
+
+[data-theme="dark"] {
+  --t-bg:       #111113;
+  --t-surface:  #1C1C1E;
+  --t-surface2: #2C2C2E;
+  --t-border:   rgba(255,255,255,0.08);
+  --t-text:     #FAFAFA;
+  --t-muted:    #C4C4C7;
+  --t-subtle:   #8D8D95;
+  --t-nav:      #2D6BCC;
+  --t-blue:     #2D6BCC;
+  --t-blue-deep: #1B3A7A;
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'DM Serif Display', serif;
+  color-scheme: dark;
+
+  --salt-bg: #111113;
+  --salt-surface: #1C1C1E;
+  --salt-border: rgba(255,255,255,0.08);
+  --salt-text: #FAFAFA;
+  --salt-text-muted: #C4C4C7;
+  --salt-text-subtle: #8D8D95;
+  --salt-nav-active: #4B7BCC;
+  --salt-card-shadow: 0 1px 6px rgba(0,0,0,0.50);
+  --salt-home-content-bg: #111113;
+}
+
+/* Forced-light class overrides (mirrors peps-anonymous global rules) */
+:root .bg-white        { background-color: var(--t-surface) !important; }
+:root .bg-slate-50     { background-color: var(--t-bg)      !important; }
+:root .bg-slate-100    { background-color: var(--t-surface2)!important; }
+:root .bg-gray-50      { background-color: var(--t-bg)      !important; }
+:root .bg-gray-100     { background-color: var(--t-surface2)!important; }
+:root .text-slate-900  { color: var(--t-text)   !important; }
+:root .text-slate-600  { color: var(--t-muted)  !important; }
+:root .text-slate-500  { color: var(--t-subtle) !important; }
+:root .text-gray-900   { color: var(--t-text)   !important; }
+:root .text-gray-600   { color: var(--t-muted)  !important; }
+:root .text-gray-500   { color: var(--t-subtle) !important; }
+
+[data-theme="dark"] .bg-white        { background-color: var(--t-surface) !important; }
+[data-theme="dark"] .bg-slate-50     { background-color: var(--t-bg)      !important; }
+[data-theme="dark"] .bg-slate-100    { background-color: var(--t-surface2)!important; }
+[data-theme="dark"] .bg-gray-50      { background-color: var(--t-bg)      !important; }
+[data-theme="dark"] .bg-gray-100     { background-color: var(--t-surface2)!important; }
+[data-theme="dark"] .text-slate-900  { color: var(--t-text)   !important; }
+[data-theme="dark"] .text-slate-600  { color: var(--t-muted)  !important; }
+[data-theme="dark"] .text-slate-500  { color: var(--t-subtle) !important; }
+[data-theme="dark"] .text-gray-900   { color: var(--t-text)   !important; }
+[data-theme="dark"] .text-gray-600   { color: var(--t-muted)  !important; }
+[data-theme="dark"] .text-gray-500   { color: var(--t-subtle) !important; }

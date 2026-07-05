@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+.paper-desk {
+  --pd-bg: #F5F3EC;
+  --pd-surface: #FCFAF8;
+  --pd-surface-alt: #F0EEE5;
+  --pd-ink: #1C1B1A;
+  --pd-ink-light: #595652;
+  --pd-border: #DEDCD3;
+  --pd-border-heavy: #BDBAB0;
+  --pd-accent: #7A2821; /* Oxblood red */
+  
+  background-color: var(--pd-bg);
+  color: var(--pd-ink);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+.paper-desk .font-serif {
+  font-family: 'Newsreader', serif;
+}
+
+.paper-desk .font-display {
+  font-family: 'Instrument Serif', serif;
+}
+
+.pd-hairline {
+  border: 1px solid var(--pd-border);
+}
+
+.pd-hairline-bottom {
+  border-bottom: 1px solid var(--pd-border);
+}
+
+.pd-hairline-top {
+  border-top: 1px solid var(--pd-border);
+}
+
+.pd-hairline-x {
+  border-left: 1px solid var(--pd-border);
+  border-right: 1px solid var(--pd-border);
+}
+
+.pd-surface {
+  background-color: var(--pd-surface);
+}
+
+.pd-hover:hover {
+  background-color: var(--pd-surface-alt);
+}
