@@ -8145,7 +8145,7 @@ export default function CustomerPortal() {
                 <div className="relative px-5 pt-5 flex flex-col gap-2.5 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Organiser</span>
-                    <span className="text-[13px] truncate" style={{ color: "rgba(255,255,255,0.5)" }}>{gb.organiserId ?? "Admin"}</span>
+                    <span className="text-[13px] font-bold truncate" style={{ color: "rgba(255,255,255,0.95)" }}>{gb.organiserId ?? "Admin"}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Products</span>
