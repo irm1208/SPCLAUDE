@@ -25,3 +25,23 @@ the column exists at runtime. Only the *type-level* `dist/*.d.ts` is stale.
 **How to apply:** any time you edit `lib/db` or `lib/api-zod` source and then see a
 "does not exist" type error in an artifact for something you just added, run
 `typecheck:libs` first before assuming your change is wrong.
+
+## Same trap with lib/api-client-react (frontend artifact)
+
+`@workspace/api-client-react` is also `composite` + `emitDeclarationOnly` and is
+referenced by the frontend artifact (`peps-anonymous`). When its `dist/*.d.ts` is
+stale/missing, the artifact typecheck shows a distinctive **cascade**:
+- `TS6305: Output file '.../lib/api-client-react/dist/index.d.ts' has not been built
+  from source file ...` on the import line, PLUS
+- `TS7006 implicitly has an 'any' type` on every `.map/.find/.filter` callback over
+  data returned by the generated query hooks (e.g. `products`, `deliveryMethods`) —
+  because the hooks lose their types, their array elements become `any`.
+
+These are NOT bugs in the component; they vanish once the lib is built.
+
+**Gotcha:** root `tsc --build` (`typecheck:libs`) may report exit 0 yet leave
+`api-client-react/dist` stale (stale/incorrect `.tsbuildinfo` → build thinks it's
+up to date). Force it:
+`pnpm exec tsc --build lib/api-client-react/tsconfig.json --force`, then re-run the
+artifact `tsc --noEmit`. **Why:** this cost real debugging time — the TS7006s look
+like they were introduced by an edit but are pure stale-dist cascade.
