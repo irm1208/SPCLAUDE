@@ -315,7 +315,7 @@ export function DashboardHome({
   );
 
   return (
-    <div className="flex w-full min-h-screen" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
+    <div className="flex w-full min-h-screen lg:h-screen lg:overflow-hidden" style={{ background: T.page, fontFamily: FONT, color: T.text }}>
       <style>{`
         .dh-nav:hover { background: ${T.chip} !important; }
         .dh-rail:hover { background: rgba(255,255,255,0.10) !important; }
@@ -544,18 +544,18 @@ export function DashboardHome({
       </aside>
 
       {/* ══ Main ══ */}
-      <div className="flex-1 min-w-0 flex flex-col" style={{ marginLeft: 0 }}>
+      <div className="flex-1 min-w-0 lg:h-screen lg:overflow-y-auto lg:overflow-x-hidden dh-scroll" style={{ marginLeft: 0 }}>
         <div style={{ paddingLeft: 0 }} className="lg:pl-0">
           <div className="lg:ml-[var(--dh-ml)]" style={{ ["--dh-ml" as any]: `${SIDEBAR_W}px`, transition: "margin .2s ease" }}>
 
             {/* Top bar */}
             <header
-              className="sticky top-0 z-10 flex items-center gap-3 px-4 md:px-7"
+              className="sticky top-0 z-10 flex items-center gap-3 px-3 md:px-7"
               style={{ height: 72, background: T.panel, borderBottom: `1px solid ${T.border}` }}
             >
               <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>Dashboard</h1>
 
-              <div className="flex-1 flex justify-center min-w-0 px-2">
+              <div className="flex-1 flex justify-center min-w-0 sm:px-2">
                 <div className="relative hidden sm:block w-full max-w-[460px]">
                   <div
                     className="flex items-center gap-2.5 w-full rounded-md"
@@ -665,7 +665,7 @@ export function DashboardHome({
                 )}
                 <button
                   onClick={toggleTheme}
-                  className="flex items-center justify-center rounded-md transition-colors"
+                  className="hidden md:flex items-center justify-center rounded-md transition-colors"
                   style={{ width: 40, height: 40, background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}
                   title={dark ? "Light mode" : "Dark mode"}
                 >
@@ -691,7 +691,7 @@ export function DashboardHome({
                       <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{username}</span>
                       <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{username}</span>
                     </span>
-                    <ChevronDown className="w-4 h-4 shrink-0 transition-transform" style={{ color: T.subtle, transform: menu === "profile" ? "rotate(180deg)" : "none" }} />
+                    <ChevronDown className="w-4 h-4 shrink-0 transition-transform hidden md:block" style={{ color: T.subtle, transform: menu === "profile" ? "rotate(180deg)" : "none" }} />
                   </button>
                   {menu === "profile" && (
                     <>
