@@ -7977,11 +7977,11 @@ export default function CustomerPortal() {
         <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
 
         {/* ── Header: subtitle + actions ── */}
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px]" style={{ color: T.subtle }}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[13px] whitespace-nowrap" style={{ color: T.subtle }}>
             {activeGbs.length} active group buy{activeGbs.length !== 1 ? "s" : ""}
           </p>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <button onClick={() => setGbView("cards")} title="Card view"
                 className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -8001,9 +8001,11 @@ export default function CustomerPortal() {
               <RefreshCw className={`w-4 h-4 ${gbLoading ? "animate-spin" : ""}`} style={{ color: T.muted }} />
             </button>
             <button onClick={() => setShowJoin(true)}
-              className="flex items-center gap-1.5 h-10 px-4 rounded-xl text-[12.5px] font-bold text-white"
+              className="flex items-center gap-1.5 h-10 px-3.5 sm:px-4 rounded-xl text-[12.5px] font-bold text-white"
               style={{ background: ACCENT, boxShadow: "0 2px 8px rgba(1,118,211,0.3)" }}>
-              <Users className="w-3.5 h-3.5" /> Join a Group Buy
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Join a Group Buy</span>
+              <span className="sm:hidden">Join</span>
             </button>
           </div>
         </div>
@@ -8214,8 +8216,16 @@ export default function CustomerPortal() {
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                      {["Group Buy", "Organiser", "Status", "Products", "Closes", "My orders", ""].map((h, hi) => (
-                        <th key={hi} className="px-4 py-3 text-[10.5px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: T.subtle }}>{h}</th>
+                      {([
+                        ["Group Buy", ""],
+                        ["Organiser", "hidden md:table-cell"],
+                        ["Status", "hidden sm:table-cell"],
+                        ["Products", "hidden lg:table-cell"],
+                        ["Closes", "hidden sm:table-cell"],
+                        ["My orders", "hidden lg:table-cell"],
+                        ["", ""],
+                      ] as const).map(([h, cls], hi) => (
+                        <th key={hi} className={`px-4 py-3 text-[10.5px] font-bold uppercase tracking-wider whitespace-nowrap ${cls}`} style={{ color: T.subtle }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -8242,32 +8252,38 @@ export default function CustomerPortal() {
                         <tr key={gb.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: hexToRgba(palette.accent, 0.12) }}>
+                              <div className="w-8 h-8 rounded-lg hidden sm:flex items-center justify-center shrink-0" style={{ background: hexToRgba(palette.accent, 0.12) }}>
                                 <GBIcon className="w-4 h-4" style={{ color: palette.accent }} />
                               </div>
                               <div className="min-w-0 max-w-[220px]">
                                 <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>{gb.name}</p>
-                                {gb.manufacturer && <p className="text-[11px] truncate" style={{ color: T.subtle }}>{gb.manufacturer}</p>}
+                                {gb.manufacturer && <p className="text-[11px] truncate hidden sm:block" style={{ color: T.subtle }}>{gb.manufacturer}</p>}
+                                {/* Mobile-only: status dot + closes info under the name */}
+                                <p className="text-[11px] truncate flex items-center gap-1.5 sm:hidden" style={{ color: T.subtle }}>
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                                  {statusLabel}
+                                  {closeDateBadge && closeDateBadge.daysStr !== "Closed" && <> · {closeDateBadge.daysStr}</>}
+                                </p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] font-bold whitespace-nowrap" style={{ color: T.text }}>{gb.organiserId ?? "Admin"}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className="px-4 py-3 text-[12.5px] font-bold whitespace-nowrap hidden md:table-cell" style={{ color: T.text }}>{gb.organiserId ?? "Admin"}</td>
+                          <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
                               style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
                               {statusLabel}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap hidden lg:table-cell" style={{ color: T.muted }}>
                             {gb.productCount}{gb.currency ? ` · ${gb.currency.toUpperCase()}` : ""}
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap hidden sm:table-cell" style={{ color: T.muted }}>
                             {closeDateBadge
                               ? (closeDateBadge.daysStr === "Closed" ? closeDateBadge.dateStr : `${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`)
                               : "—"}
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap hidden lg:table-cell" style={{ color: T.muted }}>
                             {gbOrders.length > 0
                               ? <>{gbOrders.length}{orderState && <span className="font-semibold ml-1.5" style={{ color: orderState.color }}>{orderState.label}</span>}</>
                               : "—"}
@@ -8294,14 +8310,14 @@ export default function CustomerPortal() {
                                 }}
                                 disabled={pendingArchiveId === gb.id}
                                 title="Archive"
-                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                className="w-8 h-8 rounded-lg hidden md:flex items-center justify-center"
                                 style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
                                 {pendingArchiveId === gb.id
                                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: T.muted }} />
                                   : <Archive className="w-3.5 h-3.5" style={{ color: T.muted }} />}
                               </button>
                               <button onClick={() => setLeaveConfirmGb(gb)} title="Leave"
-                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                className="w-8 h-8 rounded-lg hidden md:flex items-center justify-center"
                                 style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
                                 <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
                               </button>
