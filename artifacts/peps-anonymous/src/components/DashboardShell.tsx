@@ -33,6 +33,7 @@ type NavProps = PortalNavProps;
 // ─── Palette (exact hex, flips light/dark) ───────────────────────────────────
 
 import { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT } from "./dashboard-theme";
+import { BrandLogo } from "./BrandLogo";
 export { palette, ACCENT, ACCENT_SOFT, HERO_GRAD, FONT };
 export const STAR_AMBER = "#F5A623";
 export const LIVE_RED = "#EF4444";
@@ -379,9 +380,10 @@ export function DashboardShell({
         >
           <div
             className="flex items-center justify-center shrink-0"
-            style={{ width: 38, height: 38, borderRadius: 8, background: "#0176D3", color: "#fff", fontWeight: 800, fontSize: 12 }}
+            style={{ width: 38, height: 38, borderRadius: 8, background: "#0176D3", color: "#fff" }}
+            title="Salt & Peps"
           >
-            S&amp;P
+            <BrandLogo size={22} />
           </div>
 
           <nav className="flex flex-col items-center gap-1.5" style={{ marginTop: 22 }}>
@@ -596,6 +598,13 @@ export function DashboardShell({
               className="sticky top-0 z-10 flex items-center gap-3 px-3 md:px-7"
               style={{ height: 72, background: T.panel, borderBottom: `1px solid ${T.border}` }}
             >
+              <div
+                className="lg:hidden flex items-center justify-center shrink-0"
+                style={{ width: 32, height: 32, borderRadius: 8, background: ACCENT, color: "#fff" }}
+                title="Salt & Peps"
+              >
+                <BrandLogo size={19} />
+              </div>
               <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>{title}</h1>
 
               <div className="flex-1 flex justify-center min-w-0 sm:px-2">
