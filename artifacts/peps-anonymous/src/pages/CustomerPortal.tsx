@@ -8122,31 +8122,31 @@ export default function CustomerPortal() {
                   </div>
                 </div>
 
-                {/* Hero: close date (or product count) */}
+                {/* Hero: organiser centrepiece */}
                 <div className="relative px-5 pt-6">
-                  {closeDateBadge ? (
-                    <>
-                      <p className="text-[34px] font-bold text-white leading-none tracking-tight">{closeDateBadge.dateStr}</p>
-                      <p className="text-[12.5px] mt-1.5" style={{ color: "rgba(255,255,255,0.45)" }}>
-                        {closeDateBadge.daysStr === "Closed" ? "Closed" : `Closes · ${closeDateBadge.daysStr}`}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-[34px] font-bold text-white leading-none tracking-tight">{gb.productCount}</p>
-                      <p className="text-[12.5px] mt-1.5" style={{ color: "rgba(255,255,255,0.45)" }}>
-                        product{gb.productCount !== 1 ? "s" : ""} available
-                      </p>
-                    </>
-                  )}
+                  <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    Organised by
+                  </p>
+                  <p className="text-[32px] font-bold text-white leading-tight tracking-tight truncate mt-1">
+                    {gb.organiserId ?? "Admin"}
+                  </p>
+                  <p className="text-[12.5px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+                    {closeDateBadge
+                      ? (closeDateBadge.daysStr === "Closed" ? "Closed" : `Closes ${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`)
+                      : `${gb.productCount} product${gb.productCount !== 1 ? "s" : ""} available`}
+                  </p>
                 </div>
 
                 {/* Stat rows */}
                 <div className="relative px-5 pt-5 flex flex-col gap-2.5 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Organiser</span>
-                    <span className="text-[13px] font-bold truncate" style={{ color: "rgba(255,255,255,0.95)" }}>{gb.organiserId ?? "Admin"}</span>
-                  </div>
+                  {closeDateBadge && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Closes</span>
+                      <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                        {closeDateBadge.daysStr === "Closed" ? closeDateBadge.dateStr : `${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Products</span>
                     <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
