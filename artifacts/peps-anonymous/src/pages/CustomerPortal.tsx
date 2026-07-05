@@ -201,15 +201,15 @@ const GB_STATUS_LABEL: Record<string, string> = {
   archived: "Archived",
 };
 
-const GB_PALETTE: Array<{ accent: string; gradient: string; blobColor: string; icon: React.ElementType }> = [
-  { accent: "#5B8DEF", gradient: "linear-gradient(135deg, #0D1B2A 0%, #162A44 100%)", blobColor: "rgba(91,141,239,0.14)",  icon: FlaskConical },
-  { accent: "#F59E0B", gradient: "linear-gradient(135deg, #1A1208 0%, #2C1F0A 100%)", blobColor: "rgba(245,158,11,0.12)",  icon: Zap },
-  { accent: "#22D3EE", gradient: "linear-gradient(135deg, #061819 0%, #0D2D2E 100%)", blobColor: "rgba(34,211,238,0.12)",  icon: Activity },
-  { accent: "#A78BFA", gradient: "linear-gradient(135deg, #0F0A1E 0%, #1D1040 100%)", blobColor: "rgba(167,139,250,0.12)", icon: Dna },
-  { accent: "#34D399", gradient: "linear-gradient(135deg, #061209 0%, #0E2414 100%)", blobColor: "rgba(52,211,153,0.12)",  icon: Leaf },
-  { accent: "#38BDF8", gradient: "linear-gradient(135deg, #040E1A 0%, #0A1E35 100%)", blobColor: "rgba(56,189,248,0.12)",  icon: Microscope },
-  { accent: "#F472B6", gradient: "linear-gradient(135deg, #180613 0%, #2C0C22 100%)", blobColor: "rgba(244,114,182,0.12)", icon: HeartPulse },
-  { accent: "#C084FC", gradient: "linear-gradient(135deg, #0A0618 0%, #17102E 100%)", blobColor: "rgba(192,132,252,0.12)", icon: Brain },
+const GB_PALETTE: Array<{ accent: string; gradient: string; blobColor: string; icon: React.ElementType; aurora: [string, string, string] }> = [
+  { accent: "#5B8DEF", gradient: "linear-gradient(135deg, #0D1B2A 0%, #162A44 100%)", blobColor: "rgba(91,141,239,0.14)",  icon: FlaskConical, aurora: ["rgba(91,141,239,0.55)",  "rgba(56,189,248,0.45)",  "rgba(139,92,246,0.40)"] },
+  { accent: "#F59E0B", gradient: "linear-gradient(135deg, #1A1208 0%, #2C1F0A 100%)", blobColor: "rgba(245,158,11,0.12)",  icon: Zap,          aurora: ["rgba(251,146,60,0.55)",  "rgba(245,158,11,0.45)",  "rgba(244,63,94,0.40)"] },
+  { accent: "#22D3EE", gradient: "linear-gradient(135deg, #061819 0%, #0D2D2E 100%)", blobColor: "rgba(34,211,238,0.12)",  icon: Activity,     aurora: ["rgba(34,211,238,0.55)",  "rgba(59,130,246,0.45)",  "rgba(16,185,129,0.40)"] },
+  { accent: "#A78BFA", gradient: "linear-gradient(135deg, #0F0A1E 0%, #1D1040 100%)", blobColor: "rgba(167,139,250,0.12)", icon: Dna,          aurora: ["rgba(167,139,250,0.55)", "rgba(236,72,153,0.45)",  "rgba(99,102,241,0.40)"] },
+  { accent: "#34D399", gradient: "linear-gradient(135deg, #061209 0%, #0E2414 100%)", blobColor: "rgba(52,211,153,0.12)",  icon: Leaf,         aurora: ["rgba(52,211,153,0.55)",  "rgba(34,211,238,0.45)",  "rgba(132,204,22,0.40)"] },
+  { accent: "#38BDF8", gradient: "linear-gradient(135deg, #040E1A 0%, #0A1E35 100%)", blobColor: "rgba(56,189,248,0.12)",  icon: Microscope,   aurora: ["rgba(56,189,248,0.55)",  "rgba(129,140,248,0.45)", "rgba(34,211,238,0.40)"] },
+  { accent: "#F472B6", gradient: "linear-gradient(135deg, #180613 0%, #2C0C22 100%)", blobColor: "rgba(244,114,182,0.12)", icon: HeartPulse,   aurora: ["rgba(244,114,182,0.55)", "rgba(251,113,133,0.45)", "rgba(168,85,247,0.40)"] },
+  { accent: "#C084FC", gradient: "linear-gradient(135deg, #0A0618 0%, #17102E 100%)", blobColor: "rgba(192,132,252,0.12)", icon: Brain,        aurora: ["rgba(192,132,252,0.55)", "rgba(244,114,182,0.45)", "rgba(96,165,250,0.40)"] },
 ];
 
 
@@ -8089,13 +8089,13 @@ export default function CustomerPortal() {
                 className="relative overflow-hidden flex flex-col"
                 style={{ background: "#0B0B0F", borderRadius: 24, boxShadow: "0 16px 40px rgba(0,0,0,0.35)" }}>
 
-                {/* Aurora glow — right edge */}
+                {/* Aurora glow — right side, spreads into the card */}
                 <div className="absolute inset-0 pointer-events-none"
                   style={{
                     background:
-                      "radial-gradient(55% 40% at 106% 6%, rgba(255,146,72,0.5) 0%, transparent 70%)," +
-                      "radial-gradient(50% 38% at 108% 42%, rgba(236,72,153,0.42) 0%, transparent 70%)," +
-                      "radial-gradient(55% 45% at 106% 78%, rgba(139,92,246,0.38) 0%, transparent 72%)",
+                      `radial-gradient(75% 60% at 102% 2%, ${palette.aurora[0]} 0%, transparent 74%),` +
+                      `radial-gradient(70% 55% at 105% 45%, ${palette.aurora[1]} 0%, transparent 74%),` +
+                      `radial-gradient(75% 62% at 100% 92%, ${palette.aurora[2]} 0%, transparent 76%)`,
                   }} />
 
                 {/* Header: icon tile + eyebrow/title + pills */}
