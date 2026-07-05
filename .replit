@@ -56,6 +56,7 @@ VENDOR_SHIPPING_PRICE = "0"
 MOCKUP_PORT = "8081"
 MOCKUP_BASE_PATH = "/__mockup/"
 APP_URL = "https://saltandpeps.co.uk"
+AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 [userenv.production]
 PUBLIC_URL = "saltandpeps.co.uk"

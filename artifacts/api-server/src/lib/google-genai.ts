@@ -54,13 +54,23 @@ class Models {
 
     const endpoint = `${this._baseUrl}/models/${model}:generateContent`;
 
+    // Google's native generativelanguage endpoint authenticates via the
+    // x-goog-api-key header only. Sending an extra "Authorization: Bearer <apiKey>"
+    // makes it treat the key as an OAuth2 token and reject the request (401).
+    // The Replit AI-integrations proxy, by contrast, needs the Bearer header — so
+    // only add it when we are NOT talking to the public Google host.
+    const isGoogleNative = /(^|\.)generativelanguage\.googleapis\.com/.test(this._baseUrl);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": this._apiKey,
+    };
+    if (!isGoogleNative) {
+      headers["Authorization"] = `Bearer ${this._apiKey}`;
+    }
+
     const res = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this._apiKey}`,
-        "x-goog-api-key": this._apiKey,
-      },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
@@ -86,7 +96,11 @@ export class GoogleGenAI {
     apiKey?: string;
     httpOptions?: { baseUrl?: string; apiVersion?: string };
   }) {
-    const apiKey = options?.apiKey ?? "";
+    const apiKey =
+      options?.apiKey ||
+      process.env.GEMINI_API_KEY ||
+      process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
+      "";
     const rawBase =
       options?.httpOptions?.baseUrl ??
       "https://generativelanguage.googleapis.com";
