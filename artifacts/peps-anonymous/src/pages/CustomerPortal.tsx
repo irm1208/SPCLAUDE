@@ -6892,6 +6892,7 @@ export default function CustomerPortal() {
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersStatusFilter, setOrdersStatusFilter] = useState<string>("all");
   const [ordersView, setOrdersView] = useState<"grid" | "list">("grid");
+  const [gbView, setGbView] = useState<"cards" | "table">("cards");
   const [ordersPage, setOrdersPage] = useState(1);
   const [orderTypeFilterOpen, setOrderTypeFilterOpen] = useState(false);
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
@@ -7981,6 +7982,18 @@ export default function CustomerPortal() {
             {activeGbs.length} active group buy{activeGbs.length !== 1 ? "s" : ""}
           </p>
           <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <button onClick={() => setGbView("cards")} title="Card view"
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={gbView === "cards" ? { background: hexToRgba("#2D6BCC", 0.1) } : {}}>
+                <LayoutGrid className="w-4 h-4" style={{ color: gbView === "cards" ? "var(--t-blue)" : T.subtle }} />
+              </button>
+              <button onClick={() => setGbView("table")} title="Table view"
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={gbView === "table" ? { background: hexToRgba("#2D6BCC", 0.1) } : {}}>
+                <LayoutList className="w-4 h-4" style={{ color: gbView === "table" ? "var(--t-blue)" : T.subtle }} />
+              </button>
+            </div>
             <button onClick={() => refetchGb()} disabled={gbLoading}
               title="Refresh"
               className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -8018,7 +8031,7 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className={gbView === "cards" ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3" : "flex flex-col gap-3"}>
           {gbLoading && (
             <div className="col-span-full flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
           )}
@@ -8041,7 +8054,7 @@ export default function CustomerPortal() {
             </motion.div>
           )}
 
-          {!gbLoading && activeGbs.map((gb, idx) => {
+          {!gbLoading && gbView === "cards" && activeGbs.map((gb, idx) => {
             const palette = GB_PALETTE[idx % GB_PALETTE.length];
             const GBIcon = palette.icon;
             const isOrderable = gb.status === "active";
@@ -8193,6 +8206,115 @@ export default function CustomerPortal() {
               </motion.div>
             );
           })}
+
+          {!gbLoading && gbView === "table" && activeGbs.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl overflow-hidden" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                      {["Group Buy", "Organiser", "Status", "Products", "Closes", "My orders", ""].map((h, hi) => (
+                        <th key={hi} className="px-4 py-3 text-[10.5px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: T.subtle }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeGbs.map((gb, idx) => {
+                      const palette = GB_PALETTE[idx % GB_PALETTE.length];
+                      const GBIcon = palette.icon;
+                      const isOrderable = gb.status === "active";
+                      const gbOrders = orders.filter(o => o.groupBuyId === gb.id);
+                      const paid    = gbOrders.filter(o => ["paid", "confirmed", "test_confirmed"].includes(o.paymentStatus));
+                      const pending = gbOrders.filter(o => o.paymentStatus === "pending_confirmation");
+                      const unpaid  = gbOrders.filter(o => o.paymentStatus === "unpaid");
+                      const orderState = unpaid.length > 0
+                        ? { label: `${unpaid.length} unpaid`, color: "#DC2626" }
+                        : pending.length > 0
+                          ? { label: `${pending.length} pending`, color: "#D97706" }
+                          : paid.length > 0
+                            ? { label: `${paid.length} paid`, color: "#059669" }
+                            : null;
+                      const closeDateBadge = getGBCloseDateBadge(gb.closeDate);
+                      const dotColor = GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
+                      const statusLabel = GB_STATUS_LABEL[gb.status] ?? gb.status;
+                      return (
+                        <tr key={gb.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: hexToRgba(palette.accent, 0.12) }}>
+                                <GBIcon className="w-4 h-4" style={{ color: palette.accent }} />
+                              </div>
+                              <div className="min-w-0 max-w-[220px]">
+                                <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>{gb.name}</p>
+                                {gb.manufacturer && <p className="text-[11px] truncate" style={{ color: T.subtle }}>{gb.manufacturer}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] font-bold whitespace-nowrap" style={{ color: T.text }}>{gb.organiserId ?? "Admin"}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                              style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                            {gb.productCount}{gb.currency ? ` · ${gb.currency.toUpperCase()}` : ""}
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                            {closeDateBadge
+                              ? (closeDateBadge.daysStr === "Closed" ? closeDateBadge.dateStr : `${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] whitespace-nowrap" style={{ color: T.muted }}>
+                            {gbOrders.length > 0
+                              ? <>{gbOrders.length}{orderState && <span className="font-semibold ml-1.5" style={{ color: orderState.color }}>{orderState.label}</span>}</>
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => isOrderable ? setLocation(`/order?gbId=${gb.id}`) : setLocation("/account?s=orders")}
+                                className="h-8 px-3.5 rounded-lg text-[11.5px] font-bold text-white whitespace-nowrap"
+                                style={{ background: ACCENT }}>
+                                {isOrderable ? "Order" : "My Orders"}
+                              </button>
+                              <button onClick={() => setInfoGb(gb)} title="Details"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
+                                <Info className="w-3.5 h-3.5" style={{ color: T.muted }} />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  setPendingArchiveId(gb.id);
+                                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
+                                  catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                                  finally { setPendingArchiveId(null); }
+                                }}
+                                disabled={pendingArchiveId === gb.id}
+                                title="Archive"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
+                                {pendingArchiveId === gb.id
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: T.muted }} />
+                                  : <Archive className="w-3.5 h-3.5" style={{ color: T.muted }} />}
+                              </button>
+                              <button onClick={() => setLeaveConfirmGb(gb)} title="Leave"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
+                                <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
         </div>
 
         {!gbLoading && archivedGbs.length > 0 && (
