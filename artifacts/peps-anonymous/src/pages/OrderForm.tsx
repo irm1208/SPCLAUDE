@@ -9,6 +9,7 @@ import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
+import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useGetProducts, useGetDeliveryMethods, useGetSiteConfig } from "@workspace/api-client-react";
@@ -1052,7 +1053,7 @@ export default function OrderForm() {
           </motion.div>
         )}
       </AnimatePresence>
-      <main className="flex-1 px-4 py-5 pb-32 max-w-2xl mx-auto w-full space-y-4">
+      <main className="flex-1 px-4 py-5 pb-48 md:pb-32 max-w-2xl mx-auto w-full space-y-4">
 
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (
@@ -2148,7 +2149,7 @@ export default function OrderForm() {
           borderColor: "var(--t-border)",
         }}
       >
-        <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
+        <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: isMdPlus ? "calc(1rem + env(safe-area-inset-bottom))" : "calc(76px + env(safe-area-inset-bottom))" }}>
           <div className="flex items-center justify-between gap-4 mb-2">
             {!hideOrderTotal && (
               <div className="flex-1 min-w-0">
@@ -2171,6 +2172,13 @@ export default function OrderForm() {
         </div>
       </div>
     </div>
+    <HubBottomNav
+      section={"orders" as HubSection}
+      setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+      hubMoreOpen={false}
+      setHubMoreOpen={() => {}}
+      account={account}
+    />
     </PageLayout>
   );
 }

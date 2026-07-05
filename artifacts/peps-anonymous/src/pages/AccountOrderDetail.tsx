@@ -14,7 +14,8 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
-import { useOrderParcels, type GbParcel } from "@/hooks/use-account";
+import { useOrderParcels, useAccount, type GbParcel } from "@/hooks/use-account";
+import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 
@@ -1768,6 +1769,7 @@ function DirectShippingToggle({
 export default function AccountOrderDetail() {
   const [, params] = useRoute("/account/orders/:id");
   const [, setLocation] = useLocation();
+  const { account } = useAccount();
   const { loadExistingOrder, startTopUpOrder, orderId: draftOrderId, clearOrderId: clearDraftOrderId } = useDraftStore();
 
   const orderId = params?.id ?? null;
@@ -1958,7 +1960,7 @@ export default function AccountOrderDetail() {
     <PageLayout>
       <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
-        <main className="flex-1 px-4 py-5 max-w-md mx-auto w-full">
+        <main className="flex-1 px-4 py-5 pb-24 md:pb-5 max-w-md mx-auto w-full">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
             {/* Back button */}
@@ -2650,6 +2652,13 @@ export default function AccountOrderDetail() {
           </>
         )}
       </AnimatePresence>
+      <HubBottomNav
+        section={"orders" as HubSection}
+        setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+        hubMoreOpen={false}
+        setHubMoreOpen={() => {}}
+        account={account}
+      />
     </PageLayout>
   );
 }

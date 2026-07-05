@@ -4,6 +4,7 @@ import {
   Loader2, CheckCircle, ArrowLeft, TriangleAlert,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
@@ -313,7 +314,7 @@ export default function Review() {
     <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
       <SiteAnnouncements />
 
-      <main className="flex-1 px-4 py-5 pb-36 max-w-2xl mx-auto w-full space-y-4">
+      <main className="flex-1 px-4 py-5 pb-52 md:pb-36 max-w-2xl mx-auto w-full space-y-4">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
 
           <section className="space-y-2">
@@ -538,7 +539,7 @@ export default function Review() {
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t z-20" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
-        <div className="max-w-2xl mx-auto px-4 pt-3 pb-4">
+        <div className="max-w-2xl mx-auto px-4 pt-3 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-4">
           <div className="flex gap-3 mb-2">
             <button
               onClick={() => setLocation(isWholesale ? "/wholesale" : (draft.groupBuyId ? `/order?gbId=${draft.groupBuyId}` : "/order"))}
@@ -576,6 +577,13 @@ export default function Review() {
         />
       )}
     </div>
+    <HubBottomNav
+      section={"orders" as HubSection}
+      setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+      hubMoreOpen={false}
+      setHubMoreOpen={() => {}}
+      account={account}
+    />
     </PageLayout>
   );
 }
