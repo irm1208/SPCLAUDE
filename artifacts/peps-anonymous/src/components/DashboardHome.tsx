@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell }
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { HubBottomNav } from "@/components/HubBottomNav";
+import { SageChat } from "@/components/SageChat";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
 // ─── Props (structural — accepts the real portal objects) ────────────────────
@@ -144,6 +145,9 @@ export function DashboardHome({
   const [collapsed, setCollapsed] = useState(false);
   const [heroQ, setHeroQ] = useState("");
   const [heroFocused, setHeroFocused] = useState(false);
+  const [sageOpen, setSageOpen] = useState(false);
+  const [sageSeed, setSageSeed] = useState("");
+  const askSage = (q: string) => { setSageSeed(q); setSageOpen(true); };
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // ── Global search + dropdown menus ──
@@ -943,13 +947,13 @@ export function DashboardHome({
                         onChange={e => setHeroQ(e.target.value)}
                         onFocus={() => setHeroFocused(true)}
                         onBlur={() => setHeroFocused(false)}
-                        onKeyDown={e => { if (e.key === "Enter" && heroQ.trim()) onSection("blood-tests"); }}
+                        onKeyDown={e => { if (e.key === "Enter" && heroQ.trim()) { askSage(heroQ.trim()); setHeroQ(""); } }}
                         placeholder="Type your question or ask about your bloodwork…"
                         className="flex-1 min-w-0 bg-transparent outline-none"
                         style={{ color: "#fff", fontSize: 13.5 }}
                       />
                       <button
-                        onClick={() => onSection("blood-tests")}
+                        onClick={() => { if (heroQ.trim()) { askSage(heroQ.trim()); setHeroQ(""); } }}
                         disabled={!heroQ.trim()}
                         className="dh-send flex items-center justify-center rounded-lg shrink-0 active:scale-95"
                         style={{ width: 40, height: 40, background: ACCENT, color: "#fff", opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
@@ -962,13 +966,13 @@ export function DashboardHome({
                     {/* Quick prompts */}
                     <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
                       {([
-                        { label: "Analyse my bloodwork", Icon: Droplet, section: "blood-tests" },
-                        { label: "Review a protocol", Icon: ClipboardList, section: "protocols" },
-                        { label: "My compounds", Icon: FlaskConical, section: "compounds" },
-                      ] as { label: string; Icon: React.ElementType; section: string }[]).map(chip => (
+                        { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
+                        { label: "Review a protocol", Icon: ClipboardList, prompt: "Help me review a protocol — what should I keep in mind?" },
+                        { label: "My compounds", Icon: FlaskConical, prompt: "Give me an overview of my active compounds and how they work together." },
+                      ] as { label: string; Icon: React.ElementType; prompt: string }[]).map(chip => (
                         <button
                           key={chip.label}
-                          onClick={() => onSection(chip.section)}
+                          onClick={() => askSage(chip.prompt)}
                           className="dh-chip flex items-center gap-1.5 rounded-full"
                           style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", padding: "9px 14px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)" }}
                         >
@@ -1362,6 +1366,8 @@ export function DashboardHome({
       </div>
 
       {navProps && <HubBottomNav {...(navProps as unknown as React.ComponentProps<typeof HubBottomNav>)} />}
+
+      <SageChat open={sageOpen} onClose={() => setSageOpen(false)} seed={sageSeed} t={T} accent={ACCENT} />
     </div>
   );
 }

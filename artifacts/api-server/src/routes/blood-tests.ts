@@ -1507,6 +1507,10 @@ Do NOT say "Hello" or "Hi there" — just get straight into the findings. You ar
   }
 });
 
+// Guardrail regex: block direct questions about the underlying AI technology (not health questions).
+// Shared by both the blood-test path and the compounds-only (no blood test yet) path.
+const AI_IDENTITY_RE = /\bwhich\s+(ai|llm)\b|\bwhat\s+(ai|llm)\b|\bare\s+you\s+(gpt|claude|gemini|llama|mistral|chatgpt)\b|\bwho\s+made\s+you\b|\bopenai\b|\banthropic\b|\bgoogle\s+ai\b|\bwhat\s+(ai|llm)\s+model\b|\blanguage\s+model\b|\bwhat\s+are\s+you\b.*\b(ai|bot|model)\b/i;
+
 // POST /api/blood-tests/discuss — contextual AI-like chat with blood test data
 router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
@@ -1541,30 +1545,114 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   const effectiveLimit = await getDiscussLimit(tg);
 
   if (!session) {
-    // No tests uploaded yet — do not consume quota
-    const [acct] = await db
-      .select({ discussCount: accountsTable.discussCount })
-      .from(accountsTable)
-      .where(eq(accountsTable.telegramUsername, tg));
-    const currentUsed = acct?.discussCount ?? 0;
-    res.json({
-      response: "You haven't logged any blood tests yet. Head to the Upload tab to add your first test, then I can help you interpret the results.",
-      contextSession: null,
-      used: currentUsed,
-      limit: effectiveLimit,
-    });
+    // No blood test on file. If the user has active compounds, still answer using that context;
+    // otherwise there's nothing to personalise on, so don't consume quota.
+    const compoundRowsNoBt = await db
+      .select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
+      .from(compoundLogsTable)
+      .where(eq(compoundLogsTable.telegramUsername, tg));
+    const activeCompoundsNoBt = compoundRowsNoBt.filter((c) => !c.endDate).map((c) => c.compoundName);
+
+    const readUsed = async () => {
+      const [acct] = await db
+        .select({ discussCount: accountsTable.discussCount })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, tg));
+      return acct?.discussCount ?? 0;
+    };
+
+    if (activeCompoundsNoBt.length === 0) {
+      res.json({
+        response: "You haven't logged any blood tests or active compounds yet. Add your compounds or upload a blood test, and I can give you personalised guidance tailored to your own data.",
+        contextSession: null,
+        used: await readUsed(),
+        limit: effectiveLimit,
+      });
+      return;
+    }
+
+    // AI-identity guardrail — do not consume quota
+    if (AI_IDENTITY_RE.test(message)) {
+      res.json({
+        response: "I'm not able to share information about the underlying technology.",
+        contextSession: null,
+        used: await readUsed(),
+        limit: effectiveLimit,
+      });
+      return;
+    }
+
+    // Consume one quota slot, roll back on failure
+    const updatedNoBt = await db
+      .update(accountsTable)
+      .set({ discussCount: sql`${accountsTable.discussCount} + 1` })
+      .where(eq(accountsTable.telegramUsername, tg))
+      .returning({ newCount: accountsTable.discussCount });
+    const newCountNoBt = updatedNoBt[0]?.newCount ?? (await readUsed());
+
+    try {
+      const topics = extractTopicsForCache(message, []);
+      const cachedKnowledge = await lookupKnowledgeCache(topics);
+      const result = await callGeminiDiscuss(
+        message,
+        "General health (no blood test on file yet)",
+        new Date().toISOString().slice(0, 10),
+        [],
+        history,
+        activeCompoundsNoBt,
+        [],
+        cachedKnowledge,
+      );
+
+      logCustomerActivity({
+        telegramUsername: tg,
+        eventCategory: "blood_test",
+        eventType: "blood_test.ai_discussion_message",
+        entityId: "compounds-only",
+        actorType: "customer",
+        metadata: { sender: "user", content: message, conversationId: "compounds-only", characterCount: message.length },
+      }).catch(() => {});
+
+      logCustomerActivity({
+        telegramUsername: tg,
+        eventCategory: "blood_test",
+        eventType: "blood_test.ai_discussion_message",
+        entityId: "compounds-only",
+        actorType: "system",
+        metadata: { sender: "ai", content: result.text, conversationId: "compounds-only", characterCount: result.text.length },
+      }).catch(() => {});
+
+      res.json({
+        response: result.text,
+        chips: result.chips,
+        sources: result.sources,
+        contextSession: null,
+        used: newCountNoBt,
+        limit: effectiveLimit,
+      });
+    } catch (err) {
+      console.error("[discuss] Gemini error (compounds-only):", err);
+      await db
+        .update(accountsTable)
+        .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
+        .where(eq(accountsTable.telegramUsername, tg));
+      res.status(500).json({
+        error: "ai_unavailable",
+        response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
+        contextSession: null,
+        used: newCountNoBt - 1,
+        limit: effectiveLimit,
+      });
+    }
     return;
   }
-
-  // Guardrail: only block direct questions about the underlying AI technology (not health questions)
-  const LLM_KEYWORDS = /\bwhich\s+(ai|llm)\b|\bwhat\s+(ai|llm)\b|\bare\s+you\s+(gpt|claude|gemini|llama|mistral|chatgpt)\b|\bwho\s+made\s+you\b|\bopenai\b|\banthropic\b|\bgoogle\s+ai\b|\bwhat\s+(ai|llm)\s+model\b|\blanguage\s+model\b|\bwhat\s+are\s+you\b.*\b(ai|bot|model)\b/i;
 
   const getUsedCount = async () => {
     const [a] = await db.select({ discussCount: accountsTable.discussCount }).from(accountsTable).where(eq(accountsTable.telegramUsername, tg));
     return a?.discussCount ?? 0;
   };
 
-  if (LLM_KEYWORDS.test(message)) {
+  if (AI_IDENTITY_RE.test(message)) {
     res.json({
       response: "I'm not able to share information about the underlying technology.",
       contextSession: null,
