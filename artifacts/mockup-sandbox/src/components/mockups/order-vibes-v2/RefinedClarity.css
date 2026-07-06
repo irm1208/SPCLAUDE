@@ -1,0 +1,50 @@
+/* RefinedClarity.css */
+.refined-clarity {
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-elevation: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+  --shadow-sticky: 0 -4px 24px -4px rgba(0, 0, 0, 0.08);
+}
+
+.refined-clarity .card-elevated {
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--t-border);
+}
+
+.refined-clarity .product-panel-elevated {
+  box-shadow: var(--shadow-elevation);
+}
+
+.refined-clarity .sidebar-active-item {
+  background: linear-gradient(90deg, rgba(1, 118, 211, 0.08) 0%, rgba(1, 118, 211, 0.02) 100%);
+  border-right: 3px solid #0176D3;
+}
+
+.refined-clarity .nav-btn-hover:hover {
+  background-color: rgba(0,0,0,0.03);
+}
+
+.refined-clarity .qty-btn {
+  transition: all 0.15s ease;
+}
+.refined-clarity .qty-btn:hover {
+  background-color: rgba(255,255,255,0.08);
+}
+.refined-clarity .qty-btn:active {
+  background-color: rgba(255,255,255,0.12);
+}
+
+.refined-clarity .cta-btn {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(27, 58, 122, 0.25);
+}
+.refined-clarity .cta-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(27, 58, 122, 0.35);
+  filter: brightness(1.05);
+}
+.refined-clarity .cta-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(27, 58, 122, 0.3);
+}
