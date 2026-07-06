@@ -234,6 +234,7 @@ function getGBCloseDateBadge(iso: string | null): { dateStr: string; daysStr: st
 // ─── Order-type colour coding ────────────────────────────────────────────────
 // Each order type gets a consistent accent colour so types are easy to tell apart.
 const WHOLESALE_ACCENT = "#10B981";
+const SHARED_WHOLESALE_ACCENT = "#F97316";
 const SHOP_ACCENT = "#7C3AED";
 
 // Deterministic accent per group buy so multiple group buys are visually distinct
@@ -290,39 +291,41 @@ function OrderGridCard({
 }) {
   const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
   const pMeta = PAYMENT_META[order.paymentStatus] ?? PAYMENT_META.unpaid!;
-  const { label: kindLabel, Icon } = ORDER_KIND_META[kind];
+  const { label: metaLabel, Icon } = ORDER_KIND_META[kind];
+  const kindLabel = order.orderType === "wholesale_shared" ? "Shared Wholesale" : metaLabel;
   const visible = order.lineItems.slice(0, 3);
   const extra = order.lineItems.length - visible.length;
   const done = order.status === "Completed";
   const cancelled = order.status === "Cancelled";
   const terminal = done || cancelled;
+  // Bold colour-blocked header per order type (deepened towards navy so white text stays readable)
+  const bandBg = `linear-gradient(135deg, color-mix(in srgb, ${accent} 82%, #12233F) 0%, color-mix(in srgb, ${accent} 55%, #12233F) 100%)`;
 
   return (
-    <div className="rounded-2xl p-4 flex flex-col h-full"
+    <div className="rounded-2xl flex flex-col h-full overflow-hidden"
       style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
-      {/* header: avatar + title + status */}
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: hexToRgba(accent, 0.12), border: `1px solid ${hexToRgba(accent, 0.22)}` }}>
-          <Icon className="w-[18px] h-[18px]" style={{ color: accent }} />
+      {/* colour-block header: type icon + title + status */}
+      <div className="px-4 pt-3.5 pb-3 flex items-start gap-3 relative overflow-hidden" style={{ background: bandBg }}>
+        <div className="absolute -right-6 -top-10 w-28 h-28 rounded-full pointer-events-none" style={{ background: "rgba(255,255,255,0.10)" }} />
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
+          <Icon className="w-[18px] h-[18px] text-white" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[14px] font-bold truncate" style={{ color: T.text }}>{title}</p>
+            <p className="text-[9.5px] font-bold uppercase tracking-[0.12em] truncate" style={{ color: "rgba(255,255,255,0.78)" }}>{kindLabel}</p>
             <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full shrink-0"
-              style={{ color: sMeta.color, background: `color-mix(in srgb, ${sMeta.color} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${sMeta.color} 28%, transparent)` }}>
+              style={{ color: "#fff", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
               {sMeta.label}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 mt-1 text-[11.5px]" style={{ color: T.subtle }}>
-            <Icon className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-medium">{kindLabel}</span>
-            <span className="truncate">· {timeAgo(order.createdAt)}</span>
-          </div>
+          <p className="text-[14px] font-bold text-white truncate mt-0.5">{title}</p>
+          <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.68)" }}>{timeAgo(order.createdAt)}</p>
         </div>
       </div>
 
+      <div className="p-4 pt-0 flex flex-col flex-1">
       {/* info: code + payment */}
       <div className="flex items-center justify-between gap-2 mt-3.5 pb-3.5" style={{ borderBottom: `1px dashed ${T.border}` }}>
         <div className="flex items-center gap-1.5 min-w-0">
@@ -398,6 +401,7 @@ function OrderGridCard({
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 }
@@ -430,7 +434,11 @@ function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order
 
   const isGb = !!order.groupBuyId || !!groupBuyName;
   const isWholesale = order.orderType === "wholesale" || order.orderType === "wholesale_shared";
-  const typeColor = accent ?? (isGb ? GB_PALETTE[0]!.accent : isWholesale ? WHOLESALE_ACCENT : SHOP_ACCENT);
+  const typeColor = accent ?? (isGb
+    ? GB_PALETTE[0]!.accent
+    : order.orderType === "wholesale_shared" ? SHARED_WHOLESALE_ACCENT
+    : isWholesale ? WHOLESALE_ACCENT
+    : SHOP_ACCENT);
   const TypeIcon = isGb ? Users : isWholesale ? Boxes : ShoppingBag;
   const typeLabel = isGb
     ? `${groupBuyName ?? "Group Buy"} Order`
@@ -7589,7 +7597,14 @@ export default function CustomerPortal() {
       const acc = gbAccentColor(g.gbId);
       for (const o of g.orders) allCards.push({ order: o, kind: "gb", title: g.gb?.name ?? "Group Buy", accent: acc, gb: g.gb, gbOrders: g.orders });
     }
-    for (const o of wholesaleOrders) allCards.push({ order: o, kind: "wholesale", title: "Wholesale Order", accent: WHOLESALE_ACCENT, gb: null, gbOrders: [] });
+    for (const o of wholesaleOrders) allCards.push({
+      order: o,
+      kind: "wholesale",
+      title: o.orderType === "wholesale_shared" ? "Shared Wholesale Order" : "Wholesale Order",
+      accent: o.orderType === "wholesale_shared" ? SHARED_WHOLESALE_ACCENT : WHOLESALE_ACCENT,
+      gb: null,
+      gbOrders: [],
+    });
     for (const o of shopOrders) allCards.push({ order: o, kind: "shop", title: "Shop Order", accent: SHOP_ACCENT, gb: null, gbOrders: [] });
     allCards.sort((a, b) => (b.order.createdAt || "").localeCompare(a.order.createdAt || ""));
 
