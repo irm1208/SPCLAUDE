@@ -545,7 +545,6 @@ function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order
           return null;
         })()}
       </div>
-
       {/* ── Zone B: Items + Logistics ────────────────────────────────── */}
       <div
         className="mx-3 mb-3 rounded-xl overflow-hidden"
@@ -618,7 +617,6 @@ function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order
           </div>
         )}
       </div>
-
       {/* ── Zone D: Action ───────────────────────────────────────────── */}
       <div className="flex" style={{ borderTop: `1px solid ${T.border}` }}>
         {onReorder && (
@@ -786,7 +784,6 @@ function TelegramCard() {
           </span>
         )}
       </div>
-
       <div className="p-4 space-y-4">
         {linked ? (
           <>
@@ -851,7 +848,7 @@ function TelegramCard() {
           </>
         ) : (
           /* Not linked — unified single-page layout */
-          <div className="space-y-3">
+          (<div className="space-y-3">
             <div className="rounded-xl p-3.5 space-y-3" style={{ background: "rgba(27,58,122,0.05)", border: "1px solid rgba(27,58,122,0.15)" }}>
 
               {/* Step 1 */}
@@ -904,7 +901,6 @@ function TelegramCard() {
                 </div>
               </div>
             </div>
-
             <div className="flex gap-2">
               <button onClick={handleLinkInit} disabled={linkInit.isPending}
                 className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-50"
@@ -945,9 +941,8 @@ function TelegramCard() {
                   : "Done — Check Status"}
               </button>
             </div>
-
             <TelegramTestBanner result={testResult} error={testError} pendingCode={linkData?.code} />
-          </div>
+          </div>)
         )}
       </div>
     </div>
@@ -1012,7 +1007,6 @@ function CompoundCard({
           {expanded ? <ChevronUp className="w-4 h-4" style={{ color: T.subtle }} /> : <ChevronDown className="w-4 h-4" style={{ color: T.subtle }} />}
         </div>
       </button>
-
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
@@ -2483,7 +2477,6 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
           </p>
         </form>
       </motion.div>
-
       {showRulesetModal && (
         <RulesetModal
           onAccepted={async () => {
@@ -9809,7 +9802,7 @@ export default function CustomerPortal() {
             <Scale className="w-5 h-5" strokeWidth={2.2} />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>GLP-1 Tracker</h2>
+            <h2 className="font-extrabold leading-tight text-[#ffffff]" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>GLP-1 Tracker</h2>
             <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>Track your shots, weight and progress.</p>
           </div>
           {glp1SubTab === "shots" && (
