@@ -15,6 +15,7 @@ import { PROTOCOLS } from "@/data/protocols";
 import { PageLayout } from "@/components/PageLayout";
 import { PEPTIDE_GROUPS, getCanonicalGroup, getPeptideDisplayName } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
+import { doseForBatchCode } from "@/lib/batch-prefixes";
 import type { PeptideGroup } from "@/lib/peptide-groups";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import {
@@ -848,7 +849,7 @@ function TestTable({ tests, indexFor, onView }: { tests: LabTest[]; indexFor: (t
         <table className="w-full text-left" style={{ minWidth: 860 }}>
           <thead>
             <tr className="border-b" style={{ borderColor: "var(--t-border)" }}>
-              {["Compound", "Source", "Purity", "Actual Mass", "Batch", "Analysis", "Supplier", "Date", "Status"].map(h => (
+              {["Compound", "Listed Mass", "Purity", "Actual Mass", "Batch", "Analysis", "Supplier", "Date", "Status"].map(h => (
                 <th key={h} className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--t-subtle)" }}>{h}</th>
               ))}
             </tr>
@@ -870,12 +871,19 @@ function TestTable({ tests, indexFor, onView }: { tests: LabTest[]; indexFor: (t
                   className="border-b last:border-b-0 cursor-pointer transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
                   style={{ borderColor: "var(--t-border)" }}
                 >
-                  <td className="px-3 py-2.5 text-[13px] font-bold whitespace-nowrap max-w-[220px] truncate" style={{ color: "var(--t-text)" }}>{buildTestTitle(test)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: "var(--t-muted)", borderColor: "var(--t-border)", background: "var(--t-bg)" }}>
-                      {test.isThirdPartyTest ? "3rd Party" : "Vendor"}
-                    </span>
+                  <td className="px-3 py-2.5 whitespace-nowrap max-w-[240px]">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[13px] font-bold truncate" style={{ color: "var(--t-text)" }}>{buildTestTitle(test)}</span>
+                      <span
+                        className="text-[9px] font-extrabold px-1 py-px rounded shrink-0 tracking-wide"
+                        title={test.isThirdPartyTest ? "3rd Party" : "Vendor"}
+                        style={{ color: "var(--t-subtle)", border: "1px solid var(--t-border)", background: "var(--t-bg)" }}
+                      >
+                        {test.isThirdPartyTest ? "TP" : "V"}
+                      </span>
+                    </div>
                   </td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{doseForBatchCode(test.batchCode) ?? "—"}</td>
                   <td className="px-3 py-2.5 text-[13px] font-semibold whitespace-nowrap" style={{ color: "var(--t-text)" }}>{test.purityPct != null ? `${formatPurity(test.purityPct)}%` : "—"}</td>
                   <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{test.mgAmount != null ? `${test.mgAmount} ${test.massUnit ?? "mg"}` : "—"}</td>
                   <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{test.batchCode ?? "—"}</td>

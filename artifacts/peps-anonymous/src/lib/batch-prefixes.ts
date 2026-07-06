@@ -316,3 +316,16 @@ export function anyBatchCodeMatches(batchCodes: string[], prefixes: string[]): b
   if (prefixes.length === 0) return false;
   return batchCodes.some(code => prefixes.some(p => batchCodeMatchesPrefix(code, p)));
 }
+
+/**
+ * Resolve the labelled (listed) per-vial dose for a lab-test batch code via
+ * its prefix, e.g. "ZE15-0612" → "15mg", "G10-0610" → "10iu". Returns null for
+ * unknown prefixes and for blends whose table entry carries no single dose.
+ */
+export function doseForBatchCode(batchCode: string | null | undefined): string | null {
+  if (!batchCode) return null;
+  for (const e of BATCH_PREFIX_TABLE) {
+    if (e.dose && batchCodeMatchesPrefix(batchCode, e.prefix)) return e.dose;
+  }
+  return null;
+}
