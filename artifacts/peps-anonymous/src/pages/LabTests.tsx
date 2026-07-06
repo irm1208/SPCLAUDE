@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   TestTube, Search, X, ExternalLink, CheckCircle2, XCircle,
   Microscope, ChevronDown, ChevronLeft, ChevronRight, Loader2,
-  FlaskConical, AlertTriangle, ShieldCheck, Calendar, Send,
+  AlertTriangle, ShieldCheck, Send,
   BookOpen, ArrowRight, Activity, Beaker, BarChart3, Upload,
   Filter, Users, Building2, Star, TrendingUp, Award, RefreshCw,
   ClipboardList, Link2, Tag, Sparkles, Share2, SlidersHorizontal, Plus
@@ -748,11 +748,27 @@ function FilterBar({
 }
 
 // ─── TestCard ───────────────────────────────────────────────────────────────
-const COA_MUTED = "rgba(196,200,235,0.55)";
-const COA_LABEL = "rgba(196,200,235,0.45)";
+const COA_MUTED = "rgba(235,235,245,0.6)";
+const COA_LABEL = "rgba(235,235,245,0.4)";
 const COA_GREEN = "#34D399";
 const COA_BLUE = "#7C9EF5";
 const COA_RED = "#F87171";
+
+// Aurora palettes — deterministic per compound name
+const AURORA_PALETTES: [string, string, string][] = [
+  ["#FF9E64", "#FF5CA8", "#8B5CF6"], // sunset
+  ["#34D399", "#22D3EE", "#6366F1"], // borealis
+  ["#C084FC", "#F472B6", "#38BDF8"], // orchid
+  ["#FBBF24", "#FB7185", "#A855F7"], // ember
+  ["#38BDF8", "#2DD4BF", "#A78BFA"], // ocean
+  ["#F472B6", "#E879F9", "#60A5FA"], // rose
+];
+function auroraFor(name: string | null | undefined): [string, string, string] {
+  const s = (name ?? "").toLowerCase().trim();
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AURORA_PALETTES[h % AURORA_PALETTES.length];
+}
 
 function coaStatusBadge(test: LabTest): { label: string; color: string } | null {
   if (test.purityPct != null) {
@@ -770,14 +786,23 @@ function coaStatusBadge(test: LabTest): { label: string; color: string } | null 
   return null;
 }
 
-function CoaStat({ label, value, suffix, suffixColor, align = "left" }: { label: string; value: string; suffix?: string; suffixColor?: string; align?: "left" | "right" }) {
+function CoaBigStat({ label, value, suffix }: { label: string; value: string; suffix?: string }) {
   return (
-    <div className={`min-w-0 flex flex-col gap-1 ${align === "right" ? "items-end text-right" : "items-start"}`}>
-      <span className="text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: COA_LABEL }}>{label}</span>
-      <span className="font-black text-[22px] leading-none tracking-tight truncate max-w-full" style={{ color: "#fff" }}>
+    <div className="min-w-0">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-1" style={{ color: COA_LABEL }}>{label}</div>
+      <div className="font-bold text-[34px] leading-none tracking-tight truncate" style={{ color: "#fff" }}>
         {value}
-        {suffix && <span className="text-[13px] font-extrabold ml-0.5" style={{ color: suffixColor ?? COA_BLUE }}>{suffix}</span>}
-      </span>
+        {suffix && <span className="text-[17px] font-semibold ml-1" style={{ color: "rgba(255,255,255,0.65)" }}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+function CoaRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-[13px] font-medium shrink-0" style={{ color: "rgba(255,255,255,0.92)" }}>{label}</span>
+      <span className="text-[13px] font-medium truncate" style={{ color: valueColor ?? COA_MUTED }}>{value}</span>
     </div>
   );
 }
@@ -799,6 +824,9 @@ function TestCard({ test, index, onView }: { test: LabTest; index: number; onVie
     );
   };
 
+  const [a1, a2, a3] = auroraFor(test.peptideName ?? buildTestTitle(test));
+  const initial = (test.peptideName ?? buildTestTitle(test) ?? "?").trim().charAt(0).toUpperCase() || "?";
+
   return (
     <motion.div
       role="button"
@@ -808,131 +836,146 @@ function TestCard({ test, index, onView }: { test: LabTest; index: number; onVie
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
-      className="text-left w-full rounded-2xl overflow-hidden cursor-pointer group transition-all duration-200 focus:outline-none focus-visible:ring-2"
+      className="relative text-left w-full rounded-3xl overflow-hidden cursor-pointer group transition-all duration-200 focus:outline-none focus-visible:ring-2"
       style={{
-        background: "linear-gradient(165deg, #272456 0%, #1B1A42 100%)",
-        border: "1px solid rgba(255,255,255,0.09)",
-        boxShadow: "0 4px 16px rgba(12,12,40,0.25)",
+        background: "linear-gradient(160deg, #0E0D13 0%, #131118 55%, #16131C 100%)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        boxShadow: "0 6px 22px rgba(0,0,0,0.35)",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = "0 12px 30px rgba(12,12,40,0.4)";
+        e.currentTarget.style.boxShadow = "0 14px 34px rgba(0,0,0,0.5)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "none";
-        e.currentTarget.style.boxShadow = "0 4px 16px rgba(12,12,40,0.25)";
+        e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.35)";
       }}
     >
-      <div className="p-4 flex flex-col h-full gap-3">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: COA_MUTED }}>
-            Certificate of Analysis
-          </span>
-          <div className="flex items-center gap-2 shrink-0">
+      {/* Aurora glow — per-compound palette, bleeding in from the right edge */}
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none transition-opacity duration-300 group-hover:opacity-100 opacity-90"
+        style={{
+          background: [
+            `radial-gradient(75% 55% at 108% 6%, color-mix(in srgb, ${a1} 62%, transparent) 0%, transparent 62%)`,
+            `radial-gradient(60% 50% at 112% 48%, color-mix(in srgb, ${a2} 55%, transparent) 0%, transparent 65%)`,
+            `radial-gradient(65% 55% at 106% 96%, color-mix(in srgb, ${a3} 48%, transparent) 0%, transparent 62%)`,
+          ].join(", "),
+          filter: "blur(22px)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `radial-gradient(30% 22% at 103% 12%, color-mix(in srgb, ${a1} 55%, transparent) 0%, transparent 70%)`,
+          filter: "blur(8px)",
+        }}
+      />
+
+      <div className="relative z-10 p-5 flex flex-col h-full gap-4">
+        {/* Header: icon tile left, pills right */}
+        <div className="flex items-center justify-between gap-3">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-lg"
+            style={{
+              background: "linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06))",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "#fff",
+            }}
+          >
+            {initial}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold"
+              style={{ background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)" }}
+            >
+              {test.isThirdPartyTest ? <Star className="w-3 h-3" /> : <Building2 className="w-3 h-3" />}
+              {test.isThirdPartyTest ? "3rd Party" : "Vendor"}
+            </span>
             <button
               onClick={handleShare}
-              className="p-0.5 rounded transition-opacity hover:opacity-100 opacity-70"
-              style={{ color: COA_MUTED }}
+              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/15"
+              style={{ background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)" }}
               title="Copy report link"
               aria-label="Copy report link"
             >
               <Share2 className="w-3.5 h-3.5" />
             </button>
-            <ShieldCheck className="w-3.5 h-3.5" style={{ color: COA_GREEN }} />
           </div>
         </div>
 
-        {/* Source + supplier pills */}
-        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-          <span
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase"
-            style={{ border: "1px solid rgba(255,255,255,0.14)", color: COA_MUTED }}
-          >
-            {test.isThirdPartyTest ? <Star className="w-3 h-3" /> : <Building2 className="w-3 h-3" />}
-            {test.isThirdPartyTest ? "3rd Party" : "Vendor"}
-          </span>
-          {test.supplier && (
-            <span
-              className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold max-w-[10rem] truncate"
-              style={{ background: "rgba(255,255,255,0.1)", color: "#fff" }}
-            >
-              {test.supplier}
-            </span>
+        {/* Title */}
+        <div className="min-w-0 -mt-1">
+          <div className="text-[11px] font-medium" style={{ color: COA_LABEL }}>
+            Certificate of Analysis
+          </div>
+          <h3 className="text-[16px] font-bold leading-snug break-words" style={{ color: "#fff" }}>
+            {buildTestTitle(test)}
+          </h3>
+        </div>
+
+        {/* Big stat */}
+        <div className="pt-1">
+          {showPurity ? (
+            <CoaBigStat label="Purity" value={formatPurity(test.purityPct)} suffix="%" />
+          ) : showEndotoxinOnly ? (
+            <CoaBigStat label="Endotoxin" value={String(test.endotoxinEuMg)} suffix="EU/Vial" />
+          ) : test.mgAmount != null ? (
+            <CoaBigStat label="Actual Mass" value={String(test.mgAmount)} suffix={test.massUnit ?? "mg"} />
+          ) : (
+            <CoaBigStat label="Result" value={test.sterilityPass === true ? "Pass" : test.sterilityPass === false ? "Fail" : "—"} />
           )}
         </div>
 
-        {/* Compound name */}
-        <h3 className="font-black text-lg leading-tight break-words min-w-0" style={{ color: "#fff" }}>
-          {buildTestTitle(test)}
-        </h3>
-
-        {/* Big stats */}
-        {showPurity ? (
-          <div className="flex items-start justify-between gap-3">
-            <CoaStat label="Purity" value={formatPurity(test.purityPct)} suffix="%" suffixColor={COA_GREEN} />
-            <div className="self-stretch w-px" style={{ background: "rgba(255,255,255,0.1)" }} />
-            <CoaStat
-              label="Actual Mass"
-              value={test.mgAmount != null ? String(test.mgAmount) : "—"}
-              suffix={test.mgAmount != null ? (test.massUnit ?? "mg") : undefined}
-              align="right"
+        {/* Detail rows */}
+        <div className="space-y-2.5 pt-1">
+          {showPurity && test.mgAmount != null && (
+            <CoaRow label="Actual Mass" value={`${test.mgAmount} ${test.massUnit ?? "mg"}`} />
+          )}
+          {showPurity && test.endotoxinEuMg != null && (
+            <CoaRow
+              label="Endotoxin"
+              value={`${test.endotoxinEuMg} EU/Vial`}
+              valueColor={
+                endotoxinTier(test.endotoxinEuMg).label === "Excellent" ? COA_GREEN
+                : endotoxinTier(test.endotoxinEuMg).label === "Acceptable" ? COA_BLUE
+                : COA_RED
+              }
             />
-          </div>
-        ) : showEndotoxinOnly ? (
-          <CoaStat label="Endotoxin" value={String(test.endotoxinEuMg)} suffix="EU/Vial" />
-        ) : test.mgAmount != null ? (
-          <CoaStat label="Actual Mass" value={String(test.mgAmount)} suffix={test.massUnit ?? "mg"} />
-        ) : (
-          <CoaStat label="Result" value={test.sterilityPass === true ? "Pass" : test.sterilityPass === false ? "Fail" : "—"} />
-        )}
-
-        {/* Batch / Analysis rows */}
-        <div className="pt-2.5 space-y-1.5" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[9px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: COA_LABEL }}>Batch</span>
-            <span className="font-mono text-[11px] font-bold truncate" style={{ color: "#fff" }}>{test.batchCode ?? "—"}</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[9px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: COA_LABEL }}>Analysis</span>
-            <span className="text-[11px] font-semibold truncate" style={{ color: "rgba(255,255,255,0.85)" }}>{analysisLabel ?? "—"}</span>
-          </div>
-        </div>
-
-        {/* Status + date */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {badge && (
-            <span
-              className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide"
-              style={{ border: `1px solid color-mix(in srgb, ${badge.color} 45%, transparent)`, color: badge.color, background: `color-mix(in srgb, ${badge.color} 8%, transparent)` }}
-            >
-              {badge.label}
-            </span>
           )}
-          {displayDate && (
+          <CoaRow label="Batch" value={test.batchCode ?? "—"} />
+          <CoaRow label="Analysis" value={analysisLabel ?? "—"} />
+          {test.supplier && <CoaRow label="Supplier" value={test.supplier} />}
+        </div>
+
+        {/* Footer */}
+        <div className="mt-auto pt-3.5" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {badge && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-wide shrink-0" style={{ color: badge.color }}>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {badge.label}
+                </span>
+              )}
+              {displayDate && (
+                <span className="text-[11px] font-medium truncate" style={{ color: COA_LABEL }}>
+                  {displayDate}
+                </span>
+              )}
+            </div>
             <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold"
-              style={{ border: "1px solid rgba(255,255,255,0.12)", color: COA_MUTED }}
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors group-hover:bg-white/15"
+              style={{ background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)" }}
+              title="View report"
             >
-              <Calendar className="w-3 h-3" />
-              {displayDate}
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
             </span>
-          )}
-        </div>
-
-        <div className="text-[10px] font-medium" style={{ color: COA_LABEL }}>
-          Tested by {test.labName}
-        </div>
-
-        {/* View Report */}
-        <div className="mt-auto">
-          <div
-            className="w-full h-9 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition-colors group-hover:brightness-125"
-            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }}
-          >
-            <FlaskConical className="w-3.5 h-3.5" style={{ color: COA_MUTED }} />
-            View Report
-            <ArrowRight className="w-3.5 h-3.5" />
+          </div>
+          <div className="text-[10px] font-medium mt-1.5" style={{ color: "rgba(235,235,245,0.3)" }}>
+            Tested by {test.labName}
           </div>
         </div>
       </div>
