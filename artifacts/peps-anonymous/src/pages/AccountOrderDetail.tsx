@@ -10,6 +10,7 @@ import {
   Home, ExternalLink, Megaphone,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PageLayout } from "@/components/PageLayout";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
@@ -362,8 +363,8 @@ function AccountShippingAddressSection({
 
   const hasExisting = !!(existingName && existingAddress);
 
-  // Always start collapsed — the box is a tap-to-open required step
-  const [expanded, setExpanded] = useState(false);
+  // The address editor opens in a popup modal
+  const [open, setOpen] = useState(false);
   // Track the "live" saved name/address (updated after each save)
   const [liveName, setLiveName] = useState(existingName ?? "");
   const [liveAddress, setLiveAddress] = useState(existingAddress ?? "");
@@ -499,7 +500,7 @@ function AccountShippingAddressSection({
       setLiveName(j.shippingName);
       setLiveAddress(j.shippingAddress);
       setJustSaved(true);
-      setExpanded(false);
+      setOpen(false);
       setTimeout(() => setJustSaved(false), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save address");
@@ -526,8 +527,8 @@ function AccountShippingAddressSection({
         borderColor: addressIsSet
           ? isDark ? "rgba(74,222,128,0.3)" : "rgba(22,163,74,0.3)"
           : `${NAVY}55`,
-        borderStyle: addressIsSet || expanded ? "solid" : "dashed",
-        background: addressIsSet && !expanded
+        borderStyle: addressIsSet ? "solid" : "dashed",
+        background: addressIsSet
           ? isDark ? "rgba(21,128,61,0.12)" : "rgba(240,253,244,1)"
           : isDark ? `${NAVY}0d` : `${NAVY}06`,
       }}
@@ -535,8 +536,8 @@ function AccountShippingAddressSection({
       {/* Header row — always visible */}
       <button
         type="button"
-        onClick={() => setExpanded(v => !v)}
-        aria-expanded={expanded}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
         className="w-full flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 text-left transition-colors"
         style={{ background: "transparent" }}
       >
@@ -576,15 +577,15 @@ function AccountShippingAddressSection({
                 </span>
               )}
             </div>
-            {addressIsSet && !expanded ? (
+            {addressIsSet ? (
               <p className="text-xs mt-0.5 truncate" style={{ color: isDark ? "rgba(74,222,128,0.7)" : "#166534", maxWidth: "18rem" }}>
                 {displayName}{addrSummary ? ` · ${addrSummary}` : ""}
               </p>
-            ) : !addressIsSet ? (
+            ) : (
               <p className="text-xs mt-0.5" style={{ color: `${NAVY}88` }}>
-                {expanded ? "Required for shipping" : "Tap to enter your delivery address"}
+                Tap to enter your delivery address
               </p>
-            ) : null}
+            )}
           </div>
         </div>
 
@@ -608,7 +609,7 @@ function AccountShippingAddressSection({
               Edit
             </span>
           )}
-          {!addressIsSet && !expanded && (
+          {!addressIsSet && (
             <span
               className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
               style={{ background: NAVY, color: isDark ? "#0D1B2A" : "#FFFFFF" }}
@@ -617,33 +618,24 @@ function AccountShippingAddressSection({
               Add
             </span>
           )}
-          {(addressIsSet || expanded) && (
-            <ChevronDown
-              className="w-4 h-4 transition-transform duration-200"
-              style={{
-                color: addressIsSet ? (isDark ? "#4ade80" : "#16a34a") : NAVY,
-                transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            />
-          )}
         </div>
       </button>
 
-      {/* Expandable form */}
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            key="addr-form"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22, ease: "easeInOut" }}
-            style={{ overflow: "hidden" }}
-          >
-            <div className="px-4 pb-4 space-y-3 sm:px-5 sm:pb-5 border-t"
-              style={{ borderColor: addressIsSet ? (isDark ? "rgba(74,222,128,0.15)" : "rgba(22,163,74,0.15)") : `${NAVY}18` }}>
-
-              <div className="pt-3" />
+      {/* Address editor modal */}
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setError(null); }}>
+        <DialogContent
+          className="max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl"
+          style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+        >
+          <DialogHeader>
+            <DialogTitle style={{ color: NAVY }}>
+              {addressIsSet ? "Edit Delivery Address" : "Add Delivery Address"}
+            </DialogTitle>
+            <DialogDescription style={{ color: "var(--t-muted)" }}>
+              Required for shipping — we only use this to deliver your order.
+            </DialogDescription>
+          </DialogHeader>
+            <div className="space-y-3">
 
               {/* Saved account address autofill */}
               {savedAccountAddr && (
@@ -688,7 +680,7 @@ function AccountShippingAddressSection({
                     style={navyInputStyle}
                   />
                   {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl shadow-xl overflow-hidden border"
+                    <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl shadow-xl overflow-y-auto max-h-48 border"
                       style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
                       {suggestions.map(s => (
                         <button
@@ -812,17 +804,15 @@ function AccountShippingAddressSection({
                 {error && <p className="text-xs text-destructive font-medium">{error}</p>}
 
                 <div className="flex gap-2 pt-1">
-                  {addressIsSet && (
-                    <button
-                      type="button"
-                      onClick={() => { setExpanded(false); setError(null); }}
-                      disabled={saving}
-                      className="flex-1 h-11 rounded-xl text-sm font-semibold border transition-all hover:brightness-95 active:scale-[0.98]"
-                      style={{ borderColor: `${NAVY}33`, color: NAVY, background: "var(--t-surface)" }}
-                    >
-                      Cancel
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setOpen(false); setError(null); }}
+                    disabled={saving}
+                    className="flex-1 h-11 rounded-xl text-sm font-semibold border transition-all hover:brightness-95 active:scale-[0.98]"
+                    style={{ borderColor: `${NAVY}33`, color: NAVY, background: "var(--t-surface)" }}
+                  >
+                    Cancel
+                  </button>
                   <button
                     type="submit"
                     className="flex-1 h-11 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:brightness-110 active:scale-[0.98]"
@@ -840,9 +830,8 @@ function AccountShippingAddressSection({
                 </div>
               </form>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2338,6 +2327,49 @@ export default function AccountOrderDetail() {
                         )}
                       </div>
 
+                      {/* Delivery Address — sits under the order summary. Additions ride along with
+                          the original order, so the address is locked (read-only). Otherwise show the
+                          editable section when the chosen shipping option requires it, for Royal Mail,
+                          or for direct-shipping GB orders. */}
+                      {order.additionOfOrderId ? (
+                        (order.shippingAddress || order.shippingName) ? (
+                          <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
+                                <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Delivery Address</p>
+                                <p className="text-xs mb-1.5" style={{ color: "var(--t-muted)" }}>Ships with your original order — this address can&apos;t be changed.</p>
+                                {order.shippingName && <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>{order.shippingName}</p>}
+                                {order.shippingAddress && <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-subtle)" }}>{order.shippingAddress}</p>}
+                              </div>
+                            </div>
+                          </Card>
+                        ) : null
+                      ) : (order.customShippingRequiresAddress || order.deliveryMethod?.toLowerCase().includes("royal") || order.directShippingRequested) && (
+                        ["confirmed", "pending_confirmation", "test_confirmed"].includes(order.paymentStatus) ? (
+                          <AccountShippingAddressSection
+                            orderId={order.id}
+                            existingName={order.shippingName ?? null}
+                            existingAddress={order.shippingAddress ?? null}
+                            onSaved={(n, a) => setOrder((prev) => prev ? { ...prev, shippingName: n, shippingAddress: a } : prev)}
+                          />
+                        ) : (
+                          <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
+                                <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold" style={{ color: "var(--t-subtle)" }}>Delivery Address</p>
+                                <p className="text-xs" style={{ color: "var(--t-muted)" }}>Available after payment is initiated</p>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      )}
+
                       {/* Admin message */}
                       {order.adminMessage && (
                         <div className="rounded-lg p-4 sm:p-5 flex items-start gap-3" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
@@ -2618,48 +2650,6 @@ export default function AccountOrderDetail() {
                         </div>
                       )}
                     </Card>
-                  )}
-
-                  {/* Delivery Address — additions ride along with the original order, so the address
-                      is locked (read-only). Otherwise show the editable section when the chosen
-                      shipping option requires it, for Royal Mail, or for direct-shipping GB orders. */}
-                  {order.additionOfOrderId ? (
-                    (order.shippingAddress || order.shippingName) ? (
-                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
-                            <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Delivery Address</p>
-                            <p className="text-xs mb-1.5" style={{ color: "var(--t-muted)" }}>Ships with your original order — this address can&apos;t be changed.</p>
-                            {order.shippingName && <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>{order.shippingName}</p>}
-                            {order.shippingAddress && <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-subtle)" }}>{order.shippingAddress}</p>}
-                          </div>
-                        </div>
-                      </Card>
-                    ) : null
-                  ) : (order.customShippingRequiresAddress || order.deliveryMethod?.toLowerCase().includes("royal") || order.directShippingRequested) && (
-                    ["confirmed", "pending_confirmation", "test_confirmed"].includes(order.paymentStatus) ? (
-                      <AccountShippingAddressSection
-                        orderId={order.id}
-                        existingName={order.shippingName ?? null}
-                        existingAddress={order.shippingAddress ?? null}
-                        onSaved={(n, a) => setOrder((prev) => prev ? { ...prev, shippingName: n, shippingAddress: a } : prev)}
-                      />
-                    ) : (
-                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
-                            <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold" style={{ color: "var(--t-subtle)" }}>Delivery Address</p>
-                            <p className="text-xs" style={{ color: "var(--t-muted)" }}>Available after payment is initiated</p>
-                          </div>
-                        </div>
-                      </Card>
-                    )
                   )}
 
                   {/* Shipping details — wholesale orders only */}
