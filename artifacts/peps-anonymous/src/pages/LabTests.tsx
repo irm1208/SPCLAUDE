@@ -748,92 +748,195 @@ function FilterBar({
 }
 
 // ─── TestCard ───────────────────────────────────────────────────────────────
+const COA_MUTED = "rgba(196,200,235,0.55)";
+const COA_LABEL = "rgba(196,200,235,0.45)";
+const COA_GREEN = "#34D399";
+const COA_BLUE = "#7C9EF5";
+const COA_RED = "#F87171";
+
+function coaStatusBadge(test: LabTest): { label: string; color: string } | null {
+  if (test.purityPct != null) {
+    const tier = purityTier(test.purityPct, test.peptideName);
+    return tier.label === "Good" ? { label: "PASS", color: COA_GREEN } : { label: "FAIL", color: COA_RED };
+  }
+  if (test.endotoxinEuMg != null) {
+    const tier = endotoxinTier(test.endotoxinEuMg);
+    if (tier.label === "Excellent") return { label: "PASS", color: COA_GREEN };
+    if (tier.label === "Acceptable") return { label: "ACCEPTABLE", color: COA_BLUE };
+    return { label: "FAIL", color: COA_RED };
+  }
+  if (test.sterilityPass === true) return { label: "PASS", color: COA_GREEN };
+  if (test.sterilityPass === false) return { label: "FAIL", color: COA_RED };
+  return null;
+}
+
+function CoaStat({ label, value, suffix, suffixColor, align = "left" }: { label: string; value: string; suffix?: string; suffixColor?: string; align?: "left" | "right" }) {
+  return (
+    <div className={`min-w-0 flex flex-col gap-1 ${align === "right" ? "items-end text-right" : "items-start"}`}>
+      <span className="text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: COA_LABEL }}>{label}</span>
+      <span className="font-black text-[22px] leading-none tracking-tight truncate max-w-full" style={{ color: "#fff" }}>
+        {value}
+        {suffix && <span className="text-[13px] font-extrabold ml-0.5" style={{ color: suffixColor ?? COA_BLUE }}>{suffix}</span>}
+      </span>
+    </div>
+  );
+}
+
 function TestCard({ test, index, onView }: { test: LabTest; index: number; onView: (i: number) => void }) {
   const batchDate = parseBatchDate(test.batchCode);
   const displayDate = test.testDate ? new Date(test.testDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : batchDate;
-  const result = cardResultColor(test);
-  const hasQuality = test.purityPct != null || test.endotoxinEuMg != null || test.sterilityPass != null;
-  
+  const badge = coaStatusBadge(test);
+  const analysisLabel = test.testType ? (TEST_TYPE_LABELS[test.testType] ?? test.testType) : null;
+  const showPurity = test.purityPct != null;
+  const showEndotoxinOnly = !showPurity && test.endotoxinEuMg != null;
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}${window.location.pathname}?report=${test.id}`;
+    navigator.clipboard?.writeText(url).then(
+      () => toast({ title: "Link copied", description: "Report link copied to clipboard." }),
+      () => toast({ title: "Could not copy link", variant: "destructive" }),
+    );
+  };
+
   return (
-    <motion.button
+    <motion.div
+      role="button"
+      tabIndex={0}
       onClick={() => onView(index)}
+      onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onView(index); } }}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.2 }}
-      className="text-left w-full rounded-xl overflow-hidden border group transition-all duration-200 focus:outline-none"
-      style={{ 
-        background: "var(--t-surface)", 
-        borderColor: "var(--t-border)",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)"
+      className="text-left w-full rounded-2xl overflow-hidden cursor-pointer group transition-all duration-200 focus:outline-none focus-visible:ring-2"
+      style={{
+        background: "linear-gradient(165deg, #272456 0%, #1B1A42 100%)",
+        border: "1px solid rgba(255,255,255,0.09)",
+        boxShadow: "0 4px 16px rgba(12,12,40,0.25)",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = "0 10px 26px rgba(16,17,33,.10)";
+        e.currentTarget.style.boxShadow = "0 12px 30px rgba(12,12,40,0.4)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "none";
-        e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)";
+        e.currentTarget.style.boxShadow = "0 4px 16px rgba(12,12,40,0.25)";
       }}
     >
-      <div className="p-4 flex flex-col h-full gap-3 relative">
-        <div className="flex justify-between items-start gap-3">
-          <div className="min-w-0">
-            <h3 className="font-bold text-sm leading-tight truncate mb-1" style={{ color: "var(--t-text)" }}>
-              {buildTestTitle(test)}
-            </h3>
-            <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
-              <span className="truncate">{test.supplier}</span>
-              {test.batchCode && (
-                <>
-                  <span className="opacity-40">•</span>
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border" style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}>{test.batchCode}</span>
-                </>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {result ? (
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border" 
-                style={{ background: result.bg, color: result.color, borderColor: result.border }}>
-                <Activity className="w-3 h-3" />
-                {test.purityPct != null ? `${formatPurity(test.purityPct)}%` : result.label}
-              </div>
-            ) : (
-               <div className="px-2 py-1 rounded-md text-[11px] font-bold border" style={{ background: "var(--t-surface2)", color: "var(--t-muted)", borderColor: "var(--t-border)" }}>
-                 Pending
-               </div>
-            )}
+      <div className="p-4 flex flex-col h-full gap-3">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: COA_MUTED }}>
+            Certificate of Analysis
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleShare}
+              className="p-0.5 rounded transition-opacity hover:opacity-100 opacity-70"
+              style={{ color: COA_MUTED }}
+              title="Copy report link"
+              aria-label="Copy report link"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+            </button>
+            <ShieldCheck className="w-3.5 h-3.5" style={{ color: COA_GREEN }} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mt-1">
-          <div className="rounded-lg p-2.5 flex flex-col justify-center border" style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}>
-             <span className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>Mass</span>
-             <span className="text-[13px] font-bold truncate" style={{ color: test.mgAmount != null ? "var(--t-text)" : "var(--t-subtle)" }}>
-               {test.mgAmount != null ? `${test.mgAmount}${test.massUnit ?? "mg"}` : "—"}
-             </span>
+        {/* Source + supplier pills */}
+        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+          <span
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase"
+            style={{ border: "1px solid rgba(255,255,255,0.14)", color: COA_MUTED }}
+          >
+            {test.isThirdPartyTest ? <Star className="w-3 h-3" /> : <Building2 className="w-3 h-3" />}
+            {test.isThirdPartyTest ? "3rd Party" : "Vendor"}
+          </span>
+          {test.supplier && (
+            <span
+              className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold max-w-[10rem] truncate"
+              style={{ background: "rgba(255,255,255,0.1)", color: "#fff" }}
+            >
+              {test.supplier}
+            </span>
+          )}
+        </div>
+
+        {/* Compound name */}
+        <h3 className="font-black text-lg leading-tight break-words min-w-0" style={{ color: "#fff" }}>
+          {buildTestTitle(test)}
+        </h3>
+
+        {/* Big stats */}
+        {showPurity ? (
+          <div className="flex items-start justify-between gap-3">
+            <CoaStat label="Purity" value={formatPurity(test.purityPct)} suffix="%" suffixColor={COA_GREEN} />
+            <div className="self-stretch w-px" style={{ background: "rgba(255,255,255,0.1)" }} />
+            <CoaStat
+              label="Actual Mass"
+              value={test.mgAmount != null ? String(test.mgAmount) : "—"}
+              suffix={test.mgAmount != null ? (test.massUnit ?? "mg") : undefined}
+              align="right"
+            />
           </div>
-          <div className="rounded-lg p-2.5 flex flex-col justify-center border" style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}>
-             <span className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>Endotoxin</span>
-             <span className="text-[13px] font-bold truncate" style={{ color: test.endotoxinEuMg != null ? endotoxinTier(test.endotoxinEuMg).color : "var(--t-subtle)" }}>
-               {test.endotoxinEuMg != null ? `${test.endotoxinEuMg} EU` : "—"}
-             </span>
+        ) : showEndotoxinOnly ? (
+          <CoaStat label="Endotoxin" value={String(test.endotoxinEuMg)} suffix="EU/Vial" />
+        ) : test.mgAmount != null ? (
+          <CoaStat label="Actual Mass" value={String(test.mgAmount)} suffix={test.massUnit ?? "mg"} />
+        ) : (
+          <CoaStat label="Result" value={test.sterilityPass === true ? "Pass" : test.sterilityPass === false ? "Fail" : "—"} />
+        )}
+
+        {/* Batch / Analysis rows */}
+        <div className="pt-2.5 space-y-1.5" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: COA_LABEL }}>Batch</span>
+            <span className="font-mono text-[11px] font-bold truncate" style={{ color: "#fff" }}>{test.batchCode ?? "—"}</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: COA_LABEL }}>Analysis</span>
+            <span className="text-[11px] font-semibold truncate" style={{ color: "rgba(255,255,255,0.85)" }}>{analysisLabel ?? "—"}</span>
           </div>
         </div>
 
-        <div className="mt-auto pt-2 flex items-center justify-between">
-           <div className="flex gap-1.5">
-             <SourceBadge isThirdParty={test.isThirdPartyTest} />
-             <TestTypeBadge testType={test.testType} />
-           </div>
-           
-           <div className="text-[10px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+        {/* Status + date */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {badge && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide"
+              style={{ border: `1px solid color-mix(in srgb, ${badge.color} 45%, transparent)`, color: badge.color, background: `color-mix(in srgb, ${badge.color} 8%, transparent)` }}
+            >
+              {badge.label}
+            </span>
+          )}
+          {displayDate && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold"
+              style={{ border: "1px solid rgba(255,255,255,0.12)", color: COA_MUTED }}
+            >
+              <Calendar className="w-3 h-3" />
               {displayDate}
-           </div>
+            </span>
+          )}
+        </div>
+
+        <div className="text-[10px] font-medium" style={{ color: COA_LABEL }}>
+          Tested by {test.labName}
+        </div>
+
+        {/* View Report */}
+        <div className="mt-auto">
+          <div
+            className="w-full h-9 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition-colors group-hover:brightness-125"
+            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }}
+          >
+            <FlaskConical className="w-3.5 h-3.5" style={{ color: COA_MUTED }} />
+            View Report
+            <ArrowRight className="w-3.5 h-3.5" />
+          </div>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
