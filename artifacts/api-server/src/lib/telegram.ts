@@ -373,11 +373,6 @@ export async function notifyUserFull(
   prefKey: keyof TelegramPrefs,
   text: string,
 ): Promise<NotifyResult> {
-  const { token } = await getCredentials();
-  if (!token) {
-    console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${telegramUsername} — bot token not configured`);
-    return { ok: false };
-  }
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
     const [account] = await db
@@ -389,14 +384,26 @@ export async function notifyUserFull(
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — account not found`);
       return { ok: false };
     }
+
+    const { token } = await getCredentials();
+    if (!token) {
+      console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — bot token not configured`);
+      // Still record the notification so it appears in the customer's in-app feed.
+      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare });
+      return { ok: false };
+    }
     if (!account.telegramChatId) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — Telegram not linked (no chatId)`);
+      // Still record the notification so it appears in the customer's in-app feed.
+      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare });
       return { ok: false };
     }
 
     const prefs = parsePrefKey(account.telegramNotifications);
     if (!prefs[prefKey]) {
       console.debug(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — preference disabled`);
+      // Telegram delivery is off for this event, but keep it in the in-app feed.
+      logTgMessage(account.telegramChatId, text, false, "skipped: Telegram preference off (in-app only)", { recipientType: "user", recipientUsername: bare });
       return { ok: false, chatId: account.telegramChatId };
     }
 
@@ -434,8 +441,6 @@ export async function notifyUserTicket(
   ticketId: string,
   text: string,
 ): Promise<void> {
-  const { token } = await getCredentials();
-  if (!token) return;
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
     const [account] = await db
@@ -443,8 +448,23 @@ export async function notifyUserTicket(
       .from(accountsTable)
       .where(eq(accountsTable.telegramUsername, bare));
 
-    if (!account?.telegramChatId) {
+    if (!account) {
+      console.warn(`[telegram:notifyUserTicket] SKIP ticketId=${ticketId} user=@${bare} — account not found`);
+      return;
+    }
+
+    const { token } = await getCredentials();
+    if (!token) {
+      console.warn(`[telegram:notifyUserTicket] SKIP ticketId=${ticketId} user=@${bare} — bot token not configured`);
+      // Still record the reply so it appears in the customer's in-app feed.
+      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare });
+      return;
+    }
+
+    if (!account.telegramChatId) {
       console.warn(`[telegram:notifyUserTicket] SKIP ticketId=${ticketId} user=@${bare} — no chatId`);
+      // Still record the reply so it appears in the customer's in-app feed.
+      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare });
       return;
     }
 

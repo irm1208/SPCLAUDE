@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable } from "@workspace/db";
+import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
@@ -1355,6 +1355,52 @@ router.post("/account/wholesale-invite-prompt-seen", requireAccount, async (req,
     .where(and(eq(accountsTable.telegramUsername, tg), isNull(accountsTable.wholesaleInvitePromptSeenAt)))
     .returning({ tg: accountsTable.telegramUsername });
   res.json({ ok: true, newlyMarked: stamped.length > 0 });
+});
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+/** Strip Telegram HTML markup (and common entities) so the message reads as plain text. */
+function stripTelegramHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// GET /api/account/notifications — recent notifications for the logged-in account
+router.get("/account/notifications", requireAccount, async (req, res): Promise<void> => {
+  try {
+    const tg = normalizeTg(req.account!.telegramUsername);
+    const rows = await db
+      .select({
+        id: telegramMessageLogsTable.id,
+        messageText: telegramMessageLogsTable.messageText,
+        sentAt: telegramMessageLogsTable.sentAt,
+        delivered: telegramMessageLogsTable.delivered,
+      })
+      .from(telegramMessageLogsTable)
+      .where(and(
+        eq(telegramMessageLogsTable.recipientType, "user"),
+        eq(telegramMessageLogsTable.recipientUsername, tg),
+      ))
+      .orderBy(desc(telegramMessageLogsTable.sentAt))
+      .limit(20);
+    res.json(rows.map(r => ({
+      id: r.id,
+      text: stripTelegramHtml(r.messageText),
+      sentAt: (r.sentAt as Date).toISOString(),
+      delivered: r.delivered,
+    })));
+  } catch (err) {
+    console.error("[account:notifications] failed:", err);
+    res.status(500).json({ error: "Failed to load notifications" });
+  }
 });
 
 // GET /api/account/orders — orders for the logged-in account, optionally filtered by gbId

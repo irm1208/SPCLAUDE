@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
 
 export const telegramMessageLogsTable = pgTable("telegram_message_logs", {
   id: serial("id").primaryKey(),
@@ -9,7 +9,9 @@ export const telegramMessageLogsTable = pgTable("telegram_message_logs", {
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   delivered: boolean("delivered").notNull(),
   errorMessage: text("error_message"),
-});
+}, (t) => [
+  index("tg_logs_recipient_sent_idx").on(t.recipientType, t.recipientUsername, t.sentAt.desc()),
+]);
 
 export type TelegramMessageLog = typeof telegramMessageLogsTable.$inferSelect;
 export type NewTelegramMessageLog = typeof telegramMessageLogsTable.$inferInsert;

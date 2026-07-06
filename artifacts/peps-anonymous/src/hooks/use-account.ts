@@ -759,6 +759,29 @@ export function useTestingLateOptIn(enabled = true) {
   });
 }
 
+export interface AccountNotification {
+  id: number;
+  text: string;
+  sentAt: string;
+  delivered: boolean;
+}
+
+export function useAccountNotifications(enabled = true) {
+  return useQuery<AccountNotification[]>({
+    queryKey: ["account", "notifications"],
+    queryFn: async () => {
+      const res = await fetch("/api/account/notifications", { credentials: "include" });
+      if (res.status === 401) return [];
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+    retry: false,
+    enabled,
+  });
+}
+
 export function useAccountOrders(gbId?: string | null, enabled = true) {
   const url = gbId ? `/api/account/orders?gbId=${encodeURIComponent(gbId)}` : "/api/account/orders";
   return useQuery<AccountOrder[]>({

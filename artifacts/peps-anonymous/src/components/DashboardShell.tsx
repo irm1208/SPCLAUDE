@@ -7,7 +7,7 @@ import {
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, useAccountNotifications } from "@/hooks/use-account";
 import { useThemeStore } from "@/hooks/use-theme";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
@@ -110,6 +110,19 @@ interface DashboardShellProps {
   children: React.ReactNode;
 }
 
+/** Compact relative timestamp for the notifications dropdown. */
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
 export function DashboardShell({
@@ -125,7 +138,27 @@ export function DashboardShell({
   const [searchQ, setSearchQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [dq, setDq] = useState("");
-  const [menu, setMenu] = useState<null | "profile">(null);
+  const [menu, setMenu] = useState<null | "profile" | "notifs">(null);
+
+  // ── Notifications (bell) ──
+  const { data: notifs } = useAccountNotifications();
+  const [notifSeenAt, setNotifSeenAt] = useState<number>(() => {
+    try { return Number(localStorage.getItem("sp_notif_seen") ?? 0) || 0; } catch { return 0; }
+  });
+  // Cutoff captured when the dropdown opens, so rows stay highlighted while it's open.
+  const notifCutoffRef = useRef(notifSeenAt);
+  const hasUnseenNotifs = (notifs ?? []).some(n => new Date(n.sentAt).getTime() > notifSeenAt);
+  const toggleNotifs = () => {
+    setSearchOpen(false);
+    setMenu(m => {
+      if (m === "notifs") return null;
+      notifCutoffRef.current = notifSeenAt;
+      const now = Date.now();
+      setNotifSeenAt(now);
+      try { localStorage.setItem("sp_notif_seen", String(now)); } catch { /* ignore */ }
+      return "notifs";
+    });
+  };
   // Rail quick-view flyout: which section is peeking, and the y-offset to anchor it.
   const [quickView, setQuickView] = useState<{ id: string; top: number } | null>(null);
   // Rail hover tooltip: page name shown beside the blue icon rail.
@@ -846,15 +879,63 @@ export function DashboardShell({
                 >
                   {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                 </button>
-                <button
-                  onClick={() => onSection("orders")}
-                  className="relative flex items-center justify-center rounded-md transition-colors"
-                  style={{ width: 40, height: 40, background: T.panel, border: `1px solid ${T.border}`, color: T.muted }}
-                  title="Notifications"
-                >
-                  <Bell className="w-4 h-4" />
-                  <span className="absolute rounded-full" style={{ top: 9, right: 10, width: 7, height: 7, background: LIVE_RED, border: `2px solid ${T.panel}` }} />
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={toggleNotifs}
+                    className="relative flex items-center justify-center rounded-md transition-colors"
+                    style={{ width: 40, height: 40, background: T.panel, border: `1px solid ${menu === "notifs" ? ACCENT : T.border}`, color: T.muted }}
+                    title="Notifications"
+                    aria-label="Notifications"
+                  >
+                    <Bell className="w-4 h-4" />
+                    {hasUnseenNotifs && (
+                      <span className="absolute rounded-full" style={{ top: 9, right: 10, width: 7, height: 7, background: LIVE_RED, border: `2px solid ${T.panel}` }} />
+                    )}
+                  </button>
+                  {menu === "notifs" && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                      <div className="absolute right-0 z-50 mt-2 rounded-lg overflow-hidden" style={{ top: "100%", width: 340, maxWidth: "calc(100vw - 24px)", background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)" }}>
+                        <div className="px-3.5 py-3" style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                          <p className="font-bold" style={{ fontSize: 13 }}>Notifications</p>
+                        </div>
+                        <div style={{ maxHeight: 380, overflowY: "auto" }}>
+                          {(notifs ?? []).length === 0 ? (
+                            <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
+                              <Bell className="w-5 h-5" style={{ color: T.subtle }} />
+                              <p style={{ fontSize: 12.5, color: T.muted, fontWeight: 600 }}>No notifications yet</p>
+                              <p style={{ fontSize: 11.5, color: T.subtle }}>Order updates and support replies will show up here.</p>
+                            </div>
+                          ) : (notifs ?? []).map(n => {
+                            const lines = n.text.split("\n").map(l => l.trim()).filter(Boolean);
+                            const nTitle = lines[0] ?? "Notification";
+                            const nBody = lines.slice(1).join(" · ");
+                            const unread = new Date(n.sentAt).getTime() > notifCutoffRef.current;
+                            return (
+                              <div key={n.id} className="px-3.5 py-2.5 flex gap-2.5" style={{ borderBottom: `1px solid ${T.borderSoft}`, background: unread ? (dark ? "rgba(45,107,204,.12)" : "rgba(45,107,204,.05)") : "transparent" }}>
+                                <span className="rounded-full shrink-0" style={{ width: 7, height: 7, marginTop: 5, background: unread ? LIVE_RED : "transparent" }} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate" style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{nTitle}</p>
+                                  {nBody && (
+                                    <p style={{ fontSize: 11.5, color: T.muted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{nBody}</p>
+                                  )}
+                                  <p style={{ fontSize: 10.5, color: T.subtle, marginTop: 2 }}>{timeAgo(n.sentAt)}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => { setMenu(null); onSection("orders"); }}
+                          className="dh-nav w-full flex items-center justify-center gap-2"
+                          style={{ height: 40, fontSize: 12.5, fontWeight: 700, color: ACCENT, borderTop: `1px solid ${T.borderSoft}` }}
+                        >
+                          View my orders <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <div className="relative">
                   <button
                     onClick={() => { setSearchOpen(false); setMenu(m => (m === "profile" ? null : "profile")); }}
