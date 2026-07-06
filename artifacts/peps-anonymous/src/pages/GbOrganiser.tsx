@@ -12,6 +12,7 @@ import {
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield,
   ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
+  Store, MapPin, Settings2, ArrowRight, Share2,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
@@ -4071,7 +4072,7 @@ function OverviewTab({ gbs, loading, profile, onSelect, onNew, onRefresh }: {
 
 // ─── GB Form Tab ─────────────────────────────────────────────────────────────
 
-function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange, statusSaving, availableStatuses }: {
+function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange, statusSaving, availableStatuses, onGoToProducts }: {
   gb: OrganiserGB | null;
   onSaved: (gb: OrganiserGB) => void;
   onGbUpdated?: (gb: OrganiserGB) => void;
@@ -4080,6 +4081,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
   onStatusChange?: (s: string) => void;
   statusSaving?: boolean;
   availableStatuses?: string[];
+  onGoToProducts?: () => void;
 }) {
   const isNew = !gb;
 
@@ -4278,6 +4280,61 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
     });
   };
 
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [productCount, setProductCount] = useState<number | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const visibilityCardRef = useRef<HTMLDivElement | null>(null);
+  const [checklistDismissed, setChecklistDismissed] = useState<boolean>(() => {
+    if (!gb?.id) return false;
+    try { return localStorage.getItem(`gbSetupChecklistDismissed:${gb.id}`) === "1"; } catch { return false; }
+  });
+
+  useEffect(() => {
+    if (!gb?.id) return;
+    let alive = true;
+    fetch(`/api/organiser/group-buys/${gb.id}/products`, { credentials: "include" })
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (alive) setProductCount(Array.isArray(d) ? d.length : 0); })
+      .catch(() => { if (alive) setProductCount(0); });
+    return () => { alive = false; };
+  }, [gb?.id]);
+
+  const dismissChecklist = () => {
+    setChecklistDismissed(true);
+    if (gb?.id) { try { localStorage.setItem(`gbSetupChecklistDismissed:${gb.id}`, "1"); } catch { /* ignore */ } }
+  };
+
+  const shareAccess = async () => {
+    if (!gb?.id) return;
+    const shareText = `Join my group buy "${gb.name}" on Salt&Peps — access code #${gb.id}`;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try { await navigator.share({ title: gb.name, text: shareText, url: previewLink }); } catch { /* user cancelled */ }
+    } else {
+      navigator.clipboard.writeText(`${shareText}\n${previewLink}`).then(() => {
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2000);
+      }).catch(() => { /* clipboard unavailable */ });
+    }
+  };
+
+  const goToChecklistStep = (key: string) => {
+    if (key === "products") { onGoToProducts?.(); }
+    else if (key === "pin") { setDetailsTab("members"); }
+    else if (key === "listed") { visibilityCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }
+  };
+
+  type ChecklistStep = { key: string; label: string; done: boolean; desc?: string; optional?: boolean };
+  const checklistSteps: ChecklistStep[] = !isNew && gb ? [
+    { key: "basics", label: "Basic details saved", done: true },
+    { key: "admin", label: "Admin notified for review", done: true },
+    { key: "products", label: "Add catalog products", desc: "What are members buying? Add items to your shop.", done: (productCount ?? 0) > 0 },
+    { key: "pin", label: "Set join PIN", desc: "Control who can join with a 4-digit PIN.", optional: true, done: !!gb.invitePinHash },
+    { key: "listed", label: "Request public listing", desc: "Show this buy on the public group-buy list.", done: !gb.hiddenFromList },
+  ] : [];
+  const checklistDone = checklistSteps.filter(s => s.done).length;
+  const checklistActiveIdx = checklistSteps.findIndex(s => !s.done);
+  const showChecklist = !isNew && !!gb && !checklistDismissed && productCount !== null && checklistDone < checklistSteps.length;
+
   const handleToggleHidden = async (nextHidden: boolean) => {
     if (!gb?.id || visibilitySaving) return;
     // Going public requires admin approval — keep it hidden and explain.
@@ -4366,6 +4423,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to save"); return; }
+      if (!isNew) { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2500); }
       onSaved(data as OrganiserGB);
     } catch { setError("Connection error"); }
     finally { setSaving(false); }
@@ -4389,34 +4447,228 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         <button type="button" onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
           <ArrowLeft className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
         </button>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>{isNew ? "New Group Buy" : `Edit: ${gb.name}`}</h2>
-          {!isNew && <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>#{gb.id}</p>}
-        </div>
+        {!isNew && gb && detailsTab !== "core" && (
+          <div>
+            <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Edit: {gb.name}</h2>
+            <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>#{gb.id}</p>
+          </div>
+        )}
       </div>
 
       {error && <ErrorBanner msg={error} onClose={() => setError("")} />}
 
+      {/* ── New GB: essentials only ── */}
+      {isNew && (
+        <div className="max-w-3xl mx-auto w-full pt-1 md:pt-4">
+          <div className="mb-6 md:mb-8 text-center">
+            <h1 className="text-2xl md:text-3xl font-bold" style={{ color: "var(--t-text)" }}>Start a Group Buy</h1>
+            <p className="text-sm md:text-base mt-1.5" style={{ color: "var(--t-muted)" }}>Just the essentials to get your draft started. Everything else comes later.</p>
+          </div>
+          <div className="rounded-2xl p-5 md:p-8 flex flex-col md:flex-row gap-5 md:gap-10" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(2,6,23,0.05)" }}>
+            <div className="flex-1 space-y-4 md:space-y-5">
+              <div>
+                <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Group Buy Name <span style={{ color: "#EF4444" }}>*</span></label>
+                <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Polaris Spring Buy" className={inputCls} style={{ ...inputStyle, height: 46 }} />
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Manufacturer</label>
+                  <div className="relative">
+                    <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--t-subtle)" }} />
+                    <input value={form.manufacturer} onChange={e => set("manufacturer", e.target.value)} placeholder="e.g. Polaris" className={inputCls} style={{ ...inputStyle, height: 46, paddingLeft: 36 }} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Origin</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--t-subtle)" }} />
+                    <input value={form.manufacturerCountry} onChange={e => set("manufacturerCountry", e.target.value)} placeholder="e.g. China" className={inputCls} style={{ ...inputStyle, height: 46, paddingLeft: 36 }} />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Base Currency</label>
+                  <select value={form.currency} onChange={e => set("currency", e.target.value)} className={`${inputCls} appearance-none`} style={{ ...inputStyle, height: 46 }}>
+                    {["GBP", "EUR", "USD", "USDT", "BTC"].map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Close Date</label>
+                  <input type="datetime-local" value={form.closeDate} onChange={e => set("closeDate", e.target.value)} className={inputCls} style={{ ...inputStyle, height: 46 }} />
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 flex flex-col">
+              <div className="flex-1">
+                <label className="flex justify-between text-sm font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                  <span>Short Description</span>
+                  <span className="font-normal text-xs self-center" style={{ color: "var(--t-subtle)" }}>Optional</span>
+                </label>
+                <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="What's the focus of this buy? Mention goals, specialised products, or anything unique." className={`${inputCls} resize-none h-28 md:h-40`} style={inputStyle} />
+              </div>
+              <div className="mt-5 md:mt-8">
+                <button type="submit" disabled={saving} className="w-full h-12 md:h-14 rounded-xl text-base md:text-lg font-semibold text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-60" style={{ background: "var(--t-blue-deep)", boxShadow: "0 6px 16px rgba(27,58,122,0.2)" }}>
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Create Draft <ArrowRight className="w-5 h-5" /></>}
+                </button>
+                <p className="text-center text-xs md:text-sm mt-3.5 flex items-center justify-center gap-1.5" style={{ color: "var(--t-muted)" }}>
+                  <Lock className="w-3.5 h-3.5" /> Nothing is public yet.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sub-tab pill nav */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-        {(["core", "members", "messaging", "settings"] as const).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setDetailsTab(tab)}
-            className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-            style={detailsTab === tab
-              ? { background: "var(--t-blue-deep)", color: "#fff" }
-              : { color: "var(--t-muted)" }}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+      {!isNew && (
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+          {(["core", "members", "messaging", "settings"] as const).map(tab => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setDetailsTab(tab)}
+              className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+              style={detailsTab === tab
+                ? { background: "var(--t-blue-deep)", color: "#fff" }
+                : { color: "var(--t-muted)" }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Core ── */}
-      {detailsTab === "core" && (
+      {detailsTab === "core" && !isNew && gb && (
         <>
+          {/* Header */}
+          <div className="rounded-2xl p-4 md:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl md:text-2xl font-bold tracking-tight" style={{ color: "var(--t-text)" }}>{gb.name}</h1>
+                  {gb.status === "draft" ? (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1.5" style={{ background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A" }}>
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: "#FBBF24" }} />
+                        <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: "#F59E0B" }} />
+                      </span>
+                      DRAFT
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase" style={{
+                      background: (STATUS_CONFIG[gb.status] ?? { bg: "rgba(100,116,139,0.12)" }).bg,
+                      color: (STATUS_CONFIG[gb.status] ?? { color: "#64748B" }).color,
+                      border: "1px solid var(--t-border)",
+                    }}>
+                      {(STATUS_CONFIG[gb.status] ?? { label: gb.status }).label}
+                    </span>
+                  )}
+                </div>
+                {(gb.manufacturer || gb.manufacturerCountry) && (
+                  <p className="text-xs md:text-sm font-medium flex items-center gap-1.5 mt-1 flex-wrap" style={{ color: "var(--t-muted)" }}>
+                    {gb.manufacturer && <span className="flex items-center gap-1"><Store className="w-3.5 h-3.5" />{gb.manufacturer}</span>}
+                    {gb.manufacturer && gb.manufacturerCountry && <span style={{ color: "var(--t-subtle)" }}>•</span>}
+                    {gb.manufacturerCountry && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{gb.manufacturerCountry}</span>}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {gb.approvalStatus && gb.approvalStatus !== "approved" && <StatusPill status={gb.approvalStatus} />}
+                <button type="button" onClick={() => window.open(previewLink, "_blank")} className="h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5" style={{ background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+                  <Eye className="w-3.5 h-3.5" /> Preview Form
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="lg:col-span-8 space-y-5">
+
+              {/* Setup Progress checklist */}
+              {showChecklist && (
+                <div className="rounded-2xl overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <div className="p-4 md:p-5 flex justify-between items-center" style={{ borderBottom: "1px solid var(--t-border)", background: "linear-gradient(to right, rgba(45,107,204,0.07), transparent)" }}>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(45,107,204,0.12)", color: "var(--t-blue)" }}>
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm md:text-base" style={{ color: "var(--t-text)" }}>Setup Progress</h3>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>{checklistDone} of {checklistSteps.length} steps completed</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={dismissChecklist} className="h-8 w-8 rounded-full flex items-center justify-center" style={{ color: "var(--t-subtle)" }} aria-label="Dismiss checklist">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="px-4 md:px-6 py-3" style={{ background: "var(--t-surface2)", borderBottom: "1px solid var(--t-border)" }}>
+                    <div className="hidden sm:flex justify-between text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--t-muted)" }}>
+                      <span>Draft Started</span>
+                      {checklistActiveIdx >= 0 && <span style={{ color: "var(--t-blue)" }}>Next: {checklistSteps[checklistActiveIdx].label}</span>}
+                      <span>Listed</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--t-border)" }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${(checklistDone / Math.max(checklistSteps.length, 1)) * 100}%`, background: "var(--t-blue)" }} />
+                    </div>
+                  </div>
+                  <div className="p-2 md:p-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 md:gap-2">
+                    {checklistSteps.map((s, i) => {
+                      if (s.done) return (
+                        <div key={s.key} className="flex items-center gap-3 p-3 rounded-xl opacity-60">
+                          <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(22,163,74,0.12)", color: "#16A34A" }}>
+                            <Check className="w-3.5 h-3.5" />
+                          </div>
+                          <p className="text-sm font-semibold line-through" style={{ color: "var(--t-muted)" }}>{s.label}</p>
+                        </div>
+                      );
+                      if (i === checklistActiveIdx) return (
+                        <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3.5 rounded-xl sm:col-span-2" style={{ background: "rgba(45,107,204,0.08)", border: "1px solid rgba(45,107,204,0.2)" }}>
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0" style={{ border: "3px solid var(--t-blue)", background: "var(--t-surface)" }}>
+                              <span className="w-2 h-2 rounded-full" style={{ background: "var(--t-blue)" }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold" style={{ color: "var(--t-blue-deep)" }}>{s.label}{s.optional && <span className="font-normal ml-1 text-xs" style={{ color: "var(--t-subtle)" }}>(Optional)</span>}</p>
+                              {s.desc && <p className="text-xs mt-0.5" style={{ color: "var(--t-blue)" }}>{s.desc}</p>}
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => goToChecklistStep(s.key)} className="px-4 h-9 rounded-xl text-xs font-semibold text-white shrink-0 flex items-center justify-center gap-1" style={{ background: "var(--t-blue)" }}>
+                            {s.key === "products" && <Plus className="w-3.5 h-3.5" />}
+                            {s.key === "products" ? "Add Products" : s.key === "pin" ? "Set PIN" : "Go Public"}
+                          </button>
+                        </div>
+                      );
+                      return (
+                        <button type="button" key={s.key} onClick={() => goToChecklistStep(s.key)} className="flex items-center gap-3 p-3 rounded-xl text-left transition-colors">
+                          <div className="h-7 w-7 rounded-full shrink-0" style={{ border: "2px solid var(--t-border)", background: "var(--t-surface)" }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{s.label}{s.optional && <span className="font-normal ml-1 text-xs" style={{ color: "var(--t-subtle)" }}>(Optional)</span>}</p>
+                            {s.desc && <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>{s.desc}</p>}
+                          </div>
+                          <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Products empty state */}
+              {productCount === 0 && (
+                <div className="rounded-2xl p-8 md:p-10 flex flex-col items-center justify-center text-center" style={{ background: "var(--t-surface)", border: "1.5px dashed var(--t-border)" }}>
+                  <div className="h-14 w-14 rounded-full flex items-center justify-center mb-3" style={{ background: "var(--t-surface2)" }}>
+                    <Store className="w-7 h-7" style={{ color: "var(--t-subtle)" }} />
+                  </div>
+                  <h3 className="text-base font-bold" style={{ color: "var(--t-text)" }}>No products added yet</h3>
+                  <p className="text-xs md:text-sm max-w-md mt-1.5" style={{ color: "var(--t-muted)" }}>Add the peptides, testing kits or shipping options members will be able to order in this group buy.</p>
+                  <button type="button" onClick={() => onGoToProducts?.()} className="mt-5 h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5" style={{ background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+                    <Plus className="w-3.5 h-3.5" /> Add First Product
+                  </button>
+                </div>
+              )}
+
           {!isNew && gb && onStatusChange && availableStatuses && availableStatuses.length > 0 && (
             <SectionCard>
               <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Status</p>
@@ -4446,72 +4698,6 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
                 })}
                 {statusSaving && <Loader2 className="w-3 h-3 animate-spin shrink-0" style={{ color: "var(--t-subtle)" }} />}
               </div>
-            </SectionCard>
-          )}
-
-          {!isNew && gb && (
-            <SectionCard>
-              <div className="flex items-center gap-2 mb-1">
-                {gb.hiddenFromList
-                  ? <EyeOff className="w-3.5 h-3.5" style={{ color: "var(--t-blue-deep)" }} />
-                  : <Eye className="w-3.5 h-3.5" style={{ color: "#16A34A" }} />}
-                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Visibility &amp; Preview</p>
-                <span style={{
-                  marginLeft: "auto", fontSize: 10, padding: "1px 8px", borderRadius: 20, fontWeight: 600,
-                  ...(gb.hiddenFromList
-                    ? { background: "rgba(27,58,122,0.1)", color: "var(--t-blue-deep)", border: "1px solid rgba(27,58,122,0.2)" }
-                    : { background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }),
-                }}>
-                  {gb.hiddenFromList ? "Hidden / Preview" : "Listed"}
-                </span>
-              </div>
-              <ToggleRow
-                label="Hidden / Preview mode"
-                hint={gb.hiddenFromList
-                  ? "Hidden from all public group-buy lists. Only people with the preview link below (and the PIN, if set) can open and join it."
-                  : "This group buy can appear in the public group-buy list when it is active."}
-                value={gb.hiddenFromList}
-                onChange={handleToggleHidden}
-              />
-              {visibilitySaving && (
-                <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
-                  <Loader2 className="w-3 h-3 animate-spin" /> Saving…
-                </p>
-              )}
-              {gb.hiddenFromList && gb.approvalStatus !== "approved" && (
-                <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                  Appearing in public lists still needs admin approval. Until then it stays in Hidden / Preview — but you can already share the link below so members can view and test-join it.
-                </p>
-              )}
-              <div>
-                <p className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Preview link</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0 rounded-xl py-2.5 px-3 truncate" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                    <span className="font-mono text-[11px]" style={{ color: "var(--t-text)" }}>{previewLink}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={copyPreviewLink}
-                    className="h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all"
-                    style={linkCopied
-                      ? { background: "rgba(22,163,74,0.12)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.3)" }
-                      : { background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
-                  >
-                    {linkCopied ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
-                  </button>
-                </div>
-                <p className="text-[11px] mt-1.5" style={{ color: "var(--t-muted)" }}>
-                  Opens the group buy exactly as a member sees it — they can view it and test-join from here.
-                </p>
-              </div>
-              {gb.invitePinHash && (
-                <div className="flex items-start gap-2 rounded-xl py-2.5 px-3" style={{ background: "var(--t-surface2)" }}>
-                  <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--t-muted)" }} />
-                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                    A 4-digit invite PIN is set — share it separately from the link, as it&apos;s required to join.
-                  </p>
-                </div>
-              )}
             </SectionCard>
           )}
 
@@ -4659,62 +4845,126 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
             </SectionCard>
           )}
 
-          {!isNew && gb?.id && (
-            <SectionCard>
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Access Code</p>
-              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Share this code with members so they can join this group buy directly.</p>
-              <div className="flex items-center gap-3 mt-1">
-                <div className="flex-1 flex items-center justify-center rounded-xl py-2.5 px-4" style={{ background: "var(--t-blue-10)", border: "1px solid rgba(27,58,122,0.15)" }}>
-                  <span className="font-mono font-black text-xl tracking-[0.18em]" style={{ color: "var(--t-blue-deep)" }}>#{gb.id}</span>
+            </div>
+
+            <div className="lg:col-span-4 space-y-5">
+              {/* Preview & Test */}
+              <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: "#1B3164", border: "1px solid rgba(45,107,204,0.35)", boxShadow: "0 12px 28px rgba(2,6,23,0.25)" }}>
+                <div className="absolute right-0 top-0 w-40 h-40 rounded-full opacity-30 -mr-10 -mt-10 pointer-events-none" style={{ background: "#2D6BCC", filter: "blur(56px)" }} />
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <div className="p-2 rounded-xl" style={{ background: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.3)" }}>
+                      <Eye className="w-4 h-4" style={{ color: "#93C5FD" }} />
+                    </div>
+                    <h3 className="font-bold text-white text-base">Preview &amp; Test</h3>
+                  </div>
+                  <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: "#DBEAFE" }}>
+                    Share this link with trusted friends — it opens the group buy exactly as a member sees it, so they can view and test-join it.
+                  </p>
+                  <div className="rounded-xl p-1 flex items-center mb-4" style={{ background: "#162231", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                    <div className="flex-1 overflow-hidden px-3">
+                      <p className="text-[11px] truncate font-mono" style={{ color: "#94A3B8" }}>{previewLink}</p>
+                    </div>
+                    <button type="button" onClick={copyPreviewLink} className="h-9 px-3 rounded-lg shrink-0 text-xs font-semibold flex items-center gap-1.5 transition-colors" style={{ color: linkCopied ? "#4ADE80" : "#93C5FD" }}>
+                      {linkCopied ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "#BFDBFE" }}>Access Code</p>
+                      <button type="button" onClick={copyCode} title="Copy access code" className="text-lg md:text-xl font-bold text-white tracking-widest font-mono flex items-center gap-2">
+                        #{gb.id}
+                        {codeCopied ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: "#4ADE80" }} /> : <Copy className="w-3.5 h-3.5 shrink-0" style={{ color: "#93C5FD" }} />}
+                      </button>
+                    </div>
+                    <button type="button" onClick={shareAccess} className="h-9 px-4 rounded-xl text-xs font-semibold text-white shrink-0 flex items-center gap-1.5" style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      <Share2 className="w-3.5 h-3.5" /> {shareCopied ? "Copied!" : "Share"}
+                    </button>
+                  </div>
+                  {gb.invitePinHash && (
+                    <div className="flex items-start gap-2 mt-3 px-1">
+                      <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#93C5FD" }} />
+                      <p className="text-[11px]" style={{ color: "#BFDBFE" }}>A 4-digit invite PIN is set — share it separately from the link, as it&apos;s required to join.</p>
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={copyCode}
-                  className="h-11 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all"
-                  style={codeCopied
-                    ? { background: "rgba(22,163,74,0.12)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.3)" }
-                    : { background: "var(--t-surface)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
-                >
-                  {codeCopied ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
-                </button>
               </div>
-            </SectionCard>
-          )}
 
-          <SectionCard>
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Basic Info</p>
-            <Field label="Name *" icon={Tag}>
-              <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Summer 2025 Peptide GB" className={inputCls} style={inputStyle} />
-            </Field>
-            <Field label="Description" icon={FileText}>
-              <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="Brief description visible to members" rows={2} className={`${inputCls} resize-none`} style={inputStyle} />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Currency" icon={Globe}>
-                <select value={form.currency} onChange={e => set("currency", e.target.value)} className={`${inputCls} appearance-none`} style={inputStyle}>
-                  {["GBP", "EUR", "USD", "USDT", "BTC"].map(c => <option key={c}>{c}</option>)}
-                </select>
-              </Field>
-              <Field label="Close Date" icon={Calendar}>
-                <input type="datetime-local" value={form.closeDate} onChange={e => set("closeDate", e.target.value)} className={inputCls} style={inputStyle} />
-              </Field>
-            </div>
-          </SectionCard>
+              {/* Visibility */}
+              <div ref={visibilityCardRef}>
+                <SectionCard>
+                  <div className="flex items-center gap-2 mb-1">
+                    {gb.hiddenFromList
+                      ? <EyeOff className="w-3.5 h-3.5" style={{ color: "var(--t-blue-deep)" }} />
+                      : <Eye className="w-3.5 h-3.5" style={{ color: "#16A34A" }} />}
+                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Visibility</p>
+                    <span style={{
+                      marginLeft: "auto", fontSize: 10, padding: "1px 8px", borderRadius: 20, fontWeight: 600,
+                      ...(gb.hiddenFromList
+                        ? { background: "rgba(27,58,122,0.1)", color: "var(--t-blue-deep)", border: "1px solid rgba(27,58,122,0.2)" }
+                        : { background: "rgba(22,163,74,0.1)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.25)" }),
+                    }}>
+                      {gb.hiddenFromList ? "Hidden / Preview" : "Listed"}
+                    </span>
+                  </div>
+                  <ToggleRow
+                    label="Hidden / Preview mode"
+                    hint={gb.hiddenFromList
+                      ? "Hidden from all public group-buy lists. Only people with the preview link (and the PIN, if set) can open and join it."
+                      : "This group buy can appear in the public group-buy list when it is active."}
+                    value={gb.hiddenFromList}
+                    onChange={handleToggleHidden}
+                  />
+                  {visibilitySaving && (
+                    <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
+                      <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                    </p>
+                  )}
+                  {gb.hiddenFromList && gb.approvalStatus !== "approved" && (
+                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                      Appearing in public lists still needs admin approval. Until then it stays in Hidden / Preview — but you can already share the preview link so members can view and test-join it.
+                    </p>
+                  )}
+                </SectionCard>
+              </div>
 
-          <SectionCard>
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Supplier Details</p>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Manufacturer">
-                <input value={form.manufacturer} onChange={e => set("manufacturer", e.target.value)} placeholder="Lab / manufacturer name" className={inputCls} style={inputStyle} />
-              </Field>
-              <Field label="Country">
-                <input value={form.manufacturerCountry} onChange={e => set("manufacturerCountry", e.target.value)} placeholder="e.g. China" className={inputCls} style={inputStyle} />
-              </Field>
+              {/* Buy Settings */}
+              <SectionCard>
+                <div className="flex items-center gap-2">
+                  <Settings2 className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Buy Settings</p>
+                </div>
+                <Field label="Name *" icon={Tag}>
+                  <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Summer 2025 Peptide GB" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Description" icon={FileText}>
+                  <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="Brief description visible to members" rows={2} className={`${inputCls} resize-none`} style={inputStyle} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Currency" icon={Globe}>
+                    <select value={form.currency} onChange={e => set("currency", e.target.value)} className={`${inputCls} appearance-none`} style={inputStyle}>
+                      {["GBP", "EUR", "USD", "USDT", "BTC"].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Close Date" icon={Calendar}>
+                    <input type="datetime-local" value={form.closeDate} onChange={e => set("closeDate", e.target.value)} className={inputCls} style={inputStyle} />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Manufacturer">
+                    <input value={form.manufacturer} onChange={e => set("manufacturer", e.target.value)} placeholder="Lab / manufacturer name" className={inputCls} style={inputStyle} />
+                  </Field>
+                  <Field label="Country">
+                    <input value={form.manufacturerCountry} onChange={e => set("manufacturerCountry", e.target.value)} placeholder="e.g. China" className={inputCls} style={inputStyle} />
+                  </Field>
+                </div>
+                <Field label="Lab Test Supplier" icon={FlaskConical}>
+                  <input value={form.labTestSupplier} onChange={e => set("labTestSupplier", e.target.value)} placeholder="e.g. Janoshik, Simec" className={inputCls} style={inputStyle} />
+                </Field>
+                <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Changes here are saved with the <strong>Save Changes</strong> button below.</p>
+              </SectionCard>
             </div>
-            <Field label="Lab Test Supplier" icon={FlaskConical}>
-              <input value={form.labTestSupplier} onChange={e => set("labTestSupplier", e.target.value)} placeholder="e.g. Janoshik, Simec" className={inputCls} style={inputStyle} />
-            </Field>
-          </SectionCard>
+          </div>
         </>
       )}
 
@@ -5348,21 +5598,23 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         </>
       )}
 
-      {/* Save / Cancel / Archive — always shown */}
-      <div className="flex gap-3">
-        {!isNew && onDelete && (
-          <button type="button" onClick={handleDelete} disabled={deleting} className="h-12 px-4 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50" style={{ background: "rgba(220,38,38,0.07)", color: "#DC2626", border: "1px solid rgba(220,38,38,0.2)" }}>
-            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            Archive
+      {/* Save / Cancel / Archive */}
+      {!isNew && (
+        <div className="flex gap-3">
+          {onDelete && (
+            <button type="button" onClick={handleDelete} disabled={deleting} className="h-12 px-4 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50" style={{ background: "rgba(220,38,38,0.07)", color: "#DC2626", border: "1px solid rgba(220,38,38,0.2)" }}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              Archive
+            </button>
+          )}
+          <button type="button" onClick={onBack} className="h-12 px-4 rounded-xl font-semibold text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+            Cancel
           </button>
-        )}
-        <button type="button" onClick={onBack} className="h-12 px-4 rounded-xl font-semibold text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
-          Cancel
-        </button>
-        <div className="flex-1">
-          <SaveBtn saving={saving} label={isNew ? "Create Group Buy" : "Save Changes"} />
+          <div className="flex-1">
+            <SaveBtn saving={saving} label={savedFlash ? "Saved!" : "Save Changes"} icon={savedFlash ? CheckCircle2 : Check} />
+          </div>
         </div>
-      </div>
+      )}
     </form>
   );
 }
@@ -12421,6 +12673,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
   };
 
   const handleGbSaved = (saved: OrganiserGB) => {
+    const wasNew = creatingNew;
     setGbs(prev => {
       const idx = prev.findIndex(g => g.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
@@ -12428,7 +12681,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
     });
     setSelectedGbId(saved.id);
     setCreatingNew(false);
-    setActiveTab("overview");
+    if (!wasNew && saved.status !== "draft") setActiveTab("overview");
   };
 
   const handleGbUpdated = (updated: OrganiserGB) => {
@@ -12615,7 +12868,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-5 pb-8">
         {activeTab === "overview" && <OverviewTab gbs={gbs} loading={loadingGbs} profile={profile} onSelect={handleSelectGb} onNew={handleNewGb} onRefresh={loadGbs} />}
-        {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
+        {activeTab === "edit" && <GBFormTab key={creatingNew ? "new" : selectedGbId ?? "none"} gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} onGoToProducts={() => setActiveTab("products")} />}
         {activeTab === "products" && selectedGb && <ProductsTab gb={selectedGb} />}
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
