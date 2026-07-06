@@ -1,0 +1,103 @@
+/* ============================================================================
+   order-vibes-v2 — Bold Energetic Variant
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+.bold-energetic-theme {
+  --be-bg: #08080C; /* Deep dark base */
+  --be-surface: #12121A;
+  --be-surface2: #1A1A24;
+  --be-border: #2A2A38;
+  --be-primary: #CCFF00; /* Electric Lime */
+  --be-accent: #FF3366; /* Hot Coral */
+  --be-violet: #6D28D9;
+  --be-text: #FFFFFF;
+  --be-muted: #9CA3AF;
+  
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  font-family: var(--font-display);
+  background-color: var(--be-bg);
+  color: var(--be-text);
+}
+
+.be-sidebar {
+  background-color: #050508;
+  border-right: 2px solid var(--be-border);
+}
+
+.be-rail {
+  background-color: var(--be-violet);
+  border-right: 2px solid #000;
+}
+
+.be-button-primary {
+  background-color: var(--be-primary);
+  color: #000;
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0px 0px var(--be-violet);
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.be-button-primary:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px 0px var(--be-violet);
+}
+.be-button-primary:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0px 0px 0px 0px var(--be-violet);
+}
+
+.be-card {
+  background-color: var(--be-surface);
+  border: 2px solid var(--be-border);
+  box-shadow: 4px 4px 0px 0px #000;
+  border-radius: 20px;
+}
+
+.be-input {
+  background-color: var(--be-surface2);
+  border: 2px solid var(--be-border);
+  color: var(--be-text);
+  border-radius: 12px;
+}
+.be-input:focus-within {
+  border-color: var(--be-primary);
+}
+
+.be-chip {
+  background-color: var(--be-surface2);
+  border: 2px solid var(--be-border);
+  box-shadow: 2px 2px 0px 0px #000;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+}
+
+.be-promo-card {
+  background: linear-gradient(135deg, var(--be-violet) 0%, #4C1D95 100%);
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0px 0px var(--be-primary);
+  border-radius: 16px;
+}
+
+.be-nav-button {
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+.be-nav-button:hover {
+  background-color: var(--be-surface);
+}
+.be-nav-button[data-active="true"] {
+  background-color: var(--be-primary);
+  color: #000 !important;
+  border-color: #000;
+  box-shadow: 2px 2px 0px 0px var(--be-accent);
+}
+
+.be-product-row {
+  background-color: var(--be-surface2);
+  border: 2px solid var(--be-border);
+  border-radius: 16px;
+  padding: 12px;
+}

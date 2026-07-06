@@ -1,0 +1,32 @@
+/* ============================================================================
+   order-vibes-v2 — Warm Apothecary Variant
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&display=swap');
+
+.warm-apothecary {
+  --wa-bg: #F8F6F0;
+  --wa-surface: #FFFFFF;
+  --wa-surface-alt: #F2EFE8;
+  --wa-border: #E8E3D5;
+  --wa-border-soft: #F0EDE4;
+  --wa-text: #332C23;
+  --wa-muted: #73695C;
+  --wa-subtle: #A39B8E;
+  --wa-accent: #C85A32; /* Terracotta */
+  --wa-accent-hover: #B34F2B;
+  --wa-accent-light: #F7EAE5;
+  
+  /* The Dark Ink Panel */
+  --wa-ink: #2C2621;
+  --wa-ink-surface: #38312A;
+  --wa-ink-border: #4A423A;
+  --wa-ink-text: #F2EFE9;
+  --wa-ink-muted: #B8B2A7;
+
+  --wa-shadow-sm: 0 2px 8px rgba(45, 39, 33, 0.04);
+  --wa-shadow-md: 0 8px 24px rgba(45, 39, 33, 0.06);
+
+  --font-wa-sans: 'DM Sans', sans-serif;
+  --font-wa-serif: 'Fraunces', serif;
+}

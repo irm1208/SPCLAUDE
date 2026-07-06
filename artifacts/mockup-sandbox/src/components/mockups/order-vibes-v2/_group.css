@@ -1,0 +1,208 @@
+/* ============================================================================
+   order-vibes-v2 — Order Form faithful baseline
+   Theme tokens copied verbatim from the main app (peps-anonymous/src/index.css)
+   so semantic tokens (var(--t-*), --salt-*, shadcn HSL vars) resolve to the
+   app's real values. Google Fonts imported here (not via index.html links).
+   ========================================================================== */
+
+/* Fonts the main app loads (index.css + index.html) */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root, [data-theme="light"] {
+  --t-bg:       #F4F4F5;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F4F4F5;
+  --t-border:   #E4E4E7;
+  --t-text:     #1A1D1F;
+  --t-muted:    #374151;
+  --t-subtle:   #4B5563;
+  --t-nav:      #2D6BCC;
+  --brand-navy: #1B3A7A;
+  --brand-blue: #2D6BCC;
+  --t-blue:     #2D6BCC;
+  --t-blue-deep: #1B3A7A;
+  --t-blue-rgb: 45, 107, 204;
+  --t-blue-03: rgba(45,107,204,0.03);
+  --t-blue-04: rgba(45,107,204,0.04);
+  --t-blue-05: rgba(45,107,204,0.05);
+  --t-blue-06: rgba(45,107,204,0.06);
+  --t-blue-07: rgba(45,107,204,0.07);
+  --t-blue-08: rgba(45,107,204,0.08);
+  --t-blue-10: rgba(45,107,204,0.10);
+  --t-blue-12: rgba(45,107,204,0.12);
+  --t-blue-15: rgba(45,107,204,0.15);
+  --t-blue-18: rgba(45,107,204,0.18);
+  --t-blue-20: rgba(45,107,204,0.20);
+  --t-blue-22: rgba(45,107,204,0.22);
+  --t-blue-25: rgba(45,107,204,0.25);
+  --t-blue-28: rgba(45,107,204,0.28);
+  --t-blue-30: rgba(45,107,204,0.30);
+  --t-blue-35: rgba(45,107,204,0.35);
+  --t-blue-40: rgba(45,107,204,0.40);
+  --t-blue-50: rgba(45,107,204,0.50);
+  --t-glass:    rgba(255,255,255,0.97);
+  --t-glass2:   rgba(244,244,245,0.98);
+  --t-tag-bg:   rgba(45,107,204,0.08);
+  --t-tag-text: #2D6BCC;
+  --t-tag-border: rgba(45,107,204,0.2);
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  /* Crypto payment panel – theme-aware glass & text */
+  --crypto-glass-bg:    rgba(255,255,255,0.82);
+  --crypto-glass-border: rgba(109,40,217,0.28);
+  --crypto-glass-hover: rgba(255,255,255,0.96);
+  --crypto-text-primary: #3b0764;
+  --crypto-text-body:    #4c1d95;
+  --crypto-text-muted:   rgba(76,29,149,0.72);
+  --crypto-warn-bg:      rgba(109,40,217,0.09);
+  --crypto-warn-border:  rgba(109,40,217,0.30);
+  --crypto-warn-text:    rgba(76,29,149,0.90);
+  /* AnonPay section – light mode */
+  --anon-glass:        rgba(0,0,0,0.05);
+  --anon-glass-border: rgba(0,0,0,0.12);
+  --anon-icon-bg:      rgba(0,0,0,0.08);
+  --anon-icon-border:  rgba(0,0,0,0.14);
+  --anon-text:         #1A1D1F;
+  --anon-text-muted:   #4B5563;
+  --anon-text-faint:   #6B7280;
+  --anon-btn-bg:       rgba(0,0,0,0.07);
+  --anon-btn-border:   rgba(0,0,0,0.15);
+  --anon-btn-text:     #1A1D1F;
+  --anon-back-bg:      rgba(0,0,0,0.08);
+  --anon-back-border:  rgba(0,0,0,0.15);
+  --anon-back-text:    #374151;
+
+  --salt-bg: #F4F4F5;
+  --salt-surface: #FFFFFF;
+  --salt-border: #E4E4E7;
+  --salt-text: #1A1D1F;
+  --salt-text-muted: #374151;
+  --salt-text-subtle: #4B5563;
+  --salt-nav-active: #2D6BCC;
+  --salt-card-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --salt-home-content-bg: #F7F7F9;
+
+  --background: 40 23% 97%;
+  --foreground: 210 11% 11%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 210 11% 11%;
+
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+
+  --ring: 220 65% 50%;
+
+  --primary: 220 65% 50%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 210 11% 11%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 220 9% 22%;
+
+  --accent: 220 65% 50%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 4 86% 57%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 72% 29%;
+  --success-foreground: 0 0% 100%;
+}
+
+[data-theme="dark"] {
+  --t-bg:       #111113;
+  --t-surface:  #1C1C1E;
+  --t-surface2: #2C2C2E;
+  --t-border:   rgba(255,255,255,0.08);
+  --t-text:     #FAFAFA;
+  --t-muted:    #C4C4C7;
+  --t-subtle:   #8D8D95;
+  --t-nav:      #2D6BCC;
+  --t-blue:     #2D6BCC;
+  --t-blue-deep: #1B3A7A;
+  --t-blue-rgb: 45, 107, 204;
+  --t-blue-03: rgba(45,107,204,0.03);
+  --t-blue-04: rgba(45,107,204,0.04);
+  --t-blue-05: rgba(45,107,204,0.05);
+  --t-blue-06: rgba(45,107,204,0.06);
+  --t-blue-07: rgba(45,107,204,0.07);
+  --t-blue-08: rgba(45,107,204,0.08);
+  --t-blue-10: rgba(45,107,204,0.10);
+  --t-blue-12: rgba(45,107,204,0.12);
+  --t-blue-15: rgba(45,107,204,0.15);
+  --t-blue-18: rgba(45,107,204,0.18);
+  --t-blue-20: rgba(45,107,204,0.20);
+  --t-blue-22: rgba(45,107,204,0.22);
+  --t-blue-25: rgba(45,107,204,0.25);
+  --t-blue-28: rgba(45,107,204,0.28);
+  --t-blue-30: rgba(45,107,204,0.30);
+  --t-blue-35: rgba(45,107,204,0.35);
+  --t-blue-40: rgba(45,107,204,0.40);
+  --t-blue-50: rgba(45,107,204,0.50);
+  --t-glass:    rgba(17,17,19,0.95);
+  --t-glass2:   rgba(28,28,30,0.97);
+  --t-tag-bg:   rgba(45,107,204,0.15);
+  --t-tag-text: #2D6BCC;
+  --t-tag-border: rgba(45,107,204,0.3);
+  --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
+  /* Crypto payment panel – theme-aware glass & text */
+  --crypto-glass-bg:    rgba(255,255,255,0.09);
+  --crypto-glass-border: rgba(255,255,255,0.18);
+  --crypto-glass-hover: rgba(255,255,255,0.16);
+  --crypto-text-primary: #ede9fe;
+  --crypto-text-body:    #ddd6fe;
+  --crypto-text-muted:   rgba(196,181,253,0.80);
+  --crypto-warn-bg:      rgba(139,92,246,0.15);
+  --crypto-warn-border:  rgba(255,255,255,0.14);
+  --crypto-warn-text:    rgba(196,181,253,0.95);
+  /* AnonPay section – dark mode */
+  --anon-glass:        rgba(255,255,255,0.07);
+  --anon-glass-border: rgba(255,255,255,0.14);
+  --anon-icon-bg:      rgba(255,255,255,0.12);
+  --anon-icon-border:  rgba(255,255,255,0.18);
+  --anon-text:         rgba(255,255,255,0.92);
+  --anon-text-muted:   rgba(255,255,255,0.55);
+  --anon-text-faint:   rgba(255,255,255,0.40);
+  --anon-btn-bg:       rgba(255,255,255,0.12);
+  --anon-btn-border:   rgba(255,255,255,0.20);
+  --anon-btn-text:     rgba(255,255,255,0.90);
+  --anon-back-bg:      rgba(255,255,255,0.20);
+  --anon-back-border:  rgba(255,255,255,0.20);
+  --anon-back-text:    rgba(226,232,240,1);
+
+  --salt-bg: #111113;
+  --salt-surface: #1C1C1E;
+  --salt-border: rgba(255,255,255,0.08);
+  --salt-text: #FAFAFA;
+  --salt-text-muted: #C4C4C7;
+  --salt-text-subtle: #8D8D95;
+  --salt-nav-active: #4B7BCC;
+  --salt-card-shadow: 0 1px 6px rgba(0,0,0,0.50);
+  --salt-home-content-bg: #111113;
+
+  --background: 240 10% 11%;
+  --foreground: 0 0% 98%;
+
+  --card: 240 8% 16%;
+  --card-foreground: 0 0% 98%;
+
+  --border: 240 6% 22%;
+  --input: 240 6% 22%;
+
+  --ring: 220 65% 50%;
+
+  --primary: 220 65% 50%;
+  --primary-foreground: 0 0% 100%;
+
+  --muted: 240 6% 22%;
+  --muted-foreground: 240 4% 55%;
+
+  --accent: 220 65% 50%;
+  --accent-foreground: 0 0% 100%;
+
+  --secondary: 240 6% 22%;
+  --secondary-foreground: 0 0% 98%;
+}

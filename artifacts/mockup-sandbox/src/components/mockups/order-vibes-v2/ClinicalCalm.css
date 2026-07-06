@@ -1,0 +1,14 @@
+/* ClinicalCalm.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+.clinical-theme {
+  --c-bg: #F9FAFB;
+  --c-surface: #FFFFFF;
+  --c-border: #E5E7EB;
+  --c-text: #111827;
+  --c-muted: #6B7280;
+  --c-subtle: #9CA3AF;
+  --c-accent: #4B637B; /* Muted steel blue */
+  --c-accent-bg: #F0F4F8;
+  font-family: 'Inter', sans-serif;
+}
