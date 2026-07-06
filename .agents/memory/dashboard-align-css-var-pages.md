@@ -13,3 +13,13 @@ When a page complains of "old style" but already renders with `var(--t-surface)/
 3. Section titles — plain `<h2 class="text-sm font-bold">` → `SecIcon` (exported from DashboardShell) + `font-extrabold` span (~15px, -0.01em).
 
 **How to apply:** import only `SecIcon, STATUS_STYLE, HERO_GRAD` from `@/components/DashboardShell` (SecIcon internalizes ACCENT/ACCENT_SOFT). Keep every `var(--t-*)`. This keeps the edit surface tiny and avoids stretching/gutting downstream functional sections. Identical card-container strings repeat, so change radius via `replace_all` on the exact container string; cards with an extra class (e.g. `space-y-2.5`) won't match — edit those separately. Pre-existing strict-tsc errors in these big pages are expected (build is decoupled from typecheck); confirm any tsc error also exists in `git show HEAD:<file>` before treating it as your regression.
+
+## "Still looks like AI" follow-up on these pages
+When the header/cards/section-titles are already dashboard-aligned but the user still says it "looks like AI", the remaining tells are almost always these three — fix them, don't re-theme:
+1. **Emojis.** The dashboard uses lucide icons ONLY. Sweep 📦🏠🌐📢 etc. and swap to lucide (Truck/Home/ExternalLink/Megaphone/Info). Leave functional emoji DATA (e.g. phone-prefix country flags) alone.
+2. **Primary buttons.** Generic `h-12 rounded-xl font-bold` filled buttons read as AI. Dashboard buttons are `rounded-md`, `font-semibold`, `padding:"10px 16px"` (no fixed height), filled with `ACCENT` (#0176D3, re-exported from DashboardShell) — NOT `var(--t-blue)` (#2D6BCC). Unify all CTAs on ACCENT; it also matches the SecIcon chips which already use ACCENT.
+3. **Decorative per-item icon tiles** (e.g. a blue Package square on every line item) look generated — remove them; keep the text row.
+
+Header size is 16px (not 15). "Position buttons properly" on the order-detail two-column grid = move the Download-PDF + Edit/Top-up block out of the bottom of the tall sidebar (where it's buried under QR cards) into an "Actions" card at the TOP of the sidebar; move the whole conditional block verbatim to preserve gating, keep the destructive Cancel/Delete block separate at the bottom.
+
+**Do NOT delegate these pages to the DESIGN subagent** — they're huge and functionally dense; the subagent guts handlers/deep-links (see design-subagent-functional-regressions). Apply the dashboard idiom by hand.

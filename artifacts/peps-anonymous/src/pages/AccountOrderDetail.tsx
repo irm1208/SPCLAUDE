@@ -7,6 +7,7 @@ import {
   CheckCircle2, AlertCircle, Lock, Plus, Trash2, X, Copy, Check,
   QrCode, Upload, Download, ImagePlus, MapPin, ScanLine, TestTube, Clock, Coins,
   ChevronDown, Pencil, FileText, PackageCheck, ReceiptText, Info,
+  Home, ExternalLink, Megaphone,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -16,7 +17,7 @@ import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
 import { useOrderParcels, useAccount, useAccountOrders, useLogout, type GbParcel } from "@/hooks/use-account";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { DashboardShell, SecIcon, STATUS_STYLE, HERO_GRAD, type DashOrder } from "@/components/DashboardShell";
+import { DashboardShell, SecIcon, STATUS_STYLE, HERO_GRAD, ACCENT, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
@@ -747,7 +748,7 @@ function AccountShippingAddressSection({
                 {/* Delivery tips */}
                 {deliveryTipsEnabled && deliveryTipsItems.length > 0 && (
                   <div className="rounded-xl p-3 space-y-2" style={{ background: `${NAVY}08`, border: `1px solid ${NAVY}22` }}>
-                    <p className="text-xs font-semibold" style={{ color: NAVY }}>📦 Delivery tips</p>
+                    <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: NAVY }}><Info className="w-3.5 h-3.5 shrink-0" /> Delivery tips</p>
                     <ul className="text-xs space-y-1" style={{ color: `${NAVY}bb` }}>
                       {deliveryTipsItems.map((item, i) => (
                         <li key={i}>• {item.split(/(\*\*[^*]+\*\*)/).map((part, j) =>
@@ -1735,7 +1736,7 @@ function DirectShippingToggle({
           border: `1.5px solid ${value ? "rgba(99,102,241,0.45)" : "rgba(255,255,255,0.1)"}`,
         }}
       >
-        <span className="text-xl leading-none shrink-0">🏠</span>
+        <Home className="w-5 h-5 shrink-0" style={{ color: value ? "#a5b4fc" : "rgba(255,255,255,0.6)" }} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold" style={{ color: value ? "#a5b4fc" : "rgba(255,255,255,0.85)" }}>
             I want direct shipping to my home address
@@ -2092,7 +2093,7 @@ export default function AccountOrderDetail() {
                       {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
                         <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
                           <div className="flex items-center gap-2 px-3 py-2">
-                            <span className="text-base leading-none">📦</span>
+                            <Truck className="w-4 h-4 shrink-0" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }} />
                             <p className="text-xs font-semibold" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }}>Your order will be shipped via a reshipper</p>
                           </div>
                           {order.reshipperUsername && (
@@ -2117,14 +2118,11 @@ export default function AccountOrderDetail() {
                         <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                           <div className="flex items-center gap-2 mb-3">
                             <SecIcon Icon={Package} />
-                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Items <span style={{ color: "var(--t-subtle)", fontWeight: 700 }}>({order.lineItems.length})</span></span>
+                            <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Items <span style={{ color: "var(--t-subtle)", fontWeight: 700 }}>({order.lineItems.length})</span></span>
                           </div>
                           <div>
                             {order.lineItems.map((li: OrderLineItem, i: number) => (
                               <div key={i} className={`flex items-center gap-3 py-2.5${li.isOos ? " opacity-55" : ""}`} style={i > 0 ? { borderTop: "1px solid var(--t-border)" } : undefined}>
-                                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-08)" }}>
-                                  <Package className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
-                                </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-semibold truncate" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>{li.productName}</p>
                                   <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
@@ -2143,7 +2141,7 @@ export default function AccountOrderDetail() {
                       <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                         <div className="flex items-center gap-2 mb-3">
                           <SecIcon Icon={ReceiptText} />
-                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order summary</span>
+                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order summary</span>
                         </div>
                         <div className="space-y-1.5 text-sm">
                           {order.productSubtotal > 0 && (
@@ -2158,7 +2156,7 @@ export default function AccountOrderDetail() {
                           )}
                           {order.directShippingRequested && (order.directShippingCost ?? 0) > 0 ? (
                             <div className="flex justify-between" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>
-                              <span className="font-medium">🏠 Direct Shipping</span>
+                              <span className="font-medium flex items-center gap-1.5"><Home className="w-3.5 h-3.5 shrink-0" /> Direct Shipping</span>
                               <span className="font-medium">{fmtC(order.directShippingCost!, order.currency)}</span>
                             </div>
                           ) : (
@@ -2237,7 +2235,7 @@ export default function AccountOrderDetail() {
                             )}
                             {order.routingType === "direct" && (
                               <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
-                                <span className="text-base leading-none">🏠</span>
+                                <Home className="w-4 h-4 shrink-0" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }} />
                                 <p className="text-xs font-semibold" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Your order will be shipped directly to your address</p>
                               </div>
                             )}
@@ -2261,7 +2259,7 @@ export default function AccountOrderDetail() {
                         <div className="rounded-lg p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                           <div className="flex items-center gap-2">
                             <SecIcon Icon={Truck} />
-                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Tracking</span>
+                            <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Tracking</span>
                           </div>
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
@@ -2293,7 +2291,7 @@ export default function AccountOrderDetail() {
                             className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
                             style={{ color: "var(--t-blue)" }}
                           >
-                            🌐 Track on 17track →
+                            <ExternalLink className="w-3.5 h-3.5 shrink-0" /> Track on 17track
                           </a>
                         </div>
                       )}
@@ -2304,11 +2302,50 @@ export default function AccountOrderDetail() {
 
                     {/* ---------- SIDEBAR ---------- */}
                     <div className="space-y-4 min-w-0">
+                      {/* Actions */}
+                      <div className="rounded-lg p-4 sm:p-5 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <SecIcon Icon={Pencil} />
+                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
+                        </div>
+                        {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false ? (
+                          <button
+                            className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
+                            style={{ background: ACCENT, padding: "10px 16px" }}
+                            onClick={handleTopUp}
+                          >
+                            <Plus className="w-4 h-4" /> Place Another Order
+                          </button>
+                        ) : order.orderType === "wholesale_shared" ? (
+                          <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                            This is a shared wholesale order. Items and shipping are managed from the shared order page.
+                          </div>
+                        ) : EDITABLE_STATUSES.includes(order.status) ? (
+                          <button
+                            className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
+                            style={{ background: ACCENT, padding: "10px 16px" }}
+                            onClick={handleEdit}
+                          >
+                            <Pencil className="w-4 h-4" /> Edit This Order
+                          </button>
+                        ) : order.paymentStatus !== "confirmed" ? (
+                          <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                            This order is <span className="font-semibold">{order.status}</span> and cannot be edited.
+                          </div>
+                        ) : null}
+                        <button
+                          onClick={handleDownloadReceipt}
+                          className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
+                          style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderColor: "var(--t-border)", padding: "10px 16px" }}
+                        >
+                          <Download className="w-4 h-4" /> Download PDF Receipt
+                        </button>
+                      </div>
                       {/* Order details */}
                       <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                         <div className="flex items-center gap-2 mb-3">
                           <SecIcon Icon={Info} />
-                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order details</span>
+                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order details</span>
                         </div>
                         <div className="space-y-2.5 text-sm">
                           <div className="flex items-start justify-between gap-3">
@@ -2330,7 +2367,7 @@ export default function AccountOrderDetail() {
                       <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                         <div className="flex items-center gap-2 mb-3">
                           <SecIcon Icon={Clock} />
-                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Timeline</span>
+                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Timeline</span>
                         </div>
                         {order.status === "Cancelled" ? (
                           <div className="flex items-center gap-2 text-sm">
@@ -2376,7 +2413,7 @@ export default function AccountOrderDetail() {
                         <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                           <div className="flex items-center gap-2 mb-2">
                             <SecIcon Icon={FileText} />
-                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Notes</span>
+                            <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Notes</span>
                           </div>
                           <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-muted)" }}>{order.notes}</p>
                         </div>
@@ -2387,7 +2424,7 @@ export default function AccountOrderDetail() {
                   {/* Payment banner (set by GB admin) */}
                   {order.groupBuyPaymentBanner && (
                     <div className="rounded-2xl flex items-start gap-3 px-4 py-3" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
-                      <span className="text-lg leading-none mt-0.5 shrink-0">📢</span>
+                      <Megaphone className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#B45309" }} />
                       <p className="text-sm leading-snug" style={{ color: "#92400E" }}>
                         {order.groupBuyPaymentBanner.split("\n").map((line, i) => {
                           const parts = line.split(/(\*\*[^*]+\*\*)/g);
@@ -2700,43 +2737,6 @@ export default function AccountOrderDetail() {
                       </Card>
                     )
                   )}
-
-                  {/* Download PDF Receipt */}
-                  <button
-                    onClick={handleDownloadReceipt}
-                    className="w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] border"
-                    style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderColor: "var(--t-border)" }}
-                  >
-                    <Download className="w-4 h-4" />
-                    Download PDF Receipt
-                  </button>
-
-                  {/* Edit / Top-up buttons */}
-                  {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false ? (
-                    <button
-                      className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.98] hover:brightness-110"
-                      style={{ background: "var(--t-blue-deep)" }}
-                      onClick={handleTopUp}
-                    >
-                      <Plus className="w-5 h-5" /> Place Another Order
-                    </button>
-                  ) : order.orderType === "wholesale_shared" ? (
-                    <div className="text-center text-sm text-muted-foreground p-3 bg-muted/40 rounded-xl">
-                      This is a shared wholesale order. Items and shipping are managed from the shared order page.
-                    </div>
-                  ) : EDITABLE_STATUSES.includes(order.status) ? (
-                    <button
-                      className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.98] hover:brightness-110"
-                      style={{ background: "var(--t-blue)" }}
-                      onClick={handleEdit}
-                    >
-                      <Package className="w-5 h-5" /> Edit This Order
-                    </button>
-                  ) : order.paymentStatus !== "confirmed" ? (
-                    <div className="text-center text-sm text-muted-foreground p-3 bg-muted/40 rounded-xl">
-                      This order is <span className="font-semibold">{order.status}</span> and cannot be edited.
-                    </div>
-                  ) : null}
 
                   {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
                   {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder && !order.groupBuyDeleteLocked && (
