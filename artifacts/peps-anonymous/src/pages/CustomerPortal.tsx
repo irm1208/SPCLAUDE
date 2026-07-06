@@ -14,7 +14,7 @@ import {
   Info, TriangleAlert, FlaskConical, CalendarDays, Users,
   Home, Lock, LayoutDashboard, ChevronDown, ChevronUp, ChevronLeft, AtSign,
   Plus, Trash2, CircleDot, Leaf, Pill, Calendar, X,
-  ShoppingCart, History, LineChart, Scale, Zap, Menu,
+  ShoppingCart, History, LineChart, Scale, Zap, Menu, Droplet,
   Send, MessageSquare, Upload, ClipboardList, ExternalLink,
   Dna, Microscope, HeartPulse, Brain, TestTube, Stethoscope,
   SlidersHorizontal, Sparkles, RotateCcw, GripVertical,
@@ -66,7 +66,7 @@ import { T } from "@/lib/theme";
 import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
 import { DashboardHome } from "@/components/DashboardHome";
-import { DashboardShell, StatCard, palette, ACCENT } from "@/components/DashboardShell";
+import { DashboardShell, StatCard, palette, ACCENT, ACCENT_SOFT, SecIcon, HERO_GRAD } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
 import Protocols from "@/pages/Protocols";
 import PublicTestingPools from "@/pages/PublicTestingPools";
@@ -7417,39 +7417,92 @@ export default function CustomerPortal() {
   // ─── Health Hub section ───────────────────────────────────────────────────────
 
   if (section === "health-hub") {
-    const HEALTH_AREAS: { id: Section; label: string; description: string; Icon: React.ElementType; color: string; bg: string }[] = [
-      { id: "glp1",        label: "GLP-1 Tracker",              description: "Log your GLP-1 shots and track weight trends over time.",              Icon: Scale,       color: "#0891B2",        bg: "rgba(8,145,178,0.08)"   },
-      { id: "compounds",   label: "Compounds & Protocols",      description: "Track your active compounds, doses, and cycling protocols.",           Icon: FlaskConical, color: "#16A34A",        bg: "rgba(22,163,74,0.08)"   },
-      { id: "blood-tests", label: "Blood Tests",                description: "Upload and analyse your blood work results.",                          Icon: FlaskConical, color: "#7C3AED",        bg: "rgba(124,58,237,0.08)"  },
-      { id: "health",      label: "Health Insights",            description: "AI-powered biomarker analysis and health trend summaries.",            Icon: HeartPulse,   color: "#DC2626",        bg: "rgba(220,38,38,0.08)"   },
-      { id: "plotter",     label: "Cycle Plotter",              description: "Visualise your steroid and peptide cycles on a timeline.",             Icon: TrendingUp,   color: "var(--t-blue)",  bg: "var(--t-blue-08)"       },
-      { id: "fh-risk",            label: "Inherited Cholesterol Risk", description: "Assess your risk of Familial Hypercholesterolaemia using Simon Broome or Dutch DLCN criteria.", Icon: HeartPulse, color: "#DC2626", bg: "rgba(220,38,38,0.08)" },
-      { id: "insulin-resistance", label: "Insulin Resistance Score",   description: "Estimate your metabolic risk using the HOMA-IR model with fasting glucose and insulin levels.",   Icon: Activity,  color: "#0891B2", bg: "rgba(8,145,178,0.08)"  },
+    const P = palette(dark);
+    const hubCard = {
+      background: P.panel,
+      border: `1px solid ${P.border}`,
+      boxShadow: P.panel === "#FFFFFF" ? "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" : "none",
+    } as React.CSSProperties;
+
+    type Area = { id: Section; label: string; description: string; Icon: React.ElementType; color: string; bg: string };
+    const HEALTH_GROUPS: { group: string; GroupIcon: React.ElementType; areas: Area[] }[] = [
+      {
+        group: "Tracking & Logs", GroupIcon: LineChart,
+        areas: [
+          { id: "glp1",      label: "GLP-1 Tracker",         description: "Log your GLP-1 shots and track weight trends over time.",    Icon: Scale,        color: "#0891B2",       bg: "rgba(8,145,178,0.12)"  },
+          { id: "compounds", label: "Compounds & Protocols", description: "Track your active compounds, doses, and cycling protocols.", Icon: FlaskConical, color: "#16A34A",       bg: "rgba(22,163,74,0.12)"  },
+          { id: "plotter",   label: "Cycle Plotter",         description: "Visualise your steroid and peptide cycles on a timeline.",   Icon: TrendingUp,   color: "var(--t-blue)", bg: "var(--t-blue-08)"      },
+        ],
+      },
+      {
+        group: "Analysis", GroupIcon: HeartPulse,
+        areas: [
+          { id: "blood-tests", label: "Blood Tests",     description: "Upload and analyse your blood work results.",                Icon: Droplet,    color: "#7C3AED", bg: "rgba(124,58,237,0.12)" },
+          { id: "health",      label: "Health Insights", description: "AI-powered biomarker analysis and health trend summaries.", Icon: HeartPulse, color: "#DC2626", bg: "rgba(220,38,38,0.12)"  },
+        ],
+      },
+      {
+        group: "Risk Calculators", GroupIcon: Activity,
+        areas: [
+          { id: "fh-risk",            label: "Inherited Cholesterol Risk", description: "Assess your FH risk using Simon Broome or Dutch DLCN criteria.", Icon: HeartPulse, color: "#DC2626", bg: "rgba(220,38,38,0.12)" },
+          { id: "insulin-resistance", label: "Insulin Resistance Score",   description: "Estimate metabolic risk via the HOMA-IR model.",                Icon: Activity,   color: "#0891B2", bg: "rgba(8,145,178,0.12)" },
+        ],
+      },
     ];
+
     return inShell("health-hub", "Health Hub", (
       <>
-        <p className="text-[13px]" style={{ color: T.subtle }}>
-          Track, analyse, and manage all aspects of your health in one place.
-        </p>
-        <div className="flex flex-col gap-3 w-full max-w-[860px]">
-              {HEALTH_AREAS.map(({ id, label, description, Icon, color, bg }) => (
+        {/* Hero band */}
+        <div
+          className="rounded-lg flex items-center gap-4"
+          style={{ background: HERO_GRAD, padding: "20px 22px", color: "#fff" }}
+        >
+          <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 44, height: 44, background: "rgba(255,255,255,0.14)" }}>
+            <HeartPulse className="w-6 h-6" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-extrabold leading-tight" style={{ fontSize: 19, letterSpacing: "-0.01em" }}>Health Hub</h2>
+            <p className="text-[13px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>
+              Track, analyse, and manage all aspects of your health in one place.
+            </p>
+          </div>
+        </div>
+
+        {/* Summary stats */}
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[860px]">
+          <StatCard T={P} label="Blood Tests"  value={bloodTests.length}    Icon={Droplet}      iconColor="#7C3AED" onClick={() => setSection("blood-tests")} />
+          <StatCard T={P} label="Compounds"     value={activeCompounds.length} Icon={FlaskConical} iconColor="#16A34A" onClick={() => setSection("compounds")} />
+          <StatCard T={P} label="GLP-1 Logs"    value={glp1Logs.length}      Icon={Scale}        iconColor="#0891B2" onClick={() => setSection("glp1")} />
+        </div>
+
+        {/* Grouped app cards */}
+        {HEALTH_GROUPS.map(({ group, GroupIcon, areas }) => (
+          <div key={group} className="w-full max-w-[860px] flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <SecIcon Icon={GroupIcon} />
+              <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: P.text }}>{group}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {areas.map(({ id, label, description, Icon, color, bg }) => (
                 <button
                   key={id}
                   onClick={() => setSection(id)}
-                  className="flex items-center gap-4 p-5 rounded-xl text-left transition-opacity hover:opacity-80"
-                  style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}
+                  className="dh-card-hover flex items-center gap-3.5 p-4 rounded-lg text-left"
+                  style={hubCard}
                 >
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ background: bg }}>
-                    <Icon className="w-5 h-5" style={{ color }} />
+                  <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}>
+                    <Icon className="w-[18px] h-[18px]" strokeWidth={2.2} style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-bold leading-tight" style={{ color: T.text }}>{label}</p>
-                    <p className="text-[12px] mt-1 leading-snug" style={{ color: T.muted }}>{description}</p>
+                    <p className="text-[14px] font-bold leading-tight" style={{ color: P.text }}>{label}</p>
+                    <p className="text-[12px] mt-1 leading-snug" style={{ color: P.muted }}>{description}</p>
                   </div>
-                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: T.subtle }} />
+                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: P.subtle }} />
                 </button>
               ))}
-        </div>
+            </div>
+          </div>
+        ))}
       </>
     ));
   }
@@ -8416,11 +8469,17 @@ export default function CustomerPortal() {
   if (section === "compounds") {
     return inShell("compounds", "Compounds & Protocols", (
       <>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px]" style={{ color: T.subtle }}>Track your active compounds, doses, and cycling protocols</p>
+        <div className="rounded-lg flex items-center gap-4" style={{ background: HERO_GRAD, padding: "18px 20px", color: "#fff" }}>
+          <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 42, height: 42, background: "rgba(255,255,255,0.14)" }}>
+            <FlaskConical className="w-5 h-5" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Compounds &amp; Protocols</h2>
+            <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>Track your active compounds, doses, and cycling protocols.</p>
+          </div>
           <button onClick={() => setShowCompoundForm(true)}
-                  className="h-9 px-4 rounded-lg flex items-center gap-1.5 text-sm font-semibold text-white shrink-0"
-                  style={{ background: "var(--t-blue)" }}>
+                  className="flex items-center gap-1.5 text-sm font-semibold shrink-0 rounded-md"
+                  style={{ background: "#fff", color: ACCENT, padding: "8px 14px" }}>
             <Plus className="w-3.5 h-3.5" /> Log
           </button>
         </div>
@@ -9150,15 +9209,21 @@ export default function CustomerPortal() {
 
     return inShell("health", "Health Insights", (
       <>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px]" style={{ color: T.subtle }}>
-            {lastTestLabel ? `Last test: ${lastTestLabel}` : "Based on your blood test data"}
-          </p>
+        <div className="rounded-lg flex items-center gap-4" style={{ background: HERO_GRAD, padding: "18px 20px", color: "#fff" }}>
+          <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 42, height: 42, background: "rgba(255,255,255,0.14)" }}>
+            <HeartPulse className="w-5 h-5" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Health Insights</h2>
+            <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>
+              {lastTestLabel ? `Last test: ${lastTestLabel}` : "AI-powered analysis based on your blood test data."}
+            </p>
+          </div>
           {biomarkers.length > 0 && (
             <button
               onClick={() => setShowDashCustomise(v => !v)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl text-[11px] font-semibold transition-all shrink-0"
-              style={{ background: showDashCustomise ? "var(--t-blue)" : T.surface, color: showDashCustomise ? "#fff" : T.muted, border: `1px solid ${showDashCustomise ? "var(--t-blue)" : T.border}` }}>
+              className="flex items-center gap-1.5 text-[12px] font-semibold transition-all shrink-0 rounded-md"
+              style={{ background: showDashCustomise ? "#fff" : "rgba(255,255,255,0.14)", color: showDashCustomise ? ACCENT : "#fff", padding: "7px 12px" }}>
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Customise
             </button>
@@ -9736,13 +9801,19 @@ export default function CustomerPortal() {
         </AnimatePresence>
 
         {/* ════════════════════ HEADER ROW ═════════════════════════════════════ */}
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px]" style={{ color: T.subtle }}>Track your shots, weight and progress</p>
+        <div className="rounded-lg flex items-center gap-4" style={{ background: HERO_GRAD, padding: "18px 20px", color: "#fff" }}>
+          <span className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 42, height: 42, background: "rgba(255,255,255,0.14)" }}>
+            <Scale className="w-5 h-5" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>GLP-1 Tracker</h2>
+            <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>Track your shots, weight and progress.</p>
+          </div>
           {glp1SubTab === "shots" && (
             <button
               onClick={() => setShowGlp1Form(true)}
-              className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm font-semibold text-white shrink-0"
-              style={{ background: "var(--t-blue)" }}
+              className="flex items-center gap-1.5 text-sm font-semibold shrink-0 rounded-md"
+              style={{ background: "#fff", color: ACCENT, padding: "8px 14px" }}
             >
               <Plus className="w-3.5 h-3.5" /> Add shot
             </button>
