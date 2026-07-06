@@ -1623,11 +1623,11 @@ export default function OrderForm() {
                 const methodInfoEnabled = (method as any).infoEnabled === true;
                 const infoText = (method as any).infoText || (method as any).description || getDeliveryFallbackInfo(method.name);
                 return (
-                  <div key={method.id} className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${isSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-border, #E4E4E7)"}`, boxShadow: isSelected ? "0 1px 3px rgba(45,107,204,0.10)" : undefined }}>
+                  <div key={method.id} className="rounded-lg overflow-hidden" style={{ border: `1.5px solid ${isSelected ? "#0176D3" : "var(--t-border, #E4E4E7)"}`, boxShadow: isSelected ? "0 1px 3px rgba(1,118,211,0.10)" : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                     {/* Row: selection area + info button + price */}
                     <div
                       className="flex items-center gap-3 px-3.5 py-3 transition-all"
-                      style={{ background: isSelected ? "var(--t-blue-08, rgba(45,107,204,0.08))" : "var(--t-surface, #fff)" }}
+                      style={{ background: isSelected ? "rgba(1,118,211,0.08)" : "var(--t-surface, #fff)" }}
                     >
                       {/* Clickable selection area (radio + icon tile + name) */}
                       <button
@@ -1639,8 +1639,8 @@ export default function OrderForm() {
                         <div
                           className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all"
                           style={{
-                            background: isSelected ? "var(--t-blue, #2D6BCC)" : "transparent",
-                            border: `1.5px solid ${isSelected ? "var(--t-blue, #2D6BCC)" : "#D0DAE4"}`,
+                            background: isSelected ? "#0176D3" : "transparent",
+                            border: `1.5px solid ${isSelected ? "#0176D3" : "#D0DAE4"}`,
                           }}
                         >
                           {isSelected && <Check className="w-3 h-3" style={{ color: "#fff" }} strokeWidth={3} />}
@@ -1651,7 +1651,7 @@ export default function OrderForm() {
                           className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                           style={{ background: isSelected ? "rgba(255,255,255,0.7)" : "var(--t-surface2, #F4F4F5)" }}
                         >
-                          <Icon className="w-4 h-4" style={{ color: isSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-muted, #374151)" }} />
+                          <Icon className="w-4 h-4" style={{ color: isSelected ? "#0176D3" : "var(--t-muted, #374151)" }} />
                         </div>
 
                         {/* Name */}
@@ -1666,10 +1666,10 @@ export default function OrderForm() {
                           type="button"
                           onClick={() => setInfoOpenId(isInfoOpen ? null : method.id)}
                           className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors"
-                          style={{ background: isInfoOpen ? "rgba(45,107,204,0.12)" : "transparent" }}
+                          style={{ background: isInfoOpen ? "rgba(1,118,211,0.12)" : "transparent" }}
                           aria-label="Delivery info"
                         >
-                          <Info className="w-4 h-4" style={{ color: isInfoOpen ? "var(--t-blue, #2D6BCC)" : "#9CA3AF" }} />
+                          <Info className="w-4 h-4" style={{ color: isInfoOpen ? "#0176D3" : "#9CA3AF" }} />
                         </button>
                       )}
 
@@ -1683,7 +1683,7 @@ export default function OrderForm() {
 
                     {/* Expandable info panel */}
                     {methodInfoEnabled && isInfoOpen && (
-                      <div className="px-4 pb-3 pt-2" style={{ background: isSelected ? "rgba(45,107,204,0.04)" : "var(--t-surface2, #F8F9FA)", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
+                      <div className="px-4 pb-3 pt-2" style={{ background: isSelected ? "rgba(1,118,211,0.04)" : "var(--t-surface2, #F8F9FA)", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
                         <p className="text-xs leading-relaxed" style={{ color: "var(--t-subtle, #6B7280)" }}>{infoText}</p>
                       </div>
                     )}
@@ -1704,23 +1704,23 @@ export default function OrderForm() {
 
             if (!("tiers" in info) || !info.tiers || !info.tierBounds?.length) {
               return (
-                <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${isDsSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-border, #E4E4E7)"}`, boxShadow: isDsSelected ? "0 2px 8px rgba(45,107,204,0.13)" : undefined }}>
+                <div className="rounded-lg overflow-hidden" style={{ border: `1.5px solid ${isDsSelected ? "#0176D3" : "var(--t-border, #E4E4E7)"}`, boxShadow: isDsSelected ? "0 2px 8px rgba(1,118,211,0.13)" : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                   <button
                     type="button"
                     onClick={selectDirectShipping}
                     className="flex items-center gap-3 w-full px-3.5 py-3.5 text-left transition-all"
-                    style={{ background: isDsSelected ? "rgba(45,107,204,0.07)" : "var(--t-surface, #fff)" }}
+                    style={{ background: isDsSelected ? "rgba(1,118,211,0.07)" : "var(--t-surface, #fff)" }}
                   >
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all" style={{ background: isDsSelected ? "var(--t-blue, #2D6BCC)" : "transparent", border: `2px solid ${isDsSelected ? "var(--t-blue, #2D6BCC)" : "#CBD5E1"}` }}>
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all" style={{ background: isDsSelected ? "#0176D3" : "transparent", border: `2px solid ${isDsSelected ? "#0176D3" : "#CBD5E1"}` }}>
                       {isDsSelected && <Check className="w-3 h-3" style={{ color: "#fff" }} strokeWidth={3} />}
                     </div>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: isDsSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-surface2, #F1F5F9)" }}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: isDsSelected ? "#0176D3" : "var(--t-surface2, #F1F5F9)" }}>
                       <Home className="w-4 h-4" style={{ color: isDsSelected ? "#fff" : "var(--t-muted, #64748B)" }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-semibold" style={{ color: "var(--t-text, #1A1D1F)" }}>Direct to Home</p>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(45,107,204,0.1)", color: "var(--t-blue, #2D6BCC)" }}>VENDOR</span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(1,118,211,0.1)", color: "#0176D3" }}>VENDOR</span>
                       </div>
                       <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted, #6B7280)" }}>Contact us for quote</p>
                     </div>
@@ -1769,24 +1769,24 @@ export default function OrderForm() {
             const estimatedCost = userRegion?.prices ? calcCost(userRegion.prices) : null;
 
             return (
-              <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${isDsSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-border, #E4E4E7)"}`, boxShadow: isDsSelected ? "0 2px 8px rgba(45,107,204,0.13)" : undefined }}>
+              <div className="rounded-lg overflow-hidden" style={{ border: `1.5px solid ${isDsSelected ? "#0176D3" : "var(--t-border, #E4E4E7)"}`, boxShadow: isDsSelected ? "0 2px 8px rgba(1,118,211,0.13)" : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                 {/* Header — clickable radio card */}
                 <button
                   type="button"
                   onClick={selectDirectShipping}
                   className="flex items-center gap-3 w-full px-3.5 py-3.5 text-left transition-all"
-                  style={{ background: isDsSelected ? "rgba(45,107,204,0.07)" : "var(--t-surface, #fff)", borderBottom: "1px solid rgba(45,107,204,0.10)" }}
+                  style={{ background: isDsSelected ? "rgba(1,118,211,0.07)" : "var(--t-surface, #fff)", borderBottom: "1px solid rgba(1,118,211,0.10)" }}
                 >
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all" style={{ background: isDsSelected ? "var(--t-blue, #2D6BCC)" : "transparent", border: `2px solid ${isDsSelected ? "var(--t-blue, #2D6BCC)" : "#CBD5E1"}` }}>
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all" style={{ background: isDsSelected ? "#0176D3" : "transparent", border: `2px solid ${isDsSelected ? "#0176D3" : "#CBD5E1"}` }}>
                     {isDsSelected && <Check className="w-3 h-3" style={{ color: "#fff" }} strokeWidth={3} />}
                   </div>
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: isDsSelected ? "var(--t-blue, #2D6BCC)" : "var(--t-surface2, #F1F5F9)" }}>
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: isDsSelected ? "#0176D3" : "var(--t-surface2, #F1F5F9)" }}>
                     <Home className="w-4 h-4" style={{ color: isDsSelected ? "#fff" : "var(--t-muted, #64748B)" }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-semibold" style={{ color: "var(--t-text, #1A1D1F)" }}>Direct to Home</p>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(45,107,204,0.1)", color: "var(--t-blue, #2D6BCC)" }}>VENDOR</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(1,118,211,0.1)", color: "#0176D3" }}>VENDOR</span>
                     </div>
                     <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted, #6B7280)" }}>Shipped direct by the vendor</p>
                   </div>
@@ -1808,8 +1808,8 @@ export default function OrderForm() {
                               key={ti}
                               className="text-right py-1 px-2 font-semibold rounded-sm"
                               style={{
-                                color: ti === currentTierIdx && totalKits > 0 ? "var(--t-blue)" : "var(--t-muted, #6B7280)",
-                                background: ti === currentTierIdx && totalKits > 0 ? "rgba(45,107,204,0.08)" : "transparent",
+                                color: ti === currentTierIdx && totalKits > 0 ? "#0176D3" : "var(--t-muted, #6B7280)",
+                                background: ti === currentTierIdx && totalKits > 0 ? "rgba(1,118,211,0.08)" : "transparent",
                                 minWidth: 48,
                               }}
                             >
@@ -1822,8 +1822,8 @@ export default function OrderForm() {
                         {visibleRegions.map((region, ri) => {
                           const isUser = region.name === userRegionName;
                           return (
-                            <tr key={ri} style={{ background: isUser ? "rgba(45,107,204,0.06)" : "transparent" }}>
-                              <td className="py-1.5 pr-3 font-medium truncate" style={{ color: isUser ? "var(--t-blue)" : "var(--t-text)", maxWidth: 100 }}>
+                            <tr key={ri} style={{ background: isUser ? "rgba(1,118,211,0.06)" : "transparent" }}>
+                              <td className="py-1.5 pr-3 font-medium truncate" style={{ color: isUser ? "#0176D3" : "var(--t-text)", maxWidth: 100 }}>
                                 {region.name}{isUser && <span className="ml-1 text-[10px] opacity-60">★</span>}
                               </td>
                               {region.prices ? region.prices.map((price, ti) => (
@@ -1831,9 +1831,9 @@ export default function OrderForm() {
                                   key={ti}
                                   className="text-right py-1.5 px-2 tabular-nums rounded-sm"
                                   style={{
-                                    color: ti === currentTierIdx && totalKits > 0 ? "var(--t-blue)" : "var(--t-text)",
+                                    color: ti === currentTierIdx && totalKits > 0 ? "#0176D3" : "var(--t-text)",
                                     fontWeight: ti === currentTierIdx && totalKits > 0 ? 700 : 400,
-                                    background: ti === currentTierIdx && totalKits > 0 ? "rgba(45,107,204,0.08)" : "transparent",
+                                    background: ti === currentTierIdx && totalKits > 0 ? "rgba(1,118,211,0.08)" : "transparent",
                                   }}
                                 >
                                   ${price}
@@ -1851,19 +1851,19 @@ export default function OrderForm() {
                   </div>
 
                   {showAllToggle && (
-                    <button type="button" onClick={() => setShowAllDsRegions(p => !p)} className="mt-1 text-[11px]" style={{ color: "var(--t-blue)" }}>
+                    <button type="button" onClick={() => setShowAllDsRegions(p => !p)} className="mt-1 text-[11px]" style={{ color: "#0176D3" }}>
                       {showAllDsRegions ? "Show less" : `Show all ${regions.length} regions`}
                     </button>
                   )}
 
                   {/* Live cost estimate */}
                   {totalKits > 0 && (
-                    <div className="mt-3 flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "rgba(45,107,204,0.08)" }}>
-                      <p className="text-xs" style={{ color: "var(--t-blue)" }}>
+                    <div className="mt-3 flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "rgba(1,118,211,0.08)" }}>
+                      <p className="text-xs" style={{ color: "#0176D3" }}>
                         Estimated cost for <strong>{totalKits}</strong> kit{totalKits !== 1 ? "s" : ""}
                         {totalKits > maxKitsPerPackage && <span className="opacity-70 ml-1">({Math.ceil(totalKits / maxKitsPerPackage)} packages)</span>}
                       </p>
-                      <p className="text-sm font-bold tabular-nums" style={{ color: "var(--t-blue)" }}>
+                      <p className="text-sm font-bold tabular-nums" style={{ color: "#0176D3" }}>
                         {estimatedCost != null ? `$${estimatedCost.toFixed(2)}` : userRegion ? "—" : "Select your country"}
                       </p>
                     </div>
