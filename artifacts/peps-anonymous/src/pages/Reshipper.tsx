@@ -4018,12 +4018,33 @@ export default function ReshipperPage() {
   }
 
   if (loading || accountLoading) {
+    // Render the loading state inside the new dashboard chrome (sidebar skeleton
+    // + page background) so navigating here never flashes the old PageLayout nav.
     return (
-      <PageLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--t-blue)" }} />
+      <div className="flex overflow-hidden" style={{ height: "100dvh", background: P.page, fontFamily: FONT, color: P.text }}>
+        <aside className="hidden lg:flex flex-col shrink-0" style={{ width: 252, background: P.sidebar, borderRight: `1px solid ${P.border}` }}>
+          <div className="flex items-center gap-3 px-4 shrink-0" style={{ height: 72 }}>
+            <span className="flex items-center justify-center shrink-0" style={{ width: 38, height: 38, borderRadius: 8, background: ACCENT, color: "#fff" }}>
+              <Truck className="w-[19px] h-[19px]" strokeWidth={2.2} />
+            </span>
+            <div className="min-w-0">
+              <p className="font-extrabold tracking-tight leading-tight truncate" style={{ fontSize: 16 }}>Reshipper Hub</p>
+              <p className="truncate" style={{ fontSize: 11.5, color: P.subtle }}>Loading…</p>
+            </div>
+          </div>
+        </aside>
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="flex items-center gap-2.5 px-4 md:px-7 shrink-0" style={{ height: 60, background: P.panel, borderBottom: `1px solid ${P.border}` }}>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold uppercase" style={{ fontSize: 10, letterSpacing: ".08em", color: ACCENT }}>Reshipper</p>
+              <p className="font-extrabold tracking-tight truncate leading-tight" style={{ fontSize: 16 }}>Loading…</p>
+            </div>
+          </header>
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: ACCENT }} />
+          </div>
         </div>
-      </PageLayout>
+      </div>
     );
   }
 
