@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { DashboardShell } from "@/components/DashboardShell";
-import { useAccount, useLogout } from "@/hooks/use-account";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
 type WholesaleSection = "order" | "shared";
@@ -12,7 +12,8 @@ export function WholesaleShell({ active, title, children }: {
   children: React.ReactNode;
 }) {
   const [, navigate] = useLocation();
-  const { account } = useAccount();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
   const logoutMutation = useLogout();
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
@@ -35,7 +36,7 @@ export function WholesaleShell({ active, title, children }: {
       title={title}
       username={account?.telegramUsername ?? ""}
       credits={account?.credits ?? null}
-      orders={[]}
+      orders={(ordersData ?? []) as DashOrder[]}
       activeCompounds={[]}
       groupBuys={[]}
       onSection={goSection}

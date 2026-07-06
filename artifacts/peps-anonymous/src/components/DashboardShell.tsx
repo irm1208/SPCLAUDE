@@ -17,6 +17,7 @@ import type { PortalNavProps } from "@/pages/CustomerPortal";
 export interface DashOrder {
   id: string; code: string; status: string; grandTotal: number;
   currency?: string | null; createdAt: string; deliveryMethod?: string;
+  orderType?: string | null; groupBuyId?: string | null;
   lineItems: { productName: string; quantity: number }[];
 }
 export interface DashCompound {
@@ -267,6 +268,19 @@ export function DashboardShell({
     { id: "lab-pool", label: "Pool Leaders", Icon: TestTube, active: activeSection === "lab-pool", go: () => onSection("lab-pool") },
     { id: "support",  label: "Tickets",      Icon: LifeBuoy, active: activeSection === "support",  go: () => onSection("support") },
   ];
+
+  // ── Sidebar orders, segmented by GB / Wholesale / Shared Orders ──
+  const sideOrderGroups = useMemo(() => {
+    const sorted = [...orders].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+    const isShared = (o: DashOrder) => o.orderType === "wholesale_shared";
+    const isWholesale = (o: DashOrder) => o.orderType === "wholesale";
+    const groups = [
+      { id: "gb",        label: "Group Buys",    Icon: UsersRound,  color: "#7C3AED", bg: "rgba(124,58,237,0.12)", items: sorted.filter(o => o.groupBuyId && !isWholesale(o) && !isShared(o)) },
+      { id: "wholesale", label: "Wholesale",     Icon: ShoppingBag, color: "#2E844A", bg: "rgba(46,132,74,0.12)",  items: sorted.filter(isWholesale) },
+      { id: "shared",    label: "Shared Orders", Icon: Users,       color: "#0891B2", bg: "rgba(8,145,178,0.12)",  items: sorted.filter(isShared) },
+    ];
+    return groups.map(g => ({ ...g, items: g.items.slice(0, 3) })).filter(g => g.items.length > 0);
+  }, [orders]);
 
   const RAIL_W = 56;
   const SIDEBAR_W = collapsed ? RAIL_W : 250;
@@ -609,31 +623,34 @@ export function DashboardShell({
             </div>
           )}
 
-          {/* Group Buys (Friends analog) */}
-          {!collapsed && groupBuys.length > 0 && (
-            <div className="dh-side-gb">
-              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Group Buys</p>
-              <div className="flex flex-col gap-0.5">
-                {groupBuys.slice(0, 5).map(g => {
-                  const [gc1, gc2] = AVATAR_GRADIENTS[seedIndex(g.name, AVATAR_GRADIENTS.length)];
-                  return (
-                    <button
-                      key={g.id}
-                      onClick={() => onSection("groups")}
-                      className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
-                      style={{ height: 42, color: T.text, fontWeight: 600, fontSize: 13 }}
-                    >
-                      <span
-                        className="flex items-center justify-center shrink-0 rounded-xl text-white"
-                        style={{ width: 30, height: 30, fontSize: 12, fontWeight: 800, background: `linear-gradient(135deg, ${gc1}, ${gc2})`, boxShadow: `0 2px 8px ${gc1}44` }}
-                      >
-                        {g.name.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="truncate">{g.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Orders, segmented by GB / Wholesale / Shared Orders */}
+          {!collapsed && sideOrderGroups.length > 0 && (
+            <div className="dh-side-orders">
+              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Orders</p>
+              {sideOrderGroups.map(g => (
+                <div key={g.id} className="mb-2">
+                  <p className="px-3 mb-1 font-bold uppercase" style={{ fontSize: 10, letterSpacing: ".07em", color: T.subtle, opacity: 0.8 }}>{g.label}</p>
+                  <div className="flex flex-col gap-0.5">
+                    {g.items.map(o => {
+                      const st = STATUS_STYLE[o.status];
+                      return (
+                        <button
+                          key={o.id}
+                          onClick={() => navigate(`/account/orders/${o.id}`)}
+                          className="dh-nav w-full flex items-center gap-3 rounded-md px-3 text-left"
+                          style={{ height: 40, color: T.text, fontWeight: 600, fontSize: 13 }}
+                        >
+                          <span className="flex items-center justify-center shrink-0 rounded-lg" style={{ width: 28, height: 28, background: g.bg, color: g.color }}>
+                            <g.Icon className="w-[15px] h-[15px]" />
+                          </span>
+                          <span className="truncate flex-1">{o.code}</span>
+                          {st && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: st.color }} title={st.label} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
