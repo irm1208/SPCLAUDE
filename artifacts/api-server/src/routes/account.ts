@@ -1359,18 +1359,54 @@ router.post("/account/wholesale-invite-prompt-seen", requireAccount, async (req,
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
-/** Strip Telegram HTML markup (and common entities) so the message reads as plain text. */
-function stripTelegramHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+function decodeHtmlEntities(s: string): string {
+  return s
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
+    .replace(/&#0?39;/g, "'");
+}
+
+/** Strip Telegram HTML markup (and common entities) so the message reads as plain text. */
+function stripTelegramHtml(html: string): string {
+  const text = decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, ""),
+  );
+  return text
+    .split("\n")
+    // Drop leftover separators at line edges (e.g. "text ·" after a link was extracted).
+    .map(l => l.replace(/[\s·•|]+$/g, "").replace(/^[\s·|]+/g, "").trim())
+    .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Pull `<a href>` anchors out of a Telegram HTML message so the app can render
+ * them as tappable action links. Returns the remaining HTML with anchors removed.
+ */
+function extractNotificationLinks(html: string): { html: string; links: { href: string; label: string }[] } {
+  const links: { href: string; label: string }[] = [];
+  const seen = new Set<string>();
+  const remaining = html.replace(/<a\s[^>]*?href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) => {
+    const url = decodeHtmlEntities(href).trim();
+    // Defense in depth: only allow relative paths and http(s) URLs (never javascript:/data: etc).
+    let safe = false;
+    try {
+      safe = ["http:", "https:"].includes(new URL(url, "https://x.invalid").protocol);
+    } catch { /* unparseable → drop */ }
+    if (safe && url && !seen.has(url) && links.length < 3) {
+      seen.add(url);
+      // Drop trailing arrows/chevrons — the app renders its own arrow icon.
+      const label = stripTelegramHtml(inner).replace(/[→›»\s]+$/g, "").trim();
+      links.push({ href: url, label: label || "Open link" });
+    }
+    return "";
+  });
+  return { html: remaining, links };
 }
 
 // GET /api/account/notifications — recent notifications for the logged-in account
@@ -1391,12 +1427,16 @@ router.get("/account/notifications", requireAccount, async (req, res): Promise<v
       ))
       .orderBy(desc(telegramMessageLogsTable.sentAt))
       .limit(20);
-    res.json(rows.map(r => ({
-      id: r.id,
-      text: stripTelegramHtml(r.messageText),
-      sentAt: (r.sentAt as Date).toISOString(),
-      delivered: r.delivered,
-    })));
+    res.json(rows.map(r => {
+      const { html, links } = extractNotificationLinks(r.messageText);
+      return {
+        id: r.id,
+        text: stripTelegramHtml(html),
+        links,
+        sentAt: (r.sentAt as Date).toISOString(),
+        delivered: r.delivered,
+      };
+    }));
   } catch (err) {
     console.error("[account:notifications] failed:", err);
     res.status(500).json({ error: "Failed to load notifications" });

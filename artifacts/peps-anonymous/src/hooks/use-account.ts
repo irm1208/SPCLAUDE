@@ -762,6 +762,7 @@ export function useTestingLateOptIn(enabled = true) {
 export interface AccountNotification {
   id: number;
   text: string;
+  links: { href: string; label: string }[];
   sentAt: string;
   delivered: boolean;
 }

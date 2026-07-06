@@ -159,6 +159,18 @@ export function DashboardShell({
       return "notifs";
     });
   };
+  // Open a notification action link: in-app links navigate within the SPA, external open a new tab.
+  const openNotifLink = (href: string) => {
+    try {
+      const u = new URL(href, window.location.origin);
+      if (u.host === window.location.host) {
+        setMenu(null);
+        navigate(u.pathname + u.search + u.hash);
+        return;
+      }
+    } catch { /* fall through to new tab */ }
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
   // Rail quick-view flyout: which section is peeking, and the y-offset to anchor it.
   const [quickView, setQuickView] = useState<{ id: string; top: number } | null>(null);
   // Rail hover tooltip: page name shown beside the blue icon rail.
@@ -909,7 +921,7 @@ export function DashboardShell({
                           ) : (notifs ?? []).map(n => {
                             const lines = n.text.split("\n").map(l => l.trim()).filter(Boolean);
                             const nTitle = lines[0] ?? "Notification";
-                            const nBody = lines.slice(1).join(" · ");
+                            const nBody = lines.slice(1).join("\n");
                             const unread = new Date(n.sentAt).getTime() > notifCutoffRef.current;
                             return (
                               <div key={n.id} className="px-3.5 py-2.5 flex gap-2.5" style={{ borderBottom: `1px solid ${T.borderSoft}`, background: unread ? (dark ? "rgba(45,107,204,.12)" : "rgba(45,107,204,.05)") : "transparent" }}>
@@ -917,9 +929,24 @@ export function DashboardShell({
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate" style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{nTitle}</p>
                                   {nBody && (
-                                    <p style={{ fontSize: 11.5, color: T.muted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{nBody}</p>
+                                    <p style={{ fontSize: 11.5, lineHeight: 1.45, color: T.muted, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", marginTop: 1 }}>{nBody}</p>
                                   )}
-                                  <p style={{ fontSize: 10.5, color: T.subtle, marginTop: 2 }}>{timeAgo(n.sentAt)}</p>
+                                  {(n.links?.length ?? 0) > 0 && (
+                                    <div className="flex flex-wrap gap-1.5" style={{ marginTop: 5 }}>
+                                      {n.links.map(l => (
+                                        <button
+                                          key={l.href}
+                                          onClick={() => openNotifLink(l.href)}
+                                          className="dh-nav inline-flex items-center gap-1 rounded-md"
+                                          style={{ padding: "3px 8px", fontSize: 11, fontWeight: 700, color: ACCENT, background: dark ? "rgba(45,107,204,.16)" : "rgba(45,107,204,.08)", border: `1px solid ${dark ? "rgba(45,107,204,.35)" : "rgba(45,107,204,.22)"}` }}
+                                        >
+                                          {l.label}
+                                          <ArrowRight className="w-3 h-3" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <p style={{ fontSize: 10.5, color: T.subtle, marginTop: 3 }}>{timeAgo(n.sentAt)}</p>
                                 </div>
                               </div>
                             );

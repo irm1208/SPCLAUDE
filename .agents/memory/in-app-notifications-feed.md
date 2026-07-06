@@ -16,3 +16,12 @@ The customer dashboard bell reads `GET /api/account/notifications`, which querie
 - The admin Telegram-logs viewer shows these skipped rows; they're intentional and clearly labelled.
 - Unread state is client-only: localStorage `sp_notif_seen` timestamp in DashboardShell; there is no server-side read receipt.
 - Feed queries are covered by index `tg_logs_recipient_sent_idx` (recipient_type, recipient_username, sent_at desc) — keep it if the table is ever rebuilt.
+
+## Action links in the feed
+
+The endpoint extracts `<a href="...">` anchors from the stored Telegram HTML into a `links: [{href,label}]` array (max 3, http/https + relative only — javascript:/data: dropped) BEFORE stripping tags; the client renders them as chips (same-host/relative → SPA navigate, external → new tab noopener).
+
+**Constraints:**
+- Extraction regex only matches **double-quoted** hrefs — keep templates double-quoted (all of telegram-registry.ts is).
+- `renderTemplate` does NOT auto-escape variables; any caller substituting user content into a message MUST escapeHtml it, or a user could inject a clickable chip into another user's feed (protocol allowlist limits blast radius, but don't rely on it).
+- Bodies render with line breaks preserved (pre-line, 3-line clamp) — never join lines with " · " client-side; stripTelegramHtml trims dangling `·`/`•`/`|` at line edges left by anchor removal.
