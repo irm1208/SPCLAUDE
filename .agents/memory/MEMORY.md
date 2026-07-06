@@ -62,3 +62,4 @@
 - [Design subagent functional regressions](design-subagent-functional-regressions.md) — DESIGN redesigns of big pages silently gut forms/deep-links/server fetches; diff-audit vs git HEAD, splice originals back verbatim.
 - [Hub nav breakpoint pairing](hub-nav-breakpoint-pairing.md) — HubBottomNav hideAt must match host layout's sidebar breakpoint (PageLayout=md, DashboardShell=lg) or tablet loses all nav; class + matchMedia in lockstep.
 - [Site typography attempts](site-typography.md) — blanket font swap was tried and REJECTED ("looks horrible"); brainstorm + canvas mockups + approval before any site-wide restyle; fonts load in index.html AND index.css @import.
+- [DashboardShell bottom bars](dashboard-shell-bottom-bars.md) — bottom bars in shell pages must be sticky (lg:bottom-0 + mobile pill clearance), never fixed with hardcoded sidebar offset; collapse state is internal.

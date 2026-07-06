@@ -251,15 +251,15 @@ export function DashboardShell({
   type SideLink = { id: string; label: string; Icon: React.ElementType; active?: boolean; go: () => void };
   const workspaceItems: SideLink[] = [
     ...(account?.organiserStatus === "approved"
-      ? [{ id: "gborganiser", label: "GB Organiser", Icon: Store, go: () => navigate("/gborganiser") }]
+      ? [{ id: "gborganiser", label: "GB Organiser", Icon: Store, active: activeSection === "gborganiser", go: () => navigate("/gborganiser") }]
       : []),
     ...(account?.reshipperStatus === "approved"
-      ? [{ id: "reshipper", label: "Reshipper", Icon: Truck, go: () => navigate("/reshipper") }]
+      ? [{ id: "reshipper", label: "Reshipper", Icon: Truck, active: activeSection === "reshipper", go: () => navigate("/reshipper") }]
       : []),
     ...(account?.isWholesale
       ? [
-          { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, go: () => navigate("/wholesale") },
-          { id: "shared-orders", label: "Shared Orders", Icon: Users, go: () => navigate("/wholesale/shared") },
+          { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, active: activeSection === "wholesale", go: () => navigate("/wholesale") },
+          { id: "shared-orders", label: "Shared Orders", Icon: Users, active: activeSection === "shared-orders", go: () => navigate("/wholesale/shared") },
         ]
       : []),
   ];
@@ -546,14 +546,20 @@ export function DashboardShell({
                 <>
                   <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Workspaces</p>
                   <nav className="flex flex-col gap-0.5">
-                    {workspaceItems.map(({ id, label, Icon, go }) => (
+                    {workspaceItems.map(({ id, label, Icon, active, go }) => (
                       <button
                         key={id}
                         onClick={go}
-                        className="dh-nav relative w-full flex items-center rounded-md transition-all text-left"
-                        style={{ gap: 11, padding: "0 12px", height: 40, background: "transparent", color: T.muted, fontWeight: 600, fontSize: 13.5 }}
+                        className={active ? "relative w-full flex items-center rounded-md transition-all text-left" : "dh-nav relative w-full flex items-center rounded-md transition-all text-left"}
+                        style={{
+                          gap: 11, padding: "0 12px", height: 40,
+                          background: active ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent",
+                          color: active ? ACCENT : T.muted,
+                          fontWeight: active ? 700 : 600, fontSize: 13.5,
+                        }}
                       >
-                        <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+                        {active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
+                        <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
                         <span className="truncate">{label}</span>
                       </button>
                     ))}

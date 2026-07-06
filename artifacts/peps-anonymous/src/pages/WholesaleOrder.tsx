@@ -1116,7 +1116,7 @@ export default function WholesaleOrder() {
 function TotalBarShell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="fixed bottom-0 right-0 left-0 lg:left-[252px] backdrop-blur-xl border-t z-20"
+      className="sticky bottom-[calc(70px_+_env(safe-area-inset-bottom))] lg:bottom-0 backdrop-blur-xl border-t z-20"
       style={{
         background: "var(--t-surface)",
         borderColor: "var(--t-border)",
