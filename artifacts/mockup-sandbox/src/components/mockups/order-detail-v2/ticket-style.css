@@ -1,0 +1,32 @@
+.ticket-perforation {
+  position: relative;
+  border-top: 2px dashed #D0DAE4;
+  margin: 0 1rem;
+}
+
+.ticket-perforation::before,
+.ticket-perforation::after {
+  content: '';
+  position: absolute;
+  top: -10px; /* half of width */
+  width: 20px;
+  height: 20px;
+  background-color: #F8FAFC;
+  border-radius: 50%;
+  z-index: 10;
+}
+
+.ticket-perforation::before {
+  left: -26px; /* offset for container padding */
+  box-shadow: inset -2px 0 3px rgba(0,0,0,0.02);
+}
+
+.ticket-perforation::after {
+  right: -26px;
+  box-shadow: inset 2px 0 3px rgba(0,0,0,0.02);
+}
+
+/* Add subtle shadow to the whole ticket */
+.ticket-shadow {
+  box-shadow: 0 10px 40px -10px rgba(27, 58, 122, 0.15), 0 0 10px rgba(27, 58, 122, 0.05);
+}

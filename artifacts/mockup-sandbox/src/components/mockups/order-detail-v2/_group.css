@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --navy: #1B3A7A;
+  --blue: #2D6BCC;
+  --deep-navy: #1B3164;
+  --amber: #E9A020;
+  --green: #22c55e;
+  --red: #ef4444;
+  
+  --bg-light: #F8FAFC;
+  --card-dark: #1C2B3D;
+  --input-dark: #162231;
+  
+  --text-heading: #0F1F38;
+  --text-body: #374151;
+  --text-muted: #6B7280;
+}
+
+.pj-container {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-light);
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.pj-gradient-header {
+  background: linear-gradient(135deg, var(--blue) 0%, var(--navy) 100%);
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+  position: relative;
+  padding-bottom: 2rem;
+  box-shadow: 0 10px 25px rgba(27, 58, 122, 0.15);
+}
+
+.pj-progress-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.pj-progress-circle-bg {
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+.pj-progress-circle-value {
+  stroke: var(--amber);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease-out;
+}
+
+.pj-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(15, 31, 56, 0.04);
+  border: 1px solid rgba(27, 58, 122, 0.06);
+}
+
+.pj-card-dark {
+  background: var(--card-dark);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(27, 43, 61, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pj-button-primary {
+  background: var(--navy);
+  color: white;
+  transition: opacity 0.2s;
+}
+.pj-button-primary:active {
+  opacity: 0.9;
+}
+
+.pj-button-ghost {
+  border: 1px dashed #D0DAE4;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.pj-dashed-line {
+  border-left: 2px dashed rgba(255, 255, 255, 0.2);
+}
