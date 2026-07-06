@@ -14,8 +14,10 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
-import { useOrderParcels, useAccount, type GbParcel } from "@/hooks/use-account";
+import { useOrderParcels, useAccount, useAccountOrders, useLogout, type GbParcel } from "@/hooks/use-account";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 
@@ -1766,10 +1768,47 @@ function DirectShippingToggle({
   );
 }
 
+/** Dashboard chrome (sidebar + header) for logged-in customers, mirroring WholesaleShell. */
+function OrderDetailShell({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
+  const logoutMutation = useLogout();
+  const [hubMoreOpen, setHubMoreOpen] = useState(false);
+  const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
+  const goSection = (s: string) =>
+    navigate(s === "home" ? "/account" : `/account?s=${encodeURIComponent(s)}`);
+
+  const navProps = {
+    section: "orders",
+    setSection: goSection,
+    hubMoreOpen,
+    setHubMoreOpen,
+    account,
+  } as unknown as PortalNavProps;
+
+  return (
+    <DashboardShell
+      activeSection="orders"
+      title="Order Details"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={(ordersData ?? []) as DashOrder[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={goSection}
+      onLogout={handleLogout}
+      navProps={navProps}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
+
 export default function AccountOrderDetail() {
   const [, params] = useRoute("/account/orders/:id");
   const [, setLocation] = useLocation();
-  const { account } = useAccount();
+  const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const { loadExistingOrder, startTopUpOrder, orderId: draftOrderId, clearOrderId: clearDraftOrderId } = useDraftStore();
 
   const orderId = params?.id ?? null;
@@ -1956,11 +1995,16 @@ export default function AccountOrderDetail() {
     doc.save(`receipt-${order.code}.pdf`);
   };
 
+  // Logged-in customers get the dashboard chrome (sidebar navigation); admin
+  // preview (and logged-out visitors) keep the plain public layout.
+  const useDashChrome = !isAdminPreview && (isLoggedIn || accountLoading);
+  const Chrome = useDashChrome ? OrderDetailShell : PageLayout;
+
   return (
-    <PageLayout>
+    <Chrome>
       <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
-        <main className="flex-1 px-4 py-5 pb-24 md:pb-5 max-w-md mx-auto w-full">
+        <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-24 lg:pb-6" : "pb-24 md:pb-5"} max-w-md mx-auto w-full`}>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
             {/* Back button */}
@@ -2652,13 +2696,15 @@ export default function AccountOrderDetail() {
           </>
         )}
       </AnimatePresence>
-      <HubBottomNav
-        section={"orders" as HubSection}
-        setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
-        hubMoreOpen={false}
-        setHubMoreOpen={() => {}}
-        account={account}
-      />
-    </PageLayout>
+      {!useDashChrome && (
+        <HubBottomNav
+          section={"orders" as HubSection}
+          setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+          hubMoreOpen={false}
+          setHubMoreOpen={() => {}}
+          account={account}
+        />
+      )}
+    </Chrome>
   );
 }

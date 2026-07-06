@@ -42,3 +42,13 @@ track a single dark-mode flag. Do not try to thread `dark` into `T`-based conten
 - Don't double bottom padding: the inShell container already has
   `pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8`; inner content divs
   should not repeat it.
+
+**Standalone detail pages adopting the shell (WholesaleShell pattern):**
+Pages outside CustomerPortal (e.g. wholesale, order detail) wrap in a thin
+top-level shell component mirroring `WholesaleShell.tsx` and swap chrome via
+`useDashChrome = !isAdminPreview && (isLoggedIn || accountLoading)` →
+shell, else `PageLayout`. Include `accountLoading` in the gate or logged-in
+users get a PageLayout flash on first paint. Admin preview (`?adminPreview=1`)
+MUST stay on PageLayout (no customer session). Gate any page-level
+HubBottomNav with `!useDashChrome` (shell renders its own) and pair padding
+to the shell's breakpoint (`pb-24 lg:pb-6`, hub nav hides at lg).
