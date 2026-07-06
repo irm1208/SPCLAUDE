@@ -6,7 +6,8 @@ import {
   AlertTriangle, ShieldCheck, Send,
   BookOpen, ArrowRight, Activity, Beaker, BarChart3, Upload,
   Filter, Users, Building2, Star, TrendingUp, Award, RefreshCw,
-  ClipboardList, Link2, Tag, Sparkles, Share2, SlidersHorizontal, Plus
+  ClipboardList, Link2, Tag, Sparkles, Share2, SlidersHorizontal, Plus,
+  LayoutGrid, Table2
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "@/hooks/use-toast";
@@ -569,6 +570,32 @@ interface Filters {
 
 type SortOption = "newest" | "oldest" | "purity";
 
+function ViewToggle({ view, onViewChange }: { view: "cards" | "table"; onViewChange: (v: "cards" | "table") => void }) {
+  return (
+    <div className="h-9 shrink-0 rounded-md border flex items-center p-0.5 gap-0.5" style={{ background: "var(--t-bg)", borderColor: "var(--t-border)" }}>
+      {([
+        { id: "cards" as const, icon: <LayoutGrid className="w-4 h-4" />, title: "Card view" },
+        { id: "table" as const, icon: <Table2 className="w-4 h-4" />, title: "Table view" },
+      ]).map(opt => (
+        <button
+          key={opt.id}
+          onClick={() => onViewChange(opt.id)}
+          title={opt.title}
+          aria-pressed={view === opt.id}
+          className="h-full px-2 rounded flex items-center justify-center transition-colors"
+          style={{
+            background: view === opt.id ? "var(--t-surface)" : "transparent",
+            color: view === opt.id ? "var(--t-text)" : "var(--t-subtle)",
+            boxShadow: view === opt.id ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+          }}
+        >
+          {opt.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function FilterBar({
   filters,
   onFilters,
@@ -581,6 +608,8 @@ function FilterBar({
   totalShown,
   totalAll,
   onShareFilters,
+  view,
+  onViewChange,
 }: {
   filters: Filters;
   onFilters: (f: Filters) => void;
@@ -593,6 +622,8 @@ function FilterBar({
   totalShown: number;
   totalAll: number;
   onShareFilters?: () => void;
+  view: "cards" | "table";
+  onViewChange: (v: "cards" | "table") => void;
 }) {
   const [open, setOpen] = useState(false);
   const set = (k: keyof Filters) => (v: string) => onFilters({ ...filters, [k]: v });
@@ -652,16 +683,19 @@ function FilterBar({
           </button>
         )}
 
-        {onShareFilters && (
-          <button
-            onClick={onShareFilters}
-            className="h-9 w-9 rounded-md flex items-center justify-center shrink-0 border ml-auto transition-colors"
-            style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
-            title="Share current filter view"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <ViewToggle view={view} onViewChange={onViewChange} />
+          {onShareFilters && (
+            <button
+              onClick={onShareFilters}
+              className="h-9 w-9 rounded-md flex items-center justify-center shrink-0 border transition-colors"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+              title="Share current filter view"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <AnimatePresence initial={false}>
@@ -803,6 +837,73 @@ function CoaRow({ label, value, valueColor }: { label: string; value: string; va
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-[13px] font-medium shrink-0" style={{ color: "rgba(255,255,255,0.92)" }}>{label}</span>
       <span className="text-[13px] font-medium truncate" style={{ color: valueColor ?? COA_MUTED }}>{value}</span>
+    </div>
+  );
+}
+
+function TestTable({ tests, indexFor, onView }: { tests: LabTest[]; indexFor: (t: LabTest) => number; onView: (i: number) => void }) {
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left" style={{ minWidth: 860 }}>
+          <thead>
+            <tr className="border-b" style={{ borderColor: "var(--t-border)" }}>
+              {["Compound", "Source", "Purity", "Actual Mass", "Batch", "Analysis", "Supplier", "Date", "Status"].map(h => (
+                <th key={h} className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--t-subtle)" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tests.map(test => {
+              const badge = coaStatusBadge(test);
+              const batchDate = parseBatchDate(test.batchCode);
+              const displayDate = test.testDate ? new Date(test.testDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : batchDate;
+              const analysisLabel = test.testType ? (TEST_TYPE_LABELS[test.testType] ?? test.testType) : "—";
+              const idx = indexFor(test);
+              return (
+                <tr
+                  key={test.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onView(idx)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(idx); } }}
+                  className="border-b last:border-b-0 cursor-pointer transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+                  style={{ borderColor: "var(--t-border)" }}
+                >
+                  <td className="px-3 py-2.5 text-[13px] font-bold whitespace-nowrap max-w-[220px] truncate" style={{ color: "var(--t-text)" }}>{buildTestTitle(test)}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: "var(--t-muted)", borderColor: "var(--t-border)", background: "var(--t-bg)" }}>
+                      {test.isThirdPartyTest ? "3rd Party" : "Vendor"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-[13px] font-semibold whitespace-nowrap" style={{ color: "var(--t-text)" }}>{test.purityPct != null ? `${formatPurity(test.purityPct)}%` : "—"}</td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{test.mgAmount != null ? `${test.mgAmount} ${test.massUnit ?? "mg"}` : "—"}</td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{test.batchCode ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{analysisLabel}</td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap max-w-[140px] truncate" style={{ color: "var(--t-muted)" }}>{test.supplier ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-[13px] whitespace-nowrap" style={{ color: "var(--t-muted)" }}>{displayDate ?? "—"}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {badge ? (
+                      <span
+                        className="text-[10px] font-extrabold px-2 py-0.5 rounded-full tracking-wide"
+                        style={{
+                          color: badge.color,
+                          background: `color-mix(in srgb, ${badge.color} 12%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${badge.color} 35%, transparent)`,
+                        }}
+                      >
+                        {badge.label}
+                      </span>
+                    ) : (
+                      <span className="text-[13px]" style={{ color: "var(--t-subtle)" }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2399,6 +2500,18 @@ export default function LabTests({ bare }: { bare?: boolean } = {}) {
 
   const displayedTests = filteredTests.slice(0, displayCount);
 
+  const [reportsView, setReportsView] = useState<"cards" | "table">(() => {
+    try {
+      return localStorage.getItem("labtests-view") === "table" ? "table" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const handleViewChange = useCallback((v: "cards" | "table") => {
+    setReportsView(v);
+    try { localStorage.setItem("labtests-view", v); } catch { /* ignore */ }
+  }, []);
+
   const TABS = [
     { id: "reports" as const, label: "Reports", icon: <ClipboardList className="w-4 h-4" /> },
     { id: "metrics" as const, label: "Metrics", icon: <BarChart3 className="w-4 h-4" /> },
@@ -2443,7 +2556,7 @@ export default function LabTests({ bare }: { bare?: boolean } = {}) {
       <div className="min-h-[60vh] pb-24" style={{ background: "var(--t-bg)" }}>
         {activeTab === "reports" && (
           <>
-            <FilterBar filters={filters} onFilters={setFilters} sort={sort} onSort={setSort} compoundNameOptions={compoundNameOptions} labs={labs} testTypes={testTypes} suppliers={suppliers} totalShown={filteredTests.length} totalAll={allTests.length} onShareFilters={handleShareFilters} />
+            <FilterBar filters={filters} onFilters={setFilters} sort={sort} onSort={setSort} compoundNameOptions={compoundNameOptions} labs={labs} testTypes={testTypes} suppliers={suppliers} totalShown={filteredTests.length} totalAll={allTests.length} onShareFilters={handleShareFilters} view={reportsView} onViewChange={handleViewChange} />
             <div className="max-w-7xl mx-auto px-4 py-5">
               {loading ? (
                 <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>
@@ -2458,6 +2571,8 @@ export default function LabTests({ bare }: { bare?: boolean } = {}) {
                     Clear filters
                   </button>
                 </div>
+              ) : reportsView === "table" ? (
+                <TestTable tests={displayedTests} indexFor={t => filteredTests.findIndex(ft => ft.id === t.id)} onView={setModalIndex} />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
                   {displayedTests.map((t, i) => (
