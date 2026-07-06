@@ -16,7 +16,9 @@ import { useGetProducts, useGetDeliveryMethods, useGetSiteConfig } from "@worksp
 import { useQuery } from "@tanstack/react-query";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg } from "@/hooks/use-account";
+import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout } from "@/hooks/use-account";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import type { PortalNavProps } from "@/pages/CustomerPortal";
 
 const TIP_OPTIONS = [0, 1, 2, 3, 5, 10, 15, 20];
 
@@ -386,6 +388,43 @@ function SearchableProductSelect({
   );
 }
 
+/** Dashboard chrome (sidebar + header) for logged-in customers, mirroring WholesaleShell. */
+function OrderFormShell({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
+  const logoutMutation = useLogout();
+  const [hubMoreOpen, setHubMoreOpen] = useState(false);
+  const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
+  const goSection = (s: string) =>
+    navigate(s === "home" ? "/account" : `/account?s=${encodeURIComponent(s)}`);
+
+  const navProps = {
+    section: "orders",
+    setSection: goSection,
+    hubMoreOpen,
+    setHubMoreOpen,
+    account,
+  } as unknown as PortalNavProps;
+
+  return (
+    <DashboardShell
+      activeSection="orders"
+      title="Order Form"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={(ordersData ?? []) as DashOrder[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={goSection}
+      onLogout={handleLogout}
+      navProps={navProps}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
+
 export default function OrderForm() {
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -523,7 +562,7 @@ export default function OrderForm() {
 
   const setPageTitle = usePageTitle(s => s.setTitle);
   const pageTitle = usePageTitle(s => s.title);
-  const { account } = useAccount();
+  const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const { data: myGroupBuys } = useMyGroupBuys();
 
   const [gbShippingOptions, setGbShippingOptions] = React.useState<Array<{ id: string; label: string; price: number; requiresAddress?: boolean }>>([]);
@@ -697,6 +736,15 @@ export default function OrderForm() {
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const handler = (e: MediaQueryListEvent) => setIsMdPlus(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  const [isLgPlus, setIsLgPlus] = React.useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const handler = (e: MediaQueryListEvent) => setIsLgPlus(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
@@ -932,8 +980,13 @@ export default function OrderForm() {
 
   const selectedProductIds = draft.lineItems.map(item => item.productId).filter(Boolean);
 
+  // Logged-in customers get the dashboard chrome (sidebar navigation);
+  // logged-out visitors keep the plain public layout.
+  const useDashChrome = isLoggedIn || accountLoading;
+  const Chrome = useDashChrome ? OrderFormShell : PageLayout;
+
   return (
-    <PageLayout>
+    <Chrome>
     <div className="flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Inter', sans-serif" }}>
       <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
         <SiteAnnouncements />
@@ -1053,7 +1106,7 @@ export default function OrderForm() {
           </motion.div>
         )}
       </AnimatePresence>
-      <main className="flex-1 px-4 py-5 pb-48 md:pb-32 max-w-2xl mx-auto w-full space-y-4">
+      <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-48 lg:pb-32" : "pb-48 md:pb-32"} max-w-2xl mx-auto w-full space-y-4`}>
 
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (
@@ -2143,13 +2196,15 @@ export default function OrderForm() {
       <div
         className="fixed bottom-0 right-0 z-20 backdrop-blur-xl border-t shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
         style={{
-          left: isMdPlus ? (sidebarExpanded ? 240 : 56) : 0,
+          left: useDashChrome
+            ? (isLgPlus ? "var(--dh-ml, 0px)" : 0)
+            : (isMdPlus ? (sidebarExpanded ? 240 : 56) : 0),
           transition: "left 220ms ease",
           background: "var(--t-surface)",
           borderColor: "var(--t-border)",
         }}
       >
-        <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: isMdPlus ? "calc(1rem + env(safe-area-inset-bottom))" : "calc(76px + env(safe-area-inset-bottom))" }}>
+        <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: (useDashChrome ? isLgPlus : isMdPlus) ? "calc(1rem + env(safe-area-inset-bottom))" : "calc(76px + env(safe-area-inset-bottom))" }}>
           <div className="flex items-center justify-between gap-4 mb-2">
             {!hideOrderTotal && (
               <div className="flex-1 min-w-0">
@@ -2172,13 +2227,15 @@ export default function OrderForm() {
         </div>
       </div>
     </div>
-    <HubBottomNav
-      section={"orders" as HubSection}
-      setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
-      hubMoreOpen={false}
-      setHubMoreOpen={() => {}}
-      account={account}
-    />
-    </PageLayout>
+    {!useDashChrome && (
+      <HubBottomNav
+        section={"orders" as HubSection}
+        setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+        hubMoreOpen={false}
+        setHubMoreOpen={() => {}}
+        account={account}
+      />
+    )}
+    </Chrome>
   );
 }

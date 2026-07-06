@@ -52,3 +52,15 @@ users get a PageLayout flash on first paint. Admin preview (`?adminPreview=1`)
 MUST stay on PageLayout (no customer session). Gate any page-level
 HubBottomNav with `!useDashChrome` (shell renders its own) and pair padding
 to the shell's breakpoint (`pb-24 lg:pb-6`, hub nav hides at lg).
+
+**Fixed bottom bars under DashboardShell (--dh-ml contract):**
+A page's `position:fixed` bottom bar (e.g. order form Grand Total/Review)
+must offset `left` by the shell sidebar width at lg+. DashboardShell sets
+`--dh-ml` (collapse-aware sidebar width px) inline on the content wrapper;
+it cascades to children, so use `left: isLgPlus ? "var(--dh-ml, 0px)" : 0`
+(matchMedia 1024px = Tailwind lg; shell sidebar is hidden below lg even
+though the var is still set). The bar's hub-nav clearance padding (76px)
+must also key off lg under the shell, not md. PageLayout pages instead use
+`isMdPlus ? (sidebarExpanded ? 240 : 56) : 0`.
+If a 4th page copies the shell wrapper (OrderDetailShell/OrderFormShell/
+WholesaleShell), extract a shared CustomerShell.
