@@ -21,6 +21,7 @@ import {
   Navigation, MapPin, Box, UsersRound, Eye, EyeOff, QrCode,
   LayoutList, LayoutGrid, Store, Star, RefreshCcw, Hash, Wallet, Boxes, Pencil,
   Download, Maximize2, Archive, ArchiveRestore, MoreHorizontal,
+  Percent, Target,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -9633,15 +9634,17 @@ export default function CustomerPortal() {
       { id: "arm-right",    label: "Upper Arm – Right" },
     ];
 
-    const TEAL        = "var(--t-blue)";
-    const TEAL_BG     = "var(--t-blue-12)";
-    const PAGE_BG     = T.bg;
-    const CARD_BG     = T.surface;
-    const DIVIDER     = T.border;
-    const BORDER_CLR  = T.border;
-    const LABEL_CLR   = T.muted;
-    const TEXT_CLR    = T.text;
-    const BADGE_BG    = "#3D1D8A";
+    const P           = palette(dark);
+    const TEAL        = ACCENT;
+    const TEAL_BG     = ACCENT_SOFT;
+    const PAGE_BG     = P.page;
+    const CARD_BG     = P.panel;
+    const DIVIDER     = P.border;
+    const BORDER_CLR  = P.border;
+    const LABEL_CLR   = P.muted;
+    const TEXT_CLR    = P.text;
+    const BADGE_BG    = ACCENT;
+    const CARD_SHADOW = P.panel === "#FFFFFF" ? "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" : "none";
 
     const ST_TO_KG = 6.35029;
 
@@ -9822,12 +9825,12 @@ export default function CustomerPortal() {
 
         {/* ════════════════════ SUB-TAB BAR ════════════════════════════════════ */}
         <div>
-          <div className="flex gap-0.5 p-1 rounded-xl" style={{ background: T.surface2 }}>
+          <div className="flex gap-1 p-1 rounded-lg" style={{ background: P.chip }}>
             {(["summary", "shots", "settings"] as const).map(tab => (
               <button key={tab} onClick={() => setGlp1SubTab(tab)}
-                className="flex-1 h-8 rounded-lg text-xs font-bold transition-all capitalize"
+                className="flex-1 h-9 rounded-md text-xs font-bold transition-all capitalize"
                 style={{
-                  background: glp1SubTab === tab ? "linear-gradient(135deg, var(--t-blue), var(--t-blue-deep))" : "transparent",
+                  background: glp1SubTab === tab ? ACCENT : "transparent",
                   color: glp1SubTab === tab ? "#fff" : LABEL_CLR,
                 }}>
                 {tab === "summary" ? "Summary" : tab === "shots" ? "Shots" : "Settings"}
@@ -9847,7 +9850,7 @@ export default function CustomerPortal() {
             {glp1SubTab === "summary" && (
               glp1Logs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center px-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                  <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-4"
                     style={{ background: TEAL_BG }}>
                     <Syringe className="w-8 h-8" style={{ color: TEAL }} />
                   </div>
@@ -9857,7 +9860,7 @@ export default function CustomerPortal() {
                   </p>
                   <button
                     onClick={() => { setGlp1SubTab("shots"); setShowGlp1Form(true); }}
-                    className="h-11 px-6 rounded-2xl text-sm font-semibold text-white"
+                    className="h-11 px-6 rounded-lg text-sm font-semibold text-white"
                     style={{ background: TEAL }}>
                     + Log First Shot
                   </button>
@@ -9867,27 +9870,28 @@ export default function CustomerPortal() {
 
                   {/* ═══════════ WEIGHT PROGRESS CHART ══════════════════════ */}
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl overflow-hidden"
-                    style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
+                    className="rounded-lg overflow-hidden"
+                    style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
 
                     <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                      <div>
-                        <p className="text-base font-bold" style={{ color: TEXT_CLR }}>Weight Progress</p>
-                        {deltaKg != null && (
-                          <p className="text-xs font-semibold mt-0.5"
-                            style={{ color: deltaKg < 0 ? "#16A34A" : "#DC2626" }}>
-                            {deltaKg < 0 ? "−" : "+"}{displayW(Math.abs(deltaKg), glp1WeightUnit)} overall
-                          </p>
-                        )}
+                      <div className="flex items-center gap-2.5">
+                        <SecIcon Icon={TrendingUp} />
+                        <div>
+                          <p className="text-sm font-bold" style={{ color: TEXT_CLR }}>Weight Progress</p>
+                          {deltaKg != null && (
+                            <p className="text-xs font-semibold mt-0.5"
+                              style={{ color: deltaKg < 0 ? "#16A34A" : "#DC2626" }}>
+                              {deltaKg < 0 ? "−" : "+"}{displayW(Math.abs(deltaKg), glp1WeightUnit)} overall
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: T.surface2 }}>
+                      <div className="flex gap-0.5 p-0.5 rounded-md" style={{ background: P.chip }}>
                         {(["4w", "3m", "all"] as const).map(r => (
                           <button key={r} onClick={() => setGlp1ChartRange(r)}
-                            className="px-3 py-1.5 rounded-md text-[11px] font-bold transition-all"
+                            className="px-3 py-1.5 rounded text-[11px] font-bold transition-all"
                             style={{
-                              background: glp1ChartRange === r
-                                ? "linear-gradient(135deg, var(--t-blue), var(--t-blue-deep))"
-                                : "transparent",
+                              background: glp1ChartRange === r ? ACCENT : "transparent",
                               color: glp1ChartRange === r ? "#fff" : LABEL_CLR,
                             }}>
                             {r === "4w" ? "4W" : r === "3m" ? "3M" : "All"}
@@ -9902,11 +9906,11 @@ export default function CustomerPortal() {
                           <ComposedChart data={chartPoints} margin={{ top: 24, right: 12, left: 0, bottom: 4 }}>
                             <defs>
                               <linearGradient id="glp1WGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%"   stopColor="var(--t-blue)" stopOpacity={0.25} />
-                                <stop offset="100%" stopColor="var(--t-blue)" stopOpacity={0}   />
+                                <stop offset="0%"   stopColor={ACCENT} stopOpacity={0.25} />
+                                <stop offset="100%" stopColor={ACCENT} stopOpacity={0}   />
                               </linearGradient>
                             </defs>
-                            <CartesianGrid vertical={false} stroke="#F2F2F7" strokeDasharray="0" />
+                            <CartesianGrid vertical={false} stroke={DIVIDER} strokeDasharray="0" />
                             <XAxis
                               dataKey="date"
                               tickFormatter={(d: string) =>
@@ -9958,11 +9962,11 @@ export default function CustomerPortal() {
                               type="monotone"
                               dataKey="weight"
                               name="weight"
-                              stroke="var(--t-blue)"
+                              stroke={ACCENT}
                               strokeWidth={2.5}
                               fill="url(#glp1WGrad)"
-                              dot={{ r: 4, fill: "var(--t-blue)", strokeWidth: 2, stroke: "#fff" }}
-                              activeDot={{ r: 6, fill: "var(--t-blue)", strokeWidth: 2, stroke: "#fff" }}
+                              dot={{ r: 4, fill: ACCENT, strokeWidth: 2, stroke: CARD_BG }}
+                              activeDot={{ r: 6, fill: ACCENT, strokeWidth: 2, stroke: CARD_BG }}
                               connectNulls={false}
                             >
                               <LabelList
@@ -9974,7 +9978,7 @@ export default function CustomerPortal() {
                         </ResponsiveContainer>
                         <div className="flex items-center gap-5 px-5 pb-3 mt-1">
                           <div className="flex items-center gap-1.5">
-                            <div className="w-4 h-0.5 rounded-full" style={{ background: "var(--t-blue)" }} />
+                            <div className="w-4 h-0.5 rounded-full" style={{ background: ACCENT }} />
                             <span className="text-[10px] font-semibold" style={{ color: LABEL_CLR }}>
                               Weight ({glp1WeightUnit})
                             </span>
@@ -10005,10 +10009,10 @@ export default function CustomerPortal() {
                   {/* Next injection card */}
                   {nextDateStr && lastLog && (
                     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                      className="rounded-2xl p-5"
+                      className="rounded-lg p-5"
                       style={{
                         background: isOverdue ? "rgba(220,38,38,0.07)" : TEAL_BG,
-                        border: `1px solid ${isOverdue ? "rgba(220,38,38,0.2)" : "var(--t-blue-25)"}`,
+                        border: `1px solid ${isOverdue ? "rgba(220,38,38,0.2)" : "rgba(1,118,211,0.25)"}`,
                       }}>
                       <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5"
                         style={{ color: isOverdue ? "#DC2626" : TEAL }}>Next Injection</p>
@@ -10025,21 +10029,23 @@ export default function CustomerPortal() {
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.05 } }}
                     className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     {([
-                      { label: "Total change", value: deltaKg != null ? `${deltaKg < 0 ? "−" : "+"}${displayW(Math.abs(deltaKg), glp1WeightUnit)}` : "—", color: deltaKg != null && deltaKg < 0 ? "#16A34A" : "#DC2626", emoji: "📉" },
-                      { label: "Current BMI", value: bmi ?? "—", color: "#F59E0B", emoji: "🏃" },
-                      { label: "Weight", value: displayW(lastKg, glp1WeightUnit), color: TEAL, emoji: "⚖️" },
-                      { label: "Percent", value: pctChange != null ? `${pctChange < 0 ? "" : "+"}${pctChange.toFixed(0)}%` : "—", color: pctChange != null && pctChange < 0 ? "#16A34A" : "#DC2626", emoji: "%" },
-                      { label: "Weekly avg", value: weeklyAvgKg != null ? `${weeklyAvgKg < 0 ? "−" : "+"}${displayW(Math.abs(weeklyAvgKg), glp1WeightUnit)}/wk` : "—", color: "#7C3AED", emoji: "📊" },
-                      { label: "To goal", value: toGoalKg != null ? (toGoalKg <= 0 ? "Reached!" : `${displayW(toGoalKg, glp1WeightUnit)}`) : "—", color: "#0D9488", emoji: "🏁", sub: toGoalPct != null ? `(${Math.min(100, Math.max(0, Math.round(toGoalPct)))}%)` : (goalKg == null ? "Set in settings" : undefined) },
-                    ] as { label: string; value: string; color: string; emoji: string; sub?: string }[]).map(tile => (
-                      <div key={tile.label} className="rounded-2xl p-3 sm:p-3.5"
-                        style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
-                        <div className="flex items-center gap-1 mb-2" style={{ color: tile.color }}>
-                          <span className="text-xs">{tile.emoji}</span>
-                          <span className="text-[10px] font-bold uppercase tracking-wide leading-tight">{tile.label}</span>
+                      { label: "Total change", value: deltaKg != null ? `${deltaKg < 0 ? "−" : "+"}${displayW(Math.abs(deltaKg), glp1WeightUnit)}` : "—", color: "#7C3AED", valueColor: deltaKg != null && deltaKg < 0 ? "#16A34A" : deltaKg != null ? "#DC2626" : TEXT_CLR, Icon: TrendingDown },
+                      { label: "Current BMI", value: bmi ?? "—", color: "#F59E0B", valueColor: TEXT_CLR, Icon: Activity },
+                      { label: "Weight", value: displayW(lastKg, glp1WeightUnit), color: ACCENT, valueColor: TEXT_CLR, Icon: Scale },
+                      { label: "Percent", value: pctChange != null ? `${pctChange < 0 ? "" : "+"}${pctChange.toFixed(0)}%` : "—", color: "#0891B2", valueColor: pctChange != null && pctChange < 0 ? "#16A34A" : pctChange != null ? "#DC2626" : TEXT_CLR, Icon: Percent },
+                      { label: "Weekly avg", value: weeklyAvgKg != null ? `${weeklyAvgKg < 0 ? "−" : "+"}${displayW(Math.abs(weeklyAvgKg), glp1WeightUnit)}/wk` : "—", color: "#16A34A", valueColor: TEXT_CLR, Icon: LineChart },
+                      { label: "To goal", value: toGoalKg != null ? (toGoalKg <= 0 ? "Reached!" : `${displayW(toGoalKg, glp1WeightUnit)}`) : "—", color: "#0D9488", valueColor: TEXT_CLR, Icon: Target, sub: toGoalPct != null ? `${Math.min(100, Math.max(0, Math.round(toGoalPct)))}% there` : (goalKg == null ? "Set in settings" : undefined) },
+                    ] as { label: string; value: string; color: string; valueColor: string; Icon: React.ElementType; sub?: string }[]).map(tile => (
+                      <div key={tile.label} className="rounded-lg p-4 flex flex-col gap-2.5"
+                        style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
+                        <div className="flex items-center gap-2">
+                          <span className="flex items-center justify-center rounded-md shrink-0" style={{ width: 26, height: 26, background: `${tile.color}1A`, color: tile.color }}>
+                            <tile.Icon className="w-[14px] h-[14px]" strokeWidth={2.2} />
+                          </span>
+                          <span className="text-[11px] font-semibold leading-tight" style={{ color: LABEL_CLR }}>{tile.label}</span>
                         </div>
-                        <p className="text-base font-extrabold leading-none truncate" style={{ color: TEXT_CLR }}>{tile.value}</p>
-                        {tile.sub && <p className="text-[10px] mt-1 truncate" style={{ color: LABEL_CLR }}>{tile.sub}</p>}
+                        <p className="text-xl font-extrabold leading-none truncate" style={{ color: tile.valueColor }}>{tile.value}</p>
+                        {tile.sub && <p className="text-[10px] -mt-1 truncate" style={{ color: LABEL_CLR }}>{tile.sub}</p>}
                       </div>
                     ))}
                   </motion.div>
@@ -10047,11 +10053,14 @@ export default function CustomerPortal() {
                   {/* Recent shots */}
                   {sorted.length > 0 && (
                     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
-                      className="rounded-2xl overflow-hidden"
-                      style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
+                      className="rounded-lg overflow-hidden"
+                      style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
                       <div className="flex items-center justify-between px-5 py-3.5"
                         style={{ borderBottom: `1px solid ${DIVIDER}` }}>
-                        <p className="text-sm font-bold" style={{ color: TEXT_CLR }}>Recent Shots</p>
+                        <div className="flex items-center gap-2.5">
+                          <SecIcon Icon={Syringe} />
+                          <p className="text-sm font-bold" style={{ color: TEXT_CLR }}>Recent Shots</p>
+                        </div>
                         <button onClick={() => setGlp1SubTab("shots")}
                           className="text-xs font-semibold" style={{ color: TEAL }}>
                           See all
@@ -10082,7 +10091,7 @@ export default function CustomerPortal() {
             {glp1SubTab === "shots" && (
               sorted.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center px-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                  <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-4"
                     style={{ background: TEAL_BG }}>
                     <Syringe className="w-8 h-8" style={{ color: TEAL }} />
                   </div>
@@ -10097,8 +10106,8 @@ export default function CustomerPortal() {
                   {nextDateStr && lastLog && (
                     <div className="px-4 pt-4 pb-2">
                       <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: LABEL_CLR }}>Next Shot</p>
-                      <div className="rounded-2xl p-4"
-                        style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
+                      <div className="rounded-lg p-4"
+                        style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div>
                             <p className="text-xs font-bold" style={{ color: isOverdue ? "#DC2626" : TEAL }}>
@@ -10134,8 +10143,8 @@ export default function CustomerPortal() {
                       <div key={monthLabel} className="space-y-2">
                         <p className="text-[11px] font-semibold uppercase tracking-wider"
                           style={{ color: LABEL_CLR }}>{monthLabel}</p>
-                        <div className="rounded-2xl overflow-hidden"
-                          style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
+                        <div className="rounded-lg overflow-hidden"
+                          style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
                           {mShots.map((log, i) => {
                             const shotNum = sorted.findIndex(s => s.id === log.id) + 1;
                             return (
@@ -10198,14 +10207,14 @@ export default function CustomerPortal() {
             {/* ═════════════════════════ SETTINGS TAB ═════════════════════════ */}
             {glp1SubTab === "settings" && (
               <div className="p-4 space-y-4">
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}` }}>
+                <div className="rounded-lg overflow-hidden"
+                  style={{ background: CARD_BG, border: `1px solid ${BORDER_CLR}`, boxShadow: CARD_SHADOW }}>
 
                   {/* Weight unit */}
                   <div className="px-4 py-3.5" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
                     <p className="text-[10px] font-bold uppercase tracking-wider mb-2"
                       style={{ color: LABEL_CLR }}>Weight Unit</p>
-                    <div className="flex rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER_CLR}` }}>
+                    <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER_CLR}` }}>
                       {(["kg", "st", "lbs"] as const).map(u => (
                         <button key={u}
                           onClick={() => handleWeightUnitChange(u)}
@@ -10252,8 +10261,8 @@ export default function CustomerPortal() {
                             localStorage.setItem(`peps:${username}:glp1_height_cm`, e.target.value);
                           }}
                           placeholder="175"
-                          className="w-full h-11 px-4 pr-12 text-sm font-semibold rounded-xl outline-none transition-all"
-                          style={{ background: T.surface2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
+                          className="w-full h-11 px-4 pr-12 text-sm font-semibold rounded-lg outline-none transition-all"
+                          style={{ background: P.panel2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none"
                           style={{ color: LABEL_CLR }}>cm</span>
@@ -10275,8 +10284,8 @@ export default function CustomerPortal() {
                               localStorage.setItem(`peps:${username}:glp1_height_cm`, cmStr);
                             }}
                             placeholder="5"
-                            className="w-full h-11 px-4 pr-10 text-sm font-semibold rounded-xl outline-none"
-                            style={{ background: T.surface2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
+                            className="w-full h-11 px-4 pr-10 text-sm font-semibold rounded-lg outline-none"
+                            style={{ background: P.panel2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none"
                             style={{ color: LABEL_CLR }}>ft</span>
@@ -10296,8 +10305,8 @@ export default function CustomerPortal() {
                               localStorage.setItem(`peps:${username}:glp1_height_cm`, cmStr);
                             }}
                             placeholder="10"
-                            className="w-full h-11 px-4 pr-10 text-sm font-semibold rounded-xl outline-none"
-                            style={{ background: T.surface2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
+                            className="w-full h-11 px-4 pr-10 text-sm font-semibold rounded-lg outline-none"
+                            style={{ background: P.panel2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none"
                             style={{ color: LABEL_CLR }}>in</span>
@@ -10306,9 +10315,9 @@ export default function CustomerPortal() {
                     )}
 
                     {heightCm != null && lastKg != null && (
-                      <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-xl"
+                      <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg"
                         style={{ background: "rgba(16,163,74,0.08)" }}>
-                        <span className="text-base">🏃</span>
+                        <Activity className="w-4 h-4 shrink-0" style={{ color: "#16A34A" }} strokeWidth={2.2} />
                         <span className="text-xs font-semibold" style={{ color: "#16A34A" }}>
                           Current BMI: {(lastKg / Math.pow(heightCm / 100, 2)).toFixed(1)}
                         </span>
@@ -10348,16 +10357,16 @@ export default function CustomerPortal() {
                           }
                         }}
                         placeholder={glp1WeightUnit === "kg" ? "e.g. 75" : glp1WeightUnit === "lbs" ? "e.g. 165" : "e.g. 11.5"}
-                        className="w-full h-11 px-4 pr-14 text-sm font-semibold rounded-xl outline-none transition-all"
-                        style={{ background: T.surface2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
+                        className="w-full h-11 px-4 pr-14 text-sm font-semibold rounded-lg outline-none transition-all"
+                        style={{ background: P.panel2, color: TEXT_CLR, border: `1.5px solid ${BORDER_CLR}` }}
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none"
                         style={{ color: LABEL_CLR }}>{glp1WeightUnit}</span>
                     </div>
                     {goalKg != null && lastKg != null && (
-                      <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-xl"
+                      <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg"
                         style={{ background: lastKg <= goalKg ? "rgba(16,163,74,0.08)" : "rgba(13,148,136,0.08)" }}>
-                        <span className="text-base">🏁</span>
+                        <Target className="w-4 h-4 shrink-0" style={{ color: lastKg <= goalKg ? "#16A34A" : "#0D9488" }} strokeWidth={2.2} />
                         <span className="text-xs font-semibold"
                           style={{ color: lastKg <= goalKg ? "#16A34A" : "#0D9488" }}>
                           {lastKg <= goalKg
@@ -10369,8 +10378,8 @@ export default function CustomerPortal() {
                   </div>
                 </div>
 
-                <div className="rounded-xl p-3"
-                  style={{ background: "var(--t-blue-06)", border: "1px solid var(--t-blue-15)" }}>
+                <div className="rounded-lg p-3"
+                  style={{ background: ACCENT_SOFT, border: "1px solid rgba(1,118,211,0.15)" }}>
                   <p className="text-xs" style={{ color: LABEL_CLR }}>
                     {glp1Logs.length} entr{glp1Logs.length === 1 ? "y" : "ies"} logged. Delete shots from the Shots tab.
                   </p>
