@@ -299,7 +299,7 @@ function OrderGridCard({
   const cancelled = order.status === "Cancelled";
   const terminal = done || cancelled;
   // Bold colour-blocked header per order type (deepened towards navy so white text stays readable)
-  const bandBg = `linear-gradient(135deg, color-mix(in srgb, ${accent} 82%, #12233F) 0%, color-mix(in srgb, ${accent} 55%, #12233F) 100%)`;
+  const bandBg = `linear-gradient(135deg, color-mix(in srgb, ${accent} 62%, #12233F) 0%, color-mix(in srgb, ${accent} 38%, #12233F) 100%)`;
 
   return (
     <div className="rounded-2xl flex flex-col h-full overflow-hidden"
@@ -329,7 +329,7 @@ function OrderGridCard({
       {/* info: code + payment */}
       <div className="flex items-center justify-between gap-2 mt-3.5 pb-3.5" style={{ borderBottom: `1px dashed ${T.border}` }}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] font-bold uppercase tracking-wider shrink-0" style={{ color: T.subtle }}>Code</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider shrink-0" style={{ color: T.subtle }}>Order</span>
           <span className="text-[12px] font-semibold truncate" style={{ color: T.muted }}>#{order.code}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
