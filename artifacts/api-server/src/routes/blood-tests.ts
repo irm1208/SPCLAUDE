@@ -1406,17 +1406,52 @@ router.post("/blood-tests", requireAccount, async (req, res): Promise<void> => {
   res.status(201).json({ ...session, values: insertedValues });
 });
 
-const DEFAULT_DISCUSS_LIMIT = 5;
+const DEFAULT_DISCUSS_LIMIT = 10;
 
 async function getDiscussLimit(telegramUsername: string): Promise<number> {
   const [acct] = await db
     .select({ discussLimitOverride: accountsTable.discussLimitOverride })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, telegramUsername));
-  if (acct?.discussLimitOverride != null) return acct.discussLimitOverride;
+  // Clamp to >= 1 so the daily-quota SQL always enforces "exactly N/day"
+  // (a non-positive limit would otherwise leak one request per day on reset).
+  if (acct?.discussLimitOverride != null) return Math.max(1, acct.discussLimitOverride);
   const [cfg] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "discuss_limit"));
-  if (cfg?.value) { const n = parseInt(cfg.value, 10); if (!isNaN(n)) return n; }
+  if (cfg?.value) { const n = parseInt(cfg.value, 10); if (!isNaN(n)) return Math.max(1, n); }
   return DEFAULT_DISCUSS_LIMIT;
+}
+
+// Returns how many discuss requests the user has consumed *today* (0 if the
+// stored counter is from a previous day — the daily window has reset).
+async function readDailyUsed(telegramUsername: string): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT CASE WHEN discuss_count_date = CURRENT_DATE THEN discuss_count ELSE 0 END AS used
+    FROM accounts WHERE telegram_username = ${telegramUsername}
+  `);
+  const rows = result.rows as { used: number }[];
+  return Number(rows[0]?.used ?? 0);
+}
+
+// Atomically enforce the per-day quota and consume one slot. The counter resets
+// automatically on the first request of a new calendar day (DB CURRENT_DATE).
+// Returns { allowed: false } when today's limit is already reached.
+async function consumeDailyQuota(
+  telegramUsername: string,
+  limit: number,
+): Promise<{ allowed: boolean; used: number }> {
+  const result = await db.execute(sql`
+    UPDATE accounts
+    SET discuss_count = CASE WHEN discuss_count_date = CURRENT_DATE THEN discuss_count + 1 ELSE 1 END,
+        discuss_count_date = CURRENT_DATE
+    WHERE telegram_username = ${telegramUsername}
+      AND (discuss_count_date IS DISTINCT FROM CURRENT_DATE OR discuss_count < ${limit})
+    RETURNING discuss_count AS used
+  `);
+  const rows = result.rows as { used: number }[];
+  if (rows.length > 0) {
+    return { allowed: true, used: Number(rows[0].used) };
+  }
+  return { allowed: false, used: await readDailyUsed(telegramUsername) };
 }
 
 // POST /api/blood-tests/discuss/open — generate an AI opening message when a new chat starts (no quota cost)
@@ -1553,13 +1588,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       .where(eq(compoundLogsTable.telegramUsername, tg));
     const activeCompoundsNoBt = compoundRowsNoBt.filter((c) => !c.endDate).map((c) => c.compoundName);
 
-    const readUsed = async () => {
-      const [acct] = await db
-        .select({ discussCount: accountsTable.discussCount })
-        .from(accountsTable)
-        .where(eq(accountsTable.telegramUsername, tg));
-      return acct?.discussCount ?? 0;
-    };
+    const readUsed = async () => readDailyUsed(tg);
 
     if (activeCompoundsNoBt.length === 0) {
       res.json({
@@ -1582,13 +1611,19 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       return;
     }
 
-    // Consume one quota slot, roll back on failure
-    const updatedNoBt = await db
-      .update(accountsTable)
-      .set({ discussCount: sql`${accountsTable.discussCount} + 1` })
-      .where(eq(accountsTable.telegramUsername, tg))
-      .returning({ newCount: accountsTable.discussCount });
-    const newCountNoBt = updatedNoBt[0]?.newCount ?? (await readUsed());
+    // Enforce daily quota, consuming one slot; roll back on failure
+    const quotaNoBt = await consumeDailyQuota(tg, effectiveLimit);
+    if (!quotaNoBt.allowed) {
+      res.status(429).json({
+        error: "limit_reached",
+        response: "You've reached your daily question limit. Please check back tomorrow.",
+        contextSession: null,
+        used: quotaNoBt.used,
+        limit: effectiveLimit,
+      });
+      return;
+    }
+    const newCountNoBt = quotaNoBt.used;
 
     try {
       const topics = extractTopicsForCache(message, []);
@@ -1635,7 +1670,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       await db
         .update(accountsTable)
         .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
-        .where(eq(accountsTable.telegramUsername, tg));
+        .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
       res.status(500).json({
         error: "ai_unavailable",
         response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
@@ -1647,10 +1682,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     return;
   }
 
-  const getUsedCount = async () => {
-    const [a] = await db.select({ discussCount: accountsTable.discussCount }).from(accountsTable).where(eq(accountsTable.telegramUsername, tg));
-    return a?.discussCount ?? 0;
-  };
+  const getUsedCount = async () => readDailyUsed(tg);
 
   if (AI_IDENTITY_RE.test(message)) {
     res.json({
@@ -1662,14 +1694,19 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     return;
   }
 
-  // Step 2: Increment usage counter (no limit enforced)
-  const updated = await db
-    .update(accountsTable)
-    .set({ discussCount: sql`${accountsTable.discussCount} + 1` })
-    .where(eq(accountsTable.telegramUsername, tg))
-    .returning({ newCount: accountsTable.discussCount });
-
-  const newCount = updated[0]?.newCount ?? (await getUsedCount());
+  // Step 2: Enforce the daily quota and consume one slot
+  const quota = await consumeDailyQuota(tg, effectiveLimit);
+  if (!quota.allowed) {
+    res.status(429).json({
+      error: "limit_reached",
+      response: "You've reached your daily question limit. Please check back tomorrow.",
+      contextSession: null,
+      used: quota.used,
+      limit: effectiveLimit,
+    });
+    return;
+  }
+  const newCount = quota.used;
 
   // Step 3: Build biomarker context for current session + all historical sessions
   const [values, compoundRows, allSessionsList] = await Promise.all([
@@ -1735,7 +1772,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     await db
       .update(accountsTable)
       .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
-      .where(eq(accountsTable.telegramUsername, tg));
+      .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
     res.status(500).json({
       error: "ai_unavailable",
       response: "I'm having trouble reaching the AI right now. Please try again in a moment.",

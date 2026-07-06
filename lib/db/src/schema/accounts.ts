@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, unique, index, jsonb, boolean, integer, serial, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, unique, index, jsonb, boolean, integer, serial, numeric, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { groupBuysTable, gbCountryLegsTable } from "./group_buys";
@@ -26,6 +26,7 @@ export const accountsTable = pgTable("accounts", {
   telegramLinkExpiresAt: timestamp("telegram_link_expires_at", { withTimezone: true }),
   healthDataConsent: boolean("health_data_consent").notNull().default(false),
   discussCount: integer("discuss_count").notNull().default(0),
+  discussCountDate: date("discuss_count_date", { mode: "string" }),
   discussLimitOverride: integer("discuss_limit_override"),
   resetCode: text("reset_code"),
   resetCodeExpiresAt: timestamp("reset_code_expires_at", { withTimezone: true }),

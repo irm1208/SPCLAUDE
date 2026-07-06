@@ -144,7 +144,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
             {
               id: nextId(),
               role: "assistant",
-              content: "You've reached your question limit for now. Please check back a little later.",
+              content: "You've reached your daily question limit. Please check back tomorrow.",
             },
           ]);
         } else {

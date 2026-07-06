@@ -208,6 +208,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
     // accounts — columns from merged branch (discuss, reset, pool leader, organiser, wholesale, phone, etc.)
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discuss_count integer NOT NULL DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discuss_count_date date`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discuss_limit_override integer`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS reset_code text`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS reset_code_expires_at timestamptz`);
