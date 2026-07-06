@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap');
+
+.minimal-mono-theme {
+  --mm-bg: #FFFFFF;
+  --mm-surface: #FFFFFF;
+  --mm-border: #E5E5E5;
+  --mm-border-soft: #F2F2F2;
+  --mm-text: #000000;
+  --mm-muted: #666666;
+  --mm-subtle: #999999;
+  --mm-accent: #000000;
+  --mm-accent-light: #F5F5F5;
+  --font-mm: 'Outfit', sans-serif;
+}
+
+.minimal-mono-theme button, 
+.minimal-mono-theme input {
+  font-family: var(--font-mm);
+}
