@@ -255,6 +255,159 @@
   --secondary-foreground: 0 0% 98%;
 }
 
+/* ============================================================================
+   "Warm & Human" scoped palette — Order Details page only (.warm-order)
+   Overrides the theme tokens on the page root so the whole page (incl. shared
+   widgets that read var(--t-*) / --crypto-* / shadcn HSL vars) renders in a
+   warm cream + navy + amber bento aesthetic, in BOTH light and dark, without
+   editing any shared component or affecting any other page.
+   ========================================================================== */
+.warm-order {
+  --t-bg:       #FDFBF7;
+  --t-surface:  #FFFFFF;
+  --t-surface2: #F6F3EC;
+  --t-border:   #EBE5DE;
+  --t-text:     #2B2520;
+  --t-muted:    #5A524A;
+  --t-subtle:   #8B827A;
+  --t-nav:      #3B5E99;
+  --brand-navy: #1A2B56;
+  --brand-blue: #3B5E99;
+  --t-blue:     #3B5E99;
+  --t-blue-deep: #1A2B56;
+  --t-blue-rgb: 59, 94, 153;
+  --t-blue-03: rgba(59,94,153,0.03);
+  --t-blue-04: rgba(59,94,153,0.04);
+  --t-blue-05: rgba(59,94,153,0.05);
+  --t-blue-06: rgba(59,94,153,0.06);
+  --t-blue-07: rgba(59,94,153,0.07);
+  --t-blue-08: rgba(59,94,153,0.08);
+  --t-blue-10: rgba(59,94,153,0.10);
+  --t-blue-12: rgba(59,94,153,0.12);
+  --t-blue-15: rgba(59,94,153,0.15);
+  --t-blue-18: rgba(59,94,153,0.18);
+  --t-blue-20: rgba(59,94,153,0.20);
+  --t-blue-22: rgba(59,94,153,0.22);
+  --t-blue-25: rgba(59,94,153,0.25);
+  --t-blue-28: rgba(59,94,153,0.28);
+  --t-blue-30: rgba(59,94,153,0.30);
+  --t-blue-35: rgba(59,94,153,0.35);
+  --t-blue-40: rgba(59,94,153,0.40);
+  --t-blue-50: rgba(59,94,153,0.50);
+  --t-glass:    rgba(255,255,255,0.97);
+  --t-glass2:   rgba(246,243,236,0.98);
+  --t-tag-bg:   rgba(59,94,153,0.08);
+  --t-tag-text: #3B5E99;
+  --t-tag-border: rgba(59,94,153,0.20);
+  --t-gradient: linear-gradient(135deg,#3B5E99 0%,#1A2B56 100%);
+  /* Warm amber + navy accents used by the page markup */
+  --warm-amber: #E9A020;
+  --warm-amber-deep: #B4770E;
+  --warm-navy: #3B5E99;
+  --warm-navy-deep: #1A2B56;
+  --warm-ink: #1C2538;
+  /* Crypto payment panel — warm-tinted */
+  --crypto-glass-bg:     rgba(255,255,255,0.82);
+  --crypto-glass-border: rgba(59,94,153,0.28);
+  --crypto-glass-hover:  rgba(255,255,255,0.96);
+  --crypto-text-primary: #1A2B56;
+  --crypto-text-body:    #3B5E99;
+  --crypto-text-muted:   rgba(59,94,153,0.72);
+  --crypto-warn-bg:      rgba(233,160,32,0.10);
+  --crypto-warn-border:  rgba(233,160,32,0.32);
+  --crypto-warn-text:    #8A5A00;
+  /* shadcn HSL vars (Card, text-foreground, text-muted-foreground, etc.) */
+  --background: 40 60% 98%;
+  --foreground: 27 15% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 27 15% 15%;
+  --border: 32 24% 90%;
+  --input: 32 24% 90%;
+  --ring: 217 44% 42%;
+  --primary: 217 44% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 42 30% 95%;
+  --secondary-foreground: 27 15% 15%;
+  --muted: 42 30% 95%;
+  --muted-foreground: 30 10% 32%;
+  --accent: 217 44% 42%;
+  --accent-foreground: 0 0% 100%;
+}
+
+[data-theme="dark"] .warm-order {
+  --t-bg:       #17130E;
+  --t-surface:  #211B15;
+  --t-surface2: #2C251D;
+  --t-border:   rgba(255,255,255,0.09);
+  --t-text:     #F5EFE6;
+  --t-muted:    #C9BFB2;
+  --t-subtle:   #9A9289;
+  --t-nav:      #7C9BD1;
+  --brand-navy: #1A2B56;
+  --brand-blue: #7C9BD1;
+  --t-blue:     #7C9BD1;
+  --t-blue-deep: #3B5E99;
+  --t-blue-rgb: 124, 155, 209;
+  --t-blue-03: rgba(124,155,209,0.03);
+  --t-blue-04: rgba(124,155,209,0.04);
+  --t-blue-05: rgba(124,155,209,0.05);
+  --t-blue-06: rgba(124,155,209,0.06);
+  --t-blue-07: rgba(124,155,209,0.07);
+  --t-blue-08: rgba(124,155,209,0.08);
+  --t-blue-10: rgba(124,155,209,0.10);
+  --t-blue-12: rgba(124,155,209,0.12);
+  --t-blue-15: rgba(124,155,209,0.15);
+  --t-blue-18: rgba(124,155,209,0.18);
+  --t-blue-20: rgba(124,155,209,0.20);
+  --t-blue-22: rgba(124,155,209,0.22);
+  --t-blue-25: rgba(124,155,209,0.25);
+  --t-blue-28: rgba(124,155,209,0.28);
+  --t-blue-30: rgba(124,155,209,0.30);
+  --t-blue-35: rgba(124,155,209,0.35);
+  --t-blue-40: rgba(124,155,209,0.40);
+  --t-blue-50: rgba(124,155,209,0.50);
+  --t-glass:    rgba(23,19,14,0.95);
+  --t-glass2:   rgba(33,27,21,0.97);
+  --t-tag-bg:   rgba(124,155,209,0.16);
+  --t-tag-text: #7C9BD1;
+  --t-tag-border: rgba(124,155,209,0.30);
+  --t-gradient: linear-gradient(135deg,#3B5E99 0%,#1A2B56 100%);
+  --warm-amber: #E9A020;
+  --warm-amber-deep: #F0C878;
+  --warm-navy: #7C9BD1;
+  --warm-navy-deep: #1A2B56;
+  --warm-ink: #14100B;
+  --crypto-glass-bg:     rgba(255,255,255,0.06);
+  --crypto-glass-border: rgba(255,255,255,0.16);
+  --crypto-glass-hover:  rgba(255,255,255,0.12);
+  --crypto-text-primary: #F5EFE6;
+  --crypto-text-body:    #E6DBCB;
+  --crypto-text-muted:   rgba(230,219,203,0.72);
+  --crypto-warn-bg:      rgba(233,160,32,0.14);
+  --crypto-warn-border:  rgba(233,160,32,0.30);
+  --crypto-warn-text:    rgba(240,200,120,0.95);
+  --background: 33 24% 8%;
+  --foreground: 36 43% 93%;
+  --card: 34 21% 11%;
+  --card-foreground: 36 43% 93%;
+  --border: 34 12% 22%;
+  --input: 34 12% 22%;
+  --ring: 217 48% 65%;
+  --primary: 217 48% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 36 21% 14%;
+  --secondary-foreground: 36 43% 93%;
+  --muted: 36 21% 14%;
+  --muted-foreground: 33 18% 74%;
+  --accent: 217 48% 65%;
+  --accent-foreground: 0 0% 100%;
+}
+
+/* Warm bento: softer, larger radii scoped to the page (cards, banners, inputs) */
+.warm-order .rounded-lg  { border-radius: 16px; }
+.warm-order .rounded-xl  { border-radius: 20px; }
+.warm-order .rounded-2xl { border-radius: 24px; }
+
 :root .bg-white        { background-color: var(--t-surface) !important; }
 :root .bg-slate-50     { background-color: var(--t-bg)      !important; }
 :root .bg-slate-100    { background-color: var(--t-surface2)!important; }

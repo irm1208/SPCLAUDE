@@ -17,10 +17,31 @@ import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
 import { useOrderParcels, useAccount, useAccountOrders, useLogout, type GbParcel } from "@/hooks/use-account";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { DashboardShell, SecIcon, STATUS_STYLE, HERO_GRAD, ACCENT, type DashOrder } from "@/components/DashboardShell";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
+
+// ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
+const HERO_GRAD = "linear-gradient(135deg,#3B5E99 0%,#1A2B56 100%)";
+const ACCENT = "#3B5E99";
+
+function SecIcon({ Icon }: { Icon: React.ElementType }) {
+  return (
+    <span className="flex items-center justify-center shrink-0" style={{ width: 30, height: 30, borderRadius: 10, background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+      <Icon className="w-4 h-4" />
+    </span>
+  );
+}
+
+const STATUS_STYLE: Record<string, { label: string; color: string; bg: string; pct: number }> = {
+  Draft:      { label: "Draft",      color: "#8B827A", bg: "rgba(139,130,122,0.14)", pct: 5 },
+  Submitted:  { label: "Submitted",  color: "#E9A020", bg: "rgba(233,160,32,0.14)",  pct: 25 },
+  Processing: { label: "Processing", color: "#E9A020", bg: "rgba(233,160,32,0.14)",  pct: 55 },
+  Shipped:    { label: "Shipped",    color: "#E9A020", bg: "rgba(233,160,32,0.16)",  pct: 80 },
+  Completed:  { label: "Completed",  color: "#22c55e", bg: "rgba(34,197,94,0.16)",   pct: 100 },
+  Cancelled:  { label: "Cancelled",  color: "#ef4444", bg: "rgba(239,68,68,0.14)",   pct: 0 },
+};
 
 interface OrderLineItem {
   id: string;
@@ -56,21 +77,21 @@ function MemberDispatchImages({ orderId }: { orderId: string }) {
 
   return (
     <>
-      <div className="rounded-lg p-3 space-y-2" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)" }}>
-        <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Dispatch Photo{images.length > 1 ? "s" : ""}</p>
+      <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+        <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-blue)" }}>Dispatch Photo{images.length > 1 ? "s" : ""}</p>
         <div className="flex flex-wrap gap-2">
           {images.map(img => (
             <button
               key={img.id}
               onClick={() => loadImage(img.id)}
               className="w-20 h-20 rounded-lg overflow-hidden flex items-center justify-center transition-colors cursor-zoom-in hover:brightness-95"
-              style={{ border: "1px solid rgba(99,102,241,0.3)", background: "var(--t-surface)" }}
+              style={{ border: "1px solid var(--t-blue-30)", background: "var(--t-surface)" }}
               title={img.filename}
             >
               {loadedData[img.id] ? (
                 <img src={loadedData[img.id]} alt={img.filename} className="w-full h-full object-cover rounded-lg" />
               ) : (
-                <span className="text-[10px] font-medium text-center px-1.5 leading-tight" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Tap to view</span>
+                <span className="text-[10px] font-medium text-center px-1.5 leading-tight" style={{ color: "var(--t-blue)" }}>Tap to view</span>
               )}
             </button>
           ))}
@@ -1451,7 +1472,7 @@ function BalanceDueCard({
                           {verifying ? "Verifying on-chain…" : "Submit & verify"}
                         </button>
                         {verifyMsg && verifyMsg.kind === "underpaid" ? (
-                          <div className="rounded-md px-3 py-2.5 text-xs space-y-1" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", color: "#92400E" }}>
+                          <div className="rounded-md px-3 py-2.5 text-xs space-y-1" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", color: "light-dark(#92400E, #E8C488)" }}>
                             <p className="font-bold">⚠️ Underpayment detected</p>
                             <p>You sent <strong>{verifyMsg.amountPaid} {verifyMsg.currency ?? "USDT"}</strong> but <strong>{((verifyMsg.amountPaid ?? 0) + (verifyMsg.shortfall ?? 0)).toFixed(2)} {verifyMsg.currency ?? "USDT"}</strong> was expected.</p>
                             <p>You are short by <strong>{verifyMsg.shortfall} {verifyMsg.currency ?? "USDT"}</strong>. Please send the remaining amount to the same wallet address and submit that transaction hash. Your organiser has been notified.</p>
@@ -1998,7 +2019,7 @@ export default function AccountOrderDetail() {
 
   return (
     <Chrome>
-      <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
+      <div className="warm-order flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
         <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-24 lg:pb-6" : "pb-24 md:pb-5"} max-w-md lg:max-w-2xl mx-auto w-full`}>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
@@ -2018,7 +2039,7 @@ export default function AccountOrderDetail() {
             {/* Loading */}
             {loading && (
               <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--t-blue)" }} />
               </div>
             )}
 
@@ -2030,7 +2051,8 @@ export default function AccountOrderDetail() {
                 <p className="text-sm" style={{ color: "var(--t-subtle)" }}>{error}</p>
                 <button
                   onClick={() => setLocation("/account?s=orders")}
-                  className="mt-4 text-sm font-semibold text-blue-600 underline"
+                  className="mt-4 text-sm font-semibold underline"
+                  style={{ color: "var(--t-blue)" }}
                 >
                   Back to orders
                 </button>
@@ -2050,8 +2072,8 @@ export default function AccountOrderDetail() {
                   {(() => {
                     const hst = STATUS_STYLE[order.status] ?? { label: order.status, color: "#fff", bg: "rgba(255,255,255,0.16)", pct: 0 };
                     return (
-                      <div className="relative overflow-hidden" style={{ borderRadius: 14, background: HERO_GRAD, padding: "22px 24px 20px" }}>
-                        <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.12), transparent 55%)", pointerEvents: "none" }} />
+                      <div className="relative overflow-hidden" style={{ borderRadius: 24, background: HERO_GRAD, padding: "24px 26px 22px", boxShadow: "0 18px 40px -18px rgba(26,43,86,0.55)" }}>
+                        <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.12), transparent 55%), radial-gradient(90% 80% at 0% 100%, rgba(233,160,32,.24), transparent 60%)", pointerEvents: "none" }} />
                         <div className="relative flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="font-bold uppercase" style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,.62)" }}>Order</p>
@@ -2076,7 +2098,7 @@ export default function AccountOrderDetail() {
                               <span className="font-bold tabular-nums text-white" style={{ fontSize: 11 }}>{hst.pct}%</span>
                             </div>
                             <div className="rounded-full overflow-hidden" style={{ height: 6, background: "rgba(255,255,255,.16)" }}>
-                              <div style={{ width: `${hst.pct}%`, height: "100%", background: "#fff", borderRadius: 999 }} />
+                              <div style={{ width: `${hst.pct}%`, height: "100%", background: "var(--warm-amber)", borderRadius: 999 }} />
                             </div>
                           </div>
                         )}
@@ -2091,10 +2113,10 @@ export default function AccountOrderDetail() {
 
                       {/* Reshipper banner */}
                       {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
-                        <div className="rounded-lg overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                        <div className="rounded-lg overflow-hidden" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
                           <div className="flex items-center gap-2 px-3 py-2">
-                            <Truck className="w-4 h-4 shrink-0" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }} />
-                            <p className="text-xs font-semibold" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }}>Your order will be shipped via a reshipper</p>
+                            <Truck className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
+                            <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>Your order will be shipped via a reshipper</p>
                           </div>
                           {order.reshipperUsername && (
                             <div className="px-3 pb-3 space-y-2">
@@ -2155,7 +2177,7 @@ export default function AccountOrderDetail() {
                             </div>
                           )}
                           {order.directShippingRequested && (order.directShippingCost ?? 0) > 0 ? (
-                            <div className="flex justify-between" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>
+                            <div className="flex justify-between" style={{ color: "var(--t-blue)" }}>
                               <span className="font-medium flex items-center gap-1.5"><Home className="w-3.5 h-3.5 shrink-0" /> Direct Shipping</span>
                               <span className="font-medium">{fmtC(order.directShippingCost!, order.currency)}</span>
                             </div>
@@ -2188,9 +2210,9 @@ export default function AccountOrderDetail() {
                               <span>−${order.creditsApplied!.toFixed(2)} USD</span>
                             </div>
                           )}
-                          <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
-                            <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
-                            <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
+                          <div className="flex items-center justify-between rounded-lg px-4 py-3 mt-2" style={{ background: "var(--warm-ink)", border: "1px solid var(--warm-ink)", boxShadow: "0 10px 24px -14px rgba(26,43,86,0.55)" }}>
+                            <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
+                            <span className="text-lg font-extrabold" style={{ color: "var(--warm-amber)" }}>
                               {order.currency === "GBP"
                                 ? fmtC(order.grandTotal, order.currency)
                                 : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
@@ -2234,9 +2256,9 @@ export default function AccountOrderDetail() {
                               </div>
                             )}
                             {order.routingType === "direct" && (
-                              <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
-                                <Home className="w-4 h-4 shrink-0" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }} />
-                                <p className="text-xs font-semibold" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Your order will be shipped directly to your address</p>
+                              <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-blue-20)" }}>
+                                <Home className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
+                                <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>Your order will be shipped directly to your address</p>
                               </div>
                             )}
                           </div>
@@ -2269,7 +2291,7 @@ export default function AccountOrderDetail() {
                               <p className="font-mono font-bold text-sm tracking-widest break-all" style={{ color: "var(--t-text)" }}>{order.trackingNumber}</p>
                             </div>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5"
-                              style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "light-dark(#4f46e5, #818cf8)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "rgba(99,102,241,0.16)" : "rgba(148,163,184,0.18)" }}>
+                              style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "var(--t-blue)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "var(--t-blue-15)" : "rgba(148,163,184,0.18)" }}>
                               {order.status}
                             </span>
                           </div>
@@ -2424,8 +2446,8 @@ export default function AccountOrderDetail() {
                   {/* Payment banner (set by GB admin) */}
                   {order.groupBuyPaymentBanner && (
                     <div className="rounded-lg flex items-start gap-3 px-4 py-3" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
-                      <Megaphone className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#B45309" }} />
-                      <p className="text-sm leading-snug" style={{ color: "#92400E" }}>
+                      <Megaphone className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "light-dark(#B45309, #F0C880)" }} />
+                      <p className="text-sm leading-snug" style={{ color: "light-dark(#92400E, #E8C488)" }}>
                         {order.groupBuyPaymentBanner.split("\n").map((line, i) => {
                           const parts = line.split(/(\*\*[^*]+\*\*)/g);
                           return (
@@ -2454,10 +2476,10 @@ export default function AccountOrderDetail() {
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Coins className="w-4 h-4 shrink-0" style={{ color: "#16a34a" }} />
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: "#15803d" }}>
+                          <p className="text-sm font-semibold" style={{ color: "light-dark(#15803d, #6ee7b7)" }}>
                             ${accountCredits.toFixed(2)} store credit available
                           </p>
-                          <p className="text-xs mt-0.5" style={{ color: "#166534" }}>
+                          <p className="text-xs mt-0.5" style={{ color: "light-dark(#166534, #86efac)" }}>
                             Apply to reduce the amount you owe on this order.
                           </p>
                         </div>
@@ -2474,7 +2496,7 @@ export default function AccountOrderDetail() {
                     </div>
                   )}
                   {creditsError && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.2)" }}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "light-dark(#dc2626, #fca5a5)", border: "1px solid rgba(239,68,68,0.2)" }}>
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       {creditsError}
                     </div>
@@ -2482,7 +2504,7 @@ export default function AccountOrderDetail() {
                   {(order.creditsApplied ?? 0) > 0 && (
                     <div
                       className="rounded-lg px-3 py-2 flex items-center gap-2 text-xs"
-                      style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.2)", color: "#15803d" }}
+                      style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.2)", color: "light-dark(#15803d, #6ee7b7)" }}
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                       <span><strong>${(order.creditsApplied ?? 0).toFixed(2)}</strong> store credit applied — amount due reduced.</span>
@@ -2499,11 +2521,11 @@ export default function AccountOrderDetail() {
                         className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
                         style={{ background: "rgba(217,119,6,0.15)" }}
                       >
-                        <Clock className="w-4 h-4" style={{ color: "#D97706" }} />
+                        <Clock className="w-4 h-4" style={{ color: "light-dark(#D97706, #F0C880)" }} />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold" style={{ color: "#B45309" }}>Payments Not Yet Open</p>
-                        <p className="text-xs mt-0.5" style={{ color: "#92400E" }}>The organiser hasn't opened payments for this group buy yet. Check back soon.</p>
+                        <p className="text-sm font-semibold" style={{ color: "light-dark(#B45309, #F0C880)" }}>Payments Not Yet Open</p>
+                        <p className="text-xs mt-0.5" style={{ color: "light-dark(#92400E, #E8C488)" }}>The organiser hasn't opened payments for this group buy yet. Check back soon.</p>
                       </div>
                     </div>
                   ) : order.id ? (
@@ -2531,8 +2553,8 @@ export default function AccountOrderDetail() {
                   {order.testingContribution > 0 && order.paymentStatus === "confirmed" && (
                     <Card className="p-4 rounded-lg shadow-none" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                       <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                          <TestTube className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-10)" }}>
+                          <TestTube className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
                         </div>
                         <div>
                           <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Lab Test Contribution</p>
@@ -2540,11 +2562,11 @@ export default function AccountOrderDetail() {
                         </div>
                       </div>
                       {order.testVote ? (
-                        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-100">
-                          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                        <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.22)" }}>
+                          <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: "light-dark(#16a34a, #4ade80)" }} />
                           <div>
-                            <p className="text-xs font-semibold text-green-700">Vote cast!</p>
-                            <p className="text-xs text-green-600">
+                            <p className="text-xs font-semibold" style={{ color: "light-dark(#15803d, #6ee7b7)" }}>Vote cast!</p>
+                            <p className="text-xs" style={{ color: "light-dark(#166534, #86efac)" }}>
                               You voted to test: <span className="font-medium">{order.testVote}</span>
                             </p>
                           </div>
@@ -2558,7 +2580,7 @@ export default function AccountOrderDetail() {
                               onClick={() => li.productId && handleVote(li.productId)}
                               disabled={voteLoading || !li.productId}
                               className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-50"
-                              style={{ borderColor: "rgba(59,130,246,0.4)", background: "var(--t-surface)", color: "var(--t-blue)" }}
+                              style={{ borderColor: "var(--t-blue-30)", background: "var(--t-surface)", color: "var(--t-blue)" }}
                             >
                               <span className="truncate">{li.productName}</span>
                               {voteLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 ml-2" /> : null}
@@ -2768,7 +2790,7 @@ export default function AccountOrderDetail() {
               onClick={() => { if (!deleting) { setDeleteConfirm(false); setDeleteError(null); } }} />
             <motion.div
               initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 rounded-3xl w-[90%] max-w-sm p-6"
+              className="warm-order fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 rounded-3xl w-[90%] max-w-sm p-6"
               style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 24px 64px rgba(0,0,0,0.35)" }}>
               <div className="flex flex-col items-center gap-3 mb-5">
                 <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.1)" }}>
