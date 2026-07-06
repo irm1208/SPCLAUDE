@@ -786,13 +786,13 @@ function coaStatusBadge(test: LabTest): { label: string; color: string } | null 
   return null;
 }
 
-function CoaBigStat({ label, value, suffix }: { label: string; value: string; suffix?: string }) {
+function CoaBigStat({ label, value, suffix, align = "left" }: { label: string; value: string; suffix?: string; align?: "left" | "right" }) {
   return (
-    <div className="min-w-0">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-1" style={{ color: COA_LABEL }}>{label}</div>
-      <div className="font-bold text-[34px] leading-none tracking-tight truncate" style={{ color: "#fff" }}>
+    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] mb-1 whitespace-nowrap" style={{ color: COA_LABEL }}>{label}</div>
+      <div className="font-bold text-[23px] leading-none tracking-tight truncate" style={{ color: "#fff" }}>
         {value}
-        {suffix && <span className="text-[17px] font-semibold ml-1" style={{ color: "rgba(255,255,255,0.65)" }}>{suffix}</span>}
+        {suffix && <span className="text-[13px] font-semibold ml-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>{suffix}</span>}
       </div>
     </div>
   );
@@ -857,19 +857,22 @@ function TestCard({ test, index, onView }: { test: LabTest; index: number; onVie
         className="absolute inset-0 pointer-events-none transition-opacity duration-300 group-hover:opacity-100 opacity-90"
         style={{
           background: [
-            `radial-gradient(75% 55% at 108% 6%, color-mix(in srgb, ${a1} 62%, transparent) 0%, transparent 62%)`,
-            `radial-gradient(60% 50% at 112% 48%, color-mix(in srgb, ${a2} 55%, transparent) 0%, transparent 65%)`,
-            `radial-gradient(65% 55% at 106% 96%, color-mix(in srgb, ${a3} 48%, transparent) 0%, transparent 62%)`,
+            `radial-gradient(95% 70% at 104% 4%, color-mix(in srgb, ${a1} 78%, transparent) 0%, transparent 68%)`,
+            `radial-gradient(80% 65% at 110% 48%, color-mix(in srgb, ${a2} 70%, transparent) 0%, transparent 70%)`,
+            `radial-gradient(85% 70% at 102% 100%, color-mix(in srgb, ${a3} 62%, transparent) 0%, transparent 68%)`,
           ].join(", "),
-          filter: "blur(22px)",
+          filter: "blur(26px)",
         }}
       />
       <div
         aria-hidden
         className="absolute inset-0 pointer-events-none"
         style={{
-          background: `radial-gradient(30% 22% at 103% 12%, color-mix(in srgb, ${a1} 55%, transparent) 0%, transparent 70%)`,
-          filter: "blur(8px)",
+          background: [
+            `radial-gradient(45% 32% at 102% 10%, color-mix(in srgb, ${a1} 70%, transparent) 0%, transparent 72%)`,
+            `radial-gradient(35% 28% at 104% 60%, color-mix(in srgb, ${a2} 55%, transparent) 0%, transparent 70%)`,
+          ].join(", "),
+          filter: "blur(10px)",
         }}
       />
 
@@ -919,7 +922,14 @@ function TestCard({ test, index, onView }: { test: LabTest; index: number; onVie
         {/* Big stat */}
         <div className="pt-1">
           {showPurity ? (
-            <CoaBigStat label="Purity" value={formatPurity(test.purityPct)} suffix="%" />
+            test.mgAmount != null ? (
+              <div className="flex items-start justify-between gap-3">
+                <CoaBigStat label="Purity" value={Number(test.purityPct).toFixed(2)} suffix="%" />
+                <CoaBigStat label="Actual Mass" value={String(test.mgAmount)} suffix={test.massUnit ?? "mg"} align="right" />
+              </div>
+            ) : (
+              <CoaBigStat label="Purity" value={formatPurity(test.purityPct)} suffix="%" />
+            )
           ) : showEndotoxinOnly ? (
             <CoaBigStat label="Endotoxin" value={String(test.endotoxinEuMg)} suffix="EU/Vial" />
           ) : test.mgAmount != null ? (
@@ -931,9 +941,6 @@ function TestCard({ test, index, onView }: { test: LabTest; index: number; onVie
 
         {/* Detail rows */}
         <div className="space-y-2.5 pt-1">
-          {showPurity && test.mgAmount != null && (
-            <CoaRow label="Actual Mass" value={`${test.mgAmount} ${test.massUnit ?? "mg"}`} />
-          )}
           {showPurity && test.endotoxinEuMg != null && (
             <CoaRow
               label="Endotoxin"
