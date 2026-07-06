@@ -2071,6 +2071,14 @@ export default function AccountOrderDetail() {
                   {/* ===== Header (dashboard hero) ===== */}
                   {(() => {
                     const hst = STATUS_STYLE[order.status] ?? { label: order.status, color: "#fff", bg: "rgba(255,255,255,0.16)", pct: 0 };
+                    const tlStages = [
+                      { label: "Ordered", Icon: FileText },
+                      { label: "Processing", Icon: PackageCheck },
+                      { label: "Shipped", Icon: Truck },
+                      { label: "Delivered", Icon: CheckCircle2 },
+                    ];
+                    const tlIdxMap: Record<string, number> = { Draft: 0, Submitted: 0, Processing: 1, Shipped: 2, Completed: 3 };
+                    const tlCur = tlIdxMap[order.status] ?? 0;
                     return (
                       <div className="relative overflow-hidden" style={{ borderRadius: 24, background: HERO_GRAD, padding: "24px 26px 22px", boxShadow: "0 18px 40px -18px rgba(26,43,86,0.55)" }}>
                         <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.12), transparent 55%), radial-gradient(90% 80% at 0% 100%, rgba(233,160,32,.24), transparent 60%)", pointerEvents: "none" }} />
@@ -2099,6 +2107,26 @@ export default function AccountOrderDetail() {
                             </div>
                             <div className="rounded-full overflow-hidden" style={{ height: 6, background: "rgba(255,255,255,.16)" }}>
                               <div style={{ width: `${hst.pct}%`, height: "100%", background: "var(--warm-amber)", borderRadius: 999 }} />
+                            </div>
+                            {/* Timeline stepper */}
+                            <div className="relative flex mt-4">
+                              {tlStages.map((s, i) => {
+                                const reached = i <= tlCur;
+                                const active = i === tlCur;
+                                const Icon = s.Icon;
+                                return (
+                                  <div key={s.label} className="relative flex-1 flex flex-col items-center min-w-0">
+                                    {i > 0 && (
+                                      <div className="absolute" style={{ top: 13, right: "50%", width: "100%", height: 2, background: reached ? "var(--warm-amber)" : "rgba(255,255,255,.18)" }} />
+                                    )}
+                                    <div className="relative z-10 rounded-full flex items-center justify-center shrink-0" style={{ width: 28, height: 28, background: reached ? "var(--warm-amber)" : "rgba(255,255,255,.12)", border: reached ? "none" : "1px solid rgba(255,255,255,.28)", color: reached ? "#1A2B56" : "rgba(255,255,255,.6)", boxShadow: active ? "0 0 0 3px rgba(233,160,32,.35)" : "none" }}>
+                                      <Icon className="w-3.5 h-3.5" />
+                                    </div>
+                                    <p className="mt-1.5 font-semibold text-center leading-tight px-0.5" style={{ fontSize: 10.5, color: reached ? "#fff" : "rgba(255,255,255,.55)" }}>{s.label}</p>
+                                    {active && <p className="text-center font-medium" style={{ fontSize: 9, color: "var(--warm-amber)", marginTop: 1 }}>Current</p>}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
