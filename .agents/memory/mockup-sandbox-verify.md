@@ -11,6 +11,10 @@ description: How to truly verify a mockup renders, and how to find the artifactI
 
 **Why:** a DESIGN subagent once wrote literal backslash-escaped backticks (`\`...\``) into a `style={{ width: ... }}` template literal — a heredoc/escaping leak. Page url returned 200, module url returned 500, and it shipped to the canvas broken. Also watch for `Math.random()` in mockups (non-deterministic widths re-roll every render) — prefer a deterministic expression like `((i * 7) % 4) + 1`.
 
+# Check iframe `url` after DESIGN subagents finish
+
+DESIGN subagents can set `state: "live"` + `componentPath` on their canvas iframe but leave `url` EMPTY — the user then sees frames that "aren't loading" even though the modules compile fine. After all subagents complete, `getCanvasState()` and verify every mockup iframe has a non-empty `url`; if blank, patch it yourself with an `update` action (`https://<dev-domain>/__mockup/preview/<folder>/<Component>`).
+
 # presentArtifact needs an artifactId
 
 `presentArtifact({ artifactId, shapeIds })` fails without `artifactId`, and the id is NOT the slug (`"mockup-sandbox"` is rejected). Each project's artifacts have opaque ids. Discover them: call `presentArtifact` with any wrong id and read the thrown error's `Available artifacts: [{id,title}, ...]` list — the mockup sandbox appears there titled **"Component Preview Server"** with a random id. Use that id.
