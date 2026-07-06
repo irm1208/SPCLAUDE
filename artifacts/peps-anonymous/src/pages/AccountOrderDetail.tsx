@@ -362,8 +362,8 @@ function AccountShippingAddressSection({
 
   const hasExisting = !!(existingName && existingAddress);
 
-  // Start collapsed if address already exists; open if not yet set
-  const [expanded, setExpanded] = useState(!hasExisting);
+  // Always start collapsed — the box is a tap-to-open required step
+  const [expanded, setExpanded] = useState(false);
   // Track the "live" saved name/address (updated after each save)
   const [liveName, setLiveName] = useState(existingName ?? "");
   const [liveAddress, setLiveAddress] = useState(existingAddress ?? "");
@@ -525,7 +525,8 @@ function AccountShippingAddressSection({
       style={{
         borderColor: addressIsSet
           ? isDark ? "rgba(74,222,128,0.3)" : "rgba(22,163,74,0.3)"
-          : `${NAVY}33`,
+          : `${NAVY}55`,
+        borderStyle: addressIsSet || expanded ? "solid" : "dashed",
         background: addressIsSet && !expanded
           ? isDark ? "rgba(21,128,61,0.12)" : "rgba(240,253,244,1)"
           : isDark ? `${NAVY}0d` : `${NAVY}06`,
@@ -535,6 +536,7 @@ function AccountShippingAddressSection({
       <button
         type="button"
         onClick={() => setExpanded(v => !v)}
+        aria-expanded={expanded}
         className="w-full flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 text-left transition-colors"
         style={{ background: "transparent" }}
       >
@@ -553,20 +555,34 @@ function AccountShippingAddressSection({
             }
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold leading-tight" style={{
-              color: addressIsSet
-                ? isDark ? "#4ade80" : "#15803d"
-                : NAVY,
-            }}>
-              {addressIsSet ? "Delivery Address Added" : "Delivery Address"}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-semibold leading-tight" style={{
+                color: addressIsSet
+                  ? isDark ? "#4ade80" : "#15803d"
+                  : NAVY,
+              }}>
+                {addressIsSet ? "Delivery Address Added" : "Delivery Address"}
+              </p>
+              {!addressIsSet && (
+                <span
+                  className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md leading-none"
+                  style={{
+                    color: isDark ? "#FBBF24" : "#B45309",
+                    background: isDark ? "rgba(251,191,36,0.14)" : "rgba(251,191,36,0.18)",
+                    border: `1px solid ${isDark ? "rgba(251,191,36,0.35)" : "rgba(180,83,9,0.28)"}`,
+                  }}
+                >
+                  Required
+                </span>
+              )}
+            </div>
             {addressIsSet && !expanded ? (
               <p className="text-xs mt-0.5 truncate" style={{ color: isDark ? "rgba(74,222,128,0.7)" : "#166534", maxWidth: "18rem" }}>
                 {displayName}{addrSummary ? ` · ${addrSummary}` : ""}
               </p>
             ) : !addressIsSet ? (
               <p className="text-xs mt-0.5" style={{ color: `${NAVY}88` }}>
-                Required for shipping
+                {expanded ? "Required for shipping" : "Tap to enter your delivery address"}
               </p>
             ) : null}
           </div>
@@ -592,13 +608,24 @@ function AccountShippingAddressSection({
               Edit
             </span>
           )}
-          <ChevronDown
-            className="w-4 h-4 transition-transform duration-200"
-            style={{
-              color: addressIsSet ? (isDark ? "#4ade80" : "#16a34a") : NAVY,
-              transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-            }}
-          />
+          {!addressIsSet && !expanded && (
+            <span
+              className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
+              style={{ background: NAVY, color: isDark ? "#0D1B2A" : "#FFFFFF" }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add
+            </span>
+          )}
+          {(addressIsSet || expanded) && (
+            <ChevronDown
+              className="w-4 h-4 transition-transform duration-200"
+              style={{
+                color: addressIsSet ? (isDark ? "#4ade80" : "#16a34a") : NAVY,
+                transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+              }}
+            />
+          )}
         </div>
       </button>
 
