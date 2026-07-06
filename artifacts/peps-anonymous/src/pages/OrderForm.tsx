@@ -366,12 +366,15 @@ function SearchableProductSelect({
           paddingBottom: 13,
           fontSize: 14,
           background: "#162231",
-          border: open ? "1px solid rgba(91,141,239,0.5)" : "1px solid rgba(255,255,255,0.08)",
+          border: open ? "1px solid rgba(91,141,239,0.5)" : "1px solid rgba(255,255,255,0.1)",
+          boxShadow: open ? "0 0 0 3px rgba(91,141,239,0.12)" : "inset 0 1px 2px rgba(0,0,0,0.15)",
           color: selected ? "#ffffff" : "rgba(255,255,255,0.75)",
-          transition: "border-color 0.15s",
+          transition: "border-color 0.15s, box-shadow 0.15s",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.6 : 1,
         }}
+        onMouseEnter={(e) => { if (!disabled && !open) (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.2)"; }}
+        onMouseLeave={(e) => { if (!disabled && !open) (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.1)"; }}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -1184,87 +1187,99 @@ export default function OrderForm() {
 
             {/* Reshipper info card — shown when the user's country leg has reshippers assigned */}
             {legReshippers.length > 0 && myCountryLeg && (
-              <div className="rounded-xl px-4 py-3 flex items-start gap-3" style={{ background: "var(--t-blue-12)", border: "1.5px solid var(--t-blue-30)" }}>
-                <Globe className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--t-blue)" }} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold" style={{ color: "var(--t-blue)" }}>
+              <div
+                className="rounded-2xl p-4 flex items-start gap-3.5"
+                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)" }}
+              >
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-12)" }}>
+                  <Globe className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-xs font-bold tracking-tight" style={{ color: "var(--t-text)" }}>
                     Local Reshipper — {myCountryLeg.countryName}
                   </p>
                   {!hasMultipleReshippers && (
-                    <>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--t-text)" }}>
+                    <div className="mt-1.5 space-y-1">
+                      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
                         @{reshipperInfo?.telegramUsername}
                       </p>
                       {reshipperInfo?.paymentTarget && (
-                        <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>
-                          Pay to: {reshipperInfo.paymentTarget}
+                        <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                          Pay to: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{reshipperInfo.paymentTarget}</span>
                         </p>
                       )}
                       {reshipperInfo?.enabledPaymentMethods && typeof reshipperInfo.enabledPaymentMethods === "object" && !Array.isArray(reshipperInfo.enabledPaymentMethods) && (() => {
                         const labels: Record<string, string> = { usdtEnabled: "USDT / USDC", revolutEnabled: "Revolut", paypalEnabled: "PayPal", cryptoEnabled: "Crypto", anonPayEnabled: "AnonPay" };
                         const methods = Object.entries(reshipperInfo.enabledPaymentMethods as Record<string, unknown>).filter(([, v]) => v).map(([k]) => labels[k] ?? k);
                         return methods.length > 0 ? (
-                          <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Methods: {methods.join(", ")}</p>
+                          <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Methods: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{methods.join(", ")}</span></p>
                         ) : null;
                       })()}
                       {reshipperInfo?.reshipperPaymentDetails && typeof reshipperInfo.reshipperPaymentDetails === "object" && (() => {
                         const detailLabels: Record<string, string> = { usdtWallet: "USDT Wallet", revolutHandle: "Revolut", paypalHandle: "PayPal", cryptoCurrency: "Crypto", cryptoNetwork: "Network", cryptoWalletAddress: "Crypto Wallet", anonPayWallet: "AnonPay Wallet", anonPayTicker: "AnonPay Ticker", anonPayNetwork: "AnonPay Network" };
                         const entries = Object.entries(reshipperInfo.reshipperPaymentDetails as Record<string, unknown>).filter(([k, v]) => v && k !== "anonPayEnabled");
                         return entries.length > 0 ? (
-                          <div className="mt-1 space-y-0.5">
+                          <div className="space-y-0.5">
                             {entries.map(([k, v]) => (
-                              <p key={k} className="text-xs" style={{ color: "var(--t-subtle)" }}>{detailLabels[k] ?? k}: {String(v)}</p>
+                              <p key={k} className="text-xs" style={{ color: "var(--t-subtle)" }}>{detailLabels[k] ?? k}: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{String(v)}</span></p>
                             ))}
                           </div>
                         ) : null;
                       })()}
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
             )}
 
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-center" style={{ color: "var(--t-blue-deep)" }}>Group Buy</p>
-              <h1 className="text-xl font-bold text-center" style={{ color: "var(--t-text)" }}>{pageTitle}</h1>
+            <div className="pt-1">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] mb-1 text-center" style={{ color: "var(--t-blue-deep)" }}>Group Buy</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-center" style={{ color: "var(--t-text)" }}>{pageTitle}</h1>
             </div>
             {/* 2-step progress indicator */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-1">
               {/* Step 1 — active */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: "var(--t-blue-deep)" }}>
-                <span className="w-4 h-4 rounded-full bg-white flex items-center justify-center shrink-0">
-                  <span className="text-[9px] font-bold" style={{ color: "var(--t-blue-deep)" }}>1</span>
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-full shadow-sm" style={{ background: "var(--t-blue-deep)" }}>
+                <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
+                  <span className="text-[10px] font-bold" style={{ color: "var(--t-blue-deep)" }}>1</span>
                 </span>
-                <span className="text-xs font-semibold text-white whitespace-nowrap">Choose Products</span>
+                <span className="text-[13px] font-bold text-white whitespace-nowrap tracking-wide">Choose Products</span>
               </div>
               {/* Arrow */}
-              <div className="flex-1 flex items-center">
-                <div className="flex-1 h-px" style={{ background: "rgba(27,58,122,0.2)" }} />
-                <svg className="w-3 h-3 mx-1 shrink-0" fill="none" viewBox="0 0 12 12" style={{ color: "rgba(27,58,122,0.35)" }}>
+              <div className="flex-1 flex items-center px-1">
+                <div className="flex-1 h-[2px] rounded-full" style={{ background: "rgba(27,58,122,0.15)" }} />
+                <svg className="w-3.5 h-3.5 mx-1 shrink-0" fill="none" viewBox="0 0 12 12" style={{ color: "rgba(27,58,122,0.3)" }}>
                   <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               {/* Step 2 — inactive */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: "rgba(27,58,122,0.08)", border: "1px solid rgba(27,58,122,0.2)" }}>
-                <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(27,58,122,0.18)" }}>
-                  <span className="text-[9px] font-bold" style={{ color: "var(--t-blue-deep)" }}>2</span>
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-full" style={{ background: "var(--t-surface)", border: "1px solid rgba(27,58,122,0.15)" }}>
+                <span className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(27,58,122,0.08)" }}>
+                  <span className="text-[10px] font-bold" style={{ color: "var(--t-blue-deep)", opacity: 0.7 }}>2</span>
                 </span>
-                <span className="text-xs font-semibold whitespace-nowrap" style={{ color: "rgba(27,58,122,0.6)" }}>Review Order</span>
+                <span className="text-[13px] font-semibold whitespace-nowrap" style={{ color: "rgba(27,58,122,0.5)" }}>Review Order</span>
               </div>
             </div>
           </div>
         )}
 
         <section className="space-y-3">
-          <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: "#1C2B3D" }}>
+          <div className="rounded-3xl p-5 relative overflow-hidden" style={{ background: "#1C2B3D", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06)" }}>
+            <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
+            <div className="relative z-10">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Your Products</p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.15)" }}>
+                  <Package className="w-3.5 h-3.5" style={{ color: "#60A5FA" }} />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Your Products</p>
+              </div>
               {gbId && stockViewEnabled && gbCapacity.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setStockModalOpen(true)}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors"
-                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.55)" }}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-all border"
+                  style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)", borderColor: "rgba(255,255,255,0.1)" }}
                   title="View stock levels"
                 >
                   <BarChart2 className="w-3 h-3" />
@@ -1396,14 +1411,14 @@ export default function OrderForm() {
                       })()}
 
                       <div className="flex items-center gap-3">
-                        <div className="flex flex-col items-center shrink-0">
+                        <div className="flex flex-col items-start shrink-0">
                           <div
-                            className="flex items-center h-11 rounded-xl overflow-hidden"
-                            style={{ background: "#162231", border: "1px solid rgba(255,255,255,0.08)" }}
+                            className="flex items-center h-10 rounded-lg overflow-hidden"
+                            style={{ background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.08)" }}
                           >
                             <button
                               type="button"
-                              className="px-3.5 h-full text-lg transition-colors"
+                              className="px-3 h-full text-lg transition-colors hover:bg-white/10 active:bg-white/15"
                               style={{ color: "rgba(255,255,255,0.85)" }}
                               onClick={() => draft.updateLineItem(item.id, { quantity: itemAllowHalfKits ? prevQty(item.quantity) : Math.max(1, item.quantity - 1) })}
                             >−</button>
@@ -1421,21 +1436,21 @@ export default function OrderForm() {
                             />
                             <button
                               type="button"
-                              className="px-3.5 h-full text-lg transition-colors"
+                              className="px-3 h-full text-lg transition-colors hover:bg-white/10 active:bg-white/15"
                               style={{ color: "rgba(255,255,255,0.85)" }}
                               onClick={() => draft.updateLineItem(item.id, { quantity: nextQty(item.quantity) })}
                             >+</button>
                           </div>
                           {itemAllowHalfKits && (
-                            <p className="text-xs mt-1 leading-none" style={{ color: "rgba(255,255,255,0.75)" }}>For half kits add .5</p>
+                            <p className="text-[10px] mt-1.5 leading-none opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>For half kits add .5</p>
                           )}
                         </div>
 
                         {!hideOrderFormPrices && (
                           <div className="flex-1 text-right">
-                            <p className="font-bold text-base" style={{ color: "#ffffff" }}>{formatPrice(item.lineTotal)}</p>
+                            <p className="font-semibold text-[15px] tracking-tight" style={{ color: "#ffffff" }}>{formatPrice(item.lineTotal)}</p>
                             {item.unitPrice > 0 && (
-                              <p className="text-sm" style={{ color: "rgba(255,255,255,0.75)" }}>{formatPrice(item.unitPrice)} each</p>
+                              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.6)" }}>{formatPrice(item.unitPrice)} each</p>
                             )}
                           </div>
                         )}
@@ -1443,7 +1458,7 @@ export default function OrderForm() {
                         {draft.lineItems.length > 1 && (
                           <button
                             type="button"
-                            className="p-2 rounded-lg transition-colors"
+                            className="p-2 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
                             style={{ color: "rgba(255,255,255,0.75)" }}
                             onClick={() => draft.removeLineItem(item.id)}
                           >
@@ -1464,14 +1479,16 @@ export default function OrderForm() {
             <button
               type="button"
               onClick={draft.addLineItem}
-              className="w-full h-10 mt-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
+              className="w-full h-11 mt-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-white/5"
               style={{
-                border: "1px dashed rgba(255,255,255,0.35)",
-                color: "rgba(255,255,255,0.75)",
+                border: "1px dashed rgba(255,255,255,0.3)",
+                color: "rgba(255,255,255,0.9)",
                 background: "transparent",
               }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.5)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.3)"; }}
             >
-              <Plus className="w-3 h-3" /> Add another product
+              <Plus className="w-4 h-4" /> Add another product
             </button>
 
             {/* Real-time kit limit warnings */}
@@ -1506,6 +1523,7 @@ export default function OrderForm() {
                 </div>
               );
             })()}
+            </div>
           </div>
         </section>
 
@@ -2194,7 +2212,7 @@ export default function OrderForm() {
         )}
       </AnimatePresence>
       <div
-        className="fixed bottom-0 right-0 z-20 backdrop-blur-xl border-t shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
+        className="fixed bottom-0 right-0 z-20 backdrop-blur-xl border-t"
         style={{
           left: useDashChrome
             ? (isLgPlus ? "var(--dh-ml, 0px)" : 0)
@@ -2202,14 +2220,15 @@ export default function OrderForm() {
           transition: "left 220ms ease",
           background: "var(--t-surface)",
           borderColor: "var(--t-border)",
+          boxShadow: "0 -4px 24px -4px rgba(0,0,0,0.1)",
         }}
       >
         <div className="max-w-2xl mx-auto px-4 pt-3" style={{ paddingBottom: (useDashChrome ? isLgPlus : isMdPlus) ? "calc(1rem + env(safe-area-inset-bottom))" : "calc(76px + env(safe-area-inset-bottom))" }}>
           <div className="flex items-center justify-between gap-4 mb-2">
             {!hideOrderTotal && (
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Grand Total</p>
-                <p className="text-xl font-bold truncate" style={{ color: "var(--t-text)" }}>{formatPrice(grandTotal)}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.15em]" style={{ color: "var(--t-subtle)" }}>Grand Total</p>
+                <p className="text-2xl font-extrabold tracking-tight truncate mt-0.5" style={{ color: "var(--t-text)" }}>{formatPrice(grandTotal)}</p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>
                   {draft.deliveryMethod ? `incl. ${draft.deliveryMethod}` : "Choose a delivery method"}
                   {productSubtotal > 0 && draft.vendorShipping > 0 && ` + ${formatPrice(draft.vendorShipping)} vendor shipping`}
@@ -2218,7 +2237,7 @@ export default function OrderForm() {
             )}
             <button
               onClick={handleReview}
-              className="h-12 px-7 rounded-xl text-sm font-bold text-white flex items-center gap-2 shrink-0 hover:brightness-110 active:scale-[0.98] transition-all"
+              className="h-12 px-7 rounded-xl text-sm font-bold text-white flex items-center gap-2 shrink-0 hover:brightness-110 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 transition-all shadow-lg shadow-black/10"
               style={{ background: "var(--t-blue-deep)" }}
             >
               Review <ArrowRight className="w-4 h-4" />
