@@ -2258,7 +2258,7 @@ export default function AccountOrderDetail() {
                           )}
                           <div className="flex items-center justify-between rounded-lg px-4 py-3 mt-2" style={{ background: "var(--warm-ink)", border: "1px solid var(--warm-ink)", boxShadow: "0 10px 24px -14px rgba(26,43,86,0.55)" }}>
                             <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
-                            <span className="text-lg font-extrabold" style={{ color: "var(--warm-amber)" }}>
+                            <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
                               {order.currency === "GBP"
                                 ? fmtC(order.grandTotal, order.currency)
                                 : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
