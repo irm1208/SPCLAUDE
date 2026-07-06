@@ -2431,51 +2431,6 @@ export default function AccountOrderDetail() {
                         </div>
                       </div>
 
-                      {/* Timeline */}
-                      <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <SecIcon Icon={Clock} />
-                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Timeline</span>
-                        </div>
-                        {order.status === "Cancelled" ? (
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#ef4444" }} />
-                            <span style={{ color: "var(--t-text)" }}>Order cancelled</span>
-                          </div>
-                        ) : (() => {
-                          const stages = [
-                            { label: "Ordered", Icon: FileText },
-                            { label: "Processing", Icon: PackageCheck },
-                            { label: "Shipped", Icon: Truck },
-                            { label: "Delivered", Icon: CheckCircle2 },
-                          ];
-                          const idxMap: Record<string, number> = { Draft: 0, Submitted: 0, Processing: 1, Shipped: 2, Completed: 3 };
-                          const cur = idxMap[order.status] ?? 0;
-                          return (
-                            <div>
-                              {stages.map((s, i) => {
-                                const reached = i <= cur;
-                                const active = i === cur;
-                                const Icon = s.Icon;
-                                const last = i === stages.length - 1;
-                                return (
-                                  <div key={s.label} className="flex gap-3 relative" style={{ paddingBottom: last ? 0 : 16 }}>
-                                    {!last && <div className="absolute w-[2px]" style={{ left: 13, top: 28, bottom: 0, background: i < cur ? "var(--t-blue)" : "var(--t-border)" }} />}
-                                    <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 relative z-10" style={{ background: reached ? "var(--t-blue)" : "var(--t-surface2)", color: reached ? "#fff" : "var(--t-subtle)", border: reached ? "none" : "1px solid var(--t-border)", boxShadow: active ? "0 0 0 3px var(--t-blue-08)" : "none" }}>
-                                      <Icon className="w-3.5 h-3.5" />
-                                    </div>
-                                    <div className="pt-1.5">
-                                      <p className="text-sm font-semibold leading-none" style={{ color: reached ? "var(--t-text)" : "var(--t-subtle)" }}>{s.label}</p>
-                                      {active && <p className="text-xs mt-1 font-medium" style={{ color: "var(--t-blue)" }}>Current status</p>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
-                      </div>
-
                       {/* Notes */}
                       {order.notes && (
                         <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
