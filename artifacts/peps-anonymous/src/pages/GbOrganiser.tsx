@@ -14,13 +14,15 @@ import {
   ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { IntlShippingTab } from "@/components/IntlShippingTab";
 import { GbQrCodesPanel } from "@/components/GbQrCodesPanel";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 
@@ -12645,6 +12647,49 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+/**
+ * Dashboard-shell wrapper for the organiser page (mirrors WholesaleShell):
+ * feeds account/orders/credits into DashboardShell and maps sidebar clicks
+ * back to customer-portal sections. Used for logged-in customers only —
+ * admin mode keeps the plain PageLayout fallback.
+ */
+function OrganiserShell({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
+  const logoutMutation = useLogout();
+  const [hubMoreOpen, setHubMoreOpen] = useState(false);
+  const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
+
+  const goSection = (s: string) =>
+    navigate(s === "home" ? "/account" : `/account?s=${encodeURIComponent(s)}`);
+
+  const navProps = {
+    section: "gborganiser",
+    setSection: goSection,
+    hubMoreOpen,
+    setHubMoreOpen,
+    account,
+  } as unknown as PortalNavProps;
+
+  return (
+    <DashboardShell
+      activeSection="gborganiser"
+      title="GB Organiser"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={(ordersData ?? []) as DashOrder[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={goSection}
+      onLogout={handleLogout}
+      navProps={navProps}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
+
 export default function GbOrganiser() {
   const { account, isLoading: accountLoading } = useAccount();
   const [, setLocation] = useLocation();
@@ -12722,8 +12767,12 @@ export default function GbOrganiser() {
 
   const isLoading = isAdminMode ? false : (accountLoading || profileLoading);
 
+  // Admin mode has no customer account/session — keep the plain PageLayout
+  // fallback there; logged-in customers get the dashboard shell chrome.
+  const Wrapper = isAdminMode ? PageLayout : OrganiserShell;
+
   return (
-    <PageLayout>
+    <Wrapper>
       <div className="flex flex-col flex-1 min-h-0" style={{ fontFamily: "'Inter', sans-serif", background: "var(--t-bg)" }}>
         <AnimatePresence mode="wait">
           {isLoading && (
@@ -12754,6 +12803,6 @@ export default function GbOrganiser() {
           )}
         </AnimatePresence>
       </div>
-    </PageLayout>
+    </Wrapper>
   );
 }
