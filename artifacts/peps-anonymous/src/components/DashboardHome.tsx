@@ -403,7 +403,7 @@ export function DashboardHome({
                       const first = o.lineItems[0]?.productName ?? "—";
                       const more = o.lineItems.length - 1;
                       return (
-                        <tr key={o.id} onClick={() => onSection("orders")} className="cursor-pointer transition-colors hover:bg-[color:var(--dh-row)]" style={{ ["--dh-row" as any]: T.panel2 }}>
+                        <tr key={o.id} onClick={() => navigate(`/account/orders/${o.id}`)} className="cursor-pointer transition-colors hover:bg-[color:var(--dh-row)]" style={{ ["--dh-row" as any]: T.panel2 }}>
                           <td style={{ padding: "13px 14px", borderBottom: `1px solid ${T.borderSoft}` }}>
                             <span className="font-bold" style={{ fontSize: 12.5, color: ACCENT }}>{o.code}</span>
                           </td>
