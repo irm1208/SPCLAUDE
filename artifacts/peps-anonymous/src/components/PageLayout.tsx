@@ -38,6 +38,7 @@ import {
   MessageSquarePlus,
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
+import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
 import { useAccount, useLogout, useHasTestingContribution, useTestingGbPools } from "@/hooks/use-account";
 import { useVialCart } from "@/hooks/use-vial-cart";
 import { CartDrawer } from "@/components/CartDrawer";
@@ -83,8 +84,8 @@ function itemIsActive(item: NavItem, location: string): boolean {
   return false;
 }
 
-const BRAND_NAVY = "var(--t-blue-deep)";
-const BRAND_BG = "var(--t-blue-07)";
+const BRAND_NAVY = ACCENT;
+const BRAND_BG = ACCENT_SOFT;
 
 const MORE_ITEM_COLORS: Record<string, { bg: string; color: string }> = {
   medications:  { bg: "rgba(168,85,247,0.15)",  color: "#c084fc" },
@@ -102,18 +103,20 @@ function SidebarNavItem({ item, location }: { item: NavItem; location: string })
   const [, setLocation] = useLocation();
   const expanded = useContext(SidebarExpandedCtx);
   const active = itemIsActive(item, location);
+  const NAV = useNav();
 
   return (
     <button
       onClick={() => setLocation(item.path)}
       title={!expanded ? item.label : undefined}
-      className="nav-row w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left"
+      className={`nav-row ${active ? "is-active" : ""} relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left`}
       style={
         active
           ? { background: NAV.activeBg, color: NAV.activeText, fontWeight: 600, border: `1px solid ${NAV.activeBorder}`, boxShadow: NAV.activeShadow }
           : { color: NAV.itemText, fontWeight: 500, background: "transparent", border: "1px solid transparent" }
       }
     >
+      {active && <span className="absolute rounded-full" style={{ left: -12, top: 6, bottom: 6, width: 3.5, background: ACCENT }} />}
       <item.icon
         className="w-4 h-4 shrink-0"
         strokeWidth={active ? 2 : 1.75}
@@ -136,10 +139,12 @@ function SidebarNavItem({ item, location }: { item: NavItem; location: string })
 }
 
 function NavDivider() {
+  const NAV = useNav();
   return <div className="h-px mx-3 my-3" style={{ background: NAV.divider }} />;
 }
 
 function SectionHeader({ label, expanded }: { label: string; expanded: boolean; showActions?: boolean }) {
+  const NAV = useNav();
   if (!expanded) return null;
   return (
     <div className="px-3 pt-2 pb-1 select-none">
@@ -235,24 +240,33 @@ function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
   );
 }
 
-// Theme-aware sidebar palette. Values are CSS variables that flip between
-// light and dark via :root.dark in index.css, so the sidebar follows the
-// global theme automatically.
-const NAV = {
-  bg:           "var(--t-surface)",
-  divider:      "var(--t-border)",
-  sectionLabel: "var(--t-subtle)",
-  itemText:     "var(--t-text)",
-  itemIcon:     "var(--t-muted)",
-  itemHover:    "var(--t-surface2)",
-  activeBg:     "var(--t-surface2)",
-  activeText:   "var(--t-text)",
-  activeBorder: "var(--t-border)",
-  activeShadow: "0 1px 2px rgba(15,23,41,0.06)",
-  pillBg:       "var(--t-surface)",
-  badge:        "#EF4444",
-  white70:      "var(--t-muted)",
-};
+// Theme-aware nav palette matching the dashboard theme (DashboardShell).
+// Derived from palette(dark) so the chrome flips with the global theme store.
+function useNav() {
+  const { dark } = useThemeStore();
+  const P = palette(dark);
+  return {
+    bg:           P.sidebar,
+    divider:      P.border,
+    sectionLabel: P.subtle,
+    itemText:     P.muted,
+    itemIcon:     P.muted,
+    itemHover:    P.chip,
+    activeBg:     dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)",
+    activeText:   ACCENT,
+    activeBorder: "transparent",
+    activeShadow: "none",
+    pillBg:       P.panel2,
+    badge:        "#EF4444",
+    white70:      P.muted,
+    text:         P.text,
+    panel:        P.panel,
+    panel2:       P.panel2,
+    chip:         P.chip,
+    subtle:       P.subtle,
+    muted:        P.muted,
+  };
+}
 
 function Sidebar({ location, expanded, onExpand, onCollapse }: {
   location: string;
@@ -263,6 +277,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { dark, toggle: toggleTheme } = useThemeStore();
+  const NAV = useNav();
   const { isLoggedIn, account } = useAccount();
   const logout = useLogout();
   const hasTestingContribution = useHasTestingContribution(isLoggedIn);
@@ -314,12 +329,13 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
         borderRight: `1px solid ${NAV.divider}`,
         transition: "width 220ms ease",
         color: NAV.itemText,
+        fontFamily: FONT,
       }}
       onMouseEnter={onExpand}
       onMouseLeave={onCollapse}
     >
       <style>{`
-        .nav-dark .nav-row:hover { background: ${NAV.itemHover} !important; }
+        .nav-dark .nav-row:not(.is-active):hover { background: ${NAV.itemHover} !important; }
         .nav-dark ::-webkit-scrollbar { width: 6px; }
         .nav-dark ::-webkit-scrollbar-thumb { background: ${NAV.divider}; border-radius: 3px; }
       `}</style>
@@ -333,14 +349,14 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
         >
           <BrandMark />
           <div className="flex-1 min-w-0" style={{ ...labelStyle, maxWidth: expanded ? 200 : 0 }}>
-            <p className="text-[15px] font-bold leading-tight truncate" style={{ color: NAV.activeText }}>
+            <p className="text-[15px] font-bold leading-tight truncate" style={{ color: NAV.text }}>
               Salt &amp; Peps
             </p>
           </div>
         </button>
       </div>
 
-      <nav ref={navScrollRef} className="flex-1 overflow-y-auto px-2 pt-0 pb-3">
+      <nav ref={navScrollRef} className="flex-1 overflow-y-auto px-3 pt-0 pb-3">
         {isPortal ? (
           <>
             {(() => { let renderedGroups = 0; return PORTAL_NAV_GROUPS.map(({ key: groupKey, groupLabel, items }) => {
@@ -371,13 +387,14 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                       key={section}
                       title={!expanded ? label : undefined}
                       onClick={() => setLocation(navTarget)}
-                      className="nav-row w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left"
+                      className={`nav-row ${active ? "is-active" : ""} relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left`}
                       style={
                         active
                           ? { background: NAV.activeBg, color: NAV.activeText, fontWeight: 600, border: `1px solid ${NAV.activeBorder}`, boxShadow: NAV.activeShadow }
                           : { color: NAV.itemText, fontWeight: 500, background: "transparent", border: "1px solid transparent" }
                       }
                     >
+                      {active && <span className="absolute rounded-full" style={{ left: -12, top: 6, bottom: 6, width: 3.5, background: ACCENT }} />}
                       <Icon className="w-4 h-4 shrink-0" strokeWidth={active ? 2 : 1.75} style={{ color: active ? NAV.activeText : NAV.itemIcon }} />
                       <span className="text-[13px] font-medium" style={labelStyle}>{label}</span>
                     </button>
@@ -396,13 +413,14 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                   key={section}
                   title={!expanded ? label : undefined}
                   onClick={() => setLocation(`/account?s=${section}`)}
-                  className="nav-row w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left"
+                  className={`nav-row ${active ? "is-active" : ""} relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left`}
                   style={
                     active
                       ? { background: NAV.activeBg, color: NAV.activeText, fontWeight: 600, border: `1px solid ${NAV.activeBorder}`, boxShadow: NAV.activeShadow }
                       : { color: NAV.itemText, fontWeight: 500, background: "transparent", border: "1px solid transparent" }
                   }
                 >
+                  {active && <span className="absolute rounded-full" style={{ left: -12, top: 6, bottom: 6, width: 3.5, background: ACCENT }} />}
                   <Icon className="w-4 h-4 shrink-0" strokeWidth={active ? 2 : 1.75} style={{ color: active ? NAV.activeText : NAV.itemIcon }} />
                   <span style={labelStyle}>{label}</span>
                 </button>
@@ -421,12 +439,12 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                   {key === "shop" && (
                     <button
                       onClick={() => setLocation(isLoggedIn ? "/account?s=groups" : "/login")}
-                      className="nav-row w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left mb-0.5"
+                      className="nav-row is-active w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-all text-left mb-0.5"
                       style={{
-                        background: "linear-gradient(135deg, #8B6BFF 0%, #5B47E0 100%)",
+                        background: ACCENT,
                         color: "white",
                         fontWeight: 600,
-                        boxShadow: "0 4px 14px rgba(91,71,224,0.25)",
+                        boxShadow: "0 4px 14px rgba(1,118,211,0.25)",
                       }}
                       title={!expanded ? "Group Buy" : undefined}
                     >
@@ -477,14 +495,14 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                 className="flex items-center justify-center shrink-0 select-none"
                 style={{
                   width: 32, height: 32, borderRadius: "9999px",
-                  background: "linear-gradient(135deg, #8B6BFF 0%, #5B47E0 100%)",
+                  background: ACCENT,
                   color: "white", fontSize: 13, fontWeight: 700,
                 }}
               >
                 {(sidebarUsername ?? "U").slice(0, 1).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0" style={{ ...labelStyle, maxWidth: expanded ? 120 : 0 }}>
-                <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: NAV.activeText }}>
+                <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: NAV.text }}>
                   {sidebarUsername ?? "Account"}
                 </p>
                 <p className="text-[11px] leading-tight truncate" style={{ color: NAV.sectionLabel }}>
@@ -544,7 +562,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
               title={!expanded ? "Sign in" : undefined}
             >
               <LogIn className="w-4 h-4 shrink-0" strokeWidth={2} style={{ color: NAV.itemIcon }} />
-              <span style={{ ...labelStyle, color: NAV.activeText }} className="text-[13px] font-semibold">Sign in</span>
+              <span style={{ ...labelStyle, color: NAV.text }} className="text-[13px] font-semibold">Sign in</span>
             </button>
             {expanded && (
               <div className="flex items-center shrink-0" style={{ gap: 2 }}>
@@ -584,6 +602,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
 function DesktopHeader() {
   const [location, setLocation] = useLocation();
   const search = useSearch();
+  const NAV = useNav();
   const { isLoggedIn, account } = useAccount();
   const logout = useLogout();
   const cartCount = useVialCart(s => s.itemCount());
@@ -601,30 +620,31 @@ function DesktopHeader() {
       className="hidden md:flex items-center gap-4 px-6 shrink-0 sticky top-0 z-20"
       style={{
         height: "60px",
-        background: "var(--t-surface)",
-        borderBottom: "1px solid var(--t-border)",
+        background: NAV.panel,
+        borderBottom: `1px solid ${NAV.divider}`,
+        fontFamily: FONT,
       }}
     >
       {canGoBack && (
         <button
           onClick={() => window.history.back()}
           className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
-          style={{ background: "var(--t-blue-07)", border: "1px solid var(--t-blue-18)" }}
+          style={{ background: ACCENT_SOFT, border: "1px solid rgba(1,118,211,0.25)" }}
           title="Go back"
         >
-          <ChevronLeft className="w-4 h-4" style={{ color: "var(--t-blue-deep)" }} strokeWidth={2.25} />
+          <ChevronLeft className="w-4 h-4" style={{ color: ACCENT }} strokeWidth={2.25} />
         </button>
       )}
 
       {location === "/shop" && (
         <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
-          <h1 className="text-[15px] font-bold tracking-tight leading-tight" style={{ color: "var(--t-text)" }}>The Lonely Vial</h1>
-          <p className="text-[10px] font-medium" style={{ color: "var(--t-blue)" }}>Single vials · No kits</p>
+          <h1 className="text-[15px] font-bold tracking-tight leading-tight" style={{ color: NAV.text }}>The Lonely Vial</h1>
+          <p className="text-[10px] font-medium" style={{ color: ACCENT }}>Single vials · No kits</p>
         </div>
       )}
       {isGbWorkflow && (
         <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
-          <h1 className="text-[15px] font-bold tracking-tight leading-tight" style={{ color: "var(--t-text)" }}>
+          <h1 className="text-[15px] font-bold tracking-tight leading-tight" style={{ color: NAV.text }}>
             {isReviewPage ? "Review Order" : (pageTitle ?? (gbId ? "Group Buy Order" : "New Order"))}
           </h1>
         </div>
@@ -634,7 +654,7 @@ function DesktopHeader() {
         <button
           onClick={() => setLocation("/seller")}
           className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-all shrink-0"
-          style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", borderColor: "var(--t-blue-22)" }}
+          style={{ background: ACCENT_SOFT, color: ACCENT, borderColor: "rgba(1,118,211,0.25)" }}
         >
           <Store className="w-3.5 h-3.5" /> Sell with us
         </button>
@@ -646,22 +666,22 @@ function DesktopHeader() {
         <button
           onClick={() => setLocation("/feedback")}
           className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all"
-          style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+          style={{ background: NAV.chip, borderColor: NAV.divider }}
           title="Feedback"
         >
-          <MessageSquarePlus className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
+          <MessageSquarePlus className="w-4 h-4" style={{ color: NAV.muted }} />
         </button>
         <button
           onClick={() => useVialCart.getState().setCartOpen(true)}
           className="relative w-9 h-9 rounded-xl flex items-center justify-center border transition-all"
-          style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+          style={{ background: NAV.chip, borderColor: NAV.divider }}
           title="Cart"
         >
-          <ShoppingCart className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
+          <ShoppingCart className="w-4 h-4" style={{ color: NAV.muted }} />
           {cartCount > 0 && (
             <span
               className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
-              style={{ background: "var(--t-blue)" }}
+              style={{ background: ACCENT }}
             >
               {cartCount}
             </span>
@@ -711,6 +731,7 @@ function MobileHeader() {
   const [location, setLocation] = useLocation();
   const search = useSearch();
   const { dark, toggle: toggleTheme } = useThemeStore();
+  const NAV = useNav();
   const { isLoggedIn } = useAccount();
   const pageTitle = usePageTitle(s => s.title);
   const openHubDrawer = useHubDrawerStore(s => s.setOpen);
@@ -728,18 +749,19 @@ function MobileHeader() {
       className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4"
       style={{
         height: "52px",
-        background: "var(--t-surface)",
-        borderBottom: "1px solid var(--t-border)",
+        background: NAV.panel,
+        borderBottom: `1px solid ${NAV.divider}`,
         backdropFilter: "blur(12px)",
+        fontFamily: FONT,
       }}
     >
       <div className="flex items-center gap-2">
         {isGbWorkflow ? (
-          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{orderTitle}</span>
+          <span className="text-[14px] font-bold" style={{ color: NAV.text }}>{orderTitle}</span>
         ) : (
           <button onClick={() => setLocation("/")} className="flex items-center gap-2">
             <BrandMark size="sm" />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Salt &amp; Peps</span>
+            <span className="text-[13px] font-bold" style={{ color: NAV.text }}>Salt &amp; Peps</span>
           </button>
         )}
       </div>
@@ -747,32 +769,32 @@ function MobileHeader() {
         <button
           onClick={() => setLocation("/feedback")}
           className="w-8 h-8 rounded-lg flex items-center justify-center border"
-          style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+          style={{ background: NAV.chip, borderColor: NAV.divider }}
           title="Feedback"
         >
-          <MessageSquarePlus className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+          <MessageSquarePlus className="w-3.5 h-3.5" style={{ color: NAV.muted }} />
         </button>
         <button
           onClick={toggleTheme}
           className="w-8 h-8 rounded-lg flex items-center justify-center border"
-          style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+          style={{ background: NAV.chip, borderColor: NAV.divider }}
         >
           {dark
-            ? <Sun className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-            : <Moon className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+            ? <Sun className="w-3.5 h-3.5" style={{ color: NAV.muted }} />
+            : <Moon className="w-3.5 h-3.5" style={{ color: NAV.muted }} />
           }
         </button>
         <button
           onClick={() => setLocation(isLoggedIn ? "/account" : "/login")}
           className="w-8 h-8 rounded-lg flex items-center justify-center border"
           style={{
-            background: isLoggedIn ? "var(--t-surface2)" : BRAND_NAVY,
-            borderColor: isLoggedIn ? "var(--t-border)" : BRAND_NAVY,
+            background: isLoggedIn ? NAV.chip : BRAND_NAVY,
+            borderColor: isLoggedIn ? NAV.divider : BRAND_NAVY,
           }}
           title={isLoggedIn ? "My Account" : "Login"}
         >
           {isLoggedIn
-            ? <User className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+            ? <User className="w-3.5 h-3.5" style={{ color: NAV.muted }} />
             : <LogIn className="w-3.5 h-3.5" style={{ color: "white" }} />
           }
         </button>
@@ -783,6 +805,7 @@ function MobileHeader() {
 
 function MobileBottomTabs({ location, onMore }: { location: string; onMore: () => void }) {
   const [, setLocation] = useLocation();
+  const NAV = useNav();
   const enabledNavIds = useContext(PublicNavCtx);
   const visibleTabs = MOBILE_TABS.filter(tab =>
     tab.id === "home" || tab.id === "more" || enabledNavIds === null || enabledNavIds.has(tab.id)
@@ -792,10 +815,11 @@ function MobileBottomTabs({ location, onMore }: { location: string; onMore: () =
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex"
       style={{
-        background: "var(--t-surface)",
-        borderTop: "1px solid var(--t-border)",
+        background: NAV.panel,
+        borderTop: `1px solid ${NAV.divider}`,
         backdropFilter: "blur(16px)",
         paddingBottom: "env(safe-area-inset-bottom)",
+        fontFamily: FONT,
       }}
     >
       {visibleTabs.map(tab => {
@@ -823,9 +847,9 @@ function MobileBottomTabs({ location, onMore }: { location: string; onMore: () =
             <tab.icon
               className="w-5 h-5 transition-colors"
               strokeWidth={active ? 2.25 : 1.75}
-              style={{ color: active ? BRAND_NAVY : "var(--t-subtle)" }}
+              style={{ color: active ? BRAND_NAVY : NAV.subtle }}
             />
-            <span className="text-[10px] font-semibold" style={{ color: active ? BRAND_NAVY : "var(--t-subtle)" }}>
+            <span className="text-[10px] font-semibold" style={{ color: active ? BRAND_NAVY : NAV.subtle }}>
               {tab.label}
             </span>
           </button>
@@ -838,6 +862,7 @@ function MobileBottomTabs({ location, onMore }: { location: string; onMore: () =
 function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [, setLocation] = useLocation();
   const { dark } = useThemeStore();
+  const NAV = useNav();
   const enabledNavIds = useContext(PublicNavCtx);
   const { isLoggedIn, account } = useAccount();
 
@@ -854,26 +879,27 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
       <div
         className="fixed bottom-0 left-0 right-0 z-[55] rounded-t-3xl flex flex-col md:hidden"
         style={{
-          background: "var(--t-surface)",
-          border: "1px solid var(--t-border)",
+          background: NAV.panel,
+          border: `1px solid ${NAV.divider}`,
           paddingBottom: "env(safe-area-inset-bottom)",
           maxHeight: "80dvh",
+          fontFamily: FONT,
         }}
       >
         <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full" style={{ background: "var(--t-border)" }} />
+          <div className="w-10 h-1 rounded-full" style={{ background: NAV.divider }} />
         </div>
         <div
           className="flex items-center justify-between px-5 py-3"
-          style={{ borderBottom: "1px solid var(--t-border)" }}
+          style={{ borderBottom: `1px solid ${NAV.divider}` }}
         >
-          <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>More</p>
+          <p className="text-sm font-bold" style={{ color: NAV.text }}>More</p>
           <button
             onClick={onClose}
             className="w-7 h-7 rounded-full flex items-center justify-center"
-            style={{ background: "var(--t-surface2)" }}
+            style={{ background: NAV.chip }}
           >
-            <X className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
+            <X className="w-4 h-4" style={{ color: NAV.muted }} />
           </button>
         </div>
         <div className="overflow-y-auto">
@@ -883,10 +909,10 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
               onClick={() => navigate(isLoggedIn ? "/account?s=groups" : "/login")}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left mb-4"
               style={{
-                background: "linear-gradient(135deg, #8B6BFF 0%, #5B47E0 100%)",
+                background: ACCENT,
                 color: "white",
                 fontWeight: 600,
-                boxShadow: "0 4px 14px rgba(91,71,224,0.25)",
+                boxShadow: "0 4px 14px rgba(1,118,211,0.25)",
               }}
             >
               <UsersRound className="w-4 h-4 shrink-0" style={{ color: "white" }} strokeWidth={2} />
@@ -899,9 +925,9 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
               return (
                 <div key={sec.key} className="mb-4">
                   {secIdx > 0 && (
-                    <div className="h-px mb-4" style={{ background: "var(--t-border)" }} />
+                    <div className="h-px mb-4" style={{ background: NAV.divider }} />
                   )}
-                  <p className="text-[10px] font-semibold uppercase tracking-widest mb-2 px-1" style={{ color: "var(--t-subtle)" }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest mb-2 px-1" style={{ color: NAV.subtle }}>
                     {sec.label}
                   </p>
                   <div className="grid grid-cols-2 gap-2.5">
@@ -912,7 +938,7 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
                           key={item.id}
                           onClick={() => navigate(item.path)}
                           className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-left border"
-                          style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+                          style={{ background: NAV.panel2, borderColor: NAV.divider }}
                         >
                           <div
                             className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -921,7 +947,7 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
                             <item.icon className="w-4 h-4" style={{ color: accent.color }} />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-bold leading-tight truncate" style={{ color: "var(--t-text)" }}>{item.label}</p>
+                            <p className="text-xs font-bold leading-tight truncate" style={{ color: NAV.text }}>{item.label}</p>
                           </div>
                         </button>
                       );
@@ -933,21 +959,21 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
           {isLoggedIn && account?.isWholesale && (
             <div className="px-4 pb-1">
-              <div className="h-px mb-3" style={{ background: "var(--t-border)" }} />
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-2 px-1" style={{ color: "var(--t-subtle)" }}>
+              <div className="h-px mb-3" style={{ background: NAV.divider }} />
+              <p className="text-[10px] font-semibold uppercase tracking-widest mb-2 px-1" style={{ color: NAV.subtle }}>
                 Wholesale
               </p>
               <button
                 onClick={() => navigate("/wholesale")}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left border"
-                style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)" }}
+                style={{ background: NAV.panel2, borderColor: NAV.divider }}
               >
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(16,185,129,0.15)" }}>
                   <Package className="w-4 h-4" style={{ color: "#10b981" }} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold leading-tight" style={{ color: "var(--t-text)" }}>Wholesale Order</p>
-                  <p className="text-[10px] leading-tight" style={{ color: "var(--t-muted)" }}>Bulk ordering</p>
+                  <p className="text-xs font-bold leading-tight" style={{ color: NAV.text }}>Wholesale Order</p>
+                  <p className="text-[10px] leading-tight" style={{ color: NAV.muted }}>Bulk ordering</p>
                 </div>
               </button>
             </div>
@@ -958,7 +984,7 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
               className="w-full flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold border transition-all"
               style={dark
                 ? { background: "rgba(255,255,255,0.07)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.90)" }
-                : { background: BRAND_BG, borderColor: "var(--t-blue-20)", color: BRAND_NAVY }
+                : { background: BRAND_BG, borderColor: "rgba(1,118,211,0.25)", color: BRAND_NAVY }
               }
             >
               <User className="w-3.5 h-3.5 shrink-0" />
