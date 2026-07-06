@@ -56,7 +56,7 @@ function MemberDispatchImages({ orderId }: { orderId: string }) {
 
   return (
     <>
-      <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)" }}>
+      <div className="rounded-lg p-3 space-y-2" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)" }}>
         <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Dispatch Photo{images.length > 1 ? "s" : ""}</p>
         <div className="flex flex-wrap gap-2">
           {images.map(img => (
@@ -500,7 +500,7 @@ function AccountShippingAddressSection({
   const addrSummary = addrLines.slice(0, 2).join(", ");
 
   return (
-    <div className="rounded-2xl overflow-hidden border transition-all"
+    <div className="rounded-lg overflow-hidden border transition-all"
       style={{
         borderColor: addressIsSet
           ? isDark ? "rgba(74,222,128,0.3)" : "rgba(22,163,74,0.3)"
@@ -868,14 +868,14 @@ function AccountQrSection({
   };
 
   return (
-    <Card className="p-5 border-violet-200 dark:border-violet-700/50 bg-violet-50/40 dark:bg-violet-950/30">
+    <Card className="p-5 rounded-lg shadow-none" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-9 h-9 rounded-full bg-violet-200 dark:bg-violet-800/40 flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0">
           <QrCode className="w-4 h-4 text-violet-700 dark:text-violet-300" />
         </div>
         <div>
-          <p className="font-semibold text-violet-900 dark:text-violet-300 text-sm">{label}</p>
-          <p className="text-xs text-violet-700 dark:text-violet-400">
+          <p className="font-semibold text-sm" style={{ color: "var(--t-text)" }}>{label}</p>
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>
             {previewSrc
               ? "Your file is saved."
               : "Upload your QR code or label"}
@@ -884,7 +884,7 @@ function AccountQrSection({
       </div>
 
       {!previewSrc && (
-        <p className="text-xs text-violet-800 dark:text-violet-400 mb-3 leading-relaxed whitespace-pre-line">
+        <p className="text-xs mb-3 leading-relaxed whitespace-pre-line" style={{ color: "var(--t-muted)" }}>
           {customMessage ?? "Once the organiser confirms your order is ready to ship, upload your QR code here."}
         </p>
       )}
@@ -892,7 +892,7 @@ function AccountQrSection({
       {previewSrc && (
         <div className="mb-3">
           {isPdfPreview ? (
-            <div className="w-48 h-24 mx-auto rounded-xl border border-violet-200 dark:border-violet-700/50 bg-white dark:bg-violet-950/50 flex flex-col items-center justify-center gap-1 p-2">
+            <div className="w-48 h-24 mx-auto rounded-lg border border-violet-200 dark:border-violet-700/50 bg-white dark:bg-violet-950/50 flex flex-col items-center justify-center gap-1 p-2">
               <span className="text-2xl">📄</span>
               <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">PDF uploaded</span>
             </div>
@@ -900,7 +900,7 @@ function AccountQrSection({
             <img
               src={previewSrc}
               alt={label}
-              className="w-48 h-48 object-contain mx-auto rounded-xl border border-violet-200 dark:border-violet-700/50 bg-white dark:bg-white/5 p-2"
+              className="w-48 h-48 object-contain mx-auto rounded-lg border border-violet-200 dark:border-violet-700/50 bg-white dark:bg-white/5 p-2"
             />
           )}
         </div>
@@ -953,7 +953,7 @@ const PARCEL_STATUS_META: Record<string, { label: string; color: string; bg: str
 function ParcelCard({ parcel }: { parcel: GbParcel }) {
   const meta = PARCEL_STATUS_META[parcel.status ?? ""] ?? { label: parcel.status ?? "Pending", color: "#94A3B8", bg: "rgba(148,163,184,0.12)" };
   return (
-    <div className="bg-white/10 border border-white/10 rounded-xl p-3 space-y-2.5">
+    <div className="bg-white/10 border border-white/10 rounded-lg p-3 space-y-2.5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           {parcel.label && (
@@ -1324,7 +1324,7 @@ function BalanceDueCard({
 
   return (
     <div
-      className="rounded-2xl p-4 mt-3"
+      className="rounded-lg p-4 mt-3"
       style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}
     >
       <div className="flex items-start gap-3">
@@ -2091,7 +2091,7 @@ export default function AccountOrderDetail() {
 
                       {/* Reshipper banner */}
                       {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
-                        <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                        <div className="rounded-lg overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
                           <div className="flex items-center gap-2 px-3 py-2">
                             <Truck className="w-4 h-4 shrink-0" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }} />
                             <p className="text-xs font-semibold" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }}>Your order will be shipped via a reshipper</p>
@@ -2245,7 +2245,7 @@ export default function AccountOrderDetail() {
 
                       {/* Admin message */}
                       {order.adminMessage && (
-                        <div className="rounded-2xl p-4 sm:p-5 flex items-start gap-3" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+                        <div className="rounded-lg p-4 sm:p-5 flex items-start gap-3" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
                           <MessageCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
                           <div>
                             <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-blue)" }}>Message from Us</p>
@@ -2423,7 +2423,7 @@ export default function AccountOrderDetail() {
 
                   {/* Payment banner (set by GB admin) */}
                   {order.groupBuyPaymentBanner && (
-                    <div className="rounded-2xl flex items-start gap-3 px-4 py-3" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                    <div className="rounded-lg flex items-start gap-3 px-4 py-3" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
                       <Megaphone className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#B45309" }} />
                       <p className="text-sm leading-snug" style={{ color: "#92400E" }}>
                         {order.groupBuyPaymentBanner.split("\n").map((line, i) => {
@@ -2448,7 +2448,7 @@ export default function AccountOrderDetail() {
                    Math.min(accountCredits, order.grandTotal - (order.creditsApplied ?? 0)) > 0 &&
                    order.paymentStatus === "unpaid" && order.status !== "Cancelled" && (
                     <div
-                      className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+                      className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
                       style={{ background: "rgba(22,163,74,0.08)", border: "1.5px solid rgba(22,163,74,0.3)" }}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -2474,14 +2474,14 @@ export default function AccountOrderDetail() {
                     </div>
                   )}
                   {creditsError && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.2)" }}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.2)" }}>
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       {creditsError}
                     </div>
                   )}
                   {(order.creditsApplied ?? 0) > 0 && (
                     <div
-                      className="rounded-xl px-3 py-2 flex items-center gap-2 text-xs"
+                      className="rounded-lg px-3 py-2 flex items-center gap-2 text-xs"
                       style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.2)", color: "#15803d" }}
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -2492,7 +2492,7 @@ export default function AccountOrderDetail() {
                   {/* Payment panel */}
                   {order.id && order.groupBuyId && order.groupBuyPaymentsEnabled === false && !(order.directShippingRequested && order.groupBuyDirectShippingPaymentsEnabled === true) ? (
                     <div
-                      className="rounded-2xl p-4 flex items-start gap-3"
+                      className="rounded-lg p-4 flex items-start gap-3"
                       style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.25)" }}
                     >
                       <div
@@ -2529,14 +2529,14 @@ export default function AccountOrderDetail() {
 
                   {/* Lab Test Vote Card */}
                   {order.testingContribution > 0 && order.paymentStatus === "confirmed" && (
-                    <Card className="p-4 border-blue-100 bg-blue-50/60">
+                    <Card className="p-4 rounded-lg shadow-none" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                       <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                          <TestTube className="w-4 h-4 text-blue-600" />
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                          <TestTube className="w-4 h-4 text-blue-600 dark:text-blue-300" />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-blue-800">Lab Test Contribution</p>
-                          <p className="text-xs text-blue-500">You contributed {fmtC(order.testingContribution, order.currency)} to batch testing</p>
+                          <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Lab Test Contribution</p>
+                          <p className="text-xs" style={{ color: "var(--t-muted)" }}>You contributed {fmtC(order.testingContribution, order.currency)} to batch testing</p>
                         </div>
                       </div>
                       {order.testVote ? (
@@ -2551,7 +2551,7 @@ export default function AccountOrderDetail() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <p className="text-xs text-blue-700 font-medium">Vote for which product you'd like tested:</p>
+                          <p className="text-xs font-medium" style={{ color: "var(--t-muted)" }}>Vote for which product you'd like tested:</p>
                           {order.lineItems.filter(li => !li.isOos).map(li => (
                             <button
                               key={li.productId}
@@ -2575,7 +2575,7 @@ export default function AccountOrderDetail() {
                       shipping option requires it, for Royal Mail, or for direct-shipping GB orders. */}
                   {order.additionOfOrderId ? (
                     (order.shippingAddress || order.shippingName) ? (
-                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
@@ -2598,7 +2598,7 @@ export default function AccountOrderDetail() {
                         onSaved={(n, a) => setOrder((prev) => prev ? { ...prev, shippingName: n, shippingAddress: a } : prev)}
                       />
                     ) : (
-                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
@@ -2614,7 +2614,7 @@ export default function AccountOrderDetail() {
 
                   {/* Shipping details — wholesale orders only */}
                   {order.orderType === "wholesale" && (order.shippingName || order.shippingAddress || order.shippingCountry || order.shippingPhone) && (
-                    <Card className="p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+                    <Card className="p-4 space-y-3 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-muted)" }}>Shipping Details</p>
                         {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder ? (
@@ -2672,7 +2672,7 @@ export default function AccountOrderDetail() {
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, inpostQrCode: qr } : prev)}
                       />
                     ) : (
-                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
@@ -2698,7 +2698,7 @@ export default function AccountOrderDetail() {
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, royalMailQrCode: qr } : prev)}
                       />
                     ) : (
-                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
@@ -2724,7 +2724,7 @@ export default function AccountOrderDetail() {
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, qrCodes: { ...(prev.qrCodes ?? {}), custom: qr } } : prev)}
                       />
                     ) : (
-                      <Card className="p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-bg)" }}>
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
