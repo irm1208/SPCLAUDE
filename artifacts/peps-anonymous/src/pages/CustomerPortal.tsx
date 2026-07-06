@@ -10390,6 +10390,16 @@ export default function CustomerPortal() {
             borderTop: `1px solid ${BORDER_CLR}`,
             paddingBottom: "env(safe-area-inset-bottom)",
           }}>
+          <button onClick={() => setSection("home")}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5">
+            <div className="flex items-center justify-center w-12 h-7 rounded-full transition-all"
+              style={{ background: "transparent" }}>
+              <span style={{ color: LABEL_CLR }}><LayoutDashboard className="w-5 h-5" /></span>
+            </div>
+            <span className="text-[10px] font-semibold" style={{ color: LABEL_CLR }}>
+              Dashboard
+            </span>
+          </button>
           {([
             { id: "summary",  label: "Summary",  icon: <ClipboardList className="w-5 h-5" /> },
             { id: "shots",    label: "Shots",    icon: <Syringe className="w-5 h-5" /> },
