@@ -8015,9 +8015,10 @@ export default function CustomerPortal() {
             const GBIcon = palette.icon;
             const isOrderable = gb.status === "active";
             const infoCards = gb.infoCards ?? [];
-            const infoContent = infoCards.length > 0
-              ? infoCards.slice(0, 2).map((c: { title: string }) => c.title).join(" · ")
-              : gb.description ?? null;
+            const infoContent = gb.description
+              || (infoCards.length > 0
+                ? infoCards.slice(0, 2).map((c: { title: string }) => c.title).join(" · ")
+                : null);
 
             const gbOrders = orders.filter(o => o.groupBuyId === gb.id);
             const paid    = gbOrders.filter(o => ["paid", "confirmed", "test_confirmed"].includes(o.paymentStatus));
@@ -9209,7 +9210,7 @@ export default function CustomerPortal() {
             <HeartPulse className="w-5 h-5" strokeWidth={2.2} />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Health Insights</h2>
+            <h2 className="font-extrabold leading-tight text-[#ffffff]" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Health Insights</h2>
             <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>
               {lastTestLabel ? `Last test: ${lastTestLabel}` : "AI-powered analysis based on your blood test data."}
             </p>
