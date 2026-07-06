@@ -23,7 +23,7 @@ import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
-const HERO_GRAD = "linear-gradient(135deg,#3B5E99 0%,#1A2B56 100%)";
+const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
 const ACCENT = "#3B5E99";
 
 function SecIcon({ Icon }: { Icon: React.ElementType }) {
