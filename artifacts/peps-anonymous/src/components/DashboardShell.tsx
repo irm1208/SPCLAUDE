@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard, ReceiptText, UsersRound, HeartPulse, ClipboardList,
-  Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send,
+  Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send, Ticket,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
 } from "lucide-react";
@@ -484,15 +484,15 @@ export function DashboardShell({
             })}
           </nav>
 
-          <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto" }}>
+          <div className="flex flex-col items-center gap-1.5" style={{ marginTop: "auto", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.14)" }}>
             <button
-              onClick={() => onSection("telegram")}
-              {...railTipProps("Telegram")}
-              aria-label="Telegram notifications"
+              onClick={() => { setQuickView(null); onSection("support"); }}
+              {...railTipProps("Tickets")}
+              aria-label="Tickets"
               className="dh-rail flex items-center justify-center transition-all"
               style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
             >
-              <Send className="w-[19px] h-[19px]" />
+              <Ticket className="w-[19px] h-[19px]" />
             </button>
             <button
               onClick={() => navigate("/shop")}
@@ -502,15 +502,6 @@ export function DashboardShell({
               style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
             >
               <Store className="w-[19px] h-[19px]" />
-            </button>
-            <button
-              onClick={toggleTheme}
-              {...railTipProps(dark ? "Light mode" : "Dark mode")}
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-              className="dh-rail flex items-center justify-center transition-all"
-              style={{ width: 40, height: 40, borderRadius: 6, color: "rgba(255,255,255,0.62)" }}
-            >
-              {dark ? <Sun className="w-[19px] h-[19px]" /> : <Moon className="w-[19px] h-[19px]" />}
             </button>
             <button
               onClick={() => setCollapsed(c => !c)}
