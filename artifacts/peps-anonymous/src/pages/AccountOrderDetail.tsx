@@ -2106,6 +2106,24 @@ export default function AccountOrderDetail() {
                     );
                   })()}
 
+                  {/* Payment confirmed card — shown directly under the fulfilment box when paid */}
+                  {order.id && order.paymentStatus === "confirmed" && (
+                    <PaymentPanel
+                      orderId={order.id}
+                      orderPin={order.pin ?? undefined}
+                      grandTotal={order.grandTotal}
+                      creditsUsd={order.creditsApplied ?? 0}
+                      currency={order.currency}
+                      paymentStatus="confirmed"
+                      paymentTxHash={order.paymentTxHash ?? null}
+                      paymentTestAmount={order.paymentTestAmount ?? null}
+                      testPaymentTxHash={order.testPaymentTxHash ?? null}
+                      paymentRejectionReason={order.paymentRejectionReason ?? null}
+                      paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
+                      onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
+                    />
+                  )}
+
                   {/* ===== Two-column layout (reference style) ===== */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5 items-start">
                     {/* ---------- MAIN COLUMN ---------- */}
@@ -2511,8 +2529,8 @@ export default function AccountOrderDetail() {
                     </div>
                   )}
 
-                  {/* Payment panel */}
-                  {order.id && order.groupBuyId && order.groupBuyPaymentsEnabled === false && !(order.directShippingRequested && order.groupBuyDirectShippingPaymentsEnabled === true) ? (
+                  {/* Payment panel (hidden when confirmed — the confirmed card is shown under the fulfilment box above) */}
+                  {order.paymentStatus !== "confirmed" && (order.id && order.groupBuyId && order.groupBuyPaymentsEnabled === false && !(order.directShippingRequested && order.groupBuyDirectShippingPaymentsEnabled === true) ? (
                     <div
                       className="rounded-lg p-4 flex items-start gap-3"
                       style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.25)" }}
@@ -2547,7 +2565,7 @@ export default function AccountOrderDetail() {
                       paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
                     />
-                  ) : null}
+                  ) : null)}
 
                   {/* Lab Test Vote Card */}
                   {order.testingContribution > 0 && order.paymentStatus === "confirmed" && (
