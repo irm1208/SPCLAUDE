@@ -6,7 +6,7 @@ import {
   ArrowLeft, Loader2, Truck, Package, MessageCircle,
   CheckCircle2, AlertCircle, Lock, Plus, Trash2, X, Copy, Check,
   QrCode, Upload, Download, ImagePlus, MapPin, ScanLine, TestTube, Clock, Coins,
-  ChevronDown, Pencil, FileText, PackageCheck, Send,
+  ChevronDown, Pencil, FileText, PackageCheck,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -2054,45 +2054,14 @@ export default function AccountOrderDetail() {
                   exit={{ opacity: 0, y: -8 }}
                   className="space-y-4"
                 >
-                  {/* Reshipper card — shown above the main order box when a reshipper is assigned */}
-                  {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
-                    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
-                      <div className="flex items-center gap-2 px-3 py-2">
-                        <span className="text-base leading-none">📦</span>
-                        <p className="text-xs font-semibold" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }}>Your order will be shipped via a reshipper</p>
-                      </div>
-                      {order.reshipperUsername && (
-                        <div className="px-3 pb-3 space-y-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span style={{ color: "var(--t-muted)" }}>Reshipper</span>
-                            <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{order.reshipperUsername.replace(/^@/, "")}</span>
-                          </div>
-                          {order.reshipperInfo?.country && (
-                            <div className="flex items-center justify-between text-xs">
-                              <span style={{ color: "var(--t-muted)" }}>Based in</span>
-                              <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Status + tracking card */}
-                  <div
-                    className="rounded-2xl p-5 space-y-4 relative overflow-hidden"
-                    style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}
-                  >
-                    <div className="absolute top-0 right-0 w-24 h-24 rounded-full pointer-events-none" style={{ background: "var(--t-blue-06)", transform: "translate(30%, -30%)" }} />
-
-                    {/* Code + status */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Order Code</p>
-                        <p className="font-display font-bold text-2xl tracking-widest" style={{ color: "var(--t-text)" }}>{order.code}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className={cn("text-sm font-bold px-3 py-1.5 rounded-full", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
+                  {/* ===== Header ===== */}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h1 className="font-display font-bold text-2xl sm:text-3xl tracking-tight" style={{ color: "var(--t-text)" }}>
+                        Order <span className="tracking-widest">{order.code}</span>
+                      </h1>
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className={cn("text-xs font-bold px-2.5 py-1 rounded-full", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
                           {order.status}
                         </span>
                         {isPaidOrder && (
@@ -2102,254 +2071,289 @@ export default function AccountOrderDetail() {
                         )}
                       </div>
                     </div>
+                  </div>
 
-                    {/* Fulfilment timeline */}
-                    {order.status !== "Cancelled" && (() => {
-                      const stages = [
-                        { label: "Ordered", Icon: FileText },
-                        { label: "Processing", Icon: PackageCheck },
-                        { label: "Shipped", Icon: Truck },
-                        { label: "Delivered", Icon: CheckCircle2 },
-                      ];
-                      const idxMap: Record<string, number> = { Draft: 0, Submitted: 0, Processing: 1, Shipped: 2, Completed: 3 };
-                      const cur = idxMap[order.status] ?? 0;
-                      return (
-                        <div className="flex items-center pt-1">
-                          {stages.map((s, i) => {
-                            const reached = i <= cur;
-                            const active = i === cur;
-                            const Icon = s.Icon;
-                            return (
-                              <React.Fragment key={s.label}>
-                                {i > 0 && (
-                                  <div className="flex-1 h-[3px] rounded-full mx-1" style={{ background: i <= cur ? "var(--t-blue)" : "var(--t-border)" }} />
-                                )}
-                                <div className="flex flex-col items-center gap-1.5" style={{ width: 64 }}>
-                                  <div
-                                    className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-                                    style={{
-                                      background: reached ? "var(--t-blue)" : "var(--t-surface2)",
-                                      color: reached ? "#fff" : "var(--t-subtle)",
-                                      border: reached ? "none" : "1px solid var(--t-border)",
-                                      boxShadow: active ? "0 0 0 4px var(--t-blue-08)" : "none",
-                                    }}
-                                  >
-                                    <Icon className="w-4 h-4" />
-                                  </div>
-                                  <span className="text-[10px] font-semibold text-center leading-tight" style={{ color: reached ? "var(--t-text)" : "var(--t-subtle)" }}>
-                                    {s.label}
-                                  </span>
-                                </div>
-                              </React.Fragment>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
+                  {/* ===== Two-column layout (reference style) ===== */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5 items-start">
+                    {/* ---------- MAIN COLUMN ---------- */}
+                    <div className="lg:col-span-2 space-y-4 min-w-0">
 
-                    {/* Meta grid */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                        <div className="flex items-center gap-1 mb-1">
-                          <Send className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Telegram</span>
-                        </div>
-                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.telegramUsername}</p>
-                      </div>
-                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                        <div className="flex items-center gap-1 mb-1">
-                          <Truck className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Delivery</span>
-                        </div>
-                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.deliveryMethod}</p>
-                      </div>
-                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                        <div className="flex items-center gap-1 mb-1">
-                          <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Items</span>
-                        </div>
-                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.lineItems?.length ?? 0}</p>
-                      </div>
-                    </div>
-
-                    {/* Admin message */}
-                    {order.adminMessage && (
-                      <div className="rounded-xl p-3 flex items-start gap-3" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
-                        <MessageCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-blue)" }}>Message from Us</p>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--t-text)" }}>{order.adminMessage}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Direct / wholesale tracking number — parcel card style */}
-                    {order.trackingNumber && (
-                      <div className="rounded-xl p-3 space-y-2.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>
-                              {(order as any).shippingCarrier ? (order as any).shippingCarrier : "Your Parcel"}
-                            </p>
-                            <p className="font-mono font-bold text-sm tracking-widest break-all" style={{ color: "var(--t-text)" }}>{order.trackingNumber}</p>
+                      {/* Reshipper banner */}
+                      {(order.routingType === "reshipper" || (!order.routingType && order.reshipperUsername)) && (
+                        <div className="rounded-xl overflow-hidden" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                          <div className="flex items-center gap-2 px-3 py-2">
+                            <span className="text-base leading-none">📦</span>
+                            <p className="text-xs font-semibold" style={{ color: "light-dark(#6d28d9, #c4b5fd)" }}>Your order will be shipped via a reshipper</p>
                           </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5"
-                            style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "light-dark(#4f46e5, #818cf8)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "rgba(99,102,241,0.16)" : "rgba(148,163,184,0.18)" }}>
-                            {order.status}
-                          </span>
+                          {order.reshipperUsername && (
+                            <div className="px-3 pb-3 space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span style={{ color: "var(--t-muted)" }}>Reshipper</span>
+                                <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{order.reshipperUsername.replace(/^@/, "")}</span>
+                              </div>
+                              {order.reshipperInfo?.country && (
+                                <div className="flex items-center justify-between text-xs">
+                                  <span style={{ color: "var(--t-muted)" }}>Based in</span>
+                                  <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.reshipperInfo.country}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {order.lineItems?.length > 0 && (
-                          <div className="pt-2 space-y-0.5" style={{ borderTop: "1px solid var(--t-border)" }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Contents</p>
+                      )}
+
+                      {/* Items card */}
+                      {order.lineItems?.length > 0 && (
+                        <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <h2 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Items <span style={{ color: "var(--t-subtle)" }}>({order.lineItems.length})</span></h2>
+                          <div>
                             {order.lineItems.map((li: OrderLineItem, i: number) => (
-                              <div key={i} className="flex items-center gap-1.5">
-                                <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                                <span className="text-xs" style={{ color: "var(--t-muted)" }}>{li.productName} <span style={{ color: "var(--t-subtle)" }}>×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}</span></span>
+                              <div key={i} className={`flex items-center gap-3 py-2.5${li.isOos ? " opacity-55" : ""}`} style={i > 0 ? { borderTop: "1px solid var(--t-border)" } : undefined}>
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-08)" }}>
+                                  <Package className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold truncate" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>{li.productName}</p>
+                                  <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
+                                    <span>Qty ×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}</span>
+                                    {li.isOos && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "light-dark(#dc2626, #fca5a5)" }}>OOS</span>}
+                                  </p>
+                                </div>
+                                {li.lineTotal > 0 && <span className="text-sm font-semibold shrink-0" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>{fmtC(li.lineTotal, order.currency)}</span>}
                               </div>
                             ))}
                           </div>
-                        )}
-                        <a
-                          href={`https://t.17track.net/en#nums=${encodeURIComponent(order.trackingNumber)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
-                          style={{ color: "var(--t-blue)" }}
-                        >
-                          🌐 Track on 17track →
-                        </a>
-                      </div>
-                    )}
+                        </div>
+                      )}
 
-                    {/* Dispatch photos uploaded by admin */}
-                    <MemberDispatchImages orderId={order.id} />
-
-
-                    {/* Items */}
-                    {order.lineItems?.length > 0 && (
-                      <div className="pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--t-border)" }}>
-                        <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Items</p>
-                        {order.lineItems.map((li: OrderLineItem, i: number) => (
-                          <div key={i} className={`flex justify-between text-sm items-center gap-2${li.isOos ? " opacity-55" : ""}`}>
-                            <span className="flex items-center gap-1.5 flex-1 min-w-0" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>
-                              {li.productName}
-                              <span className="ml-1" style={{ color: "var(--t-subtle)" }}>
-                                ×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}
+                      {/* Order summary card */}
+                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Order summary</h2>
+                        <div className="space-y-1.5 text-sm">
+                          {order.productSubtotal > 0 && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Products</span><span>{fmtC(order.productSubtotal, order.currency)}</span>
+                            </div>
+                          )}
+                          {order.deliveryPrice > 0 && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Delivery</span><span>{fmtC(order.deliveryPrice, order.currency)}</span>
+                            </div>
+                          )}
+                          {order.directShippingRequested && (order.directShippingCost ?? 0) > 0 ? (
+                            <div className="flex justify-between" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>
+                              <span className="font-medium">🏠 Direct Shipping</span>
+                              <span className="font-medium">{fmtC(order.directShippingCost!, order.currency)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Vendor Shipping</span>
+                              <span className={order.vendorShipping > 0 ? "font-medium" : "font-semibold"} style={{ color: order.vendorShipping > 0 ? "var(--t-text)" : "var(--t-blue)" }}>
+                                {order.vendorShipping > 0 ? fmtC(order.vendorShipping, order.currency) : "TBD"}
                               </span>
-                              {li.isOos && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "rgba(239,68,68,0.12)", color: "light-dark(#dc2626, #fca5a5)", textDecoration: "none" }}>OOS</span>}
+                            </div>
+                          )}
+                          {order.tip > 0 && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Tip</span><span>{fmtC(order.tip, order.currency)}</span>
+                            </div>
+                          )}
+                          {order.testingContribution > 0 && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Lab Test Contribution</span><span>{fmtC(order.testingContribution, order.currency)}</span>
+                            </div>
+                          )}
+                          {(order.adminFee ?? 0) > 0 && !order.directShippingRequested && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>{order.adminFeeLabel ?? "Admin Fee"}</span><span>{fmtC(order.adminFee!, order.currency)}</span>
+                            </div>
+                          )}
+                          {(order.creditsApplied ?? 0) > 0 && (
+                            <div className="flex justify-between font-medium" style={{ color: "light-dark(#059669, #6ee7b7)" }}>
+                              <span>Store Credits Applied</span>
+                              <span>−${order.creditsApplied!.toFixed(2)} USD</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between rounded-xl px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+                            <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
+                            <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
+                              {order.currency === "GBP"
+                                ? fmtC(order.grandTotal, order.currency)
+                                : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
                             </span>
-                            {li.lineTotal > 0 && <span className="font-medium shrink-0" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>{fmtC(li.lineTotal, order.currency)}</span>}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          {(order.amountDue ?? 0) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus ?? "") && (
+                            <div
+                              className="flex justify-between font-bold border-t pt-2 mt-1"
+                              style={{ color: "#F59E0B", borderColor: "rgba(245,158,11,0.25)" }}
+                            >
+                              <span>Outstanding Balance</span>
+                              <span>{fmtC(order.amountDue!, order.currency)}</span>
+                            </div>
+                          )}
+                        </div>
 
-                    {/* Totals */}
-                    <div className="pt-3 space-y-1.5 text-sm" style={{ borderTop: "1px solid var(--t-border)" }}>
-                      <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Order Summary</p>
-                      {order.productSubtotal > 0 && (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>Products</span><span>{fmtC(order.productSubtotal, order.currency)}</span>
-                        </div>
-                      )}
-                      {order.deliveryPrice > 0 && (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>Delivery</span><span>{fmtC(order.deliveryPrice, order.currency)}</span>
-                        </div>
-                      )}
-                      {order.directShippingRequested && (order.directShippingCost ?? 0) > 0 ? (
-                        <div className="flex justify-between" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>
-                          <span className="font-medium">🏠 Direct Shipping</span>
-                          <span className="font-medium">{fmtC(order.directShippingCost!, order.currency)}</span>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>Vendor Shipping</span>
-                          <span className={order.vendorShipping > 0 ? "font-medium" : "font-semibold"} style={{ color: order.vendorShipping > 0 ? "var(--t-text)" : "var(--t-blue)" }}>
-                            {order.vendorShipping > 0 ? fmtC(order.vendorShipping, order.currency) : "TBD"}
-                          </span>
-                        </div>
-                      )}
-                      {order.tip > 0 && (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>Tip</span><span>{fmtC(order.tip, order.currency)}</span>
-                        </div>
-                      )}
-                      {order.testingContribution > 0 && (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>Lab Test Contribution</span><span>{fmtC(order.testingContribution, order.currency)}</span>
-                        </div>
-                      )}
-                      {(order.adminFee ?? 0) > 0 && !order.directShippingRequested && (
-                        <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
-                          <span>{order.adminFeeLabel ?? "Admin Fee"}</span><span>{fmtC(order.adminFee!, order.currency)}</span>
-                        </div>
-                      )}
-                      {(order.creditsApplied ?? 0) > 0 && (
-                        <div className="flex justify-between font-medium" style={{ color: "light-dark(#059669, #6ee7b7)" }}>
-                          <span>Store Credits Applied</span>
-                          <span>−${order.creditsApplied!.toFixed(2)} USD</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between rounded-xl px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
-                        <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
-                        <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
-                          {order.currency === "GBP"
-                            ? fmtC(order.grandTotal, order.currency)
-                            : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
-                        </span>
+                        {(order.amountDue ?? 0) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus ?? "") && (
+                          <div className="mt-3">
+                            <BalanceDueCard
+                              orderId={order.id}
+                              amountDue={order.amountDue!}
+                              currency={order.currency}
+                              hasBalanceScreenshot={!!order.hasBalanceScreenshot}
+                              balanceTxHash={order.balanceTxHash ?? null}
+                              balancePaymentStatus={order.balancePaymentStatus ?? null}
+                              onUploaded={() => setOrder(prev => prev ? { ...prev, hasBalanceScreenshot: true } : prev)}
+                              onBalanceStatusChange={(status, txHash) =>
+                                setOrder(prev => prev ? { ...prev, balancePaymentStatus: status, balanceTxHash: txHash ?? prev.balanceTxHash ?? null } : prev)
+                              }
+                            />
+                          </div>
+                        )}
+
+                        {/* Routing banners (batch lock + direct only — reshipper card is above) */}
+                        {(order.batchLocked || order.routingType === "direct") && (
+                          <div className="mt-3 space-y-2">
+                            {order.batchLocked && (
+                              <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)" }}>
+                                <Lock className="w-3.5 h-3.5 shrink-0" style={{ color: "light-dark(#475569, #94a3b8)" }} />
+                                <p className="text-xs font-semibold" style={{ color: "light-dark(#475569, #94a3b8)" }}>This order has been locked for batching — shipping details are being finalised</p>
+                              </div>
+                            )}
+                            {order.routingType === "direct" && (
+                              <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
+                                <span className="text-base leading-none">🏠</span>
+                                <p className="text-xs font-semibold" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Your order will be shipped directly to your address</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      {(order.amountDue ?? 0) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus ?? "") && (
-                        <div
-                          className="flex justify-between font-bold border-t pt-2 mt-1"
-                          style={{ color: "#F59E0B", borderColor: "rgba(245,158,11,0.25)" }}
-                        >
-                          <span>Outstanding Balance</span>
-                          <span>{fmtC(order.amountDue!, order.currency)}</span>
+
+                      {/* Admin message */}
+                      {order.adminMessage && (
+                        <div className="rounded-2xl p-4 sm:p-5 flex items-start gap-3" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+                          <MessageCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "var(--t-blue)" }} />
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-blue)" }}>Message from Us</p>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--t-text)" }}>{order.adminMessage}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Direct / wholesale tracking number — parcel card style */}
+                      {order.trackingNumber && (
+                        <div className="rounded-2xl p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Tracking</h2>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>
+                                {(order as any).shippingCarrier ? (order as any).shippingCarrier : "Your Parcel"}
+                              </p>
+                              <p className="font-mono font-bold text-sm tracking-widest break-all" style={{ color: "var(--t-text)" }}>{order.trackingNumber}</p>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5"
+                              style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "light-dark(#4f46e5, #818cf8)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "rgba(99,102,241,0.16)" : "rgba(148,163,184,0.18)" }}>
+                              {order.status}
+                            </span>
+                          </div>
+                          {order.lineItems?.length > 0 && (
+                            <div className="pt-2 space-y-0.5" style={{ borderTop: "1px solid var(--t-border)" }}>
+                              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Contents</p>
+                              {order.lineItems.map((li: OrderLineItem, i: number) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                  <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                                  <span className="text-xs" style={{ color: "var(--t-muted)" }}>{li.productName} <span style={{ color: "var(--t-subtle)" }}>×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}</span></span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <a
+                            href={`https://t.17track.net/en#nums=${encodeURIComponent(order.trackingNumber)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
+                            style={{ color: "var(--t-blue)" }}
+                          >
+                            🌐 Track on 17track →
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Dispatch photos uploaded by admin */}
+                      <MemberDispatchImages orderId={order.id} />
+                    </div>
+
+                    {/* ---------- SIDEBAR ---------- */}
+                    <div className="space-y-4 min-w-0">
+                      {/* Order details */}
+                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Order details</h2>
+                        <div className="space-y-2.5 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="shrink-0" style={{ color: "var(--t-muted)" }}>Telegram</span>
+                            <span className="font-semibold text-right break-all min-w-0" style={{ color: "var(--t-text)" }}>{order.telegramUsername}</span>
+                          </div>
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="shrink-0" style={{ color: "var(--t-muted)" }}>Delivery</span>
+                            <span className="font-semibold text-right break-words min-w-0" style={{ color: "var(--t-text)" }}>{order.deliveryMethod}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="shrink-0" style={{ color: "var(--t-muted)" }}>Items</span>
+                            <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.lineItems?.length ?? 0}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Timeline */}
+                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Timeline</h2>
+                        {order.status === "Cancelled" ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#ef4444" }} />
+                            <span style={{ color: "var(--t-text)" }}>Order cancelled</span>
+                          </div>
+                        ) : (() => {
+                          const stages = [
+                            { label: "Ordered", Icon: FileText },
+                            { label: "Processing", Icon: PackageCheck },
+                            { label: "Shipped", Icon: Truck },
+                            { label: "Delivered", Icon: CheckCircle2 },
+                          ];
+                          const idxMap: Record<string, number> = { Draft: 0, Submitted: 0, Processing: 1, Shipped: 2, Completed: 3 };
+                          const cur = idxMap[order.status] ?? 0;
+                          return (
+                            <div>
+                              {stages.map((s, i) => {
+                                const reached = i <= cur;
+                                const active = i === cur;
+                                const Icon = s.Icon;
+                                const last = i === stages.length - 1;
+                                return (
+                                  <div key={s.label} className="flex gap-3 relative" style={{ paddingBottom: last ? 0 : 16 }}>
+                                    {!last && <div className="absolute w-[2px]" style={{ left: 13, top: 28, bottom: 0, background: i < cur ? "var(--t-blue)" : "var(--t-border)" }} />}
+                                    <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 relative z-10" style={{ background: reached ? "var(--t-blue)" : "var(--t-surface2)", color: reached ? "#fff" : "var(--t-subtle)", border: reached ? "none" : "1px solid var(--t-border)", boxShadow: active ? "0 0 0 3px var(--t-blue-08)" : "none" }}>
+                                      <Icon className="w-3.5 h-3.5" />
+                                    </div>
+                                    <div className="pt-1.5">
+                                      <p className="text-sm font-semibold leading-none" style={{ color: reached ? "var(--t-text)" : "var(--t-subtle)" }}>{s.label}</p>
+                                      {active && <p className="text-xs mt-1 font-medium" style={{ color: "var(--t-blue)" }}>Current status</p>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Notes */}
+                      {order.notes && (
+                        <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <h2 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Notes</h2>
+                          <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-muted)" }}>{order.notes}</p>
                         </div>
                       )}
                     </div>
-
-                    {(order.amountDue ?? 0) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus ?? "") && (
-                      <BalanceDueCard
-                        orderId={order.id}
-                        amountDue={order.amountDue!}
-                        currency={order.currency}
-                        hasBalanceScreenshot={!!order.hasBalanceScreenshot}
-                        balanceTxHash={order.balanceTxHash ?? null}
-                        balancePaymentStatus={order.balancePaymentStatus ?? null}
-                        onUploaded={() => setOrder(prev => prev ? { ...prev, hasBalanceScreenshot: true } : prev)}
-                        onBalanceStatusChange={(status, txHash) =>
-                          setOrder(prev => prev ? { ...prev, balancePaymentStatus: status, balanceTxHash: txHash ?? prev.balanceTxHash ?? null } : prev)
-                        }
-                      />
-                    )}
-
-                    {/* Routing banners (batch lock + direct only — reshipper card is above the blue box) */}
-                    {(order.batchLocked || order.routingType === "direct") && (
-                      <div className="pt-3 space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
-                        {order.batchLocked && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)" }}>
-                            <Lock className="w-3.5 h-3.5 shrink-0" style={{ color: "light-dark(#475569, #94a3b8)" }} />
-                            <p className="text-xs font-semibold" style={{ color: "light-dark(#475569, #94a3b8)" }}>This order has been locked for batching — shipping details are being finalised</p>
-                          </div>
-                        )}
-                        {order.routingType === "direct" && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
-                            <span className="text-base leading-none">🏠</span>
-                            <p className="text-xs font-semibold" style={{ color: "light-dark(#4f46e5, #a5b4fc)" }}>Your order will be shipped directly to your address</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Notes */}
-                    {order.notes && (
-                      <div className="pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
-                        <p className="text-xs mb-1" style={{ color: "var(--t-muted)" }}>Your Notes</p>
-                        <p className="text-sm rounded-lg p-2" style={{ color: "var(--t-text)", background: "var(--t-surface2)" }}>{order.notes}</p>
-                      </div>
-                    )}
                   </div>
 
                   {/* Payment banner (set by GB admin) */}
