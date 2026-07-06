@@ -8,9 +8,48 @@ import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
-import { useMyGroupBuys, useAccount } from "@/hooks/use-account";
+import { useMyGroupBuys, useAccount, useAccountOrders, useLogout } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
+import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import type { PortalNavProps } from "@/pages/CustomerPortal";
+
+function ReviewShell({ children }: { children: ReactNode }) {
+  const [, navigate] = useLocation();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
+  const logoutMutation = useLogout();
+  const [hubMoreOpen, setHubMoreOpen] = useState(false);
+  const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
+  const goSection = (s: string) =>
+    navigate(s === "home" ? "/account" : `/account?s=${encodeURIComponent(s)}`);
+
+  const navProps = {
+    section: "orders",
+    setSection: goSection,
+    hubMoreOpen,
+    setHubMoreOpen,
+    account,
+  } as unknown as PortalNavProps;
+
+  return (
+    <DashboardShell
+      activeSection="orders"
+      title="Review Order"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={(ordersData ?? []) as DashOrder[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={goSection}
+      onLogout={handleLogout}
+      navProps={navProps}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
 
 export default function Review() {
   const [, setLocation] = useLocation();
@@ -19,7 +58,28 @@ export default function Review() {
   const [retried, setRetried] = useState(false);
   const [globalVendorShippingWarning, setGlobalVendorShippingWarning] = useState<boolean | null>(null);
   const [showRulesetModal, setShowRulesetModal] = useState(false);
-  const { account } = useAccount();
+  const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
+  const useDashChrome = isLoggedIn || accountLoading;
+  const Chrome = useDashChrome ? ReviewShell : PageLayout;
+  const sidebarExpanded = useSidebarExpanded();
+  const [isMdPlus, setIsMdPlus] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const handler = (e: MediaQueryListEvent) => setIsMdPlus(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  const [isLgPlus, setIsLgPlus] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const handler = (e: MediaQueryListEvent) => setIsLgPlus(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const isNewOrder = !draft.orderId;
   // Derived from the single source of truth — additionOfOrderId being set means this is a
@@ -310,11 +370,11 @@ export default function Review() {
   };
 
   return (
-    <PageLayout>
+    <Chrome>
     <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
       <SiteAnnouncements />
 
-      <main className="flex-1 px-4 py-5 pb-52 md:pb-36 max-w-2xl mx-auto w-full space-y-4">
+      <main className={`flex-1 px-4 py-5 max-w-2xl mx-auto w-full space-y-4 ${useDashChrome ? "pb-40 lg:pb-32" : "pb-52 md:pb-36"}`}>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
 
           <section className="space-y-2">
@@ -538,8 +598,18 @@ export default function Review() {
         </motion.div>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t z-20" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
-        <div className="max-w-2xl mx-auto px-4 pt-3 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-4">
+      <div
+        className="fixed bottom-0 right-0 backdrop-blur-xl border-t z-20"
+        style={{
+          left: useDashChrome
+            ? (isLgPlus ? "var(--dh-ml, 0px)" : 0)
+            : (isMdPlus ? (sidebarExpanded ? 240 : 56) : 0),
+          transition: "left 220ms ease",
+          background: "var(--t-surface)",
+          borderColor: "var(--t-border)",
+        }}
+      >
+        <div className={`max-w-2xl mx-auto px-4 pt-3 ${(useDashChrome ? isLgPlus : isMdPlus) ? "pb-[calc(1rem+env(safe-area-inset-bottom))]" : "pb-[calc(76px+env(safe-area-inset-bottom))]"}`}>
           <div className="flex gap-3 mb-2">
             <button
               onClick={() => setLocation(isWholesale ? "/wholesale" : (draft.groupBuyId ? `/order?gbId=${draft.groupBuyId}` : "/order"))}
@@ -577,13 +647,15 @@ export default function Review() {
         />
       )}
     </div>
-    <HubBottomNav
-      section={"orders" as HubSection}
-      setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
-      hubMoreOpen={false}
-      setHubMoreOpen={() => {}}
-      account={account}
-    />
-    </PageLayout>
+    {!useDashChrome && (
+      <HubBottomNav
+        section={"orders" as HubSection}
+        setSection={(s: HubSection) => setLocation(`/account?s=${s}`)}
+        hubMoreOpen={false}
+        setHubMoreOpen={() => {}}
+        account={account}
+      />
+    )}
+    </Chrome>
   );
 }
