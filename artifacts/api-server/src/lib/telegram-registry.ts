@@ -715,7 +715,7 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
     description: "Sent to a customer asking them to upload their InPost QR code after their order has been dispatched to the reshipper.",
     placeholders: ["code", "username", "gb_name", "app_url"],
     defaultTemplate:
-      `📦 <b>Action Required: Upload Your QR Code</b>\n\nHi <b>@{{username}}</b>, your order <code>#{{code}}</code> from <b>{{gb_name}}</b> has been dispatched!\n\nPlease log in and upload your InPost QR code so it's ready for collection.\n\n<a href="{{app_url}}/account">Upload your QR code →</a>`,
+      `📦 <b>Action Required: Upload Your QR Code</b>\n\nHi <b>@{{username}}</b>, your order <code>#{{code}}</code> from <b>{{gb_name}}</b> has been dispatched!\n\nPlease log in and upload your InPost QR code so it's ready for collection.\n\n<a href="{{app_url}}/account?s=orders">Upload your QR code →</a>`,
     editableInAdmin: true,
   },
   // ── Reshipper notifications ─────────────────────────────────────────────────

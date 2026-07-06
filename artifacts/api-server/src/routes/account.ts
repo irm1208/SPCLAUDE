@@ -1393,12 +1393,18 @@ function extractNotificationLinks(html: string): { html: string; links: { href: 
   const seen = new Set<string>();
   const remaining = html.replace(/<a\s[^>]*?href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) => {
     const url = decodeHtmlEntities(href).trim();
-    // Defense in depth: only allow relative paths and http(s) URLs (never javascript:/data: etc).
-    let safe = false;
+    let keep = false;
     try {
-      safe = ["http:", "https:"].includes(new URL(url, "https://x.invalid").protocol);
+      const u = new URL(url, "https://x.invalid");
+      // Defense in depth: only allow relative paths and http(s) URLs (never javascript:/data: etc).
+      const safe = ["http:", "https:"].includes(u.protocol);
+      const path = u.pathname.replace(/\/+$/, "") || "/";
+      // Skip generic footer links ("Visit the site →", "View your orders →" → site root or bare
+      // /account) — the user is already in the app and the dropdown has its own orders button.
+      const generic = !u.search && !u.hash && (path === "/" || path === "/account");
+      keep = safe && !generic;
     } catch { /* unparseable → drop */ }
-    if (safe && url && !seen.has(url) && links.length < 3) {
+    if (keep && url && !seen.has(url) && links.length < 3) {
       seen.add(url);
       // Drop trailing arrows/chevrons — the app renders its own arrow icon.
       const label = stripTelegramHtml(inner).replace(/[→›»\s]+$/g, "").trim();

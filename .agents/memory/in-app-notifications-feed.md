@@ -25,3 +25,5 @@ The endpoint extracts `<a href="...">` anchors from the stored Telegram HTML int
 - Extraction regex only matches **double-quoted** hrefs — keep templates double-quoted (all of telegram-registry.ts is).
 - `renderTemplate` does NOT auto-escape variables; any caller substituting user content into a message MUST escapeHtml it, or a user could inject a clickable chip into another user's feed (protocol allowlist limits blast radius, but don't rely on it).
 - Bodies render with line breaks preserved (pre-line, 3-line clamp) — never join lines with " · " client-side; stripTelegramHtml trims dangling `·`/`•`/`|` at line edges left by anchor removal.
+- Generic footer links (site root or bare `/account`, no query/hash) are suppressed — no chip, still stripped from the body (user asked "no button if not needed"; dropdown has its own orders footer). To give a notification a chip, deepen its template href (e.g. `/account?s=orders`) — don't weaken the heuristic.
+- Templates are DB-overridable via site_config `tg_template:<eventKey>` (60s cache); registry default only applies when no DB row exists — check before assuming a registry edit takes effect.
