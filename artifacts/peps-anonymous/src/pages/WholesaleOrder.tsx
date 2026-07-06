@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
-import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
+import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
@@ -432,7 +432,7 @@ export default function WholesaleOrder() {
   const isLoading = productsLoading;
 
   return (
-    <PageLayout>
+    <WholesaleShell active="order" title="Wholesale Order">
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
         <main className="px-4 py-5 pb-36 max-w-3xl mx-auto w-full space-y-5">
@@ -1109,21 +1109,17 @@ export default function WholesaleOrder() {
           />
         )}
       </AnimatePresence>
-    </PageLayout>
+    </WholesaleShell>
   );
 }
 
 function TotalBarShell({ children }: { children: React.ReactNode }) {
-  const expanded = useSidebarExpanded();
   return (
     <div
-      className="fixed bottom-0 right-0 backdrop-blur-xl border-t z-20 transition-[left] duration-200"
+      className="fixed bottom-0 right-0 left-0 lg:left-[252px] backdrop-blur-xl border-t z-20"
       style={{
         background: "var(--t-surface)",
         borderColor: "var(--t-border)",
-        left: typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
-          ? (expanded ? 264 : 64)
-          : 0,
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >

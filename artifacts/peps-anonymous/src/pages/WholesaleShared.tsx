@@ -9,6 +9,7 @@ import {
   Globe, ShieldAlert, SlidersHorizontal, TestTube,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { WholesaleShell } from "@/components/WholesaleShell";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
@@ -2545,7 +2546,7 @@ export default function WholesaleShared() {
   );
 
   return (
-    <PageLayout>
+    <WholesaleShell active="shared" title="Shared Order">
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <main className="px-4 py-5 pb-36 max-w-3xl mx-auto w-full space-y-5">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
@@ -2589,7 +2590,7 @@ export default function WholesaleShared() {
           />
         )}
       </AnimatePresence>
-    </PageLayout>
+    </WholesaleShell>
   );
 }
 

@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Loader2, ArrowRight, Users, Share2, Clock, Globe, ShieldAlert, Package, MapPin } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { WholesaleShell } from "@/components/WholesaleShell";
 import { useAccount } from "@/hooks/use-account";
 import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare } from "@/hooks/use-wholesale-shares";
 
@@ -79,7 +80,7 @@ export default function WholesaleShareEntry() {
   if (!account || !account.isWholesale) return null;
 
   return (
-    <PageLayout>
+    <WholesaleShell active="shared" title="Shared Orders">
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <main className="px-4 py-5 pb-36 max-w-3xl mx-auto w-full space-y-5">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
@@ -250,6 +251,6 @@ export default function WholesaleShareEntry() {
           </motion.div>
         </main>
       </div>
-    </PageLayout>
+    </WholesaleShell>
   );
 }
