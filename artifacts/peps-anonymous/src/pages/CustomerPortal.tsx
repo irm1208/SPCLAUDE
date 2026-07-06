@@ -7455,7 +7455,7 @@ export default function CustomerPortal() {
             <HeartPulse className="w-6 h-6" strokeWidth={2.2} />
           </span>
           <div className="min-w-0">
-            <h2 className="font-extrabold leading-tight" style={{ fontSize: 19, letterSpacing: "-0.01em" }}>Health Hub</h2>
+            <h2 className="font-extrabold leading-tight text-[#ffffff]" style={{ fontSize: 19, letterSpacing: "-0.01em" }}>Health Hub</h2>
             <p className="text-[13px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>
               Track, analyse, and manage all aspects of your health in one place.
             </p>
