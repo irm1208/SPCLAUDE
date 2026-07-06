@@ -9,9 +9,12 @@ import {
   Search, Filter, Wallet, QrCode, FileDown, BarChart3, MapPin,
   Download, ImageOff, Inbox, Bell, Users, FileText, Box,
   CheckCircle2, RotateCcw, Home, Hash, ChevronRight, Info,
+  Sun, Moon, ArrowLeft,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
+import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
+import { useThemeStore } from "@/hooks/use-theme";
 import { useAccount } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES } from "@/data/countries";
@@ -3814,6 +3817,8 @@ const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
 export default function ReshipperPage() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
+  const { dark, toggle: toggleTheme } = useThemeStore();
+  const P = palette(dark);
 
   // Admin impersonation — detect ?impersonate=<username> + sessionStorage secret
   const urlParams = new URLSearchParams(window.location.search);
@@ -4050,84 +4055,164 @@ export default function ReshipperPage() {
     );
   }
 
-  return (
-    <PageLayout>
-      <div className="flex flex-col flex-1" style={{ fontFamily: "'Inter', sans-serif", background: "var(--t-bg)" }}>
+  const visibleTabs = TABS.filter(t => t.id !== "payments" || currentAssignment?.allowPayments);
+  const activeMeta = TABS.find(t => t.id === activeTab);
+  const unclaimedBadge = unclaimedOrders.length > 0 ? unclaimedOrders.length : null;
 
-        {/* ── Header ── */}
-        <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
+  return (
+    <div className="flex overflow-hidden" style={{ height: "100dvh", background: P.page, fontFamily: FONT, color: P.text }}>
+
+      {/* ══ Desktop sidebar ══ */}
+      <aside className="hidden lg:flex flex-col shrink-0" style={{ width: 252, background: P.sidebar, borderRight: `1px solid ${P.border}` }}>
+        {/* Brand */}
+        <div className="flex items-center gap-3 px-4 shrink-0" style={{ height: 72 }}>
+          <span className="flex items-center justify-center shrink-0" style={{ width: 38, height: 38, borderRadius: 8, background: ACCENT, color: "#fff" }}>
+            <Truck className="w-[19px] h-[19px]" strokeWidth={2.2} />
+          </span>
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Reshipper</p>
-            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>@{me?.telegramUsername}</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {assignments.length === 1 && currentAssignment && (
-              <p className="hidden sm:block text-xs font-semibold truncate max-w-[180px]" style={{ color: "var(--t-muted)" }}>
-                {currentAssignment.gb?.name ?? currentAssignment.gbId} · {currentAssignment.country}
-              </p>
-            )}
-            <button
-              onClick={() => setShowJoinForm(v => !v)}
-              className="flex items-center gap-1 px-3 h-8 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all"
-              style={showJoinForm
-                ? { background: "var(--t-blue-deep)", color: "#fff" }
-                : { background: "var(--t-surface2)", color: "var(--t-muted)", border: "1px solid var(--t-border)" }}>
-              <Plus className="w-3 h-3" />Join GB
-            </button>
-            <button onClick={() => { load(); if (selectedGbId) { loadOrders(selectedGbId); loadUnclaimed(selectedGbId); } }}
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-              <RefreshCw className="w-3 h-3" style={{ color: "var(--t-muted)" }} />
-            </button>
+            <p className="font-extrabold tracking-tight leading-tight truncate" style={{ fontSize: 16 }}>Reshipper Hub</p>
+            <p className="truncate" style={{ fontSize: 11.5, color: P.subtle }}>@{me?.telegramUsername}</p>
           </div>
         </div>
 
-        {/* ── GB picker row (multiple assignments) ── */}
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          {/* GB picker */}
+          {assignments.length > 1 && (
+            <>
+              <p className="px-3 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: P.subtle }}>Group Buys</p>
+              <nav className="flex flex-col gap-0.5 mb-5">
+                {assignments.map(a => {
+                  const on = selectedGbId === a.gbId;
+                  const name = a.gb?.name ?? a.gbId;
+                  return (
+                    <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
+                      className="w-full flex items-center gap-3 rounded-md px-3 text-left transition-all"
+                      style={{ height: 42, background: on ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent", color: on ? ACCENT : P.text, fontWeight: 600, fontSize: 13 }}>
+                      <span className="flex items-center justify-center shrink-0 rounded-lg"
+                        style={{ width: 28, height: 28, fontSize: 12, fontWeight: 800, background: on ? ACCENT : ACCENT_SOFT, color: on ? "#fff" : ACCENT }}>
+                        {name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{name}</span>
+                        <span className="block truncate" style={{ fontSize: 10.5, fontWeight: 600, color: P.subtle }}>{a.country}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </>
+          )}
+
+          {/* Tab nav */}
+          <p className="px-3 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: P.subtle }}>Workspace</p>
+          <nav className="flex flex-col gap-0.5">
+            {visibleTabs.map(t => {
+              const Icon = t.icon;
+              const isActive = activeTab === t.id;
+              const badge = t.id === "unclaimed" ? unclaimedBadge : null;
+              return (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className="relative w-full flex items-center rounded-md transition-all text-left"
+                  style={{
+                    gap: 11, padding: "0 12px", height: 40,
+                    background: isActive ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent",
+                    color: isActive ? ACCENT : P.muted, fontWeight: isActive ? 700 : 600, fontSize: 13.5,
+                  }}>
+                  {isActive && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
+                  <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={isActive ? 2.4 : 2} />
+                  <span className="flex-1 truncate">{t.label}</span>
+                  {badge !== null && (
+                    <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#EF4444", color: "#fff", lineHeight: 1 }}>
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar footer */}
+        <div className="px-3 py-3 shrink-0 flex flex-col gap-0.5" style={{ borderTop: `1px solid ${P.border}` }}>
+          <button onClick={() => setLocation("/account")}
+            className="w-full flex items-center rounded-md transition-all text-left"
+            style={{ gap: 11, padding: "0 12px", height: 38, color: P.muted, fontWeight: 600, fontSize: 13 }}>
+            <LayoutDashboard className="w-[17px] h-[17px] shrink-0" />
+            <span className="truncate">Back to Dashboard</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* ══ Main column ══ */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* ── Topbar ── */}
+        <header className="flex items-center gap-2.5 px-4 md:px-7 shrink-0" style={{ height: 60, background: P.panel, borderBottom: `1px solid ${P.border}` }}>
+          <button onClick={() => setLocation("/account")} aria-label="Back to dashboard"
+            className="lg:hidden flex items-center justify-center rounded-lg shrink-0"
+            style={{ width: 34, height: 34, background: P.chip, border: `1px solid ${P.border}`, color: P.muted }}>
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold uppercase" style={{ fontSize: 10, letterSpacing: ".08em", color: ACCENT }}>Reshipper</p>
+            <p className="font-extrabold tracking-tight truncate leading-tight" style={{ fontSize: 16 }}>{activeMeta?.label ?? "Overview"}</p>
+          </div>
+          {currentAssignment && (
+            <p className="hidden sm:block text-xs font-semibold truncate max-w-[220px] shrink-0" style={{ color: P.subtle }}>
+              {currentAssignment.gb?.name ?? currentAssignment.gbId} · {currentAssignment.country}
+            </p>
+          )}
+          <button
+            onClick={() => setShowJoinForm(v => !v)}
+            className="flex items-center gap-1.5 px-3 rounded-lg text-[11.5px] font-bold whitespace-nowrap transition-all shrink-0"
+            style={showJoinForm
+              ? { height: 34, background: ACCENT, color: "#fff" }
+              : { height: 34, background: P.chip, color: P.muted, border: `1px solid ${P.border}` }}>
+            <Plus className="w-3.5 h-3.5" />Join GB
+          </button>
+          <button onClick={() => { load(); if (selectedGbId) { loadOrders(selectedGbId); loadUnclaimed(selectedGbId); } }}
+            aria-label="Refresh"
+            className="flex items-center justify-center rounded-lg shrink-0"
+            style={{ width: 34, height: 34, background: P.chip, border: `1px solid ${P.border}`, color: P.muted }}>
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={toggleTheme} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+            className="flex items-center justify-center rounded-lg shrink-0"
+            style={{ width: 34, height: 34, background: P.chip, border: `1px solid ${P.border}`, color: P.muted }}>
+            {dark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+        </header>
+
+        {/* ── Mobile GB picker (multiple assignments) ── */}
         {assignments.length > 1 && (
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="lg:hidden flex gap-1.5 px-4 py-2 overflow-x-auto shrink-0" style={{ background: P.panel, borderBottom: `1px solid ${P.border}` }}>
             {assignments.map(a => (
               <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
-                className="flex items-center gap-1 px-3 h-7 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
+                className="flex items-center gap-1 px-3 h-7 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
                 style={selectedGbId === a.gbId
-                  ? { background: "var(--t-blue-deep)", color: "#fff" }
-                  : { background: "transparent", color: "var(--t-muted)" }}>
+                  ? { background: ACCENT, color: "#fff" }
+                  : { background: P.chip, color: P.muted, border: `1px solid ${P.border}` }}>
                 {a.gb?.name ?? a.gbId} · {a.country}
               </button>
             ))}
           </div>
         )}
 
-        {/* ── Inline Join GB form ── */}
-        {showJoinForm && (
-          <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface)" }}>
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--t-subtle)" }}>Join a Group Buy</p>
-            <JoinWithCodeForm
-              onJoined={(_gbId, _gbName, _already) => { setShowJoinForm(false); setError(""); load(); }}
-              onCancel={() => setShowJoinForm(false)}
-            />
-          </div>
-        )}
-
-        {error && (
-          <div className="mx-4 mt-3 flex items-center gap-2 p-3 rounded-xl text-sm"
-            style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}>
-            <AlertCircle className="w-4 h-4 shrink-0" />{error}
-          </div>
-        )}
-
-        {/* ── Tab bar ── */}
-        <div className="flex gap-1 px-3 py-2 overflow-x-auto shrink-0" style={{ borderBottom: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
-          {TABS.filter(t => t.id !== "payments" || currentAssignment?.allowPayments).map(t => {
+        {/* ── Mobile tab bar ── */}
+        <div className="lg:hidden flex gap-1.5 px-4 py-2 overflow-x-auto shrink-0" style={{ background: P.panel, borderBottom: `1px solid ${P.border}` }}>
+          {visibleTabs.map(t => {
             const Icon = t.icon;
             const isActive = activeTab === t.id;
-            const badge = t.id === "unclaimed" && unclaimedOrders.length > 0 ? unclaimedOrders.length : null;
+            const badge = t.id === "unclaimed" ? unclaimedBadge : null;
             return (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all shrink-0 relative"
-                style={{ background: isActive ? "var(--t-blue-deep)" : "transparent", color: isActive ? "#fff" : "var(--t-muted)" }}>
+                className="flex items-center gap-1.5 px-3 h-8 rounded-full text-[11px] font-bold whitespace-nowrap transition-all shrink-0 relative"
+                style={isActive
+                  ? { background: ACCENT, color: "#fff" }
+                  : { background: P.chip, color: P.muted, border: `1px solid ${P.border}` }}>
                 <Icon className="w-3 h-3" />{t.label}
                 {badge !== null && (
-                  <span className="ml-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: isActive ? "rgba(255,255,255,0.25)" : "#DC2626", color: "#fff", lineHeight: 1 }}>
+                  <span className="ml-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: isActive ? "rgba(255,255,255,0.25)" : "#EF4444", color: "#fff", lineHeight: 1 }}>
                     {badge}
                   </span>
                 )}
@@ -4136,8 +4221,26 @@ export default function ReshipperPage() {
           })}
         </div>
 
+        {/* ── Inline Join GB form ── */}
+        {showJoinForm && (
+          <div className="px-4 md:px-7 py-3 shrink-0" style={{ borderBottom: `1px solid ${P.border}`, background: P.panel2 }}>
+            <p className="font-bold uppercase mb-3" style={{ fontSize: 11, letterSpacing: ".08em", color: P.subtle }}>Join a Group Buy</p>
+            <JoinWithCodeForm
+              onJoined={(_gbId, _gbName, _already) => { setShowJoinForm(false); setError(""); load(); }}
+              onCancel={() => setShowJoinForm(false)}
+            />
+          </div>
+        )}
+
+        {error && (
+          <div className="mx-4 md:mx-7 mt-3 flex items-center gap-2 p-3 rounded-xl text-sm shrink-0"
+            style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}>
+            <AlertCircle className="w-4 h-4 shrink-0" />{error}
+          </div>
+        )}
+
         {/* ── Content ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-5 pb-24">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-7 py-6" style={{ paddingBottom: "calc(40px + env(safe-area-inset-bottom))" }}>
           {currentAssignment ? (
             <>
               <TabHelp tab={activeTab} />
@@ -4195,6 +4298,6 @@ export default function ReshipperPage() {
           )}
         </div>
       </div>
-    </PageLayout>
+    </div>
   );
 }
