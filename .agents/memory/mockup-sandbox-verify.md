@@ -15,6 +15,10 @@ description: How to truly verify a mockup renders, and how to find the artifactI
 
 DESIGN subagents can set `state: "live"` + `componentPath` on their canvas iframe but leave `url` EMPTY — the user then sees frames that "aren't loading" even though the modules compile fine. After all subagents complete, `getCanvasState()` and verify every mockup iframe has a non-empty `url`; if blank, patch it yourself with an `update` action (`https://<dev-domain>/__mockup/preview/<folder>/<Component>`).
 
+# Sandbox restart can bind the wrong port
+
+The main app's dev proxy routes `/__mockup/*` → **:8081**. If an orphan vite still holds 8081 when the "Component Preview Server" workflow restarts, vite silently binds 8082 ("Port 8081 is in use, trying another one...") and previews only keep working because the ORPHAN file-watches the same folder — if it dies, the proxy 502s. **Fix:** `pkill -f "mockup-sandbox.*vite"` (the pkill shell may kill itself with exit 143 — that's fine, the kills landed), then restart the workflow and confirm `localhost:8081/__mockup/` returns 200. Also note: local curl must go through `localhost:5000/__mockup/...` (the proxy) — there is no :8000 listener.
+
 # presentArtifact needs an artifactId
 
 `presentArtifact({ artifactId, shapeIds })` fails without `artifactId`, and the id is NOT the slug (`"mockup-sandbox"` is rejected). Each project's artifacts have opaque ids. Discover them: call `presentArtifact` with any wrong id and read the thrown error's `Available artifacts: [{id,title}, ...]` list — the mockup sandbox appears there titled **"Component Preview Server"** with a random id. Use that id.
