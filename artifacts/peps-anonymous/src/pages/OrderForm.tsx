@@ -1114,6 +1114,11 @@ export default function OrderForm() {
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (
           <div className="space-y-3 pt-1">
+            <div className="pt-1">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] mb-1 text-center" style={{ color: "var(--t-blue-deep)" }}>Group Buy</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-center" style={{ color: "var(--t-text)" }}>{pageTitle}</h1>
+            </div>
+
             {/* Order page message banner */}
             {gbOrderPageMessage && (
               <div
@@ -1185,57 +1190,71 @@ export default function OrderForm() {
               );
             })()}
 
-            {/* Reshipper info card — shown when the user's country leg has reshippers assigned */}
-            {legReshippers.length > 0 && myCountryLeg && (
-              <div
-                className="rounded-2xl p-4 flex items-start gap-3.5"
-                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)" }}
-              >
-                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-12)" }}>
-                  <Globe className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-                </div>
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <p className="text-xs font-bold tracking-tight" style={{ color: "var(--t-text)" }}>
-                    Local Reshipper — {myCountryLeg.countryName}
-                  </p>
-                  {!hasMultipleReshippers && (
-                    <div className="mt-1.5 space-y-1">
-                      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-                        @{reshipperInfo?.telegramUsername}
-                      </p>
-                      {reshipperInfo?.paymentTarget && (
-                        <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-                          Pay to: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{reshipperInfo.paymentTarget}</span>
-                        </p>
-                      )}
-                      {reshipperInfo?.enabledPaymentMethods && typeof reshipperInfo.enabledPaymentMethods === "object" && !Array.isArray(reshipperInfo.enabledPaymentMethods) && (() => {
-                        const labels: Record<string, string> = { usdtEnabled: "USDT / USDC", revolutEnabled: "Revolut", paypalEnabled: "PayPal", cryptoEnabled: "Crypto", anonPayEnabled: "AnonPay" };
-                        const methods = Object.entries(reshipperInfo.enabledPaymentMethods as Record<string, unknown>).filter(([, v]) => v).map(([k]) => labels[k] ?? k);
-                        return methods.length > 0 ? (
-                          <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Methods: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{methods.join(", ")}</span></p>
-                        ) : null;
-                      })()}
-                      {reshipperInfo?.reshipperPaymentDetails && typeof reshipperInfo.reshipperPaymentDetails === "object" && (() => {
-                        const detailLabels: Record<string, string> = { usdtWallet: "USDT Wallet", revolutHandle: "Revolut", paypalHandle: "PayPal", cryptoCurrency: "Crypto", cryptoNetwork: "Network", cryptoWalletAddress: "Crypto Wallet", anonPayWallet: "AnonPay Wallet", anonPayTicker: "AnonPay Ticker", anonPayNetwork: "AnonPay Network" };
-                        const entries = Object.entries(reshipperInfo.reshipperPaymentDetails as Record<string, unknown>).filter(([k, v]) => v && k !== "anonPayEnabled");
-                        return entries.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {entries.map(([k, v]) => (
-                              <p key={k} className="text-xs" style={{ color: "var(--t-subtle)" }}>{detailLabels[k] ?? k}: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{String(v)}</span></p>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()}
+            {/* Group buy info card — shown when the user's country leg has reshippers assigned */}
+            {legReshippers.length > 0 && myCountryLeg && (() => {
+              const tgLink = (username: string) => (
+                <a
+                  href={`https://t.me/${username.replace(/^@/, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline underline-offset-2"
+                  style={{ color: "#0176D3" }}
+                >
+                  @{username.replace(/^@/, "")}
+                </a>
+              );
+              return (
+                <div
+                  className="rounded-lg p-4"
+                  style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}
+                >
+                  <div className="flex items-center gap-2.5 mb-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(1,118,211,0.10)" }}>
+                      <Globe className="w-4 h-4" style={{ color: "#0176D3" }} />
                     </div>
-                  )}
+                    <p className="text-[13px] font-extrabold tracking-tight" style={{ color: "var(--t-text)" }}>
+                      Group Buy Info — {myCountryLeg.countryName}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {myGb?.organiserId && (
+                      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                        Group Buy Organiser: {tgLink(myGb.organiserId)}
+                      </p>
+                    )}
+                    {!hasMultipleReshippers && reshipperInfo?.telegramUsername && (
+                      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                        Reshipper: {tgLink(reshipperInfo.telegramUsername)}
+                      </p>
+                    )}
+                    {!hasMultipleReshippers && reshipperInfo?.paymentTarget && (
+                      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                        Pay To: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{reshipperInfo.paymentTarget}</span>
+                      </p>
+                    )}
+                    {!hasMultipleReshippers && reshipperInfo?.enabledPaymentMethods && typeof reshipperInfo.enabledPaymentMethods === "object" && !Array.isArray(reshipperInfo.enabledPaymentMethods) && (() => {
+                      const labels: Record<string, string> = { usdtEnabled: "USDT / USDC", revolutEnabled: "Revolut", paypalEnabled: "PayPal", cryptoEnabled: "Crypto", anonPayEnabled: "AnonPay" };
+                      const methods = Object.entries(reshipperInfo.enabledPaymentMethods as Record<string, unknown>).filter(([, v]) => v).map(([k]) => labels[k] ?? k);
+                      return methods.length > 0 ? (
+                        <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Methods of Payment: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{methods.join(", ")}</span></p>
+                      ) : null;
+                    })()}
+                    {!hasMultipleReshippers && reshipperInfo?.reshipperPaymentDetails && typeof reshipperInfo.reshipperPaymentDetails === "object" && (() => {
+                      const detailLabels: Record<string, string> = { usdtWallet: "USDT Wallet", revolutHandle: "Revolut", paypalHandle: "PayPal", cryptoCurrency: "Crypto", cryptoNetwork: "Network", cryptoWalletAddress: "Crypto Wallet", anonPayWallet: "AnonPay Wallet", anonPayTicker: "AnonPay Ticker", anonPayNetwork: "AnonPay Network" };
+                      const entries = Object.entries(reshipperInfo.reshipperPaymentDetails as Record<string, unknown>).filter(([k, v]) => v && k !== "anonPayEnabled");
+                      return entries.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {entries.map(([k, v]) => (
+                            <p key={k} className="text-xs" style={{ color: "var(--t-subtle)" }}>{detailLabels[k] ?? k}: <span className="font-semibold" style={{ color: "var(--t-text)" }}>{String(v)}</span></p>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
-            <div className="pt-1">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] mb-1 text-center" style={{ color: "var(--t-blue-deep)" }}>Group Buy</p>
-              <h1 className="text-2xl font-extrabold tracking-tight text-center" style={{ color: "var(--t-text)" }}>{pageTitle}</h1>
-            </div>
             {/* 2-step progress indicator */}
             <div className="flex items-center gap-2 px-1">
               {/* Step 1 — active */}
