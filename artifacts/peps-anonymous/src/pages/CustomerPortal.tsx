@@ -8067,19 +8067,16 @@ export default function CustomerPortal() {
                       `radial-gradient(75% 62% at 100% 92%, ${palette.aurora[2]} 0%, transparent 76%)`,
                   }} />
 
-                {/* Header: icon tile + eyebrow/title + pills */}
-                <div className="relative p-5 pb-0 flex items-start justify-between gap-3">
+                {/* Header: icon tile + eyebrow + pills */}
+                <div className="relative p-5 pb-0 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
                       style={{ background: "rgba(255,255,255,0.14)" }}>
                       <GBIcon className="w-5 h-5" style={{ color: "#fff" }} />
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-medium truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
-                        Group Buy{gb.manufacturer ? ` · ${gb.manufacturer}` : ""}
-                      </p>
-                      <h3 className="text-[16px] font-bold text-white leading-snug truncate">{gb.name}</h3>
-                    </div>
+                    <p className="text-[12px] font-medium truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
+                      Group Buy{gb.manufacturer ? ` · ${gb.manufacturer}` : ""}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[11.5px] font-semibold"
@@ -8091,23 +8088,32 @@ export default function CustomerPortal() {
                   </div>
                 </div>
 
-                {/* Hero: organiser centrepiece */}
+                {/* Hero: group buy title + description */}
                 <div className="relative px-5 pt-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    Organised by
-                  </p>
-                  <p className="text-[32px] font-bold text-white leading-tight tracking-tight truncate mt-1">
-                    {gb.organiserId ?? "Admin"}
-                  </p>
-                  <p className="text-[12.5px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
-                    {closeDateBadge
-                      ? (closeDateBadge.daysStr === "Closed" ? "Closed" : `Closes ${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`)
-                      : `${gb.productCount} product${gb.productCount !== 1 ? "s" : ""} available`}
-                  </p>
+                  <h3 className="text-[32px] font-bold text-white leading-tight tracking-tight truncate">
+                    {gb.name}
+                  </h3>
+                  {infoContent ? (
+                    <p className="text-[13px] mt-1.5 leading-relaxed line-clamp-3" style={{ color: "rgba(255,255,255,0.6)" }}>
+                      {infoContent}
+                    </p>
+                  ) : (
+                    <p className="text-[12.5px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+                      {closeDateBadge
+                        ? (closeDateBadge.daysStr === "Closed" ? "Closed" : `Closes ${closeDateBadge.dateStr} · ${closeDateBadge.daysStr}`)
+                        : `${gb.productCount} product${gb.productCount !== 1 ? "s" : ""} available`}
+                    </p>
+                  )}
                 </div>
 
                 {/* Stat rows */}
                 <div className="relative px-5 pt-5 flex flex-col gap-2.5 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Organised by</span>
+                    <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                      {gb.organiserId ?? "Admin"}
+                    </span>
+                  </div>
                   {closeDateBadge && (
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.9)" }}>Closes</span>
@@ -8140,11 +8146,6 @@ export default function CustomerPortal() {
                         )}
                       </span>
                     </div>
-                  )}
-                  {infoContent && (
-                    <p className="text-[11.5px] leading-relaxed line-clamp-1" style={{ color: "rgba(255,255,255,0.38)" }}>
-                      {infoContent}
-                    </p>
                   )}
                 </div>
 
@@ -8468,7 +8469,7 @@ export default function CustomerPortal() {
             <FlaskConical className="w-5 h-5" strokeWidth={2.2} />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-extrabold leading-tight" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Compounds &amp; Protocols</h2>
+            <h2 className="font-extrabold leading-tight text-[#ffffff]" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>Compounds &amp; Protocols</h2>
             <p className="text-[12.5px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>Track your active compounds, doses, and cycling protocols.</p>
           </div>
           <button onClick={() => setShowCompoundForm(true)}
