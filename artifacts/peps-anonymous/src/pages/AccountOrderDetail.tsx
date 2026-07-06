@@ -6,7 +6,7 @@ import {
   ArrowLeft, Loader2, Truck, Package, MessageCircle,
   CheckCircle2, AlertCircle, Lock, Plus, Trash2, X, Copy, Check,
   QrCode, Upload, Download, ImagePlus, MapPin, ScanLine, TestTube, Clock, Coins,
-  ChevronDown, Pencil,
+  ChevronDown, Pencil, FileText, PackageCheck, Send,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -2008,7 +2008,7 @@ export default function AccountOrderDetail() {
     <Chrome>
       <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
-        <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-24 lg:pb-6" : "pb-24 md:pb-5"} max-w-md mx-auto w-full`}>
+        <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-24 lg:pb-6" : "pb-24 md:pb-5"} max-w-md lg:max-w-2xl mx-auto w-full`}>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
             {/* Back button */}
@@ -2086,23 +2086,90 @@ export default function AccountOrderDetail() {
                     <div className="absolute top-0 right-0 w-24 h-24 rounded-full pointer-events-none" style={{ background: "var(--t-blue-06)", transform: "translate(30%, -30%)" }} />
 
                     {/* Code + status */}
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Order Code</p>
                         <p className="font-display font-bold text-2xl tracking-widest" style={{ color: "var(--t-text)" }}>{order.code}</p>
                       </div>
-                      <span className={cn("text-sm font-bold px-3 py-1.5 rounded-full", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
-                        {order.status}
-                      </span>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className={cn("text-sm font-bold px-3 py-1.5 rounded-full", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
+                          {order.status}
+                        </span>
+                        {isPaidOrder && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "light-dark(#059669, #6ee7b7)", background: "rgba(16,185,129,0.14)" }}>
+                            <CheckCircle2 className="w-3 h-3" /> Paid
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex justify-between text-sm">
-                      <span style={{ color: "var(--t-muted)" }}>Telegram</span>
-                      <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.telegramUsername}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span style={{ color: "var(--t-muted)" }}>Delivery</span>
-                      <span className="font-semibold" style={{ color: "var(--t-text)" }}>{order.deliveryMethod}</span>
+                    {/* Fulfilment timeline */}
+                    {order.status !== "Cancelled" && (() => {
+                      const stages = [
+                        { label: "Ordered", Icon: FileText },
+                        { label: "Processing", Icon: PackageCheck },
+                        { label: "Shipped", Icon: Truck },
+                        { label: "Delivered", Icon: CheckCircle2 },
+                      ];
+                      const idxMap: Record<string, number> = { Draft: 0, Submitted: 0, Processing: 1, Shipped: 2, Completed: 3 };
+                      const cur = idxMap[order.status] ?? 0;
+                      return (
+                        <div className="flex items-center pt-1">
+                          {stages.map((s, i) => {
+                            const reached = i <= cur;
+                            const active = i === cur;
+                            const Icon = s.Icon;
+                            return (
+                              <React.Fragment key={s.label}>
+                                {i > 0 && (
+                                  <div className="flex-1 h-[3px] rounded-full mx-1" style={{ background: i <= cur ? "var(--t-blue)" : "var(--t-border)" }} />
+                                )}
+                                <div className="flex flex-col items-center gap-1.5" style={{ width: 64 }}>
+                                  <div
+                                    className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+                                    style={{
+                                      background: reached ? "var(--t-blue)" : "var(--t-surface2)",
+                                      color: reached ? "#fff" : "var(--t-subtle)",
+                                      border: reached ? "none" : "1px solid var(--t-border)",
+                                      boxShadow: active ? "0 0 0 4px var(--t-blue-08)" : "none",
+                                    }}
+                                  >
+                                    <Icon className="w-4 h-4" />
+                                  </div>
+                                  <span className="text-[10px] font-semibold text-center leading-tight" style={{ color: reached ? "var(--t-text)" : "var(--t-subtle)" }}>
+                                    {s.label}
+                                  </span>
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Meta grid */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <div className="flex items-center gap-1 mb-1">
+                          <Send className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Telegram</span>
+                        </div>
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.telegramUsername}</p>
+                      </div>
+                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <div className="flex items-center gap-1 mb-1">
+                          <Truck className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Delivery</span>
+                        </div>
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.deliveryMethod}</p>
+                      </div>
+                      <div className="rounded-xl p-2.5 min-w-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <div className="flex items-center gap-1 mb-1">
+                          <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                          <span className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--t-subtle)" }}>Items</span>
+                        </div>
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--t-text)" }}>{order.lineItems?.length ?? 0}</p>
+                      </div>
                     </div>
 
                     {/* Admin message */}
@@ -2161,6 +2228,7 @@ export default function AccountOrderDetail() {
                     {/* Items */}
                     {order.lineItems?.length > 0 && (
                       <div className="pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--t-border)" }}>
+                        <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Items</p>
                         {order.lineItems.map((li: OrderLineItem, i: number) => (
                           <div key={i} className={`flex justify-between text-sm items-center gap-2${li.isOos ? " opacity-55" : ""}`}>
                             <span className="flex items-center gap-1.5 flex-1 min-w-0" style={{ color: li.isOos ? "var(--t-subtle)" : "var(--t-text)", textDecoration: li.isOos ? "line-through" : "none" }}>
@@ -2178,6 +2246,7 @@ export default function AccountOrderDetail() {
 
                     {/* Totals */}
                     <div className="pt-3 space-y-1.5 text-sm" style={{ borderTop: "1px solid var(--t-border)" }}>
+                      <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Order Summary</p>
                       {order.productSubtotal > 0 && (
                         <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
                           <span>Products</span><span>{fmtC(order.productSubtotal, order.currency)}</span>
@@ -2222,9 +2291,9 @@ export default function AccountOrderDetail() {
                           <span>−${order.creditsApplied!.toFixed(2)} USD</span>
                         </div>
                       )}
-                      <div className="flex justify-between font-bold pt-2 mt-1" style={{ color: "var(--t-text)", borderTop: "1px solid var(--t-border)" }}>
-                        <span>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
-                        <span style={{ color: "var(--t-blue)" }}>
+                      <div className="flex items-center justify-between rounded-xl px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+                        <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
+                        <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
                           {order.currency === "GBP"
                             ? fmtC(order.grandTotal, order.currency)
                             : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
