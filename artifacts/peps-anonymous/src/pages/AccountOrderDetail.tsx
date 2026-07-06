@@ -6,7 +6,7 @@ import {
   ArrowLeft, Loader2, Truck, Package, MessageCircle,
   CheckCircle2, AlertCircle, Lock, Plus, Trash2, X, Copy, Check,
   QrCode, Upload, Download, ImagePlus, MapPin, ScanLine, TestTube, Clock, Coins,
-  ChevronDown, Pencil, FileText, PackageCheck,
+  ChevronDown, Pencil, FileText, PackageCheck, ReceiptText, Info,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -16,7 +16,7 @@ import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
 import { useOrderParcels, useAccount, useAccountOrders, useLogout, type GbParcel } from "@/hooks/use-account";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import { DashboardShell, SecIcon, STATUS_STYLE, HERO_GRAD, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
@@ -163,15 +163,6 @@ interface OrderDetail {
   updatedAt: string;
   lineItems: OrderLineItem[];
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-slate-100 text-slate-600",
-  Submitted: "bg-blue-50 text-blue-600",
-  Processing: "bg-blue-100 text-blue-700",
-  Shipped: "bg-purple-100 text-purple-700",
-  Completed: "bg-green-100 text-green-700",
-  Cancelled: "bg-red-100 text-red-600",
-};
 
 const EDITABLE_STATUSES = ["Draft", "Submitted"];
 
@@ -2054,24 +2045,43 @@ export default function AccountOrderDetail() {
                   exit={{ opacity: 0, y: -8 }}
                   className="space-y-4"
                 >
-                  {/* ===== Header ===== */}
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h1 className="font-display font-bold text-2xl sm:text-3xl tracking-tight" style={{ color: "var(--t-text)" }}>
-                        Order <span className="tracking-widest">{order.code}</span>
-                      </h1>
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className={cn("text-xs font-bold px-2.5 py-1 rounded-full", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
-                          {order.status}
-                        </span>
-                        {isPaidOrder && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "light-dark(#059669, #6ee7b7)", background: "rgba(16,185,129,0.14)" }}>
-                            <CheckCircle2 className="w-3 h-3" /> Paid
-                          </span>
+                  {/* ===== Header (dashboard hero) ===== */}
+                  {(() => {
+                    const hst = STATUS_STYLE[order.status] ?? { label: order.status, color: "#fff", bg: "rgba(255,255,255,0.16)", pct: 0 };
+                    return (
+                      <div className="relative overflow-hidden" style={{ borderRadius: 14, background: HERO_GRAD, padding: "22px 24px 20px" }}>
+                        <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.12), transparent 55%)", pointerEvents: "none" }} />
+                        <div className="relative flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-bold uppercase" style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,.62)" }}>Order</p>
+                            <h1 className="font-extrabold text-white tracking-widest" style={{ fontSize: 28, lineHeight: 1.1, marginTop: 4 }}>{order.code}</h1>
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                              <span className="inline-flex items-center gap-1.5 rounded-full font-bold" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.28)", color: "#fff" }}>
+                                <span className="rounded-full" style={{ width: 6, height: 6, background: hst.color === "#fff" ? "#fff" : hst.color }} />
+                                {hst.label}
+                              </span>
+                              {isPaidOrder && (
+                                <span className="inline-flex items-center gap-1 rounded-full font-bold" style={{ fontSize: 11, padding: "4px 10px", background: "rgba(16,185,129,0.22)", border: "1px solid rgba(16,185,129,0.42)", color: "#d1fae5" }}>
+                                  <CheckCircle2 className="w-3 h-3" /> Paid
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {order.status !== "Cancelled" && (
+                          <div className="relative mt-4">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="font-semibold uppercase" style={{ fontSize: 9.5, letterSpacing: "0.08em", color: "rgba(255,255,255,.6)" }}>Fulfilment</span>
+                              <span className="font-bold tabular-nums text-white" style={{ fontSize: 11 }}>{hst.pct}%</span>
+                            </div>
+                            <div className="rounded-full overflow-hidden" style={{ height: 6, background: "rgba(255,255,255,.16)" }}>
+                              <div style={{ width: `${hst.pct}%`, height: "100%", background: "#fff", borderRadius: 999 }} />
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* ===== Two-column layout (reference style) ===== */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5 items-start">
@@ -2104,12 +2114,15 @@ export default function AccountOrderDetail() {
 
                       {/* Items card */}
                       {order.lineItems?.length > 0 && (
-                        <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                          <h2 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Items <span style={{ color: "var(--t-subtle)" }}>({order.lineItems.length})</span></h2>
+                        <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <SecIcon Icon={Package} />
+                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Items <span style={{ color: "var(--t-subtle)", fontWeight: 700 }}>({order.lineItems.length})</span></span>
+                          </div>
                           <div>
                             {order.lineItems.map((li: OrderLineItem, i: number) => (
                               <div key={i} className={`flex items-center gap-3 py-2.5${li.isOos ? " opacity-55" : ""}`} style={i > 0 ? { borderTop: "1px solid var(--t-border)" } : undefined}>
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-08)" }}>
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-08)" }}>
                                   <Package className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -2127,8 +2140,11 @@ export default function AccountOrderDetail() {
                       )}
 
                       {/* Order summary card */}
-                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Order summary</h2>
+                      <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <SecIcon Icon={ReceiptText} />
+                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order summary</span>
+                        </div>
                         <div className="space-y-1.5 text-sm">
                           {order.productSubtotal > 0 && (
                             <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
@@ -2174,7 +2190,7 @@ export default function AccountOrderDetail() {
                               <span>−${order.creditsApplied!.toFixed(2)} USD</span>
                             </div>
                           )}
-                          <div className="flex items-center justify-between rounded-xl px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
+                          <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mt-2" style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}>
                             <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
                             <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
                               {order.currency === "GBP"
@@ -2242,8 +2258,11 @@ export default function AccountOrderDetail() {
 
                       {/* Direct / wholesale tracking number — parcel card style */}
                       {order.trackingNumber && (
-                        <div className="rounded-2xl p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                          <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Tracking</h2>
+                        <div className="rounded-lg p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <div className="flex items-center gap-2">
+                            <SecIcon Icon={Truck} />
+                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Tracking</span>
+                          </div>
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>
@@ -2286,8 +2305,11 @@ export default function AccountOrderDetail() {
                     {/* ---------- SIDEBAR ---------- */}
                     <div className="space-y-4 min-w-0">
                       {/* Order details */}
-                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Order details</h2>
+                      <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <SecIcon Icon={Info} />
+                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Order details</span>
+                        </div>
                         <div className="space-y-2.5 text-sm">
                           <div className="flex items-start justify-between gap-3">
                             <span className="shrink-0" style={{ color: "var(--t-muted)" }}>Telegram</span>
@@ -2305,8 +2327,11 @@ export default function AccountOrderDetail() {
                       </div>
 
                       {/* Timeline */}
-                      <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                        <h2 className="text-sm font-bold mb-3" style={{ color: "var(--t-text)" }}>Timeline</h2>
+                      <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <SecIcon Icon={Clock} />
+                          <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Timeline</span>
+                        </div>
                         {order.status === "Cancelled" ? (
                           <div className="flex items-center gap-2 text-sm">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#ef4444" }} />
@@ -2348,8 +2373,11 @@ export default function AccountOrderDetail() {
 
                       {/* Notes */}
                       {order.notes && (
-                        <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                          <h2 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Notes</h2>
+                        <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <SecIcon Icon={FileText} />
+                            <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Notes</span>
+                          </div>
                           <p className="text-sm whitespace-pre-line break-words" style={{ color: "var(--t-muted)" }}>{order.notes}</p>
                         </div>
                       )}
