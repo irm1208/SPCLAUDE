@@ -10,7 +10,9 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useState, useEffect } from "react";
 import PaymentPanel from "@/components/PaymentPanel";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, useAccountOrders, useLogout } from "@/hooks/use-account";
+import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
+import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { COUNTRIES } from "@/data/countries";
 import { generateReceiptPDF, type Receipt, type ReceiptLineItem } from "@/lib/generate-receipt-pdf";
 
@@ -254,9 +256,45 @@ function InPostNotice() {
   );
 }
 
+function SuccessShell({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  const { account, isLoggedIn } = useAccount();
+  const { data: ordersData } = useAccountOrders(null, isLoggedIn);
+  const logoutMutation = useLogout();
+  const [hubMoreOpen, setHubMoreOpen] = useState(false);
+  const handleLogout = () => { logoutMutation.mutate(); navigate("/"); };
+  const goSection = (s: string) =>
+    navigate(s === "home" ? "/account" : `/account?s=${encodeURIComponent(s)}`);
+
+  const navProps = {
+    section: "orders",
+    setSection: goSection,
+    hubMoreOpen,
+    setHubMoreOpen,
+    account,
+  } as unknown as PortalNavProps;
+
+  return (
+    <DashboardShell
+      activeSection="orders"
+      title="Order Complete"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={(ordersData ?? []) as DashOrder[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={goSection}
+      onLogout={handleLogout}
+      navProps={navProps}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
+
 export default function Success() {
   const [, setLocation] = useLocation();
-  const { account } = useAccount();
+  const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const searchParams = new URLSearchParams(window.location.search);
   const action = searchParams.get("action") || "created";
   const orderId = searchParams.get("oid") || "";
@@ -301,8 +339,13 @@ export default function Success() {
     }
   };
 
+  // Logged-in customers get the dashboard chrome (sidebar navigation);
+  // logged-out visitors keep the plain public layout.
+  const useDashChrome = isLoggedIn || accountLoading;
+  const Chrome = useDashChrome ? SuccessShell : PageLayout;
+
   return (
-    <PageLayout>
+    <Chrome>
     <div className="flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
       <SiteAnnouncements />
 
@@ -539,13 +582,15 @@ export default function Success() {
 
       </main>
     </div>
-    <HubBottomNav
-      section={hubSection}
-      setSection={(s) => { setHubSection(s); setLocation(`/account?s=${s}`); }}
-      hubMoreOpen={hubMoreOpen}
-      setHubMoreOpen={setHubMoreOpen}
-      account={account}
-    />
-    </PageLayout>
+    {!useDashChrome && (
+      <HubBottomNav
+        section={hubSection}
+        setSection={(s) => { setHubSection(s); setLocation(`/account?s=${s}`); }}
+        hubMoreOpen={hubMoreOpen}
+        setHubMoreOpen={setHubMoreOpen}
+        account={account}
+      />
+    )}
+    </Chrome>
   );
 }
