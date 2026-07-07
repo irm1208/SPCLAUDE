@@ -5,6 +5,7 @@ import {
   Scale, LineChart, Users, UsersRound, User, MessageCircle, History,
   Store, TestTube, LogOut, Sun, Moon, Home,
   ReceiptText, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
+  GraduationCap, Calculator as CalcIcon,
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
@@ -152,7 +153,9 @@ export function HubBottomNav({
     {
       label: "Research",
       items: [
-        { key: "protocols", label: "Protocols", Icon: BookMarked, onClick: () => go("/account?s=protocols") },
+        { key: "protocols",    label: "Protocols",    Icon: BookMarked,    onClick: () => go("/protocols") },
+        { key: "learn",        label: "Learning Hub", Icon: GraduationCap, onClick: () => go("/learn") },
+        { key: "calculator",   label: "Calculator",   Icon: CalcIcon,      onClick: () => go("/calculator") },
       ],
     },
     {

@@ -5,6 +5,7 @@ import {
   Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send, Ticket,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
+  BookMarked, GraduationCap, Calculator as CalcIcon,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useAccount, useAccountNotifications } from "@/hooks/use-account";
@@ -308,6 +309,11 @@ export function DashboardShell({
           { id: "shared-orders", label: "Shared Orders", Icon: Users, active: activeSection === "shared-orders", go: () => navigate("/wholesale/shared") },
         ]
       : []),
+  ];
+  const researchItems: SideLink[] = [
+    { id: "protocols",   label: "Protocols",     Icon: BookMarked,    active: activeSection === "protocols",   go: () => navigate("/protocols") },
+    { id: "learn",       label: "Learning Hub",  Icon: GraduationCap, active: activeSection === "learn",       go: () => navigate("/learn") },
+    { id: "calculator",  label: "Calculator",    Icon: CalcIcon,      active: activeSection === "calculator",  go: () => navigate("/calculator") },
   ];
   const moreItems: SideLink[] = [
     { id: "lab-pool", label: "Pool Leaders", Icon: TestTube, active: activeSection === "lab-pool", go: () => onSection("lab-pool") },
@@ -616,6 +622,28 @@ export function DashboardShell({
                   </nav>
                 </>
               )}
+
+              {/* Research */}
+              <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Research</p>
+              <nav className="flex flex-col gap-0.5">
+                {researchItems.map(({ id, label, Icon, active, go }) => (
+                  <button
+                    key={id}
+                    onClick={go}
+                    className={active ? "relative w-full flex items-center rounded-md transition-all text-left" : "dh-nav relative w-full flex items-center rounded-md transition-all text-left"}
+                    style={{
+                      gap: 11, padding: "0 12px", height: 40,
+                      background: active ? (dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)") : "transparent",
+                      color: active ? ACCENT : T.muted,
+                      fontWeight: active ? 700 : 600, fontSize: 13.5,
+                    }}
+                  >
+                    {active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
+                    <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
 
               {/* More */}
               <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>More</p>
