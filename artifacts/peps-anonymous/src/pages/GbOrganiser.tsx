@@ -6774,6 +6774,10 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [orgQrSaving, setOrgQrSaving] = useState<Record<string, boolean>>({});
   const [orgQrMsg, setOrgQrMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
 
+  // Wholesale vendor order modal
+  const [, gbNavigate] = useLocation();
+  const [wholesaleModal, setWholesaleModal] = useState<{ items: { name: string; qty: number }[] } | null>(null);
+
   // Create Order form state
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [gbProducts, setGbProducts] = useState<OrgProduct[]>([]);
@@ -6985,6 +6989,14 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         .catch(() => {});
     }
   }, [loadOrders, gb.id, gb.countryLegsEnabled]);
+
+  // Load GB products on mount so the "Place Vendor Order" button can check vendor tags
+  useEffect(() => {
+    fetch(`/api/organiser/group-buys/${gb.id}/products`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((d: OrgProduct[]) => setGbProducts(d))
+      .catch(() => {});
+  }, [gb.id]);
 
   useEffect(() => {
     if (!intlShipOpen || countryFilter === "all") return;
@@ -7271,13 +7283,104 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const totalUnpaid = unpaidOrders.reduce((s, o) => s + o.grandTotal, 0);
   const unpaidCount = unpaidOrders.length;
 
+  // Uther vendor aggregation helpers
+  const utherProductIds = new Set(gbProducts.filter(p => p.vendor?.toLowerCase() === "uther").map(p => p.id));
+  const hasUtherProducts = utherProductIds.size > 0;
+
+  function openVendorOrderModal() {
+    const aggregated: Record<string, number> = {};
+    for (const o of orders) {
+      if (o.status === "Cancelled" || o.status === "Draft") continue;
+      for (const li of o.lineItems) {
+        if (utherProductIds.has(li.productId)) {
+          aggregated[li.productName] = (aggregated[li.productName] ?? 0) + li.quantity;
+        }
+      }
+    }
+    const items = Object.entries(aggregated)
+      .map(([name, qty]) => ({ name, qty }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (items.length === 0) { alert("No Uther products found in active orders."); return; }
+    setWholesaleModal({ items });
+  }
+
   return (
     <div className="space-y-4">
+      {/* Vendor wholesale order modal */}
+      <AnimatePresence>
+        {wholesaleModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+            onClick={() => setWholesaleModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-md rounded-2xl overflow-hidden"
+              style={{ background: "var(--t-panel)", border: "1.5px solid var(--t-border)", boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--t-border)" }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "var(--t-blue)" }}>Uther Vendor Order</p>
+                    <h3 className="text-base font-extrabold" style={{ color: "var(--t-text)" }}>Place Wholesale Order</h3>
+                  </div>
+                  <button onClick={() => setWholesaleModal(null)} style={{ color: "var(--t-muted)" }}><X className="w-5 h-5" /></button>
+                </div>
+                <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--t-muted)" }}>
+                  This aggregates all active orders' Uther products and pre-fills a wholesale order. The group buy stays unchanged — this is only for placing the vendor order.
+                </p>
+              </div>
+              <div className="px-5 py-4 max-h-72 overflow-y-auto space-y-1">
+                {wholesaleModal.items.map(item => (
+                  <div key={item.name} className="flex items-center justify-between py-1.5 border-b last:border-0" style={{ borderColor: "var(--t-border)" }}>
+                    <span className="text-sm font-medium" style={{ color: "var(--t-text)" }}>{item.name}</span>
+                    <span className="text-sm font-bold tabular-nums ml-4" style={{ color: "var(--t-blue-deep)" }}>{item.qty} kit{item.qty !== 1 ? "s" : ""}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 pb-5 pt-3 flex gap-2">
+                <button
+                  onClick={() => setWholesaleModal(null)}
+                  className="flex-1 h-10 rounded-xl text-sm font-bold"
+                  style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    sessionStorage.setItem("peps:gb-wholesale-prefill", JSON.stringify({
+                      items: wholesaleModal.items.map(i => ({ name: i.name, quantity: i.qty })),
+                    }));
+                    setWholesaleModal(null);
+                    gbNavigate("/wholesale");
+                  }}
+                  className="flex-1 h-10 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-1.5"
+                  style={{ background: "var(--t-blue-deep)" }}
+                >
+                  <Package className="w-4 h-4" /> Open Wholesale Page
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <PendingConfirmationsPanel gb={gb} onResolved={loadOrders} />
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Orders — {gb.name}</h2>
           <div className="flex items-center gap-2">
+            {hasUtherProducts && orders.length > 0 && (
+              <button
+                onClick={openVendorOrderModal}
+                className="h-8 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                style={{ background: "#0f766e22", border: "1px solid #0f766e44", color: "#0f766e" }}
+              >
+                <Package className="w-3.5 h-3.5" /> Place Vendor Order
+              </button>
+            )}
             <button onClick={openCreateOrder} className="h-8 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5" style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-blue-15, rgba(27,58,122,0.15))", color: "var(--t-blue-deep)" }}>
               <Plus className="w-3.5 h-3.5" /> Create Order
             </button>

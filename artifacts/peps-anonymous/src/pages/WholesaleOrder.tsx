@@ -111,9 +111,21 @@ export default function WholesaleOrder() {
   const draftInitialised = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveAbort = useRef<AbortController | null>(null);
+  // Holds name-based prefill from GB organiser "Place Vendor Order" until products resolve
+  const gbPrefillRef = useRef<{ name: string; quantity: number }[]>([]);
 
   // Restore draft on mount: edit/reorder sessionStorage keys take priority, then DB draft
   useEffect(() => {
+    // GB organiser prefill — stored by name, resolved to product IDs after catalog loads
+    const gbPrefillRaw = sessionStorage.getItem("peps:gb-wholesale-prefill");
+    if (gbPrefillRaw) {
+      try {
+        const d = JSON.parse(gbPrefillRaw);
+        if (Array.isArray(d.items)) gbPrefillRef.current = d.items;
+      } catch {}
+      sessionStorage.removeItem("peps:gb-wholesale-prefill");
+    }
+
     const editRaw = sessionStorage.getItem("peps:edit-wholesale");
     const reorderRaw = sessionStorage.getItem("peps:reorder-wholesale");
 
@@ -255,6 +267,24 @@ export default function WholesaleOrder() {
       .then(d => setVendor(d))
       .catch(() => {})
       .finally(() => setVendorLoading(false));
+  }, []);
+
+  // Resolve GB prefill once the product catalog is available
+  useEffect(() => {
+    if (products.length === 0 || gbPrefillRef.current.length === 0) return;
+    const items = gbPrefillRef.current;
+    gbPrefillRef.current = [];
+    const resolved: Record<string, number> = {};
+    for (const item of items) {
+      const match = products.find(
+        p => p.name.toLowerCase() === item.name.toLowerCase() && p.active !== false
+      );
+      if (match) resolved[match.id] = (resolved[match.id] ?? 0) + item.quantity;
+    }
+    if (Object.keys(resolved).length > 0) setQuantities(resolved);
+  }, [products]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once for config
     fetch("/api/config")
       .then(r => r.ok ? r.json() : null)
       .then(d => {
