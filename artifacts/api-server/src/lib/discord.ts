@@ -2,6 +2,8 @@ import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 
+const DISCORD_TOKEN_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 const DISCORD_API = "https://discord.com/api/v10";
 
 // ── Credential cache ──────────────────────────────────────────────────────────
@@ -141,7 +143,12 @@ export async function notifyUserDiscord(telegramUsername: string, prefKey: strin
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
     const [account] = await db
-      .select({ discordId: accountsTable.discordId, telegramNotifications: accountsTable.telegramNotifications })
+      .select({
+        discordId: accountsTable.discordId,
+        telegramNotifications: accountsTable.telegramNotifications,
+        discordRefreshToken: accountsTable.discordRefreshToken,
+        discordTokenExpiresAt: accountsTable.discordTokenExpiresAt,
+      })
       .from(accountsTable)
       .where(eq(accountsTable.telegramUsername, bare));
 
@@ -149,6 +156,15 @@ export async function notifyUserDiscord(telegramUsername: string, prefKey: strin
 
     // Respect the same notification preference the user set for Telegram
     if (!checkPref(account.telegramNotifications, prefKey)) return;
+
+    // Refresh the OAuth token if it is within 24h of expiry or already expired
+    if (account.discordRefreshToken) {
+      const expiresAt = account.discordTokenExpiresAt ? new Date(account.discordTokenExpiresAt).getTime() : 0;
+      const needsRefresh = expiresAt - Date.now() < DISCORD_TOKEN_REFRESH_WINDOW_MS;
+      if (needsRefresh) {
+        await refreshDiscordToken(bare, account.discordRefreshToken);
+      }
+    }
 
     // Convert HTML to plain text for Discord
     const plain = htmlText
@@ -253,6 +269,58 @@ export async function fetchDiscordUser(accessToken: string): Promise<{
     });
     if (!res.ok) return null;
     return await res.json() as { id: string; username: string; avatar: string | null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh a Discord OAuth2 access token for the given account (identified by
+ * telegramUsername). Calls /oauth2/token with grant_type=refresh_token and
+ * persists the new access_token, refresh_token, and expires_at back to the DB.
+ *
+ * Returns the new access token on success, null on failure.
+ */
+export async function refreshDiscordToken(
+  telegramUsername: string,
+  refreshToken: string,
+): Promise<string | null> {
+  const clientId = process.env["DISCORD_CLIENT_ID"] ?? "";
+  const clientSecret = process.env["DISCORD_CLIENT_SECRET"] ?? "";
+  if (!clientId || !clientSecret || !refreshToken) return null;
+
+  try {
+    const res = await fetch(`${DISCORD_API}/oauth2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json() as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    };
+
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+    await db
+      .update(accountsTable)
+      .set({
+        discordAccessToken: data.access_token,
+        discordRefreshToken: data.refresh_token,
+        discordTokenExpiresAt: expiresAt,
+      })
+      .where(eq(accountsTable.telegramUsername, telegramUsername));
+
+    return data.access_token;
   } catch {
     return null;
   }
