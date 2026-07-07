@@ -219,6 +219,16 @@ export function HubBottomNav({
     <>
       <style>{`
         .hbn-row:hover { background: ${T.chip} !important; }
+        @keyframes hbn-pulse {
+          0%,100% { opacity: 1; transform: scale(1); }
+          50%      { opacity: 0.55; transform: scale(0.92); }
+        }
+        @keyframes hbn-ring {
+          0%   { transform: translate(-50%,-50%) scale(0.85); opacity: 0.7; }
+          100% { transform: translate(-50%,-50%) scale(1.55); opacity: 0; }
+        }
+        .hbn-label-pulse { animation: hbn-pulse 2s ease-in-out infinite; }
+        .hbn-ring        { animation: hbn-ring 1.8s ease-out infinite; }
       `}</style>
 
       {/* Backdrop */}
@@ -358,30 +368,62 @@ export function HubBottomNav({
           {BAR_LEFT.map(barItem)}
 
           {/* Center menu button */}
-          <button
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            aria-label={open ? "Close menu" : "Open menu"}
-            className="flex items-center justify-center rounded-full shrink-0 transition-all"
-            style={{
-              width: 44, height: 44,
-              margin: "0 6px",
-              background: ACCENT,
-              color: "#fff",
-              boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
-            }}
-          >
-            <span
-              className="select-none"
+          <div className="relative flex flex-col items-center shrink-0" style={{ margin: "0 6px" }}>
+            {/* "Menu" label above */}
+            {!open && (
+              <span
+                className="hbn-label-pulse absolute select-none pointer-events-none"
+                style={{
+                  top: -18, left: "50%", transform: "translateX(-50%)",
+                  fontSize: 9, fontWeight: 800, letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "#fff",
+                  background: ACCENT,
+                  borderRadius: 99,
+                  padding: "2px 6px",
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 2px 8px rgba(1,118,211,0.5)",
+                }}
+              >
+                Menu
+              </span>
+            )}
+            {/* Pulsing ring (only when closed) */}
+            {!open && (
+              <span
+                className="hbn-ring absolute pointer-events-none"
+                style={{
+                  top: "50%", left: "50%",
+                  width: 44, height: 44,
+                  borderRadius: "50%",
+                  border: `2px solid ${ACCENT}`,
+                }}
+              />
+            )}
+            <button
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
+              aria-label={open ? "Close menu" : "Open menu"}
+              className="flex items-center justify-center rounded-full transition-all"
               style={{
-                fontWeight: 800, fontSize: 12.5, letterSpacing: "-0.02em",
-                transform: open ? "scale(0.85)" : "scale(1)",
-                transition: "transform 220ms ease",
+                width: 44, height: 44,
+                background: ACCENT,
+                color: "#fff",
+                boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
               }}
             >
-              S&amp;P
-            </span>
-          </button>
+              <span
+                className="select-none"
+                style={{
+                  fontWeight: 800, fontSize: 12.5, letterSpacing: "-0.02em",
+                  transform: open ? "scale(0.85)" : "scale(1)",
+                  transition: "transform 220ms ease",
+                }}
+              >
+                S&amp;P
+              </span>
+            </button>
+          </div>
 
           {BAR_RIGHT.map(barItem)}
         </div>
