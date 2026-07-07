@@ -2435,7 +2435,7 @@ export default function AccountOrderDetail() {
                           <SecIcon Icon={Pencil} />
                           <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                         </div>
-                        {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false ? (
+                        {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" ? (
                           <button
                             className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                             style={{ background: ACCENT, padding: "10px 16px" }}

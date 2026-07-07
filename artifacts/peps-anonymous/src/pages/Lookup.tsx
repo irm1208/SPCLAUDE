@@ -1410,7 +1410,7 @@ export default function Lookup() {
                 })}
 
                 {/* Edit / Top-up buttons */}
-                {foundOrder.paymentStatus === "confirmed" && foundOrder.groupBuyAllowOrderAddons !== false ? (
+                {foundOrder.paymentStatus === "confirmed" && foundOrder.groupBuyAllowOrderAddons !== false && (foundOrder as any).orderType !== "wholesale" ? (
                   <div className="space-y-3">
                     <button
                       className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.98] hover:brightness-110"
