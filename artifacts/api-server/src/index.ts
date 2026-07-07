@@ -206,6 +206,23 @@ async function runStartupMigrations(): Promise<void> {
     // accounts — audit timestamps
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
+    // accounts — Discord integration columns
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_id text`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_username text`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_avatar text`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_access_token text`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_refresh_token text`);
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discord_token_expires_at timestamptz`);
+    // Add unique constraint on discord_id if not exists
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'accounts_discord_id_unique'
+        ) THEN
+          ALTER TABLE accounts ADD CONSTRAINT accounts_discord_id_unique UNIQUE (discord_id);
+        END IF;
+      END $$
+    `);
     // accounts — columns from merged branch (discuss, reset, pool leader, organiser, wholesale, phone, etc.)
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discuss_count integer NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS discuss_count_date date`);
