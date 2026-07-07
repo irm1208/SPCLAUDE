@@ -431,7 +431,7 @@ export async function notifyUser(
   // Fire both Telegram and Discord in parallel; failures are independent
   await Promise.all([
     notifyUserFull(telegramUsername, prefKey, text),
-    notifyUserDiscord(telegramUsername, text).catch(() => {}),
+    notifyUserDiscord(telegramUsername, prefKey, text).catch(() => {}),
   ]);
 }
 

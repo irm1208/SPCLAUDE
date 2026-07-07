@@ -107,19 +107,34 @@ export async function sendAdminDiscordMessage(content: string): Promise<boolean>
 }
 
 /**
+ * Check whether the notification preference `prefKey` is enabled for an account.
+ * Defaults to true (opt-in) for all keys, mirroring parsePrefKey in telegram.ts.
+ * Uses telegramNotifications JSON column so Discord honours the same user prefs.
+ */
+function checkPref(prefs: unknown, prefKey: string): boolean {
+  if (!prefs || typeof prefs !== "object") return true;
+  const p = prefs as Record<string, unknown>;
+  return typeof p[prefKey] === "boolean" ? (p[prefKey] as boolean) : true;
+}
+
+/**
  * Send a Discord DM to a user identified by their telegramUsername.
+ * Respects the same notification preference (prefKey) as Telegram.
  * Looks up their discord_id, converts HTML text to plain text, and sends.
  * Best-effort — failures are silently ignored.
  */
-export async function notifyUserDiscord(telegramUsername: string, htmlText: string): Promise<void> {
+export async function notifyUserDiscord(telegramUsername: string, prefKey: string, htmlText: string): Promise<void> {
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
     const [account] = await db
-      .select({ discordId: accountsTable.discordId })
+      .select({ discordId: accountsTable.discordId, telegramNotifications: accountsTable.telegramNotifications })
       .from(accountsTable)
       .where(eq(accountsTable.telegramUsername, bare));
 
     if (!account?.discordId) return;
+
+    // Respect the same notification preference the user set for Telegram
+    if (!checkPref(account.telegramNotifications, prefKey)) return;
 
     // Convert HTML to plain text for Discord
     const plain = htmlText
@@ -171,7 +186,7 @@ export async function getDiscordBotStatus(): Promise<{
 
 // ── OAuth helpers ─────────────────────────────────────────────────────────────
 
-export function buildDiscordAuthUrl(redirectUri: string, state: string, scopes = ["identify"]): string {
+export function buildDiscordAuthUrl(redirectUri: string, state: string, scopes = ["identify", "email"]): string {
   const clientId = process.env["DISCORD_CLIENT_ID"] ?? "";
   const params = new URLSearchParams({
     client_id: clientId,
@@ -179,7 +194,6 @@ export function buildDiscordAuthUrl(redirectUri: string, state: string, scopes =
     response_type: "code",
     scope: scopes.join(" "),
     state,
-    prompt: "none",
   });
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
