@@ -7326,7 +7326,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                   Aggregates all active orders and pre-fills a wholesale order. The group buy stays unchanged — this is only for placing the vendor order.
                 </p>
               </div>
-              <div className="px-5 py-4 max-h-72 overflow-y-auto space-y-1">
+              <div className="px-5 py-4 max-h-72 overflow-y-auto space-y-1" style={{ background: "var(--t-panel)" }}>
                 {wholesaleModal.items.map(item => (
                   <div key={item.name} className="flex items-center justify-between py-1.5 border-b last:border-0" style={{ borderColor: "var(--t-border)" }}>
                     <span className="text-sm font-medium" style={{ color: "var(--t-text)" }}>{item.name}</span>
