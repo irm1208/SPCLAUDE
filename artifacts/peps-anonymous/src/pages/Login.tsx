@@ -305,7 +305,7 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 pt-10 pb-28">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
           {/* Centre avatar */}
           <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-6"
