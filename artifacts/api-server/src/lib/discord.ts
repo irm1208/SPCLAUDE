@@ -14,16 +14,29 @@ interface DiscordCredCache {
 let _credCache: DiscordCredCache | null = null;
 const CACHE_TTL_MS = 60_000;
 
+/**
+ * Resolve Discord credentials.
+ * Bot token and webhook URL are resolved INDEPENDENTLY:
+ *   - env var takes priority per-field
+ *   - if a field is absent from env, it falls back to site_config DB
+ * This means having DISCORD_BOT_TOKEN in env does NOT prevent a webhook URL
+ * saved via the admin UI from being used (and vice versa).
+ */
 export async function getDiscordCredentials(): Promise<{ botToken: string; webhookUrl: string }> {
   const envBot = process.env["DISCORD_BOT_TOKEN"] ?? "";
   const envWebhook = process.env["DISCORD_ADMIN_WEBHOOK_URL"] ?? "";
 
-  if (envBot) {
+  // If both are in env, skip DB entirely
+  if (envBot && envWebhook) {
     return { botToken: envBot, webhookUrl: envWebhook };
   }
 
+  // Use cache if fresh (still need DB for whichever field is missing from env)
   if (_credCache && Date.now() - _credCache.loadedAt < CACHE_TTL_MS) {
-    return { botToken: envBot || _credCache.botToken, webhookUrl: envWebhook || _credCache.webhookUrl };
+    return {
+      botToken: envBot || _credCache.botToken,
+      webhookUrl: envWebhook || _credCache.webhookUrl,
+    };
   }
 
   try {
@@ -35,6 +48,7 @@ export async function getDiscordCredentials(): Promise<{ botToken: string; webho
     const dbToken = rows.find((r: { key: string; value: string }) => r.key === "discordBotToken")?.value ?? "";
     const dbWebhook = rows.find((r: { key: string; value: string }) => r.key === "discordAdminWebhookUrl")?.value ?? "";
     _credCache = { botToken: dbToken, webhookUrl: dbWebhook, loadedAt: Date.now() };
+    // env always wins per-field; DB fills in whatever env is missing
     return { botToken: envBot || dbToken, webhookUrl: envWebhook || dbWebhook };
   } catch {
     return { botToken: envBot, webhookUrl: envWebhook };
