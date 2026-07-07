@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
@@ -88,6 +88,7 @@ export default function WholesaleOrder() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftSavedFlash, setDraftSavedFlash] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   useEffect(() => {
     if (!accountLoading) {
@@ -1035,59 +1036,193 @@ export default function WholesaleOrder() {
           </motion.div>
         </main>
 
-        <TotalBarShell>
-          <div className="max-w-3xl mx-auto px-4 pt-3 pb-4">
-            {(() => {
-              const lowItems = lineItems.filter(li => {
-                const p = activeProducts.find(x => x.id === li.productId);
-                return getStockLevel(p?.stock) === "low";
-              });
-              if (lowItems.length === 0) return null;
-              return (
-                <div className="mb-2 px-3 py-2 rounded-lg text-xs flex items-start gap-2"
-                  style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.2)", color: "#f97316" }}>
-                  <span className="mt-px">⚠</span>
-                  <span>{lowItems.length} item{lowItems.length !== 1 ? "s" : ""} in your order {lowItems.length !== 1 ? "have" : "has"} low stock — order soon to avoid delays.</span>
+      </div>
+
+      {/* ── Floating order summary tab ───────────────────────────────────────── */}
+      <AnimatePresence>
+        {!summaryOpen && (
+          <motion.button
+            key="summary-tab"
+            initial={{ x: 40, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 40, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 350, damping: 28 }}
+            onClick={() => setSummaryOpen(true)}
+            className="fixed right-0 z-40 flex flex-col items-center justify-center gap-1.5 rounded-l-2xl shadow-xl"
+            style={{
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: 40,
+              paddingTop: 18,
+              paddingBottom: 18,
+              background: "var(--t-blue)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+            }}
+            aria-label="Open order summary"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            {lineItems.length > 0 && (
+              <span
+                className="flex items-center justify-center rounded-full text-[9px] font-black leading-none"
+                style={{ width: 18, height: 18, background: "#fff", color: "var(--t-blue)", minWidth: 18 }}
+              >
+                {lineItems.length}
+              </span>
+            )}
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {summaryOpen && (
+          <>
+            <motion.div
+              key="summary-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40"
+              style={{ background: "rgba(0,0,0,0.35)" }}
+              onClick={() => setSummaryOpen(false)}
+            />
+            <motion.div
+              key="summary-panel"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 32 }}
+              className="fixed inset-y-0 right-0 z-50 flex flex-col shadow-2xl"
+              style={{
+                width: 288,
+                background: "var(--t-surface)",
+                borderLeft: "1px solid var(--t-border)",
+              }}
+            >
+              {/* Header */}
+              <div
+                className="flex items-center justify-between px-4 shrink-0"
+                style={{ height: 52, borderBottom: "1px solid var(--t-border)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
+                  <span className="font-bold text-sm" style={{ color: "var(--t-text)" }}>Order Summary</span>
                 </div>
-              );
-            })()}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-                  {lineItems.length === 0
-                    ? "No items selected"
-                    : `${lineItems.length} product${lineItems.length !== 1 ? "s" : ""} · ${totalKits} kit${totalKits !== 1 ? "s" : ""}`}
-                </p>
-                {productSubtotal > 0 && (
-                  <div>
-                    <p className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
-                      ${productSubtotal.toFixed(2)}
-                    </p>
-                    {computedVendorShipping !== null && (
-                      <p className="text-xs font-medium" style={{ color: "var(--t-muted)" }}>
-                        + ${computedVendorShipping.toFixed(2)} vendor shipping ({selectedRegion?.name})
-                      </p>
-                    )}
-                    {vendor && selectedRegionIdx === null && totalKits > 0 && (
-                      <p className="text-xs" style={{ color: "#F24908" }}>Select a shipping region above</p>
-                    )}
+                <button
+                  onClick={() => setSummaryOpen(false)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-60"
+                  style={{ color: "var(--t-muted)" }}
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Items list */}
+              <div className="flex-1 overflow-y-auto px-4 py-3">
+                {lineItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 py-10">
+                    <ShoppingCart className="w-8 h-8" style={{ color: "var(--t-border)" }} />
+                    <p className="text-sm text-center" style={{ color: "var(--t-muted)" }}>No items selected yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {lineItems.map(item => (
+                      <div
+                        key={item.productId}
+                        className="flex items-start justify-between gap-3 py-2"
+                        style={{ borderBottom: "1px solid var(--t-border)" }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold leading-snug break-words" style={{ color: "var(--t-text)" }}>
+                            {item.productName}
+                          </p>
+                          <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
+                            × {item.quantity} kit{item.quantity !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                        <span className="text-xs font-bold shrink-0 tabular-nums" style={{ color: "var(--t-text)" }}>
+                          ${item.lineTotal.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* Totals */}
+              {productSubtotal > 0 && (
+                <div
+                  className="px-4 py-3 space-y-2 shrink-0"
+                  style={{ borderTop: "1px solid var(--t-border)" }}
+                >
+                  {/* Low stock warning */}
+                  {(() => {
+                    const lowItems = lineItems.filter(li => {
+                      const p = activeProducts.find(x => x.id === li.productId);
+                      return getStockLevel(p?.stock) === "low";
+                    });
+                    if (lowItems.length === 0) return null;
+                    return (
+                      <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-lg text-[11px]"
+                        style={{ background: "rgba(249,115,22,0.08)", color: "#f97316" }}>
+                        <span className="mt-px shrink-0">⚠</span>
+                        <span>{lowItems.length} item{lowItems.length !== 1 ? "s have" : " has"} low stock</span>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex justify-between text-xs">
+                    <span style={{ color: "var(--t-muted)" }}>
+                      Subtotal ({totalKits} kit{totalKits !== 1 ? "s" : ""})
+                    </span>
+                    <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>
+                      ${productSubtotal.toFixed(2)}
+                    </span>
+                  </div>
+                  {computedVendorShipping !== null && (
+                    <div className="flex justify-between text-xs">
+                      <span style={{ color: "var(--t-muted)" }}>Vendor shipping ({selectedRegion?.name})</span>
+                      <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>
+                        ${computedVendorShipping.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {vendor && selectedRegionIdx === null && totalKits > 0 && (
+                    <p className="text-[11px]" style={{ color: "#F24908" }}>Select a shipping region above</p>
+                  )}
+                  {computedVendorShipping !== null && (
+                    <div
+                      className="flex justify-between text-sm font-bold pt-1.5"
+                      style={{ borderTop: "1px solid var(--t-border)" }}
+                    >
+                      <span style={{ color: "var(--t-text)" }}>Estimated total</span>
+                      <span className="tabular-nums" style={{ color: "var(--t-text)" }}>
+                        ${(productSubtotal + computedVendorShipping).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div
+                className="px-4 py-4 space-y-2.5 shrink-0"
+                style={{ borderTop: "1px solid var(--t-border)", paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+              >
                 <button
                   onClick={handleSaveDraft}
                   disabled={!draftHasContent || draftSaving}
-                  className="flex items-center gap-2 h-12 px-4 rounded-xl text-sm font-bold transition-all disabled:opacity-40 active:scale-[0.98]"
+                  className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-bold transition-all disabled:opacity-40 active:scale-[0.98]"
                   style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
                 >
                   {draftSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSavedFlash ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                  {draftSavedFlash ? "Saved" : "Save draft"}
+                  {draftSavedFlash ? "Saved!" : "Save draft"}
                 </button>
                 <button
-                  onClick={handleReview}
+                  onClick={() => { setSummaryOpen(false); handleReview(); }}
                   disabled={lineItems.length === 0}
-                  className="flex items-center gap-2 h-12 px-6 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
+                  className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98] hover:brightness-110"
                   style={{ background: "var(--t-blue)" }}
                 >
                   <ShoppingCart className="w-4 h-4" />
@@ -1095,10 +1230,10 @@ export default function WholesaleOrder() {
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          </div>
-        </TotalBarShell>
-      </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {labTestsProduct && (
@@ -1113,17 +1248,3 @@ export default function WholesaleOrder() {
   );
 }
 
-function TotalBarShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="sticky bottom-[calc(70px_+_env(safe-area-inset-bottom))] lg:bottom-0 backdrop-blur-xl border-t z-20"
-      style={{
-        background: "var(--t-surface)",
-        borderColor: "var(--t-border)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
