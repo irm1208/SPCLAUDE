@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable, telegramMessageLogsTable, ticketTelegramMessagesTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { REGISTRY_MAP } from "./telegram-registry";
-import { notifyUserDiscord, sendAdminDiscordMessage } from "./discord";
+import { sendAdminDiscordMessage } from "./discord";
 
 export interface TelegramPrefs {
   status: boolean;
@@ -428,11 +428,7 @@ export async function notifyUser(
   prefKey: keyof TelegramPrefs,
   text: string,
 ): Promise<void> {
-  // Fire both Telegram and Discord in parallel; failures are independent
-  await Promise.all([
-    notifyUserFull(telegramUsername, prefKey, text),
-    notifyUserDiscord(telegramUsername, prefKey, text).catch(() => {}),
-  ]);
+  await notifyUserFull(telegramUsername, prefKey, text);
 }
 
 /**
