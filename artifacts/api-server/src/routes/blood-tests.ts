@@ -4,16 +4,8 @@ import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accoun
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
-import { GoogleGenAI } from "../lib/google-genai";
+import { callSageAI } from "../lib/sage-ai";
 import { logCustomerActivity } from "../lib/activity-log";
-
-const gemini = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
 
 const router: IRouter = Router();
 
@@ -112,12 +104,11 @@ Rules:
 - topic must be snake_case, 5–35 chars (e.g. "high_shbg_trt_causes", "anastrozole_rebound_e2", "oestradiol_low_ai_over_control")
 - Return [] if nothing worth caching is present`;
 
-  gemini.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ role: "user", parts: [{ text: extractPrompt }] }],
-    config: { maxOutputTokens: 1024 },
-  }).then(async (r) => {
-    const raw = (r.text ?? "").trim()
+  callSageAI({
+    messages: [{ role: "user", content: extractPrompt }],
+    maxTokens: 1024,
+  }).then(async (rawText) => {
+    const raw = rawText.trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/i, "")
       .trim();
@@ -819,38 +810,22 @@ async function callGeminiDiscuss(
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
 
-  const contents = [
+  const messages = [
     ...cappedHistory.map(h => ({
-      role: h.role === "assistant" ? "model" : "user",
-      parts: [{ text: h.content }],
+      role: h.role as "user" | "assistant",
+      content: h.content,
     })),
-    { role: "user", parts: [{ text: message }] },
+    { role: "user" as const, content: message },
   ];
 
-  console.log(`[discuss] Calling Gemini with ${contents.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
+  console.log(`[discuss] Calling Sage AI with ${messages.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
 
-  const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents,
-    config: {
-      systemInstruction: systemPrompt,
-      maxOutputTokens: 8192,
-      tools: [{ googleSearch: {} }],
-    },
+  const raw = await callSageAI({
+    system: systemPrompt,
+    messages,
+    maxTokens: 8192,
   });
-
-  const raw = response.text ?? "";
-  console.log(`[discuss] Gemini responded with ${raw.length} chars`);
-
-  // Log web searches performed and async-populate the knowledge cache from this response
-  try {
-    const candidate = response.candidates?.[0];
-    const groundingMeta = (candidate as Record<string, unknown> | undefined)?.groundingMetadata as Record<string, unknown> | undefined;
-    const queries = groundingMeta?.webSearchQueries as string[] | undefined;
-    if (queries && queries.length > 0) {
-      console.log(`[discuss] Web searches performed: ${queries.join(", ")}`);
-    }
-  } catch { /* non-critical */ }
+  console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
   // Async: extract community knowledge from this response and store in knowledge base
   // This runs after the response is parsed and returned — it never delays the user
@@ -909,15 +884,12 @@ Generate:
 Return ONLY valid JSON, no markdown fences, no explanation:
 {"narrative":"...","nextSteps":"...","monitoring":[{"marker":"...","reason":"..."}]}`;
 
-  console.log(`[health-insights] Calling Gemini with ${biomarkers.length} biomarkers`);
+  console.log(`[health-insights] Calling Sage AI with ${biomarkers.length} biomarkers`);
 
-  const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { maxOutputTokens: 1024 },
-  });
-
-  const raw = (response.text ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const raw = (await callSageAI({
+    messages: [{ role: "user", content: prompt }],
+    maxTokens: 1024,
+  })).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
   type RawInsights = { narrative?: string; nextSteps?: string; monitoring?: Array<{ marker?: string; reason?: string }> };
   const toResult = (p: RawInsights) => ({
@@ -1247,18 +1219,13 @@ router.post("/blood-tests/extract-image", requireAccount, async (req, res): Prom
   }
 
   try {
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{
+    const ocrText = await callSageAI({
+      messages: [{
         role: "user",
-        parts: [
+        content: [
+          { type: "image", source: { type: "base64", media_type: mt, data: imageBase64 } },
           {
-            inlineData: {
-              mimeType: mt,
-              data: imageBase64,
-            },
-          },
-          {
+            type: "text",
             text: [
               "You are an OCR assistant specialised in blood test lab reports.",
               "Your task: extract every biomarker result and output it on its own line in EXACTLY this format:",
@@ -1280,13 +1247,13 @@ router.post("/blood-tests/extract-image", requireAccount, async (req, res): Prom
           },
         ],
       }],
-      config: { maxOutputTokens: 4096 },
+      maxTokens: 4096,
     });
 
-    console.log("[extract-image] OCR complete, chars:", (response.text ?? "").length);
-    res.json({ text: response.text ?? "" });
+    console.log("[extract-image] OCR complete, chars:", ocrText.length);
+    res.json({ text: ocrText });
   } catch (err) {
-    console.error("[extract-image] Gemini error:", err);
+    console.error("[extract-image] Sage AI error:", err);
     res.status(500).json({ error: "Image extraction failed" });
   }
 });
@@ -1531,12 +1498,12 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
 Do NOT say "Hello" or "Hi there" — just get straight into the findings. You are looking at their test results and speaking directly to them.`;
 
   try {
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: openingInstruction }] }],
-      config: { systemInstruction: systemPrompt, maxOutputTokens: 1024 },
+    const text = await callSageAI({
+      system: systemPrompt,
+      messages: [{ role: "user", content: openingInstruction }],
+      maxTokens: 1024,
     });
-    res.json({ response: response.text ?? "I've reviewed your results. What would you like to explore?" });
+    res.json({ response: text || "I've reviewed your results. What would you like to explore?" });
   } catch {
     res.json({ response: "I've reviewed your results — ask me anything about what you see here." });
   }
