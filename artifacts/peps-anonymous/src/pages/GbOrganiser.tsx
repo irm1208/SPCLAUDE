@@ -7283,24 +7283,18 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const totalUnpaid = unpaidOrders.reduce((s, o) => s + o.grandTotal, 0);
   const unpaidCount = unpaidOrders.length;
 
-  // Uther vendor aggregation helpers
-  const utherProductIds = new Set(gbProducts.filter(p => p.vendor?.toLowerCase() === "uther").map(p => p.id));
-  const hasUtherProducts = utherProductIds.size > 0;
-
   function openVendorOrderModal() {
     const aggregated: Record<string, number> = {};
     for (const o of orders) {
       if (o.status === "Cancelled" || o.status === "Draft") continue;
       for (const li of o.lineItems) {
-        if (utherProductIds.has(li.productId)) {
-          aggregated[li.productName] = (aggregated[li.productName] ?? 0) + li.quantity;
-        }
+        aggregated[li.productName] = (aggregated[li.productName] ?? 0) + li.quantity;
       }
     }
     const items = Object.entries(aggregated)
       .map(([name, qty]) => ({ name, qty }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    if (items.length === 0) { alert("No Uther products found in active orders."); return; }
+    if (items.length === 0) { alert("No active order items found."); return; }
     setWholesaleModal({ items });
   }
 
@@ -7323,13 +7317,13 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
               <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--t-border)" }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "var(--t-blue)" }}>Uther Vendor Order</p>
+                    <p className="text-[11px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "var(--t-blue)" }}>Vendor Order</p>
                     <h3 className="text-base font-extrabold" style={{ color: "var(--t-text)" }}>Place Wholesale Order</h3>
                   </div>
                   <button onClick={() => setWholesaleModal(null)} style={{ color: "var(--t-muted)" }}><X className="w-5 h-5" /></button>
                 </div>
                 <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--t-muted)" }}>
-                  This aggregates all active orders' Uther products and pre-fills a wholesale order. The group buy stays unchanged — this is only for placing the vendor order.
+                  Aggregates all active orders and pre-fills a wholesale order. The group buy stays unchanged — this is only for placing the vendor order.
                 </p>
               </div>
               <div className="px-5 py-4 max-h-72 overflow-y-auto space-y-1">
@@ -7372,7 +7366,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Orders — {gb.name}</h2>
           <div className="flex items-center gap-2">
-            {hasUtherProducts && orders.length > 0 && (
+            {orders.length > 0 && (
               <button
                 onClick={openVendorOrderModal}
                 className="h-8 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5"
