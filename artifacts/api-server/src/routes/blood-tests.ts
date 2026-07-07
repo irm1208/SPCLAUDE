@@ -583,6 +583,23 @@ async function fetchLabTestsForCompounds(compoundNames: string[]): Promise<LabTe
   return result;
 }
 
+interface CompoundWithDose {
+  name: string;
+  active: boolean;
+  doseAmount?: string | null;
+  doseUnit?: string | null;
+  frequency?: string | null;
+  route?: string | null;
+}
+
+function formatCompoundLine(c: CompoundWithDose): string {
+  const parts: string[] = [c.name];
+  if (c.doseAmount && c.doseUnit) parts.push(`${c.doseAmount} ${c.doseUnit}`);
+  if (c.route) parts.push(`(${c.route})`);
+  if (c.frequency) parts.push(`— ${c.frequency}`);
+  return parts.join(" ");
+}
+
 function buildBloodTestSystemPrompt(
   sessionName: string,
   sessionDate: string,
@@ -591,7 +608,7 @@ function buildBloodTestSystemPrompt(
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
-  allCompounds: Array<{ name: string; active: boolean }> = [],
+  allCompounds: CompoundWithDose[] = [],
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -605,20 +622,23 @@ function buildBloodTestSystemPrompt(
   }).join("\n");
 
   // Build compound context using allCompounds if available, else fall back to activeCompounds
-  const effectiveActive = allCompounds.length > 0 ? allCompounds.filter(c => c.active).map(c => c.name) : activeCompounds;
-  const effectiveHistorical = allCompounds.filter(c => !c.active).map(c => c.name);
+  const enrichedActive = allCompounds.filter(c => c.active);
+  const enrichedHistorical = allCompounds.filter(c => !c.active);
+  const effectiveActive = allCompounds.length > 0 ? enrichedActive.map(c => c.name) : activeCompounds;
 
   const compoundsLine = [
-    effectiveActive.length > 0
-      ? `ACTIVE COMPOUNDS (currently being used — consider impact on all biomarkers): ${effectiveActive.join(", ")}`
-      : `ACTIVE COMPOUNDS: None currently logged.`,
-    effectiveHistorical.length > 0
-      ? `HISTORICAL COMPOUNDS (previously used / cycled off): ${effectiveHistorical.join(", ")}`
+    enrichedActive.length > 0
+      ? `ACTIVE COMPOUNDS (currently being used — consider dose/route/frequency and impact on all biomarkers):\n${enrichedActive.map(c => `  - ${formatCompoundLine(c)}`).join("\n")}`
+      : activeCompounds.length > 0
+        ? `ACTIVE COMPOUNDS (currently being used — consider impact on all biomarkers): ${activeCompounds.join(", ")}`
+        : `ACTIVE COMPOUNDS: None currently logged.`,
+    enrichedHistorical.length > 0
+      ? `HISTORICAL COMPOUNDS (previously used / cycled off):\n${enrichedHistorical.map(c => `  - ${formatCompoundLine(c)}`).join("\n")}`
       : "",
   ].filter(Boolean).join("\n");
 
   // Build protocol reference section for known compounds
-  const compoundsToLookUp = [...effectiveActive, ...effectiveHistorical];
+  const compoundsToLookUp = [...effectiveActive, ...enrichedHistorical.map(c => c.name)];
   const protocolLines: string[] = [];
   for (const name of compoundsToLookUp) {
     const proto = findProtocol(name);
@@ -1084,7 +1104,7 @@ async function callGeminiDiscuss(
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
-  allCompounds: Array<{ name: string; active: boolean }> = [],
+  allCompounds: CompoundWithDose[] = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
   const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds);
 
@@ -1743,8 +1763,14 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
   });
 
   const [compoundRows, allSessions] = await Promise.all([
-    db.select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
-      .from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
+    db.select({
+      compoundName: compoundLogsTable.compoundName,
+      endDate: compoundLogsTable.endDate,
+      doseAmount: compoundLogsTable.doseAmount,
+      doseUnit: compoundLogsTable.doseUnit,
+      frequency: compoundLogsTable.frequency,
+      route: compoundLogsTable.route,
+    }).from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
     db.select().from(bloodTestSessionsTable)
       .where(eq(bloodTestSessionsTable.telegramUsername, tg))
       .orderBy(desc(bloodTestSessionsTable.testDate)),
@@ -1842,11 +1868,25 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     // No blood test on file. If the user has active compounds, still answer using that context;
     // otherwise there's nothing to personalise on, so don't consume quota.
     const compoundRowsNoBt = await db
-      .select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
+      .select({
+        compoundName: compoundLogsTable.compoundName,
+        endDate: compoundLogsTable.endDate,
+        doseAmount: compoundLogsTable.doseAmount,
+        doseUnit: compoundLogsTable.doseUnit,
+        frequency: compoundLogsTable.frequency,
+        route: compoundLogsTable.route,
+      })
       .from(compoundLogsTable)
       .where(eq(compoundLogsTable.telegramUsername, tg));
     const activeCompoundsNoBt = compoundRowsNoBt.filter((c) => !c.endDate).map((c) => c.compoundName);
-    const allCompoundsNoBt = compoundRowsNoBt.map((c) => ({ name: c.compoundName, active: !c.endDate }));
+    const allCompoundsNoBt: CompoundWithDose[] = compoundRowsNoBt.map((c) => ({
+      name: c.compoundName,
+      active: !c.endDate,
+      doseAmount: c.doseAmount,
+      doseUnit: c.doseUnit,
+      frequency: c.frequency,
+      route: c.route,
+    }));
 
     const readUsed = async () => readDailyUsed(tg);
 
@@ -1966,8 +2006,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   // Step 3: Build biomarker context for current session + all historical sessions
   const [values, compoundRows, allSessionsList] = await Promise.all([
     db.select().from(bloodTestValuesTable).where(eq(bloodTestValuesTable.sessionId, session.id)),
-    db.select({ compoundName: compoundLogsTable.compoundName, endDate: compoundLogsTable.endDate })
-      .from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
+    db.select({
+      compoundName: compoundLogsTable.compoundName,
+      endDate: compoundLogsTable.endDate,
+      doseAmount: compoundLogsTable.doseAmount,
+      doseUnit: compoundLogsTable.doseUnit,
+      frequency: compoundLogsTable.frequency,
+      route: compoundLogsTable.route,
+    }).from(compoundLogsTable).where(eq(compoundLogsTable.telegramUsername, tg)),
     db.select().from(bloodTestSessionsTable)
       .where(eq(bloodTestSessionsTable.telegramUsername, tg))
       .orderBy(desc(bloodTestSessionsTable.testDate)),
@@ -1989,7 +2035,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
 
   const sessionDisplayName = session.testName ?? session.labName ?? "Blood Test";
   const activeCompounds = compoundRows.filter(c => !c.endDate).map(c => c.compoundName);
-  const allCompoundsWithStatus = compoundRows.map(c => ({ name: c.compoundName, active: !c.endDate }));
+  const allCompoundsWithStatus: CompoundWithDose[] = compoundRows.map(c => ({
+    name: c.compoundName,
+    active: !c.endDate,
+    doseAmount: c.doseAmount,
+    doseUnit: c.doseUnit,
+    frequency: c.frequency,
+    route: c.route,
+  }));
 
   // Fetch biomarkers for all other sessions to build historical context
   const otherSessions = allSessionsList.filter(s => s.id !== session.id);
