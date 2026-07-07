@@ -5,6 +5,7 @@ import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
+import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 
 const router: IRouter = Router();
@@ -590,6 +591,7 @@ function buildBloodTestSystemPrompt(
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
+  allCompounds: Array<{ name: string; active: boolean }> = [],
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -602,9 +604,34 @@ function buildBloodTestSystemPrompt(
     return `  - ${b.name}: ${b.value} ${b.unit} (${rangeStr})${flag}`;
   }).join("\n");
 
-  const compoundsLine = activeCompounds.length > 0
-    ? `KNOWN ACTIVE COMPOUNDS (from user's compound log — treat as a starting point, confirm if relevant): ${activeCompounds.join(", ")}`
-    : `KNOWN ACTIVE COMPOUNDS: None logged.`;
+  // Build compound context using allCompounds if available, else fall back to activeCompounds
+  const effectiveActive = allCompounds.length > 0 ? allCompounds.filter(c => c.active).map(c => c.name) : activeCompounds;
+  const effectiveHistorical = allCompounds.filter(c => !c.active).map(c => c.name);
+
+  const compoundsLine = [
+    effectiveActive.length > 0
+      ? `ACTIVE COMPOUNDS (currently being used — consider impact on all biomarkers): ${effectiveActive.join(", ")}`
+      : `ACTIVE COMPOUNDS: None currently logged.`,
+    effectiveHistorical.length > 0
+      ? `HISTORICAL COMPOUNDS (previously used / cycled off): ${effectiveHistorical.join(", ")}`
+      : "",
+  ].filter(Boolean).join("\n");
+
+  // Build protocol reference section for known compounds
+  const compoundsToLookUp = [...effectiveActive, ...effectiveHistorical];
+  const protocolLines: string[] = [];
+  for (const name of compoundsToLookUp) {
+    const proto = findProtocol(name);
+    if (proto) protocolLines.push(formatProtocolForSage(name, proto));
+  }
+  const protocolSection = protocolLines.length > 0
+    ? `\n\n═══════════════════════════════════════════
+PLATFORM PROTOCOL REFERENCE (from Salt&Peps protocols page — for the user's logged compounds)
+═══════════════════════════════════════════
+These are the established dosing protocols for the user's compounds as listed on the Salt&Peps protocols page. Use this data to assess whether their current regimen aligns with recommended practice, identify dosing issues, and give specific actionable guidance.
+
+${protocolLines.join("\n\n")}`
+    : "";
 
   let historicalSection = "";
   if (historicalSessions.length > 0) {
@@ -759,7 +786,7 @@ BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsLine}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}
+${compoundsLine}${protocolSection}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}
 
 ═══════════════════════════════════════════
 PERSONA & TONE
@@ -1057,8 +1084,9 @@ async function callGeminiDiscuss(
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
+  allCompounds: Array<{ name: string; active: boolean }> = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests);
+  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds);
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1818,6 +1846,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       .from(compoundLogsTable)
       .where(eq(compoundLogsTable.telegramUsername, tg));
     const activeCompoundsNoBt = compoundRowsNoBt.filter((c) => !c.endDate).map((c) => c.compoundName);
+    const allCompoundsNoBt = compoundRowsNoBt.map((c) => ({ name: c.compoundName, active: !c.endDate }));
 
     const readUsed = async () => readDailyUsed(tg);
 
@@ -1862,6 +1891,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         [],
         cachedKnowledge,
         labTests,
+        allCompoundsNoBt,
       );
 
       logCustomerActivity({
@@ -1959,6 +1989,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
 
   const sessionDisplayName = session.testName ?? session.labName ?? "Blood Test";
   const activeCompounds = compoundRows.filter(c => !c.endDate).map(c => c.compoundName);
+  const allCompoundsWithStatus = compoundRows.map(c => ({ name: c.compoundName, active: !c.endDate }));
 
   // Fetch biomarkers for all other sessions to build historical context
   const otherSessions = allSessionsList.filter(s => s.id !== session.id);
@@ -1994,7 +2025,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     if (labTests.length > 0) {
       console.log(`[discuss] Lab tests loaded: ${labTests.map(t => t.peptideName).join(", ")}`);
     }
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests);
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus);
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
