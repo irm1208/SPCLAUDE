@@ -47,6 +47,7 @@ import {
   useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useLeaveGroupBuy, useUpdateCountry, useCountryLegs,
   useViewerAccess, useSetGroupBuyArchived,
   useDeleteOrder, useDeletedOrders, useRestoreOrder,
+  useHiddenOrders, useToggleHiddenOrder,
   type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry, type DeletedOrder,
 } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
@@ -7011,6 +7012,8 @@ export default function CustomerPortal() {
   const deleteOrderMut = useDeleteOrder();
   const { data: deletedOrders = [], refetch: refetchDeleted } = useDeletedOrders();
   const restoreOrderMut = useRestoreOrder();
+  const { data: hiddenOrderIdsArr = [] } = useHiddenOrders(isLoggedIn);
+  const toggleHiddenOrder = useToggleHiddenOrder();
   const { data: lateOptInGbs = [] } = useTestingLateOptIn(isLoggedIn);
   const { data: activePools = [] } = useTestingActivePools(isLoggedIn);
   const { data: gbPools = [] } = useTestingGbPools(isLoggedIn);
@@ -7084,12 +7087,7 @@ export default function CustomerPortal() {
   const [gbView, setGbView] = useState<"cards" | "table">("cards");
   const [ordersPage, setOrdersPage] = useState(1);
   const [orderTypeFilterOpen, setOrderTypeFilterOpen] = useState(false);
-  const [hiddenOrderIds, setHiddenOrderIds] = useState<Set<string>>(() => {
-    try {
-      const s = localStorage.getItem("peps:hidden-orders");
-      return s ? new Set(JSON.parse(s)) : new Set<string>();
-    } catch { return new Set<string>(); }
-  });
+  const hiddenOrderIds = new Set(hiddenOrderIdsArr);
   const [showHidden, setShowHidden] = useState(false);
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
@@ -7244,6 +7242,26 @@ export default function CustomerPortal() {
       setShowCountryPrompt(true);
     }
   }, [account, accountLoading]);
+
+  // ── Migrate hidden orders from localStorage → server (one-time, per login) ──
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    try {
+      const raw = localStorage.getItem("peps:hidden-orders");
+      if (!raw) return;
+      const ids = JSON.parse(raw) as string[];
+      if (!Array.isArray(ids) || ids.length === 0) { localStorage.removeItem("peps:hidden-orders"); return; }
+      fetch("/api/account/hidden-orders", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setAll: ids }),
+      }).then(() => {
+        localStorage.removeItem("peps:hidden-orders");
+        qc.invalidateQueries({ queryKey: ["account", "hidden-orders"] });
+      }).catch(() => {});
+    } catch {}
+  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Migrate and load account-scoped localStorage settings ──────────────
   useEffect(() => {
@@ -7910,18 +7928,10 @@ export default function CustomerPortal() {
     const statusLabel = statusDropdownOptions.find(o => o.id === ordersStatusFilter)?.label ?? "All Statuses";
 
     function hideOrder(id: string) {
-      setHiddenOrderIds(prev => {
-        const next = new Set(prev); next.add(id);
-        localStorage.setItem("peps:hidden-orders", JSON.stringify([...next]));
-        return next;
-      });
+      toggleHiddenOrder.mutate({ orderId: id, hidden: true });
     }
     function unhideOrder(id: string) {
-      setHiddenOrderIds(prev => {
-        const next = new Set(prev); next.delete(id);
-        localStorage.setItem("peps:hidden-orders", JSON.stringify([...next]));
-        return next;
-      });
+      toggleHiddenOrder.mutate({ orderId: id, hidden: false });
     }
     async function removeOrder(id: string) {
       try {

@@ -1537,6 +1537,43 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
   res.json(results);
 });
 
+// GET /api/account/hidden-orders — returns the list of order IDs the member has hidden
+router.get("/account/hidden-orders", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const [acc] = await db
+    .select({ hiddenOrderIds: accountsTable.hiddenOrderIds })
+    .from(accountsTable)
+    .where(eq(accountsTable.telegramUsername, tg));
+  res.json(acc?.hiddenOrderIds ?? []);
+});
+
+// PATCH /api/account/hidden-orders — add, remove, or bulk-set hidden order IDs
+// Body: { add?: string } | { remove?: string } | { setAll?: string[] }
+router.patch("/account/hidden-orders", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const { add, remove, setAll } = req.body as { add?: string; remove?: string; setAll?: string[] };
+
+  if (setAll !== undefined) {
+    if (!Array.isArray(setAll)) { res.status(400).json({ error: "setAll must be an array" }); return; }
+    await db.update(accountsTable).set({ hiddenOrderIds: setAll }).where(eq(accountsTable.telegramUsername, tg));
+    res.json({ hiddenOrderIds: setAll });
+    return;
+  }
+
+  const [acc] = await db
+    .select({ hiddenOrderIds: accountsTable.hiddenOrderIds })
+    .from(accountsTable)
+    .where(eq(accountsTable.telegramUsername, tg));
+  const current = acc?.hiddenOrderIds ?? [];
+
+  let next = current;
+  if (add && typeof add === "string" && !current.includes(add)) next = [...current, add];
+  if (remove && typeof remove === "string") next = current.filter(id => id !== remove);
+
+  await db.update(accountsTable).set({ hiddenOrderIds: next }).where(eq(accountsTable.telegramUsername, tg));
+  res.json({ hiddenOrderIds: next });
+});
+
 // GET /api/account/orders/deleted — member's soft-deleted orders within the 48-hour restore window
 // IMPORTANT: must be registered before GET /account/orders/:id to avoid "deleted" being captured as :id
 router.get("/account/orders/deleted", requireAccount, async (req, res): Promise<void> => {

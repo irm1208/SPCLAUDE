@@ -677,6 +677,50 @@ export interface DeletedOrder {
   lineItems: { productName: string; quantity: number; lineTotal: number }[];
 }
 
+export function useHiddenOrders(enabled = true) {
+  return useQuery<string[]>({
+    queryKey: ["account", "hidden-orders"],
+    queryFn: async () => {
+      const res = await fetch("/api/account/hidden-orders", { credentials: "include" });
+      if (res.status === 401) return [];
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    retry: false,
+    enabled,
+  });
+}
+
+export function useToggleHiddenOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, hidden }: { orderId: string; hidden: boolean }) => {
+      const res = await fetch("/api/account/hidden-orders", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hidden ? { add: orderId } : { remove: orderId }),
+      });
+      if (!res.ok) throw new Error("Failed to update hidden orders");
+      return res.json() as Promise<{ hiddenOrderIds: string[] }>;
+    },
+    onMutate: async ({ orderId, hidden }) => {
+      await qc.cancelQueries({ queryKey: ["account", "hidden-orders"] });
+      const prev = qc.getQueryData<string[]>(["account", "hidden-orders"]) ?? [];
+      const next = hidden ? [...prev, orderId] : prev.filter(id => id !== orderId);
+      qc.setQueryData(["account", "hidden-orders"], next);
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["account", "hidden-orders"], ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["account", "hidden-orders"] });
+    },
+  });
+}
+
 export function useDeleteOrder() {
   const qc = useQueryClient();
   return useMutation({
