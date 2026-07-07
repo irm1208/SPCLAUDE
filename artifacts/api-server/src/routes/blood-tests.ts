@@ -609,6 +609,7 @@ function buildBloodTestSystemPrompt(
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
+  hasBloodTest = true,
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -800,13 +801,17 @@ You are an expert personal health research assistant embedded in Salt&Peps — a
 ═══════════════════════════════════════════
 THIS USER'S HEALTH DATA — ALREADY LOADED FROM DATABASE
 ═══════════════════════════════════════════
-IMPORTANT: The following blood test results and compounds ARE this user's actual data, retrieved directly from their account. You have full access to it. Do NOT ask the user to share, paste, or upload their results — you already have them. Answer questions about their bloodwork directly using the data below.
+${hasBloodTest ? `IMPORTANT: The following blood test results and compounds ARE this user's actual data, retrieved directly from their account. You have full access to it. Do NOT ask the user to share, paste, or upload their results — you already have them. Answer questions about their bloodwork directly using the data below.
 
 BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsLine}${protocolSection}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}
+${compoundsLine}${protocolSection}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}` : `BLOOD TEST STATUS: No blood test on file yet for this member.
+
+IMPORTANT BEHAVIOUR RULE: In your FIRST response in this conversation, and ONLY the first, open with a single short sentence acknowledging that you don't have any blood test results on file for them yet. Mention that they can upload a blood test via the Blood Tests section of their profile to unlock personalised biomarker analysis. Then pivot IMMEDIATELY to being genuinely helpful with whatever they asked — compound protocols, dosing questions, general health optimisation. Do NOT repeat this notice in any subsequent messages.
+
+${compoundsLine}${protocolSection}${knowledgeSection}${labTestSection}`}
 
 ═══════════════════════════════════════════
 PERSONA & TONE
@@ -1105,8 +1110,9 @@ async function callGeminiDiscuss(
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
+  hasBloodTest = true,
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds);
+  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest);
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1932,6 +1938,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         cachedKnowledge,
         labTests,
         allCompoundsNoBt,
+        false,
       );
 
       logCustomerActivity({
