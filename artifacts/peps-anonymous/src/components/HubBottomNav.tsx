@@ -37,7 +37,7 @@ const BAR_LEFT: { id: HubSection; label: string; icon: React.ElementType }[] = [
 ];
 const BAR_RIGHT: { id: HubSection; label: string; icon: React.ElementType }[] = [
   { id: "groups",  label: "Group Buys", icon: UsersRound },
-  { id: "profile", label: "Me",         icon: User },
+  { id: "profile", label: "Profile",    icon: User },
 ];
 
 interface HubBottomNavProps {
