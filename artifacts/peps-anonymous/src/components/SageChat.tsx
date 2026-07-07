@@ -36,19 +36,20 @@ interface SageChatProps {
 const GREETING =
   "Hi, I'm Sage. Ask me anything about your compounds, bloodwork, or protocols and I'll help you make sense of it.";
 
-/** Lightweight renderer: preserves line breaks, bullet lists and **bold** without a markdown dependency. */
+/** Renders markdown-lite: headings, bullets, numbered lists, bold, italic, hr. */
 function renderRich(text: string): React.ReactNode {
   const lines = text.split(/\r?\n/);
   const blocks: React.ReactNode[] = [];
   let bullets: string[] = [];
+  let ordered: { n: string; text: string }[] = [];
   let key = 0;
 
   const flushBullets = () => {
     if (bullets.length === 0) return;
     blocks.push(
-      <ul key={`ul-${key++}`} style={{ margin: "4px 0", paddingLeft: 18, listStyle: "disc" }}>
+      <ul key={`ul-${key++}`} style={{ margin: "6px 0 6px 0", paddingLeft: 20, listStyle: "disc" }}>
         {bullets.map((b, i) => (
-          <li key={i} style={{ marginBottom: 2 }}>
+          <li key={i} style={{ marginBottom: 3, lineHeight: 1.55 }}>
             {renderInline(b)}
           </li>
         ))}
@@ -57,37 +58,101 @@ function renderRich(text: string): React.ReactNode {
     bullets = [];
   };
 
+  const flushOrdered = () => {
+    if (ordered.length === 0) return;
+    blocks.push(
+      <ol key={`ol-${key++}`} style={{ margin: "6px 0 6px 0", paddingLeft: 20, listStyle: "decimal" }}>
+        {ordered.map((o, i) => (
+          <li key={i} style={{ marginBottom: 3, lineHeight: 1.55 }}>
+            {renderInline(o.text)}
+          </li>
+        ))}
+      </ol>,
+    );
+    ordered = [];
+  };
+
   for (const raw of lines) {
     const line = raw.trimEnd();
+
+    // Bullet list
     const bulletMatch = line.match(/^\s*[-*•]\s+(.*)$/);
     if (bulletMatch) {
+      flushOrdered();
       bullets.push(bulletMatch[1]);
       continue;
     }
+    // Numbered list
+    const orderedMatch = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (orderedMatch) {
+      flushBullets();
+      ordered.push({ n: orderedMatch[1], text: orderedMatch[2] });
+      continue;
+    }
+
     flushBullets();
+    flushOrdered();
+
+    // Horizontal rule
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+      blocks.push(<hr key={`hr-${key++}`} style={{ margin: "10px 0", border: "none", borderTop: "1px solid rgba(0,0,0,0.1)" }} />);
+      continue;
+    }
+    // H1
+    const h1 = line.match(/^#\s+(.+)$/);
+    if (h1) {
+      blocks.push(
+        <p key={`h1-${key++}`} style={{ margin: "10px 0 4px", fontWeight: 800, fontSize: 15 }}>
+          {renderInline(h1[1])}
+        </p>,
+      );
+      continue;
+    }
+    // H2
+    const h2 = line.match(/^##\s+(.+)$/);
+    if (h2) {
+      blocks.push(
+        <p key={`h2-${key++}`} style={{ margin: "10px 0 4px", fontWeight: 700, fontSize: 13.5, letterSpacing: "0.01em", textTransform: "uppercase", opacity: 0.7 }}>
+          {renderInline(h2[1])}
+        </p>,
+      );
+      continue;
+    }
+    // H3
+    const h3 = line.match(/^###\s+(.+)$/);
+    if (h3) {
+      blocks.push(
+        <p key={`h3-${key++}`} style={{ margin: "8px 0 3px", fontWeight: 700, fontSize: 13 }}>
+          {renderInline(h3[1])}
+        </p>,
+      );
+      continue;
+    }
+    // Blank line
     if (line.trim().length === 0) {
       blocks.push(<div key={`sp-${key++}`} style={{ height: 6 }} />);
     } else {
       blocks.push(
-        <p key={`p-${key++}`} style={{ margin: 0 }}>
+        <p key={`p-${key++}`} style={{ margin: 0, lineHeight: 1.6 }}>
           {renderInline(line)}
         </p>,
       );
     }
   }
   flushBullets();
+  flushOrdered();
   return blocks;
 }
 
 function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  // Split on **bold** and _italic_ / *italic*
+  const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_|\*[^*]+\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <strong key={i} style={{ fontWeight: 700 }}>
-          {part.slice(2, -2)}
-        </strong>
-      );
+      return <strong key={i} style={{ fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+    }
+    if ((part.startsWith("_") && part.endsWith("_")) || (part.startsWith("*") && part.endsWith("*"))) {
+      return <em key={i}>{part.slice(1, -1)}</em>;
     }
     return part;
   });
@@ -203,12 +268,10 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
       }}
     >
       <div
-        className="flex flex-col w-full sm:w-[460px] sm:rounded-2xl overflow-hidden shadow-2xl"
+        className="flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-auto sm:max-h-[88vh]"
         style={{
           background: t.panel,
           border: `1px solid ${t.border}`,
-          height: "100dvh",
-          maxHeight: "100dvh",
         }}
       >
         {/* Header */}
