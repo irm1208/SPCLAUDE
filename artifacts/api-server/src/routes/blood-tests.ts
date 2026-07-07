@@ -1557,16 +1557,6 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
 
     const readUsed = async () => readDailyUsed(tg);
 
-    if (activeCompoundsNoBt.length === 0) {
-      res.json({
-        response: "You haven't logged any blood tests or active compounds yet. Add your compounds or upload a blood test, and I can give you personalised guidance tailored to your own data.",
-        contextSession: null,
-        used: await readUsed(),
-        limit: effectiveLimit,
-      });
-      return;
-    }
-
     // AI-identity guardrail — do not consume quota
     if (AI_IDENTITY_RE.test(message)) {
       res.json({
