@@ -11,6 +11,7 @@ const DISCORD_API = "https://discord.com/api/v10";
 interface DiscordCredCache {
   botToken: string;
   webhookUrl: string;
+  guildId: string;
   loadedAt: number;
 }
 let _credCache: DiscordCredCache | null = null;
@@ -18,26 +19,26 @@ const CACHE_TTL_MS = 60_000;
 
 /**
  * Resolve Discord credentials.
- * Bot token and webhook URL are resolved INDEPENDENTLY:
+ * Each field is resolved INDEPENDENTLY:
  *   - env var takes priority per-field
  *   - if a field is absent from env, it falls back to site_config DB
- * This means having DISCORD_BOT_TOKEN in env does NOT prevent a webhook URL
- * saved via the admin UI from being used (and vice versa).
  */
-export async function getDiscordCredentials(): Promise<{ botToken: string; webhookUrl: string }> {
+export async function getDiscordCredentials(): Promise<{ botToken: string; webhookUrl: string; guildId: string }> {
   const envBot = process.env["DISCORD_BOT_TOKEN"] ?? "";
   const envWebhook = process.env["DISCORD_ADMIN_WEBHOOK_URL"] ?? "";
+  const envGuild = process.env["DISCORD_GUILD_ID"] ?? "";
 
-  // If both are in env, skip DB entirely
-  if (envBot && envWebhook) {
-    return { botToken: envBot, webhookUrl: envWebhook };
+  // If all are in env, skip DB entirely
+  if (envBot && envWebhook && envGuild) {
+    return { botToken: envBot, webhookUrl: envWebhook, guildId: envGuild };
   }
 
-  // Use cache if fresh (still need DB for whichever field is missing from env)
+  // Use cache if fresh (still need DB for whichever fields are missing from env)
   if (_credCache && Date.now() - _credCache.loadedAt < CACHE_TTL_MS) {
     return {
       botToken: envBot || _credCache.botToken,
       webhookUrl: envWebhook || _credCache.webhookUrl,
+      guildId: envGuild || _credCache.guildId,
     };
   }
 
@@ -45,15 +46,16 @@ export async function getDiscordCredentials(): Promise<{ botToken: string; webho
     const rows = await db
       .select({ key: siteConfigTable.key, value: siteConfigTable.value })
       .from(siteConfigTable)
-      .where(inArray(siteConfigTable.key, ["discordBotToken", "discordAdminWebhookUrl"]));
+      .where(inArray(siteConfigTable.key, ["discordBotToken", "discordAdminWebhookUrl", "discordGuildId"]));
 
     const dbToken = rows.find((r: { key: string; value: string }) => r.key === "discordBotToken")?.value ?? "";
     const dbWebhook = rows.find((r: { key: string; value: string }) => r.key === "discordAdminWebhookUrl")?.value ?? "";
-    _credCache = { botToken: dbToken, webhookUrl: dbWebhook, loadedAt: Date.now() };
+    const dbGuild = rows.find((r: { key: string; value: string }) => r.key === "discordGuildId")?.value ?? "";
+    _credCache = { botToken: dbToken, webhookUrl: dbWebhook, guildId: dbGuild, loadedAt: Date.now() };
     // env always wins per-field; DB fills in whatever env is missing
-    return { botToken: envBot || dbToken, webhookUrl: envWebhook || dbWebhook };
+    return { botToken: envBot || dbToken, webhookUrl: envWebhook || dbWebhook, guildId: envGuild || dbGuild };
   } catch {
-    return { botToken: envBot, webhookUrl: envWebhook };
+    return { botToken: envBot, webhookUrl: envWebhook, guildId: envGuild };
   }
 }
 
