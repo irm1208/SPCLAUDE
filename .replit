@@ -57,7 +57,7 @@ MOCKUP_PORT = "8081"
 MOCKUP_BASE_PATH = "/__mockup/"
 APP_URL = "https://saltandpeps.co.uk"
 AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-SAGE_PROXY_MODEL = "claude-sonnet-4-6"
+SAGE_PROXY_MODEL = "claude-fable-5"
 
 [userenv.production]
 PUBLIC_URL = "saltandpeps.co.uk"
