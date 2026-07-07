@@ -46,3 +46,4 @@ export { orderDispatchImagesTable } from "./orders";
 export type { OrderDispatchImage } from "./orders";
 export * from "./bt_knowledge_cache";
 export * from "./hidden_orders";
+export * from "./dna_profiles";

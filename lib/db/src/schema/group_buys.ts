@@ -85,6 +85,7 @@ export const groupBuysTable = pgTable("group_buys", {
   allowEditOrderWhenClosed: boolean("allow_edit_order_when_closed").notNull().default(true),
   allowEditAddressWhenClosed: boolean("allow_edit_address_when_closed").notNull().default(true),
   allowDeleteOrderWhenClosed: boolean("allow_delete_order_when_closed").notNull().default(true),
+  hidePrices: boolean("hide_prices").notNull().default(false),
   hidePricesWhenClosed: boolean("hide_prices_when_closed").notNull().default(false),
   hideCostBreakdownWhenClosed: boolean("hide_cost_breakdown_when_closed").notNull().default(false),
   hideGrandTotalWhenClosed: boolean("hide_grand_total_when_closed").notNull().default(false),

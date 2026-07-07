@@ -97,6 +97,7 @@ export const accountsTable = pgTable("accounts", {
   // shared wholesale order. null = never shown. Persisted so the one-time prompt is
   // remembered per account, across devices (replaces the old per-browser flag).
   wholesaleInvitePromptSeenAt: timestamp("wholesale_invite_prompt_seen_at", { withTimezone: true }),
+  allowExtraOrder: boolean("allow_extra_order").notNull().default(false),
   // Per-account list of group buy IDs the user has archived (hidden from their Group Buys list)
   archivedGroupBuyIds: jsonb("archived_group_buy_ids").$type<string[]>().notNull().default([]),
   lastLoginIp: text("last_login_ip"),
