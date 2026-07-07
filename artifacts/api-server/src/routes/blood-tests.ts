@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable } from "@workspace/db";
+import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable, labTestsTable } from "@workspace/db";
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
@@ -504,6 +504,84 @@ interface SessionHistoryContext {
   biomarkers: BiomarkerContext[];
 }
 
+interface LabTestContext {
+  peptideName: string;
+  batchCode: string | null;
+  labName: string;
+  testDate: string | null;
+  supplier: string;
+  purityPct: number | null;
+  endotoxinEuMg: number | null;
+  sterilityPass: boolean | null;
+  heavyMetalAs: string | null;
+  heavyMetalCd: string | null;
+  heavyMetalPb: string | null;
+  heavyMetalHg: string | null;
+  notes: string | null;
+}
+
+/** Fetch up to 3 most-recent lab tests for each of the given compound names. Falls back to 10 most recent overall if no compounds given. */
+async function fetchLabTestsForCompounds(compoundNames: string[]): Promise<LabTestContext[]> {
+  const rows = compoundNames.length > 0
+    ? await db
+        .select({
+          peptideName: labTestsTable.peptideName,
+          batchCode: labTestsTable.batchCode,
+          labName: labTestsTable.labName,
+          testDate: labTestsTable.testDate,
+          supplier: labTestsTable.supplier,
+          purityPct: labTestsTable.purityPct,
+          endotoxinEuMg: labTestsTable.endotoxinEuMg,
+          sterilityPass: labTestsTable.sterilityPass,
+          heavyMetalAs: labTestsTable.heavyMetalAs,
+          heavyMetalCd: labTestsTable.heavyMetalCd,
+          heavyMetalPb: labTestsTable.heavyMetalPb,
+          heavyMetalHg: labTestsTable.heavyMetalHg,
+          notes: labTestsTable.notes,
+        })
+        .from(labTestsTable)
+        .where(
+          and(
+            inArray(labTestsTable.peptideName, compoundNames),
+            eq(labTestsTable.pending, false),
+          ),
+        )
+        .orderBy(desc(labTestsTable.createdAt))
+        .limit(30)
+    : await db
+        .select({
+          peptideName: labTestsTable.peptideName,
+          batchCode: labTestsTable.batchCode,
+          labName: labTestsTable.labName,
+          testDate: labTestsTable.testDate,
+          supplier: labTestsTable.supplier,
+          purityPct: labTestsTable.purityPct,
+          endotoxinEuMg: labTestsTable.endotoxinEuMg,
+          sterilityPass: labTestsTable.sterilityPass,
+          heavyMetalAs: labTestsTable.heavyMetalAs,
+          heavyMetalCd: labTestsTable.heavyMetalCd,
+          heavyMetalPb: labTestsTable.heavyMetalPb,
+          heavyMetalHg: labTestsTable.heavyMetalHg,
+          notes: labTestsTable.notes,
+        })
+        .from(labTestsTable)
+        .where(eq(labTestsTable.pending, false))
+        .orderBy(desc(labTestsTable.createdAt))
+        .limit(10);
+
+  // Deduplicate: keep max 3 most-recent per compound
+  const seen = new Map<string, number>();
+  const result: LabTestContext[] = [];
+  for (const r of rows) {
+    const n = (seen.get(r.peptideName) ?? 0);
+    if (n < 3) {
+      result.push(r);
+      seen.set(r.peptideName, n + 1);
+    }
+  }
+  return result;
+}
+
 function buildBloodTestSystemPrompt(
   sessionName: string,
   sessionDate: string,
@@ -511,6 +589,7 @@ function buildBloodTestSystemPrompt(
   activeCompounds: string[] = [],
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
+  labTests: LabTestContext[] = [],
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -611,6 +690,33 @@ The following community/forum insights have been retrieved from our knowledge ba
 ${cachedKnowledge.map(k => `[${k.topic.toUpperCase().replace(/_/g, " ")}]\n${k.summary}`).join("\n\n")}`
     : "";
 
+  const labTestSection = labTests.length > 0
+    ? `\n\n═══════════════════════════════════════════
+LAB TEST CERTIFICATES (CoA — third-party quality tests for compounds used by this member)
+═══════════════════════════════════════════
+These are independently verified Certificate of Analysis (CoA) results from ${labTests[0]?.labName ?? "third-party labs"} for the peptide compounds relevant to this member. Use this data to:
+- Confirm purity when discussing dosing accuracy or expected effect strength
+- Highlight if a batch had sterility or endotoxin concerns
+- Reassure (or flag concern) about product quality when relevant to symptoms or bloodwork
+
+${labTests.map(t => {
+  const parts: string[] = [`[${t.peptideName}${t.batchCode ? ` — batch ${t.batchCode}` : ""}]`];
+  parts.push(`  Lab: ${t.labName} | Supplier: ${t.supplier}${t.testDate ? ` | Tested: ${t.testDate}` : ""}`);
+  if (t.purityPct != null) parts.push(`  Purity: ${t.purityPct}%`);
+  if (t.endotoxinEuMg != null) parts.push(`  Endotoxin: ${t.endotoxinEuMg} EU/mg`);
+  if (t.sterilityPass != null) parts.push(`  Sterility: ${t.sterilityPass ? "PASS ✓" : "FAIL ✗"}`);
+  const metals = [
+    t.heavyMetalAs ? `As: ${t.heavyMetalAs}` : null,
+    t.heavyMetalCd ? `Cd: ${t.heavyMetalCd}` : null,
+    t.heavyMetalPb ? `Pb: ${t.heavyMetalPb}` : null,
+    t.heavyMetalHg ? `Hg: ${t.heavyMetalHg}` : null,
+  ].filter(Boolean);
+  if (metals.length > 0) parts.push(`  Heavy metals: ${metals.join(", ")}`);
+  if (t.notes) parts.push(`  Notes: ${t.notes}`);
+  return parts.join("\n");
+}).join("\n\n")}`
+    : "";
+
   return `═══════════════════════════════════════════
 ABSOLUTE SCOPE RESTRICTIONS — READ FIRST, APPLY ALWAYS
 ═══════════════════════════════════════════
@@ -648,7 +754,7 @@ BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsLine}${historicalSection}${persistentTrendsSection}${knowledgeSection}
+${compoundsLine}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}
 
 ═══════════════════════════════════════════
 PERSONA & TONE
@@ -945,8 +1051,9 @@ async function callGeminiDiscuss(
   activeCompounds: string[] = [],
   historicalSessions: SessionHistoryContext[] = [],
   cachedKnowledge: Array<{ topic: string; summary: string }> = [],
+  labTests: LabTestContext[] = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge);
+  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests);
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1735,7 +1842,10 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     const newCountNoBt = quotaNoBt.used;
 
     try {
-      const topics = extractTopicsForCache(message, []);
+      const [topics, labTests] = await Promise.all([
+        Promise.resolve(extractTopicsForCache(message, [])),
+        fetchLabTestsForCompounds(activeCompoundsNoBt),
+      ]);
       const cachedKnowledge = await lookupKnowledgeCache(topics);
       const result = await callGeminiDiscuss(
         message,
@@ -1746,6 +1856,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         activeCompoundsNoBt,
         [],
         cachedKnowledge,
+        labTests,
       );
 
       logCustomerActivity({
@@ -1868,11 +1979,17 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseSources: DiscussSource[] = [];
   try {
     const cacheTopics = extractTopicsForCache(message, biomarkers);
-    const cachedKnowledge = await lookupKnowledgeCache(cacheTopics);
+    const [cachedKnowledge, labTests] = await Promise.all([
+      lookupKnowledgeCache(cacheTopics),
+      fetchLabTestsForCompounds(activeCompounds),
+    ]);
     if (cachedKnowledge.length > 0) {
       console.log(`[discuss] Knowledge cache hit: ${cachedKnowledge.map(k => k.topic).join(", ")}`);
     }
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge);
+    if (labTests.length > 0) {
+      console.log(`[discuss] Lab tests loaded: ${labTests.map(t => t.peptideName).join(", ")}`);
+    }
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests);
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
