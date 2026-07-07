@@ -481,23 +481,27 @@ export default function WholesaleOrder() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Full Name</label>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Full Name <span style={{ color: "var(--t-red, #ef4444)" }}>*</span></label>
                     <input
                       type="text"
                       value={fullName}
                       onChange={e => setFullName(e.target.value)}
                       placeholder="e.g. Jane Smith"
+                      autoComplete="name"
+                      required
                       className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
                       style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone Number</label>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Phone Number <span style={{ color: "var(--t-red, #ef4444)" }}>*</span></label>
                     <input
                       type="tel"
                       value={phone}
                       onChange={e => setPhone(e.target.value)}
                       placeholder="e.g. +44 7700 000000"
+                      autoComplete="tel"
+                      required
                       className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
                       style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
                     />
@@ -515,21 +519,25 @@ export default function WholesaleOrder() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Shipping Address</label>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Shipping Address <span style={{ color: "var(--t-red, #ef4444)" }}>*</span></label>
                   <textarea
                     value={shippingAddress}
                     onChange={e => setShippingAddress(e.target.value)}
                     placeholder={"Street address, city, postcode…"}
                     rows={3}
+                    autoComplete="street-address"
+                    required
                     className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent outline-none resize-none"
                     style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country</label>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country <span style={{ color: "var(--t-red, #ef4444)" }}>*</span></label>
                   <select
                     value={shippingCountry}
                     onChange={e => setShippingCountry(e.target.value)}
+                    autoComplete="country-name"
+                    required
                     className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
                     style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: shippingCountry ? "var(--t-text)" : "var(--t-muted)" }}
                   >
