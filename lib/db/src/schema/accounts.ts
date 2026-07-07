@@ -102,6 +102,13 @@ export const accountsTable = pgTable("accounts", {
   lastLoginIp: text("last_login_ip"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   signupInviteCode: text("signup_invite_code"),
+  // Discord integration
+  discordId: text("discord_id").unique(),
+  discordUsername: text("discord_username"),
+  discordAvatar: text("discord_avatar"),
+  discordAccessToken: text("discord_access_token"),
+  discordRefreshToken: text("discord_refresh_token"),
+  discordTokenExpiresAt: timestamp("discord_token_expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

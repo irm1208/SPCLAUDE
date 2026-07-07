@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable, telegramMessageLogsTable, ticketTelegramMessagesTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { REGISTRY_MAP } from "./telegram-registry";
+import { notifyUserDiscord, sendAdminDiscordMessage } from "./discord";
 
 export interface TelegramPrefs {
   status: boolean;
@@ -278,6 +279,8 @@ export async function sendTelegramMessage(
 
 export async function sendAdminMessage(text: string): Promise<boolean> {
   const { chatId } = await getCredentials();
+  // Fire Discord webhook in parallel (best-effort)
+  sendAdminDiscordMessage(text).catch(() => {});
   if (!chatId) return false;
   return sendTelegramMessage(chatId, text, "HTML", { recipientType: "admin" }).catch(() => false);
 }
@@ -425,7 +428,11 @@ export async function notifyUser(
   prefKey: keyof TelegramPrefs,
   text: string,
 ): Promise<void> {
-  await notifyUserFull(telegramUsername, prefKey, text);
+  // Fire both Telegram and Discord in parallel; failures are independent
+  await Promise.all([
+    notifyUserFull(telegramUsername, prefKey, text),
+    notifyUserDiscord(telegramUsername, text).catch(() => {}),
+  ]);
 }
 
 /**

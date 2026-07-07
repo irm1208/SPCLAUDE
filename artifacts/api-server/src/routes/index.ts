@@ -51,6 +51,7 @@ import adminBtChatRouter from "./admin-bt-chat";
 import adminDispatchRouter from "./admin-dispatch";
 import { reshipperDispatchRouter, organiserDispatchRouter } from "./dispatch-scoped";
 import wholesaleSharesRouter from "./wholesale-shares";
+import discordRouter from "./discord";
 
 const router: IRouter = Router();
 
@@ -134,6 +135,7 @@ router.use(adminDispatchRouter);
 router.use(reshipperDispatchRouter);
 router.use(organiserDispatchRouter);
 router.use(wholesaleSharesRouter);
+router.use(discordRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────
 // Proxies GBP→USD/EUR rates so the browser avoids CORS restrictions.

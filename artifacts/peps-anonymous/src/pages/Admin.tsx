@@ -14781,6 +14781,167 @@ function TelegramConfigSection({ secret }: { secret: string }) {
   );
 }
 
+// ── Discord Admin Config Section ──────────────────────────────────────────────
+function DiscordConfigSection({ secret }: { secret: string }) {
+  const [status, setStatus] = useState<{ configured: boolean; botUsername?: string; webhookConfigured: boolean } | null>(null);
+  const [config, setConfig] = useState<{ botTokenSet: boolean; webhookUrlSet: boolean; webhookUrlHint: string | null } | null>(null);
+  const [botToken, setBotToken] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saveResult, setSaveResult] = useState<"ok" | "error" | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const loadStatus = useCallback(() => {
+    Promise.all([
+      fetch(apiUrl("/admin/discord/status"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+        .then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(apiUrl("/admin/discord/config"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+        .then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([s, c]) => {
+      if (s) setStatus(s as typeof status);
+      if (c) setConfig(c as typeof config);
+    });
+  }, [secret]);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const save = async () => {
+    setSaving(true); setSaveResult(null);
+    try {
+      const body: Record<string, string> = {};
+      if (botToken.trim()) body.botToken = botToken.trim();
+      if (webhookUrl.trim()) body.webhookUrl = webhookUrl.trim();
+      const res = await fetch(apiUrl("/admin/discord/save-config"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        credentials: "omit",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error();
+      setBotToken(""); setWebhookUrl("");
+      setSaveResult("ok");
+      loadStatus();
+      setTimeout(() => setSaveResult(null), 3000);
+    } catch { setSaveResult("error"); }
+    finally { setSaving(false); }
+  };
+
+  const testWebhook = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const res = await fetch(apiUrl("/admin/discord/test-webhook"), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+        credentials: "omit",
+      });
+      const d = await res.json() as { ok?: boolean; error?: string };
+      if (res.ok) setTestResult({ ok: true, msg: "Test message sent to Discord webhook!" });
+      else setTestResult({ ok: false, msg: (d as Record<string, string>).error || "Failed to send test" });
+    } catch { setTestResult({ ok: false, msg: "Network error" }); }
+    finally { setTesting(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
+      <div className="px-5 py-4 flex items-center gap-2.5" style={{ borderBottom: "1px solid #F1F5F9" }}>
+        <svg className="w-4 h-4" viewBox="0 0 127.14 96.36" fill="#5865F2" xmlns="http://www.w3.org/2000/svg">
+          <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/>
+        </svg>
+        <div>
+          <h2 className="text-sm font-bold text-slate-800">Discord Bot Settings</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Bot for customer DMs + webhook for admin alerts</p>
+        </div>
+        {status && (
+          <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${status.configured ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+            {status.configured ? (status.botUsername ? `@${status.botUsername}` : "Bot connected") : "Not configured"}
+          </span>
+        )}
+      </div>
+
+      <div className="p-4 space-y-4">
+        {config && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50">
+              <span className={`w-2 h-2 rounded-full ${config.botTokenSet ? "bg-green-500" : "bg-slate-300"}`} />
+              <span className="text-xs text-slate-600">Bot token: {config.botTokenSet ? "set" : "not set"}</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50">
+              <span className={`w-2 h-2 rounded-full ${config.webhookUrlSet ? "bg-green-500" : "bg-slate-300"}`} />
+              <span className="text-xs text-slate-600 truncate">
+                Webhook: {config.webhookUrlSet ? (config.webhookUrlHint ?? "set") : "not set"}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Bot Token</label>
+          <p className="text-[11px] text-slate-400 mb-1.5">From Discord Developer Portal → Bot → Token</p>
+          <div className="relative">
+            <input
+              type={showToken ? "text" : "password"}
+              value={botToken}
+              onChange={e => setBotToken(e.target.value)}
+              placeholder="Paste new bot token to update"
+              className="w-full h-10 pl-3 pr-10 rounded-xl text-sm border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+            <button type="button" onClick={() => setShowToken(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Admin Webhook URL</label>
+          <p className="text-[11px] text-slate-400 mb-1.5">Discord channel webhook for admin alerts (optional)</p>
+          <input
+            type="url"
+            value={webhookUrl}
+            onChange={e => setWebhookUrl(e.target.value)}
+            placeholder="https://discord.com/api/webhooks/…"
+            className="w-full h-10 px-3 rounded-xl text-sm border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+        </div>
+
+        <div className="rounded-xl p-3 bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700 space-y-1">
+          <p className="font-semibold">Setup steps:</p>
+          <p>1. Create a bot at <a href="https://discord.com/developers/applications" target="_blank" rel="noopener" className="underline">discord.com/developers</a></p>
+          <p>2. Add <code className="font-mono bg-indigo-100 px-1 rounded">DISCORD_CLIENT_ID</code> and <code className="font-mono bg-indigo-100 px-1 rounded">DISCORD_CLIENT_SECRET</code> env vars for OAuth</p>
+          <p>3. Set redirect URI: <code className="font-mono bg-indigo-100 px-1 rounded text-[10px]">/api/account/discord/oauth-callback</code></p>
+          <p>4. Enable DMs by adding the bot to your server</p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={save}
+            disabled={saving || (!botToken.trim() && !webhookUrl.trim())}
+            className="flex-1 h-10 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 text-white"
+            style={{ background: "#5865F2" }}
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saveResult === "ok" ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save</>}
+          </button>
+          <button
+            onClick={testWebhook}
+            disabled={testing || !config?.webhookUrlSet}
+            className="flex-1 h-10 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40"
+            style={{ background: "#F1F5F9", color: "#475569" }}
+          >
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Test webhook"}
+          </button>
+        </div>
+
+        {testResult && (
+          <p className={`text-xs font-medium text-center rounded-lg py-2 px-3 ${testResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+            {testResult.msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_LANDING_SECTIONS = [
   { id: "announcements",  label: "Site Announcements",     enabled: true },
   { id: "vials_in_stock", label: "Single Vials — In Stock", enabled: true },
@@ -15752,6 +15913,9 @@ function ConfigTab({ secret, onTabOrderChange }: { secret: string; onTabOrderCha
 
       {/* Telegram Bot Settings */}
       <TelegramConfigSection secret={secret} />
+
+      {/* Discord Bot Settings */}
+      <DiscordConfigSection secret={secret} />
 
       {/* Homepage Sections */}
       <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">

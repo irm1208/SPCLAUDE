@@ -11,6 +11,40 @@ import { useQuery } from "@tanstack/react-query";
 type Tab = "login" | "signup";
 type Step = "form" | "set-password" | "telegram-prompt" | "join-group-buy" | "forgot-step1" | "forgot-step2" | "forgot-done";
 
+// ── Discord OAuth button ────────────────────────────────────────────────────
+function DiscordLoginButton() {
+  const [loading, setLoading] = useState(false);
+  const handleDiscordLogin = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/account/discord/login-url");
+      if (!res.ok) { setLoading(false); return; }
+      const { url } = await res.json() as { url: string };
+      window.location.href = url;
+    } catch {
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleDiscordLogin}
+      disabled={loading}
+      className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-opacity disabled:opacity-60"
+      style={{ background: "#5865F2", color: "#fff" }}
+    >
+      {loading ? (
+        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+      ) : (
+        <svg className="w-5 h-5" viewBox="0 0 127.14 96.36" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/>
+        </svg>
+      )}
+      Continue with Discord
+    </button>
+  );
+}
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
@@ -35,6 +69,18 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
+
+  // Handle discord_error param from OAuth callback
+  useEffect(() => {
+    const discordError = new URLSearchParams(window.location.search).get("discord_error");
+    if (discordError) {
+      setError(decodeURIComponent(discordError));
+      // Clean up the URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("discord_error");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   const { data: siteConfig } = useQuery({
     queryKey: ["site-config"],
@@ -316,6 +362,14 @@ export default function Login() {
                   style={{ background: "var(--t-blue-deep)" }}>
                   {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><LogIn className="w-4 h-4" /> Sign In</>}
                 </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px" style={{ background: T.border }} />
+                  <span className="text-xs" style={{ color: T.muted }}>or</span>
+                  <div className="flex-1 h-px" style={{ background: T.border }} />
+                </div>
+
+                <DiscordLoginButton />
               </motion.form>
             )}
 
@@ -620,6 +674,14 @@ export default function Login() {
                   style={{ background: "var(--t-blue-deep)" }}>
                   {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Create Account</>}
                 </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px" style={{ background: T.border }} />
+                  <span className="text-xs" style={{ color: T.muted }}>or sign up with</span>
+                  <div className="flex-1 h-px" style={{ background: T.border }} />
+                </div>
+
+                <DiscordLoginButton />
               </motion.form>
             )}
 
