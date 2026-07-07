@@ -1122,7 +1122,7 @@ export default function WholesaleOrder() {
             exit={{ x: 40, opacity: 0 }}
             transition={{ type: "spring", stiffness: 350, damping: 28 }}
             onClick={() => setSummaryOpen(true)}
-            className="fixed right-0 z-[58] flex flex-col items-center justify-center gap-1.5 rounded-l-2xl shadow-xl"
+            className="fixed right-0 z-[68] flex flex-col items-center justify-center gap-1.5 rounded-l-2xl shadow-xl"
             style={{
               top: "50%",
               transform: "translateY(-50%)",
@@ -1157,7 +1157,7 @@ export default function WholesaleOrder() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[59]"
+              className="fixed inset-0 z-[69]"
               style={{ background: "rgba(0,0,0,0.35)" }}
               onClick={() => setSummaryOpen(false)}
             />
@@ -1167,7 +1167,7 @@ export default function WholesaleOrder() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", stiffness: 320, damping: 32 }}
-              className="fixed inset-y-0 right-0 z-[60] flex flex-col shadow-2xl"
+              className="fixed inset-y-0 right-0 z-[70] flex flex-col shadow-2xl"
               style={{
                 width: 288,
                 background: "var(--t-surface)",
