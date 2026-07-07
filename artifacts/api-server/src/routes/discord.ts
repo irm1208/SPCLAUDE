@@ -111,6 +111,29 @@ router.get("/account/discord/login-url", async (req, res): Promise<void> => {
 router.get("/account/discord/oauth-callback", async (req: Request, res: Response): Promise<void> => {
   const { code, state, error } = req.query as Record<string, string>;
 
+  // access_denied can mean two things:
+  // 1. We used prompt=none and the user hasn't authorized the app yet → retry with consent screen
+  // 2. We used prompt=consent and the user clicked Cancel → show error
+  // Distinguish by checking whether firstAuth=true is in the signed state.
+  if (error === "access_denied" && state) {
+    const stateData = verifyState(state);
+    if (!stateData?.firstAuth) {
+      // First-timer hit prompt=none — send them to the consent screen once
+      const action = (stateData?.action as string) ?? "login";
+      const redirectUri = getOAuthRedirectUri(req);
+      const newState = signState({ action, firstAuth: true });
+      const url = buildDiscordAuthUrl(redirectUri, newState, ["identify"], "consent");
+      res.redirect(url);
+      return;
+    }
+    // User actually clicked Cancel on the consent screen
+    const dest = (stateData?.action as string) === "connect"
+      ? `/account?s=telegram&discord_error=${encodeURIComponent("Discord authorisation was cancelled")}`
+      : `/login?discord_error=${encodeURIComponent("Discord authorisation was cancelled")}`;
+    res.redirect(dest);
+    return;
+  }
+
   if (error) {
     res.redirect(`/login?discord_error=${encodeURIComponent("Discord authorisation was cancelled")}`);
     return;

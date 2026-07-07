@@ -216,7 +216,12 @@ export async function getDiscordBotStatus(): Promise<{
 
 // ── OAuth helpers ─────────────────────────────────────────────────────────────
 
-export function buildDiscordAuthUrl(redirectUri: string, state: string, scopes = ["identify", "email"]): string {
+export function buildDiscordAuthUrl(
+  redirectUri: string,
+  state: string,
+  scopes = ["identify"],
+  prompt: "none" | "consent" = "none",
+): string {
   const clientId = process.env["DISCORD_CLIENT_ID"] ?? "";
   const params = new URLSearchParams({
     client_id: clientId,
@@ -224,6 +229,7 @@ export function buildDiscordAuthUrl(redirectUri: string, state: string, scopes =
     response_type: "code",
     scope: scopes.join(" "),
     state,
+    prompt,
   });
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
