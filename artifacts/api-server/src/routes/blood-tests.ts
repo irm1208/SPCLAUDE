@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable } from "@workspace/db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable } from "@workspace/db";
+import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
@@ -856,6 +856,86 @@ function filterSageOutput(text: string): string {
   return text;
 }
 
+// ─── Sage input security scanner ──────────────────────────────────────────────
+// Scans incoming user messages for prompt injection / jailbreak attempts BEFORE
+// they are sent to the AI. Flags are logged to the audit trail. Users with 3+
+// flags today are auto-blocked for the remainder of the day.
+
+const SAGE_FLAGS_PER_DAY_LIMIT = 3;
+
+const SAGE_INPUT_INJECTION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /ignore\s+(all\s+)?(previous|prior|above|your)\s+instructions/i,        label: "ignore_instructions" },
+  { pattern: /forget\s+(all\s+)?(your\s+)?(rules|instructions|guidelines|training)/i, label: "forget_rules" },
+  { pattern: /\b(jailbreak|dan\s+mode|developer\s+mode|god\s+mode|unlocked\s+mode)\b/i, label: "jailbreak_keyword" },
+  { pattern: /act\s+as\s+(if\s+you\s+(are|were)|a\s+)?(?!sage\b)\w+/i,               label: "act_as_persona" },
+  { pattern: /you\s+are\s+now\s+(?!sage\b)\w/i,                                       label: "persona_override" },
+  { pattern: /pretend\s+(you\s+are|to\s+be|you\s+have\s+no)/i,                        label: "pretend_persona" },
+  { pattern: /new\s+(system\s+)?prompt[\s:]/i,                                         label: "new_system_prompt" },
+  { pattern: /\[system\]|\[assistant\]|\[user\].*override/i,                           label: "role_injection" },
+  { pattern: /repeat\s+(everything|all|your\s+instructions|the\s+system\s+prompt)/i,  label: "prompt_extraction" },
+  { pattern: /what\s+(are|were)\s+your\s+(exact\s+)?(instructions|system\s+prompt|rules)/i, label: "prompt_extraction" },
+  { pattern: /translate\s+your\s+(instructions|system\s+prompt)\s+(to|into)/i,        label: "prompt_extraction" },
+  { pattern: /hypothetically\s+if\s+you\s+(had\s+no\s+restrictions|were\s+allowed)/i, label: "hypothetical_bypass" },
+  { pattern: /for\s+(educational|research|fictional|story|roleplay)\s+purposes?\s+(only\s+)?[,:]?\s*(please\s+)?(tell|explain|describe|provide|show|give)/i, label: "fictional_bypass" },
+];
+
+async function scanSageInput(
+  message: string,
+  telegramUsername: string,
+): Promise<{ blocked: boolean; reason?: string; autoSuspended?: boolean }> {
+  let matchedLabel: string | undefined;
+
+  for (const { pattern, label } of SAGE_INPUT_INJECTION_PATTERNS) {
+    if (pattern.test(message)) {
+      matchedLabel = label;
+      break;
+    }
+  }
+
+  if (!matchedLabel) return { blocked: false };
+
+  console.warn(`[sage-input-filter] Injection attempt by ${telegramUsername}: ${matchedLabel}`);
+
+  // Log the flag to the audit trail (fire-and-forget)
+  logCustomerActivity({
+    telegramUsername,
+    eventCategory: "security",
+    eventType: "sage.injection_attempt",
+    actorType: "customer",
+    metadata: { pattern: matchedLabel, messagePreview: message.slice(0, 120) },
+  }).catch(() => {});
+
+  // Count how many flags this user has accumulated today
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [{ flagCount }] = await db
+    .select({ flagCount: count() })
+    .from(customerActivityLogsTable)
+    .where(
+      and(
+        eq(customerActivityLogsTable.telegramUsername, telegramUsername),
+        eq(customerActivityLogsTable.eventType, "sage.injection_attempt"),
+        gte(customerActivityLogsTable.createdAt, todayStart),
+      ),
+    );
+
+  const autoSuspended = flagCount >= SAGE_FLAGS_PER_DAY_LIMIT;
+
+  if (autoSuspended) {
+    console.warn(`[sage-input-filter] Auto-suspended ${telegramUsername} (${flagCount} flags today)`);
+    logCustomerActivity({
+      telegramUsername,
+      eventCategory: "security",
+      eventType: "sage.auto_suspended",
+      actorType: "system",
+      metadata: { flagCount, reason: "daily_flag_limit_exceeded" },
+    }).catch(() => {});
+  }
+
+  return { blocked: true, reason: matchedLabel, autoSuspended };
+}
+
 async function callGeminiDiscuss(
   message: string,
   sessionName: string,
@@ -1582,6 +1662,16 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "message is required" });
+    return;
+  }
+
+  // Security: scan for prompt injection / jailbreak attempts
+  const inputScan = await scanSageInput(message, tg);
+  if (inputScan.blocked) {
+    const reply = inputScan.autoSuspended
+      ? "Your access to Sage has been temporarily suspended due to repeated policy violations. Please contact support."
+      : "I'm Sage — I can only help with blood tests, compounds, and health protocols.";
+    res.status(400).json({ error: "blocked_input", response: reply, contextSession: null, used: 0, limit: 0 });
     return;
   }
 
