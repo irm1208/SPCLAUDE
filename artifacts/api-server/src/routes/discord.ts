@@ -301,7 +301,7 @@ router.post("/admin/discord/test-webhook", (req: Request, res: Response): void =
 // POST /api/admin/discord/save-config
 router.post("/admin/discord/save-config", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { botToken, webhookUrl } = req.body as { botToken?: string; webhookUrl?: string };
+  const { botToken, webhookUrl, guildId } = req.body as { botToken?: string; webhookUrl?: string; guildId?: string };
 
   if (botToken !== undefined) {
     await db.insert(siteConfigTable).values({ key: "discordBotToken", value: botToken.trim() })
@@ -311,6 +311,10 @@ router.post("/admin/discord/save-config", async (req: Request, res: Response): P
     await db.insert(siteConfigTable).values({ key: "discordAdminWebhookUrl", value: webhookUrl.trim() })
       .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: webhookUrl.trim() } });
   }
+  if (guildId !== undefined) {
+    await db.insert(siteConfigTable).values({ key: "discordGuildId", value: guildId.trim() })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: guildId.trim() } });
+  }
   invalidateDiscordCache();
   res.json({ ok: true });
 });
@@ -318,10 +322,12 @@ router.post("/admin/discord/save-config", async (req: Request, res: Response): P
 // GET /api/admin/discord/config — fetch current saved config (values redacted)
 router.get("/admin/discord/config", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { botToken, webhookUrl } = await getDiscordCredentials();
+  const { botToken, webhookUrl, guildId } = await getDiscordCredentials();
   res.json({
     botTokenSet: !!botToken,
     webhookUrlSet: !!webhookUrl,
+    guildIdSet: !!guildId,
+    guildIdHint: guildId ? guildId : null,
     // Show last 8 chars of webhook URL for identification, fully mask bot token
     webhookUrlHint: webhookUrl ? `…${webhookUrl.slice(-20)}` : null,
   });

@@ -14784,9 +14784,10 @@ function TelegramConfigSection({ secret }: { secret: string }) {
 // ── Discord Admin Config Section ──────────────────────────────────────────────
 function DiscordConfigSection({ secret }: { secret: string }) {
   const [status, setStatus] = useState<{ configured: boolean; botUsername?: string; webhookConfigured: boolean } | null>(null);
-  const [config, setConfig] = useState<{ botTokenSet: boolean; webhookUrlSet: boolean; webhookUrlHint: string | null } | null>(null);
+  const [config, setConfig] = useState<{ botTokenSet: boolean; webhookUrlSet: boolean; guildIdSet: boolean; guildIdHint: string | null; webhookUrlHint: string | null } | null>(null);
   const [botToken, setBotToken] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [guildId, setGuildId] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -14813,6 +14814,7 @@ function DiscordConfigSection({ secret }: { secret: string }) {
       const body: Record<string, string> = {};
       if (botToken.trim()) body.botToken = botToken.trim();
       if (webhookUrl.trim()) body.webhookUrl = webhookUrl.trim();
+      if (guildId.trim()) body.guildId = guildId.trim();
       const res = await fetch(apiUrl("/admin/discord/save-config"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
@@ -14820,7 +14822,7 @@ function DiscordConfigSection({ secret }: { secret: string }) {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error();
-      setBotToken(""); setWebhookUrl("");
+      setBotToken(""); setWebhookUrl(""); setGuildId("");
       setSaveResult("ok");
       loadStatus();
       setTimeout(() => setSaveResult(null), 3000);
@@ -14873,6 +14875,12 @@ function DiscordConfigSection({ secret }: { secret: string }) {
                 Webhook: {config.webhookUrlSet ? (config.webhookUrlHint ?? "set") : "not set"}
               </span>
             </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 col-span-2">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${config.guildIdSet ? "bg-green-500" : "bg-slate-300"}`} />
+              <span className="text-xs text-slate-600 truncate">
+                Server ID: {config.guildIdSet ? (config.guildIdHint ?? "set") : "not set"}
+              </span>
+            </div>
           </div>
         )}
 
@@ -14905,18 +14913,30 @@ function DiscordConfigSection({ secret }: { secret: string }) {
           />
         </div>
 
+        <div>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Server ID</label>
+          <p className="text-[11px] text-slate-400 mb-1.5">Right-click your server in Discord → Copy Server ID (requires Developer Mode)</p>
+          <input
+            type="text"
+            value={guildId}
+            onChange={e => setGuildId(e.target.value)}
+            placeholder="e.g. 1234567890123456789"
+            className="w-full h-10 px-3 rounded-xl text-sm border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+        </div>
+
         <div className="rounded-xl p-3 bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700 space-y-1">
           <p className="font-semibold">Setup steps:</p>
           <p>1. Create a bot at <a href="https://discord.com/developers/applications" target="_blank" rel="noopener" className="underline">discord.com/developers</a></p>
           <p>2. Add <code className="font-mono bg-indigo-100 px-1 rounded">DISCORD_CLIENT_ID</code> and <code className="font-mono bg-indigo-100 px-1 rounded">DISCORD_CLIENT_SECRET</code> env vars for OAuth</p>
           <p>3. Set redirect URI: <code className="font-mono bg-indigo-100 px-1 rounded text-[10px]">/api/account/discord/oauth-callback</code></p>
-          <p>4. Enable DMs by adding the bot to your server</p>
+          <p>4. Add bot to your server and paste the Server ID above</p>
         </div>
 
         <div className="flex gap-2">
           <button
             onClick={save}
-            disabled={saving || (!botToken.trim() && !webhookUrl.trim())}
+            disabled={saving || (!botToken.trim() && !webhookUrl.trim() && !guildId.trim())}
             className="flex-1 h-10 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 text-white"
             style={{ background: "#5865F2" }}
           >
