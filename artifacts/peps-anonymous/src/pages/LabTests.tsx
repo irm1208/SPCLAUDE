@@ -2530,7 +2530,7 @@ export default function LabTests({ bare }: { bare?: boolean } = {}) {
   return (
     <PageLayout bare={bare}>
       <SiteAnnouncements />
-      <div className="border-b sticky top-0 z-20" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
+      <div className="border-b" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
         <div className="max-w-7xl mx-auto px-4 pt-5 pb-0">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center border shadow-sm" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
