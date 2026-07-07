@@ -99,7 +99,6 @@ export const accountsTable = pgTable("accounts", {
   wholesaleInvitePromptSeenAt: timestamp("wholesale_invite_prompt_seen_at", { withTimezone: true }),
   // Per-account list of group buy IDs the user has archived (hidden from their Group Buys list)
   archivedGroupBuyIds: jsonb("archived_group_buy_ids").$type<string[]>().notNull().default([]),
-  hiddenOrderIds: jsonb("hidden_order_ids").$type<string[]>().notNull().default([]),
   lastLoginIp: text("last_login_ip"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   signupInviteCode: text("signup_invite_code"),

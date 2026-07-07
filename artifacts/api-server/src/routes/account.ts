@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable } from "@workspace/db";
+import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
@@ -1540,14 +1540,14 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
 // GET /api/account/hidden-orders — returns the list of order IDs the member has hidden
 router.get("/account/hidden-orders", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
-  const [acc] = await db
-    .select({ hiddenOrderIds: accountsTable.hiddenOrderIds })
-    .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, tg));
-  res.json(acc?.hiddenOrderIds ?? []);
+  const rows = await db
+    .select({ orderId: hiddenOrdersTable.orderId })
+    .from(hiddenOrdersTable)
+    .where(eq(hiddenOrdersTable.telegramUsername, tg));
+  res.json(rows.map(r => r.orderId));
 });
 
-// PATCH /api/account/hidden-orders — add, remove, or bulk-set hidden order IDs
+// PATCH /api/account/hidden-orders — add or remove a hidden order ID
 // Body: { add?: string } | { remove?: string } | { setAll?: string[] }
 router.patch("/account/hidden-orders", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
@@ -1555,23 +1555,35 @@ router.patch("/account/hidden-orders", requireAccount, async (req, res): Promise
 
   if (setAll !== undefined) {
     if (!Array.isArray(setAll)) { res.status(400).json({ error: "setAll must be an array" }); return; }
-    await db.update(accountsTable).set({ hiddenOrderIds: setAll }).where(eq(accountsTable.telegramUsername, tg));
+    await db.transaction(async tx => {
+      await tx.delete(hiddenOrdersTable).where(eq(hiddenOrdersTable.telegramUsername, tg));
+      if (setAll.length > 0) {
+        await tx.insert(hiddenOrdersTable).values(
+          setAll.map(orderId => ({ id: randomUUID(), telegramUsername: tg, orderId }))
+        );
+      }
+    });
     res.json({ hiddenOrderIds: setAll });
     return;
   }
 
-  const [acc] = await db
-    .select({ hiddenOrderIds: accountsTable.hiddenOrderIds })
-    .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, tg));
-  const current = acc?.hiddenOrderIds ?? [];
+  if (add && typeof add === "string") {
+    await db.insert(hiddenOrdersTable)
+      .values({ id: randomUUID(), telegramUsername: tg, orderId: add })
+      .onConflictDoNothing();
+  }
 
-  let next = current;
-  if (add && typeof add === "string" && !current.includes(add)) next = [...current, add];
-  if (remove && typeof remove === "string") next = current.filter(id => id !== remove);
+  if (remove && typeof remove === "string") {
+    await db.delete(hiddenOrdersTable).where(
+      and(eq(hiddenOrdersTable.telegramUsername, tg), eq(hiddenOrdersTable.orderId, remove))
+    );
+  }
 
-  await db.update(accountsTable).set({ hiddenOrderIds: next }).where(eq(accountsTable.telegramUsername, tg));
-  res.json({ hiddenOrderIds: next });
+  const rows = await db
+    .select({ orderId: hiddenOrdersTable.orderId })
+    .from(hiddenOrdersTable)
+    .where(eq(hiddenOrdersTable.telegramUsername, tg));
+  res.json({ hiddenOrderIds: rows.map(r => r.orderId) });
 });
 
 // GET /api/account/orders/deleted — member's soft-deleted orders within the 48-hour restore window
