@@ -272,11 +272,12 @@ function timeAgo(iso: string): string {
 }
 
 // ─── Order grid card (dashboard-style) ───────────────────────────────────────────
-type OrderCardKind = "gb" | "wholesale" | "shop";
+type OrderCardKind = "gb" | "wholesale" | "shared" | "shop";
 const ORDER_KIND_META: Record<OrderCardKind, { label: string; Icon: React.ElementType }> = {
-  gb:        { label: "Group Buy", Icon: Users },
-  wholesale: { label: "Wholesale", Icon: Boxes },
-  shop:      { label: "Shop",      Icon: ShoppingBag },
+  gb:       { label: "Group Buy",    Icon: Users },
+  wholesale:{ label: "Wholesale",    Icon: Boxes },
+  shared:   { label: "Shared Order", Icon: UsersRound },
+  shop:     { label: "Shop",         Icon: ShoppingBag },
 };
 
 function OrderGridCard({
@@ -7029,7 +7030,7 @@ export default function CustomerPortal() {
   }, []);
 
   const dark = useThemeStore((s) => s.dark);
-  const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "wholesale" | "shop">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "gb" | "wholesale" | "shared" | "shop">("all");
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersStatusFilter, setOrdersStatusFilter] = useState<string>("all");
   const [ordersView, setOrdersView] = useState<"grid" | "list">("grid");
@@ -7828,7 +7829,7 @@ export default function CustomerPortal() {
     }
     for (const o of wholesaleOrders) allCards.push({
       order: o,
-      kind: "wholesale",
+      kind: o.orderType === "wholesale_shared" ? "shared" : "wholesale",
       title: o.orderType === "wholesale_shared" ? "Shared Wholesale Order" : "Wholesale Order",
       accent: o.orderType === "wholesale_shared" ? SHARED_WHOLESALE_ACCENT : WHOLESALE_ACCENT,
       gb: null,
@@ -7837,22 +7838,22 @@ export default function CustomerPortal() {
     for (const o of shopOrders) allCards.push({ order: o, kind: "shop", title: "Shop Order", accent: SHOP_ACCENT, gb: null, gbOrders: [] });
     allCards.sort((a, b) => (b.order.createdAt || "").localeCompare(a.order.createdAt || ""));
 
-    // Status tabs (only statuses that are actually present), each with a count.
-    const STATUS_TAB_ORDER = ["Draft", "Submitted", "Processing", "Shipped", "Completed", "Cancelled"];
-    const statusTabs = [
-      { id: "all", label: "All", count: allCards.length },
-      ...STATUS_TAB_ORDER
-        .filter(s => allCards.some(c => c.order.status === s))
-        .map(s => ({ id: s, label: STATUS_META[s]?.label ?? s, count: allCards.filter(c => c.order.status === s).length })),
+    // Type tabs — primary filter bar.
+    const TYPE_TABS: { id: "gb" | "shared" | "wholesale"; label: string; Icon: React.ElementType }[] = [
+      { id: "gb",        label: "Group Buy",    Icon: Users },
+      { id: "shared",    label: "Shared Order", Icon: UsersRound },
+      { id: "wholesale", label: "Wholesale",    Icon: Boxes },
     ];
 
-    const typeOptions: { id: "all" | "gb" | "wholesale" | "shop"; label: string }[] = [
-      { id: "all", label: "All types" },
-      { id: "gb", label: "Group Buys" },
-      ...(account?.isWholesale ? [{ id: "wholesale" as const, label: "Wholesale" }] : []),
-      { id: "shop", label: "Shop" },
+    // Status dropdown options (only statuses that actually appear).
+    const STATUS_TAB_ORDER = ["Draft", "Submitted", "Processing", "Shipped", "Completed", "Cancelled"];
+    const statusDropdownOptions = [
+      { id: "all", label: "All Statuses" },
+      ...STATUS_TAB_ORDER
+        .filter(s => allCards.some(c => c.order.status === s))
+        .map(s => ({ id: s, label: STATUS_META[s]?.label ?? s })),
     ];
-    const typeLabel = typeOptions.find(t => t.id === typeFilter)?.label ?? "All types";
+    const statusLabel = statusDropdownOptions.find(o => o.id === ordersStatusFilter)?.label ?? "All Statuses";
 
     const q = ordersSearch.trim().toLowerCase();
     const filteredCards = allCards.filter(c => {
@@ -7896,19 +7897,29 @@ export default function CustomerPortal() {
           {/* ── Header: subtitle ── */}
           <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
 
-          {/* ── Status tabs + toolbar ── */}
+          {/* ── Type tabs + toolbar ── */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1 lg:pb-0">
-              {statusTabs.map(t => {
-                const active = ordersStatusFilter === t.id;
+              {TYPE_TABS.map(t => {
+                const count = allCards.filter(c => c.kind === t.id).length;
+                const active = typeFilter === t.id;
                 return (
                   <button key={t.id}
-                    onClick={() => { setOrdersStatusFilter(t.id); setOrdersPage(1); }}
+                    onClick={() => { setTypeFilter(active ? "all" : t.id); setOrdersPage(1); }}
                     className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[12.5px] font-semibold whitespace-nowrap transition-all shrink-0"
                     style={active
                       ? { background: T.surface, color: T.text, boxShadow: T.shadow, border: `1px solid ${T.border}` }
                       : { background: "transparent", color: T.subtle, border: "1px solid transparent" }}>
+                    <t.Icon className="w-3.5 h-3.5 shrink-0" />
                     {t.label}
+                    {count > 0 && (
+                      <span className="text-[10px] font-bold px-1 rounded-full"
+                        style={active
+                          ? { background: hexToRgba("#2D6BCC", 0.12), color: "var(--t-blue)" }
+                          : { background: "rgba(0,0,0,0.07)", color: T.subtle }}>
+                        {count}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -7933,27 +7944,27 @@ export default function CustomerPortal() {
               <div className="relative shrink-0">
                 <button onClick={() => setOrderTypeFilterOpen(v => !v)}
                   className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[12.5px] font-semibold"
-                  style={typeFilter !== "all"
+                  style={ordersStatusFilter !== "all"
                     ? { background: hexToRgba("#2D6BCC", 0.08), color: "var(--t-blue)", border: `1px solid ${hexToRgba("#2D6BCC", 0.3)}` }
                     : { background: T.surface, color: T.muted, border: `1px solid ${T.border}` }}>
                   <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{typeFilter === "all" ? "Filter" : typeLabel}</span>
+                  <span className="hidden sm:inline">{ordersStatusFilter === "all" ? "Status" : statusLabel}</span>
                 </button>
                 {orderTypeFilterOpen && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setOrderTypeFilterOpen(false)} />
                     <div className="absolute right-0 top-11 z-20 w-44 rounded-xl p-1.5 flex flex-col gap-0.5"
                       style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.14)" }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: T.subtle }}>Order type</p>
-                      {typeOptions.map(opt => (
+                      <p className="text-[10px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: T.subtle }}>Order status</p>
+                      {statusDropdownOptions.map(opt => (
                         <button key={opt.id}
-                          onClick={() => { setTypeFilter(opt.id); setOrdersPage(1); setOrderTypeFilterOpen(false); }}
+                          onClick={() => { setOrdersStatusFilter(opt.id); setOrdersPage(1); setOrderTypeFilterOpen(false); }}
                           className="flex items-center justify-between h-9 px-2.5 rounded-lg text-[12.5px] font-medium text-left"
-                          style={typeFilter === opt.id
+                          style={ordersStatusFilter === opt.id
                             ? { background: hexToRgba("#2D6BCC", 0.08), color: "var(--t-blue)" }
                             : { color: T.muted }}>
                           {opt.label}
-                          {typeFilter === opt.id && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {ordersStatusFilter === opt.id && <CheckCircle2 className="w-3.5 h-3.5" />}
                         </button>
                       ))}
                     </div>
