@@ -1,7 +1,7 @@
 import React from "react";
 import { useLocation } from "wouter";
 import { BookOpen, ChevronRight } from "lucide-react";
-import { PageLayout } from "@/components/PageLayout";
+import { ResearchShell } from "@/components/ResearchShell";
 import { COURSES, getTotalLessons } from "@/data/learn-content";
 import { useLearnProgress } from "@/hooks/use-learn-progress";
 import { T } from "@/lib/theme";
@@ -25,7 +25,7 @@ export default function Learn() {
   const { courseProgress } = useLearnProgress();
 
   return (
-    <PageLayout>
+    <ResearchShell active="learn">
       <div className="flex flex-col pb-10" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <main className="flex-1 px-4 py-8 max-w-3xl mx-auto w-full">
 
@@ -96,6 +96,6 @@ export default function Learn() {
           </p>
         </main>
       </div>
-    </PageLayout>
+    </ResearchShell>
   );
 }

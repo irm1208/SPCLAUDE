@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, RotateCcw, ShoppingCart, AlertTriangle, SplitSquareHorizontal, Minus, Plus, Zap } from "lucide-react";
 import { PharmaPlot } from "@/components/PharmaPlot";
 import { HALF_LIFE_DATA } from "@/data/halflife";
-import { PageLayout } from "@/components/PageLayout";
+import { ResearchShell } from "@/components/ResearchShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { PROTOCOLS, type Protocol } from "@/data/protocols";
 import { AddToOrderSheet } from "@/components/AddToOrderSheet";
@@ -287,7 +287,7 @@ export default function Calculator() {
   const activePreset = !customAmountFocused ? parseFloat(vialMg) : null;
 
   return (
-    <PageLayout>
+    <ResearchShell active="calculator">
       <div className="flex-1 flex flex-col" style={{ background: isDark ? RECON_BG : PAGE_BG, minHeight: "100%" }}>
         <SiteAnnouncements />
 
@@ -1078,6 +1078,6 @@ export default function Calculator() {
           <AddToOrderSheet protocol={selectedProtocol} onClose={() => setShowAddSheet(false)} orderType="single" />
         )}
       </div>
-    </PageLayout>
+    </ResearchShell>
   );
 }

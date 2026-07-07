@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { ChevronLeft, ChevronRight, CheckCircle2, Clock, Lightbulb, CheckCheck } from "lucide-react";
-import { PageLayout } from "@/components/PageLayout";
+import { ResearchShell } from "@/components/ResearchShell";
 import { getCourse, getLesson, getLessonNav } from "@/data/learn-content";
 import { useLearnProgress } from "@/hooks/use-learn-progress";
 import { T } from "@/lib/theme";
@@ -39,7 +39,7 @@ export default function LearnLesson() {
 
   if (!course || !lesson) {
     return (
-      <PageLayout>
+      <ResearchShell active="learn">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <p className="text-[18px] font-semibold mb-2" style={{ color: T.text }}>Lesson not found</p>
@@ -52,7 +52,7 @@ export default function LearnLesson() {
             </button>
           </div>
         </div>
-      </PageLayout>
+      </ResearchShell>
     );
   }
 
@@ -65,7 +65,7 @@ export default function LearnLesson() {
   }
 
   return (
-    <PageLayout>
+    <ResearchShell active="learn">
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
 
         <div
@@ -270,6 +270,6 @@ export default function LearnLesson() {
 
         </main>
       </div>
-    </PageLayout>
+    </ResearchShell>
   );
 }

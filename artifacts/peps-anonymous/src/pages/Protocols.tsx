@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Search, FlaskConical, ArrowRight, BookMarked, Syringe, Pill } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
-import { PageLayout } from "@/components/PageLayout";
+import { ResearchShell } from "@/components/ResearchShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { PROTOCOLS, type Protocol } from "@/data/protocols";
 import { MED_PROTOCOLS, type MedProtocol, type MedCategory } from "@/data/medication-protocols";
@@ -473,7 +473,7 @@ export default function Protocols({ bare, initialTrack }: { bare?: boolean; init
   }, [q, crossTrackResults, track]);
 
   return (
-    <PageLayout bare={bare}>
+    <ResearchShell active="protocols" bare={bare}>
       {quickViewProtocol && (
         <ProtocolQuickView
           protocol={quickViewProtocol}
@@ -660,7 +660,7 @@ export default function Protocols({ bare, initialTrack }: { bare?: boolean; init
 
         </main>
       </div>
-    </PageLayout>
+    </ResearchShell>
   );
 }
 
