@@ -2811,7 +2811,7 @@ router.delete("/account/orders/:id", requireAccount, async (req, res): Promise<v
     return;
   }
 
-  const deletableStatuses = ["Draft", "Submitted"];
+  const deletableStatuses = ["Draft", "Submitted", "Cancelled"];
   if (!deletableStatuses.includes(order.status)) {
     res.status(403).json({ error: `Orders with status "${order.status}" cannot be deleted. Contact support if needed.` });
     return;
@@ -2822,7 +2822,8 @@ router.delete("/account/orders/:id", requireAccount, async (req, res): Promise<v
     return;
   }
 
-  if (await isCustomerActionLockedByGb(order.groupBuyId, "delete")) {
+  // Cancelled orders bypass the GB lock check — they're already cancelled.
+  if (order.status !== "Cancelled" && await isCustomerActionLockedByGb(order.groupBuyId, "delete")) {
     res.status(403).json({
       error: `This group buy is closed — orders can no longer be deleted.`,
       lockedByGb: true,

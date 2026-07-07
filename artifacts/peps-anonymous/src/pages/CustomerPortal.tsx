@@ -46,7 +46,8 @@ import {
   useTelegramStatus, useTelegramLinkInit, useTelegramUnlink, useTelegramUpdatePrefs, useTelegramSendTest,
   useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useLeaveGroupBuy, useUpdateCountry, useCountryLegs,
   useViewerAccess, useSetGroupBuyArchived,
-  type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry,
+  useDeleteOrder, useDeletedOrders, useRestoreOrder,
+  type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry, type DeletedOrder,
 } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
@@ -281,7 +282,7 @@ const ORDER_KIND_META: Record<OrderCardKind, { label: string; Icon: React.Elemen
 };
 
 function OrderGridCard({
-  order, kind, title, accent, onManage, onReorder, onTracking,
+  order, kind, title, accent, onManage, onReorder, onTracking, onHide, onUnhide, onRemove, isHidden,
 }: {
   order: Order;
   kind: OrderCardKind;
@@ -290,7 +291,12 @@ function OrderGridCard({
   onManage: () => void;
   onReorder?: () => void;
   onTracking?: () => void;
+  onHide?: () => void;
+  onUnhide?: () => void;
+  onRemove?: () => void;
+  isHidden?: boolean;
 }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
   const pMeta = PAYMENT_META[order.paymentStatus] ?? PAYMENT_META.unpaid!;
   const { label: metaLabel, Icon } = ORDER_KIND_META[kind];
@@ -300,12 +306,11 @@ function OrderGridCard({
   const done = order.status === "Completed";
   const cancelled = order.status === "Cancelled";
   const terminal = done || cancelled;
-  // Bold colour-blocked header per order type (deepened towards navy so white text stays readable)
   const bandBg = `linear-gradient(135deg, color-mix(in srgb, ${accent} 62%, #12233F) 0%, color-mix(in srgb, ${accent} 38%, #12233F) 100%)`;
 
   return (
     <div className="rounded-2xl flex flex-col h-full overflow-hidden"
-      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
+      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow, opacity: isHidden ? 0.55 : 1 }}>
       {/* colour-block header: type icon + title + status */}
       <div className="px-4 pt-3.5 pb-3 flex items-start gap-3 relative overflow-hidden" style={{ background: bandBg }}>
         <div className="absolute -right-6 -top-10 w-28 h-28 rounded-full pointer-events-none" style={{ background: "rgba(255,255,255,0.10)" }} />
@@ -316,11 +321,50 @@ function OrderGridCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[9.5px] font-bold uppercase tracking-[0.12em] truncate" style={{ color: "rgba(255,255,255,0.78)" }}>{kindLabel}</p>
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full shrink-0"
-              style={{ color: "#fff", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
-              {sMeta.label}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full"
+                style={{ color: "#fff", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
+                {sMeta.label}
+              </span>
+              {/* ⋯ kebab menu */}
+              <div className="relative">
+                <button
+                  onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center"
+                  style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                  <MoreHorizontal className="w-3.5 h-3.5 text-white" />
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[50]" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 top-8 z-[51] w-40 rounded-xl p-1 flex flex-col gap-0.5"
+                      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.18)" }}>
+                      {isHidden ? (
+                        <button onClick={() => { setMenuOpen(false); onUnhide?.(); }}
+                          className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
+                          style={{ color: T.text }}>
+                          <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Unhide
+                        </button>
+                      ) : (
+                        <button onClick={() => { setMenuOpen(false); onHide?.(); }}
+                          className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
+                          style={{ color: T.text }}>
+                          <EyeOff className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Hide
+                        </button>
+                      )}
+                      {cancelled && onRemove && (
+                        <button onClick={() => { setMenuOpen(false); onRemove(); }}
+                          className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
+                          style={{ color: "#DC2626" }}>
+                          <Trash2 className="w-3.5 h-3.5 shrink-0" /> Remove
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
           <p className="text-[14px] font-bold text-white truncate mt-0.5">{title}</p>
           <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.68)" }}>{timeAgo(order.createdAt)}</p>
@@ -6964,6 +7008,9 @@ export default function CustomerPortal() {
   const qc = useQueryClient();
   const logoutMutation = useLogout();
   const { data: ordersData, isLoading: ordersLoading, refetch } = useAccountOrders(gbId, isLoggedIn);
+  const deleteOrderMut = useDeleteOrder();
+  const { data: deletedOrders = [], refetch: refetchDeleted } = useDeletedOrders();
+  const restoreOrderMut = useRestoreOrder();
   const { data: lateOptInGbs = [] } = useTestingLateOptIn(isLoggedIn);
   const { data: activePools = [] } = useTestingActivePools(isLoggedIn);
   const { data: gbPools = [] } = useTestingGbPools(isLoggedIn);
@@ -7037,6 +7084,13 @@ export default function CustomerPortal() {
   const [gbView, setGbView] = useState<"cards" | "table">("cards");
   const [ordersPage, setOrdersPage] = useState(1);
   const [orderTypeFilterOpen, setOrderTypeFilterOpen] = useState(false);
+  const [hiddenOrderIds, setHiddenOrderIds] = useState<Set<string>>(() => {
+    try {
+      const s = localStorage.getItem("peps:hidden-orders");
+      return s ? new Set(JSON.parse(s)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  const [showHidden, setShowHidden] = useState(false);
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
   const [showCompoundHistory, setShowCompoundHistory] = useState(false);
@@ -7855,8 +7909,34 @@ export default function CustomerPortal() {
     ];
     const statusLabel = statusDropdownOptions.find(o => o.id === ordersStatusFilter)?.label ?? "All Statuses";
 
+    function hideOrder(id: string) {
+      setHiddenOrderIds(prev => {
+        const next = new Set(prev); next.add(id);
+        localStorage.setItem("peps:hidden-orders", JSON.stringify([...next]));
+        return next;
+      });
+    }
+    function unhideOrder(id: string) {
+      setHiddenOrderIds(prev => {
+        const next = new Set(prev); next.delete(id);
+        localStorage.setItem("peps:hidden-orders", JSON.stringify([...next]));
+        return next;
+      });
+    }
+    async function removeOrder(id: string) {
+      try {
+        await deleteOrderMut.mutateAsync(id);
+        refetchDeleted();
+        toast({ title: "Order removed", description: "Recoverable within 48 hours." });
+      } catch (e: unknown) {
+        toast({ title: "Could not remove order", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+      }
+    }
+
+    const hiddenInView = allCards.filter(c => hiddenOrderIds.has(c.order.id));
     const q = ordersSearch.trim().toLowerCase();
     const filteredCards = allCards.filter(c => {
+      if (!showHidden && hiddenOrderIds.has(c.order.id)) return false;
       if (typeFilter !== "all" && c.kind !== typeFilter) return false;
       if (ordersStatusFilter !== "all" && c.order.status !== ordersStatusFilter) return false;
       if (q) {
@@ -7895,7 +7975,20 @@ export default function CustomerPortal() {
         <div className="px-4 md:px-7 py-6 flex flex-col gap-5 pb-[calc(96px_+_env(safe-area-inset-bottom))] lg:pb-8">
 
           {/* ── Header: subtitle ── */}
-          <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
+            {hiddenInView.length > 0 && (
+              <button
+                onClick={() => setShowHidden(v => !v)}
+                className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11.5px] font-semibold shrink-0"
+                style={showHidden
+                  ? { background: hexToRgba("#2D6BCC", 0.1), color: "var(--t-blue)", border: `1px solid ${hexToRgba("#2D6BCC", 0.25)}` }
+                  : { background: T.surface, color: T.subtle, border: `1px solid ${T.border}` }}>
+                {showHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                {showHidden ? "Hide hidden" : `Show hidden (${hiddenInView.length})`}
+              </button>
+            )}
+          </div>
 
           {/* ── Type tabs + toolbar ── */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -8048,11 +8141,15 @@ export default function CustomerPortal() {
                       kind={c.kind}
                       title={c.title}
                       accent={c.accent}
+                      isHidden={hiddenOrderIds.has(c.order.id)}
                       onManage={() => handleManage(c.order)}
                       onReorder={c.kind === "wholesale" && c.order.orderType === "wholesale" ? () => handleReorder(c.order) : undefined}
                       onTracking={c.kind === "gb" && c.gb && ["confirmed", "test_confirmed"].includes(c.order.paymentStatus)
                         ? () => { setParcelsGb(c.gb); setParcelsOrders(c.gbOrders); }
                         : undefined}
+                      onHide={() => hideOrder(c.order.id)}
+                      onUnhide={() => unhideOrder(c.order.id)}
+                      onRemove={c.order.status === "Cancelled" ? () => removeOrder(c.order.id) : undefined}
                     />
                   </motion.div>
                 ))}
@@ -8092,6 +8189,64 @@ export default function CustomerPortal() {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Recently removed (soft-deleted) ── */}
+          {deletedOrders.length > 0 && (
+            <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${hexToRgba("#EF4444", 0.3)}` }}>
+              <details open>
+                <summary className="list-none flex items-center justify-between px-4 py-3 cursor-pointer" style={{ background: T.surface }}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: hexToRgba("#EF4444", 0.08) }}>
+                      <Trash2 className="w-3.5 h-3.5" style={{ color: "#EF4444" }} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color: T.text }}>Recently Removed</p>
+                      <p className="text-[11px]" style={{ color: T.subtle }}>
+                        {deletedOrders.length} order{deletedOrders.length !== 1 ? "s" : ""} · recoverable within 48h
+                      </p>
+                    </div>
+                  </div>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: "#EF4444" }}>
+                    {deletedOrders.length}
+                  </span>
+                </summary>
+                <div className="p-3 border-t space-y-2" style={{ borderColor: hexToRgba("#EF4444", 0.15), background: hexToRgba("#EF4444", 0.02) }}>
+                  <p className="text-[11px] px-1 leading-relaxed" style={{ color: T.subtle }}>
+                    Orders you removed within the last 48 hours. Admin-removed orders cannot be self-restored.
+                  </p>
+                  {(deletedOrders as DeletedOrder[]).map(del => {
+                    const expiresIn = Math.max(0, Math.round((new Date(del.expiresAt).getTime() - Date.now()) / 3600000));
+                    return (
+                      <div key={del.id} className="flex items-center justify-between gap-3 p-3 rounded-xl"
+                        style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-bold truncate" style={{ color: T.text }}>#{del.code}</p>
+                          <p className="text-[11px]" style={{ color: T.subtle }}>{del.status} · expires in {expiresIn}h</p>
+                        </div>
+                        {del.canRestore && (
+                          <button
+                            disabled={restoreOrderMut.isPending}
+                            onClick={async () => {
+                              try {
+                                await restoreOrderMut.mutateAsync(del.id);
+                                refetchDeleted();
+                                toast({ title: "Order restored" });
+                              } catch (e: unknown) {
+                                toast({ title: "Could not restore", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+                              }
+                            }}
+                            className="shrink-0 h-8 px-3 rounded-xl text-[11.5px] font-bold flex items-center gap-1.5 disabled:opacity-50"
+                            style={{ background: hexToRgba("#16A34A", 0.1), color: "#16A34A", border: `1px solid ${hexToRgba("#16A34A", 0.2)}` }}>
+                            <ArchiveRestore className="w-3.5 h-3.5" /> Restore
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
             </div>
           )}
 

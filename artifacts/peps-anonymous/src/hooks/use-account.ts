@@ -677,6 +677,24 @@ export interface DeletedOrder {
   lineItems: { productName: string; quantity: number; lineTotal: number }[];
 }
 
+export function useDeleteOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (orderId: string) => {
+      const res = await fetch(`/api/account/orders/${orderId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to remove order");
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["account", "orders"] });
+    },
+  });
+}
+
 export function useDeletedOrders() {
   return useQuery<DeletedOrder[]>({
     queryKey: ["account", "orders", "deleted"],
