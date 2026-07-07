@@ -1109,7 +1109,7 @@ export default function OrderForm() {
           </motion.div>
         )}
       </AnimatePresence>
-      <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-48 lg:pb-32" : "pb-48 md:pb-32"} max-w-2xl mx-auto w-full space-y-4`}>
+      <main className="flex-1 px-4 py-5 pb-24 max-w-2xl mx-auto w-full space-y-4">
 
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (
@@ -2057,6 +2057,17 @@ export default function OrderForm() {
           </AnimatePresence>
         </section>
 
+        {/* ── Review Order button ────────────────────────────────────────────── */}
+        <div className="pt-2 pb-4">
+          <button
+            onClick={handleReview}
+            className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10"
+            style={{ background: "var(--t-blue-deep)" }}
+          >
+            Review Order <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
       </main>
       {/* Stock levels modal */}
       <AnimatePresence>
@@ -2230,25 +2241,6 @@ export default function OrderForm() {
           />
         )}
       </AnimatePresence>
-      {/* ── Sticky Review button ─────────────────────────────────────────────── */}
-      <div
-        className="fixed left-0 right-0 z-[68] px-4 lg:hidden"
-        style={{
-          bottom: "calc(68px + env(safe-area-inset-bottom))",
-          paddingBottom: "0.75rem",
-          paddingTop: "0.75rem",
-          background: "var(--t-bg)",
-          borderTop: "1px solid var(--t-border)",
-        }}
-      >
-        <button
-          onClick={handleReview}
-          className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10"
-          style={{ background: "var(--t-blue-deep)" }}
-        >
-          Review Order <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
     </div>
     {!useDashChrome && (
       <HubBottomNav
