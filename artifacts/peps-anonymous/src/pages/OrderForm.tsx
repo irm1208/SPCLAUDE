@@ -729,7 +729,6 @@ export default function OrderForm() {
   const [labTestsProduct, setLabTestsProduct] = React.useState<{ productName: string; batchPrefixes: string[] } | null>(null);
   const [stockModalOpen, setStockModalOpen] = React.useState(false);
   const [stockSearch, setStockSearch] = React.useState("");
-  const [orderSummaryOpen, setOrderSummaryOpen] = React.useState(false);
   const [stockFilter, setStockFilter] = React.useState<"available" | "limited" | "low" | "full" | null>(null);
   const [productLabTestsMap, setProductLabTestsMap] = React.useState<Record<string, boolean>>({});
   const productPrefixesRef = React.useRef<Record<string, string[]>>({});
@@ -2231,177 +2230,25 @@ export default function OrderForm() {
           />
         )}
       </AnimatePresence>
-      {/* ── Floating order summary tab ───────────────────────────────────────── */}
-      <AnimatePresence>
-        {!orderSummaryOpen && (
-          <motion.button
-            key="of-summary-tab"
-            initial={{ x: 40, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 40, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            onClick={() => setOrderSummaryOpen(true)}
-            className="fixed right-0 z-[58] flex flex-col items-center justify-center gap-1.5 rounded-l-2xl shadow-xl"
-            style={{
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: 40,
-              paddingTop: 18,
-              paddingBottom: 18,
-              background: "var(--t-blue-deep)",
-              color: "#fff",
-              border: "none",
-              cursor: "pointer",
-            }}
-            aria-label="Open order summary"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            {draft.lineItems.length > 0 && (
-              <span
-                className="flex items-center justify-center rounded-full text-[9px] font-black leading-none"
-                style={{ width: 18, height: 18, background: "#fff", color: "var(--t-blue-deep)", minWidth: 18 }}
-              >
-                {draft.lineItems.length}
-              </span>
-            )}
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {orderSummaryOpen && (
-          <>
-            <motion.div
-              key="of-summary-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[59]"
-              style={{ background: "rgba(0,0,0,0.35)" }}
-              onClick={() => setOrderSummaryOpen(false)}
-            />
-            <motion.div
-              key="of-summary-panel"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 32 }}
-              className="fixed inset-y-0 right-0 z-[60] flex flex-col shadow-2xl"
-              style={{
-                width: 288,
-                background: "var(--t-surface)",
-                borderLeft: "1px solid var(--t-border)",
-              }}
-            >
-              {/* Header */}
-              <div
-                className="flex items-center justify-between px-4 shrink-0"
-                style={{ height: 52, borderBottom: "1px solid var(--t-border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <ShoppingCart className="w-4 h-4" style={{ color: "var(--t-blue-deep)" }} />
-                  <span className="font-bold text-sm" style={{ color: "var(--t-text)" }}>Order Summary</span>
-                </div>
-                <button
-                  onClick={() => setOrderSummaryOpen(false)}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-60"
-                  style={{ color: "var(--t-muted)" }}
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Items */}
-              <div className="flex-1 overflow-y-auto px-4 py-3">
-                {draft.lineItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-2 py-10">
-                    <ShoppingCart className="w-8 h-8" style={{ color: "var(--t-border)" }} />
-                    <p className="text-sm text-center" style={{ color: "var(--t-muted)" }}>No items added yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {draft.lineItems.map(item => (
-                      <div
-                        key={item.id}
-                        className="flex items-start justify-between gap-3 py-2"
-                        style={{ borderBottom: "1px solid var(--t-border)" }}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold leading-snug break-words" style={{ color: "var(--t-text)" }}>
-                            {item.productName}
-                          </p>
-                          <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                            × {displayQty(item.quantity)} kit{item.quantity !== 1 ? "s" : ""}
-                          </p>
-                        </div>
-                        <span className="text-xs font-bold shrink-0 tabular-nums" style={{ color: "var(--t-text)" }}>
-                          {formatPrice(item.lineTotal)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Totals */}
-              {!hideOrderTotal && productSubtotal > 0 && (
-                <div
-                  className="px-4 py-3 space-y-2 shrink-0"
-                  style={{ borderTop: "1px solid var(--t-border)" }}
-                >
-                  <div className="flex justify-between text-xs">
-                    <span style={{ color: "var(--t-muted)" }}>Products</span>
-                    <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>{formatPrice(productSubtotal)}</span>
-                  </div>
-                  {draft.deliveryPrice > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span style={{ color: "var(--t-muted)" }}>{draft.deliveryMethod || "Delivery"}</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>{formatPrice(draft.deliveryPrice)}</span>
-                    </div>
-                  )}
-                  {draft.vendorShipping > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span style={{ color: "var(--t-muted)" }}>Vendor shipping</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>{formatPrice(draft.vendorShipping)}</span>
-                    </div>
-                  )}
-                  {draft.tip > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span style={{ color: "var(--t-muted)" }}>Tip</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "var(--t-text)" }}>{formatPrice(draft.tip)}</span>
-                    </div>
-                  )}
-                  <div
-                    className="flex justify-between text-sm font-bold pt-1.5"
-                    style={{ borderTop: "1px solid var(--t-border)" }}
-                  >
-                    <span style={{ color: "var(--t-text)" }}>Grand Total</span>
-                    <span className="tabular-nums" style={{ color: "var(--t-text)" }}>{formatPrice(grandTotal)}</span>
-                  </div>
-                  {!draft.deliveryMethod && (
-                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Choose a delivery method to see final total</p>
-                  )}
-                </div>
-              )}
-
-              {/* Action */}
-              <div
-                className="px-4 py-4 shrink-0"
-                style={{ borderTop: "1px solid var(--t-border)", paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-              >
-                <button
-                  onClick={() => { setOrderSummaryOpen(false); handleReview(); }}
-                  className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10"
-                  style={{ background: "var(--t-blue-deep)" }}
-                >
-                  Review Order <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* ── Sticky Review button ─────────────────────────────────────────────── */}
+      <div
+        className="fixed left-0 right-0 z-[68] px-4 lg:hidden"
+        style={{
+          bottom: "calc(68px + env(safe-area-inset-bottom))",
+          paddingBottom: "0.75rem",
+          paddingTop: "0.75rem",
+          background: "var(--t-bg)",
+          borderTop: "1px solid var(--t-border)",
+        }}
+      >
+        <button
+          onClick={handleReview}
+          className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10"
+          style={{ background: "var(--t-blue-deep)" }}
+        >
+          Review Order <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
     </div>
     {!useDashChrome && (
       <HubBottomNav
