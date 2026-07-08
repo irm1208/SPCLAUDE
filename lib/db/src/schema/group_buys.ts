@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, boolean, integer, timestamp, unique, jsonb, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, boolean, integer, timestamp, unique, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -313,8 +313,7 @@ export type GbEntryFeePaymentStatus = typeof GB_ENTRY_FEE_PAYMENT_STATUSES[numbe
 
 export const gbEntryFeePaymentsTable = pgTable("gb_entry_fee_payments", {
   id: text("id").primaryKey(),
-  // FK defined at table level below to lock the constraint name to what postgres auto-named it in production.
-  groupBuyId: text("group_buy_id").notNull(),
+  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
   // Plain text — mirrors organiserId/pool_participants.accountId (no FK, avoids circular dep on accounts.ts).
   accountId: text("account_id").notNull(),
   status: text("status").notNull().default("pending"),
@@ -338,11 +337,6 @@ export const gbEntryFeePaymentsTable = pgTable("gb_entry_fee_payments", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
   unique("gb_entry_fee_payments_unique").on(t.groupBuyId, t.accountId),
-  foreignKey({
-    name: "gb_entry_fee_payments_group_buy_id_fkey",
-    columns: [t.groupBuyId],
-    foreignColumns: [groupBuysTable.id],
-  }).onDelete("cascade"),
 ]);
 
 export type GbEntryFeePayment = typeof gbEntryFeePaymentsTable.$inferSelect;
