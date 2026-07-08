@@ -870,7 +870,7 @@ async function runStartupMigrations(): Promise<void> {
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT gb_entry_fee_payments_unique UNIQUE (group_buy_id, account_id),
-        CONSTRAINT gb_entry_fee_payments_group_buy_id_group_buys_id_fk
+        CONSTRAINT gb_entry_fee_payments_group_buy_id_fkey
           FOREIGN KEY (group_buy_id) REFERENCES group_buys(id) ON DELETE CASCADE
       )
     `);
