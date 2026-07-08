@@ -836,6 +836,12 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_status_code integer`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_events jsonb NOT NULL DEFAULT '[]'::jsonb`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_checked timestamptz`);
+    // sage discuss daily limit — bump from old default of 20 to 50
+    await db.execute(sql`
+      INSERT INTO site_config (key, value)
+      VALUES ('discuss_limit', '50')
+      ON CONFLICT (key) DO UPDATE SET value = '50' WHERE site_config.value IN ('10', '20')
+    `);
     // group_buys — entry fee gate (self-heal: drizzle push may drop these)
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS entry_fee_enabled boolean NOT NULL DEFAULT false`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS entry_fee_amount numeric(10,2)`);

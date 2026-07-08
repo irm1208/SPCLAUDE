@@ -49,7 +49,7 @@ export const SITE_CONFIG_REGISTRY: ConfigKeyDescriptor[] = [
 
   // ── Access ───────────────────────────────────────────────────
   { key: "signup_requires_invite", type: "boolean", group: "Access", label: "Invite required", description: "New signups must provide a valid invite code.", defaultValue: "false", publicallyExposed: true },
-  { key: "discuss_limit", type: "number", group: "Access", label: "Discuss limit", description: "Per-user rate limit for discussion posts.", defaultValue: "20" },
+  { key: "discuss_limit", type: "number", group: "Access", label: "Discuss limit", description: "Per-user rate limit for discussion posts.", defaultValue: "50" },
 
   // ── Integrations ─────────────────────────────────────────────
   { key: "telegramBotToken", type: "secret", group: "Integrations", label: "Telegram bot token", description: "Telegram bot token used for member notifications.", defaultValue: null },

@@ -1711,7 +1711,7 @@ router.post("/blood-tests", requireAccount, async (req, res): Promise<void> => {
   res.status(201).json({ ...session, values: insertedValues });
 });
 
-const DEFAULT_DISCUSS_LIMIT = 10;
+const DEFAULT_DISCUSS_LIMIT = 50;
 
 async function getDiscussLimit(telegramUsername: string): Promise<number> {
   const [acct] = await db
