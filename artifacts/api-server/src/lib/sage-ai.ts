@@ -127,7 +127,7 @@ async function callModelRaw(
   maxTokens: number,
   tools?: unknown[],
 ): Promise<ModelResponse> {
-  const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages };
+  const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
   if (tools && tools.length > 0) body.tools = tools;
 
@@ -146,7 +146,17 @@ async function callModelRaw(
     throw new Error(`Sage AI proxy error ${res.status}: ${errText}`);
   }
 
-  const data = await res.json() as { content?: ContentPart[]; stop_reason?: string };
+  const rawText = await res.text();
+  let data: { content?: ContentPart[]; stop_reason?: string };
+  try {
+    data = JSON.parse(rawText) as { content?: ContentPart[]; stop_reason?: string };
+  } catch {
+    // Proxy returned SSE stream despite stream:false — extract text from events
+    const textMatches = [...rawText.matchAll(/"type"\s*:\s*"text_delta"[^}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
+    const combined = textMatches.map(m => m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"')).join("");
+    if (combined) return { content: [{ type: "text", text: combined }], stop_reason: "end_turn" };
+    throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
+  }
   return {
     content: data.content ?? [],
     stop_reason: data.stop_reason ?? "end_turn",
@@ -160,7 +170,7 @@ async function callModel(
   messages: SageMessage[],
   maxTokens: number,
 ): Promise<string> {
-  const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages };
+  const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
 
   const res = await fetch(`${BASE_URL}/v1/messages`, {
@@ -178,8 +188,17 @@ async function callModel(
     throw new Error(`Sage AI proxy error ${res.status}: ${errText}`);
   }
 
-  const data = await res.json() as { content?: Array<{ type: string; text?: string }> };
-  return data.content?.find(c => c.type === "text")?.text ?? "";
+  const rawText = await res.text();
+  try {
+    const data = JSON.parse(rawText) as { content?: Array<{ type: string; text?: string }> };
+    return data.content?.find(c => c.type === "text")?.text ?? "";
+  } catch {
+    // SSE fallback: stitch together text_delta events
+    const textMatches = [...rawText.matchAll(/"type"\s*:\s*"text_delta"[^}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
+    const combined = textMatches.map(m => m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"')).join("");
+    if (combined) return combined;
+    throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
+  }
 }
 
 // ─── Tool loop for web-search-capable calls ───────────────────────────────────
