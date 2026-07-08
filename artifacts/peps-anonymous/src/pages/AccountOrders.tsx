@@ -11,6 +11,7 @@ import {
 import {
   useAccount, useAccountOrders, useProfile,
   useUpdateProfile, useChangePassword, type AccountOrder,
+  getAccountHandle, isDiscordOnlyAccount,
   useTelegramStatus, useTelegramLinkInit, useTelegramUnlink, useTelegramUpdatePrefs,
   type TelegramPrefs,
   useDeletedOrders, useRestoreOrder, type DeletedOrder,
@@ -547,6 +548,9 @@ function TelegramCard() {
 }
 
 function ProfileTab({ username }: { username: string }) {
+  const { account } = useAccount();
+  const isDiscord = isDiscordOnlyAccount(username);
+  const displayHandle = account ? getAccountHandle(account) : username;
   const { data: profile, isLoading: profileLoading } = useProfile();
   const updateProfile = useUpdateProfile();
   const changePassword = useChangePassword();
@@ -624,8 +628,8 @@ function ProfileTab({ username }: { username: string }) {
             <User className="w-6 h-6 text-blue-600" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Telegram Username</p>
-            <p className="text-base font-bold text-slate-800">@{username}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{isDiscord ? "Discord Username" : "Telegram Username"}</p>
+            <p className="text-base font-bold text-slate-800">@{displayHandle}</p>
             <p className="text-[10px] text-slate-400 mt-0.5">This is your account identity and cannot be changed</p>
           </div>
         </div>
@@ -828,6 +832,7 @@ export default function AccountOrders() {
   if (!isLoggedIn) return null;
 
   const username = account!.telegramUsername.replace(/^@/, "");
+  const displayHandle = getAccountHandle(account);
 
   const handleManage = (code: string) => {
     setLocation(`/lookup?code=${code}`);
@@ -855,7 +860,7 @@ export default function AccountOrders() {
               <h1 className="text-sm font-bold text-slate-800 leading-tight">
                 {mainTab === "orders" ? "My Orders" : "My Profile"}
               </h1>
-              <p className="text-xs text-slate-400">@{username}</p>
+              <p className="text-xs text-slate-400">@{displayHandle}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

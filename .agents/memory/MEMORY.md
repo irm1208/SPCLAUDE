@@ -1,3 +1,4 @@
+- [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
 - [PageLayout Portal-nav vs DashboardShell](pagelayout-portal-nav-vs-dashboardshell.md) — /order & /review show Hub/Orders/GB sidebar labels even for guests; only search/bell/credits header row signals real DashboardShell chrome.
 - [Blood test parser ordering rules](blood-test-parser-ordering.md) — NHDL before HDL, VLDL before LDL, ACTB12 before VITB12, CKMB before CK; HDL notWith "non", LDL notWith "vldl", FT3 notWith "total".
 - [Blood test US unit normalization](blood-test-us-units.md) — normalizeUnits() in parsePDF.ts converts ng/dL, pg/mL, mg/dL, g/dL, NGSP% to SI/UK catalog units on import.

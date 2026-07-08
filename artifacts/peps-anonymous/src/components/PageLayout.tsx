@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
-import { useAccount, useLogout, useHasTestingContribution, useTestingGbPools } from "@/hooks/use-account";
+import { useAccount, useLogout, useHasTestingContribution, useTestingGbPools, getAccountHandle } from "@/hooks/use-account";
 import { useVialCart } from "@/hooks/use-vial-cart";
 import { CartDrawer } from "@/components/CartDrawer";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -284,7 +284,7 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
   const { data: _gbPools = [] } = useTestingGbPools(isLoggedIn);
   const hasGbPools = _gbPools.length > 0;
   const enabledNavIds = useContext(PublicNavCtx);
-  const sidebarUsername = account?.telegramUsername ? account.telegramUsername.replace(/^@/, "") : null;
+  const sidebarUsername = account?.telegramUsername ? getAccountHandle(account) : null;
   const isGbWorkflow = location === "/order" || location === "/review";
   // Lab testing pool detail (/pool/:slug) shows the Profile Hub nav on desktop too —
   // but NOT the guest contribution sub-route (/pool/:slug/contribution/:participantId).
@@ -606,7 +606,7 @@ function DesktopHeader() {
   const { isLoggedIn, account } = useAccount();
   const logout = useLogout();
   const cartCount = useVialCart(s => s.itemCount());
-  const headerUsername = account?.telegramUsername ? account.telegramUsername.replace(/^@/, "") : null;
+  const headerUsername = account?.telegramUsername ? getAccountHandle(account) : null;
   const pageTitle = usePageTitle(s => s.title);
 
   const isOrderPage = location === "/order";
@@ -990,7 +990,7 @@ function MobileMoreDrawer({ open, onClose }: { open: boolean; onClose: () => voi
               <User className="w-3.5 h-3.5 shrink-0" />
               <span className="flex-1 text-left">
                 {isLoggedIn && account?.telegramUsername
-                  ? `@${account.telegramUsername.replace(/^@/, "")}`
+                  ? `@${getAccountHandle(account)}`
                   : "Login / My Account"}
               </span>
               <ArrowRight className="w-3 h-3 shrink-0 opacity-50" />

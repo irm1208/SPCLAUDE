@@ -310,6 +310,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
       credits: accountsTable.credits,
       isWholesale: accountsTable.isWholesale,
       wholesaleInvitePromptSeenAt: accountsTable.wholesaleInvitePromptSeenAt,
+      discordUsername: accountsTable.discordUsername,
     })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, tg));
@@ -334,6 +335,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
 
   res.json({
     telegramUsername: tg,
+    discordUsername: acct?.discordUsername ?? null,
     healthDataConsent: acct?.healthDataConsent ?? false,
     organiserStatus: acct?.organiserStatus ?? null,
     reshipperStatus: acct?.reshipperStatus ?? null,

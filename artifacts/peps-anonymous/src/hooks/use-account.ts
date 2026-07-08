@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 export interface AccountMe {
   telegramUsername: string;
+  discordUsername?: string | null;
   accountStatus?: string;
   createdAt?: string;
   healthDataConsent?: boolean;
@@ -33,6 +34,20 @@ export interface UseAccountResult {
   account: AccountMe | null;
   isLoading: boolean;
   isLoggedIn: boolean;
+}
+
+// Discord-only accounts are stored with a synthetic `discord:<id>` identifier
+// in telegramUsername (the primary key). Never show that raw id to users —
+// prefer their real Discord username when available.
+export function isDiscordOnlyAccount(telegramUsername: string | null | undefined): boolean {
+  return !!telegramUsername && telegramUsername.replace(/^@/, "").startsWith("discord:");
+}
+
+export function getAccountHandle(account: Pick<AccountMe, "telegramUsername" | "discordUsername"> | null | undefined): string {
+  if (!account) return "";
+  const raw = account.telegramUsername.replace(/^@/, "");
+  if (isDiscordOnlyAccount(raw) && account.discordUsername) return account.discordUsername;
+  return raw;
 }
 
 export function useAccount(): UseAccountResult {

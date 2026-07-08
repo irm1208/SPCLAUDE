@@ -43,6 +43,7 @@ import { RulesetModal } from "@/components/RulesetModal";
 import { toast } from "@/hooks/use-toast";
 import {
   useAccount, useLogout, useAccountOrders, useTestingLateOptIn, useTestingActivePools, useTestingGbPools,
+  getAccountHandle, isDiscordOnlyAccount,
   useTelegramStatus, useTelegramLinkInit, useTelegramUnlink, useTelegramUpdatePrefs, useTelegramSendTest,
   useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useLeaveGroupBuy, useUpdateCountry, useCountryLegs,
   useViewerAccess, useSetGroupBuyArchived,
@@ -7576,6 +7577,7 @@ export default function CustomerPortal() {
   const gbActiveCount   = gbOrderGroups.reduce((n, g) => n + g.orders.filter(isActive).length, 0);
   const gbPreviousCount = gbOrderGroups.reduce((n, g) => n + g.orders.filter(isPrev).length, 0);
   const username = account.telegramUsername.replace(/^@/, "");
+  const displayHandle = getAccountHandle(account);
 
   const latestTest = bloodTests.length > 0
     ? [...bloodTests].sort((a, b) => b.testDate.localeCompare(a.testDate))[0]
@@ -8961,7 +8963,7 @@ export default function CustomerPortal() {
             {initials}
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-black leading-tight" style={{ color: T.text }}>@{username}</h1>
+            <h1 className="text-xl font-black leading-tight" style={{ color: T.text }}>@{displayHandle}</h1>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               {tgStatusPortal !== undefined && (
                 portalLinked ? (
