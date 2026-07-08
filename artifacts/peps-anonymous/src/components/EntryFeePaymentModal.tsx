@@ -150,7 +150,7 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                 <div className="rounded-2xl p-3 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-100 flex items-center justify-between">
                   <p className="text-xs font-medium text-slate-600">Amount to send</p>
                   <p className="text-sm font-bold text-slate-900">
-                    {fee.payment.amount.toFixed(2)} {fee.payment.currency}
+                    {fee.amount.toFixed(2)} {fee.currency}
                   </p>
                 </div>
 
