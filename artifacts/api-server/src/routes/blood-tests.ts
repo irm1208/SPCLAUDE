@@ -5,6 +5,7 @@ import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
+import { buildSageSystemPrompt, type CompoundCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 
@@ -600,7 +601,9 @@ function formatCompoundLine(c: CompoundWithDose): string {
   return parts.join(" ");
 }
 
-function buildBloodTestSystemPrompt(
+// buildBloodTestSystemPrompt replaced by buildSageSystemPrompt in sage-system-prompt.ts
+
+function _unused_buildBloodTestSystemPrompt_REMOVED(
   sessionName: string,
   sessionDate: string,
   biomarkers: BiomarkerContext[],
@@ -1112,7 +1115,34 @@ async function callGeminiDiscuss(
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest);
+  const allCompoundCtx: CompoundCtx[] = allCompounds.map(c => ({
+    name: c.name,
+    active: c.active,
+    doseAmount: c.doseAmount,
+    doseUnit: c.doseUnit,
+    frequency: c.frequency,
+    route: c.route,
+  }));
+  const compoundNamesForProto = [...allCompounds.map(c => c.name), ...activeCompounds.filter(n => !allCompounds.find(c => c.name === n))];
+  const protoLines: string[] = [];
+  for (const name of compoundNamesForProto) {
+    const proto = findProtocol(name);
+    if (proto) protoLines.push(formatProtocolForSage(name, proto));
+  }
+  const protoSection = protoLines.length > 0
+    ? `\n\n═══════════════════════════════════════════\nPLATFORM PROTOCOL REFERENCE (from Salt&Peps protocols page — for the user's logged compounds)\n═══════════════════════════════════════════\nThese are the established dosing protocols for the user's compounds. Use this data to assess whether their current regimen aligns with recommended practice.\n\n${protoLines.join("\n\n")}`
+    : "";
+  const systemPrompt = buildSageSystemPrompt({
+    sessionName,
+    sessionDate,
+    biomarkers,
+    activeCompounds: allCompoundCtx,
+    historicalSessions,
+    cachedKnowledge,
+    labTests,
+    hasBloodTest,
+    protocolSection: protoSection,
+  });
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1801,7 +1831,31 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
   );
 
   const sessionDisplayName = session.testName ?? session.labName ?? "Blood Test";
-  const systemPrompt = buildBloodTestSystemPrompt(sessionDisplayName, session.testDate, biomarkers, activeCompounds, historicalSessions);
+  const allCompoundCtxOpen: CompoundCtx[] = compoundRows.map(c => ({
+    name: c.compoundName,
+    active: !c.endDate,
+    doseAmount: c.doseAmount,
+    doseUnit: c.doseUnit,
+    frequency: c.frequency,
+    route: c.route,
+  }));
+  const protoLinesOpen: string[] = [];
+  for (const c of allCompoundCtxOpen) {
+    const proto = findProtocol(c.name);
+    if (proto) protoLinesOpen.push(formatProtocolForSage(c.name, proto));
+  }
+  const protoSectionOpen = protoLinesOpen.length > 0
+    ? `\n\n═══════════════════════════════════════════\nPLATFORM PROTOCOL REFERENCE\n═══════════════════════════════════════════\n${protoLinesOpen.join("\n\n")}`
+    : "";
+  const systemPrompt = buildSageSystemPrompt({
+    sessionName: sessionDisplayName,
+    sessionDate: session.testDate,
+    biomarkers,
+    activeCompounds: allCompoundCtxOpen,
+    historicalSessions,
+    hasBloodTest: true,
+    protocolSection: protoSectionOpen,
+  });
 
   const openingInstruction = `The user has just opened a new chat about their blood test. Generate a smart, personalised opening message that:
 1. Briefly acknowledges the most notable finding(s) — mention specific values and whether they're in/out of range
