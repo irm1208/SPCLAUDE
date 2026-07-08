@@ -3,13 +3,35 @@
  * Configured via env vars:
  *   SAGE_PROXY_API_KEY      – API key for the proxy
  *   SAGE_PROXY_BASE_URL     – base URL (default: https://cn.zhihuiai.top)
- *   SAGE_PROXY_MODEL        – primary model name (default: claude-opus-4-7)
+ *   SAGE_PROXY_MODEL        – primary model name (default: claude-opus-4-7), overridable at runtime
+ *                             via the `sage_ai_model` site_config key (set from the Admin panel)
  *   SAGE_PROXY_FALLBACK_MODEL – fallback model when primary has no tokens (default: claude-3-5-sonnet-20241022)
  */
 
+import { db } from "@workspace/db";
+import { siteConfigTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+
+export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
+
 const BASE_URL       = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
-const MODEL          = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
+const DEFAULT_MODEL  = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
 const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-3-5-sonnet-20241022";
+
+/** Returns the currently configured model — admin-set value from site_config, else env, else default. */
+export async function getActiveSageModel(): Promise<string> {
+  try {
+    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, SAGE_MODEL_CONFIG_KEY));
+    if (row?.value?.trim()) return row.value.trim();
+  } catch {
+    // fall through to default below
+  }
+  return DEFAULT_MODEL;
+}
+
+export function getSageFallbackModel(): string {
+  return FALLBACK_MODEL;
+}
 
 export type TextContentPart  = { type: "text"; text: string };
 export type ImageContentPart = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
@@ -24,6 +46,8 @@ export interface SageAIParams {
   system?: string;
   messages: SageMessage[];
   maxTokens?: number;
+  /** Explicit model override (e.g. from the admin test panel). Skips the fallback chain. */
+  model?: string;
 }
 
 async function callModel(
@@ -65,15 +89,22 @@ function isTokenExhaustedError(err: unknown): boolean {
   );
 }
 
-export async function callSageAI({ system, messages, maxTokens = 8192 }: SageAIParams): Promise<string> {
+export async function callSageAI({ system, messages, maxTokens = 8192, model }: SageAIParams): Promise<string> {
   const apiKey = process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
 
+  // Explicit override (admin test panel): single attempt, no silent fallback substitution.
+  if (model) {
+    return await callModel(model, apiKey, system, messages, maxTokens);
+  }
+
+  const activeModel = await getActiveSageModel();
+
   try {
-    return await callModel(MODEL, apiKey, system, messages, maxTokens);
+    return await callModel(activeModel, apiKey, system, messages, maxTokens);
   } catch (primaryErr) {
-    if (isTokenExhaustedError(primaryErr) && MODEL !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${MODEL}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
+    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
       return await callModel(FALLBACK_MODEL, apiKey, system, messages, maxTokens);
     }
     throw primaryErr;

@@ -9,7 +9,7 @@ import {
   Bell, CalendarDays, Calendar, ToggleLeft, ToggleRight, MessageSquarePlus, MessageSquare, TestTube, PackageCheck, Globe, FlaskConical, Info,
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
-  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight,
+  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu,
 } from "lucide-react";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -25,6 +25,7 @@ import AdminAuditLog from "@/components/AdminAuditLog";
 import { AdminTicketsTab } from "@/components/AdminTicketsTab";
 import AdminAiChatbot from "@/components/AdminAiChatbot";
 import AdminBtChat from "@/components/AdminBtChat";
+import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
@@ -14399,6 +14400,7 @@ const ALL_TABS_META = [
   { id: "tickets",       label: "Tickets",        icon: MessageSquare },
   { id: "ai-chatbot",   label: "AI Chatbot",     icon: Sparkles },
   { id: "bt-chat",      label: "BT Chat",        icon: MessageSquare },
+  { id: "sage-settings", label: "Sage AI",       icon: Cpu },
   { id: "creditlog",    label: "Credit Log",     icon: CreditCard },
   { id: "countryipcheck", label: "Country IP Check", icon: Globe },
   { id: "bulkship",     label: "Bulk Tracking",  icon: PackageCheck },
@@ -21376,6 +21378,7 @@ const SIDEBAR_SECTIONS = [
       { id: "tickets",       label: "Tickets",          icon: MessageSquare,   keywords: ["tickets", "support", "customer support", "help requests", "open tickets", "closed tickets", "reply", "thread", "unread", "member messages"] },
       { id: "ai-chatbot",    label: "AI Chatbot",       icon: Sparkles,        keywords: ["ai", "chatbot", "telegram bot", "gemini", "automated replies", "transcript", "knowledge base", "message limit", "contact handle", "test chat", "ai responses"] },
       { id: "bt-chat",       label: "BT Chat",          icon: MessageSquare,   keywords: ["blood test chat", "bt chat", "health chat", "chat logs", "conversation", "api key", "flagged messages", "discuss", "health ai", "user messages"] },
+      { id: "sage-settings", label: "Sage AI",          icon: Cpu,             keywords: ["sage", "sage ai", "health bot", "health assistant", "model", "switch model", "claude", "gpt", "qwen", "glm", "kimi", "deepseek", "test chat", "sage settings"] },
     ],
   },
   {
@@ -24516,6 +24519,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "tickets"       && <AdminTicketsTab secret={secret} />}
           {activeTab === "ai-chatbot"   && <AdminAiChatbot secret={secret} />}
           {activeTab === "bt-chat"      && <AdminBtChat secret={secret} />}
+          {activeTab === "sage-settings" && <AdminSageSettings secret={secret} />}
         </main>
       </div>
 
