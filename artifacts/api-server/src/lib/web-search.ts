@@ -54,7 +54,6 @@ export async function searchWebForSage(query: string): Promise<WebSearchResult |
   if (!trimmed) return null;
 
   try {
-    console.log(`[web-search] apiKey present: ${!!process.env.AI_INTEGRATIONS_GEMINI_API_KEY}, baseUrl: ${process.env.AI_INTEGRATIONS_GEMINI_BASE_URL}`);
     const response = await gemini.models.generateContent({
       model: SEARCH_MODEL,
       contents: [{ role: "user", parts: [{ text: trimmed }] }],

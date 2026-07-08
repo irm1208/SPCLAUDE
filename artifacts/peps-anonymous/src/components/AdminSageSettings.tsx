@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle, Plus, X, Globe } from "lucide-react";
+import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle, Plus, X, Globe, FileText } from "lucide-react";
 
 const apiUrl = (path: string) => `/api${path}`;
 
@@ -13,6 +13,9 @@ interface SageSettings {
   customModels: string[];
   webSearchEnabled: boolean;
   serverKeyConfigured: boolean;
+  systemPromptTemplate: string;
+  defaultSystemPromptTemplate: string;
+  isSystemPromptCustomised: boolean;
 }
 
 interface ChatMessage {
@@ -68,6 +71,13 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState("");
 
+  const [promptDraft, setPromptDraft] = useState("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptSaved, setPromptSaved] = useState(false);
+  const [promptResetting, setPromptResetting] = useState(false);
+  const [promptError, setPromptError] = useState("");
+  const [showDefaultPrompt, setShowDefaultPrompt] = useState(false);
+
   // Personal proxy credentials — stored only in this browser's localStorage, never sent
   // to the server except as part of this admin's own test-chat requests below.
   const [authToken, setAuthToken] = useState("");
@@ -120,6 +130,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       setSelectedModel(data.model);
       setTestModel(data.model);
       setWebSearchEnabled(data.webSearchEnabled);
+      setPromptDraft(data.systemPromptTemplate);
     } catch {
       setError("Failed to load Sage settings.");
     } finally {
@@ -221,6 +232,74 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       setWebSearchError("Failed to save. Please try again.");
     } finally {
       setWebSearchSaving(false);
+    }
+  };
+
+  const savePrompt = async () => {
+    if (promptSaving) return;
+    const trimmed = promptDraft.trim();
+    if (!trimmed) {
+      setPromptError("Prompt cannot be empty.");
+      return;
+    }
+    if (!trimmed.includes("{{HEALTH_DATA}}")) {
+      setPromptError('Prompt must include the "{{HEALTH_DATA}}" placeholder so Sage can see the member\'s blood test data.');
+      return;
+    }
+    setPromptSaving(true);
+    setPromptError("");
+    try {
+      const res = await fetch(apiUrl("/admin/sage-settings"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ systemPromptTemplate: promptDraft }),
+      });
+      const data = await res.json() as { systemPromptTemplate?: string; isSystemPromptCustomised?: boolean; error?: string };
+      if (!res.ok || data.error) {
+        setPromptError(data.error ?? "Failed to save prompt.");
+        return;
+      }
+      setSettings(s => s ? {
+        ...s,
+        systemPromptTemplate: data.systemPromptTemplate ?? s.systemPromptTemplate,
+        isSystemPromptCustomised: data.isSystemPromptCustomised ?? s.isSystemPromptCustomised,
+      } : s);
+      if (data.systemPromptTemplate) setPromptDraft(data.systemPromptTemplate);
+      setPromptSaved(true);
+      setTimeout(() => setPromptSaved(false), 2500);
+    } catch {
+      setPromptError("Network error — please try again.");
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
+  const resetPrompt = async () => {
+    if (promptResetting) return;
+    if (!window.confirm("Reset Sage's system prompt back to the default? Your customisations will be lost.")) return;
+    setPromptResetting(true);
+    setPromptError("");
+    try {
+      const res = await fetch(apiUrl("/admin/sage-settings"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ resetSystemPromptToDefault: true }),
+      });
+      const data = await res.json() as { systemPromptTemplate?: string; isSystemPromptCustomised?: boolean; error?: string };
+      if (!res.ok || data.error) {
+        setPromptError(data.error ?? "Failed to reset prompt.");
+        return;
+      }
+      setSettings(s => s ? {
+        ...s,
+        systemPromptTemplate: data.systemPromptTemplate ?? s.systemPromptTemplate,
+        isSystemPromptCustomised: data.isSystemPromptCustomised ?? false,
+      } : s);
+      if (data.systemPromptTemplate) setPromptDraft(data.systemPromptTemplate);
+    } catch {
+      setPromptError("Network error — please try again.");
+    } finally {
+      setPromptResetting(false);
     }
   };
 
@@ -438,6 +517,91 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
             </button>
           </div>
           {webSearchError && <p className="text-sm text-red-400">{webSearchError}</p>}
+        </div>
+
+        <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+                <FileText className="w-4 h-4" style={{ color: "#F24908" }} />
+                Sage's system prompt
+              </h3>
+              <p className="text-[11px] mt-1" style={{ color: "var(--adm-muted)" }}>
+                This is Sage's full persona, rules, and knowledge base — edit and fine-tune it directly. Keep the{" "}
+                <code>{"{{HEALTH_DATA}}"}</code> placeholder — that's where the member's blood test data gets
+                inserted. <code>{"{{CHARTABLE_MARKERS}}"}</code> is optional (controls which markers Sage can chart).
+              </p>
+            </div>
+            <span
+              className="shrink-0 text-[11px] font-semibold px-2 py-1 rounded-full"
+              style={{
+                color: settings?.isSystemPromptCustomised ? "#F24908" : "var(--adm-muted)",
+                background: settings?.isSystemPromptCustomised ? "rgba(242,73,8,0.12)" : "var(--adm-content)",
+                border: "1px solid var(--adm-border)",
+              }}
+            >
+              {settings?.isSystemPromptCustomised ? "Customised" : "Default"}
+            </span>
+          </div>
+
+          <textarea
+            value={promptDraft}
+            onChange={e => { setPromptDraft(e.target.value); if (promptError) setPromptError(""); }}
+            rows={14}
+            spellCheck={false}
+            className="w-full rounded-lg px-3 py-2.5 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-orange-400/50 font-mono resize-y"
+            style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)", minHeight: "220px" }}
+          />
+
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="text-[11px]" style={{ color: promptDraft.length > 40000 ? "#dc2626" : "var(--adm-muted)" }}>
+              {promptDraft.length.toLocaleString()} / 40,000 characters
+            </p>
+            <button
+              onClick={() => setShowDefaultPrompt(v => !v)}
+              className="text-[11px] font-semibold"
+              style={{ color: "var(--adm-muted)" }}
+            >
+              {showDefaultPrompt ? "Hide default prompt" : "View default prompt"}
+            </button>
+          </div>
+
+          {showDefaultPrompt && settings && (
+            <pre
+              className="text-[11px] leading-relaxed whitespace-pre-wrap rounded-lg p-3 max-h-64 overflow-y-auto font-mono"
+              style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-muted)" }}
+            >
+              {settings.defaultSystemPromptTemplate}
+            </pre>
+          )}
+
+          {promptError && <p className="text-sm text-red-400">{promptError}</p>}
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={savePrompt}
+              disabled={promptSaving || promptDraft === settings?.systemPromptTemplate}
+              className="flex items-center gap-2 px-5 h-9 rounded-xl text-sm font-bold text-white transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+              style={{ background: promptSaved ? "#16a34a" : "#F24908" }}
+            >
+              {promptSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {promptSaved ? "Saved" : "Save prompt"}
+            </button>
+            {settings?.isSystemPromptCustomised && (
+              <button
+                onClick={resetPrompt}
+                disabled={promptResetting}
+                className="flex items-center gap-1.5 px-4 h-9 rounded-lg text-xs font-semibold disabled:opacity-50"
+                style={{ color: "var(--adm-muted)" }}
+              >
+                {promptResetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                Reset to default
+              </button>
+            )}
+            {promptDraft !== settings?.systemPromptTemplate && !promptSaving && (
+              <span className="text-xs" style={{ color: "var(--adm-muted)" }}>Unsaved change</span>
+            )}
+          </div>
         </div>
 
         <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
