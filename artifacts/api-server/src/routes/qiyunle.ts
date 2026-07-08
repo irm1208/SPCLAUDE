@@ -12,7 +12,7 @@ import {
   clearQiyunleCredentials,
   loginToQiyunle,
 } from "../lib/qiyunle-sync";
-import { GoogleGenAI } from "../lib/google-genai";
+import { callSageAI } from "../lib/sage-ai";
 
 const router = Router();
 
@@ -235,12 +235,7 @@ router.post("/admin/qiyunle/auto-map", async (req, res): Promise<void> => {
     const unmapped = items.filter(i => !mappedCodes.has(i.code));
     if (!unmapped.length) { res.json({ suggestions: [], message: "All items are already mapped" }); return; }
 
-    const gemini = new GoogleGenAI({
-      apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-      httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
-    });
-
-    const prompt = `You are matching Qiyunle ERP inventory batch codes to peptide products in a group-buy store (manufacturer: ${manufacturer}).
+    const systemPrompt = `You are matching Qiyunle ERP inventory batch codes to peptide products in a group-buy store (manufacturer: ${manufacturer}).
 
 BATCH CODE SCHEME:
 - BP = BPC-157 | TB4 = TB-500 | TE = Tesamorelin | ZE = Tirzepatide
@@ -262,9 +257,6 @@ DOSE RULE:
 Numbers after the abbreviation = mg dose (e.g. BP10 = BPC-157 10mg, ZE60 = Tirzepatide 60mg).
 For combos: T/B1010 = BPC-157 10mg / TB-500 10mg.
 
-QIYUNLE ITEMS TO MATCH (unmapped):
-${unmapped.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name ?? ""}"`).join("\n")}
-
 PEPS PRODUCTS AVAILABLE (vendor: ${manufacturer}):
 ${products.map(p => `  id="${p.id}" name="${p.name}"${p.mg_size ? ` mg="${p.mg_size}"` : ""}`).join("\n")}
 
@@ -283,13 +275,13 @@ OUTPUT FORMAT:
   ]
 }`;
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } },
-    });
+    const userMessage = `QIYUNLE ITEMS TO MATCH (unmapped):\n${unmapped.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name ?? ""}"`).join("\n")}`;
 
-    const raw = response.text ?? "";
+    const raw = await callSageAI({
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      maxTokens: 4096,
+    });
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as { suggestions: unknown[] };
     // Attach the manufacturer to each suggestion so the frontend can persist it
