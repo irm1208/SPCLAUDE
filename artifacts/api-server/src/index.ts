@@ -850,7 +850,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS gb_entry_fee_payments (
         id text PRIMARY KEY,
-        group_buy_id text NOT NULL REFERENCES group_buys(id) ON DELETE CASCADE,
+        group_buy_id text NOT NULL,
         account_id text NOT NULL,
         status text NOT NULL DEFAULT 'pending',
         amount numeric(10,2) NOT NULL,
@@ -869,7 +869,9 @@ async function runStartupMigrations(): Promise<void> {
         rejection_reason text,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
-        CONSTRAINT gb_entry_fee_payments_unique UNIQUE (group_buy_id, account_id)
+        CONSTRAINT gb_entry_fee_payments_unique UNIQUE (group_buy_id, account_id),
+        CONSTRAINT gb_entry_fee_payments_group_buy_id_group_buys_id_fk
+          FOREIGN KEY (group_buy_id) REFERENCES group_buys(id) ON DELETE CASCADE
       )
     `);
     console.log("[startup:migrations] Schema sync complete");
