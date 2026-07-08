@@ -15,8 +15,9 @@ import {
 } from "recharts";
 import {
   useBloodTests, useCreateBloodTest, useDeleteBloodTest, useBloodTestDiscuss,
-  type BloodTestSession, type DiscussMessage,
+  type BloodTestSession, type DiscussMessage, type DiscussChart,
 } from "@/hooks/use-blood-tests";
+import { SageTrendChart } from "@/components/SageTrendChart";
 import { useAccount } from "@/hooks/use-account";
 import { parsePDFBiomarkers, type ParsedBiomarker } from "@/lib/parsePDF";
 import { T } from "@/lib/theme";
@@ -1438,6 +1439,13 @@ function DiscussView({ sessions }: { sessions: BloodTestSession[] }) {
                     </p>
                   )}
                   <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: T.text }}>{msg.content}</p>
+                  {msg.charts && msg.charts.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-3">
+                      {msg.charts.map((c: DiscussChart, i: number) => (
+                        <SageTrendChart key={`${msg.id}-chart-${i}`} chart={c} />
+                      ))}
+                    </div>
+                  )}
                   {isLastAssistant && msg.chips && msg.chips.length > 0 && !sending && (
                     <div className="flex flex-wrap gap-2 mt-3">
                       {msg.chips.map((chip, i) => (

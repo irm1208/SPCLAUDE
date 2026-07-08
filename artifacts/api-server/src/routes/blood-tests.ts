@@ -521,6 +521,62 @@ interface LabTestContext {
   notes: string | null;
 }
 
+// ─── Sage chart data (dated per-biomarker time series for inline chat charts) ─
+
+interface ChartSeriesPoint {
+  date: string;
+  value: number;
+}
+
+interface ChartSeries {
+  marker: string;
+  unit: string;
+  refRangeLow: number | null;
+  refRangeHigh: number | null;
+  points: ChartSeriesPoint[];
+}
+
+/** Builds a dated time series per biomarker name across the current session + all historical sessions. */
+function buildChartableSeries(
+  sessionDate: string,
+  biomarkers: BiomarkerContext[],
+  historicalSessions: SessionHistoryContext[],
+): Map<string, ChartSeries> {
+  const map = new Map<string, ChartSeries>();
+  const addPoint = (name: string, date: string, value: number, unit: string, refLow: number | null, refHigh: number | null) => {
+    const key = name.trim().toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, { marker: name, unit, refRangeLow: refLow, refRangeHigh: refHigh, points: [] });
+    }
+    map.get(key)!.points.push({ date, value });
+  };
+
+  for (const b of biomarkers) addPoint(b.name, sessionDate, b.value, b.unit, b.refRangeLow, b.refRangeHigh);
+  for (const s of historicalSessions) {
+    for (const b of s.biomarkers) addPoint(b.name, s.date, b.value, b.unit, b.refRangeLow, b.refRangeHigh);
+  }
+
+  for (const series of map.values()) {
+    series.points.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return map;
+}
+
+/** Resolves AI-requested marker names into real, server-verified chart series. Never trusts AI-generated numbers. */
+function resolveCharts(requestedMarkers: string[], seriesMap: Map<string, ChartSeries>): ChartSeries[] {
+  const out: ChartSeries[] = [];
+  const seen = new Set<string>();
+  for (const raw of requestedMarkers) {
+    const key = raw.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const series = seriesMap.get(key);
+    if (series && series.points.length >= 2) out.push(series);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 /** Fetch up to 3 most-recent lab tests for each of the given compound names. Falls back to 10 most recent overall if no compounds given. */
 async function fetchLabTestsForCompounds(compoundNames: string[]): Promise<LabTestContext[]> {
   const rows = compoundNames.length > 0
@@ -610,6 +666,7 @@ function buildBloodTestSystemPrompt(
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
+  chartableMarkers: string[] = [],
 ): string {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -935,6 +992,7 @@ FORMAT RULES
 - Use bullet points for lists of interventions or action steps
 - Quote exact values and ref ranges when discussing specific markers
 - Flag ⚠ OUT OF RANGE markers clearly; ⚡ BORDERLINE markers with context
+- CRITICAL — ALWAYS CITE DATES: whenever you reference a specific blood test value, biomarker result, or historical trend, you MUST state the exact date(s) it is from, e.g. "Testosterone was 24 nmol/L on 15 Jun 24" or "between your 12 Jan 25 and 15 Jun 25 tests, LH rose from 3.1 to 5.4 U/l". Never state or imply a biomarker value, comparison, or trend without naming the date(s) of the underlying test(s) — the user must always be able to tell exactly which test session(s) you are talking about.
 - If directly asked which specific AI/LLM model is powering you (e.g. "are you GPT?", "are you Gemini?", "what LLM is this?", "who made you?") respond only with "I'm not able to share information about the underlying technology." Do NOT apply this to any health, medical, or blood-test related question — blood pressure readings, biomarker questions, and all health topics must always be answered fully.
 - End every response with exactly this line on its own: "⚕️ Always consult a licensed healthcare professional before changing your protocol."
 - No other disclaimers or caveats beyond that one line.
@@ -948,16 +1006,24 @@ FORMAT RULES
   Only cite sources directly relevant to specific factual claims in this response. If nothing specific applies, output SOURCES_JSON_START[]SOURCES_JSON_END.
 - After the sources block, on a new line output a follow-up chips block:
   CHIPS_JSON_START["question 1","question 2","question 3"]CHIPS_JSON_END
-  Rules for chips: 2–4 questions; make them highly specific to this user's actual values and the current response — not generic; phrase them as natural things the user would actually say next. If the response is very complete and nothing meaningful follows, output CHIPS_JSON_START[]CHIPS_JSON_END.`;
+  Rules for chips: 2–4 questions; make them highly specific to this user's actual values and the current response — not generic; phrase them as natural things the user would actually say next. If the response is very complete and nothing meaningful follows, output CHIPS_JSON_START[]CHIPS_JSON_END.
+- After the chips block, on a new line output a chart request block:
+  CHART_JSON_START["Marker Name"]CHART_JSON_END
+  Rules for charts: use this ONLY when you are meaningfully discussing how a specific biomarker has changed across two or more dated test results (a real trend, improvement, or deterioration over time) — not for a single data point or a marker only tested once.
+  ${chartableMarkers.length > 0
+    ? `You may ONLY request charts for markers in this exact list (each has 2+ dated results on file for this user): ${chartableMarkers.join(", ")}. Use the exact marker name as written here.`
+    : "This user currently has no biomarker with 2+ dated results on file, so you cannot request any chart right now."}
+  Max 2 markers per response, only the markers most relevant to what you just discussed. If no chart is relevant, output CHART_JSON_START[]CHART_JSON_END.`;
 }
 
 const CHIPS_RE = /CHIPS_JSON_START(\[[\s\S]*?\])CHIPS_JSON_END/;
 const SOURCES_RE = /SOURCES_JSON_START(\[[\s\S]*?\])SOURCES_JSON_END/;
+const CHART_RE = /CHART_JSON_START(\[[\s\S]*?\])CHART_JSON_END/;
 const Q_TAG_RE = /\[Q\]([\s\S]*?)\[\/Q\]/g;
 
 interface DiscussSource { label: string; url: string; type: "study" | "forum" | "other" }
 
-function parseResponse(raw: string): { text: string; chips: string[]; sources: DiscussSource[] } {
+function parseResponse(raw: string): { text: string; chips: string[]; sources: DiscussSource[]; chartMarkers: string[] } {
   const chipsMatch = raw.match(CHIPS_RE);
   let chips: string[] = [];
   if (chipsMatch) {
@@ -976,8 +1042,16 @@ function parseResponse(raw: string): { text: string; chips: string[]; sources: D
       .slice(0, 3);
   }
 
+  const chartMatch = raw.match(CHART_RE);
+  let chartMarkers: string[] = [];
+  if (chartMatch) {
+    try { chartMarkers = JSON.parse(chartMatch[1]) as string[]; } catch { chartMarkers = []; }
+    if (!Array.isArray(chartMarkers)) chartMarkers = [];
+    chartMarkers = chartMarkers.filter((c): c is string => typeof c === "string" && c.trim().length > 0).slice(0, 2);
+  }
+
   // Extract [Q]...[/Q] follow-up questions from text and add to chips
-  let text = raw.replace(CHIPS_RE, "").replace(SOURCES_RE, "");
+  let text = raw.replace(CHIPS_RE, "").replace(SOURCES_RE, "").replace(CHART_RE, "");
   const qMatches = [...text.matchAll(Q_TAG_RE)];
   for (const m of qMatches) {
     const q = m[1].trim();
@@ -986,7 +1060,7 @@ function parseResponse(raw: string): { text: string; chips: string[]; sources: D
   // Strip [Q] tags from displayed text
   text = text.replace(Q_TAG_RE, "").trim();
 
-  return { text: text || "Sorry, I wasn't able to generate a response. Please try again.", chips, sources };
+  return { text: text || "Sorry, I wasn't able to generate a response. Please try again.", chips, sources, chartMarkers };
 }
 
 // ─── Sage output safety filter ────────────────────────────────────────────────
@@ -1111,8 +1185,11 @@ async function callGeminiDiscuss(
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
-): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest);
+): Promise<{ text: string; chips: string[]; sources: DiscussSource[]; charts: ChartSeries[] }> {
+  const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
+  const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
+
+  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers);
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1139,7 +1216,9 @@ async function callGeminiDiscuss(
   // Only cache knowledge from clean responses
   if (filtered === raw) extractAndCacheKnowledge(raw);
 
-  return parseResponse(filtered);
+  const parsed = parseResponse(filtered);
+  const charts = resolveCharts(parsed.chartMarkers, seriesMap);
+  return { text: parsed.text, chips: parsed.chips, sources: parsed.sources, charts };
 }
 
 // ─── Health Insights AI helper ────────────────────────────────────────────────
@@ -1963,6 +2042,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         response: result.text,
         chips: result.chips,
         sources: result.sources,
+        charts: result.charts,
         contextSession: null,
         used: newCountNoBt,
         limit: effectiveLimit,
@@ -2073,6 +2153,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseText: string;
   let responseChips: string[] = [];
   let responseSources: DiscussSource[] = [];
+  let responseCharts: ChartSeries[] = [];
   try {
     const cacheTopics = extractTopicsForCache(message, biomarkers);
     const [cachedKnowledge, labTests] = await Promise.all([
@@ -2089,6 +2170,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
+    responseCharts = result.charts;
   } catch (err) {
     console.error("[discuss] Gemini error:", err);
     await db
@@ -2137,6 +2219,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     response: responseText,
     chips: responseChips,
     sources: responseSources,
+    charts: responseCharts,
     contextSession: {
       id: session.id,
       testName: session.testName ?? session.labName ?? "Blood Test",

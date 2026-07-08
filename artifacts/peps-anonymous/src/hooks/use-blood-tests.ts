@@ -47,6 +47,19 @@ export interface DiscussSource {
   type: "study" | "forum" | "other";
 }
 
+export interface DiscussChartPoint {
+  date: string;
+  value: number;
+}
+
+export interface DiscussChart {
+  marker: string;
+  unit: string;
+  refRangeLow: number | null;
+  refRangeHigh: number | null;
+  points: DiscussChartPoint[];
+}
+
 export interface DiscussMessage {
   id: string;
   role: "user" | "assistant";
@@ -55,6 +68,7 @@ export interface DiscussMessage {
   timestamp: Date;
   chips?: string[];
   sources?: DiscussSource[];
+  charts?: DiscussChart[];
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -140,6 +154,7 @@ export interface DiscussResponse {
   limit: number;
   chips?: string[];
   sources?: DiscussSource[];
+  charts?: DiscussChart[];
 }
 
 async function apiFetchDiscuss(path: string, options?: RequestInit): Promise<DiscussResponse> {

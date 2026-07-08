@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, X, Loader2 } from "lucide-react";
-import { useBloodTestDiscuss } from "@/hooks/use-blood-tests";
+import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2 } from "lucide-react";
+import { useBloodTestDiscuss, type DiscussMessage, type DiscussChart } from "@/hooks/use-blood-tests";
+import { SageTrendChart } from "@/components/SageTrendChart";
 
 const ACCENT = "#0176D3";
 
@@ -15,12 +16,15 @@ type Tokens = {
   chip: string;
 };
 
-interface SageMessage {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  chips?: string[];
+interface SageMessage extends DiscussMessage {
   greeting?: boolean;
+}
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  messages: SageMessage[];
+  updatedAt: Date;
 }
 
 interface SageChatProps {
@@ -35,6 +39,10 @@ interface SageChatProps {
 
 const GREETING =
   "Hi, I'm Sage. Ask me anything about your compounds, bloodwork, or protocols and I'll help you make sense of it.";
+
+function makeGreeting(): SageMessage {
+  return { id: "greeting", role: "assistant", content: GREETING, greeting: true, timestamp: new Date() };
+}
 
 /** Renders markdown-lite: headings, bullets, numbered lists, bold, italic, hr. */
 function renderRich(text: string): React.ReactNode {
@@ -158,6 +166,20 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
+function relativeTime(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
+}
+
 export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatProps) {
   const discuss = useBloodTestDiscuss();
   const [messages, setMessages] = useState<SageMessage[]>([]);
@@ -166,8 +188,12 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
 
-  const idRef = useRef(0);
-  const nextId = () => ++idRef.current;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversations, setConversations] = useState<StoredConversation[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const convIdRef = useRef<string | null>(null);
+  const convTitleRef = useRef<string>("New Chat");
   const messagesRef = useRef<SageMessage[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -176,12 +202,34 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
     messagesRef.current = messages;
   }, [messages]);
 
+  const persistConversation = useCallback(async (msgs: SageMessage[]) => {
+    const id = convIdRef.current;
+    if (!id) return;
+    const toSave = msgs.filter((m) => !m.greeting);
+    if (toSave.length === 0) return;
+    try {
+      await fetch(`/api/blood-tests/conversations/${id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: convTitleRef.current, messages: toSave }),
+      });
+    } catch {
+      // Best-effort persistence — a failed save shouldn't interrupt the chat.
+    }
+  }, []);
+
   const send = useCallback(
     async (text: string, historyOverride?: { role: "user" | "assistant"; content: string }[]) => {
       const q = text.trim();
       if (!q || sending || limitReached) return;
 
-      const userMsg: SageMessage = { id: nextId(), role: "user", content: q };
+      if (!convIdRef.current) {
+        convIdRef.current = Math.random().toString(36).slice(2);
+        convTitleRef.current = q.slice(0, 40);
+      }
+
+      const userMsg: SageMessage = { id: Math.random().toString(36).slice(2), role: "user", content: q, timestamp: new Date() };
       setMessages((prev) => [...prev, userMsg]);
       setInput("");
       setSending(true);
@@ -196,10 +244,21 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
 
       try {
         const res = await discuss.mutateAsync({ message: q, history });
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "assistant", content: res.response, chips: res.chips ?? [] },
-        ]);
+        const assistantMsg: SageMessage = {
+          id: Math.random().toString(36).slice(2),
+          role: "assistant",
+          content: res.response,
+          chips: res.chips ?? [],
+          sources: res.sources ?? [],
+          charts: res.charts ?? [],
+          contextSession: res.contextSession ?? null,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => {
+          const next = [...prev, assistantMsg];
+          void persistConversation(next);
+          return next;
+        });
       } catch (e) {
         const err = e as Error & { used?: number; limit?: number };
         if (err.message === "limit_reached") {
@@ -207,9 +266,10 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           setMessages((prev) => [
             ...prev,
             {
-              id: nextId(),
+              id: Math.random().toString(36).slice(2),
               role: "assistant",
               content: "You've reached your daily question limit. Please check back tomorrow.",
+              timestamp: new Date(),
             },
           ]);
         } else {
@@ -219,14 +279,83 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
         setSending(false);
       }
     },
-    [sending, limitReached, discuss],
+    [sending, limitReached, discuss, persistConversation],
+  );
+
+  const startNewChat = useCallback(() => {
+    convIdRef.current = null;
+    convTitleRef.current = "New Chat";
+    setMessages([makeGreeting()]);
+    setInput("");
+    setError(null);
+    setLimitReached(false);
+    setHistoryOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const loadConversations = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch("/api/blood-tests/conversations", { credentials: "include" });
+      if (res.ok) {
+        const rows: { id: string; title: string; messagesJson: string; updatedAt: string }[] = await res.json();
+        setConversations(
+          rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            messages: (() => {
+              try {
+                return JSON.parse(row.messagesJson) as SageMessage[];
+              } catch {
+                return [];
+              }
+            })(),
+            updatedAt: new Date(row.updatedAt),
+          })),
+        );
+      }
+    } catch {
+      // Silent — history is a nice-to-have overlay, not critical path.
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  const openHistory = useCallback(() => {
+    setHistoryOpen(true);
+    void loadConversations();
+  }, [loadConversations]);
+
+  const resumeConversation = useCallback((conv: StoredConversation) => {
+    convIdRef.current = conv.id;
+    convTitleRef.current = conv.title;
+    setMessages(conv.messages.length > 0 ? conv.messages : [makeGreeting()]);
+    setHistoryOpen(false);
+    setError(null);
+    setLimitReached(false);
+  }, []);
+
+  const deleteConversation = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (convIdRef.current === id) startNewChat();
+      try {
+        await fetch(`/api/blood-tests/conversations/${id}`, { method: "DELETE", credentials: "include" });
+      } catch {
+        // Best-effort delete.
+      }
+    },
+    [startNewChat],
   );
 
   // Reset conversation each time the panel opens; auto-send the seed question if provided.
   useEffect(() => {
     if (!open) return;
-    const greeting: SageMessage = { id: nextId(), role: "assistant", content: GREETING, greeting: true };
-    setMessages([greeting]);
+    convIdRef.current = null;
+    convTitleRef.current = "New Chat";
+    setHistoryOpen(false);
+    setMessages([makeGreeting()]);
     setInput("");
     setError(null);
     setLimitReached(false);
@@ -240,20 +369,23 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
 
   // Autoscroll on new content.
   useEffect(() => {
-    if (!open) return;
+    if (!open || historyOpen) return;
     const id = setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 40);
     return () => clearTimeout(id);
-  }, [messages, sending, open]);
+  }, [messages, sending, open, historyOpen]);
 
   // Escape to close.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (historyOpen) setHistoryOpen(false);
+        else onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, historyOpen]);
 
   if (!open) return null;
 
@@ -297,6 +429,24 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
             </span>
           </div>
           <button
+            onClick={startNewChat}
+            className="flex items-center justify-center rounded-lg active:scale-95"
+            style={{ width: 32, height: 32, background: "rgba(255,255,255,.14)", color: "#fff" }}
+            title="New chat"
+            aria-label="New chat"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={openHistory}
+            className="flex items-center justify-center rounded-lg active:scale-95"
+            style={{ width: 32, height: 32, background: "rgba(255,255,255,.14)", color: "#fff" }}
+            title="Past conversations"
+            aria-label="Past conversations"
+          >
+            <History className="w-4 h-4" />
+          </button>
+          <button
             onClick={onClose}
             className="flex items-center justify-center rounded-lg active:scale-95"
             style={{ width: 32, height: 32, background: "rgba(255,255,255,.14)", color: "#fff" }}
@@ -307,86 +457,150 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           </button>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ background: t.panel2, padding: "14px 12px" }}>
-          <div className="flex flex-col gap-3">
-            {messages.map((m) =>
-              m.role === "user" ? (
-                <div key={m.id} className="flex justify-end">
-                  <div
-                    className="rounded-2xl break-words"
-                    style={{
-                      maxWidth: "82%",
-                      padding: "9px 13px",
-                      background: accent,
-                      color: "#fff",
-                      fontSize: 13.5,
-                      lineHeight: 1.5,
-                      borderBottomRightRadius: 6,
-                    }}
-                  >
-                    {m.content}
+        {/* Body (messages or history overlay) */}
+        <div className="flex-1 relative overflow-hidden">
+          {historyOpen && (
+            <div className="absolute inset-0 z-10 flex flex-col" style={{ background: t.panel }}>
+              <div className="flex items-center justify-between shrink-0" style={{ padding: "10px 14px", borderBottom: `1px solid ${t.border}` }}>
+                <span className="text-sm font-bold" style={{ color: t.text }}>Past conversations</span>
+                <button
+                  onClick={() => setHistoryOpen(false)}
+                  className="flex items-center justify-center rounded-lg active:scale-95"
+                  style={{ width: 28, height: 28, color: t.muted }}
+                  aria-label="Close history"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto" style={{ padding: 10 }}>
+                {loadingHistory && (
+                  <div className="flex items-center justify-center py-6" style={{ color: t.muted }}>
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   </div>
-                </div>
-              ) : (
-                <div key={m.id} className="flex flex-col gap-2" style={{ maxWidth: "90%" }}>
-                  <div
-                    className="rounded-2xl break-words"
-                    style={{
-                      padding: "10px 13px",
-                      background: t.panel,
-                      color: t.text,
-                      border: `1px solid ${t.borderSoft}`,
-                      fontSize: 13.5,
-                      lineHeight: 1.55,
-                      borderBottomLeftRadius: 6,
-                    }}
-                  >
-                    {renderRich(m.content)}
-                  </div>
-                  {m.chips && m.chips.length > 0 && !sending && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {m.chips.slice(0, 4).map((chip, i) => (
-                        <button
-                          key={i}
-                          onClick={() => send(chip)}
-                          disabled={sending || limitReached}
-                          className="rounded-full active:scale-95"
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: accent,
-                            padding: "6px 12px",
-                            background: t.chip,
-                            border: `1px solid ${t.border}`,
-                          }}
-                        >
-                          {chip}
-                        </button>
-                      ))}
+                )}
+                {!loadingHistory && conversations.length === 0 && (
+                  <p className="text-xs text-center py-6" style={{ color: t.muted }}>No past conversations yet.</p>
+                )}
+                {!loadingHistory &&
+                  conversations.map((conv) => (
+                    <div
+                      key={conv.id}
+                      onClick={() => resumeConversation(conv)}
+                      className="flex items-start gap-2 rounded-xl cursor-pointer group"
+                      style={{ padding: "9px 10px", marginBottom: 4 }}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: t.subtle }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: t.text }}>{conv.title}</p>
+                        <p className="text-[10px]" style={{ color: t.muted }}>{relativeTime(conv.updatedAt)}</p>
+                      </div>
+                      <button
+                        onClick={(e) => deleteConversation(conv.id, e)}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        style={{ color: t.subtle }}
+                        aria-label="Delete conversation"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  )}
+                  ))}
+              </div>
+            </div>
+          )}
+
+          <div className="absolute inset-0 overflow-y-auto overflow-x-hidden" style={{ background: t.panel2, padding: "14px 12px" }}>
+            <div className="flex flex-col gap-3">
+              {messages.map((m) =>
+                m.role === "user" ? (
+                  <div key={m.id} className="flex justify-end">
+                    <div
+                      className="rounded-2xl break-words"
+                      style={{
+                        maxWidth: "82%",
+                        padding: "9px 13px",
+                        background: accent,
+                        color: "#fff",
+                        fontSize: 13.5,
+                        lineHeight: 1.5,
+                        borderBottomRightRadius: 6,
+                      }}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={m.id} className="flex flex-col gap-2" style={{ maxWidth: "90%" }}>
+                    {m.contextSession && (
+                      <p className="flex items-center gap-1" style={{ fontSize: 10.5, color: accent, paddingLeft: 2 }}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        Retrieved {formatSessionDate(m.contextSession.testDate)} — {m.contextSession.testName}
+                      </p>
+                    )}
+                    <div
+                      className="rounded-2xl break-words"
+                      style={{
+                        padding: "10px 13px",
+                        background: t.panel,
+                        color: t.text,
+                        border: `1px solid ${t.borderSoft}`,
+                        fontSize: 13.5,
+                        lineHeight: 1.55,
+                        borderBottomLeftRadius: 6,
+                      }}
+                    >
+                      {renderRich(m.content)}
+                    </div>
+                    {m.charts && m.charts.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        {m.charts.map((c: DiscussChart, i: number) => (
+                          <SageTrendChart key={`${m.id}-chart-${i}`} chart={c} />
+                        ))}
+                      </div>
+                    )}
+                    {m.chips && m.chips.length > 0 && !sending && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.chips.slice(0, 4).map((chip, i) => (
+                          <button
+                            key={i}
+                            onClick={() => send(chip)}
+                            disabled={sending || limitReached}
+                            className="rounded-full active:scale-95"
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: accent,
+                              padding: "6px 12px",
+                              background: t.chip,
+                              border: `1px solid ${t.border}`,
+                            }}
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ),
+              )}
+
+              {sending && (
+                <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 12.5, paddingLeft: 4 }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Sage is thinking…
                 </div>
-              ),
-            )}
+              )}
 
-            {sending && (
-              <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 12.5, paddingLeft: 4 }}>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Sage is thinking…
-              </div>
-            )}
+              {error && (
+                <div
+                  className="rounded-xl"
+                  style={{ padding: "9px 12px", background: "rgba(220,38,38,.10)", border: "1px solid rgba(220,38,38,.3)", color: "#dc2626", fontSize: 12.5 }}
+                >
+                  {error}
+                </div>
+              )}
 
-            {error && (
-              <div
-                className="rounded-xl"
-                style={{ padding: "9px 12px", background: "rgba(220,38,38,.10)", border: "1px solid rgba(220,38,38,.3)", color: "#dc2626", fontSize: 12.5 }}
-              >
-                {error}
-              </div>
-            )}
-
-            <div ref={endRef} />
+              <div ref={endRef} />
+            </div>
           </div>
         </div>
 
