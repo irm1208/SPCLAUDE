@@ -309,6 +309,7 @@ export interface EntryFeePaymentInfo {
     currency: string;
     network: string;
     amount: number;
+    amountUsd: number | null;
     availableCryptoOptions: { currency: string; network: string }[];
   };
 }
