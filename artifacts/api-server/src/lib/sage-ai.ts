@@ -195,6 +195,7 @@ async function callModelRaw(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!res.ok) {
@@ -237,6 +238,7 @@ async function callModel(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!res.ok) {

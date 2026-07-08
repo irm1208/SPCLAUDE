@@ -158,7 +158,7 @@ export interface DiscussResponse {
 }
 
 async function apiFetchDiscuss(path: string, options?: RequestInit): Promise<DiscussResponse> {
-  const res = await fetch(path, { credentials: "include", ...options });
+  const res = await fetch(path, { credentials: "include", signal: AbortSignal.timeout(65_000), ...options });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Request failed" }));
     const parsed = err as { error?: string; used?: number; limit?: number };
