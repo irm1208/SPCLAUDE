@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable, labTestsTable } from "@workspace/db";
+import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable, labTestsTable, glp1LogsTable } from "@workspace/db";
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
-import { buildSageSystemPrompt, type CompoundCtx } from "../lib/sage-system-prompt";
+import { buildSageSystemPrompt, type CompoundCtx, type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 
@@ -1114,6 +1114,7 @@ async function callGeminiDiscuss(
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
+  glp1Logs: Glp1LogCtx[] = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[] }> {
   const allCompoundCtx: CompoundCtx[] = allCompounds.map(c => ({
     name: c.name,
@@ -1142,6 +1143,7 @@ async function callGeminiDiscuss(
     labTests,
     hasBloodTest,
     protocolSection: protoSection,
+    glp1Logs,
   });
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
@@ -1161,6 +1163,7 @@ async function callGeminiDiscuss(
     system: systemPrompt,
     messages,
     maxTokens: 8192,
+    enableWebSearch: false,
   });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
@@ -1976,11 +1979,23 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     const newCountNoBt = quotaNoBt.used;
 
     try {
-      const [topics, labTests] = await Promise.all([
+      const [topics, labTests, glp1Rows] = await Promise.all([
         Promise.resolve(extractTopicsForCache(message, [])),
         fetchLabTestsForCompounds(activeCompoundsNoBt),
+        db.select().from(glp1LogsTable).where(eq(glp1LogsTable.telegramUsername, tg)).orderBy(desc(glp1LogsTable.loggedDate)).limit(60),
       ]);
       const cachedKnowledge = await lookupKnowledgeCache(topics);
+      const glp1Logs: Glp1LogCtx[] = glp1Rows.map(r => ({
+        loggedDate: r.loggedDate,
+        compoundName: r.compoundName,
+        doseMg: parseFloat(String(r.doseMg)),
+        weightKg: r.weightKg != null ? parseFloat(String(r.weightKg)) : null,
+        notes: r.notes ?? null,
+        injectionSite: r.injectionSite ?? null,
+        sideEffects: r.sideEffects ?? null,
+        calories: r.calories != null ? parseFloat(String(r.calories)) : null,
+        proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
+      }));
       const result = await callGeminiDiscuss(
         message,
         "General health (no blood test on file yet)",
@@ -1993,6 +2008,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         labTests,
         allCompoundsNoBt,
         false,
+        glp1Logs,
       );
 
       logCustomerActivity({
@@ -2129,9 +2145,10 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseSources: DiscussSource[] = [];
   try {
     const cacheTopics = extractTopicsForCache(message, biomarkers);
-    const [cachedKnowledge, labTests] = await Promise.all([
+    const [cachedKnowledge, labTests, glp1Rows] = await Promise.all([
       lookupKnowledgeCache(cacheTopics),
       fetchLabTestsForCompounds(activeCompounds),
+      db.select().from(glp1LogsTable).where(eq(glp1LogsTable.telegramUsername, tg)).orderBy(desc(glp1LogsTable.loggedDate)).limit(60),
     ]);
     if (cachedKnowledge.length > 0) {
       console.log(`[discuss] Knowledge cache hit: ${cachedKnowledge.map(k => k.topic).join(", ")}`);
@@ -2139,7 +2156,18 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     if (labTests.length > 0) {
       console.log(`[discuss] Lab tests loaded: ${labTests.map(t => t.peptideName).join(", ")}`);
     }
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus);
+    const glp1Logs: Glp1LogCtx[] = glp1Rows.map(r => ({
+      loggedDate: r.loggedDate,
+      compoundName: r.compoundName,
+      doseMg: parseFloat(String(r.doseMg)),
+      weightKg: r.weightKg != null ? parseFloat(String(r.weightKg)) : null,
+      notes: r.notes ?? null,
+      injectionSite: r.injectionSite ?? null,
+      sideEffects: r.sideEffects ?? null,
+      calories: r.calories != null ? parseFloat(String(r.calories)) : null,
+      proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
+    }));
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs);
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;

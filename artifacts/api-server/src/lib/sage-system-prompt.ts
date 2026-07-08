@@ -50,6 +50,18 @@ export interface KnowledgeCtx {
   summary: string;
 }
 
+export interface Glp1LogCtx {
+  loggedDate: string;
+  compoundName: string;
+  doseMg: number;
+  weightKg: number | null;
+  notes: string | null;
+  injectionSite: string | null;
+  sideEffects: string | null;
+  calories: number | null;
+  proteinG: number | null;
+}
+
 export interface SagePromptData {
   sessionName: string;
   sessionDate: string;
@@ -60,6 +72,7 @@ export interface SagePromptData {
   labTests?: LabTestCtx[];
   hasBloodTest?: boolean;
   protocolSection?: string;
+  glp1Logs?: Glp1LogCtx[];
 }
 
 // ─── Static base prompt (sections 1–46) ─────────────────────────────────────
@@ -652,6 +665,7 @@ function buildMemberDataSection(data: SagePromptData): string {
     labTests = [],
     hasBloodTest = true,
     protocolSection = "",
+    glp1Logs = [],
   } = data;
 
   const dateObj = new Date(sessionDate + "T00:00:00");
@@ -748,6 +762,24 @@ CACHED COMMUNITY KNOWLEDGE (already researched — incorporate directly)
 ${cachedKnowledge.map(k => `[${k.topic.toUpperCase().replace(/_/g, " ")}]\n${k.summary}`).join("\n\n")}`
     : "";
 
+  // GLP-1 injection log
+  const glp1Section = glp1Logs.length > 0
+    ? `\n\n═══════════════════════════════════════════
+GLP-1 INJECTION LOG (most recent entries, newest first)
+═══════════════════════════════════════════
+Use this data to discuss dosing progression, weight trends, side effects, and adherence. Weight is stored in kg.
+${glp1Logs.map(l => {
+  const parts: string[] = [`  ${l.loggedDate}: ${l.compoundName} ${l.doseMg}mg`];
+  if (l.weightKg != null) parts.push(`weight ${l.weightKg}kg`);
+  if (l.injectionSite) parts.push(`site: ${l.injectionSite}`);
+  if (l.sideEffects) { try { const arr = JSON.parse(l.sideEffects) as string[]; if (arr.length) parts.push(`side effects: ${arr.join(", ")}`); } catch { parts.push(`side effects: ${l.sideEffects}`); } }
+  if (l.calories != null) parts.push(`calories: ${l.calories} kcal`);
+  if (l.proteinG != null) parts.push(`protein: ${l.proteinG}g`);
+  if (l.notes) parts.push(`notes: ${l.notes}`);
+  return parts.join(" | ");
+}).join("\n")}`
+    : "";
+
   // Lab test CoAs
   const labTestSection = labTests.length > 0
     ? `\n\n═══════════════════════════════════════════
@@ -775,7 +807,7 @@ BLOOD TEST STATUS: No blood test on file yet for this member.
 
 IMPORTANT BEHAVIOUR RULE: In your FIRST response in this conversation, and ONLY the first, open with a single short sentence acknowledging that you don't have any blood test results on file for them yet. Mention that they can upload a blood test via the Blood Tests section of their profile to unlock personalised biomarker analysis. Then pivot IMMEDIATELY to being genuinely helpful with whatever they asked. Do NOT repeat this notice in any subsequent messages.
 
-${compoundsSection}${protocolSection}${knowledgeSection}${labTestSection}`;
+${compoundsSection}${protocolSection}${glp1Section}${knowledgeSection}${labTestSection}`;
   }
 
   return `\n\n═══════════════════════════════════════════
@@ -787,7 +819,7 @@ BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsSection}${protocolSection}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}`;
+${compoundsSection}${protocolSection}${historicalSection}${persistentTrendsSection}${glp1Section}${knowledgeSection}${labTestSection}`;
 }
 
 // ─── Public builder ──────────────────────────────────────────────────────────
