@@ -47,3 +47,12 @@ application now fixes it** — no manual port-killing needed going forward.
 3. Live log via getWorkflowStatus, not /tmp/logs/*.log (that file is stale/rotated).
    `wss://localhost … ERR_CONNECTION_REFUSED` HMR + a 401 account fetch (logged out)
    are harmless dev noise.
+
+# api-server has no watch mode
+
+`api-server`'s `dev` script is plain `tsx ./src/index.ts` (no `--watch`). Unlike the
+Vite frontend (which hot-reloads instantly), editing any backend route/lib file does
+**nothing** until you restart **Start application** — a GET right after an edit will
+silently serve the old handler (e.g. a new response field reads as `undefined`), which
+looks like a code bug but is just a stale process. Always restart after backend edits,
+then re-verify via curl before concluding something is broken.

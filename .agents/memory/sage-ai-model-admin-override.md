@@ -16,3 +16,9 @@ The Sage health chatbot's active model is stored in `site_config` under the key 
 **Why:** the user explicitly confirmed this must stay browser-only/personal — never write these credentials to `site_config`, audit logs, or any DB table, and never expose one admin's token to another.
 
 **How to apply:** any future Sage-related endpoint that calls `callSageAI` on behalf of an interactive admin session should accept the same `authToken`/`baseUrl` passthrough pattern rather than inventing a new storage mechanism.
+
+**Admin-added custom models (added 2026-07-08):** beyond the hardcoded `SAGE_AVAILABLE_MODELS` allowlist, admins can register additional model IDs at runtime via `POST /admin/sage-settings/models` / `DELETE /admin/sage-settings/models/:model`, stored as a JSON array under a separate `site_config` key (`sage_ai_custom_models`). `GET /admin/sage-settings` merges both lists into `availableModels` and also returns the custom-only list as `customModels` so the UI can group/label them separately and offer removal. Every place that validates a model name (PATCH active model, POST test-chat) checks the hardcoded set OR the custom list — never just the hardcoded one.
+
+**Why:** the allowlist is a source-controlled file, so adding a brand-new proxy-supported model previously required a code change + redeploy; letting admins self-register a model ID removes that bottleneck.
+
+**How to apply:** if the allowlist validation logic is ever refactored, keep custom-model lookups case-insensitive and deduped against the hardcoded list (an admin can't shadow/duplicate a hardcoded name); removing a custom model that is currently the active/saved model must fall back to the configured fallback model, never leave a dangling reference.

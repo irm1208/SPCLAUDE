@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { siteConfigTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { callSageAI, getActiveSageModel, getSageFallbackModel, SAGE_MODEL_CONFIG_KEY, type SageMessage } from "../lib/sage-ai";
@@ -114,17 +115,123 @@ export const SAGE_AVAILABLE_MODELS = [
 
 const SAGE_MODEL_SET = new Set<string>(SAGE_AVAILABLE_MODELS);
 
+// ── Admin-added custom models ─────────────────────────────────────────────────
+// Stored as a JSON array under this site_config key so admins can register models
+// that aren't in the curated allowlist above, without needing a code change.
+const SAGE_CUSTOM_MODELS_CONFIG_KEY = "sage_ai_custom_models";
+const MAX_CUSTOM_MODELS = 100;
+const MAX_MODEL_NAME_LENGTH = 200;
+
+async function getCustomModels(): Promise<string[]> {
+  const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, SAGE_CUSTOM_MODELS_CONFIG_KEY));
+  if (!row?.value) return [];
+  try {
+    const parsed = JSON.parse(row.value);
+    return Array.isArray(parsed) ? parsed.filter((m): m is string => typeof m === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveCustomModels(models: string[]): Promise<void> {
+  await db.insert(siteConfigTable)
+    .values({ key: SAGE_CUSTOM_MODELS_CONFIG_KEY, value: JSON.stringify(models) })
+    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: JSON.stringify(models) } });
+}
+
 // ── GET /admin/sage-settings ──────────────────────────────────────────────────
 router.get("/admin/sage-settings", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const model = await getActiveSageModel();
+  const [model, customModels] = await Promise.all([getActiveSageModel(), getCustomModels()]);
   res.json({
     model,
     fallbackModel: getSageFallbackModel(),
-    availableModels: SAGE_AVAILABLE_MODELS,
+    availableModels: [...SAGE_AVAILABLE_MODELS, ...customModels],
+    customModels,
     serverKeyConfigured: !!process.env.SAGE_PROXY_API_KEY,
   });
+});
+
+// ── POST /admin/sage-settings/models ──────────────────────────────────────────
+// Adds a custom model name to the admin-curated allowlist so it becomes selectable
+// without a code deploy. Duplicate check is case-insensitive against both lists.
+router.post("/admin/sage-settings/models", async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const { model } = req.body as { model?: string };
+  const trimmed = typeof model === "string" ? model.trim() : "";
+
+  if (!trimmed) {
+    res.status(400).json({ error: "model is required" });
+    return;
+  }
+  if (trimmed.length > MAX_MODEL_NAME_LENGTH) {
+    res.status(400).json({ error: "Model name is too long" });
+    return;
+  }
+
+  const customModels = await getCustomModels();
+  const lower = trimmed.toLowerCase();
+  const alreadyExists =
+    SAGE_AVAILABLE_MODELS.some(m => m.toLowerCase() === lower) ||
+    customModels.some(m => m.toLowerCase() === lower);
+  if (alreadyExists) {
+    res.status(400).json({ error: "That model is already in the list" });
+    return;
+  }
+  if (customModels.length >= MAX_CUSTOM_MODELS) {
+    res.status(400).json({ error: `You can add up to ${MAX_CUSTOM_MODELS} custom models` });
+    return;
+  }
+
+  const updated = [...customModels, trimmed];
+  await saveCustomModels(updated);
+
+  writeLog("change", "info", "sage_ai_custom_model_add",
+    `Custom Sage AI model "${trimmed}" added by ${getAdminUsername(res)}`,
+    { model: trimmed },
+  ).catch(() => {});
+
+  res.json({ customModels: updated, availableModels: [...SAGE_AVAILABLE_MODELS, ...updated] });
+});
+
+// ── DELETE /admin/sage-settings/models/:model ─────────────────────────────────
+// Removes a previously-added custom model. Built-in (hardcoded) models cannot be removed here.
+router.delete("/admin/sage-settings/models/:model", async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const rawParam = req.params.model;
+  const target = decodeURIComponent(Array.isArray(rawParam) ? rawParam[0] ?? "" : rawParam ?? "").trim();
+  if (!target) {
+    res.status(400).json({ error: "model is required" });
+    return;
+  }
+
+  const customModels = await getCustomModels();
+  const updated = customModels.filter(m => m !== target);
+  if (updated.length === customModels.length) {
+    res.status(404).json({ error: "Custom model not found" });
+    return;
+  }
+
+  await saveCustomModels(updated);
+
+  // If the model being removed is currently active, fall back to the default so
+  // the site never ends up pointing at a model that's no longer in any list.
+  const activeModel = await getActiveSageModel();
+  if (activeModel === target) {
+    await db.insert(siteConfigTable)
+      .values({ key: SAGE_MODEL_CONFIG_KEY, value: getSageFallbackModel() })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: getSageFallbackModel() } });
+  }
+
+  writeLog("change", "info", "sage_ai_custom_model_remove",
+    `Custom Sage AI model "${target}" removed by ${getAdminUsername(res)}`,
+    { model: target },
+  ).catch(() => {});
+
+  res.json({ customModels: updated, availableModels: [...SAGE_AVAILABLE_MODELS, ...updated] });
 });
 
 // ── PATCH /admin/sage-settings ────────────────────────────────────────────────
@@ -138,7 +245,8 @@ router.patch("/admin/sage-settings", async (req: Request, res: Response): Promis
     res.status(400).json({ error: "model is required" });
     return;
   }
-  if (!SAGE_MODEL_SET.has(trimmed)) {
+  const customModels = await getCustomModels();
+  if (!SAGE_MODEL_SET.has(trimmed) && !customModels.includes(trimmed)) {
     res.status(400).json({ error: "Unknown model" });
     return;
   }
@@ -177,8 +285,11 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
 
   const chosenModel = typeof model === "string" ? model.trim() : "";
   if (chosenModel && !SAGE_MODEL_SET.has(chosenModel)) {
-    res.status(400).json({ error: "Unknown model" });
-    return;
+    const customModels = await getCustomModels();
+    if (!customModels.includes(chosenModel)) {
+      res.status(400).json({ error: "Unknown model" });
+      return;
+    }
   }
 
   const messages: SageMessage[] = [

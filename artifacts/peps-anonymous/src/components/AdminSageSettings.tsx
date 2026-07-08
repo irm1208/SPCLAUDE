@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle, Plus, X } from "lucide-react";
 
 const apiUrl = (path: string) => `/api${path}`;
 
@@ -10,6 +10,7 @@ interface SageSettings {
   model: string;
   fallbackModel: string;
   availableModels: string[];
+  customModels: string[];
   serverKeyConfigured: boolean;
 }
 
@@ -30,11 +31,12 @@ function familyOf(model: string): string {
   return "Other";
 }
 
-function groupModels(models: string[]): Array<{ family: string; models: string[] }> {
-  const order = ["Claude", "GPT", "Qwen", "GLM", "Kimi", "DeepSeek", "Other"];
+function groupModels(models: string[], customModels: string[] = []): Array<{ family: string; models: string[] }> {
+  const order = ["Claude", "GPT", "Qwen", "GLM", "Kimi", "DeepSeek", "Custom", "Other"];
+  const customSet = new Set(customModels);
   const map = new Map<string, string[]>();
   for (const m of models) {
-    const fam = familyOf(m);
+    const fam = customSet.has(m) ? "Custom" : familyOf(m);
     if (!map.has(fam)) map.set(fam, []);
     map.get(fam)!.push(m);
   }
@@ -55,6 +57,11 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  const [customModelInput, setCustomModelInput] = useState("");
+  const [addingModel, setAddingModel] = useState(false);
+  const [customModelError, setCustomModelError] = useState("");
+  const [removingModel, setRemovingModel] = useState<string | null>(null);
 
   // Personal proxy credentials — stored only in this browser's localStorage, never sent
   // to the server except as part of this admin's own test-chat requests below.
@@ -139,6 +146,63 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
     }
   };
 
+  const addCustomModel = async () => {
+    const name = customModelInput.trim();
+    if (!name || addingModel) return;
+    setAddingModel(true);
+    setCustomModelError("");
+    try {
+      const res = await fetch(apiUrl("/admin/sage-settings/models"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ model: name }),
+      });
+      const data = await res.json() as { customModels?: string[]; availableModels?: string[]; error?: string };
+      if (!res.ok || data.error) {
+        setCustomModelError(data.error ?? "Failed to add model.");
+        return;
+      }
+      setSettings(s => s ? { ...s, customModels: data.customModels ?? s.customModels, availableModels: data.availableModels ?? s.availableModels } : s);
+      setCustomModelInput("");
+    } catch {
+      setCustomModelError("Network error — please try again.");
+    } finally {
+      setAddingModel(false);
+    }
+  };
+
+  const removeCustomModel = async (model: string) => {
+    if (removingModel) return;
+    setRemovingModel(model);
+    setCustomModelError("");
+    try {
+      const res = await fetch(apiUrl(`/admin/sage-settings/models/${encodeURIComponent(model)}`), {
+        method: "DELETE",
+        headers: { "x-admin-secret": secret },
+      });
+      const data = await res.json() as { customModels?: string[]; availableModels?: string[]; error?: string };
+      if (!res.ok || data.error) {
+        setCustomModelError(data.error ?? "Failed to remove model.");
+        return;
+      }
+      setSettings(s => s ? { ...s, customModels: data.customModels ?? s.customModels, availableModels: data.availableModels ?? s.availableModels } : s);
+      // If the removed model was selected locally but not yet saved, fall back to the saved active model.
+      setSelectedModel(sel => (sel === model && settings) ? settings.model : sel);
+      setTestModel(tm => (tm === model && settings) ? settings.model : tm);
+    } catch {
+      setCustomModelError("Network error — please try again.");
+    } finally {
+      setRemovingModel(null);
+    }
+  };
+
+  const handleCustomModelKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addCustomModel();
+    }
+  };
+
   const sendTestMessage = async () => {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
@@ -192,7 +256,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
     );
   }
 
-  const groups = settings ? groupModels(settings.availableModels) : [];
+  const groups = settings ? groupModels(settings.availableModels, settings.customModels) : [];
   const hasUnsavedChange = !!settings && selectedModel !== settings.model;
 
   return (
@@ -255,6 +319,66 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
           </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
+        </div>
+
+        <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
+          <div>
+            <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+              <Plus className="w-4 h-4" style={{ color: "#F24908" }} />
+              Add a custom model
+            </h3>
+            <p className="text-[11px] mt-1" style={{ color: "var(--adm-muted)" }}>
+              Not seeing a model your proxy supports? Add its exact model ID here — it'll show up in the
+              dropdowns above under "Custom" without needing a code change.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={customModelInput}
+              onChange={e => { setCustomModelInput(e.target.value); if (customModelError) setCustomModelError(""); }}
+              onKeyDown={handleCustomModelKey}
+              placeholder="e.g. claude-opus-4-9"
+              autoComplete="off"
+              className="flex-1 h-9 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-orange-400/50 font-mono"
+              style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+            />
+            <button
+              onClick={addCustomModel}
+              disabled={addingModel || !customModelInput.trim()}
+              className="flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-bold text-white transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 shrink-0"
+              style={{ background: "#F24908" }}
+            >
+              {addingModel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Add
+            </button>
+          </div>
+
+          {customModelError && <p className="text-sm text-red-400">{customModelError}</p>}
+
+          {!!settings?.customModels.length && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {settings.customModels.map(m => (
+                <span
+                  key={m}
+                  className="flex items-center gap-1.5 pl-2.5 pr-1.5 h-7 rounded-full text-xs font-mono"
+                  style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+                >
+                  {m}
+                  <button
+                    onClick={() => removeCustomModel(m)}
+                    disabled={removingModel === m}
+                    title={`Remove ${m}`}
+                    className="flex items-center justify-center w-4 h-4 rounded-full disabled:opacity-50"
+                    style={{ color: "var(--adm-muted)" }}
+                  >
+                    {removingModel === m ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
