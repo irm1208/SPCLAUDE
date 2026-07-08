@@ -123,6 +123,7 @@ router.get("/admin/sage-settings", async (req: Request, res: Response): Promise<
     model,
     fallbackModel: getSageFallbackModel(),
     availableModels: SAGE_AVAILABLE_MODELS,
+    serverKeyConfigured: !!process.env.SAGE_PROXY_API_KEY,
   });
 });
 
@@ -160,10 +161,13 @@ router.patch("/admin/sage-settings", async (req: Request, res: Response): Promis
 router.post("/admin/sage-settings/test", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { message, model, history } = req.body as {
+  const { message, model, history, authToken, baseUrl } = req.body as {
     message?: string;
     model?: string;
     history?: Array<{ role: "user" | "assistant"; text: string }>;
+    /** Optional per-admin browser-stored credential override. Never persisted server-side. */
+    authToken?: string;
+    baseUrl?: string;
   };
 
   if (!message?.trim()) {
@@ -194,6 +198,8 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
       messages,
       maxTokens: 1024,
       model: chosenModel || undefined,
+      apiKey: typeof authToken === "string" ? authToken.trim() || undefined : undefined,
+      baseUrl: typeof baseUrl === "string" ? baseUrl.trim() || undefined : undefined,
     });
     res.json({
       reply: reply || "(empty response)",

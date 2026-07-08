@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw } from "lucide-react";
+import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle } from "lucide-react";
 
 const apiUrl = (path: string) => `/api${path}`;
+
+const LOCAL_AUTH_TOKEN_KEY = "sagePlaygroundAuthToken";
+const LOCAL_BASE_URL_KEY = "sagePlaygroundBaseUrl";
 
 interface SageSettings {
   model: string;
   fallbackModel: string;
   availableModels: string[];
+  serverKeyConfigured: boolean;
 }
 
 interface ChatMessage {
@@ -51,6 +55,47 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Personal proxy credentials — stored only in this browser's localStorage, never sent
+  // to the server except as part of this admin's own test-chat requests below.
+  const [authToken, setAuthToken] = useState("");
+  const [proxyBaseUrl, setProxyBaseUrl] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [credsSaved, setCredsSaved] = useState(false);
+  const hasLocalCreds = !!(authToken.trim() || proxyBaseUrl.trim());
+
+  useEffect(() => {
+    try {
+      setAuthToken(localStorage.getItem(LOCAL_AUTH_TOKEN_KEY) ?? "");
+      setProxyBaseUrl(localStorage.getItem(LOCAL_BASE_URL_KEY) ?? "");
+    } catch {
+      // localStorage unavailable — ignore, fields just start empty
+    }
+  }, []);
+
+  const saveLocalCreds = () => {
+    try {
+      if (authToken.trim()) localStorage.setItem(LOCAL_AUTH_TOKEN_KEY, authToken.trim());
+      else localStorage.removeItem(LOCAL_AUTH_TOKEN_KEY);
+      if (proxyBaseUrl.trim()) localStorage.setItem(LOCAL_BASE_URL_KEY, proxyBaseUrl.trim());
+      else localStorage.removeItem(LOCAL_BASE_URL_KEY);
+      setCredsSaved(true);
+      setTimeout(() => setCredsSaved(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearLocalCreds = () => {
+    setAuthToken("");
+    setProxyBaseUrl("");
+    try {
+      localStorage.removeItem(LOCAL_AUTH_TOKEN_KEY);
+      localStorage.removeItem(LOCAL_BASE_URL_KEY);
+    } catch {
+      // ignore
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,7 +156,13 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       const res = await fetch(apiUrl("/admin/sage-settings/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ message: text, model: testModel, history }),
+        body: JSON.stringify({
+          message: text,
+          model: testModel,
+          history,
+          ...(authToken.trim() ? { authToken: authToken.trim() } : {}),
+          ...(proxyBaseUrl.trim() ? { baseUrl: proxyBaseUrl.trim() } : {}),
+        }),
       });
       const data = await res.json() as { reply?: string; error?: string };
       if (!res.ok || data.error) {
@@ -204,6 +255,88 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
           </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
+        </div>
+
+        <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
+          <div>
+            <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+              <KeyRound className="w-4 h-4" style={{ color: "#F24908" }} />
+              Your proxy credentials (saved in this browser only)
+            </h3>
+            <p className="text-[11px] mt-1" style={{ color: "var(--adm-muted)" }}>
+              Optional. Stored only in this browser's local storage — never saved on the server or shared with
+              other admins. When set, they're sent along with your own test messages below (equivalent to the
+              server's <code>SAGE_PROXY_API_KEY</code> / <code>SAGE_PROXY_BASE_URL</code>), letting you test with
+              your personal Anthropic-compatible credentials without touching the shared server config.
+            </p>
+          </div>
+
+          {settings && !settings.serverKeyConfigured && (
+            <p className="text-xs flex items-start gap-1.5 px-2.5 py-2 rounded-lg" style={{ color: "#b45309", background: "rgba(245,158,11,0.12)" }}>
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              No server-side API key is configured, so test chat will fail unless you set your own credentials here.
+            </p>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold" style={{ color: "var(--adm-muted)" }}>ANTHROPIC_AUTH_TOKEN</label>
+            <div className="relative">
+              <input
+                type={showToken ? "text" : "password"}
+                value={authToken}
+                onChange={e => setAuthToken(e.target.value)}
+                placeholder="sk-ant-…"
+                autoComplete="off"
+                className="w-full h-9 rounded-lg pl-3 pr-9 text-sm outline-none focus:ring-2 focus:ring-orange-400/50 font-mono"
+                style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(v => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2"
+                style={{ color: "var(--adm-muted)" }}
+                title={showToken ? "Hide" : "Show"}
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold" style={{ color: "var(--adm-muted)" }}>ANTHROPIC_BASE_URL</label>
+            <input
+              type="text"
+              value={proxyBaseUrl}
+              onChange={e => setProxyBaseUrl(e.target.value)}
+              placeholder="https://cn.zhihuiai.top"
+              autoComplete="off"
+              className="w-full h-9 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-orange-400/50 font-mono"
+              style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+            />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={saveLocalCreds}
+              className="flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-bold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+              style={{ background: credsSaved ? "#16a34a" : "#F24908" }}
+            >
+              <Save className="w-3.5 h-3.5" />
+              {credsSaved ? "Saved" : "Save to this browser"}
+            </button>
+            {hasLocalCreds && (
+              <button
+                onClick={clearLocalCreds}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold"
+                style={{ color: "var(--adm-muted)" }}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Clear
+              </button>
+            )}
+            {hasLocalCreds && (
+              <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>Active for your test chat →</span>
+            )}
+          </div>
         </div>
       </div>
 

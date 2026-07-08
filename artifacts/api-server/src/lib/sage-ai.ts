@@ -6,6 +6,10 @@
  *   SAGE_PROXY_MODEL        – primary model name (default: claude-opus-4-7), overridable at runtime
  *                             via the `sage_ai_model` site_config key (set from the Admin panel)
  *   SAGE_PROXY_FALLBACK_MODEL – fallback model when primary has no tokens (default: claude-3-5-sonnet-20241022)
+ *
+ * `callSageAI` also accepts a per-call `apiKey`/`baseUrl` override (used by the admin test-chat
+ * panel to let an individual admin test with their own personal Anthropic credentials, stored only
+ * in their browser). These overrides are never persisted server-side.
  */
 
 import { db } from "@workspace/db";
@@ -48,11 +52,16 @@ export interface SageAIParams {
   maxTokens?: number;
   /** Explicit model override (e.g. from the admin test panel). Skips the fallback chain. */
   model?: string;
+  /** Explicit API key override (e.g. an admin's personal browser-stored credential for testing). Never persisted. */
+  apiKey?: string;
+  /** Explicit base URL override, paired with `apiKey`. Never persisted. */
+  baseUrl?: string;
 }
 
 async function callModel(
   model: string,
   apiKey: string,
+  baseUrl: string,
   system: string | undefined,
   messages: SageMessage[],
   maxTokens: number,
@@ -60,7 +69,7 @@ async function callModel(
   const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages };
   if (system) body.system = system;
 
-  const res = await fetch(`${BASE_URL}/v1/messages`, {
+  const res = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -89,23 +98,26 @@ function isTokenExhaustedError(err: unknown): boolean {
   );
 }
 
-export async function callSageAI({ system, messages, maxTokens = 8192, model }: SageAIParams): Promise<string> {
-  const apiKey = process.env.SAGE_PROXY_API_KEY;
+export async function callSageAI({
+  system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride,
+}: SageAIParams): Promise<string> {
+  const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
 
   // Explicit override (admin test panel): single attempt, no silent fallback substitution.
   if (model) {
-    return await callModel(model, apiKey, system, messages, maxTokens);
+    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens);
   }
 
   const activeModel = await getActiveSageModel();
 
   try {
-    return await callModel(activeModel, apiKey, system, messages, maxTokens);
+    return await callModel(activeModel, apiKey, baseUrl, system, messages, maxTokens);
   } catch (primaryErr) {
     if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
       console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
-      return await callModel(FALLBACK_MODEL, apiKey, system, messages, maxTokens);
+      return await callModel(FALLBACK_MODEL, apiKey, baseUrl, system, messages, maxTokens);
     }
     throw primaryErr;
   }
