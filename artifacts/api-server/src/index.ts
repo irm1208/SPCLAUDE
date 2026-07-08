@@ -5,6 +5,7 @@ import { startTrackingAutoRefresh } from "./lib/tracking-auto-refresh";
 import { startGbAutoClose } from "./lib/gb-auto-close";
 import { startWholesaleShareAutoLock } from "./lib/wholesale-share-auto-lock";
 import { startPoolPaymentAutoVerify } from "./lib/pool-payment-auto-verify";
+import { startGbEntryFeeAutoVerify } from "./lib/gb-entry-fee-auto-verify";
 import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
@@ -893,6 +894,7 @@ app.listen(port, "0.0.0.0", () => {
   startGbAutoClose();
   startWholesaleShareAutoLock();
   startPoolPaymentAutoVerify();
+  startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
   startQiyunleSync();
   startGbLegsSync();

@@ -293,6 +293,35 @@ export function useActiveGroupBuys() {
   });
 }
 
+export interface EntryFeePaymentInfo {
+  id: string;
+  groupBuyId: string;
+  status: "pending" | "submitted" | "confirmed" | "rejected";
+  amount: number;
+  currency: string;
+  label: string | null;
+  hasTxHash: boolean;
+  rejectionReason: string | null;
+  submittedAt: string | null;
+  confirmedAt: string | null;
+  payment: {
+    walletAddress: string | null;
+    currency: string;
+    network: string;
+    amount: number;
+    availableCryptoOptions: { currency: string; network: string }[];
+  };
+}
+
+export class EntryFeeRequiredError extends Error {
+  code = "ENTRY_FEE_REQUIRED" as const;
+  entryFee: EntryFeePaymentInfo;
+  constructor(message: string, entryFee: EntryFeePaymentInfo) {
+    super(message);
+    this.entryFee = entryFee;
+  }
+}
+
 export function useJoinGroupBuy() {
   const qc = useQueryClient();
   return useMutation({
@@ -314,12 +343,52 @@ export function useJoinGroupBuy() {
         credentials: "include",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to join group buy");
+      if (!res.ok) {
+        if (res.status === 402 && data.code === "ENTRY_FEE_REQUIRED" && data.entryFee) {
+          throw new EntryFeeRequiredError(data.error || "Entry fee required", data.entryFee);
+        }
+        throw new Error(data.error || "Failed to join group buy");
+      }
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["account", "group-buys"] });
       qc.refetchQueries({ queryKey: ["account", "group-buys"] });
+    },
+  });
+}
+
+export function useEntryFeeStatus(groupBuyId: string | null, options?: { refetchInterval?: number }) {
+  return useQuery<EntryFeePaymentInfo>({
+    queryKey: ["account", "entry-fee", groupBuyId],
+    queryFn: async () => {
+      const res = await fetch(`/api/account/entry-fee/${groupBuyId}`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load entry fee status");
+      return data;
+    },
+    enabled: !!groupBuyId,
+    retry: false,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+export function useSubmitEntryFeeTx() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ paymentId, txHash }: { paymentId: string; txHash: string }) => {
+      const res = await fetch(`/api/account/entry-fee/${paymentId}/submit-tx`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to submit transaction");
+      return data as EntryFeePaymentInfo;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["account", "entry-fee", data.groupBuyId], data);
     },
   });
 }

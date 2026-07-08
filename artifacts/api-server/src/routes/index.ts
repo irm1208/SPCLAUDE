@@ -52,6 +52,7 @@ import adminDispatchRouter from "./admin-dispatch";
 import { reshipperDispatchRouter, organiserDispatchRouter } from "./dispatch-scoped";
 import wholesaleSharesRouter from "./wholesale-shares";
 import discordRouter from "./discord";
+import gbEntryFeeRouter from "./gb-entry-fee";
 
 const router: IRouter = Router();
 
@@ -92,6 +93,7 @@ router.use("/account/order-login", strictLimiter);
 router.use("/account/forgot-password", strictLimiter);
 router.use("/account/reset-password", strictLimiter);
 router.use("/account/join-gb", strictLimiter);
+router.use("/account/entry-fee", strictLimiter);
 
 router.use(ordersRouter);
 router.use(sheetsSyncRouter);
@@ -136,6 +138,7 @@ router.use(reshipperDispatchRouter);
 router.use(organiserDispatchRouter);
 router.use(wholesaleSharesRouter);
 router.use(discordRouter);
+router.use(gbEntryFeeRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────
 // Proxies GBP→USD/EUR rates so the browser avoids CORS restrictions.

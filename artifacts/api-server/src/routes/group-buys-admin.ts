@@ -15,6 +15,7 @@ import {
   orderLineItemsTable,
   routingHistoryTable,
   fs3SubmissionsTable,
+  gbEntryFeePaymentsTable,
   GROUP_BUY_STATUSES,
   type GroupBuy,
   type GroupBuyProduct,
@@ -26,6 +27,7 @@ import { normalizeTg } from "../lib/normalize";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { createAlert } from "../lib/create-alert";
 import { writeLog } from "../lib/audit-log";
+import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 
 function shortId(len = 5): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -139,7 +141,7 @@ router.get("/admin/group-buys/:id/orders-summary", async (req, res): Promise<voi
 router.post("/admin/group-buys", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel } = req.body;
+  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, entryFeeEnabled, entryFeeAmount, entryFeeLabel } = req.body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     res.status(400).json({ error: "name is required" });
@@ -206,6 +208,9 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     adminFeeEnabled: adminFeeEnabled != null ? Boolean(adminFeeEnabled) : false,
     adminFeeAmount: adminFeeAmount != null && adminFeeAmount !== "" ? parseFloat(String(adminFeeAmount)).toFixed(2) as any : undefined,
     adminFeeLabel: adminFeeLabel ? String(adminFeeLabel).trim() : undefined,
+    entryFeeEnabled: entryFeeEnabled != null ? Boolean(entryFeeEnabled) : false,
+    entryFeeAmount: entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) as any : undefined,
+    entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
   }).returning();
 
   createAlert("system", "medium", "New Group Buy Created",
@@ -225,7 +230,7 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
-  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, testingEnabled, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, adminFeeCountries, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage, orderPageMessage, countryLegsEnabled, vendorShippingEnabled, vendorShippingMessage, vendorShippingAmount, sharedShippingCountries, allowExtraOrders, directShippingEnabled, directShippingVendorId } = req.body;
+  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, testingEnabled, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage, orderPageMessage, countryLegsEnabled, vendorShippingEnabled, vendorShippingMessage, vendorShippingAmount, sharedShippingCountries, allowExtraOrders, directShippingEnabled, directShippingVendorId } = req.body;
 
   const [existing] = await db.select({ id: groupBuysTable.id, name: groupBuysTable.name, status: groupBuysTable.status }).from(groupBuysTable).where(eq(groupBuysTable.id, id));
   if (!existing) {
@@ -303,6 +308,11 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (adminFeeCountries !== undefined) {
     (updates as Record<string, unknown>)["adminFeeCountries"] = Array.isArray(adminFeeCountries) ? JSON.stringify(adminFeeCountries) : null;
   }
+  if (entryFeeEnabled !== undefined) updates.entryFeeEnabled = Boolean(entryFeeEnabled);
+  if (entryFeeAmount !== undefined) {
+    (updates as Record<string, unknown>)["entryFeeAmount"] = entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) : null;
+  }
+  if (entryFeeLabel !== undefined) updates.entryFeeLabel = entryFeeLabel ? String(entryFeeLabel).trim() : null;
   if (qrUploadInpostEnabled !== undefined) updates.qrUploadInpostEnabled = Boolean(qrUploadInpostEnabled);
   if (qrUploadRoyalMailEnabled !== undefined) updates.qrUploadRoyalMailEnabled = Boolean(qrUploadRoyalMailEnabled);
   if (qrUploadMessage !== undefined) updates.qrUploadMessage = qrUploadMessage ? String(qrUploadMessage).trim() : null;
@@ -388,6 +398,56 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   ).catch(() => {});
 
   res.json({ ...updated, infoCards: parseInfoCards(updated.infoCards), shippingOptions: parseShippingOptions(updated.shippingOptions), adminFeeCountries: parseAdminFeeCountries((updated as Record<string, unknown>).adminFeeCountries as string), sharedShippingCountries: parseSharedShippingCountries((updated as Record<string, unknown>).sharedShippingCountries as string) });
+});
+
+// ── GET /admin/group-buys/:id/entry-fee-payments — list all entry fee payments for a GB ───
+router.get("/admin/group-buys/:id/entry-fee-payments", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  const rows = await db
+    .select()
+    .from(gbEntryFeePaymentsTable)
+    .where(eq(gbEntryFeePaymentsTable.groupBuyId, id))
+    .orderBy(desc(gbEntryFeePaymentsTable.createdAt));
+  res.json(rows.map(r => ({
+    ...r,
+    amount: parseFloat(r.amount as unknown as string),
+    amountUsd: r.amountUsd != null ? parseFloat(r.amountUsd as unknown as string) : null,
+    paymentCryptoRate: r.paymentCryptoRate != null ? parseFloat(r.paymentCryptoRate as unknown as string) : null,
+  })));
+});
+
+// ── PATCH /admin/group-buys/entry-fee-payments/:id/status — confirm or reject an entry fee payment ───
+router.patch("/admin/group-buys/entry-fee-payments/:id/status", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  const { status, rejectionReason } = req.body ?? {};
+  const valid = ["confirmed", "rejected", "pending", "submitted"];
+  if (!valid.includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
+
+  const [payment] = await db.select().from(gbEntryFeePaymentsTable).where(eq(gbEntryFeePaymentsTable.id, id));
+  if (!payment) { res.status(404).json({ error: "Entry fee payment not found" }); return; }
+
+  let updated: typeof payment | null = payment;
+  if (status === "confirmed") {
+    updated = await confirmEntryFeePayment(id, "admin");
+    if (!updated) { res.status(500).json({ error: "Failed to confirm payment" }); return; }
+  } else if (status === "rejected") {
+    updated = await rejectEntryFeePayment(id, typeof rejectionReason === "string" ? rejectionReason.slice(0, 500) : null);
+  } else {
+    [updated] = await db.update(gbEntryFeePaymentsTable).set({ status }).where(eq(gbEntryFeePaymentsTable.id, id)).returning();
+  }
+
+  writeLog("change", "info", "admin_entry_fee_status",
+    `Admin set entry fee payment ${id} → ${status}`,
+    { paymentId: id, groupBuyId: payment.groupBuyId, accountId: payment.accountId, status },
+  ).catch(() => {});
+
+  res.json({
+    ...updated,
+    amount: parseFloat((updated as typeof payment).amount as unknown as string),
+    amountUsd: (updated as typeof payment).amountUsd != null ? parseFloat((updated as typeof payment).amountUsd as unknown as string) : null,
+  });
 });
 
 // ── DELETE /admin/group-buys/:id — soft delete (→ archived) ───

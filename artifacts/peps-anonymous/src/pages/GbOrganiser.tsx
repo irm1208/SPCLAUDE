@@ -25,6 +25,7 @@ import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-pr
 import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
+import { cn } from "@/lib/utils";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
 const _nameToCode: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.name.toLowerCase(), c.code]));
@@ -111,6 +112,9 @@ interface OrganiserGB {
   adminFeeAmount: number | null;
   adminFeeLabel: string | null;
   adminFeeCountries: { country: string; amount: number; enabled: boolean }[] | null;
+  entryFeeEnabled: boolean;
+  entryFeeAmount: number | null;
+  entryFeeLabel: string | null;
   sharedShippingCountries: string[] | null;
   allowHalfKits: boolean;
   allowEditOrderWhenClosed: boolean;
@@ -4118,6 +4122,9 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
     adminFeeType: gb?.adminFeeType === "percent" ? "percent" : "fixed",
     adminFeeAmount: gb?.adminFeeAmount?.toString() ?? "",
     adminFeeLabel: gb?.adminFeeLabel ?? "",
+    entryFeeEnabled: gb?.entryFeeEnabled ?? false,
+    entryFeeAmount: gb?.entryFeeAmount?.toString() ?? "",
+    entryFeeLabel: gb?.entryFeeLabel ?? "",
     allowHalfKits: gb?.allowHalfKits ?? true,
     allowEditOrderWhenClosed: gb?.allowEditOrderWhenClosed ?? true,
     allowEditAddressWhenClosed: gb?.allowEditAddressWhenClosed ?? true,
@@ -4335,6 +4342,9 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         adminFeeType: form.adminFeeType,
         adminFeeAmount: form.adminFeeAmount.trim() ? parseFloat(form.adminFeeAmount) : null,
         adminFeeLabel: form.adminFeeLabel.trim() || null,
+        entryFeeEnabled: form.entryFeeEnabled,
+        entryFeeAmount: form.entryFeeAmount.trim() ? parseFloat(form.entryFeeAmount) : null,
+        entryFeeLabel: form.entryFeeLabel.trim() || null,
         allowHalfKits: form.allowHalfKits,
         allowEditOrderWhenClosed: form.allowEditOrderWhenClosed,
         allowEditAddressWhenClosed: form.allowEditAddressWhenClosed,
@@ -4928,6 +4938,42 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
             ) : (
               <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, an admin fee (a fixed amount or a percentage of the product subtotal) will be added to each order. You can set the type, amount and label below.</p>
             )}
+          </SectionCard>
+
+          <SectionCard>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4" style={{ color: "#059669" }} />
+                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Paid Entry Fee</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => set("entryFeeEnabled", !form.entryFeeEnabled)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+                style={form.entryFeeEnabled
+                  ? { background: "rgba(5,150,105,0.08)", borderColor: "#6EE7B7", color: "#065F46" }
+                  : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+              >
+                {form.entryFeeEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                {form.entryFeeEnabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+            {form.entryFeeEnabled ? (
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                  Customers must pay this fee (crypto) before they can join. Membership is only granted once the payment is confirmed.
+                </p>
+                <Field label="Fee amount" icon={DollarSign} hint="Leave blank if not yet determined">
+                  <input value={form.entryFeeAmount} onChange={e => set("entryFeeAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="e.g. 10.00" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Fee label" hint="Optional — shown to customers when joining">
+                  <input value={form.entryFeeLabel} onChange={e => set("entryFeeLabel", e.target.value)} type="text" placeholder="e.g. Entry Fee, Membership Fee" className={inputCls} style={inputStyle} />
+                </Field>
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, customers must pay a fixed fee before they can join this group buy.</p>
+            )}
+            {gb && <EntryFeePaymentsPanel gb={gb} />}
           </SectionCard>
 
           <SectionCard>
@@ -6480,6 +6526,25 @@ interface PendingPayment {
   createdAt: string;
 }
 
+interface EntryFeePayment {
+  id: string;
+  groupBuyId: string;
+  accountId: string;
+  status: "pending" | "submitted" | "confirmed" | "rejected";
+  amount: number;
+  currency: string;
+  amountUsd: string | null;
+  paymentTxHash: string | null;
+  paymentCryptoCurrency: string | null;
+  paymentCryptoNetwork: string | null;
+  paymentCryptoRate: string | null;
+  submittedAt: string | null;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+}
+
 function PendingConfirmationsPanel({ gb, onResolved }: { gb: OrganiserGB; onResolved: () => void }) {
   const [pending, setPending] = useState<PendingPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -6636,6 +6701,106 @@ function PendingConfirmationsPanel({ gb, onResolved }: { gb: OrganiserGB; onReso
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
+  const [payments, setPayments] = useState<EntryFeePayment[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/entry-fee-payments`, { credentials: "include" });
+      if (res.ok) setPayments(await res.json());
+    } finally { setLoading(false); }
+  }, [gb.id]);
+
+  const setStatus = async (paymentId: string, status: "confirmed" | "rejected") => {
+    setActingId(paymentId);
+    try {
+      const rejectionReason = status === "rejected" ? window.prompt("Rejection reason (optional):") ?? undefined : undefined;
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/entry-fee-payments/${paymentId}/status`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, rejectionReason }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setPayments(prev => prev ? prev.map(p => p.id === paymentId ? updated : p) : prev);
+      }
+    } finally { setActingId(null); }
+  };
+
+  if (!gb.entryFeeEnabled) return null;
+
+  return (
+    <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold" style={{ color: "var(--t-muted)" }}>Entry Fee Payments</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+        >
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+          {payments === null ? "Load" : "Refresh"}
+        </button>
+      </div>
+      {payments !== null && (
+        payments.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No entry fee payments yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {payments.map(p => (
+              <div key={p.id} className="rounded-xl border p-2.5 text-xs space-y-1.5" style={{ borderColor: "var(--t-border)" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{p.accountId}</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0",
+                    p.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
+                    p.status === "rejected" ? "bg-red-100 text-red-700" :
+                    p.status === "submitted" ? "bg-amber-100 text-amber-700" :
+                    "bg-slate-100 text-slate-500"
+                  )}>{p.status}</span>
+                </div>
+                <div style={{ color: "var(--t-subtle)" }}>
+                  {gb.currency}{p.amount.toFixed(2)}
+                  {p.paymentTxHash && <> · tx: <span className="font-mono">{p.paymentTxHash.slice(0, 10)}…</span></>}
+                  {p.paymentCryptoCurrency && <> ({p.paymentCryptoCurrency}{p.paymentCryptoNetwork ? ` / ${p.paymentCryptoNetwork}` : ""})</>}
+                </div>
+                {p.rejectionReason && <div className="text-red-600">Reason: {p.rejectionReason}</div>}
+                {(p.status === "submitted" || p.status === "pending") && (
+                  <div className="flex gap-1.5 pt-1">
+                    <button
+                      onClick={() => void setStatus(p.id, "confirmed")}
+                      disabled={actingId === p.id}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-60"
+                      style={{ background: "#16a34a" }}
+                    >
+                      {actingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => void setStatus(p.id, "rejected")}
+                      disabled={actingId === p.id}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold disabled:opacity-60"
+                      style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", color: "#dc2626" }}
+                    >
+                      <X className="w-3 h-3" />
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 }

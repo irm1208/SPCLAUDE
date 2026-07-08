@@ -133,6 +133,9 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
       excludedCountries: groupBuysTable.excludedCountries,
       blockedAccounts: groupBuysTable.blockedAccounts,
       organiserId: groupBuysTable.organiserId,
+      entryFeeEnabled: groupBuysTable.entryFeeEnabled,
+      entryFeeAmount: groupBuysTable.entryFeeAmount,
+      entryFeeLabel: groupBuysTable.entryFeeLabel,
     })
     .from(groupBuysTable)
     .where(and(
@@ -178,6 +181,9 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
       // the leg itself controls access. Return empty so the frontend shows it to everyone.
       reshipperCountries: hasCountryLegs ? [] : (reshipperCountriesByGb.get(r.id) ?? []),
       countryLegsEnabled: hasCountryLegs,
+      entryFeeEnabled: r.entryFeeEnabled ?? false,
+      entryFeeAmount: r.entryFeeAmount != null ? parseFloat(String(r.entryFeeAmount)) : null,
+      entryFeeLabel: r.entryFeeLabel ?? null,
     };
   }));
 });
@@ -226,6 +232,9 @@ const GB_SELECT_COLS = {
   adminFeeType: groupBuysTable.adminFeeType,
   adminFeeAmount: groupBuysTable.adminFeeAmount,
   adminFeeLabel: groupBuysTable.adminFeeLabel,
+  entryFeeEnabled: groupBuysTable.entryFeeEnabled,
+  entryFeeAmount: groupBuysTable.entryFeeAmount,
+  entryFeeLabel: groupBuysTable.entryFeeLabel,
   directShippingEnabled: groupBuysTable.directShippingEnabled,
   directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled,
 };
@@ -250,6 +259,7 @@ function shapeGb(gb: Record<string, unknown>, productCount: number) {
     sharedShippingCountries: gb["sharedShippingCountries"] ? (() => { try { return JSON.parse(gb["sharedShippingCountries"] as string); } catch { return []; } })() : [],
     vendorShippingAmount: gb["vendorShippingAmount"] != null ? parseFloat(String(gb["vendorShippingAmount"])) : null,
     adminFeeAmount: gb["adminFeeAmount"] != null ? parseFloat(String(gb["adminFeeAmount"])) : null,
+    entryFeeAmount: gb["entryFeeAmount"] != null ? parseFloat(String(gb["entryFeeAmount"])) : null,
     productCount,
   };
 }

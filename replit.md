@@ -62,7 +62,7 @@ To run the application, use the following commands:
 - **Order Management**: Customers can look up and edit existing orders.
 - **Admin Panel**: Comprehensive dashboard with KPIs, analytics, bulk shipment tools, audit logs, and Telegram notifications.
 - **Account System**: JWT-based authentication for customer accounts.
-- **Group Buy System**: Coordinated bulk orders with organiser management.
+- **Group Buy System**: Coordinated bulk orders with organiser management, with an optional paid entry fee (admin/organiser-configured fixed amount) required before a customer's join request is granted membership.
 - **Lab Test Integration**: Display of Janoshik CoA results.
 - **Product Catalog**: Over 126 peptide products, dynamic pricing, and a "Lonely Vial" secondary shop.
 - **Health Intelligence Engine**: Member-facing insights derived from blood tests and compound logs (consent-based).

@@ -8,8 +8,9 @@ import {
   Clock, Calendar, TestTube, TriangleAlert, Star, RefreshCcw,
   ChevronDown, Hash, Check, Search, Boxes, Globe,
 } from "lucide-react";
-import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, type GroupBuySummary } from "@/hooks/use-account";
+import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
+import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { PageLayout } from "@/components/PageLayout";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
@@ -437,6 +438,7 @@ function JoinModal({ onClose }: { onClose: () => void }) {
 
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<(() => void) | null>(null);
+  const [entryFeeModal, setEntryFeeModal] = useState<{ groupBuyId: string; fee: EntryFeePaymentInfo; retry: () => Promise<void> } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
@@ -497,15 +499,24 @@ function JoinModal({ onClose }: { onClose: () => void }) {
     if (hasCountryLegs && !selectedCountryCode) { setError("Please select your country"); return; }
     if (needsLegInvite && !countryLegInvite.trim()) { setError("An invite code is required for your country group"); return; }
     const doJoin = async () => {
+      const attempt = () => join.mutateAsync({
+        groupBuyId: selectedGbId,
+        invitePin: pin || undefined,
+        countryCode: hasCountryLegs ? selectedCountryCode : undefined,
+        countryLegInvite: needsLegInvite ? countryLegInvite.trim() : undefined,
+      });
       try {
-        await join.mutateAsync({
-          groupBuyId: selectedGbId,
-          invitePin: pin || undefined,
-          countryCode: hasCountryLegs ? selectedCountryCode : undefined,
-          countryLegInvite: needsLegInvite ? countryLegInvite.trim() : undefined,
-        });
+        await attempt();
         onClose();
       } catch (err: unknown) {
+        if (err instanceof EntryFeeRequiredError) {
+          setEntryFeeModal({
+            groupBuyId: selectedGbId,
+            fee: err.entryFee,
+            retry: async () => { await attempt(); onClose(); },
+          });
+          return;
+        }
         setError(err instanceof Error ? err.message : "Failed to join");
       }
     };
@@ -525,13 +536,22 @@ function JoinModal({ onClose }: { onClose: () => void }) {
     if (idNeedsPin && !idPin.trim()) { setIdError("Please enter the invite PIN"); return; }
     const doJoin = async () => {
       setIdPending(true);
+      const attempt = () => join.mutateAsync({
+        groupBuyId: trimmed,
+        invitePin: idNeedsPin ? idPin.trim() : undefined,
+      });
       try {
-        await join.mutateAsync({
-          groupBuyId: trimmed,
-          invitePin: idNeedsPin ? idPin.trim() : undefined,
-        });
+        await attempt();
         onClose();
       } catch (err: unknown) {
+        if (err instanceof EntryFeeRequiredError) {
+          setEntryFeeModal({
+            groupBuyId: trimmed,
+            fee: err.entryFee,
+            retry: async () => { await attempt(); onClose(); },
+          });
+          return;
+        }
         const msg = err instanceof Error ? err.message : "Group buy not found or invalid ID";
         // If the GB requires a country selection, surface the country picker by
         // promoting the access code into the main GB selection so the existing
@@ -905,6 +925,21 @@ function JoinModal({ onClose }: { onClose: () => void }) {
             if (pendingJoin) { await pendingJoin(); setPendingJoin(null); }
           }}
           onClose={() => { setShowRulesetModal(false); setPendingJoin(null); }}
+        />
+      )}
+
+      {entryFeeModal && (
+        <EntryFeePaymentModal
+          groupBuyId={entryFeeModal.groupBuyId}
+          initial={entryFeeModal.fee}
+          onClose={() => setEntryFeeModal(null)}
+          onConfirmed={async () => {
+            try {
+              await entryFeeModal.retry();
+            } finally {
+              setEntryFeeModal(null);
+            }
+          }}
         />
       )}
     </>

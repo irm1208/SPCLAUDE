@@ -14,6 +14,7 @@ import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
 import { resolveOrderCrypto, getOrderCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
+import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -399,6 +400,11 @@ router.post("/account/join-gb", requireAccount, async (req, res): Promise<void> 
       allowedCountries: groupBuysTable.allowedCountries,
       excludedCountries: groupBuysTable.excludedCountries,
       countryLegsEnabled: groupBuysTable.countryLegsEnabled,
+      currency: groupBuysTable.currency,
+      organiserPayments: groupBuysTable.organiserPayments,
+      entryFeeEnabled: groupBuysTable.entryFeeEnabled,
+      entryFeeAmount: groupBuysTable.entryFeeAmount,
+      entryFeeLabel: groupBuysTable.entryFeeLabel,
     })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, groupBuyId));
@@ -521,36 +527,44 @@ router.post("/account/join-gb", requireAccount, async (req, res): Promise<void> 
   // ─────────────────────────────────────────────────────────────────────────
 
   // Not yet a member — check if this group buy requires a PIN
-  if (!gb.invitePinHash) {
-    // No PIN set — anyone with the group buy ID can join freely
+  if (gb.invitePinHash) {
+    if (!invitePin || typeof invitePin !== "string") {
+      res.status(403).json({ error: "An invite PIN is required to join this group buy" });
+      return;
+    }
+    const pinValid = await bcrypt.compare(invitePin, gb.invitePinHash);
+    if (!pinValid) {
+      res.status(403).json({ error: "Invalid invite PIN" });
+      return;
+    }
+  }
+
+  // ── Entry fee gate ────────────────────────────────────────────────────────
+  // Membership is only granted once the fee is confirmed paid. Instead of joining
+  // immediately we create/fetch a pending payment row and hand the customer the
+  // payment details so they can pay and submit their tx hash.
+  if (gb.entryFeeEnabled) {
+    const payment = await getOrCreateEntryFeePayment(gb, tg, resolvedCountryLegId);
+    if (payment.status !== "confirmed") {
+      res.status(402).json({
+        error: "This group buy requires a one-time entry fee before you can join.",
+        code: "ENTRY_FEE_REQUIRED",
+        entryFee: await shapeEntryFeePayment(payment, gb),
+      });
+      return;
+    }
+    // Fee already confirmed (e.g. re-attempted join after the membership row was
+    // removed) — grant membership below instead of re-charging.
+    await grantEntryFeeMembership(payment);
+  } else {
     await db.insert(accountGroupBuysTable).values({
       id: randomUUID(),
       accountId: tg,
       groupBuyId: gb.id,
       countryLegId: resolvedCountryLegId,
     });
-    res.json({ ok: true, groupBuyId: gb.id });
-    return;
   }
-
-  // PIN-protected — must supply a valid PIN
-  if (!invitePin || typeof invitePin !== "string") {
-    res.status(403).json({ error: "An invite PIN is required to join this group buy" });
-    return;
-  }
-
-  const pinValid = await bcrypt.compare(invitePin, gb.invitePinHash);
-  if (!pinValid) {
-    res.status(403).json({ error: "Invalid invite PIN" });
-    return;
-  }
-
-  await db.insert(accountGroupBuysTable).values({
-    id: randomUUID(),
-    accountId: tg,
-    groupBuyId: gb.id,
-    countryLegId: resolvedCountryLegId,
-  });
+  // ─────────────────────────────────────────────────────────────────────────
 
   const [gbInfo] = await db.select({ name: groupBuysTable.name, status: groupBuysTable.status }).from(groupBuysTable).where(eq(groupBuysTable.id, gb.id));
   logCustomerActivity({

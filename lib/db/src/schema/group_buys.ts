@@ -117,6 +117,10 @@ export const groupBuysTable = pgTable("group_buys", {
   legViewerAccess: jsonb("leg_viewer_access").$type<{ username: string; legIds: string[] }[]>(),
   directShippingEnabled: boolean("direct_shipping_enabled").notNull().default(false), // admin can allow customers to opt for direct home delivery
   directShippingVendorId: text("direct_shipping_vendor_id"), // wholesale vendor used for dynamic direct-shipping cost calculation
+  // ── Entry fee gate — optional fixed fee a customer must pay before membership is granted ──
+  entryFeeEnabled: boolean("entry_fee_enabled").notNull().default(false),
+  entryFeeAmount: numeric("entry_fee_amount", { precision: 10, scale: 2 }),
+  entryFeeLabel: text("entry_fee_label"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -299,3 +303,41 @@ export const gbTestingVotesTable = pgTable("gb_testing_votes", {
 
 export type GbTestingVote = typeof gbTestingVotesTable.$inferSelect;
 export type NewGbTestingVote = typeof gbTestingVotesTable.$inferInsert;
+
+// ── gb_entry_fee_payments ─────────────────────────────────────
+// Tracks a customer's payment of a group buy's optional entry fee. One row per
+// (groupBuyId, accountId). Membership (account_group_buys) is only granted once
+// status = "confirmed" — mirrors the order payment lifecycle (pool_participants).
+export const GB_ENTRY_FEE_PAYMENT_STATUSES = ["pending", "submitted", "confirmed", "rejected"] as const;
+export type GbEntryFeePaymentStatus = typeof GB_ENTRY_FEE_PAYMENT_STATUSES[number];
+
+export const gbEntryFeePaymentsTable = pgTable("gb_entry_fee_payments", {
+  id: text("id").primaryKey(),
+  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
+  // Plain text — mirrors organiserId/pool_participants.accountId (no FK, avoids circular dep on accounts.ts).
+  accountId: text("account_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  // Fee amount + currency snapshotted from the GB at the time the row was created.
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: text("currency").notNull(),
+  // USD value locked at submission time — mirrors orders.paymentUsdAmount, used for verification.
+  amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }),
+  paymentMethod: text("payment_method"), // crypto | manual
+  paymentTxHash: text("payment_tx_hash"),
+  paymentCryptoCurrency: text("payment_crypto_currency"),
+  paymentCryptoNetwork: text("payment_crypto_network"),
+  paymentCryptoRate: numeric("payment_crypto_rate", { precision: 20, scale: 8 }),
+  paymentScreenshotUrl: text("payment_screenshot_url"), // base64 data URL for manual payments
+  countryLegId: text("country_leg_id"), // snapshot of the leg the member picked, used when granting membership
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  confirmedBy: text("confirmed_by"), // admin/organiser username, or "auto-verify"
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [
+  unique("gb_entry_fee_payments_unique").on(t.groupBuyId, t.accountId),
+]);
+
+export type GbEntryFeePayment = typeof gbEntryFeePaymentsTable.$inferSelect;
+export type NewGbEntryFeePayment = typeof gbEntryFeePaymentsTable.$inferInsert;

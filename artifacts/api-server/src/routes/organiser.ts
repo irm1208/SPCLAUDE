@@ -15,6 +15,7 @@ import {
   intlShippingRatesTable,
   testingPoolsTable,
   poolParticipantsTable,
+  gbEntryFeePaymentsTable,
   type GroupBuy,
 } from "@workspace/db";
 import { eq, and, or, sql, desc, asc, inArray, ilike, isNull, isNotNull, gt } from "drizzle-orm";
@@ -25,6 +26,7 @@ import { validateAdminOrganiserSession } from "../lib/admin-organiser-sessions";
 import { writeLog } from "../lib/audit-log";
 import { notifyUser, notifyUserFromTemplate, sendTelegramMessage, sendAdminFromTemplate } from "../lib/telegram";
 import { GoogleGenAI } from "../lib/google-genai";
+import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -307,6 +309,7 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     maxKitsPerCustomer, maxKitsTotal, minKitsPerPerson,
     shippingOptions, organiserPayments, allowedCountries, excludedCountries, blockedAccounts,
     adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel,
+    entryFeeEnabled, entryFeeAmount, entryFeeLabel,
     allowHalfKits, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage,
     orderPageMessage,
   } = req.body;
@@ -392,6 +395,9 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     adminFeeType: adminFeeType === "percent" ? "percent" : "fixed",
     adminFeeAmount: adminFeeAmount != null && adminFeeAmount !== "" ? parseFloat(String(adminFeeAmount)).toFixed(2) as any : undefined,
     adminFeeLabel: adminFeeLabel ? String(adminFeeLabel).trim() : undefined,
+    entryFeeEnabled: entryFeeEnabled != null ? Boolean(entryFeeEnabled) : false,
+    entryFeeAmount: entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) as any : undefined,
+    entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
     allowHalfKits: allowHalfKits != null ? Boolean(allowHalfKits) : true,
     orderPageMessage: orderPageMessage ? String(orderPageMessage).trim() : undefined,
   }).returning();
@@ -523,6 +529,65 @@ router.patch("/organiser/group-buys/:id/leg-viewers", requireOrganiser, async (r
   res.json({ legViewerAccess: updated.legViewerAccess ?? [] });
 });
 
+// GET /api/organiser/group-buys/:id/entry-fee-payments — list entry fee payments for own GB
+router.get("/organiser/group-buys/:id/entry-fee-payments", requireOrganiser, async (req, res): Promise<void> => {
+  const id = String(req.params["id"]);
+  const [gb] = await db.select({ id: groupBuysTable.id }).from(groupBuysTable).where(gbOwner(req, id));
+  if (!gb) { res.status(404).json({ error: "Not found" }); return; }
+
+  const rows = await db
+    .select()
+    .from(gbEntryFeePaymentsTable)
+    .where(eq(gbEntryFeePaymentsTable.groupBuyId, id))
+    .orderBy(desc(gbEntryFeePaymentsTable.createdAt));
+  res.json(rows.map(r => ({
+    ...r,
+    amount: parseFloat(r.amount as unknown as string),
+    amountUsd: r.amountUsd != null ? parseFloat(r.amountUsd as unknown as string) : null,
+    paymentCryptoRate: r.paymentCryptoRate != null ? parseFloat(r.paymentCryptoRate as unknown as string) : null,
+  })));
+});
+
+// PATCH /api/organiser/group-buys/:id/entry-fee-payments/:paymentId/status — confirm/reject an entry fee payment for own GB
+router.patch("/organiser/group-buys/:id/entry-fee-payments/:paymentId/status", requireOrganiser, async (req, res): Promise<void> => {
+  const id = String(req.params["id"]);
+  const paymentId = String(req.params["paymentId"]);
+  const { status, rejectionReason } = req.body ?? {};
+  const valid = ["confirmed", "rejected", "pending", "submitted"];
+  if (!valid.includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
+
+  const [gb] = await db.select({ id: groupBuysTable.id }).from(groupBuysTable).where(gbOwner(req, id));
+  if (!gb) { res.status(404).json({ error: "Not found" }); return; }
+
+  const [payment] = await db
+    .select()
+    .from(gbEntryFeePaymentsTable)
+    .where(and(eq(gbEntryFeePaymentsTable.id, paymentId), eq(gbEntryFeePaymentsTable.groupBuyId, id)));
+  if (!payment) { res.status(404).json({ error: "Entry fee payment not found" }); return; }
+
+  const organiserUsername = req.organiser!.telegramUsername;
+  let updated: typeof payment | null = payment;
+  if (status === "confirmed") {
+    updated = await confirmEntryFeePayment(paymentId, organiserUsername);
+    if (!updated) { res.status(500).json({ error: "Failed to confirm payment" }); return; }
+  } else if (status === "rejected") {
+    updated = await rejectEntryFeePayment(paymentId, typeof rejectionReason === "string" ? rejectionReason.slice(0, 500) : null);
+  } else {
+    [updated] = await db.update(gbEntryFeePaymentsTable).set({ status }).where(eq(gbEntryFeePaymentsTable.id, paymentId)).returning();
+  }
+
+  writeLog("change", "info", "organiser_entry_fee_status",
+    `Organiser @${organiserUsername} set entry fee payment ${paymentId} → ${status}`,
+    { paymentId, groupBuyId: id, accountId: payment.accountId, status, organiser: organiserUsername },
+  ).catch(() => {});
+
+  res.json({
+    ...updated,
+    amount: parseFloat((updated as typeof payment).amount as unknown as string),
+    amountUsd: (updated as typeof payment).amountUsd != null ? parseFloat((updated as typeof payment).amountUsd as unknown as string) : null,
+  });
+});
+
 // GET /api/organiser/group-buys/:id — get own GB
 router.get("/organiser/group-buys/:id", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
@@ -566,6 +631,7 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     shippingOptions, organiserPayments,
     allowedCountries, excludedCountries, blockedAccounts,
     adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel, adminFeeCountries,
+    entryFeeEnabled, entryFeeAmount, entryFeeLabel,
     sharedShippingCountries,
     allowHalfKits, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage,
     orderPageMessage, countryLegsEnabled, qrViewerUsernames, testOrderPin,
@@ -672,6 +738,11 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
   if (adminFeeCountries !== undefined) {
     (updates as Record<string, unknown>)["adminFeeCountries"] = Array.isArray(adminFeeCountries) ? JSON.stringify(adminFeeCountries) : null;
   }
+  if (entryFeeEnabled !== undefined) updates.entryFeeEnabled = Boolean(entryFeeEnabled);
+  if (entryFeeAmount !== undefined) {
+    (updates as Record<string, unknown>)["entryFeeAmount"] = entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) : null;
+  }
+  if (entryFeeLabel !== undefined) updates.entryFeeLabel = entryFeeLabel ? String(entryFeeLabel).trim() : null;
   if (sharedShippingCountries !== undefined) {
     (updates as Record<string, unknown>)["sharedShippingCountries"] = Array.isArray(sharedShippingCountries) ? JSON.stringify(sharedShippingCountries) : null;
   }
