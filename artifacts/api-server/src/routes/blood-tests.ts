@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable, labTestsTable } from "@workspace/db";
+import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accountsTable, btConversationsTable, siteConfigTable, btKnowledgeCacheTable, customerActivityLogsTable, labTestsTable, glp1LogsTable } from "@workspace/db";
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
+import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 import { searchWebForSage, shouldSearchWeb } from "../lib/web-search";
@@ -669,6 +670,7 @@ async function buildBloodTestSystemPrompt(
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
   chartableMarkers: string[] = [],
+  glp1Logs: Glp1LogCtx[] = [],
 ): Promise<string> {
   const dateObj = new Date(sessionDate + "T00:00:00");
   const displayDate = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
@@ -824,6 +826,23 @@ ${labTests.map(t => {
 }).join("\n\n")}`
     : "";
 
+  const glp1Section = glp1Logs.length > 0
+    ? `\n\n═══════════════════════════════════════════
+GLP-1 INJECTION LOG (most recent entries, newest first)
+═══════════════════════════════════════════
+Use this data to discuss dosing progression, weight trends, side effects, and adherence. Weight is stored in kg.
+${glp1Logs.map(l => {
+  const parts: string[] = [`  ${l.loggedDate}: ${l.compoundName} ${l.doseMg}mg`];
+  if (l.weightKg != null) parts.push(`weight ${l.weightKg}kg`);
+  if (l.injectionSite) parts.push(`site: ${l.injectionSite}`);
+  if (l.sideEffects) { try { const arr = JSON.parse(l.sideEffects) as string[]; if (arr.length) parts.push(`side effects: ${arr.join(", ")}`); } catch { parts.push(`side effects: ${l.sideEffects}`); } }
+  if (l.calories != null) parts.push(`calories: ${l.calories} kcal`);
+  if (l.proteinG != null) parts.push(`protein: ${l.proteinG}g`);
+  if (l.notes) parts.push(`notes: ${l.notes}`);
+  return parts.join(" | ");
+}).join("\n")}`
+    : "";
+
   const healthDataBlock = hasBloodTest
     ? `IMPORTANT: The following blood test results and compounds ARE this user's actual data, retrieved directly from their account. You have full access to it. Do NOT ask the user to share, paste, or upload their results — you already have them. Answer questions about their bloodwork directly using the data below.
 
@@ -831,12 +850,12 @@ BLOOD TEST (CURRENT — most recent): ${sessionName} — ${displayDate}
 BIOMARKERS:
 ${biomarkerLines}
 
-${compoundsLine}${protocolSection}${historicalSection}${persistentTrendsSection}${knowledgeSection}${labTestSection}`
+${compoundsLine}${protocolSection}${historicalSection}${persistentTrendsSection}${glp1Section}${knowledgeSection}${labTestSection}`
     : `BLOOD TEST STATUS: No blood test on file yet for this member.
 
 IMPORTANT BEHAVIOUR RULE: In your FIRST response in this conversation, and ONLY the first, open with a single short sentence acknowledging that you don't have any blood test results on file for them yet. Mention that they can upload a blood test via the Blood Tests section of their profile to unlock personalised biomarker analysis. Then pivot IMMEDIATELY to being genuinely helpful with whatever they asked — compound protocols, dosing questions, general health optimisation. Do NOT repeat this notice in any subsequent messages.
 
-${compoundsLine}${protocolSection}${knowledgeSection}${labTestSection}`;
+${compoundsLine}${protocolSection}${glp1Section}${knowledgeSection}${labTestSection}`;
 
   const chartMarkersBlock = chartableMarkers.length > 0
     ? `You may ONLY request charts for markers in this exact list (each has 2+ dated results on file for this user): ${chartableMarkers.join(", ")}. Use the exact marker name as written here.`
@@ -1017,11 +1036,12 @@ async function callGeminiDiscuss(
   labTests: LabTestContext[] = [],
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
+  glp1Logs: Glp1LogCtx[] = [],
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[]; charts: ChartSeries[] }> {
   const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
 
-  let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers);
+  let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
   // ── Real-time web search pre-fetch (Gemini-grounded) ──────────────────────
   // Runs BEFORE the Sage/Claude call so results can be woven into its answer.
@@ -1054,6 +1074,7 @@ async function callGeminiDiscuss(
     system: systemPrompt,
     messages,
     maxTokens: 8192,
+    enableWebSearch: false,
   });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
@@ -1621,7 +1642,7 @@ router.post("/blood-tests", requireAccount, async (req, res): Promise<void> => {
   res.status(201).json({ ...session, values: insertedValues });
 });
 
-const DEFAULT_DISCUSS_LIMIT = 10;
+const DEFAULT_DISCUSS_LIMIT = 50;
 
 async function getDiscussLimit(telegramUsername: string): Promise<number> {
   const [acct] = await db
@@ -1741,7 +1762,18 @@ router.post("/blood-tests/discuss/open", requireAccount, async (req, res): Promi
   );
 
   const sessionDisplayName = session.testName ?? session.labName ?? "Blood Test";
-  const systemPrompt = await buildBloodTestSystemPrompt(sessionDisplayName, session.testDate, biomarkers, activeCompounds, historicalSessions);
+  const allCompoundsForOpen: CompoundWithDose[] = compoundRows.map(c => ({
+    name: c.compoundName,
+    active: !c.endDate,
+    doseAmount: c.doseAmount,
+    doseUnit: c.doseUnit,
+    frequency: c.frequency,
+    route: c.route,
+  }));
+  const systemPrompt = await buildBloodTestSystemPrompt(
+    sessionDisplayName, session.testDate, biomarkers, activeCompounds,
+    historicalSessions, [], [], allCompoundsForOpen, true,
+  );
 
   const openingInstruction = `The user has just opened a new chat about their blood test. Generate a smart, personalised opening message that:
 1. Briefly acknowledges the most notable finding(s) — mention specific values and whether they're in/out of range
@@ -1862,11 +1894,23 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     const newCountNoBt = quotaNoBt.used;
 
     try {
-      const [topics, labTests] = await Promise.all([
+      const [topics, labTests, glp1Rows] = await Promise.all([
         Promise.resolve(extractTopicsForCache(message, [])),
         fetchLabTestsForCompounds(activeCompoundsNoBt),
+        db.select().from(glp1LogsTable).where(eq(glp1LogsTable.telegramUsername, tg)).orderBy(desc(glp1LogsTable.loggedDate)).limit(60),
       ]);
       const cachedKnowledge = await lookupKnowledgeCache(topics);
+      const glp1Logs: Glp1LogCtx[] = glp1Rows.map(r => ({
+        loggedDate: r.loggedDate,
+        compoundName: r.compoundName,
+        doseMg: parseFloat(String(r.doseMg)),
+        weightKg: r.weightKg != null ? parseFloat(String(r.weightKg)) : null,
+        notes: r.notes ?? null,
+        injectionSite: r.injectionSite ?? null,
+        sideEffects: r.sideEffects ?? null,
+        calories: r.calories != null ? parseFloat(String(r.calories)) : null,
+        proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
+      }));
       const result = await callGeminiDiscuss(
         message,
         "General health (no blood test on file yet)",
@@ -1879,6 +1923,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         labTests,
         allCompoundsNoBt,
         false,
+        glp1Logs,
       );
 
       logCustomerActivity({
@@ -2017,9 +2062,10 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseCharts: ChartSeries[] = [];
   try {
     const cacheTopics = extractTopicsForCache(message, biomarkers);
-    const [cachedKnowledge, labTests] = await Promise.all([
+    const [cachedKnowledge, labTests, glp1Rows] = await Promise.all([
       lookupKnowledgeCache(cacheTopics),
       fetchLabTestsForCompounds(activeCompounds),
+      db.select().from(glp1LogsTable).where(eq(glp1LogsTable.telegramUsername, tg)).orderBy(desc(glp1LogsTable.loggedDate)).limit(60),
     ]);
     if (cachedKnowledge.length > 0) {
       console.log(`[discuss] Knowledge cache hit: ${cachedKnowledge.map(k => k.topic).join(", ")}`);
@@ -2027,7 +2073,18 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     if (labTests.length > 0) {
       console.log(`[discuss] Lab tests loaded: ${labTests.map(t => t.peptideName).join(", ")}`);
     }
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus);
+    const glp1Logs: Glp1LogCtx[] = glp1Rows.map(r => ({
+      loggedDate: r.loggedDate,
+      compoundName: r.compoundName,
+      doseMg: parseFloat(String(r.doseMg)),
+      weightKg: r.weightKg != null ? parseFloat(String(r.weightKg)) : null,
+      notes: r.notes ?? null,
+      injectionSite: r.injectionSite ?? null,
+      sideEffects: r.sideEffects ?? null,
+      calories: r.calories != null ? parseFloat(String(r.calories)) : null,
+      proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
+    }));
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs);
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;

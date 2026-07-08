@@ -209,6 +209,7 @@ export async function shapeEntryFeePayment(payment: GbEntryFeePayment, gb: Entry
       currency: payment.paymentCryptoCurrency ?? cryptoOptions.currency,
       network: payment.paymentCryptoNetwork ?? cryptoOptions.network,
       amount: parseFloat(String(payment.amount)),
+      amountUsd: payment.amountUsd != null ? parseFloat(String(payment.amountUsd)) : null,
       availableCryptoOptions: cryptoOptions.options,
     },
   };
