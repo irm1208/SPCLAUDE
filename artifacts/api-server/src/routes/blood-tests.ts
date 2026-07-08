@@ -7,6 +7,8 @@ import { requireAccount } from "../middleware/account-auth";
 import { callSageAI } from "../lib/sage-ai";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
+import { searchWebForSage, shouldSearchWeb } from "../lib/web-search";
+import { isWebSearchEnabled } from "./admin-sage-settings";
 
 const router: IRouter = Router();
 
@@ -1189,7 +1191,21 @@ async function callGeminiDiscuss(
   const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
 
-  const systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers);
+  let systemPrompt = buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers);
+
+  // ── Real-time web search pre-fetch (Gemini-grounded) ──────────────────────
+  // Runs BEFORE the Sage/Claude call so results can be woven into its answer.
+  // Gated by admin toggle + a keyword heuristic to avoid latency on ordinary
+  // biomarker questions. Never throws — worst case Sage answers without it.
+  let webSearchSources: DiscussSource[] = [];
+  if (shouldSearchWeb(message) && await isWebSearchEnabled().catch(() => true)) {
+    const searchResult = await searchWebForSage(message);
+    if (searchResult) {
+      const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      systemPrompt += `\n\nLIVE WEB SEARCH RESULTS (retrieved ${today}):\n${searchResult.digest}\n\nUse the above only if relevant to the user's question. It reflects current, real information — you DO have real-time web access via this search, so never claim you can't search the internet or don't have access to current news when results like this are provided.`;
+      webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
+    }
+  }
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1218,7 +1234,22 @@ async function callGeminiDiscuss(
 
   const parsed = parseResponse(filtered);
   const charts = resolveCharts(parsed.chartMarkers, seriesMap);
-  return { text: parsed.text, chips: parsed.chips, sources: parsed.sources, charts };
+
+  // Merge in real web-search sources (kept separate from the model's
+  // self-reported SOURCES_JSON allowlist citations), deduped by URL, capped.
+  let sources = parsed.sources;
+  if (webSearchSources.length > 0) {
+    const seenUrls = new Set(sources.map(s => s.url));
+    const merged = [...sources];
+    for (const s of webSearchSources) {
+      if (seenUrls.has(s.url)) continue;
+      seenUrls.add(s.url);
+      merged.push(s);
+    }
+    sources = merged.slice(0, 5);
+  }
+
+  return { text: parsed.text, chips: parsed.chips, sources, charts };
 }
 
 // ─── Health Insights AI helper ────────────────────────────────────────────────

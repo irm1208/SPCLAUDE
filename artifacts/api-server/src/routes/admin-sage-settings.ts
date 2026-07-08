@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { callSageAI, getActiveSageModel, getSageFallbackModel, SAGE_MODEL_CONFIG_KEY, type SageMessage } from "../lib/sage-ai";
+import { searchWebForSage } from "../lib/web-search";
 import type { Request, Response } from "express";
 
 const router: IRouter = Router();
@@ -139,16 +140,32 @@ async function saveCustomModels(models: string[]): Promise<void> {
     .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: JSON.stringify(models) } });
 }
 
+// ── Web search toggle ─────────────────────────────────────────────────────────
+// Lets an admin turn Sage's real-time web search (Gemini-grounded pre-fetch,
+// see lib/web-search.ts) on or off. Defaults to ON when unset.
+export const SAGE_WEB_SEARCH_CONFIG_KEY = "sage_web_search_enabled";
+
+export async function isWebSearchEnabled(): Promise<boolean> {
+  const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, SAGE_WEB_SEARCH_CONFIG_KEY));
+  if (!row?.value) return true;
+  return row.value === "true";
+}
+
 // ── GET /admin/sage-settings ──────────────────────────────────────────────────
 router.get("/admin/sage-settings", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const [model, customModels] = await Promise.all([getActiveSageModel(), getCustomModels()]);
+  const [model, customModels, webSearchEnabled] = await Promise.all([
+    getActiveSageModel(),
+    getCustomModels(),
+    isWebSearchEnabled(),
+  ]);
   res.json({
     model,
     fallbackModel: getSageFallbackModel(),
     availableModels: [...SAGE_AVAILABLE_MODELS, ...customModels],
     customModels,
+    webSearchEnabled,
     serverKeyConfigured: !!process.env.SAGE_PROXY_API_KEY,
   });
 });
@@ -238,29 +255,51 @@ router.delete("/admin/sage-settings/models/:model", async (req: Request, res: Re
 router.patch("/admin/sage-settings", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { model } = req.body as { model?: string };
-  const trimmed = typeof model === "string" ? model.trim() : "";
+  const { model, webSearchEnabled } = req.body as { model?: string; webSearchEnabled?: boolean };
 
-  if (!trimmed) {
-    res.status(400).json({ error: "model is required" });
+  if (model !== undefined) {
+    const trimmed = typeof model === "string" ? model.trim() : "";
+    if (!trimmed) {
+      res.status(400).json({ error: "model is required" });
+      return;
+    }
+    const customModels = await getCustomModels();
+    if (!SAGE_MODEL_SET.has(trimmed) && !customModels.includes(trimmed)) {
+      res.status(400).json({ error: "Unknown model" });
+      return;
+    }
+
+    await db.insert(siteConfigTable)
+      .values({ key: SAGE_MODEL_CONFIG_KEY, value: trimmed })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: trimmed } });
+
+    writeLog("change", "info", "sage_ai_model_update",
+      `Sage AI model changed to "${trimmed}" by ${getAdminUsername(res)}`,
+      { model: trimmed },
+    ).catch(() => {});
+  }
+
+  if (webSearchEnabled !== undefined) {
+    const value = webSearchEnabled ? "true" : "false";
+    await db.insert(siteConfigTable)
+      .values({ key: SAGE_WEB_SEARCH_CONFIG_KEY, value })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value } });
+
+    writeLog("change", "info", "sage_web_search_update",
+      `Sage web search ${webSearchEnabled ? "enabled" : "disabled"} by ${getAdminUsername(res)}`,
+      { webSearchEnabled },
+    ).catch(() => {});
+  }
+
+  if (model === undefined && webSearchEnabled === undefined) {
+    res.status(400).json({ error: "Nothing to update" });
     return;
   }
-  const customModels = await getCustomModels();
-  if (!SAGE_MODEL_SET.has(trimmed) && !customModels.includes(trimmed)) {
-    res.status(400).json({ error: "Unknown model" });
-    return;
-  }
 
-  await db.insert(siteConfigTable)
-    .values({ key: SAGE_MODEL_CONFIG_KEY, value: trimmed })
-    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: trimmed } });
-
-  writeLog("change", "info", "sage_ai_model_update",
-    `Sage AI model changed to "${trimmed}" by ${getAdminUsername(res)}`,
-    { model: trimmed },
-  ).catch(() => {});
-
-  res.json({ model: trimmed });
+  res.json({
+    model: model !== undefined ? model.trim() : await getActiveSageModel(),
+    webSearchEnabled: webSearchEnabled !== undefined ? webSearchEnabled : await isWebSearchEnabled(),
+  });
 });
 
 // ── POST /admin/sage-settings/test ────────────────────────────────────────────
@@ -269,13 +308,15 @@ router.patch("/admin/sage-settings", async (req: Request, res: Response): Promis
 router.post("/admin/sage-settings/test", async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { message, model, history, authToken, baseUrl } = req.body as {
+  const { message, model, history, authToken, baseUrl, enableWebSearch } = req.body as {
     message?: string;
     model?: string;
     history?: Array<{ role: "user" | "assistant"; text: string }>;
     /** Optional per-admin browser-stored credential override. Never persisted server-side. */
     authToken?: string;
     baseUrl?: string;
+    /** Test the web-search pre-fetch wiring, mirroring the real discuss flow. */
+    enableWebSearch?: boolean;
   };
 
   if (!message?.trim()) {
@@ -297,11 +338,23 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
     { role: "user", content: message.trim() },
   ];
 
-  const systemPrompt = [
+  let systemPrompt = [
     "You are Sage, the health assistant for Salt&Peps members.",
     "You help members understand their blood tests, peptide compound logs, and general health questions.",
     "This is an admin test conversation used to evaluate model quality — respond normally as you would to a member.",
   ].join(" ");
+
+  let webSearchUsed = false;
+  let webSearchSources: Array<{ title: string; url: string }> = [];
+  if (enableWebSearch) {
+    const searchResult = await searchWebForSage(message.trim());
+    if (searchResult) {
+      webSearchUsed = true;
+      webSearchSources = searchResult.sources;
+      const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      systemPrompt += ` LIVE WEB SEARCH RESULTS (retrieved ${today}): ${searchResult.digest} Use the above only if relevant. You DO have real-time web access via this search — never claim otherwise when results like this are provided.`;
+    }
+  }
 
   try {
     const reply = await callSageAI({
@@ -315,10 +368,16 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
     res.json({
       reply: reply || "(empty response)",
       model: chosenModel || await getActiveSageModel(),
+      webSearchUsed,
+      webSearchSources,
     });
   } catch (err) {
     console.error("[sage-settings:test] error:", err);
-    res.status(502).json({ error: err instanceof Error ? err.message : "Sage AI request failed" });
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Sage AI request failed",
+      webSearchUsed,
+      webSearchSources,
+    });
   }
 });
 

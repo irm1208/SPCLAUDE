@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle, Plus, X } from "lucide-react";
+import { Loader2, Save, Bot, Send, Cpu, Info, RotateCcw, KeyRound, Eye, EyeOff, Trash2, AlertTriangle, Plus, X, Globe } from "lucide-react";
 
 const apiUrl = (path: string) => `/api${path}`;
 
@@ -11,6 +11,7 @@ interface SageSettings {
   fallbackModel: string;
   availableModels: string[];
   customModels: string[];
+  webSearchEnabled: boolean;
   serverKeyConfigured: boolean;
 }
 
@@ -63,6 +64,10 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
   const [customModelError, setCustomModelError] = useState("");
   const [removingModel, setRemovingModel] = useState<string | null>(null);
 
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [webSearchError, setWebSearchError] = useState("");
+
   // Personal proxy credentials — stored only in this browser's localStorage, never sent
   // to the server except as part of this admin's own test-chat requests below.
   const [authToken, setAuthToken] = useState("");
@@ -114,6 +119,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       setSettings(data);
       setSelectedModel(data.model);
       setTestModel(data.model);
+      setWebSearchEnabled(data.webSearchEnabled);
     } catch {
       setError("Failed to load Sage settings.");
     } finally {
@@ -193,6 +199,28 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       setCustomModelError("Network error — please try again.");
     } finally {
       setRemovingModel(null);
+    }
+  };
+
+  const toggleWebSearch = async () => {
+    if (webSearchSaving) return;
+    const next = !webSearchEnabled;
+    setWebSearchSaving(true);
+    setWebSearchError("");
+    try {
+      const res = await fetch(apiUrl("/admin/sage-settings"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ webSearchEnabled: next }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = await res.json() as { webSearchEnabled: boolean };
+      setWebSearchEnabled(data.webSearchEnabled);
+      setSettings(s => s ? { ...s, webSearchEnabled: data.webSearchEnabled } : s);
+    } catch {
+      setWebSearchError("Failed to save. Please try again.");
+    } finally {
+      setWebSearchSaving(false);
     }
   };
 
@@ -379,6 +407,37 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+                <Globe className="w-4 h-4" style={{ color: "#F24908" }} />
+                Real-time web search
+              </h3>
+              <p className="text-[11px] mt-1" style={{ color: "var(--adm-muted)" }}>
+                When on, Sage looks up current info (news, research, prices, availability) for questions that
+                need it before replying, and cites the sources it found. Off by default it only knows what's in
+                its training data.
+              </p>
+            </div>
+            <button
+              onClick={toggleWebSearch}
+              disabled={webSearchSaving}
+              role="switch"
+              aria-checked={webSearchEnabled}
+              title={webSearchEnabled ? "Turn off web search" : "Turn on web search"}
+              className="relative shrink-0 w-10 h-6 rounded-full transition-colors disabled:opacity-50"
+              style={{ background: webSearchEnabled ? "#F24908" : "var(--adm-content)", border: "1px solid var(--adm-border)" }}
+            >
+              <span
+                className="absolute top-[2px] w-4 h-4 rounded-full bg-white transition-all shadow"
+                style={{ left: webSearchEnabled ? "18px" : "2px" }}
+              />
+            </button>
+          </div>
+          {webSearchError && <p className="text-sm text-red-400">{webSearchError}</p>}
         </div>
 
         <div className="p-4 rounded-xl border space-y-3" style={{ background: "var(--adm-btn)", borderColor: "var(--adm-border)" }}>

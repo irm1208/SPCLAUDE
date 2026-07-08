@@ -11,15 +11,30 @@ type GeminiConfig = {
   responseMimeType?: string;
   systemInstruction?: { parts: { text?: string }[] } | string;
   thinkingConfig?: { thinkingBudget?: number; [k: string]: unknown };
+  /** Passed through verbatim as a top-level `tools` field (e.g. [{ google_search: {} }] for grounding). */
+  tools?: Array<Record<string, unknown>>;
 };
 
 export type GeminiGenerateParams = {
   model: string;
   contents: GeminiContent[];
   config?: GeminiConfig;
+  /** Abort the request after this many ms (default 60000). Useful for latency-sensitive callers. */
+  timeoutMs?: number;
 };
 
-export type GeminiResponse = { text: string; [k: string]: unknown };
+export type GeminiGroundingChunk = { web?: { uri?: string; title?: string } };
+export type GeminiGroundingMetadata = {
+  webSearchQueries?: string[];
+  groundingChunks?: GeminiGroundingChunk[];
+  [k: string]: unknown;
+};
+
+export type GeminiResponse = {
+  text: string;
+  groundingMetadata?: GeminiGroundingMetadata;
+  [k: string]: unknown;
+};
 
 class Models {
   private _apiKey: string;
@@ -30,7 +45,7 @@ class Models {
     this._baseUrl = baseUrl.replace(/\/$/, "");
   }
 
-  async generateContent({ model, contents, config }: GeminiGenerateParams): Promise<GeminiResponse> {
+  async generateContent({ model, contents, config, timeoutMs }: GeminiGenerateParams): Promise<GeminiResponse> {
     const body: Record<string, unknown> = { contents };
 
     if (config) {
@@ -50,6 +65,10 @@ class Models {
               : String(config.systemInstruction);
         body.systemInstruction = { parts: [{ text: sysText }] };
       }
+
+      // `tools` (e.g. [{ google_search: {} }] for grounding) is a top-level
+      // request field in the native Gemini REST API, NOT nested under generationConfig.
+      if (config.tools !== undefined) body.tools = config.tools;
     }
 
     const endpoint = `${this._baseUrl}/models/${model}:generateContent`;
@@ -72,7 +91,7 @@ class Models {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(timeoutMs ?? 60000),
     });
 
     if (!res.ok) {
@@ -83,9 +102,11 @@ class Models {
     const data = (await res.json()) as Record<string, unknown>;
     const candidates = data.candidates as Array<{
       content: { parts: Array<{ text?: string }> };
+      groundingMetadata?: GeminiGroundingMetadata;
     }> | undefined;
     const text = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-    return { ...data, text };
+    const groundingMetadata = candidates?.[0]?.groundingMetadata;
+    return { ...data, text, groundingMetadata };
   }
 }
 
