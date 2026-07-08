@@ -11,6 +11,29 @@ const BASE_URL       = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.
 const MODEL          = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
 const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-3-5-sonnet-20241022";
 
+/**
+ * Parse Anthropic-format SSE text into a plain text string.
+ * Each `data:` line is a JSON object; text arrives in content_block_delta events
+ * as `{ delta: { type: "text_delta", text: "..." } }`.
+ */
+function extractTextFromSse(rawText: string): string | null {
+  let combined = "";
+  for (const line of rawText.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const jsonStr = trimmed.slice(5).trim();
+    if (!jsonStr || jsonStr === "[DONE]") continue;
+    try {
+      const event = JSON.parse(jsonStr) as Record<string, unknown>;
+      const delta = event["delta"] as Record<string, unknown> | undefined;
+      if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
+        combined += delta["text"] as string;
+      }
+    } catch { /* skip malformed lines */ }
+  }
+  return combined || null;
+}
+
 export type TextContentPart  = { type: "text"; text: string };
 export type ImageContentPart = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 export type ToolUseContentPart  = { type: "tool_use";  id: string; name: string; input: Record<string, unknown> };
@@ -151,10 +174,9 @@ async function callModelRaw(
   try {
     data = JSON.parse(rawText) as { content?: ContentPart[]; stop_reason?: string };
   } catch {
-    // Proxy returned SSE stream despite stream:false — extract text from events
-    const textMatches = [...rawText.matchAll(/"type"\s*:\s*"text_delta"[^}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
-    const combined = textMatches.map(m => m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"')).join("");
-    if (combined) return { content: [{ type: "text", text: combined }], stop_reason: "end_turn" };
+    // Proxy returned SSE stream despite stream:false — parse line-by-line
+    const text = extractTextFromSse(rawText);
+    if (text) return { content: [{ type: "text", text }], stop_reason: "end_turn" };
     throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
   }
   return {
@@ -193,10 +215,9 @@ async function callModel(
     const data = JSON.parse(rawText) as { content?: Array<{ type: string; text?: string }> };
     return data.content?.find(c => c.type === "text")?.text ?? "";
   } catch {
-    // SSE fallback: stitch together text_delta events
-    const textMatches = [...rawText.matchAll(/"type"\s*:\s*"text_delta"[^}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
-    const combined = textMatches.map(m => m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"')).join("");
-    if (combined) return combined;
+    // SSE fallback: parse line-by-line
+    const text = extractTextFromSse(rawText);
+    if (text) return text;
     throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
   }
 }
