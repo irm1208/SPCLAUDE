@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Salt&amp;Peps — Peptide Explorer</title>
+    <meta
+      name="description"
+      content="Salt&Peps: explore retatrutide, semaglutide and tirzepatide in interactive 3D — every atom, the 2D chemical structure, and how each works in the body."
+    />
+    <meta name="theme-color" content="#05060a" />
+    <script type="module" crossorigin src="./assets/index-DpXIUbPn.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-FCpwIRVY.css">
+  </head>
+  <body>
+    <!-- Shared WebGL canvas -->
+    <div id="scene-root"></div>
+    <!-- Overlay layer for the molecule's CSS2D region labels -->
+    <div id="label-overlay"></div>
+
+    <!-- Brand + title (title updates per peptide) -->
+    <header id="titlebar">
+      <div class="brand"><span class="brand-mark">🧂</span>Salt<span class="amp">&amp;</span>Peps</div>
+      <div class="title-main">Retatrutide</div>
+      <div class="title-sub">Triple agonist</div>
+    </header>
+
+    <!-- Peptide selector -->
+    <nav id="peptidebar" aria-label="Choose peptide"></nav>
+
+    <!-- 2D chemical structure — docked on the left -->
+    <aside id="structure">
+      <div class="structure-head">
+        <span>Chemical structure (2D)</span>
+        <button id="structure-collapse" title="Collapse">–</button>
+      </div>
+      <div id="structure-body">
+        <div id="structure-svg">Loading RDKit…</div>
+        <div class="struct-tools">
+          <button id="structure-h" aria-pressed="false" title="Show explicit hydrogens">+ Show H</button>
+        </div>
+        <div id="structure-select"></div>
+        <p id="structure-caption"></p>
+      </div>
+    </aside>
+
+    <!-- Colour key: peptide regions + CPK atom colours (built by JS) -->
+    <div id="legend" aria-label="Colour key"></div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <button id="start-walkthrough" title="Guided walkthrough">🎬 <span class="btn-label">Walkthrough</span></button>
+      <button id="show-overview" title="Detailed explanation + studies">📖 <span class="btn-label">About</span></button>
+      <button id="show-slideshow" title="How it works in the body">▶ <span class="btn-label">How it works</span></button>
+      <button id="show-compare" title="Compare weight loss across the three drugs">📊 <span class="btn-label">Compare</span></button>
+      <button id="reset-view" title="Reset the camera">⟲ <span class="btn-label">Reset</span></button>
+      <button id="toggle-labels" title="Toggle labels" aria-pressed="true">🏷 <span class="btn-label">Labels</span></button>
+      <button id="toggle-spin" title="Toggle idle auto-rotate" aria-pressed="true">❚❚ <span class="btn-label">Spin</span></button>
+    </div>
+    <div id="hint">Drag to orbit · scroll to zoom · click a label or glowing marker</div>
+
+    <!-- Explanation panel -->
+    <aside id="panel" class="hidden" aria-live="polite"></aside>
+
+    <!-- Guided walkthrough (bottom bar; molecule stays visible) -->
+    <div id="walkthrough" class="hidden" aria-live="polite"></div>
+
+    <!-- Mechanism slideshow (modal) -->
+    <div id="slideshow" class="hidden" aria-live="polite"></div>
+
+    <!-- Weight-loss comparison chart (modal) -->
+    <div id="compare" class="hidden" aria-live="polite"></div>
+
+    <!-- First-load intro overlay -->
+    <div id="intro" class="hidden"></div>
+
+    <!-- Loading indicator -->
+    <div id="loading">Building molecule…</div>
+
+  </body>
+</html>

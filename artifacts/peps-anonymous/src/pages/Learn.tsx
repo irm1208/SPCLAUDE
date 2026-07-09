@@ -1,6 +1,6 @@
 import React from "react";
 import { useLocation } from "wouter";
-import { BookOpen, ChevronRight } from "lucide-react";
+import { BookOpen, ChevronRight, Atom } from "lucide-react";
 import { ResearchShell } from "@/components/ResearchShell";
 import { COURSES, getTotalLessons } from "@/data/learn-content";
 import { useLearnProgress } from "@/hooks/use-learn-progress";
@@ -40,6 +40,42 @@ export default function Learn() {
               Structured education on TRT, peptides, and hormone optimisation — written for the curious and the committed.
             </p>
           </div>
+
+          <button
+            onClick={() => setLocation("/learn/3d-lab")}
+            className="w-full text-left rounded-2xl overflow-hidden transition-all hover:shadow-lg active:scale-[0.995] focus:outline-none mb-6"
+            style={{
+              background: T.surface,
+              border: `1px solid ${T.border}`,
+              boxShadow: T.shadow,
+            }}
+          >
+            <div
+              className="px-6 py-5 flex items-start justify-between gap-4"
+              style={{ background: "linear-gradient(135deg, #05060a 0%, #1B3A7A 60%, #2D6BCC 100%)" }}
+            >
+              <div className="flex-1">
+                <p
+                  className="text-[11px] font-bold uppercase tracking-widest mb-1 opacity-75"
+                  style={{ color: "white" }}
+                >
+                  Interactive · WebGL
+                </p>
+                <h2 className="text-[20px] font-bold leading-tight flex items-center gap-2" style={{ color: "white" }}>
+                  <Atom className="w-5 h-5" strokeWidth={2} />
+                  3D Peptide Explorer
+                </h2>
+              </div>
+              <ChevronRight className="w-5 h-5 shrink-0 mt-1" style={{ color: "rgba(255,255,255,0.7)" }} />
+            </div>
+
+            <div className="px-6 py-4 space-y-1">
+              <p className="text-[13px] leading-relaxed" style={{ color: T.muted }}>
+                Rotate the full 3D structure of retatrutide, semaglutide and tirzepatide, see the 2D chemical
+                structure, and walk through how each one works in the body.
+              </p>
+            </div>
+          </button>
 
           <div className="space-y-4">
             {COURSES.map(course => {

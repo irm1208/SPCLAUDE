@@ -40,6 +40,7 @@ import MedDetail from "@/pages/MedDetail";
 import Learn from "@/pages/Learn";
 import LearnCourse from "@/pages/LearnCourse";
 import LearnLesson from "@/pages/LearnLesson";
+import PeptideExplorer from "@/pages/PeptideExplorer";
 import NotFound from "@/pages/not-found";
 import Feedback from "@/pages/Feedback";
 import GbOrganiser from "@/pages/GbOrganiser";
@@ -137,6 +138,7 @@ function Router() {
       <Route path="/medications/:slug" component={MedDetail} />
       <Route path="/trt-aas" component={TrtAasRedirect} />
       <Route path="/learn" component={Learn} />
+      <Route path="/learn/3d-lab" component={PeptideExplorer} />
       <Route path="/learn/:courseSlug" component={LearnCourse} />
       <Route path="/learn/:courseSlug/:lessonSlug" component={LearnLesson} />
       <Route path="/feedback" component={Feedback} />
