@@ -24469,7 +24469,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
         </aside>
 
         {/* Main content */}
-        <main className={`flex-1 min-w-0 overflow-y-auto px-4 py-6 pb-24 lg:pb-8 lg:px-6 lg:py-8 ${activeTab === "orders" ? "" : "max-w-4xl"}`} style={{ color: "var(--adm-text)" }}>
+        <main className={`flex-1 min-w-0 overflow-y-auto px-4 py-6 pb-24 lg:pb-8 lg:px-6 lg:py-8 ${activeTab === "orders" || activeTab === "groupbuy" ? "" : "max-w-4xl"}`} style={{ color: "var(--adm-text)" }}>
           {activeTab === "dashboard"    && <DashboardTab secret={secret} onNavigate={navigate} openTickets={notifCounts.openTickets} />}
           {activeTab === "alerts"       && <AlertsTab secret={secret} onNavigate={navigate} />}
           {activeTab === "orders"       && <OrdersTab secret={secret} />}
