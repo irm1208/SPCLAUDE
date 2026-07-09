@@ -197,6 +197,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
   const messagesRef = useRef<SageMessage[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -235,6 +236,9 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
       setSending(true);
       setError(null);
 
+      const myRequestId = ++requestIdRef.current;
+      const isStale = () => requestIdRef.current !== myRequestId;
+
       const history =
         historyOverride ??
         messagesRef.current
@@ -244,6 +248,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
 
       try {
         const res = await discuss.mutateAsync({ message: q, history });
+        if (isStale()) return;
         const assistantMsg: SageMessage = {
           id: Math.random().toString(36).slice(2),
           role: "assistant",
@@ -260,6 +265,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           return next;
         });
       } catch (e) {
+        if (isStale()) return;
         const err = e as Error & { used?: number; limit?: number };
         if (err.message === "limit_reached") {
           setLimitReached(true);
@@ -276,7 +282,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           setError("Sage couldn't respond just now. Please try again in a moment.");
         }
       } finally {
-        setSending(false);
+        if (!isStale()) setSending(false);
       }
     },
     [sending, limitReached, discuss, persistConversation],
@@ -285,8 +291,10 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
   const startNewChat = useCallback(() => {
     convIdRef.current = null;
     convTitleRef.current = "New Chat";
+    requestIdRef.current++;
     setMessages([makeGreeting()]);
     setInput("");
+    setSending(false);
     setError(null);
     setLimitReached(false);
     setHistoryOpen(false);
@@ -329,7 +337,9 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
   const resumeConversation = useCallback((conv: StoredConversation) => {
     convIdRef.current = conv.id;
     convTitleRef.current = conv.title;
+    requestIdRef.current++;
     setMessages(conv.messages.length > 0 ? conv.messages : [makeGreeting()]);
+    setSending(false);
     setHistoryOpen(false);
     setError(null);
     setLimitReached(false);
@@ -352,11 +362,13 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
   // Reset conversation each time the panel opens; auto-send the seed question if provided.
   useEffect(() => {
     if (!open) return;
+    requestIdRef.current++;
     convIdRef.current = null;
     convTitleRef.current = "New Chat";
     setHistoryOpen(false);
     setMessages([makeGreeting()]);
     setInput("");
+    setSending(false);
     setError(null);
     setLimitReached(false);
     if (seed && seed.trim()) {
