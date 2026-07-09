@@ -11468,6 +11468,11 @@ function GBForm({ secret, initial, hideStatus, onSave, onCancel }: {
         <p className="text-[11px] text-muted-foreground">
           Requires customers to pay a one-time fee (crypto) before they can join. Membership is only granted once the payment is confirmed.
         </p>
+        {initial && form.entryFeeEnabled && (
+          <p className="text-[11px] text-primary font-medium">
+            To view or confirm member payments, go to the "Payments" sub-tab above — this toggle only controls the fee settings.
+          </p>
+        )}
         {form.entryFeeEnabled && (
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
