@@ -1807,16 +1807,6 @@ function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy;
   const [savingAdminFee, setSavingAdminFee] = useState(false);
   const [savedAdminFee, setSavedAdminFee] = useState(false);
 
-  // Entry Fee (paid join gate)
-  const [togglingEntryFee, setTogglingEntryFee] = useState(false);
-  const [entryFeeAmount, setEntryFeeAmount] = useState(gb.entryFeeAmount != null ? String(gb.entryFeeAmount) : "");
-  const [entryFeeLabel, setEntryFeeLabel] = useState(gb.entryFeeLabel ?? "");
-  const [savingEntryFee, setSavingEntryFee] = useState(false);
-  const [savedEntryFee, setSavedEntryFee] = useState(false);
-  const [entryFeePayments, setEntryFeePayments] = useState<EntryFeePayment[] | null>(null);
-  const [loadingEntryFeePayments, setLoadingEntryFeePayments] = useState(false);
-  const [entryFeePaymentActionId, setEntryFeePaymentActionId] = useState<string | null>(null);
-
   // QR Upload
   const [togglingQrInpost, setTogglingQrInpost] = useState(false);
   const [togglingQrRoyalMail, setTogglingQrRoyalMail] = useState(false);
@@ -2127,63 +2117,6 @@ function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy;
         setTimeout(() => setSavedAdminFee(false), 2000);
       }
     } finally { setSavingAdminFee(false); }
-  };
-
-  const toggleEntryFee = async () => {
-    setTogglingEntryFee(true);
-    try {
-      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ entryFeeEnabled: !gb.entryFeeEnabled }),
-      });
-      if (res.ok) onUpdate(await res.json());
-    } finally { setTogglingEntryFee(false); }
-  };
-
-  const saveEntryFee = async () => {
-    setSavingEntryFee(true);
-    try {
-      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({
-          entryFeeAmount: entryFeeAmount.trim() ? parseFloat(entryFeeAmount) : null,
-          entryFeeLabel: entryFeeLabel.trim() || null,
-        }),
-      });
-      if (res.ok) {
-        onUpdate(await res.json());
-        setSavedEntryFee(true);
-        setTimeout(() => setSavedEntryFee(false), 2000);
-      }
-    } finally { setSavingEntryFee(false); }
-  };
-
-  const loadEntryFeePayments = useCallback(async () => {
-    setLoadingEntryFeePayments(true);
-    try {
-      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}/entry-fee-payments`), {
-        headers: { "x-admin-secret": secret },
-      });
-      if (res.ok) setEntryFeePayments(await res.json());
-    } finally { setLoadingEntryFeePayments(false); }
-  }, [gb.id, secret]);
-
-  const setEntryFeePaymentStatus = async (paymentId: string, status: "confirmed" | "rejected") => {
-    setEntryFeePaymentActionId(paymentId);
-    try {
-      const rejectionReason = status === "rejected" ? window.prompt("Rejection reason (optional):") ?? undefined : undefined;
-      const res = await fetch(apiUrl(`/admin/group-buys/entry-fee-payments/${paymentId}/status`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ status, rejectionReason }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setEntryFeePayments(prev => prev ? prev.map(p => p.id === paymentId ? updated : p) : prev);
-      }
-    } finally { setEntryFeePaymentActionId(null); }
   };
 
   const toggleQrInpost = async () => {
@@ -2704,112 +2637,6 @@ function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy;
           )}
       </Card>
 
-      {/* Entry Fee (paid join gate) */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-emerald-600" />
-            <h3 className="font-semibold text-sm">Paid Entry Fee</h3>
-          </div>
-          <button
-            type="button"
-            onClick={toggleEntryFee}
-            disabled={togglingEntryFee}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
-              gb.entryFeeEnabled
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-            )}
-          >
-            {togglingEntryFee ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (gb.entryFeeEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />)}
-            {gb.entryFeeEnabled ? "Enabled" : "Disabled"}
-          </button>
-        </div>
-        {gb.entryFeeEnabled ? (
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Customers must pay this fee (crypto) before they can join. Membership is only granted once the payment is confirmed.</p>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Fee amount ({gb.currency})</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={entryFeeAmount}
-                onChange={e => setEntryFeeAmount(e.target.value)}
-                placeholder="e.g. 10.00"
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Fee label (optional)</label>
-              <input
-                type="text"
-                value={entryFeeLabel}
-                onChange={e => setEntryFeeLabel(e.target.value)}
-                placeholder="e.g. Entry Fee, Membership Fee"
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <Button size="sm" onClick={saveEntryFee} disabled={savingEntryFee} className="gap-1.5">
-              {savingEntryFee ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedEntryFee ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-              {savedEntryFee ? "Saved" : "Save Fee"}
-            </Button>
-
-            <div className="pt-3 border-t border-border space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-muted-foreground">Entry Fee Payments</h4>
-                <Button size="sm" variant="outline" onClick={() => void loadEntryFeePayments()} disabled={loadingEntryFeePayments} className="gap-1.5 h-7 text-xs">
-                  {loadingEntryFeePayments ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                  {entryFeePayments === null ? "Load" : "Refresh"}
-                </Button>
-              </div>
-              {entryFeePayments !== null && (
-                entryFeePayments.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No entry fee payments yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {entryFeePayments.map(p => (
-                      <div key={p.id} className="rounded-lg border border-border p-2.5 text-xs space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">@{p.accountId}</span>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0",
-                            p.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
-                            p.status === "rejected" ? "bg-red-100 text-red-700" :
-                            p.status === "submitted" ? "bg-amber-100 text-amber-700" :
-                            "bg-slate-100 text-slate-500"
-                          )}>{p.status}</span>
-                        </div>
-                        <div className="text-muted-foreground">
-                          {gb.currency}{p.amount.toFixed(2)}
-                          {p.paymentTxHash && <> · tx: <span className="font-mono">{p.paymentTxHash.slice(0, 10)}…</span></>}
-                          {p.paymentCryptoCurrency && <> ({p.paymentCryptoCurrency}{p.paymentCryptoNetwork ? ` / ${p.paymentCryptoNetwork}` : ""})</>}
-                        </div>
-                        {p.rejectionReason && <div className="text-red-600">Reason: {p.rejectionReason}</div>}
-                        {(p.status === "submitted" || p.status === "pending") && (
-                          <div className="flex gap-1.5 pt-1">
-                            <Button size="sm" onClick={() => void setEntryFeePaymentStatus(p.id, "confirmed")} disabled={entryFeePaymentActionId === p.id} className="h-6 px-2 text-[11px] gap-1">
-                              {entryFeePaymentActionId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                              Confirm
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => void setEntryFeePaymentStatus(p.id, "rejected")} disabled={entryFeePaymentActionId === p.id} className="h-6 px-2 text-[11px] gap-1">
-                              <X className="w-3 h-3" />
-                              Reject
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )
-              )}
-            </div>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">When enabled, customers must pay a fixed fee before joining this group buy.</p>
-        )}
-      </Card>
       </div>}
 
       {/* ── ORDERING ── */}
@@ -4676,8 +4503,186 @@ function CouriersManager({ secret }: { secret: string }) {
   );
 }
 
+function EntryFeeCard({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy; onUpdate: (gb: GroupBuy) => void }) {
+  const [togglingEntryFee, setTogglingEntryFee] = useState(false);
+  const [entryFeeAmount, setEntryFeeAmount] = useState(gb.entryFeeAmount != null ? String(gb.entryFeeAmount) : "");
+  const [entryFeeLabel, setEntryFeeLabel] = useState(gb.entryFeeLabel ?? "");
+  const [savingEntryFee, setSavingEntryFee] = useState(false);
+  const [savedEntryFee, setSavedEntryFee] = useState(false);
+  const [entryFeePayments, setEntryFeePayments] = useState<EntryFeePayment[] | null>(null);
+  const [loadingEntryFeePayments, setLoadingEntryFeePayments] = useState(false);
+  const [entryFeePaymentActionId, setEntryFeePaymentActionId] = useState<string | null>(null);
+
+  const toggleEntryFee = async () => {
+    setTogglingEntryFee(true);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ entryFeeEnabled: !gb.entryFeeEnabled }),
+      });
+      if (res.ok) onUpdate(await res.json());
+    } finally { setTogglingEntryFee(false); }
+  };
+
+  const saveEntryFee = async () => {
+    setSavingEntryFee(true);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({
+          entryFeeAmount: entryFeeAmount.trim() ? parseFloat(entryFeeAmount) : null,
+          entryFeeLabel: entryFeeLabel.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        onUpdate(await res.json());
+        setSavedEntryFee(true);
+        setTimeout(() => setSavedEntryFee(false), 2000);
+      }
+    } finally { setSavingEntryFee(false); }
+  };
+
+  const loadEntryFeePayments = useCallback(async () => {
+    setLoadingEntryFeePayments(true);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}/entry-fee-payments`), {
+        headers: { "x-admin-secret": secret },
+      });
+      if (res.ok) setEntryFeePayments(await res.json());
+    } finally { setLoadingEntryFeePayments(false); }
+  }, [gb.id, secret]);
+
+  useEffect(() => { void loadEntryFeePayments(); }, [loadEntryFeePayments]);
+
+  const setEntryFeePaymentStatus = async (paymentId: string, status: "confirmed" | "rejected") => {
+    setEntryFeePaymentActionId(paymentId);
+    try {
+      const rejectionReason = status === "rejected" ? window.prompt("Rejection reason (optional):") ?? undefined : undefined;
+      const res = await fetch(apiUrl(`/admin/group-buys/entry-fee-payments/${paymentId}/status`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ status, rejectionReason }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setEntryFeePayments(prev => prev ? prev.map(p => p.id === paymentId ? updated : p) : prev);
+      }
+    } finally { setEntryFeePaymentActionId(null); }
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-emerald-600" />
+          <h3 className="font-semibold text-sm">Paid Entry Fee</h3>
+        </div>
+        <button
+          type="button"
+          onClick={toggleEntryFee}
+          disabled={togglingEntryFee}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+            gb.entryFeeEnabled
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+              : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          {togglingEntryFee ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (gb.entryFeeEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />)}
+          {gb.entryFeeEnabled ? "Enabled" : "Disabled"}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">Requires customers to pay a one-time fee (crypto) before they can join. Membership is only granted once the payment is confirmed.</p>
+      {gb.entryFeeEnabled && (
+        <div className="space-y-3 mb-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Fee amount ({gb.currency})</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={entryFeeAmount}
+                onChange={e => setEntryFeeAmount(e.target.value)}
+                placeholder="e.g. 10.00"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Fee label (optional)</label>
+              <input
+                type="text"
+                value={entryFeeLabel}
+                onChange={e => setEntryFeeLabel(e.target.value)}
+                placeholder="e.g. Entry Fee, Membership Fee"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+          <Button size="sm" onClick={saveEntryFee} disabled={savingEntryFee} className="gap-1.5">
+            {savingEntryFee ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedEntryFee ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            {savedEntryFee ? "Saved" : "Save Fee"}
+          </Button>
+        </div>
+      )}
+
+      <div className="pt-3 border-t border-border space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-semibold text-muted-foreground">Who's paid &amp; joined</h4>
+          <Button size="sm" variant="outline" onClick={() => void loadEntryFeePayments()} disabled={loadingEntryFeePayments} className="gap-1.5 h-7 text-xs">
+            {loadingEntryFeePayments ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            Refresh
+          </Button>
+        </div>
+        {entryFeePayments === null ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : entryFeePayments.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No entry fee payment attempts yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {entryFeePayments.map(p => (
+              <div key={p.id} className="rounded-lg border border-border p-2.5 text-xs space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">@{p.accountId}</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0",
+                    p.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
+                    p.status === "rejected" ? "bg-red-100 text-red-700" :
+                    p.status === "submitted" ? "bg-amber-100 text-amber-700" :
+                    "bg-slate-100 text-slate-500"
+                  )}>{p.status === "confirmed" ? "paid & joined" : p.status === "rejected" ? "tx rejected" : p.status === "submitted" ? "tx submitted — needs review" : p.status}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  {gb.currency}{p.amount.toFixed(2)}
+                  {p.paymentTxHash && <> · tx: <span className="font-mono">{p.paymentTxHash.slice(0, 10)}…</span></>}
+                  {p.paymentCryptoCurrency && <> ({p.paymentCryptoCurrency}{p.paymentCryptoNetwork ? ` / ${p.paymentCryptoNetwork}` : ""})</>}
+                </div>
+                {p.rejectionReason && <div className="text-red-600">Reason: {p.rejectionReason}</div>}
+                {(p.status === "submitted" || p.status === "pending") && (
+                  <div className="flex gap-1.5 pt-1">
+                    <Button size="sm" onClick={() => void setEntryFeePaymentStatus(p.id, "confirmed")} disabled={entryFeePaymentActionId === p.id} className="h-6 px-2 text-[11px] gap-1">
+                      {entryFeePaymentActionId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Confirm
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void setEntryFeePaymentStatus(p.id, "rejected")} disabled={entryFeePaymentActionId === p.id} className="h-6 px-2 text-[11px] gap-1">
+                      <X className="w-3 h-3" />
+                      Reject
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ─── Members Sub-tab ──────────────────────────────────────────
-function MembersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
+function MembersSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy; onUpdate: (gb: GroupBuy) => void }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [addInput, setAddInput] = useState("");
@@ -4775,6 +4780,7 @@ function MembersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
 
   return (
     <div className="space-y-4">
+      <EntryFeeCard secret={secret} gb={gb} onUpdate={onUpdate} />
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
           {!loading && (
@@ -11016,7 +11022,7 @@ function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
           {activeTab === "details" && <DetailsSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}
           {activeTab === "products" && <ProductsSubTab secret={secret} gb={currentGb} />}
           {activeTab === "delivery" && <DeliveryMethodsSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}
-          {activeTab === "members" && <MembersSubTab secret={secret} gb={currentGb} />}
+          {activeTab === "members" && <MembersSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}
           {activeTab === "waitlist" && <WaitlistSubTab secret={secret} gb={currentGb} />}
           {activeTab === "payment" && <PaymentStatusSubTab secret={secret} gb={currentGb} />}
           {activeTab === "parcels" && <ParcelsSubTab secret={secret} gb={currentGb} />}
@@ -11457,35 +11463,11 @@ function GBForm({ secret, initial, hideStatus, onSave, onCancel }: {
           </div>
         )}
       </div>
-      <div className="rounded-xl border border-border p-3 space-y-3">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => toggle("entryFeeEnabled")}
-            className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${form.entryFeeEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}>
-            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.entryFeeEnabled ? "translate-x-[22px]" : "translate-x-0.5"}`} />
-          </button>
-          <label className="text-sm cursor-pointer" onClick={() => toggle("entryFeeEnabled")}>Paid Entry Fee</label>
-        </div>
+      {initial && (
         <p className="text-[11px] text-muted-foreground">
-          Requires customers to pay a one-time fee (crypto) before they can join. Membership is only granted once the payment is confirmed.
+          Paid Entry Fee setup and payment tracking has moved to the "Members" tab.
         </p>
-        {initial && form.entryFeeEnabled && (
-          <p className="text-[11px] text-primary font-medium">
-            To view or confirm member payments, go to the "Payments" sub-tab above — this toggle only controls the fee settings.
-          </p>
-        )}
-        {form.entryFeeEnabled && (
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Amount ({form.currency})</Label>
-              <Input type="number" min={0} step={0.01} value={form.entryFeeAmount} onChange={e => f("entryFeeAmount", e.target.value)} placeholder="0.00" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Label</Label>
-              <Input value={form.entryFeeLabel} onChange={e => f("entryFeeLabel", e.target.value)} placeholder="Entry Fee" />
-            </div>
-          </div>
-        )}
-      </div>
+      )}
       {error && <p className="text-sm text-destructive font-medium">{error}</p>}
       <div className="flex gap-2">
         <Button type="submit" disabled={saving} className="gap-1.5">

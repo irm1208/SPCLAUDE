@@ -4777,6 +4777,42 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
               <input value={form.testOrderPin} onChange={e => set("testOrderPin", e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="e.g. 5678" maxLength={4} className={inputCls} style={inputStyle} />
             </Field>
           </SectionCard>
+
+          <SectionCard>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4" style={{ color: "#059669" }} />
+                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Paid Entry Fee</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => set("entryFeeEnabled", !form.entryFeeEnabled)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+                style={form.entryFeeEnabled
+                  ? { background: "rgba(5,150,105,0.08)", borderColor: "#6EE7B7", color: "#065F46" }
+                  : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+              >
+                {form.entryFeeEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                {form.entryFeeEnabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+            {form.entryFeeEnabled ? (
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                  Customers must pay this fee (crypto) before they can join. Membership is only granted once the payment is confirmed.
+                </p>
+                <Field label="Fee amount" icon={DollarSign} hint="Leave blank if not yet determined">
+                  <input value={form.entryFeeAmount} onChange={e => set("entryFeeAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="e.g. 10.00" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Fee label" hint="Optional — shown to customers when joining">
+                  <input value={form.entryFeeLabel} onChange={e => set("entryFeeLabel", e.target.value)} type="text" placeholder="e.g. Entry Fee, Membership Fee" className={inputCls} style={inputStyle} />
+                </Field>
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, customers must pay a fixed fee before they can join this group buy.</p>
+            )}
+            {gb && <EntryFeePaymentsPanel gb={gb} />}
+          </SectionCard>
         </>
       )}
 
@@ -4938,42 +4974,6 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
             ) : (
               <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, an admin fee (a fixed amount or a percentage of the product subtotal) will be added to each order. You can set the type, amount and label below.</p>
             )}
-          </SectionCard>
-
-          <SectionCard>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wallet className="w-4 h-4" style={{ color: "#059669" }} />
-                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Paid Entry Fee</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => set("entryFeeEnabled", !form.entryFeeEnabled)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
-                style={form.entryFeeEnabled
-                  ? { background: "rgba(5,150,105,0.08)", borderColor: "#6EE7B7", color: "#065F46" }
-                  : { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-muted)" }}
-              >
-                {form.entryFeeEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
-                {form.entryFeeEnabled ? "Enabled" : "Disabled"}
-              </button>
-            </div>
-            {form.entryFeeEnabled ? (
-              <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-                  Customers must pay this fee (crypto) before they can join. Membership is only granted once the payment is confirmed.
-                </p>
-                <Field label="Fee amount" icon={DollarSign} hint="Leave blank if not yet determined">
-                  <input value={form.entryFeeAmount} onChange={e => set("entryFeeAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="e.g. 10.00" className={inputCls} style={inputStyle} />
-                </Field>
-                <Field label="Fee label" hint="Optional — shown to customers when joining">
-                  <input value={form.entryFeeLabel} onChange={e => set("entryFeeLabel", e.target.value)} type="text" placeholder="e.g. Entry Fee, Membership Fee" className={inputCls} style={inputStyle} />
-                </Field>
-              </div>
-            ) : (
-              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When enabled, customers must pay a fixed fee before they can join this group buy.</p>
-            )}
-            {gb && <EntryFeePaymentsPanel gb={gb} />}
           </SectionCard>
 
           <SectionCard>
