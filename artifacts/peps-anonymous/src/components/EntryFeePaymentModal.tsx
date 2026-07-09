@@ -143,6 +143,7 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                     <Loader2 className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0 animate-spin" />
                     <p className="text-xs text-amber-700">
                       Verifying your transaction — this can take a few minutes. This screen will update automatically once confirmed.
+                      {" "}If it's still pending after a while, the organiser reviews and confirms these manually too, so it will go through — no need to resend unless you made a mistake.
                     </p>
                   </div>
                 )}

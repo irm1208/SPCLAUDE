@@ -168,16 +168,44 @@ export async function grantEntryFeeMembership(payment: { groupBuyId: string; acc
     .onConflictDoNothing();
 }
 
-/** Mark a payment confirmed and grant membership. Idempotent — no-ops if already confirmed. */
+/**
+ * Mark a payment confirmed and grant membership, atomically (both succeed or both roll back
+ * so a payment can never be left "confirmed" without the customer actually gaining access).
+ *
+ * Idempotent: if the payment is already confirmed, this heals a previously-stuck row by
+ * re-attempting the (conflict-safe) membership grant instead of silently no-op'ing.
+ */
 export async function confirmEntryFeePayment(paymentId: string, confirmedBy: string): Promise<GbEntryFeePayment | null> {
-  const [updated] = await db
-    .update(gbEntryFeePaymentsTable)
-    .set({ status: "confirmed", confirmedAt: new Date(), confirmedBy })
-    .where(and(eq(gbEntryFeePaymentsTable.id, paymentId), ne(gbEntryFeePaymentsTable.status, "confirmed")))
-    .returning();
-  if (!updated) return null;
-  await grantEntryFeeMembership(updated);
-  return updated;
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(gbEntryFeePaymentsTable)
+      .where(eq(gbEntryFeePaymentsTable.id, paymentId));
+    if (!existing) return null;
+
+    let updated = existing;
+    if (existing.status !== "confirmed") {
+      const [row] = await tx
+        .update(gbEntryFeePaymentsTable)
+        .set({ status: "confirmed", confirmedAt: new Date(), confirmedBy })
+        .where(and(eq(gbEntryFeePaymentsTable.id, paymentId), ne(gbEntryFeePaymentsTable.status, "confirmed")))
+        .returning();
+      if (!row) return null;
+      updated = row;
+    }
+
+    await tx
+      .insert(accountGroupBuysTable)
+      .values({
+        id: randomUUID(),
+        accountId: updated.accountId,
+        groupBuyId: updated.groupBuyId,
+        countryLegId: updated.countryLegId,
+      })
+      .onConflictDoNothing();
+
+    return updated;
+  });
 }
 
 /** Reject a submitted payment, allowing the customer to resubmit. */
