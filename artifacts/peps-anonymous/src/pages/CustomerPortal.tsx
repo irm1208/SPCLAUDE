@@ -40,16 +40,17 @@ import {
 import { SteroidPlotter } from "@/components/SteroidPlotter";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { RulesetModal } from "@/components/RulesetModal";
+import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { toast } from "@/hooks/use-toast";
 import {
   useAccount, useLogout, useAccountOrders, useTestingLateOptIn, useTestingActivePools, useTestingGbPools,
   getAccountHandle, isDiscordOnlyAccount,
   useTelegramStatus, useTelegramLinkInit, useTelegramUnlink, useTelegramUpdatePrefs, useTelegramSendTest,
   useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useLeaveGroupBuy, useUpdateCountry, useCountryLegs,
-  useViewerAccess, useSetGroupBuyArchived,
+  useViewerAccess, useSetGroupBuyArchived, EntryFeeRequiredError,
   useDeleteOrder, useDeletedOrders, useRestoreOrder,
   useHiddenOrders, useToggleHiddenOrder,
-  type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry, type DeletedOrder,
+  type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry, type DeletedOrder, type EntryFeePaymentInfo,
 } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
@@ -2211,6 +2212,7 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<(() => void) | null>(null);
+  const [entryFeeModal, setEntryFeeModal] = useState<{ groupBuyId: string; fee: EntryFeePaymentInfo; retry: () => Promise<void> } | null>(null);
   const join = useJoinGroupBuy();
   const { account } = useAccount();
   const { data: activeGbs = [], isLoading: gbsLoading } = useActiveGroupBuys();
@@ -2283,15 +2285,24 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
     if (hasCountryLegs && !selectedCountryCode) { setError("Please select your country"); return; }
     if (needsLegInvite && !countryLegInvite.trim()) { setError("An invite code is required for your country group"); return; }
     const doJoin = async () => {
+      const attempt = () => join.mutateAsync({
+        groupBuyId: gbId,
+        invitePin: pin || undefined,
+        countryCode: hasCountryLegs ? selectedCountryCode : undefined,
+        countryLegInvite: needsLegInvite ? countryLegInvite.trim() : undefined,
+      });
       try {
-        await join.mutateAsync({
-          groupBuyId: gbId,
-          invitePin: pin || undefined,
-          countryCode: hasCountryLegs ? selectedCountryCode : undefined,
-          countryLegInvite: needsLegInvite ? countryLegInvite.trim() : undefined,
-        });
+        await attempt();
         onClose();
       } catch (err: unknown) {
+        if (err instanceof EntryFeeRequiredError) {
+          setEntryFeeModal({
+            groupBuyId: gbId,
+            fee: err.entryFee,
+            retry: async () => { await attempt(); onClose(); },
+          });
+          return;
+        }
         setError(err instanceof Error ? err.message : "Failed to join");
       }
     };
@@ -2310,13 +2321,22 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
     if (idNeedsPin && !idPin.trim()) { setIdError("Please enter the invite PIN"); return; }
     const doJoin = async () => {
       setIdPending(true);
+      const attempt = () => join.mutateAsync({
+        groupBuyId: trimmed,
+        invitePin: idNeedsPin ? idPin.trim() : undefined,
+      });
       try {
-        await join.mutateAsync({
-          groupBuyId: trimmed,
-          invitePin: idNeedsPin ? idPin.trim() : undefined,
-        });
+        await attempt();
         onClose();
       } catch (err: unknown) {
+        if (err instanceof EntryFeeRequiredError) {
+          setEntryFeeModal({
+            groupBuyId: trimmed,
+            fee: err.entryFee,
+            retry: async () => { await attempt(); onClose(); },
+          });
+          return;
+        }
         const msg = err instanceof Error ? err.message : "Invalid or expired ID";
         if (/invite PIN is required/i.test(msg)) {
           setIdNeedsPin(true);
@@ -2713,6 +2733,21 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
             if (pendingJoin) { await pendingJoin(); setPendingJoin(null); }
           }}
           onClose={() => { setShowRulesetModal(false); setPendingJoin(null); }}
+        />
+      )}
+
+      {entryFeeModal && (
+        <EntryFeePaymentModal
+          groupBuyId={entryFeeModal.groupBuyId}
+          initial={entryFeeModal.fee}
+          onClose={() => setEntryFeeModal(null)}
+          onConfirmed={async () => {
+            try {
+              await entryFeeModal.retry();
+            } finally {
+              setEntryFeeModal(null);
+            }
+          }}
         />
       )}
     </>
