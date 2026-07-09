@@ -385,32 +385,35 @@ export function ReportModal({
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 60, opacity: 0 }}
         transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="w-full flex flex-col overflow-y-auto overscroll-contain md:w-[90vw] md:max-w-[1100px] md:rounded-2xl md:shadow-2xl md:flex-row md:overflow-hidden"
+        className="w-full flex flex-col overflow-hidden md:w-[90vw] md:max-w-[1100px] md:rounded-2xl md:shadow-2xl"
         style={{ height: "95dvh", maxHeight: "95dvh", position: "relative", isolation: "isolate", background: "var(--t-surface)", border: "1px solid var(--t-border)" }}
         onClick={e => e.stopPropagation()}
       >
-        {/* LEFT PANEL */}
-        <div className="flex flex-col shrink-0 w-full md:w-80 border-b md:border-b-0 md:border-r" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
-          <div className="flex items-center gap-2 px-3 pb-2 pt-3 md:pt-4 md:px-5">
-            <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-sm leading-tight truncate" style={{ color: "var(--t-text)" }}>{buildTestTitle(test)}</div>
-              <div className="text-[10px] font-mono mt-0.5" style={{ color: "var(--t-subtle)" }}>{index + 1} / {tests.length}</div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {onShare && (
-                <button onClick={() => onShare(test.id)} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors" title="Copy share link" style={{ color: "var(--t-text)", background: "transparent" }}>
-                  <Share2 className="w-4 h-4" />
-                </button>
-              )}
-              <NavBtn enabled={hasPrev} onClick={() => onChangeIndex(index - 1)} icon={<ChevronLeft className="w-4 h-4" />} />
-              <NavBtn enabled={hasNext} onClick={() => onChangeIndex(index + 1)} icon={<ChevronRight className="w-4 h-4" />} />
-            </div>
+        {/* HEADER BAR: always pinned at the top */}
+        <div className="flex items-center gap-2 px-3 pb-2 pt-3 md:pt-4 md:px-5 shrink-0 border-b" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
+            <X className="w-4 h-4" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm leading-tight truncate" style={{ color: "var(--t-text)" }}>{buildTestTitle(test)}</div>
+            <div className="text-[10px] font-mono mt-0.5" style={{ color: "var(--t-subtle)" }}>{index + 1} / {tests.length}</div>
           </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {onShare && (
+              <button onClick={() => onShare(test.id)} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors" title="Copy share link" style={{ color: "var(--t-text)", background: "transparent" }}>
+                <Share2 className="w-4 h-4" />
+              </button>
+            )}
+            <NavBtn enabled={hasPrev} onClick={() => onChangeIndex(index - 1)} icon={<ChevronLeft className="w-4 h-4" />} />
+            <NavBtn enabled={hasNext} onClick={() => onChangeIndex(index + 1)} icon={<ChevronRight className="w-4 h-4" />} />
+          </div>
+        </div>
 
-          <div className="flex flex-col px-4 md:px-5 pb-4 gap-4 flex-1 overflow-y-auto mt-2">
+        {/* BODY: certificate first on mobile, two columns on desktop */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-y-auto overscroll-contain md:overflow-hidden">
+        {/* LEFT PANEL: Details */}
+        <div className="flex flex-col shrink-0 w-full md:w-80 order-2 md:order-1 border-t md:border-t-0 md:border-r" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+          <div className="flex flex-col px-4 md:px-5 py-4 gap-4 flex-1 md:overflow-y-auto">
             {resultColor && (
               <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold self-start border"
                 style={{ background: resultColor.bg, color: resultColor.color, borderColor: resultColor.border }}>
@@ -522,7 +525,7 @@ export function ReportModal({
         </div>
 
         {/* RIGHT PANEL: Document View */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-[75dvh] md:min-h-0" style={{ background: "var(--t-bg)" }}>
+        <div className="flex-1 flex flex-col min-w-0 shrink-0 min-h-[70dvh] md:min-h-0 order-1 md:order-2" style={{ background: "var(--t-bg)" }}>
           <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
             {loading ? (
               <div className="flex flex-col items-center gap-3">
@@ -552,6 +555,7 @@ export function ReportModal({
               </div>
             )}
           </div>
+        </div>
         </div>
       </motion.div>
     </motion.div>
