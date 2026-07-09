@@ -161,23 +161,30 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
         </Button>
       </div>
 
-      {/* Mobile / narrow: grouped select */}
-      <div className="md:hidden">
-        <select
-          value={activeTab}
-          onChange={e => selectTab(e.target.value as DetailTab)}
-          className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          {NAV_GROUPS.map(group => (
-            <optgroup key={group.title} label={group.title}>
-              {group.items.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.label}{item.id === "fulfilment" && unroutedCount > 0 ? ` (${unroutedCount})` : ""}
-                </option>
-              ))}
-            </optgroup>
+      {/* Mobile / narrow: horizontally scrollable tab strip */}
+      <div className="md:hidden -mx-4 px-4 overflow-x-auto">
+        <div className="flex gap-1 border-b border-border pb-0 w-max min-w-full">
+          {NAV_GROUPS.flatMap(group => group.items).map(item => (
+            <button
+              key={item.id}
+              onClick={() => selectTab(item.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap",
+                activeTab === item.id
+                  ? "border-orange-400 text-orange-600"
+                  : "border-transparent text-muted-foreground"
+              )}
+            >
+              <item.icon className="w-3.5 h-3.5 shrink-0" />
+              {item.label}
+              {item.id === "fulfilment" && unroutedCount > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
+                  {unroutedCount}
+                </span>
+              )}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       <div className="flex gap-5 items-start">
