@@ -385,7 +385,7 @@ export function ReportModal({
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 60, opacity: 0 }}
         transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="w-full flex flex-col md:w-[90vw] md:max-w-[1100px] md:rounded-2xl md:shadow-2xl md:flex-row md:overflow-hidden"
+        className="w-full flex flex-col overflow-y-auto overscroll-contain md:w-[90vw] md:max-w-[1100px] md:rounded-2xl md:shadow-2xl md:flex-row md:overflow-hidden"
         style={{ height: "95dvh", maxHeight: "95dvh", position: "relative", isolation: "isolate", background: "var(--t-surface)", border: "1px solid var(--t-border)" }}
         onClick={e => e.stopPropagation()}
       >
@@ -522,7 +522,7 @@ export function ReportModal({
         </div>
 
         {/* RIGHT PANEL: Document View */}
-        <div className="flex-1 flex flex-col min-w-0" style={{ background: "var(--t-bg)" }}>
+        <div className="flex-1 flex flex-col min-w-0 min-h-[75dvh] md:min-h-0" style={{ background: "var(--t-bg)" }}>
           <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
             {loading ? (
               <div className="flex flex-col items-center gap-3">
