@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TestTube, Loader2, X, Calendar, CheckCircle2, XCircle, ArrowLeft, FlaskConical, ShieldCheck, ChevronDown } from "lucide-react";
 import { ReportModal, parseBatchDate } from "@/pages/LabTests";
 import { getCanonicalGroup, getPeptideDisplayName, splitBlendComponents } from "@/lib/peptide-groups";
+import { resolveUtherName } from "@/lib/uther-batch-codes";
+import { resolveBatchPrefixName } from "@/lib/batch-prefixes";
 
 export interface LabTest {
   id: number;
@@ -45,6 +47,19 @@ export function extractPeptideName(productName: string): string {
     .replace(/[^a-z0-9]/gi, "")
     .toLowerCase()
     .trim();
+}
+
+/**
+ * Resolve the certificate's display compound name from its batch code,
+ * falling back to the stored peptideName when the batch code is unrecognized.
+ * Mirrors the title logic on the main /tests page (see buildTestTitle in
+ * pages/LabTests.tsx) so a batch code like "ZE10" reads "Tirzepatide" here too.
+ */
+function resolveTestCompoundName(t: LabTest): string {
+  const uther = resolveUtherName(t.supplier, t.batchCode, "");
+  if (uther) return getPeptideDisplayName(uther);
+  const prefixed = resolveBatchPrefixName(t.batchCode);
+  return getPeptideDisplayName(prefixed?.compound || t.peptideName);
 }
 
 type TestResult = "pass" | "fail" | "unknown";
@@ -227,7 +242,7 @@ function TestCard({ t, onView }: { t: LabTest; onView: () => void }) {
             )}
           </div>
           <p className="text-xs font-semibold mb-0.5" style={{ color: "var(--t-text, #1A1D1F)" }}>
-            {getPeptideDisplayName(t.peptideName)}{t.mgAmount != null ? ` · ${t.mgAmount}mg` : ""}
+            {resolveTestCompoundName(t)}{t.mgAmount != null ? ` · ${t.mgAmount}mg` : ""}
           </p>
           <p className="text-[11px] font-semibold mb-0.5" style={{ color: "#2563EB" }}>{t.supplier}</p>
           <p className="text-[10px] mb-1" style={{ color: "var(--t-subtle, #71717A)" }}>{t.labName}</p>
@@ -676,7 +691,7 @@ export function LabTestsListPopup({ productName, vendor, gbLabSupplier, onClose 
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text, #1A1D1F)" }}>
-                    {getPeptideDisplayName(t.peptideName)}{t.mgAmount != null ? ` · ${t.mgAmount}mg` : ""}
+                    {resolveTestCompoundName(t)}{t.mgAmount != null ? ` · ${t.mgAmount}mg` : ""}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 mb-1.5">
                     {t.mgAmount != null && (

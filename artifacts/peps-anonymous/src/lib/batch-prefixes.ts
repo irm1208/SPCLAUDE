@@ -329,3 +329,23 @@ export function doseForBatchCode(batchCode: string | null | undefined): string |
   }
   return null;
 }
+
+export interface ResolvedBatchName {
+  compound: string;
+  dose: string | null;
+}
+
+/**
+ * Resolve a certificate's compound + dose purely from its batch code prefix,
+ * independent of `supplier`. This is the general-purpose counterpart to
+ * `resolveUtherName` (which only fires for Uther-labelled tests) — use it as
+ * a fallback so any lab test whose batch code matches a known prefix gets
+ * titled with its corresponding compound/dose, regardless of vendor.
+ */
+export function resolveBatchPrefixName(batchCode: string | null | undefined): ResolvedBatchName | null {
+  if (!batchCode) return null;
+  for (const e of BATCH_PREFIX_TABLE) {
+    if (batchCodeMatchesPrefix(batchCode, e.prefix)) return { compound: e.compound, dose: e.dose ?? null };
+  }
+  return null;
+}

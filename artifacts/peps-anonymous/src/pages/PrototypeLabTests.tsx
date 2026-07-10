@@ -14,6 +14,7 @@ import { PROTOCOLS } from "@/data/protocols";
 import { PageLayout } from "@/components/PageLayout";
 import { PEPTIDE_GROUPS, getCanonicalGroup, getPeptideDisplayName } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
+import { resolveBatchPrefixName } from "@/lib/batch-prefixes";
 import type { PeptideGroup } from "@/lib/peptide-groups";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import {
@@ -76,9 +77,12 @@ function normalizeDose(dose: string): string {
  * the dose is not appended a second time.
  */
 function buildTestTitle(test: LabTest): string {
-  const base = getPeptideDisplayName(resolveUtherName(test.supplier, test.batchCode, test.peptideName));
-  if (!test.nominalDose) return base;
-  const dose = normalizeDose(test.nominalDose);
+  const uther = resolveUtherName(test.supplier, test.batchCode, "");
+  const prefixed = uther ? null : resolveBatchPrefixName(test.batchCode);
+  const base = getPeptideDisplayName(uther || prefixed?.compound || test.peptideName);
+  const rawDose = prefixed?.dose ?? test.nominalDose;
+  if (!rawDose) return base;
+  const dose = normalizeDose(rawDose);
   if (base.trim().toLowerCase().endsWith(dose.toLowerCase())) return base;
   return `${base} ${dose}`;
 }
@@ -2007,7 +2011,9 @@ function MetricsTab({ allTests, testsLoading, onCompoundClick }: { allTests: Lab
 // ─── CompareTab ───────────────────────────────────────────────────────────────
 
 function getCompoundBaseName(t: LabTest) {
-  return getPeptideDisplayName(resolveUtherName(t.supplier, t.batchCode, t.peptideName));
+  const uther = resolveUtherName(t.supplier, t.batchCode, "");
+  const prefixed = uther ? null : resolveBatchPrefixName(t.batchCode);
+  return getPeptideDisplayName(uther || prefixed?.compound || t.peptideName);
 }
 
 function formatShortDate(d: string | null): string {
