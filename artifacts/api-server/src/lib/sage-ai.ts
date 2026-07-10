@@ -62,9 +62,10 @@ export function getSageFallbackModel(): string {
 
 export type TextContentPart  = { type: "text"; text: string };
 export type ImageContentPart = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+export type DocumentContentPart = { type: "document"; source: { type: "base64"; media_type: string; data: string } };
 export type ToolUseContentPart  = { type: "tool_use";  id: string; name: string; input: Record<string, unknown> };
 export type ToolResultContentPart = { type: "tool_result"; tool_use_id: string; content: string };
-export type ContentPart = TextContentPart | ImageContentPart | ToolUseContentPart | ToolResultContentPart;
+export type ContentPart = TextContentPart | ImageContentPart | DocumentContentPart | ToolUseContentPart | ToolResultContentPart;
 
 export interface SageMessage {
   role: "user" | "assistant";
@@ -83,6 +84,8 @@ export interface SageAIParams {
   baseUrl?: string;
   /** Whether to give Sage access to DuckDuckGo web search via tool_use. Default true. */
   enableWebSearch?: boolean;
+  /** Optional sampling temperature (0-1). Omitted = provider default. Use a low value for deterministic extraction tasks. */
+  temperature?: number;
 }
 
 // ─── Tool definitions ────────────────────────────────────────────────────────
@@ -182,10 +185,12 @@ async function callModelRaw(
   messages: SageMessage[],
   maxTokens: number,
   tools?: unknown[],
+  temperature?: number,
 ): Promise<ModelResponse> {
   const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
   if (tools && tools.length > 0) body.tools = tools;
+  if (temperature != null) body.temperature = temperature;
 
   const res = await fetch(`${BASE_URL}/v1/messages`, {
     method: "POST",
@@ -226,9 +231,11 @@ async function callModel(
   system: string | undefined,
   messages: SageMessage[],
   maxTokens: number,
+  temperature?: number,
 ): Promise<string> {
   const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
+  if (temperature != null) body.temperature = temperature;
 
   const res = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
@@ -266,12 +273,13 @@ async function callModelWithTools(
   system: string | undefined,
   messages: SageMessage[],
   maxTokens: number,
+  temperature?: number,
 ): Promise<string> {
   const mutableMessages: SageMessage[] = [...messages];
   const MAX_TOOL_ITERATIONS = 5;
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const response = await callModelRaw(model, apiKey, system, mutableMessages, maxTokens, [WEB_SEARCH_TOOL]);
+    const response = await callModelRaw(model, apiKey, system, mutableMessages, maxTokens, [WEB_SEARCH_TOOL], temperature);
 
     // Find text content
     const textPart = response.content.find(c => c.type === "text") as TextContentPart | undefined;
@@ -310,7 +318,7 @@ async function callModelWithTools(
   }
 
   // Fallback: one final call without tools to get a text response
-  return callModel(model, apiKey, BASE_URL, system, mutableMessages, maxTokens);
+  return callModel(model, apiKey, BASE_URL, system, mutableMessages, maxTokens, temperature);
 }
 
 /** Returns true when the error looks like a "no quota" / "no available token" failure from the proxy. */
@@ -324,7 +332,7 @@ function isTokenExhaustedError(err: unknown): boolean {
 }
 
 export async function callSageAI({
-  system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, enableWebSearch = true,
+  system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, enableWebSearch = true, temperature,
 }: SageAIParams): Promise<string> {
   const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
@@ -332,14 +340,14 @@ export async function callSageAI({
 
   // Explicit override (admin test panel): single attempt, no silent fallback substitution.
   if (model) {
-    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens);
+    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens, temperature);
   }
 
   const activeModel = await getActiveSageModel();
 
   const callFn = enableWebSearch
-    ? (m: string, k: string) => callModelWithTools(m, k, system, messages, maxTokens)
-    : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens);
+    ? (m: string, k: string) => callModelWithTools(m, k, system, messages, maxTokens, temperature)
+    : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens, temperature);
 
   try {
     return await callFn(activeModel, apiKey);

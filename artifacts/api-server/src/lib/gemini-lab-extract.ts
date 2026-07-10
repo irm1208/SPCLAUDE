@@ -1,12 +1,14 @@
-import { GoogleGenAI } from "./google-genai";
+import { callSageAI, type ContentPart } from "./sage-ai";
 
-const gemini = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
+/** Converts an in-memory image/PDF part into an Anthropic-format content block for the Sage/Claude proxy. */
+function toClaudeContentParts(parts: LabFilePart[]): ContentPart[] {
+  return parts.map(({ inlineData: { mimeType, data } }): ContentPart => {
+    if (mimeType === "application/pdf") {
+      return { type: "document", source: { type: "base64", media_type: mimeType, data } };
+    }
+    return { type: "image", source: { type: "base64", media_type: mimeType, data } };
+  });
+}
 
 const IMAGE_CACHE = new Map<string, { urls: string[]; ts: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -118,7 +120,7 @@ async function downloadTrustedFile(url: string): Promise<{ data: string; mimeTyp
       if (downloadUrl.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
     }
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      console.warn("[gemini-lab-extract] downloadTrustedFile unexpected MIME:", mimeType, url);
+      console.warn("[lab-extract] downloadTrustedFile unexpected MIME:", mimeType, url);
       return null;
     }
 
@@ -145,20 +147,20 @@ async function fetchUzorakOrder(publicId: string): Promise<Record<string, unknow
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) {
-      console.warn("[gemini-lab-extract] Uzorak Supabase RPC failed:", res.status);
+      console.warn("[lab-extract] Uzorak Supabase RPC failed:", res.status);
       return null;
     }
     const order = await res.json() as Record<string, unknown> | null;
     return order ?? null;
   } catch (err) {
-    console.warn("[gemini-lab-extract] Uzorak Supabase lookup error:", err);
+    console.warn("[lab-extract] Uzorak Supabase lookup error:", err);
     return null;
   }
 }
 
 /**
  * Given an already-fetched Uzorak order, try to return a downloadable file
- * (snapshot JPEG or Google Drive PDF) for Gemini.
+ * (snapshot JPEG or Google Drive PDF) for Claude.
  * Returns null when no file is available (e.g. snapshot_base64 is null and
  * no report_url exists — common when the LCMS cert is rendered client-side).
  */
@@ -202,7 +204,7 @@ async function resolveUzorakFile(
 }
 
 /**
- * Parse a Uzorak Supabase order directly into ExtractedCoAData without Gemini.
+ * Parse a Uzorak Supabase order directly into ExtractedCoAData without Claude.
  * Used as a fallback when no image/PDF is available (common: LCMS certs are
  * generated client-side from structured data not exposed by the public API).
  * Sets confidence:"medium" since actual measured values (purity %, HPLC mass)
@@ -216,7 +218,7 @@ function parseUzorakOrder(
   const samples = (order.samples ?? []) as Record<string, unknown>[];
   const firstSample = samples[0];
   if (!firstSample) {
-    console.warn("[gemini-lab-extract] Uzorak: no samples in order for", publicId);
+    console.warn("[lab-extract] Uzorak: no samples in order for", publicId);
     return null;
   }
 
@@ -288,22 +290,22 @@ function parseUzorakOrder(
 /**
  * Full Uzorak extraction pipeline:
  *  1. Fetch order from Supabase.
- *  2. If a snapshot or Drive PDF is available → send to Gemini.
- *  3. Otherwise → parse structured metadata directly (no Gemini, confidence:"medium").
+ *  2. If a snapshot or Drive PDF is available → send to Claude.
+ *  3. Otherwise → parse structured metadata directly (no Claude call, confidence:"medium").
  */
 async function extractUzorakCoAData(publicId: string): Promise<ExtractedCoAData | null> {
   const order = await fetchUzorakOrder(publicId);
   if (!order) return null;
 
-  // Attempt Gemini extraction if a file is available
+  // Attempt Claude vision extraction if a file is available
   const file = await resolveUzorakFile(order);
   if (file) {
-    console.log("[gemini-lab-extract] Uzorak: running Gemini on file for", publicId);
-    const geminiResult = await runGeminiExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
-    if (geminiResult) return geminiResult;
-    console.warn("[gemini-lab-extract] Uzorak: Gemini failed, falling back to metadata for", publicId);
+    console.log("[lab-extract] Uzorak: running Claude extraction on file for", publicId);
+    const claudeResult = await runClaudeExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
+    if (claudeResult) return claudeResult;
+    console.warn("[lab-extract] Uzorak: Claude extraction failed, falling back to metadata for", publicId);
   } else {
-    console.log("[gemini-lab-extract] Uzorak: no file available, parsing metadata for", publicId);
+    console.log("[lab-extract] Uzorak: no file available, parsing metadata for", publicId);
   }
 
   // Fallback: parse structured metadata directly
@@ -326,7 +328,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
   // Allow Janoshik via existing strict allow, others via full allowlist
   const allowed = isAllowedUrl(url) || isBulkImportAllowedUrl(url);
   if (!allowed) {
-    console.warn("[gemini-lab-extract] Blocked non-allowlisted URL:", url);
+    console.warn("[lab-extract] Blocked non-allowlisted URL:", url);
     return null;
   }
   try {
@@ -339,7 +341,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
     // Reject oversized responses early using Content-Length header
     const contentLength = res.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > MAX_FILE_BYTES) {
-      console.warn("[gemini-lab-extract] File too large (Content-Length):", contentLength, url);
+      console.warn("[lab-extract] File too large (Content-Length):", contentLength, url);
       return null;
     }
 
@@ -348,7 +350,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
 
     // Only override ambiguous octet-stream responses using the URL extension.
     // Never override an explicit server MIME type (e.g. text/html → pdf would
-    // silently send HTML to Gemini as if it were a PDF document).
+    // silently send HTML to Claude as if it were a PDF document).
     if (mimeType === "application/octet-stream") {
       if (url.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
       if (/\.(png)$/i.test(url)) mimeType = "image/png";
@@ -358,7 +360,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
 
     // Reject unexpected MIME types
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      console.warn("[gemini-lab-extract] Unexpected MIME type:", mimeType, url);
+      console.warn("[lab-extract] Unexpected MIME type:", mimeType, url);
       return null;
     }
 
@@ -366,7 +368,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
 
     // Final size check after download (guards against missing Content-Length)
     if (buf.length > MAX_FILE_BYTES) {
-      console.warn("[gemini-lab-extract] File too large after download:", buf.length, url);
+      console.warn("[lab-extract] File too large after download:", buf.length, url);
       return null;
     }
 
@@ -590,7 +592,7 @@ export async function fetchLabPageImages(pageUrl: string): Promise<string[]> {
   return [];
 }
 
-// ── Gemini extraction — universal (all labs, all URL types) ──────────────────
+// ── Claude extraction — universal (all labs, all URL types) ──────────────────
 
 export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<ExtractedCoAData | null> {
   // ── Uzorak: intercept before generic flow ────────────────────────────────────
@@ -617,34 +619,34 @@ export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<Extract
   pageUrl = resolveCanonicalLabUrl(pageUrl);
   const urlType = detectLabUrlType(pageUrl);
 
-  // For direct PDF or image URLs, download the file and send inline to Gemini
+  // For direct PDF or image URLs, download the file and send inline to Claude
   if (urlType === "pdf" || urlType === "image") {
     const file = await downloadLabFile(pageUrl);
     if (!file) {
-      console.warn("[gemini-lab-extract] Could not download file:", pageUrl);
+      console.warn("[lab-extract] Could not download file:", pageUrl);
       return null;
     }
-    return runGeminiExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
+    return runClaudeExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
   }
 
-  // Website URL — scrape images then send to Gemini
+  // Website URL — scrape images then send to Claude
   const imageUrls = await resolvePreviewInfo(pageUrl).then(p => p.type === "image" ? p.images : []);
   if (imageUrls.length === 0) {
-    console.warn("[gemini-lab-extract] No images found for URL:", pageUrl);
+    console.warn("[lab-extract] No images found for URL:", pageUrl);
     return null;
   }
 
-  const imageParts: GeminiPart[] = [];
+  const imageParts: LabFilePart[] = [];
   for (const imgUrl of imageUrls.slice(0, 3)) {
     const file = await downloadLabFile(imgUrl);
     if (file) imageParts.push({ inlineData: { mimeType: file.mimeType, data: file.data } });
   }
 
   if (imageParts.length === 0) return null;
-  return runGeminiExtraction(imageParts);
+  return runClaudeExtraction(imageParts);
 }
 
-// ── Gemini extraction — from raw buffer (PDF/image upload) ───────────────────
+// ── Claude extraction — from raw buffer (PDF/image upload) ───────────────────
 
 /**
  * Extract CoA data from an in-memory buffer (e.g. a user-uploaded PDF).
@@ -652,15 +654,15 @@ export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<Extract
  */
 export async function extractCoADataFromBuffer(buf: Buffer, mimeType: string): Promise<ExtractedCoAData | null> {
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-    console.warn("[gemini-lab-extract] Unsupported MIME type for buffer extraction:", mimeType);
+    console.warn("[lab-extract] Unsupported MIME type for buffer extraction:", mimeType);
     return null;
   }
   if (buf.length > MAX_FILE_BYTES) {
-    console.warn("[gemini-lab-extract] Buffer too large:", buf.length);
+    console.warn("[lab-extract] Buffer too large:", buf.length);
     return null;
   }
   const data = buf.toString("base64");
-  return runGeminiExtraction([{ inlineData: { mimeType, data } }]);
+  return runClaudeExtraction([{ inlineData: { mimeType, data } }]);
 }
 
 /**
@@ -672,27 +674,27 @@ export async function extractCoADataFromBuffer(buf: Buffer, mimeType: string): P
 export async function extractCoADataFromBuffers(
   files: { buf: Buffer; mimeType: string }[],
 ): Promise<ExtractedCoAData | null> {
-  const parts: GeminiPart[] = [];
+  const parts: LabFilePart[] = [];
   for (const f of files.slice(0, 6)) {
     if (!ALLOWED_MIME_TYPES.has(f.mimeType)) {
-      console.warn("[gemini-lab-extract] Skipping unsupported MIME for buffer extraction:", f.mimeType);
+      console.warn("[lab-extract] Skipping unsupported MIME for buffer extraction:", f.mimeType);
       continue;
     }
     if (f.buf.length > MAX_FILE_BYTES) {
-      console.warn("[gemini-lab-extract] Skipping oversized buffer:", f.buf.length);
+      console.warn("[lab-extract] Skipping oversized buffer:", f.buf.length);
       continue;
     }
     parts.push({ inlineData: { mimeType: f.mimeType, data: f.buf.toString("base64") } });
   }
   if (parts.length === 0) return null;
-  return runGeminiExtraction(parts);
+  return runClaudeExtraction(parts);
 }
 
-// ── Gemini extraction — Janoshik legacy (unchanged behaviour) ─────────────────
+// ── Claude extraction — Janoshik legacy (unchanged behaviour) ─────────────────
 
 export async function extractCoAData(pageUrl: string): Promise<ExtractedCoAData | null> {
   if (!isAllowedUrl(pageUrl)) {
-    console.warn("[gemini-lab-extract] Rejected non-Janoshik URL:", pageUrl);
+    console.warn("[lab-extract] Rejected non-Janoshik URL:", pageUrl);
     return null;
   }
   return extractCoADataFromAnyUrl(pageUrl);
@@ -727,24 +729,27 @@ Rules:
 - If you find no batch codes, return: []`;
 
 /**
- * Extract all unique batch/lot numbers from one or more uploaded images using Gemini Vision.
+ * Extract all unique batch/lot numbers from one or more uploaded images using Claude vision.
  * Deduplicates case-insensitively across all images in the batch.
  */
 export async function extractBatchNumbersFromImages(
   files: Array<{ data: Buffer; mimeType: string }>
 ): Promise<string[]> {
   if (files.length === 0) return [];
-  const imageParts = files
+  const imageParts: LabFilePart[] = files
     .filter(f => ALLOWED_MIME_TYPES.has(f.mimeType))
     .map(f => ({ inlineData: { mimeType: f.mimeType, data: f.data.toString("base64") } }));
   if (imageParts.length === 0) return [];
   try {
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [...imageParts, { text: BATCH_NUMBERS_PROMPT }] }],
-      config: { temperature: 0.1, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } },
-    });
-    const text = response.text?.trim() ?? "";
+    const text = (await callSageAI({
+      messages: [{
+        role: "user",
+        content: [...toClaudeContentParts(imageParts), { type: "text", text: BATCH_NUMBERS_PROMPT }],
+      }],
+      maxTokens: 512,
+      temperature: 0.1,
+      enableWebSearch: false,
+    })).trim();
     if (!text) return [];
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = JSON.parse(cleaned);
@@ -761,24 +766,27 @@ export async function extractBatchNumbersFromImages(
         return true;
       });
   } catch (err) {
-    console.error("[gemini-lab-extract] batch OCR error:", err);
+    console.error("[lab-extract] batch OCR error:", err);
     return [];
   }
 }
 
-// ── Shared Gemini caller ──────────────────────────────────────────────────────
+// ── Shared Claude (Sage proxy) caller ────────────────────────────────────────
 
-type GeminiPart = { inlineData: { mimeType: string; data: string } };
+type LabFilePart = { inlineData: { mimeType: string; data: string } };
 
-async function runGeminiExtraction(parts: GeminiPart[]): Promise<ExtractedCoAData | null> {
+async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
   if (parts.length === 0) return null;
   try {
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [...parts, { text: EXTRACT_PROMPT }] }],
-      config: { temperature: 0.1, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
-    });
-    const text = response.text?.trim() ?? "";
+    const text = (await callSageAI({
+      messages: [{
+        role: "user",
+        content: [...toClaudeContentParts(parts), { type: "text", text: EXTRACT_PROMPT }],
+      }],
+      maxTokens: 1024,
+      temperature: 0.1,
+      enableWebSearch: false,
+    })).trim();
     if (!text) return null;
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = JSON.parse(cleaned);
@@ -822,7 +830,7 @@ async function runGeminiExtraction(parts: GeminiPart[]): Promise<ExtractedCoADat
       blendComponents,
     };
   } catch (err) {
-    console.error("[gemini-lab-extract] parse error:", err);
+    console.error("[lab-extract] parse error:", err);
     return null;
   }
 }
