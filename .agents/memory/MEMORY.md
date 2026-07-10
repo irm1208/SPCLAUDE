@@ -1,4 +1,5 @@
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
+- [Lab test extract blob preference](lab-test-extract-blob-preference.md) — CoA re-extract (single+batch) must try stored pdfBlob before external url; Cloudflare-blocked sources always fail otherwise even with a local copy.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.
 - [GB entry-fee confirm atomicity](gb-entry-fee-confirm-atomicity.md) — confirm status-update + membership-grant must be one transaction w/ idempotent retry, or payment shows confirmed forever with no membership.
 - [Duplicated join-modal entry-fee gap](duplicated-join-modal-entry-fee-gap.md) — Groups.tsx & CustomerPortal.tsx each have their own copy of "Join a Group Buy"; a handler fix ported to one silently missed the other.

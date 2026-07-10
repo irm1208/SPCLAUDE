@@ -1590,8 +1590,20 @@ router.post("/admin/lab-tests/:id/extract", async (req, res) => {
       return;
     }
 
-    if (!test.url) { res.status(422).json({ error: "This lab test has no external URL to extract from" }); return; }
-    const extracted = await extractCoADataFromAnyUrl(test.url);
+    // Prefer locally-stored bytes when we have them — a downloaded/uploaded CoA
+    // should be extractable even if the source URL is unreadable server-side
+    // (e.g. Janoshik blocks server-side fetches behind Cloudflare).
+    let extracted;
+    if (test.pdfBlob) {
+      const buf = Buffer.from(test.pdfBlob, "base64");
+      const mime = sniffBlobMime(buf);
+      extracted = await extractCoADataFromBuffer(buf, mime);
+    } else if (test.url) {
+      extracted = await extractCoADataFromAnyUrl(test.url);
+    } else {
+      res.status(422).json({ error: "This lab test has no stored file or external URL to extract from" });
+      return;
+    }
     if (!extracted) {
       res.status(422).json({ error: "Could not extract data — report unreadable or no media found" });
       return;
@@ -1667,7 +1679,7 @@ router.post("/admin/lab-tests/extract-all", async (req, res) => {
     }
 
     const tests = await db
-      .select({ id: labTestsTable.id, url: labTestsTable.url, supplier: labTestsTable.supplier, batchCode: labTestsTable.batchCode, peptideName: labTestsTable.peptideName })
+      .select({ id: labTestsTable.id, url: labTestsTable.url, pdfBlob: labTestsTable.pdfBlob, supplier: labTestsTable.supplier, batchCode: labTestsTable.batchCode, peptideName: labTestsTable.peptideName })
       .from(labTestsTable)
       .where(whereClause)
       .orderBy(labTestsTable.id);
@@ -1685,12 +1697,18 @@ router.post("/admin/lab-tests/extract-all", async (req, res) => {
         batchJob.currentId = test.id;
 
         try {
-          if (!test.url) {
+          let extracted;
+          if (test.pdfBlob) {
+            const buf = Buffer.from(test.pdfBlob, "base64");
+            const mime = sniffBlobMime(buf);
+            extracted = await extractCoADataFromBuffer(buf, mime);
+          } else if (test.url) {
+            extracted = await extractCoADataFromAnyUrl(test.url);
+          }
+          if (!test.url && !test.pdfBlob) {
             batchJob.failed++;
-            batchJob.errors.push({ id: test.id, url: null, reason: "No URL — file-only record" });
-          } else {
-          const extracted = await extractCoADataFromAnyUrl(test.url);
-          if (!extracted) {
+            batchJob.errors.push({ id: test.id, url: null, reason: "No stored file or URL" });
+          } else if (!extracted) {
             batchJob.failed++;
             batchJob.errors.push({ id: test.id, url: test.url, reason: "Report unreadable or no media found" });
           } else {
@@ -1722,7 +1740,6 @@ router.post("/admin/lab-tests/extract-all", async (req, res) => {
             await db.update(labTestsTable).set(updates).where(eq(labTestsTable.id, test.id));
             batchJob.succeeded++;
           }
-          } // end else (test.url exists)
         } catch (err) {
           batchJob.failed++;
           batchJob.errors.push({ id: test.id, url: test.url ?? null, reason: String(err) });
