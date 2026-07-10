@@ -211,6 +211,10 @@ interface OrgLabTest {
   productCategory: string | null;
   endotoxinEuMg: number | null;
   sterilityPass: boolean | null;
+  heavyMetalAs: string | null;
+  heavyMetalCd: string | null;
+  heavyMetalPb: string | null;
+  heavyMetalHg: string | null;
 }
 
 interface OrgParcel {
@@ -9750,6 +9754,7 @@ type LabReviewRow = {
   url: string; peptideName: string; labName: string; batchCode: string; purityPct: string;
   testDate: string; janoshikId: string; mgAmount: string; testType: string;
   productCategory: string; endotoxinEuMg: string; sterilityPass: string;
+  heavyMetalAs: string; heavyMetalCd: string; heavyMetalPb: string; heavyMetalHg: string;
 };
 
 function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
@@ -9772,6 +9777,7 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
   const defaultForm = {
     url: "", peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "", testDate: "",
     janoshikId: "", mgAmount: "", testType: "", productCategory: "", endotoxinEuMg: "", sterilityPass: "",
+    heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
   };
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
@@ -9802,6 +9808,7 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
       url: u, peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "",
       testDate: "", janoshikId: "", mgAmount: "", testType: "",
       productCategory: "", endotoxinEuMg: "", sterilityPass: "",
+      heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
     }));
     setReviewRows(prev => [...prev, ...newRows]);
     const startIdx = reviewRows.length;
@@ -9827,6 +9834,8 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
             testType: data.testType ?? "", productCategory: data.productCategory ?? "",
             endotoxinEuMg: data.endotoxinEuMg != null ? String(data.endotoxinEuMg) : "",
             sterilityPass: data.sterilityPass != null ? String(data.sterilityPass) : "",
+            heavyMetalAs: data.heavyMetalAs ?? "", heavyMetalCd: data.heavyMetalCd ?? "",
+            heavyMetalPb: data.heavyMetalPb ?? "", heavyMetalHg: data.heavyMetalHg ?? "",
           } : r));
         } else {
           const d = await res.json();
@@ -9865,6 +9874,10 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
           productCategory: row.productCategory.trim() || null,
           endotoxinEuMg: row.endotoxinEuMg ? parseFloat(row.endotoxinEuMg) : null,
           sterilityPass: row.sterilityPass !== "" ? row.sterilityPass === "true" : null,
+          heavyMetalAs: row.heavyMetalAs.trim() || null,
+          heavyMetalCd: row.heavyMetalCd.trim() || null,
+          heavyMetalPb: row.heavyMetalPb.trim() || null,
+          heavyMetalHg: row.heavyMetalHg.trim() || null,
         }),
       });
       if (res.ok) imported++; else failed++;
@@ -9902,6 +9915,12 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
             janoshikId: (data.janoshikId as string) ?? f.janoshikId,
             mgAmount: data.mgAmount != null ? String(data.mgAmount) : f.mgAmount,
             testType: (data.testType as string) ?? f.testType,
+            endotoxinEuMg: data.endotoxinEuMg != null ? String(data.endotoxinEuMg) : f.endotoxinEuMg,
+            sterilityPass: data.sterilityPass != null ? String(data.sterilityPass) : f.sterilityPass,
+            heavyMetalAs: (data.heavyMetalAs as string) || f.heavyMetalAs,
+            heavyMetalCd: (data.heavyMetalCd as string) || f.heavyMetalCd,
+            heavyMetalPb: (data.heavyMetalPb as string) || f.heavyMetalPb,
+            heavyMetalHg: (data.heavyMetalHg as string) || f.heavyMetalHg,
           }));
         } else {
           const d = await res.json();
@@ -9931,6 +9950,10 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
         productCategory: form.productCategory.trim() || null,
         endotoxinEuMg: form.endotoxinEuMg ? parseFloat(form.endotoxinEuMg) : null,
         sterilityPass: form.sterilityPass !== "" ? form.sterilityPass === "true" : null,
+        heavyMetalAs: form.heavyMetalAs.trim() || null,
+        heavyMetalCd: form.heavyMetalCd.trim() || null,
+        heavyMetalPb: form.heavyMetalPb.trim() || null,
+        heavyMetalHg: form.heavyMetalHg.trim() || null,
       }),
     });
     if (res.ok) {
@@ -9985,10 +10008,10 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
               {reviewRows.length > 0 && (
                 <div className="space-y-3">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-[11px]" style={{ minWidth: 700 }}>
+                    <table className="w-full text-[11px]" style={{ minWidth: 1050 }}>
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
-                          {["Link", "Status", "Peptide Name", "Lab", "Purity %", "mg", "Batch", "Test Date", "COA URL", ""].map(h => (
+                          {["Link", "Status", "Peptide Name", "Lab", "Purity %", "mg", "Batch", "Test Date", "Sterility", "As", "Cd", "Pb", "Hg", "COA URL", ""].map(h => (
                             <th key={h} className="text-left px-2 py-1.5 font-bold whitespace-nowrap" style={{ color: "var(--t-subtle)" }}>{h}</th>
                           ))}
                         </tr>
@@ -10009,6 +10032,17 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                             <td className="px-1 py-1"><input type="number" value={row.mgAmount} onChange={e => updateReviewRow(i, "mgAmount", e.target.value)} placeholder="mg" className={`${inputCls} text-[11px] h-7 py-0 w-14`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><input value={row.batchCode} onChange={e => updateReviewRow(i, "batchCode", e.target.value)} placeholder="Batch" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><input type="text" inputMode="numeric" value={row.testDate} onChange={e => updateReviewRow(i, "testDate", e.target.value)} placeholder="DD/MM/YYYY" className={`${inputCls} text-[11px] h-7 py-0 w-28`} style={inputStyle} /></td>
+                            <td className="px-1 py-1">
+                              <select value={row.sterilityPass} onChange={e => updateReviewRow(i, "sterilityPass", e.target.value)} className={`${inputCls} appearance-none text-[11px] h-7 py-0 w-20`} style={inputStyle}>
+                                <option value="">—</option>
+                                <option value="true">Pass</option>
+                                <option value="false">Fail</option>
+                              </select>
+                            </td>
+                            <td className="px-1 py-1"><input value={row.heavyMetalAs} onChange={e => updateReviewRow(i, "heavyMetalAs", e.target.value)} placeholder="n/d" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
+                            <td className="px-1 py-1"><input value={row.heavyMetalCd} onChange={e => updateReviewRow(i, "heavyMetalCd", e.target.value)} placeholder="n/d" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
+                            <td className="px-1 py-1"><input value={row.heavyMetalPb} onChange={e => updateReviewRow(i, "heavyMetalPb", e.target.value)} placeholder="n/d" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
+                            <td className="px-1 py-1"><input value={row.heavyMetalHg} onChange={e => updateReviewRow(i, "heavyMetalHg", e.target.value)} placeholder="n/d" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><input type="url" value={row.url} onChange={e => updateReviewRow(i, "url", e.target.value)} placeholder="https://..." className={`${inputCls} text-[11px] h-7 py-0 w-40`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><button onClick={() => removeReviewRow(i)} className="w-6 h-6 rounded flex items-center justify-center" style={{ background: "rgba(220,38,38,0.07)" }}><X className="w-3 h-3" style={{ color: "#DC2626" }} /></button></td>
                           </tr>
@@ -10080,6 +10114,10 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                       <option value="false">Fail</option>
                     </select>
                   </Field>
+                  <Field label="Arsenic (As)"><input value={form.heavyMetalAs} onChange={e => setForm(f => ({ ...f, heavyMetalAs: e.target.value }))} placeholder="not detected" className={inputCls} style={inputStyle} /></Field>
+                  <Field label="Cadmium (Cd)"><input value={form.heavyMetalCd} onChange={e => setForm(f => ({ ...f, heavyMetalCd: e.target.value }))} placeholder="not detected" className={inputCls} style={inputStyle} /></Field>
+                  <Field label="Lead (Pb)"><input value={form.heavyMetalPb} onChange={e => setForm(f => ({ ...f, heavyMetalPb: e.target.value }))} placeholder="not detected" className={inputCls} style={inputStyle} /></Field>
+                  <Field label="Mercury (Hg)"><input value={form.heavyMetalHg} onChange={e => setForm(f => ({ ...f, heavyMetalHg: e.target.value }))} placeholder="not detected" className={inputCls} style={inputStyle} /></Field>
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => { setMode("none"); setLabExtractedData(null); }} className="h-10 px-4 rounded-xl text-xs font-bold" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>Cancel</button>
@@ -10114,6 +10152,15 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                 {t.janoshikId && <span>ID: {t.janoshikId}</span>}
                 {t.testDate && <span>{new Date(t.testDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>}
                 {t.sterilityPass != null && <span>Sterility: {t.sterilityPass ? "Pass" : "Fail"}</span>}
+                {(t.heavyMetalAs || t.heavyMetalCd || t.heavyMetalPb || t.heavyMetalHg) && (
+                  <span>
+                    Metals:
+                    {t.heavyMetalAs && ` As ${t.heavyMetalAs}`}
+                    {t.heavyMetalCd && ` Cd ${t.heavyMetalCd}`}
+                    {t.heavyMetalPb && ` Pb ${t.heavyMetalPb}`}
+                    {t.heavyMetalHg && ` Hg ${t.heavyMetalHg}`}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex gap-1.5 shrink-0">

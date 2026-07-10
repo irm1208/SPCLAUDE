@@ -1302,6 +1302,12 @@ function SubmitSection() {
         mgAmount: ex.mgAmount != null ? String(ex.mgAmount) : f.mgAmount,
         purityPct: ex.purityPct != null ? String(ex.purityPct) : f.purityPct,
         testDate: ex.testDate?.trim() || f.testDate,
+        endotoxinEuMg: ex.endotoxinEuMg != null ? String(ex.endotoxinEuMg) : f.endotoxinEuMg,
+        sterilityPass: ex.sterilityPass != null ? String(ex.sterilityPass) : f.sterilityPass,
+        heavyMetalArsenic: ex.heavyMetalAs || f.heavyMetalArsenic,
+        heavyMetalCadmium: ex.heavyMetalCd || f.heavyMetalCadmium,
+        heavyMetalLead: ex.heavyMetalPb || f.heavyMetalLead,
+        heavyMetalMercury: ex.heavyMetalHg || f.heavyMetalMercury,
       }));
       setExtractNote({ ok: true, msg: `AI filled in what it could — review and adjust before submitting` });
     } catch { setExtractNote({ ok: false, msg: "Network error" }); }
@@ -1331,6 +1337,10 @@ function SubmitSection() {
           purityPct: form.purityPct !== "" ? parseFloat(form.purityPct) : null,
           endotoxinEuMg: form.endotoxinEuMg !== "" ? parseFloat(form.endotoxinEuMg) : null,
           sterilityPass: form.sterilityPass !== "" ? form.sterilityPass : null,
+          heavyMetalAs: form.heavyMetalArsenic.trim() || null,
+          heavyMetalCd: form.heavyMetalCadmium.trim() || null,
+          heavyMetalPb: form.heavyMetalLead.trim() || null,
+          heavyMetalHg: form.heavyMetalMercury.trim() || null,
           testDate: form.testDate.trim() || null,
         }),
       });

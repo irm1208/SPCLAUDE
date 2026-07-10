@@ -1854,6 +1854,12 @@ function SubmitSection() {
       mgAmount: ex.mgAmount != null ? String(ex.mgAmount) : f.mgAmount,
       purityPct: ex.purityPct != null ? String(ex.purityPct) : f.purityPct,
       testDate: (ex.testDate as string)?.trim() || f.testDate,
+      endotoxinEuMg: ex.endotoxinEuMg != null ? String(ex.endotoxinEuMg) : f.endotoxinEuMg,
+      sterilityPass: ex.sterilityPass != null ? String(ex.sterilityPass) : f.sterilityPass,
+      heavyMetalArsenic: (ex.heavyMetalAs as string) || f.heavyMetalArsenic,
+      heavyMetalCadmium: (ex.heavyMetalCd as string) || f.heavyMetalCadmium,
+      heavyMetalLead: (ex.heavyMetalPb as string) || f.heavyMetalLead,
+      heavyMetalMercury: (ex.heavyMetalHg as string) || f.heavyMetalMercury,
     }));
     setExtractNote({ ok: true, msg: "AI filled in what it could — review and adjust before submitting" });
   };
@@ -1908,6 +1914,10 @@ function SubmitSection() {
         if (form.purityPct) fd.append("purityPct", form.purityPct);
         if (form.endotoxinEuMg) fd.append("endotoxinEuMg", form.endotoxinEuMg);
         if (form.sterilityPass) fd.append("sterilityPass", form.sterilityPass);
+        if (form.heavyMetalArsenic.trim()) fd.append("heavyMetalAs", form.heavyMetalArsenic.trim());
+        if (form.heavyMetalCadmium.trim()) fd.append("heavyMetalCd", form.heavyMetalCadmium.trim());
+        if (form.heavyMetalLead.trim()) fd.append("heavyMetalPb", form.heavyMetalLead.trim());
+        if (form.heavyMetalMercury.trim()) fd.append("heavyMetalHg", form.heavyMetalMercury.trim());
         if (form.testDate.trim()) fd.append("testDate", form.testDate.trim());
         if (form.url.trim()) fd.append("url", form.url.trim());
         res = await fetch("/api/lab-tests/submit-pdf", { method: "POST", body: fd });
@@ -1930,6 +1940,10 @@ function SubmitSection() {
             purityPct: form.purityPct !== "" ? parseFloat(form.purityPct) : null,
             endotoxinEuMg: form.endotoxinEuMg !== "" ? parseFloat(form.endotoxinEuMg) : null,
             sterilityPass: form.sterilityPass !== "" ? form.sterilityPass : null,
+            heavyMetalAs: form.heavyMetalArsenic.trim() || null,
+            heavyMetalCd: form.heavyMetalCadmium.trim() || null,
+            heavyMetalPb: form.heavyMetalLead.trim() || null,
+            heavyMetalHg: form.heavyMetalMercury.trim() || null,
             testDate: form.testDate.trim() || null,
           }),
         });

@@ -512,7 +512,8 @@ router.post("/lab-tests/submit-pdf", upload.single("file"), async (req, res) => 
     const {
       peptideName, supplier, labName, testType, productCategory,
       isThirdPartyTest, mgAmount, purityPct, batchCode, testDate,
-      notes, submittedBy, url,
+      notes, submittedBy, url, endotoxinEuMg, sterilityPass,
+      heavyMetalAs, heavyMetalCd, heavyMetalPb, heavyMetalHg,
     } = req.body;
 
     if (!peptideName || !String(peptideName).trim()) {
@@ -546,6 +547,12 @@ router.post("/lab-tests/submit-pdf", upload.single("file"), async (req, res) => 
       mgAmount: mgAmount != null && mgAmount !== "" ? parseFloat(mgAmount) : null,
       batchCode: batchCode ? String(batchCode).trim() : null,
       purityPct: purityPct != null && purityPct !== "" ? parseFloat(purityPct) : null,
+      endotoxinEuMg: endotoxinEuMg != null && endotoxinEuMg !== "" ? parseFloat(endotoxinEuMg) : null,
+      sterilityPass: sterilityPass === true || sterilityPass === "true" ? true : sterilityPass === false || sterilityPass === "false" ? false : null,
+      heavyMetalAs: heavyMetalAs ? String(heavyMetalAs).trim() : null,
+      heavyMetalCd: heavyMetalCd ? String(heavyMetalCd).trim() : null,
+      heavyMetalPb: heavyMetalPb ? String(heavyMetalPb).trim() : null,
+      heavyMetalHg: heavyMetalHg ? String(heavyMetalHg).trim() : null,
       testDate: testDate ? String(testDate).trim() : null,
       notes: notes ? String(notes).trim().slice(0, 1000) : null,
       isThirdPartyTest: isThirdPartyTest === true || isThirdPartyTest === "true",
@@ -565,7 +572,8 @@ router.post("/lab-tests/submit", async (req, res) => {
     const {
       peptideName, supplier, labName, testType, productCategory,
       isThirdPartyTest, mgAmount, purityPct, endotoxinEuMg, sterilityPass,
-      batchCode, testDate, url, notes, submittedBy
+      batchCode, testDate, url, notes, submittedBy,
+      heavyMetalAs, heavyMetalCd, heavyMetalPb, heavyMetalHg,
     } = req.body;
 
     if (!url || typeof url !== "string" || !url.trim()) {
@@ -598,6 +606,10 @@ router.post("/lab-tests/submit", async (req, res) => {
       purityPct: purityPct != null && purityPct !== "" ? parseFloat(purityPct) : null,
       endotoxinEuMg: endotoxinEuMg != null && endotoxinEuMg !== "" ? parseFloat(endotoxinEuMg) : null,
       sterilityPass: sterilityPass === true || sterilityPass === "true" ? true : sterilityPass === false || sterilityPass === "false" ? false : null,
+      heavyMetalAs: heavyMetalAs ? String(heavyMetalAs).trim() : null,
+      heavyMetalCd: heavyMetalCd ? String(heavyMetalCd).trim() : null,
+      heavyMetalPb: heavyMetalPb ? String(heavyMetalPb).trim() : null,
+      heavyMetalHg: heavyMetalHg ? String(heavyMetalHg).trim() : null,
       testDate: testDate ? String(testDate).trim() : null,
       notes: notes ? String(notes).trim().slice(0, 1000) : null,
       isThirdPartyTest: isThirdPartyTest === true || isThirdPartyTest === "true",

@@ -1542,7 +1542,7 @@ router.post("/organiser/lab-tests/extract", requireOrganiser, async (req, res): 
     return;
   }
 
-  const LAB_EXTRACT_PROMPT = `You are analyzing a Certificate of Analysis (COA) or lab test report document.
+  const LAB_EXTRACT_PROMPT = `You are analyzing a Certificate of Analysis (COA) or lab test report document. The report may cover only ONE test type (e.g. a sterility-only report, or a heavy-metals-only add-on report) rather than a full panel — that is normal, just extract whatever is present and leave the rest null.
 Extract the following fields and return them as a JSON object:
 {
   "peptideName": "product/peptide name including dosage if present",
@@ -1554,15 +1554,20 @@ Extract the following fields and return them as a JSON object:
   "testDate": "YYYY-MM-DD format or null",
   "testType": "test method (e.g. HPLC, MS, HPLC-MS)",
   "endotoxinEuMg": 0.5,
-  "sterilityPass": true
+  "sterilityPass": true,
+  "heavyMetalAs": "not detected",
+  "heavyMetalCd": "not detected",
+  "heavyMetalPb": "not detected",
+  "heavyMetalHg": "not detected"
 }
 
 Rules:
-- All fields are optional — return null if not found.
+- All fields are optional — return null if not found anywhere in the document.
 - purityPct: numeric percentage (0-100), no % symbol.
 - mgAmount: numeric mg amount of product tested.
-- sterilityPass: boolean true/false or null if not tested.
+- sterilityPass: look for a sterility/microbial section (often shown as a TAMC/TYMC — Total Aerobic Microbial Count / Total Yeast and Mold Count — table). true if it says "pass"/"sterile"/"no growth", false if "fail"/"growth detected", null if not tested.
 - endotoxinEuMg: numeric EU/mg value or null.
+- heavyMetalAs/Cd/Pb/Hg: heavy metal results for Arsenic, Cadmium, Lead, and Mercury respectively. These are often shown as text values like "not detected", "< 0.5 ppm", or "1.2 ppb" in a Results table — but sometimes one or more of them (very commonly Mercury/Hg) is ONLY mentioned in a free-text "Comments" or "Notes" section instead of the main Results table. Carefully read any Comments/Notes text on the report and extract heavy metal values from there too, not just the table.
 - testDate: ISO date string YYYY-MM-DD or null.
 - Return ONLY the JSON object, no markdown, no extra text.`;
 

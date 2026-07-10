@@ -80,3 +80,4 @@
 - [Embedded app absolute asset paths](embedded-app-absolute-asset-paths.md) — third-party build iframed under a subpath can have runtime fetches hardcoded to site-root paths (base:'./' doesn't cover these); mirror the files at the expected absolute path.
 - [Lab test title resolution sites](lab-test-title-resolution-sites.md) — 3 duplicate title builders (LabTests.tsx, PrototypeLabTests.tsx, LabTestsPopup.tsx) must stay in sync; popup had zero batch-code resolution before.
 - [Sage/Claude proxy silently drops PDF document blocks](sage-proxy-pdf-document-blocks.md) — rasterize PDFs to an image (pdftoppm) before sending to Claude via the Sage proxy; native "document" content blocks are ignored, not errored.
+- [Lab test field multilayer drop](lab-test-field-multilayer-drop.md) — "field missing" bugs can hide independently in prompt/mapping/payload/backend-insert; trace field name through all 4 layers + backfill existing rows.

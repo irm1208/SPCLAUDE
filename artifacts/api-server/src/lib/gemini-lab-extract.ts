@@ -938,7 +938,7 @@ Guidelines:
 - mass_unit: The unit for mg_amount. Use "IU" if the report shows International Units (common for HCG, FSH, LH and similar hormones). Use "mg" for milligrams. If mg_amount is null, set this to null.
 - endotoxin_eu_mg: Extract endotoxin units (EU/mg or EU/vial). Convert any EU/vial to a number.
 - sterility_pass: true if test says "pass", "sterile", "no growth" — false if "fail", "growth detected".
-- heavy_metal_*: Text values like "not detected", "< 0.5 ppm", "1.2 ppb", etc.
+- heavy_metal_*: Text values like "not detected", "< 0.5 ppm", "1.2 ppb", etc. These often appear in a Results table, but sometimes one or more (very commonly Mercury/Hg) is ONLY mentioned in a free-text "Comments" or "Notes" section instead of the table — read any Comments/Notes text carefully and extract heavy metal values from there too, not just the table.
 - batch_code: Alphanumeric batch/lot identifier if present.
 - test_date: Date in ISO format (YYYY-MM-DD) if possible, or text like "Jan 2024".
 - test_type: Classify based on what was tested: mass_purity (HPLC/UHPLC purity + mass), mass (mass/weight measurement only, no purity), endotoxin (LAL test), sterility, heavy_metals, lcms.
