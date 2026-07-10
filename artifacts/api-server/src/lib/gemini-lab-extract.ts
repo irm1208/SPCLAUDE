@@ -39,7 +39,7 @@ async function rasterizePdfFirstPage(pdfBuffer: Buffer): Promise<{ mimeType: str
 }
 
 /** Converts an in-memory image/PDF part into an Anthropic-format content block for the Sage/Claude proxy. */
-async function toClaudeContentParts(parts: LabFilePart[]): Promise<ContentPart[]> {
+export async function toClaudeContentParts(parts: LabFilePart[]): Promise<ContentPart[]> {
   const out: ContentPart[] = [];
   for (const { inlineData: { mimeType, data } } of parts) {
     if (mimeType === "application/pdf") {
@@ -819,7 +819,7 @@ export async function extractBatchNumbersFromImages(
 
 // ── Shared Claude (Sage proxy) caller ────────────────────────────────────────
 
-type LabFilePart = { inlineData: { mimeType: string; data: string } };
+export type LabFilePart = { inlineData: { mimeType: string; data: string } };
 
 async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
   if (parts.length === 0) return null;

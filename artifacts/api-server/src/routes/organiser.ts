@@ -27,6 +27,8 @@ import { writeLog } from "../lib/audit-log";
 import { notifyUser, notifyUserFromTemplate, sendTelegramMessage, sendAdminFromTemplate } from "../lib/telegram";
 import { GoogleGenAI } from "../lib/google-genai";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
+import { callSageAI, type ContentPart } from "../lib/sage-ai";
+import { toClaudeContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -1565,7 +1567,7 @@ Rules:
 - Return ONLY the JSON object, no markdown, no extra text.`;
 
   try {
-    let parts: { text?: string; inlineData?: { mimeType: string; data: string } }[];
+    let sageContent: ContentPart[];
 
     if (url) {
       // ── Allowlist-based SSRF protection ───────────────────────────────────────
@@ -1626,8 +1628,8 @@ Rules:
         res.status(502).json({ error: `Failed to fetch URL: ${msg}` });
         return;
       }
-      parts = [
-        { text: `The following is the text content from this COA/lab test URL: ${url}\n\n---\n\n${pageText}\n\n---\n\n${LAB_EXTRACT_PROMPT}` },
+      sageContent = [
+        { type: "text", text: `The following is the text content from this COA/lab test URL: ${url}\n\n---\n\n${pageText}\n\n---\n\n${LAB_EXTRACT_PROMPT}` },
       ];
     } else {
       // File upload path
@@ -1641,20 +1643,23 @@ Rules:
         return;
       }
       const rawBase64 = fileBase64!.replace(/^data:[^;]+;base64,/, "");
-      parts = [
-        { inlineData: { mimeType: mimeType!, data: rawBase64 } },
-        { text: LAB_EXTRACT_PROMPT },
-      ];
+      const filePart: LabFilePart = { inlineData: { mimeType: mimeType!, data: rawBase64 } };
+      const imageParts = await toClaudeContentParts([filePart]);
+      if (imageParts.length === 0) {
+        res.status(502).json({ error: "Failed to process the uploaded file for extraction" });
+        return;
+      }
+      sageContent = [...imageParts, { type: "text", text: LAB_EXTRACT_PROMPT }];
     }
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts }],
-      config: { temperature: 0.1, maxOutputTokens: 1024 },
-    });
+    const rawText = (await callSageAI({
+      messages: [{ role: "user", content: sageContent }],
+      maxTokens: 1024,
+      temperature: 0.1,
+      enableWebSearch: false,
+    })).trim();
 
-    const text = (response.text ?? "").trim();
-    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     let extracted: Record<string, unknown> = {};
     try {
@@ -1668,7 +1673,7 @@ Rules:
 
     res.json(extracted);
   } catch (err) {
-    console.error("[organiser:lab-tests/extract] Gemini error:", err);
+    console.error("[organiser:lab-tests/extract] Sage extraction error:", err);
     res.status(500).json({ error: "Failed to extract lab test data" });
   }
 });
