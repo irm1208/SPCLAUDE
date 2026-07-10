@@ -1,13 +1,57 @@
+import { execFile } from "child_process";
+import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { promisify } from "util";
 import { callSageAI, type ContentPart } from "./sage-ai";
 
+const execFileAsync = promisify(execFile);
+
+/**
+ * Rasterizes the first page of a PDF to a PNG using poppler's `pdftoppm`.
+ *
+ * The Sage/Claude proxy does not support Anthropic's native `document`
+ * content block (verified empirically: the model reports "no document
+ * attached" even though the block is present in the request body). Real
+ * PDFs only reach this pipeline via Uzorak's Google-Drive `report_url`
+ * fallback, so we convert to an image up front instead of relying on
+ * document support that this proxy doesn't have.
+ */
+async function rasterizePdfFirstPage(pdfBuffer: Buffer): Promise<{ mimeType: string; data: string } | null> {
+  const dir = await mkdtemp(join(tmpdir(), "lab-pdf-"));
+  const inputPath = join(dir, "input.pdf");
+  const outputPrefix = join(dir, "page");
+  try {
+    await writeFile(inputPath, pdfBuffer);
+    await execFileAsync(
+      "pdftoppm",
+      ["-png", "-r", "150", "-singlefile", "-f", "1", "-l", "1", inputPath, outputPrefix],
+      { timeout: 30_000 },
+    );
+    const png = await readFile(`${outputPrefix}.png`);
+    return { mimeType: "image/png", data: png.toString("base64") };
+  } catch (err) {
+    console.error("[lab-extract] PDF rasterization failed:", err);
+    return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Converts an in-memory image/PDF part into an Anthropic-format content block for the Sage/Claude proxy. */
-function toClaudeContentParts(parts: LabFilePart[]): ContentPart[] {
-  return parts.map(({ inlineData: { mimeType, data } }): ContentPart => {
+async function toClaudeContentParts(parts: LabFilePart[]): Promise<ContentPart[]> {
+  const out: ContentPart[] = [];
+  for (const { inlineData: { mimeType, data } } of parts) {
     if (mimeType === "application/pdf") {
-      return { type: "document", source: { type: "base64", media_type: mimeType, data } };
+      const rasterized = await rasterizePdfFirstPage(Buffer.from(data, "base64"));
+      if (rasterized) {
+        out.push({ type: "image", source: { type: "base64", media_type: rasterized.mimeType, data: rasterized.data } });
+      }
+      continue;
     }
-    return { type: "image", source: { type: "base64", media_type: mimeType, data } };
-  });
+    out.push({ type: "image", source: { type: "base64", media_type: mimeType, data } });
+  }
+  return out;
 }
 
 const IMAGE_CACHE = new Map<string, { urls: string[]; ts: number }>();
@@ -741,10 +785,12 @@ export async function extractBatchNumbersFromImages(
     .map(f => ({ inlineData: { mimeType: f.mimeType, data: f.data.toString("base64") } }));
   if (imageParts.length === 0) return [];
   try {
+    const contentParts = await toClaudeContentParts(imageParts);
+    if (contentParts.length === 0) return [];
     const text = (await callSageAI({
       messages: [{
         role: "user",
-        content: [...toClaudeContentParts(imageParts), { type: "text", text: BATCH_NUMBERS_PROMPT }],
+        content: [...contentParts, { type: "text", text: BATCH_NUMBERS_PROMPT }],
       }],
       maxTokens: 512,
       temperature: 0.1,
@@ -778,10 +824,12 @@ type LabFilePart = { inlineData: { mimeType: string; data: string } };
 async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
   if (parts.length === 0) return null;
   try {
+    const contentParts = await toClaudeContentParts(parts);
+    if (contentParts.length === 0) return null;
     const text = (await callSageAI({
       messages: [{
         role: "user",
-        content: [...toClaudeContentParts(parts), { type: "text", text: EXTRACT_PROMPT }],
+        content: [...contentParts, { type: "text", text: EXTRACT_PROMPT }],
       }],
       maxTokens: 1024,
       temperature: 0.1,

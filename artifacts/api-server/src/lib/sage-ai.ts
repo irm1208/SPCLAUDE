@@ -5,7 +5,7 @@
  *   SAGE_PROXY_BASE_URL     – base URL (default: https://cn.zhihuiai.top)
  *   SAGE_PROXY_MODEL        – primary model name (default: claude-opus-4-7), overridable at runtime
  *                             via the `sage_ai_model` site_config key (set from the Admin panel)
- *   SAGE_PROXY_FALLBACK_MODEL – fallback model when primary has no tokens (default: claude-3-5-sonnet-20241022)
+ *   SAGE_PROXY_FALLBACK_MODEL – fallback model when primary has no tokens (default: claude-sonnet-4-5-20250929)
  *
  * `callSageAI` also accepts a per-call `apiKey`/`baseUrl` override (used by the admin test-chat
  * panel to let an individual admin test with their own personal Anthropic credentials, stored only
@@ -20,7 +20,10 @@ export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 
 const BASE_URL       = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
 const DEFAULT_MODEL  = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
-const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-3-5-sonnet-20241022";
+// NOTE: the hardcoded fallback below was previously "claude-3-5-sonnet-20241022", which a live
+// probe against the configured proxy account showed is unavailable (503 model_not_found — no
+// channel access under this account's group). "claude-sonnet-4-5-20250929" was verified working.
+const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-sonnet-4-5-20250929";
 
 /**
  * Parse Anthropic-format SSE text into a plain text string.

@@ -22,3 +22,9 @@ The Sage health chatbot's active model is stored in `site_config` under the key 
 **Why:** the allowlist is a source-controlled file, so adding a brand-new proxy-supported model previously required a code change + redeploy; letting admins self-register a model ID removes that bottleneck.
 
 **How to apply:** if the allowlist validation logic is ever refactored, keep custom-model lookups case-insensitive and deduped against the hardcoded list (an admin can't shadow/duplicate a hardcoded name); removing a custom model that is currently the active/saved model must fall back to the configured fallback model, never leave a dangling reference.
+
+**Stale `sage_ai_model` config breaks ALL Sage calls, not just chat (found 2026-07-10):** a leftover dev-DB `site_config` row can pin `sage_ai_model` to a model the current proxy account has no channel access to, causing every `callSageAI` invocation — chat AND unrelated features like lab-cert extraction — to fail with `503 model_not_found`. On this proxy account, `claude-3-5-sonnet-20241022` and `claude-3-7-sonnet-20250219` do NOT work; `claude-opus-4-7` and `claude-sonnet-4-5-20250929` do. `FALLBACK_MODEL`'s hardcoded default was fixed from the former (broken) to `claude-sonnet-4-5-20250929`.
+
+**Why:** model availability is proxy-account-specific and can silently drift out of sync with a stored config value with no error until a call is actually attempted; the failure surfaces on whatever feature happens to call `callSageAI` next, which can look unrelated to the actual root cause.
+
+**How to apply:** if any Sage AI feature returns `model_not_found`/503 with no obvious code cause, check the `site_config.sage_ai_model` row and probe candidate model names directly before assuming a code bug.
