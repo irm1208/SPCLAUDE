@@ -4934,6 +4934,8 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
         completedCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'Completed')::int`,
         cancelledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'Cancelled')::int`,
         pendingPaymentCount: sql<number>`count(*) filter (where ${ordersTable.paymentStatus} in ('pending_confirmation','test_ready','test_confirmed'))::int`,
+        paidCount: sql<number>`count(*) filter (where ${ordersTable.paymentStatus} in ('confirmed','test_confirmed'))::int`,
+        unpaidCount: sql<number>`count(*) filter (where ${ordersTable.paymentStatus} = 'unpaid')::int`,
       })
       .from(ordersTable)
       .groupBy(ordersTable.telegramUsername);
@@ -4950,7 +4952,7 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
     const accounts = await db.select().from(accountsTable).orderBy(desc(accountsTable.createdAt));
 
     // Merge and filter
-    const zeroStats = { orderCount: 0, totalSpent: 0, lastOrderAt: null, draftCount: 0, submittedCount: 0, processingCount: 0, shippedCount: 0, completedCount: 0, cancelledCount: 0, pendingPaymentCount: 0 };
+    const zeroStats = { orderCount: 0, totalSpent: 0, lastOrderAt: null, draftCount: 0, submittedCount: 0, processingCount: 0, shippedCount: 0, completedCount: 0, cancelledCount: 0, pendingPaymentCount: 0, paidCount: 0, unpaidCount: 0 };
     // Fetch customer tags
     const customerTagRows = await db.select({
       telegramUsername: customersTable.telegramUsername,

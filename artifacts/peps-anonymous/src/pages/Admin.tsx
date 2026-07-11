@@ -10374,6 +10374,8 @@ interface UsernameRow {
   email?: string | null;
   accountStatus?: string | null;
   pendingPaymentCount?: number;
+  paidCount?: number;
+  unpaidCount?: number;
   createdAt?: string | null;
   tags?: string[] | null;
   telegramConnected?: boolean;
@@ -12086,6 +12088,7 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [kpi, setKpi] = useState<AccountsKpi | null>(null);
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid" | "pending">("all");
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
   const [membersPage, setMembersPage] = useState(0);
   const MEMBERS_PAGE_SIZE = 50;
@@ -12224,6 +12227,13 @@ function UsernamesTab({ secret }: { secret: string }) {
     })
     .filter(r => countryFilter.length === 0 || countryFilter.includes(normalizeCountry(r.country ?? "")))
     .filter(r => {
+      if (paymentFilter === "all") return true;
+      if (paymentFilter === "paid") return (r.paidCount ?? 0) > 0;
+      if (paymentFilter === "unpaid") return (r.unpaidCount ?? 0) > 0;
+      if (paymentFilter === "pending") return (r.pendingPaymentCount ?? 0) > 0;
+      return true;
+    })
+    .filter(r => {
       if (roleFilter === "all") return true;
       if (roleFilter === "organiser") return (
         r.organiserStatus === "approved" || r.organiserStatus === "applied"
@@ -12254,7 +12264,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   // Reset to page 0 when any filter/sort/search changes
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
 
   return (
     <div className="space-y-4">
@@ -12359,6 +12369,16 @@ function UsernamesTab({ secret }: { secret: string }) {
 
       {/* Status filter + tag filter + sort */}
       <div className="flex gap-2 flex-wrap">
+        <select
+          className="h-9 rounded-lg border bg-background px-3 text-xs font-medium text-foreground flex-1 min-w-[140px]"
+          value={paymentFilter}
+          onChange={e => setPaymentFilter(e.target.value as typeof paymentFilter)}
+        >
+          <option value="all">All payments</option>
+          <option value="paid">Has paid order</option>
+          <option value="unpaid">Has unpaid order</option>
+          <option value="pending">Has pending order</option>
+        </select>
         <select
           className="h-9 rounded-lg border bg-background px-3 text-xs font-medium text-foreground flex-1 min-w-[140px]"
           value={statusFilter}
