@@ -651,6 +651,7 @@ router.get("/admin/group-buys/:id/products", async (req, res): Promise<void> => 
       priceOverride: groupBuyProductsTable.priceOverride,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
+      maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
       name: productsTable.name,
     })
     .from(groupBuyProductsTable)
@@ -670,7 +671,7 @@ router.post("/admin/group-buys/:id/products", async (req, res): Promise<void> =>
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
-  const { productIds, productId, priceOverride, active, sortOrder } = req.body;
+  const { productIds, productId, priceOverride, active, sortOrder, maxPerCustomer } = req.body;
 
   const [gb] = await db.select({ id: groupBuysTable.id }).from(groupBuysTable).where(eq(groupBuysTable.id, id));
   if (!gb) {
@@ -705,6 +706,7 @@ router.post("/admin/group-buys/:id/products", async (req, res): Promise<void> =>
         priceOverride: priceOverride != null ? String(parseFloat(String(priceOverride)).toFixed(2)) : undefined,
         active: active !== false,
         sortOrder: sortOrder != null ? parseInt(String(sortOrder)) : undefined,
+        maxPerCustomer: maxPerCustomer != null ? parseInt(String(maxPerCustomer)) : undefined,
       });
       insertedCount++;
     }
@@ -718,7 +720,7 @@ router.patch("/admin/group-buys/:id/products/:productId", async (req, res): Prom
   if (!requireAdmin(req, res)) return;
 
   const { id, productId } = req.params;
-  const { priceOverride, active, sortOrder } = req.body;
+  const { priceOverride, active, sortOrder, maxPerCustomer } = req.body;
 
   // Build a strongly-typed partial update — no any casts
   const updates: Partial<Omit<GroupBuyProduct, "id" | "groupBuyId" | "productId">> = {};
@@ -730,6 +732,7 @@ router.patch("/admin/group-buys/:id/products/:productId", async (req, res): Prom
   }
   if (active !== undefined) updates.active = Boolean(active);
   if (sortOrder !== undefined) updates.sortOrder = sortOrder != null ? parseInt(String(sortOrder)) : null;
+  if (maxPerCustomer !== undefined) updates.maxPerCustomer = maxPerCustomer != null ? parseInt(String(maxPerCustomer)) : null;
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No fields to update" });

@@ -923,6 +923,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
       priceOverride: groupBuyProductsTable.priceOverride,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
+      maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
       name: productsTable.name,
       vendor: productsTable.vendor,
       price: productsTable.price,
@@ -1016,12 +1017,12 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
   });
 });
 
-// PATCH /api/organiser/group-buys/:id/products/:productId — update product
+// PATCH /api/organiser/group-buys/:id/products/:productId — update product or GB-link fields
 router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]); const productId = String(req.params["productId"]);
 
-  // Verify ownership
+  // Verify GB belongs to this organiser
   const [gb] = await db
     .select({ id: groupBuysTable.id })
     .from(groupBuysTable)
@@ -1029,45 +1030,57 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
 
-  const [product] = await db
-    .select({ id: productsTable.id, organiserId: productsTable.organiserId })
-    .from(productsTable)
-    .where(and(eq(productsTable.id, productId), eq(productsTable.organiserId, username)));
+  const { name, price, category, stock, active, priceOverride, mgSize, maxPerCustomer } = req.body;
 
-  if (!product) { res.status(404).json({ error: "Product not found or not owned by you" }); return; }
+  const hasProductFields = name !== undefined || price !== undefined || category !== undefined
+    || stock !== undefined || active !== undefined || mgSize !== undefined;
 
-  const { name, price, category, stock, active, priceOverride, mgSize } = req.body;
-
+  // Product-level fields require ownership of the product
   const productUpdates: Record<string, unknown> = {};
-  if (name !== undefined) productUpdates.name = String(name).trim();
-  if (price !== undefined) {
-    const p = parseFloat(String(price));
-    if (isNaN(p) || p < 0) { res.status(400).json({ error: "price must be non-negative" }); return; }
-    productUpdates.price = p.toFixed(2);
-  }
-  if (category !== undefined) productUpdates.category = category ? String(category).trim() : null;
-  if (mgSize !== undefined) productUpdates.mgSize = mgSize ? String(mgSize).trim() : null;
-  if (stock !== undefined) productUpdates.stock = stock != null ? parseInt(String(stock)) : null;
-  if (active !== undefined) productUpdates.active = Boolean(active);
+  if (hasProductFields) {
+    const [ownedProduct] = await db
+      .select({ id: productsTable.id })
+      .from(productsTable)
+      .where(and(eq(productsTable.id, productId), eq(productsTable.organiserId, username)));
 
-  if (Object.keys(productUpdates).length > 0) {
-    await db.update(productsTable).set(productUpdates).where(eq(productsTable.id, productId));
+    if (!ownedProduct) { res.status(403).json({ error: "Product not found or not owned by you" }); return; }
+
+    if (name !== undefined) productUpdates.name = String(name).trim();
+    if (price !== undefined) {
+      const p = parseFloat(String(price));
+      if (isNaN(p) || p < 0) { res.status(400).json({ error: "price must be non-negative" }); return; }
+      productUpdates.price = p.toFixed(2);
+    }
+    if (category !== undefined) productUpdates.category = category ? String(category).trim() : null;
+    if (mgSize !== undefined) productUpdates.mgSize = mgSize ? String(mgSize).trim() : null;
+    if (stock !== undefined) productUpdates.stock = stock != null ? parseInt(String(stock)) : null;
+    if (active !== undefined) productUpdates.active = Boolean(active);
+
+    if (Object.keys(productUpdates).length > 0) {
+      await db.update(productsTable).set(productUpdates).where(eq(productsTable.id, productId));
+    }
   }
 
-  // Update price override in the GB link
+  // GB-link fields (priceOverride, maxPerCustomer) — only GB ownership required
+  const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null } = {};
   if (priceOverride !== undefined) {
-    const po = priceOverride != null && priceOverride !== ""
+    gbLinkUpdates.priceOverride = priceOverride != null && priceOverride !== ""
       ? String(parseFloat(String(priceOverride)).toFixed(2))
       : null;
+  }
+  if (maxPerCustomer !== undefined) {
+    gbLinkUpdates.maxPerCustomer = maxPerCustomer != null ? parseInt(String(maxPerCustomer)) : null;
+  }
+  if (Object.keys(gbLinkUpdates).length > 0) {
     await db
       .update(groupBuyProductsTable)
-      .set({ priceOverride: po })
+      .set(gbLinkUpdates)
       .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
   }
 
   writeLog("change", "info", "organiser_product_updated",
     `Organiser @${username} updated product ${productId} in GB ${id}`,
-    { gbId: id, productId, username, changedFields: [...Object.keys(productUpdates), ...(priceOverride !== undefined ? ["priceOverride"] : [])] },
+    { gbId: id, productId, username, changedFields: [...Object.keys(productUpdates), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : [])] },
   ).catch(() => {});
 
   res.json({ ok: true });

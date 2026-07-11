@@ -587,7 +587,7 @@ export const POPULAR_COUNTRIES: { code: string; name: string }[] = [
 
 export const GBP_TO_USD = 1.27;
 
-export interface GBProduct { id: string; groupBuyId: string; productId: string; priceOverride: number | null; active: boolean; sortOrder: number | null }
+export interface GBProduct { id: string; groupBuyId: string; productId: string; priceOverride: number | null; active: boolean; sortOrder: number | null; maxPerCustomer: number | null }
 export interface DeliveryMethod { id: string; name: string; price: number; active: boolean; sortOrder: number | null }
 export interface GBDeliveryMethod { id: string; groupBuyId: string; deliveryMethodId: string }
 export type Member = { telegramUsername: string; email: string | null; accountStatus: string; hasPassword: boolean; hasTelegram: boolean; joinedAt: string; tags: string[]; allowExtraOrder: boolean }

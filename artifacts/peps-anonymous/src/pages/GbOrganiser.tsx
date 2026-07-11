@@ -149,6 +149,7 @@ interface OrgProduct {
   active: boolean;
   vendor: string | null;
   halfKitEnabled: boolean;
+  maxPerCustomer: number | null;
 }
 
 interface OrgOrder {
@@ -5439,6 +5440,8 @@ function ProductsTab({ gb }: { gb: OrganiserGB }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editTarget, setEditTarget] = useState<OrgProduct | null>(null);
   const [togglingHalfKit, setTogglingHalfKit] = useState<string | null>(null);
+  const [pendingMaxPerCustomer, setPendingMaxPerCustomer] = useState<Record<string, string>>({});
+  const [savingMaxPerCustomer, setSavingMaxPerCustomer] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<"none" | "csv" | "ai">("none");
   const [aiRows, setAiRows] = useState<ImportRow[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -5494,6 +5497,28 @@ function ProductsTab({ gb }: { gb: OrganiserGB }) {
         setProducts(p => p.map(x => x.id === productId ? { ...x, halfKitEnabled: !current } : x));
       }
     } catch { /* ignore */ } finally { setTogglingHalfKit(null); }
+  };
+
+  const saveMaxPerCustomer = async (productId: string) => {
+    setSavingMaxPerCustomer(productId);
+    const val = pendingMaxPerCustomer[productId];
+    const parsed = val === "" ? null : parseInt(val);
+    if (val !== "" && (isNaN(parsed!) || parsed! < 1)) {
+      setSavingMaxPerCustomer(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/products/${productId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ maxPerCustomer: parsed }),
+      });
+      if (res.ok) {
+        setProducts(prev => prev.map(p => p.id === productId ? { ...p, maxPerCustomer: parsed } : p));
+        setPendingMaxPerCustomer(prev => { const n = { ...prev }; delete n[productId]; return n; });
+      }
+    } catch { /* ignore */ } finally { setSavingMaxPerCustomer(null); }
   };
 
   const handleFileAI = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -5854,14 +5879,43 @@ function ProductsTab({ gb }: { gb: OrganiserGB }) {
 
       <div className="space-y-2">
         {products.map(p => (
-          <div key={p.id} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+          <div key={p.id} className="flex items-center gap-3 px-4 py-3 rounded-xl flex-wrap" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 {p.mgSize && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(16,185,129,0.08)", color: "#059669" }}>{p.mgSize}</span>}
                 {p.category && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>{p.category}</span>}
                 {p.stock != null && <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Stock: {p.stock}</span>}
+                {p.maxPerCustomer != null && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(234,179,8,0.1)", color: "#CA8A04" }}>
+                    Max {p.maxPerCustomer}/cust
+                  </span>
+                )}
               </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Max/cust</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                placeholder="∞"
+                value={pendingMaxPerCustomer[p.id] ?? (p.maxPerCustomer != null ? String(p.maxPerCustomer) : "")}
+                onChange={e => setPendingMaxPerCustomer(prev => ({ ...prev, [p.id]: e.target.value }))}
+                className="w-14 h-7 text-xs rounded-lg border px-2 bg-transparent"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}
+              />
+              {pendingMaxPerCustomer[p.id] !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => saveMaxPerCustomer(p.id)}
+                  disabled={savingMaxPerCustomer === p.id}
+                  className="h-7 w-7 rounded-lg flex items-center justify-center disabled:opacity-50"
+                  style={{ background: "rgba(22,163,74,0.15)", color: "#16A34A" }}
+                >
+                  {savingMaxPerCustomer === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                </button>
+              )}
             </div>
             <span className="text-sm font-bold tabular-nums" style={{ color: "var(--t-text)" }}>{gb.currency} {p.price.toFixed(2)}</span>
             <button

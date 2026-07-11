@@ -421,6 +421,7 @@ router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise
       priceOverride: groupBuyProductsTable.priceOverride,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
+      maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
       name: productsTable.name,
       category: productsTable.category,
       price: productsTable.price,
@@ -448,6 +449,7 @@ router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise
     vendor: r.vendor,
     mgSize: r.mgSize,
     halfKitEnabled: r.halfKitEnabled,
+    maxPerCustomer: r.maxPerCustomer,
   }));
 
   res.json(result);

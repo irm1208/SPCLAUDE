@@ -182,6 +182,8 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
   const [toggling, setToggling] = useState<string | null>(null);
   const [togglingHalfKit, setTogglingHalfKit] = useState<string | null>(null);
   const [savingOverride, setSavingOverride] = useState<string | null>(null);
+  const [pendingMaxPerCustomer, setPendingMaxPerCustomer] = useState<Record<string, string>>({});
+  const [savingMaxPerCustomer, setSavingMaxPerCustomer] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
@@ -319,6 +321,26 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
       }
     } catch { setActionErr("Network error"); }
     setSavingOverride(null);
+  };
+
+  const saveMaxPerCustomer = async (productId: string) => {
+    setSavingMaxPerCustomer(productId);
+    setActionErr("");
+    const val = pendingMaxPerCustomer[productId];
+    const saveVal = val === "" ? null : parseInt(val);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}/products/${productId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ maxPerCustomer: saveVal }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setActionErr(d.error ?? "Failed to save limit"); }
+      else {
+        await load();
+        setPendingMaxPerCustomer(prev => { const n = { ...prev }; delete n[productId]; return n; });
+      }
+    } catch { setActionErr("Network error"); }
+    setSavingMaxPerCustomer(null);
   };
 
   const toggleHalfKit = async (productId: string, current: boolean) => {
@@ -506,25 +528,46 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
                 </p>
               </div>
               {isOn && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-mono">{displayCurrency}</span>
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-mono">{displayCurrency}</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Override"
+                        value={override}
+                        onChange={e => setPendingOverride(prev => ({ ...prev, [product.id]: e.target.value }))}
+                        className="w-36 h-8 text-xs pl-9"
+                      />
+                    </div>
+                    {pendingOverride[product.id] !== undefined && (
+                      <button type="button" onClick={() => saveOverride(product.id)}
+                        disabled={savingOverride === product.id}
+                        className="h-8 px-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50">
+                        {savingOverride === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Max/cust</span>
                     <Input
                       type="number"
-                      step="0.01"
-                      placeholder="Override"
-                      value={override}
-                      onChange={e => setPendingOverride(prev => ({ ...prev, [product.id]: e.target.value }))}
-                      className="w-36 h-8 text-xs pl-9"
+                      min="1"
+                      step="1"
+                      placeholder="∞"
+                      value={pendingMaxPerCustomer[product.id] ?? (linked?.maxPerCustomer != null ? String(linked.maxPerCustomer) : "")}
+                      onChange={e => setPendingMaxPerCustomer(prev => ({ ...prev, [product.id]: e.target.value }))}
+                      className="w-16 h-8 text-xs"
                     />
+                    {pendingMaxPerCustomer[product.id] !== undefined && (
+                      <button type="button" onClick={() => saveMaxPerCustomer(product.id)}
+                        disabled={savingMaxPerCustomer === product.id}
+                        className="h-8 px-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
+                        {savingMaxPerCustomer === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                    )}
                   </div>
-                  {pendingOverride[product.id] !== undefined && (
-                    <button type="button" onClick={() => saveOverride(product.id)}
-                      disabled={savingOverride === product.id}
-                      className="h-8 px-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50">
-                      {savingOverride === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                    </button>
-                  )}
                 </div>
               )}
               <button

@@ -12,6 +12,7 @@ import {
   accountGroupBuysTable,
   accountsTable,
   groupBuysTable,
+  groupBuyProductsTable,
   gbTestingRoundsTable,
   gbReshippersTable,
   gbCountryLegsTable,
@@ -23,7 +24,7 @@ import {
   EDITABLE_STATUSES,
   type OrderStatus,
 } from "@workspace/db";
-import { eq, and, or, ne, sql, desc, count, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, ne, sql, desc, count, inArray, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { writeLog } from "../lib/audit-log";
 import { createAlert } from "../lib/create-alert";
@@ -632,6 +633,44 @@ router.post("/orders", async (req, res): Promise<void> => {
           error: `This group buy has reached its kit limit. Only ${remaining} kit(s) remain available from the total of ${gb.maxKitsTotal}.`,
         });
         return;
+      }
+    }
+
+    // ── Per-product per-customer limit check ─────────────────────────────────
+    if (!gb.allowExtraOrders && !membership.allowExtraOrder) {
+      const productLimits = await db
+        .select({ productId: groupBuyProductsTable.productId, maxPerCustomer: groupBuyProductsTable.maxPerCustomer })
+        .from(groupBuyProductsTable)
+        .where(and(
+          eq(groupBuyProductsTable.groupBuyId, normalizedGroupBuyId),
+          isNotNull(groupBuyProductsTable.maxPerCustomer),
+        ));
+
+      for (const limit of productLimits) {
+        const newItem = (clientLineItems as Array<{ productId: string; productName?: string; quantity: number }>)
+          .find(li => li.productId === limit.productId);
+        if (!newItem) continue;
+
+        const newQty = parseFloat(String(newItem.quantity));
+        const [existingRow] = await db
+          .select({ total: sql<string>`coalesce(sum(cast(${orderLineItemsTable.quantity} as numeric)), 0)` })
+          .from(orderLineItemsTable)
+          .innerJoin(ordersTable, eq(orderLineItemsTable.orderId, ordersTable.id))
+          .where(and(
+            eq(ordersTable.groupBuyId, normalizedGroupBuyId),
+            eq(ordersTable.telegramUsername, tg),
+            eq(orderLineItemsTable.productId, limit.productId),
+          ));
+
+        const existingQty = parseFloat(existingRow?.total ?? "0");
+        if (existingQty + newQty > limit.maxPerCustomer!) {
+          const remaining = Math.max(0, limit.maxPerCustomer! - existingQty);
+          const productName = newItem.productName ?? "this product";
+          res.status(400).json({
+            error: `Product limit exceeded for "${productName}". Max ${limit.maxPerCustomer} per customer — you have ${existingQty} ordered and ${remaining} remaining.`,
+          });
+          return;
+        }
       }
     }
 
