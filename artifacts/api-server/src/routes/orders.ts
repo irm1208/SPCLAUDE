@@ -1703,6 +1703,61 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
     return;
   }
 
+  // ── Per-product per-customer limit check (on edit / top-up) ──────────────
+  if (order.groupBuyId) {
+    const [editGb] = await db
+      .select({ allowExtraOrders: groupBuysTable.allowExtraOrders })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, order.groupBuyId));
+
+    const [editMembership] = await db
+      .select({ allowExtraOrder: accountGroupBuysTable.allowExtraOrder })
+      .from(accountGroupBuysTable)
+      .where(and(
+        eq(accountGroupBuysTable.groupBuyId, order.groupBuyId),
+        eq(accountGroupBuysTable.telegramUsername, tg),
+      ));
+
+    if (!editGb?.allowExtraOrders && !editMembership?.allowExtraOrder) {
+      const productLimits = await db
+        .select({ productId: groupBuyProductsTable.productId, maxPerCustomer: groupBuyProductsTable.maxPerCustomer })
+        .from(groupBuyProductsTable)
+        .where(and(
+          eq(groupBuyProductsTable.groupBuyId, order.groupBuyId),
+          isNotNull(groupBuyProductsTable.maxPerCustomer),
+        ));
+
+      for (const limit of productLimits) {
+        const newItem = (clientLineItems as Array<{ productId: string; productName?: string; quantity: number }>)
+          .find(li => li.productId === limit.productId);
+
+        const newQty = newItem ? parseFloat(String(newItem.quantity)) : 0;
+
+        // Exclude the current order being edited — its quantities are being replaced
+        const [existingRow] = await db
+          .select({ total: sql<string>`coalesce(sum(cast(${orderLineItemsTable.quantity} as numeric)), 0)` })
+          .from(orderLineItemsTable)
+          .innerJoin(ordersTable, eq(orderLineItemsTable.orderId, ordersTable.id))
+          .where(and(
+            eq(ordersTable.groupBuyId, order.groupBuyId),
+            eq(ordersTable.telegramUsername, tg),
+            eq(orderLineItemsTable.productId, limit.productId),
+            ne(ordersTable.id, rawId),
+          ));
+
+        const existingQty = parseFloat(existingRow?.total ?? "0");
+        if (existingQty + newQty > limit.maxPerCustomer!) {
+          const remaining = Math.max(0, limit.maxPerCustomer! - existingQty);
+          const productName = newItem?.productName ?? "this product";
+          res.status(400).json({
+            error: `Product limit exceeded for "${productName}". Max ${limit.maxPerCustomer} per customer — you have ${existingQty} in other orders and ${remaining} remaining.`,
+          });
+          return;
+        }
+      }
+    }
+  }
+
   // Parse and validate testingContribution for update, matching create-order rules
   const rawUpdateContribution = parseFloat(String(clientTestingContribution)) || 0;
   const hasContribution = rawUpdateContribution > 0;
