@@ -277,19 +277,14 @@ OUTPUT FORMAT:
 
     const userMessage = `QIYUNLE ITEMS TO MATCH (unmapped):\n${unmapped.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name ?? ""}"`).join("\n")}`;
 
-    const PREFILL = '{"suggestions": [';
-    const rawSuffix = await callSageAI({
+    const raw = await callSageAI({
       system: systemPrompt,
-      messages: [
-        { role: "user", content: userMessage },
-        { role: "assistant", content: PREFILL },
-      ],
+      messages: [{ role: "user", content: userMessage }],
       maxTokens: 4096,
       enableWebSearch: false,
       temperature: 0,
       jsonMode: true,
     });
-    const raw = PREFILL + rawSuffix;
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as { suggestions: unknown[] };
     // Attach the manufacturer to each suggestion so the frontend can persist it
