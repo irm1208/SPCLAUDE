@@ -38,6 +38,52 @@ function CryptoIconBadge({ currency = "USDT", size = 36 }: { currency?: string; 
   );
 }
 
+function NetworkIcon({ network, size = 20 }: { network: string; size?: number }) {
+  const net = network.toLowerCase();
+  const r = Math.round(size * 0.25);
+  if (/solana/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <defs><linearGradient id="sol-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#9945FF"/><stop offset="100%" stopColor="#14F195"/></linearGradient></defs>
+      <rect width="24" height="24" rx={r} fill="url(#sol-g)"/>
+      <rect x="4.5" y="7" width="12" height="2.2" rx="1.1" fill="white"/>
+      <rect x="4.5" y="10.9" width="15" height="2.2" rx="1.1" fill="white" opacity="0.85"/>
+      <rect x="4.5" y="14.8" width="12" height="2.2" rx="1.1" fill="white"/>
+    </svg>
+  );
+  if (/arbitrum/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#213147"/>
+      <path d="M12 5L7.5 17h2.4L12 12l2.1 5H16.5L12 5z" fill="#12AAFF"/>
+    </svg>
+  );
+  if (/polygon/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#8247E5"/>
+      <path d="M15.5 9.25L12 7.25 8.5 9.25v4L12 15.25l3.5-2v-4z" stroke="white" strokeWidth="1.5" fill="none" strokeLinejoin="round"/>
+      <path d="M12 7.25V15.25" stroke="white" strokeWidth="1.2" opacity="0.6"/>
+    </svg>
+  );
+  if (/tron|trc/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#E50915"/>
+      <path d="M6 8h12L12 18 6 8z" fill="white" opacity="0.9"/>
+    </svg>
+  );
+  if (/bitcoin|btc/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#F7931A"/>
+      <text x="12" y="16.5" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold" fontFamily="sans-serif">₿</text>
+    </svg>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#627EEA"/>
+      <path d="M12 4.5L8 11.5l4 2.5 4-2.5L12 4.5z" fill="white" opacity="0.8"/>
+      <path d="M12 15.5L8 13l4 6.5 4-6.5-4 2.5z" fill="white"/>
+    </svg>
+  );
+}
+
 // ── Shared small components ────────────────────────────────────
 
 function CopyBtn({ value, accentColor = "#1B3A7A" }: { value: string; accentColor?: string }) {
@@ -1042,8 +1088,8 @@ export default function PaymentPanel({
             >
               <CryptoIconBadge currency={cryptoCurrency} size={44} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{availableCryptoOptions.length > 1 ? availableCryptoOptions.map(o => o.currency).join(" or ") : `${cryptoCurrency} Crypto`}</p>
-                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{cryptoNetwork} · {isAutoVerified(cryptoCurrency, cryptoNetwork) ? "Verified automatically on-chain" : "Organiser confirms manually"}</p>
+                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{availableCryptoOptions.length > 1 ? [...new Set(availableCryptoOptions.map(o => o.currency))].join(" or ") + " Crypto" : `${cryptoCurrency} Crypto`}</p>
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{availableCryptoOptions.length > 1 ? [...new Set(availableCryptoOptions.map(o => o.network))].join(" · ") : cryptoNetwork} · {isAutoVerified(cryptoCurrency, cryptoNetwork) ? "Verified on-chain" : "Organiser confirms manually"}</p>
               </div>
               <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
             </button>
@@ -1689,13 +1735,16 @@ export default function PaymentPanel({
                       setError("");
                     }}
                     disabled={rateLoading}
-                    className="py-2 px-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 text-left"
+                    className="flex items-center gap-2 py-2 px-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 text-left"
                     style={selected
                       ? { background: "#1B3A7A", color: "#fff", border: "1px solid #1B3A7A" }
                       : { background: "var(--crypto-glass-bg)", color: "var(--crypto-text-primary)", border: "1px solid var(--crypto-glass-border)" }}
                   >
-                    <span className="block font-bold">{opt.currency}</span>
-                    <span className="block text-[10px] opacity-70 font-normal">{opt.network}</span>
+                    <NetworkIcon network={opt.network} size={22} />
+                    <span>
+                      <span className="block font-bold leading-tight">{opt.currency}</span>
+                      <span className="block text-[10px] font-normal leading-tight" style={{ opacity: selected ? 0.75 : 0.65 }}>{opt.network}</span>
+                    </span>
                   </button>
                 );
               })}
