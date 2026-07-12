@@ -448,7 +448,7 @@ export default function OrderForm() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: gbProducts = [], isLoading: isLoadingGbProducts } = useQuery<Array<{ id: string; name: string; price: number; description: string | null; sortOrder: number; category: string | null; mgSize: string | null; halfKitEnabled?: boolean }>>({
+  const { data: gbProducts = [], isLoading: isLoadingGbProducts } = useQuery<Array<{ id: string; name: string; price: number; description: string | null; sortOrder: number; category: string | null; mgSize: string | null; halfKitEnabled?: boolean; maxPerCustomer?: number | null }>>({
     queryKey: ["gb-products", gbId],
     queryFn: async () => {
       if (!gbId) return [];
@@ -1326,6 +1326,8 @@ export default function OrderForm() {
                     const itemAllowHalfKits = !gbId
                       ? true
                       : (productHalfKit ?? gbAllowHalfKits);
+                    const itemMaxPerCustomer: number | null = gbId ? (itemProduct?.maxPerCustomer ?? null) : null;
+                    const atMax = itemMaxPerCustomer != null && item.quantity >= itemMaxPerCustomer;
                     return (
                     <div className="flex flex-col gap-3 overflow-hidden">
                       <SearchableProductSelect
@@ -1444,24 +1446,37 @@ export default function OrderForm() {
                             <input
                               type="number"
                               min={itemAllowHalfKits ? "0.5" : "1"}
+                              max={itemMaxPerCustomer ?? undefined}
                               step={itemAllowHalfKits ? "0.5" : "1"}
                               value={displayQty(item.quantity)}
                               onChange={(e) => {
                                 const v = parseFloat(e.target.value);
-                                if (!isNaN(v) && v > 0) draft.updateLineItem(item.id, { quantity: v });
+                                if (!isNaN(v) && v > 0) {
+                                  const capped = itemMaxPerCustomer != null ? Math.min(v, itemMaxPerCustomer) : v;
+                                  draft.updateLineItem(item.id, { quantity: capped });
+                                }
                               }}
                               className="w-10 text-center text-sm font-bold"
                               style={{ color: "#ffffff", background: "transparent", border: "none", outline: "none", appearance: "textfield", MozAppearance: "textfield" } as React.CSSProperties}
                             />
                             <button
                               type="button"
-                              className="px-3 h-full text-lg transition-colors hover:bg-white/10 active:bg-white/15"
+                              disabled={atMax}
+                              className="px-3 h-full text-lg transition-colors hover:bg-white/10 active:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed"
                               style={{ color: "rgba(255,255,255,0.85)" }}
-                              onClick={() => draft.updateLineItem(item.id, { quantity: nextQty(item.quantity) })}
+                              onClick={() => {
+                                const next = nextQty(item.quantity);
+                                draft.updateLineItem(item.id, { quantity: itemMaxPerCustomer != null ? Math.min(next, itemMaxPerCustomer) : next });
+                              }}
                             >+</button>
                           </div>
                           {itemAllowHalfKits && (
                             <p className="text-[10px] mt-1.5 leading-none opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>For half kits add .5</p>
+                          )}
+                          {itemMaxPerCustomer != null && (
+                            <p className="text-[10px] mt-1.5 leading-none font-semibold" style={{ color: atMax ? "#f97316" : "rgba(255,255,255,0.5)" }}>
+                              {atMax ? `Limit reached (max ${itemMaxPerCustomer})` : `Max ${itemMaxPerCustomer}/cust`}
+                            </p>
                           )}
                         </div>
 
