@@ -1327,7 +1327,24 @@ export default function OrderForm() {
                       ? true
                       : (productHalfKit ?? gbAllowHalfKits);
                     const itemMaxPerCustomer: number | null = gbId ? (itemProduct?.maxPerCustomer ?? null) : null;
-                    const atMax = itemMaxPerCustomer != null && item.quantity >= itemMaxPerCustomer;
+                    // GB-level per-customer budget remaining for this specific line item
+                    const otherLineItemsQty = draft.lineItems.reduce((sum, li) => li.id !== item.id ? sum + li.quantity : sum, 0);
+                    const gbRemainingForItem: number | null = (gbId && gbMaxKitsPerCustomer != null)
+                      ? Math.max(0, gbMaxKitsPerCustomer - gbKitsOrderedByUser - otherLineItemsQty)
+                      : null;
+                    // Effective max = tightest of product cap vs GB remaining budget
+                    const effectiveMax: number | null =
+                      itemMaxPerCustomer != null && gbRemainingForItem != null ? Math.min(itemMaxPerCustomer, gbRemainingForItem)
+                      : itemMaxPerCustomer != null ? itemMaxPerCustomer
+                      : gbRemainingForItem;
+                    const atMax = effectiveMax != null && item.quantity >= effectiveMax;
+                    const limitLabel = atMax
+                      ? (gbRemainingForItem != null && effectiveMax === gbRemainingForItem && (itemMaxPerCustomer == null || gbRemainingForItem < itemMaxPerCustomer)
+                          ? `GB limit reached (${gbMaxKitsPerCustomer} total)`
+                          : `Limit reached (max ${effectiveMax})`)
+                      : effectiveMax != null
+                        ? `Max ${effectiveMax}/cust`
+                        : null;
                     return (
                     <div className="flex flex-col gap-3 overflow-hidden">
                       <SearchableProductSelect
@@ -1446,13 +1463,13 @@ export default function OrderForm() {
                             <input
                               type="number"
                               min={itemAllowHalfKits ? "0.5" : "1"}
-                              max={itemMaxPerCustomer ?? undefined}
+                              max={effectiveMax ?? undefined}
                               step={itemAllowHalfKits ? "0.5" : "1"}
                               value={displayQty(item.quantity)}
                               onChange={(e) => {
                                 const v = parseFloat(e.target.value);
                                 if (!isNaN(v) && v > 0) {
-                                  const capped = itemMaxPerCustomer != null ? Math.min(v, itemMaxPerCustomer) : v;
+                                  const capped = effectiveMax != null ? Math.min(v, effectiveMax) : v;
                                   draft.updateLineItem(item.id, { quantity: capped });
                                 }
                               }}
@@ -1466,16 +1483,16 @@ export default function OrderForm() {
                               style={{ color: "rgba(255,255,255,0.85)" }}
                               onClick={() => {
                                 const next = nextQty(item.quantity);
-                                draft.updateLineItem(item.id, { quantity: itemMaxPerCustomer != null ? Math.min(next, itemMaxPerCustomer) : next });
+                                draft.updateLineItem(item.id, { quantity: effectiveMax != null ? Math.min(next, effectiveMax) : next });
                               }}
                             >+</button>
                           </div>
                           {itemAllowHalfKits && (
                             <p className="text-[10px] mt-1.5 leading-none opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>For half kits add .5</p>
                           )}
-                          {itemMaxPerCustomer != null && (
+                          {limitLabel != null && (
                             <p className="text-[10px] mt-1.5 leading-none font-semibold" style={{ color: atMax ? "#f97316" : "rgba(255,255,255,0.5)" }}>
-                              {atMax ? `Limit reached (max ${itemMaxPerCustomer})` : `Max ${itemMaxPerCustomer}/cust`}
+                              {limitLabel}
                             </p>
                           )}
                         </div>
