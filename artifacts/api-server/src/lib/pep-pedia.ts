@@ -9,8 +9,8 @@
  */
 
 const BASE = "https://pep-pedia.org";
-const TIMEOUT_MS = 8_000;
-const MAX_CONTENT_CHARS = 1_800;
+const TIMEOUT_MS = 4_000;
+const MAX_CONTENT_CHARS = 1_200;
 
 // Matches common peptide/compound identifiers:
 // BPC-157, TB-500, GHK-Cu, CJC-1295, AOD-9604, Semaglutide, Tirzepatide, etc.

@@ -1044,27 +1044,24 @@ async function callGeminiDiscuss(
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
-  // ── Pep-Pedia.org reference fetch ─────────────────────────────────────────
-  // Always runs (not keyword-gated) — fetches the relevant compound article
-  // from pep-pedia.org and injects it as authoritative reference context.
-  // Best-effort: any failure is silent and Sage proceeds without it.
-  const pepPediaResult = await fetchPepPediaContext(message).catch(() => null);
+  // ── Pre-fetch context in parallel (Pep-Pedia + optional web search) ────────
+  // Both run concurrently so they don't add to each other's latency.
+  // Best-effort: any failure is silent and Sage proceeds without that context.
+  const webSearchEnabled = shouldSearchWeb(message) && await isWebSearchEnabled().catch(() => true);
+  const [pepPediaResult, searchResult] = await Promise.all([
+    fetchPepPediaContext(message).catch(() => null),
+    webSearchEnabled ? searchWebForSage(message).catch(() => null) : Promise.resolve(null),
+  ]);
+
   if (pepPediaResult) {
     systemPrompt += `\n\n─── PEP-PEDIA.ORG REFERENCE (${pepPediaResult.url}) ───\n${pepPediaResult.content}\n─── END PEP-PEDIA REFERENCE ───\n\nThe above is from the Pep-Pedia wiki — a curated peptide reference database. Prioritise this information for compound-specific facts (mechanism, dosing, half-life, storage). Cite the source as "${pepPediaResult.url}" when you use it.`;
   }
 
-  // ── Real-time web search pre-fetch (Gemini-grounded) ──────────────────────
-  // Runs BEFORE the Sage/Claude call so results can be woven into its answer.
-  // Gated by admin toggle + a keyword heuristic to avoid latency on ordinary
-  // biomarker questions. Never throws — worst case Sage answers without it.
   let webSearchSources: DiscussSource[] = [];
-  if (shouldSearchWeb(message) && await isWebSearchEnabled().catch(() => true)) {
-    const searchResult = await searchWebForSage(message);
-    if (searchResult) {
-      const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      systemPrompt += `\n\nLIVE WEB SEARCH RESULTS (retrieved ${today}):\n${searchResult.digest}\n\nUse the above only if relevant to the user's question. It reflects current, real information — you DO have real-time web access via this search, so never claim you can't search the internet or don't have access to current news when results like this are provided.`;
-      webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
-    }
+  if (searchResult) {
+    const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    systemPrompt += `\n\nLIVE WEB SEARCH RESULTS (retrieved ${today}):\n${searchResult.digest}\n\nUse the above only if relevant to the user's question. It reflects current, real information — you DO have real-time web access via this search, so never claim you can't search the internet or don't have access to current news when results like this are provided.`;
+    webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
   }
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
