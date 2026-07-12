@@ -1073,7 +1073,7 @@ async function callGeminiDiscuss(
   const raw = await callSageAI({
     system: systemPrompt,
     messages,
-    maxTokens: 8192,
+    maxTokens: 1200,
     enableWebSearch: false,
   });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
