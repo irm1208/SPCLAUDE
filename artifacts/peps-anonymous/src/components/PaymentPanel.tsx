@@ -30,8 +30,8 @@ function PayPalIcon({ size = 36 }: { size?: number }) {
 function CryptoIconBadge({ currency = "USDT", size = 36 }: { currency?: string; size?: number }) {
   return (
     <div
-      style={{ width: size, height: size }}
-      className="rounded-[9px] bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shrink-0 shadow-sm"
+      className="rounded-[9px] flex items-center justify-center shrink-0 shadow-sm"
+      style={{ width: size, height: size, background: "linear-gradient(135deg, #2D6BCC 0%, #1B3A7A 100%)" }}
     >
       <span className="text-white font-black text-[10px] tracking-tight leading-none">{currency.slice(0, 4)}</span>
     </div>
@@ -40,7 +40,7 @@ function CryptoIconBadge({ currency = "USDT", size = 36 }: { currency?: string; 
 
 // ── Shared small components ────────────────────────────────────
 
-function CopyBtn({ value, accentColor = "#7c3aed" }: { value: string; accentColor?: string }) {
+function CopyBtn({ value, accentColor = "#1B3A7A" }: { value: string; accentColor?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(value);
@@ -323,8 +323,8 @@ interface Props {
 // ── Gradient styles ────────────────────────────────────────────
 
 const cryptoStyle = {
-  background: "linear-gradient(135deg, color-mix(in srgb, #8B5CF6 18%, var(--t-surface)) 0%, color-mix(in srgb, #7C3AED 15%, var(--t-surface)) 50%, color-mix(in srgb, #3B82F6 13%, var(--t-surface)) 100%)",
-  borderColor: "rgba(139, 92, 246, 0.35)",
+  background: "linear-gradient(135deg, color-mix(in srgb, #1B3A7A 15%, var(--t-surface)) 0%, color-mix(in srgb, #2D6BCC 12%, var(--t-surface)) 50%, color-mix(in srgb, #1B3164 10%, var(--t-surface)) 100%)",
+  borderColor: "rgba(27, 58, 122, 0.30)",
 };
 const revStyle = {
   background: "linear-gradient(135deg, color-mix(in srgb, #0666EB 13%, var(--t-surface)) 0%, color-mix(in srgb, #3B82F6 11%, var(--t-surface)) 60%, color-mix(in srgb, #6366F1 11%, var(--t-surface)) 100%)",
@@ -1691,7 +1691,7 @@ export default function PaymentPanel({
                     disabled={rateLoading}
                     className="py-2 px-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 text-left"
                     style={selected
-                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
+                      ? { background: "#1B3A7A", color: "#fff", border: "1px solid #1B3A7A" }
                       : { background: "var(--crypto-glass-bg)", color: "var(--crypto-text-primary)", border: "1px solid var(--crypto-glass-border)" }}
                   >
                     <span className="block font-bold">{opt.currency}</span>
