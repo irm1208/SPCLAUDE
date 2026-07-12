@@ -413,7 +413,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
       }}
     >
       <div
-        className="flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-auto sm:max-h-[88vh]"
+        className="flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-[88vh]"
         style={{
           background: t.panel,
           border: `1px solid ${t.border}`,
