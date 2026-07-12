@@ -159,6 +159,15 @@ export function DashboardHome({
             <div className="dh-orb dh-float-b" style={{ bottom: -80, right: 130, width: 190, height: 190, background: "rgba(1,118,211,.4)" }} />
             <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.12), transparent 55%)", pointerEvents: "none" }} />
 
+            {/* Chat history — top-right corner */}
+            <button
+              onClick={openSageHistory}
+              className="absolute flex items-center gap-1.5 rounded-full z-10"
+              style={{ top: 18, right: 20, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)", padding: "7px 13px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.18)" }}
+            >
+              <History className="w-3 h-3" /> Chat history
+            </button>
+
             <div className="relative" style={{ maxWidth: 640 }}>
               {/* Assistant identity */}
               <div className="dh-rise flex items-center gap-2.5" style={{ animationDelay: "0ms" }}>
@@ -214,7 +223,7 @@ export function DashboardHome({
                 </button>
               </div>
 
-              {/* Quick prompts + History */}
+              {/* Quick prompts */}
               <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
                 {([
                   { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
@@ -230,13 +239,6 @@ export function DashboardHome({
                     <chip.Icon className="w-3.5 h-3.5" /> {chip.label}
                   </button>
                 ))}
-                <button
-                  onClick={openSageHistory}
-                  className="dh-chip flex items-center gap-1.5 rounded-full"
-                  style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,.75)", padding: "9px 14px", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)" }}
-                >
-                  <History className="w-3.5 h-3.5" /> History
-                </button>
               </div>
             </div>
           </div>
