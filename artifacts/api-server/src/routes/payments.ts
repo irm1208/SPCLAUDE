@@ -394,10 +394,8 @@ const CHAIN_WALLET_CONFIGS: Array<{
   { configKey: "wallet_polygon",  currencies: ["USDT", "USDC"], network: "Polygon" },
   { configKey: "wallet_solana",   currencies: ["USDC", "USDT"], network: "Solana" },
   { configKey: "wallet_tron",     currencies: ["USDT"],         network: "TRC-20" },
-  { configKey: "wallet_ton",      currencies: ["USDT"],         network: "TON" },
   { configKey: "wallet_btc",      currencies: ["BTC"],          network: "Bitcoin Mainnet" },
   { configKey: "wallet_eth",      currencies: ["ETH"],          network: "Ethereum" },
-  { configKey: "wallet_xmr",      currencies: ["XMR"],          network: "Monero" },
 ];
 
 /** All chain/currency pairs currently configured by admin, with their wallet addresses. */

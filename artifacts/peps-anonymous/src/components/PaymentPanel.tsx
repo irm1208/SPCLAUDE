@@ -544,14 +544,12 @@ export default function PaymentPanel({
         const isBtcRail    = loadedCur === "BTC" || /bitcoin/.test(loadedNet);
         const isSolanaRail = /solana/.test(loadedNet);
         const isTronRail   = /tron|trc/.test(loadedNet);
-        const isTonRail    = /ton/.test(loadedNet);
-        const isEvmRail    = !isBtcRail && !isSolanaRail && !isTronRail && !isTonRail;
+        const isEvmRail    = !isBtcRail && !isSolanaRail && !isTronRail;
         const isValidCryptoAddr = (a: string | null) => {
           if (!a || !a.trim()) return false;
           if (isBtcRail)    return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(a) || /^bc1[a-z0-9]{6,87}$/.test(a);
           if (isSolanaRail) return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a); // base58
           if (isTronRail)   return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a);
-          if (isTonRail)    return a.trim().length >= 48; // TON addresses are 48+ chars
           if (isEvmRail && isAutoVerified(loadedCur, loadedNet)) return /^0x[0-9a-fA-F]{40}$/.test(a);
           // Unsupported/manual rails: accept any non-empty address for organiser-manual confirmation
           return a.trim().length > 0;
