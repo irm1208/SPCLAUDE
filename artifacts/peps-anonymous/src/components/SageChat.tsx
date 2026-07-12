@@ -191,6 +191,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [streamingHasContent, setStreamingHasContent] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
 
@@ -246,6 +247,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
       setInput("");
       setSending(true);
       setStreamingHasContent(false);
+      setSearchStatus(null);
       setError(null);
 
       const myRequestId = ++requestIdRef.current;
@@ -309,9 +311,12 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
               accumulated += event["text"] as string;
               if (!isStale()) {
                 setStreamingHasContent(true);
+                setSearchStatus(null);
                 const displayText = stripMarkers(accumulated);
                 setMessages((prev) => prev.map((m) => m.id === streamId ? { ...m, content: displayText } : m));
               }
+            } else if (event["type"] === "status" && typeof event["text"] === "string") {
+              if (!isStale()) setSearchStatus(event["text"] as string);
             } else if (event["type"] === "done") {
               donePayload = event as typeof donePayload;
             } else if (event["type"] === "error") {
@@ -715,8 +720,10 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
 
               {sending && !streamingHasContent && (
                 <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 12.5, paddingLeft: 4 }}>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Sage is thinking…
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {searchStatus ?? "Sage is thinking…"}
+                  </span>
                 </div>
               )}
 

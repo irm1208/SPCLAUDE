@@ -15,14 +15,12 @@
 import { db } from "@workspace/db";
 import { siteConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { searchWebForSage, searchPubMed, fetchUrlContent } from "./web-search";
 
 export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 
 const BASE_URL       = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
 const DEFAULT_MODEL  = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
-// NOTE: the hardcoded fallback below was previously "claude-3-5-sonnet-20241022", which a live
-// probe against the configured proxy account showed is unavailable (503 model_not_found — no
-// channel access under this account's group). "claude-sonnet-4-5-20250929" was verified working.
 const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-sonnet-4-5-20250929";
 
 /**
@@ -85,7 +83,7 @@ export interface SageAIParams {
   apiKey?: string;
   /** Explicit base URL override, paired with `apiKey`. Never persisted. */
   baseUrl?: string;
-  /** Whether to give Sage access to DuckDuckGo web search via tool_use. Default true. */
+  /** Whether to give Sage access to web search via tool_use. Default true. */
   enableWebSearch?: boolean;
   /** Optional sampling temperature (0-1). Omitted = provider default. Use a low value for deterministic extraction tasks. */
   temperature?: number;
@@ -98,85 +96,106 @@ export interface SageAIParams {
 const WEB_SEARCH_TOOL = {
   name: "web_search",
   description: [
-    "Search the internet for current clinical guidelines, medical information, medication safety data, drug interactions,",
-    "recent research, or forum discussions about health topics.",
-    "Use when: the member requests a search; a compound or medication is new or experimental; current safety or regulatory",
-    "information matters; internal knowledge is incomplete or sources conflict; recent research could materially change",
-    "the answer; or forum experiences are specifically requested.",
-    "Do NOT use for stable, well-established information that is already in your training data.",
-    "PRIVACY: Never include personal information (names, addresses, dates of birth, account IDs) in the search query.",
-    "Convert the question to an anonymous clinical search.",
+    "Search the internet AND PubMed for current clinical evidence, medical information, drug interactions,",
+    "recent research, forum discussions, and health topics.",
+    "Use when: the user asks about a compound, medication, biomarker, or health topic that would benefit from",
+    "current evidence; when community consensus or recent studies are relevant; when you need more than your",
+    "training data to give a well-sourced answer. Run 1–3 targeted searches per response for complex topics.",
+    "PRIVACY: Never include personal names, account IDs, or identifying information in queries.",
+    "Convert to anonymous clinical queries.",
   ].join(" "),
   input_schema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Anonymous clinical search query with no personal or identifying information.",
+        description: "Clinical/research search query. Be specific — include compound names, biomarker names, conditions, and relevant context terms.",
       },
     },
     required: ["query"],
   },
 };
 
-// ─── Web search implementation (DuckDuckGo — no API key required) ────────────
+const FETCH_URL_TOOL = {
+  name: "fetch_url",
+  description: [
+    "Fetch and read the full content of a specific URL — a study abstract, forum thread,",
+    "clinical guideline, product page, or any relevant health resource.",
+    "Use after web_search to get full details from a specific source you found.",
+    "Only fetch HTTPS URLs from reputable sources (PubMed, medical journals, established forums).",
+  ].join(" "),
+  input_schema: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "Full HTTPS URL to fetch.",
+      },
+    },
+    required: ["url"],
+  },
+};
 
-async function performWebSearch(query: string): Promise<string> {
-  try {
-    const encoded = encodeURIComponent(query);
-    const url = `https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1&kl=uk-en`;
+const SAGE_TOOLS = [WEB_SEARCH_TOOL, FETCH_URL_TOOL];
 
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(12000),
-      headers: { "User-Agent": "SaltAndPeps-HealthAssistant/1.0 (health research tool)" },
-    });
+// ─── Search executor (Gemini grounded + PubMed + URL fetch) ──────────────────
 
-    if (!res.ok) throw new Error(`DDG API ${res.status}`);
+/**
+ * Executes a web search on behalf of Sage. Uses Gemini's grounded Google search
+ * for live web results, PubMed for clinical studies, and optionally fetches full
+ * content from top result URLs.
+ */
+async function executeSearchForSage(query: string): Promise<string> {
+  const trimmed = query.trim();
+  if (!trimmed) return `No query provided.`;
 
-    const data = await res.json() as Record<string, unknown>;
-    const parts: string[] = [`**Search results for:** "${query}"\n`];
+  const [geminiResult, pubmedResult] = await Promise.all([
+    searchWebForSage(trimmed).catch(() => null),
+    searchPubMed(trimmed).catch(() => null),
+  ]);
 
-    const abstractText = data.AbstractText as string | undefined;
-    const abstractSource = data.AbstractSource as string | undefined;
-    const abstractURL = data.AbstractURL as string | undefined;
-    const heading = data.Heading as string | undefined;
-    const answer = data.Answer as string | undefined;
+  const parts: string[] = [`## Search results for: "${trimmed}"\n`];
 
-    if (abstractText) {
-      parts.push(`**${heading ?? "Summary"}** (${abstractSource ?? "Wikipedia"}):\n${abstractText}`);
-      if (abstractURL) parts.push(`Source: ${abstractURL}`);
+  if (geminiResult?.digest) {
+    parts.push(`### Live Web Results\n${geminiResult.digest}`);
+    if (geminiResult.sources.length > 0) {
+      const sourceList = geminiResult.sources.slice(0, 5)
+        .map(s => `- ${s.title}: ${s.url}`)
+        .join("\n");
+      parts.push(`**Sources:**\n${sourceList}`);
     }
-
-    if (answer) {
-      parts.push(`**Direct answer:** ${answer}`);
-    }
-
-    const relatedTopics = (data.RelatedTopics as Array<Record<string, unknown>> | undefined) ?? [];
-    const topics = relatedTopics
-      .filter(t => typeof t.Text === "string" && t.Text.length > 20)
-      .slice(0, 6);
-
-    if (topics.length > 0) {
-      parts.push("**Related information:**");
-      for (const t of topics) {
-        const text = t.Text as string;
-        const firstUrl = t.FirstURL as string | undefined;
-        parts.push(`- ${text}${firstUrl ? ` (${firstUrl})` : ""}`);
-      }
-    }
-
-    if (parts.length === 1) {
-      return `No structured results found for "${query}". This may be a highly specialised or emerging topic not yet well-indexed. Use your existing pharmacological and clinical knowledge to answer, clearly labelling the evidence level.`;
-    }
-
-    return parts.join("\n\n");
-  } catch (err) {
-    console.warn("[sage:web_search] error:", String(err));
-    return `Search temporarily unavailable. Use your existing clinical knowledge to answer this question, clearly noting the evidence level and any uncertainty.`;
+    const fetchedContents = await Promise.all(
+      geminiResult.sources.slice(0, 2).map(async s => {
+        const content = await fetchUrlContent(s.url).catch(() => null);
+        return content ? `#### ${s.title} (${s.url})\n${content}` : null;
+      })
+    );
+    fetchedContents.filter(Boolean).forEach(c => parts.push(c!));
   }
+
+  if (pubmedResult && pubmedResult.studies.length > 0) {
+    parts.push(`### PubMed Clinical Studies (${pubmedResult.studies.length} found)`);
+    pubmedResult.studies.forEach((s, i) => {
+      parts.push(`**[${i + 1}] ${s.title}**\nPMID URL: ${s.url}\n${s.abstract}`);
+    });
+  }
+
+  if (parts.length === 1) {
+    return `No results found for "${trimmed}". Answer from clinical knowledge, clearly noting evidence level.`;
+  }
+
+  const combined = parts.join("\n\n");
+  return combined.length > 14_000 ? combined.slice(0, 14_000) + "\n\n[Results truncated]" : combined;
 }
 
-// ─── Model call (with optional tools) ────────────────────────────────────────
+/** Fetch URL content for a tool_result. */
+async function executeFetchUrl(url: string): Promise<string> {
+  if (!url.startsWith("https://")) return "Only HTTPS URLs are supported.";
+  const content = await fetchUrlContent(url).catch(() => null);
+  return content ?? "Could not retrieve content from this URL (may be blocked or unavailable).";
+}
+
+// ─── Raw model call (non-streaming, with or without tools) ───────────────────
 
 interface ModelResponse {
   content: ContentPart[];
@@ -186,6 +205,7 @@ interface ModelResponse {
 async function callModelRaw(
   model: string,
   apiKey: string,
+  baseUrl: string,
   system: string | undefined,
   messages: SageMessage[],
   maxTokens: number,
@@ -199,7 +219,7 @@ async function callModelRaw(
   if (temperature != null) body.temperature = temperature;
   if (jsonMode) body.response_format = { type: "json_object" };
 
-  const res = await fetch(`${BASE_URL}/v1/messages`, {
+  const res = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -220,7 +240,6 @@ async function callModelRaw(
   try {
     data = JSON.parse(rawText) as { content?: ContentPart[]; stop_reason?: string };
   } catch {
-    // Proxy returned SSE stream despite stream:false — parse line-by-line
     const text = extractTextFromSse(rawText);
     if (text) return { content: [{ type: "text", text }], stop_reason: "end_turn" };
     throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
@@ -267,82 +286,205 @@ async function callModel(
     const data = JSON.parse(rawText) as { content?: Array<{ type: string; text?: string }> };
     return data.content?.find(c => c.type === "text")?.text ?? "";
   } catch {
-    // SSE fallback: parse line-by-line
     const text = extractTextFromSse(rawText);
     if (text) return text;
     throw new Error(`Sage AI proxy returned non-JSON response: ${rawText.slice(0, 200)}`);
   }
 }
 
-// ─── Tool loop for web-search-capable calls ───────────────────────────────────
+// ─── Streaming (plain, no tools) ─────────────────────────────────────────────
 
-async function callModelWithTools(
+async function streamResponse(
   model: string,
   apiKey: string,
+  baseUrl: string,
   system: string | undefined,
   messages: SageMessage[],
   maxTokens: number,
-  temperature?: number,
+  temperature: number | undefined,
+  onToken: (text: string) => void,
 ): Promise<string> {
+  const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: true };
+  if (system) body.system = system;
+  if (temperature != null) body.temperature = temperature;
+
+  const res = await fetch(`${baseUrl}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText);
+    throw new Error(`Sage AI proxy error ${res.status}: ${errText}`);
+  }
+
+  if (!res.body) throw new Error("no_stream_body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let combined = "";
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (!jsonStr || jsonStr === "[DONE]") continue;
+        let event: Record<string, unknown>;
+        try { event = JSON.parse(jsonStr) as Record<string, unknown>; }
+        catch { continue; }
+        const delta = event["delta"] as Record<string, unknown> | undefined;
+        if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
+          const text = delta["text"] as string;
+          combined += text;
+          onToken(text);
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return combined;
+}
+
+// ─── Tool loop ────────────────────────────────────────────────────────────────
+
+async function runToolLoop(
+  model: string,
+  apiKey: string,
+  baseUrl: string,
+  system: string | undefined,
+  messages: SageMessage[],
+  maxTokens: number,
+  temperature: number | undefined,
+  onStatus?: (msg: string) => void,
+): Promise<{ finalText: string; augmentedMessages: SageMessage[] }> {
   const mutableMessages: SageMessage[] = [...messages];
-  const MAX_TOOL_ITERATIONS = 5;
+  const MAX_TOOL_ITERS = 4;
 
-  for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const response = await callModelRaw(model, apiKey, system, mutableMessages, maxTokens, [WEB_SEARCH_TOOL], temperature);
+  for (let i = 0; i < MAX_TOOL_ITERS; i++) {
+    const response = await callModelRaw(model, apiKey, baseUrl, system, mutableMessages, maxTokens, SAGE_TOOLS, temperature);
 
-    // Find text content
-    const textPart = response.content.find(c => c.type === "text") as TextContentPart | undefined;
-    // Find tool use
+    const textPart  = response.content.find(c => c.type === "text")  as TextContentPart    | undefined;
     const toolUsePart = response.content.find(c => c.type === "tool_use") as ToolUseContentPart | undefined;
 
     if (response.stop_reason === "end_turn" || !toolUsePart) {
-      return textPart?.text ?? "";
+      return { finalText: textPart?.text ?? "", augmentedMessages: mutableMessages };
     }
 
+    let toolResult: string;
     if (toolUsePart.name === "web_search") {
-      const query = (toolUsePart.input.query as string | undefined) ?? "";
-      console.log(`[sage:web_search] query="${query}"`);
-      const results = await performWebSearch(query);
-      console.log(`[sage:web_search] got ${results.length} chars`);
-
-      // Append assistant turn with the tool_use content
-      mutableMessages.push({
-        role: "assistant",
-        content: response.content,
-      });
-
-      // Append tool result as user turn
-      mutableMessages.push({
-        role: "user",
-        content: [{
-          type: "tool_result",
-          tool_use_id: toolUsePart.id,
-          content: results,
-        }],
-      });
+      const query = String(toolUsePart.input.query ?? "").trim();
+      console.log(`[sage:web_search] "${query}"`);
+      onStatus?.(`Searching: "${query}"`);
+      toolResult = await executeSearchForSage(query);
+      console.log(`[sage:web_search] got ${toolResult.length} chars`);
+    } else if (toolUsePart.name === "fetch_url") {
+      const url = String(toolUsePart.input.url ?? "").trim();
+      console.log(`[sage:fetch_url] ${url}`);
+      onStatus?.(`Reading source...`);
+      toolResult = await executeFetchUrl(url);
     } else {
-      // Unknown tool — return whatever text we have
-      return textPart?.text ?? "";
+      toolResult = `Unknown tool: ${toolUsePart.name}`;
     }
+
+    mutableMessages.push({ role: "assistant", content: response.content });
+    mutableMessages.push({
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: toolUsePart.id, content: toolResult }],
+    });
   }
 
-  // Fallback: one final call without tools to get a text response
-  return callModel(model, apiKey, BASE_URL, system, mutableMessages, maxTokens, temperature);
+  // Loop exhausted — do one final non-streaming call without tools for a text response
+  const fallbackText = await callModel(model, apiKey, baseUrl, system, mutableMessages, maxTokens, temperature);
+  return { finalText: fallbackText, augmentedMessages: mutableMessages };
 }
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 /** Returns true when the error looks like a "no quota" / "no available token" failure from the proxy. */
 function isTokenExhaustedError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
-    msg.includes("没有可用token") ||        // proxy: no available tokens (Chinese)
+    msg.includes("没有可用token") ||
     msg.includes("no available token") ||
     (msg.includes("proxy error 500") && msg.includes("token"))
   );
 }
 
 /**
- * Streaming version of callSageAI. Calls onToken for each text delta as it
- * arrives from the proxy, and returns the full combined text when done.
+ * Streaming + tools hybrid for the discuss endpoint.
+ *
+ * Flow:
+ *  1. Tool loop (non-streaming): Sage decides what to search, searches run, results fed back.
+ *  2. Final response: streamed token-by-token so the user sees text appear progressively.
+ *
+ * `onStatus` fires during tool execution (e.g. "Searching: BPC-157 gut healing") so the
+ * client can show a live search status in the spinner.
+ *
+ * Falls back to plain streaming if the proxy doesn't support tools.
+ */
+export async function callSageAIStreamWithTools({
+  system, messages, maxTokens = 1200, model, apiKey: apiKeyOverride,
+  baseUrl: baseUrlOverride, temperature, onToken, onStatus,
+}: SageAIParams & { onToken: (text: string) => void; onStatus?: (msg: string) => void }): Promise<string> {
+  const apiKey = (apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY);
+  if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
+  const activeModel = model ?? await getActiveSageModel();
+
+  const tryWithTools = async (mdl: string): Promise<string> => {
+    let augmentedMessages: SageMessage[];
+    try {
+      const result = await runToolLoop(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onStatus);
+      augmentedMessages = result.augmentedMessages;
+
+      // Stream the final response using the tool-augmented conversation history
+      const streamed = await streamResponse(mdl, apiKey, baseUrl, system, augmentedMessages, maxTokens, temperature, onToken);
+      // If streamed returned empty, fall back to the non-streamed text we already have
+      if (!streamed && result.finalText) {
+        onToken(result.finalText);
+        return result.finalText;
+      }
+      return streamed;
+    } catch (toolErr) {
+      const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+      // Proxy doesn't support tools → fall back to plain streaming
+      if (msg.includes("no_stream_body") || msg.includes("400") || msg.includes("tool")) {
+        console.warn("[sage-ai] Tool loop failed, falling back to plain stream:", msg);
+        return streamResponse(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onToken);
+      }
+      throw toolErr;
+    }
+  };
+
+  try {
+    return await tryWithTools(activeModel);
+  } catch (primaryErr) {
+    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
+      return await tryWithTools(FALLBACK_MODEL);
+    }
+    throw primaryErr;
+  }
+}
+
+/**
+ * Legacy streaming (no tools). Still used by non-discuss endpoints.
  * Falls back to non-streaming callModel if the proxy returns a plain JSON body.
  */
 export async function callSageAIStream({
@@ -354,73 +496,22 @@ export async function callSageAIStream({
   const activeModel = model ?? await getActiveSageModel();
 
   const tryStream = async (mdl: string): Promise<string> => {
-    const body: Record<string, unknown> = { model: mdl, max_tokens: maxTokens, messages, stream: true };
-    if (system) body.system = system;
-    if (temperature != null) body.temperature = temperature;
-
-    const res = await fetch(`${baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => res.statusText);
-      throw new Error(`Sage AI proxy error ${res.status}: ${errText}`);
-    }
-
-    if (!res.body) throw new Error("no_stream_body");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let combined = "";
-    let buffer = "";
-
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const jsonStr = trimmed.slice(5).trim();
-          if (!jsonStr || jsonStr === "[DONE]") continue;
-          let event: Record<string, unknown>;
-          try { event = JSON.parse(jsonStr) as Record<string, unknown>; }
-          catch { continue; }
-          const delta = event["delta"] as Record<string, unknown> | undefined;
-          if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
-            const text = delta["text"] as string;
-            combined += text;
-            onToken(text);
-          }
-        }
+      const result = await streamResponse(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onToken);
+      if (result) return result;
+      return callModel(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === "no_stream_body") {
+        return callModel(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature);
       }
-    } finally {
-      reader.releaseLock();
+      throw err;
     }
-
-    return combined;
   };
 
   try {
-    const result = await tryStream(activeModel);
-    // Empty result means proxy returned a non-streaming body — fall back
-    if (result) return result;
-    return callModel(activeModel, apiKey, baseUrl, system, messages, maxTokens, temperature);
+    return await tryStream(activeModel);
   } catch (primaryErr) {
-    const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-    if (msg === "no_stream_body") {
-      return callModel(activeModel, apiKey, baseUrl, system, messages, maxTokens, temperature);
-    }
     if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
       console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying stream with fallback "${FALLBACK_MODEL}"`);
       return await tryStream(FALLBACK_MODEL);
@@ -436,7 +527,6 @@ export async function callSageAI({
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
 
-  // Explicit override (admin test panel): single attempt, no silent fallback substitution.
   if (model) {
     return await callModel(model, apiKey, baseUrl, system, messages, maxTokens, temperature, jsonMode);
   }
@@ -444,7 +534,11 @@ export async function callSageAI({
   const activeModel = await getActiveSageModel();
 
   const callFn = enableWebSearch
-    ? (m: string, k: string) => callModelWithTools(m, k, system, messages, maxTokens, temperature)
+    ? async (m: string, k: string) => {
+        const { finalText, augmentedMessages } = await runToolLoop(m, k, baseUrl, system, messages, maxTokens, temperature);
+        if (finalText) return finalText;
+        return callModel(m, k, baseUrl, system, augmentedMessages, maxTokens, temperature, jsonMode);
+      }
     : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens, temperature, jsonMode);
 
   try {

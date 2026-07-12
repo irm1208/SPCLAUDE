@@ -4,11 +4,10 @@ import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accoun
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
-import { callSageAI, callSageAIStream } from "../lib/sage-ai";
+import { callSageAI, callSageAIStreamWithTools } from "../lib/sage-ai";
 import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
-import { searchWebForSage, shouldSearchWeb, searchPubMed, type PubMedResult } from "../lib/web-search";
 import { fetchPepPediaContext } from "../lib/pep-pedia";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
 
@@ -1039,51 +1038,26 @@ async function callGeminiDiscuss(
   hasBloodTest = true,
   glp1Logs: Glp1LogCtx[] = [],
   onToken?: (text: string) => void,
+  onStatus?: (msg: string) => void,
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[]; charts: ChartSeries[] }> {
   const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
-  // ── Pre-fetch context in parallel (Pep-Pedia + web search + PubMed) ─────────
-  // All three run concurrently so they don't add to each other's latency.
-  // Best-effort: any failure is silent and Sage proceeds without that context.
-  const webSearchEnabled = await isWebSearchEnabled().catch(() => true);
-  const [pepPediaResult, searchResult, pubmedResult] = await Promise.all([
+  // ── Pre-fetch Pep-Pedia context (fast, compound-specific wiki) ───────────────
+  // Sage handles its own web search via tool_use (web_search + fetch_url tools).
+  // Only Pep-Pedia is pre-fetched here since it's a curated peptide-specific database
+  // that Sage cannot reach via Google search, and it loads in ~1s.
+  const [pepPediaResult] = await Promise.all([
     fetchPepPediaContext(message).catch(() => null),
-    webSearchEnabled ? searchWebForSage(message).catch(() => null) : Promise.resolve(null),
-    webSearchEnabled ? searchPubMed(message).catch(() => null) : Promise.resolve(null),
   ]);
 
   if (pepPediaResult) {
     systemPrompt += `\n\n─── PEP-PEDIA.ORG REFERENCE (${pepPediaResult.url}) ───\n${pepPediaResult.content}\n─── END PEP-PEDIA REFERENCE ───\n\nThe above is from the Pep-Pedia wiki — a curated peptide reference database. Prioritise this information for compound-specific facts (mechanism, dosing, half-life, storage). Cite the source as "${pepPediaResult.url}" when you use it.`;
   }
 
-  let webSearchSources: DiscussSource[] = [];
-  if (searchResult) {
-    const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    systemPrompt += `\n\n═══════════════════════════════════════════\nLIVE WEB SEARCH RESULTS (retrieved ${today})\n═══════════════════════════════════════════\n${searchResult.digest}\n\nYou have real-time web access via this search. Never claim you can't search the internet or access current information when results like this are provided.`;
-    webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
-  }
-
-  if (pubmedResult && pubmedResult.studies.length > 0) {
-    const studyLines = pubmedResult.studies.map((s, i) =>
-      `[Study ${i + 1}] ${s.title}\nPMID: ${s.pmid} | URL: ${s.url}\nAbstract: ${s.abstract}`
-    ).join("\n\n");
-    systemPrompt += `\n\n═══════════════════════════════════════════\nPUBMED CLINICAL STUDIES (NCBI, retrieved live — PubMed query: "${pubmedResult.query}")\n═══════════════════════════════════════════\nThese are real published studies retrieved from PubMed for this question. Cite specific findings, statistics, and study details when relevant. Use the PMID URLs as SOURCES_JSON_START citations.\n\n${studyLines}`;
-    const pubmedSources = pubmedResult.studies.map(s => ({
-      label: s.title.length > 70 ? s.title.slice(0, 67) + "…" : s.title,
-      url: s.url,
-      type: "study" as const,
-    }));
-    const seenUrls = new Set(webSearchSources.map(s => s.url));
-    for (const s of pubmedSources) {
-      if (!seenUrls.has(s.url)) {
-        seenUrls.add(s.url);
-        webSearchSources.push(s);
-      }
-    }
-  }
+  const webSearchSources: DiscussSource[] = [];
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1099,8 +1073,8 @@ async function callGeminiDiscuss(
   console.log(`[discuss] Calling Sage AI with ${messages.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
 
   const raw = onToken
-    ? await callSageAIStream({ system: systemPrompt, messages, maxTokens: 1200, onToken })
-    : await callSageAI({ system: systemPrompt, messages, maxTokens: 1200, enableWebSearch: false });
+    ? await callSageAIStreamWithTools({ system: systemPrompt, messages, maxTokens: 1200, onToken, onStatus })
+    : await callSageAI({ system: systemPrompt, messages, maxTokens: 1200, enableWebSearch: true });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
   const filtered = filterSageOutput(raw);
@@ -1958,6 +1932,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         false,
         glp1Logs,
         (text) => sseWrite({ type: "token", text }),
+        (msg) => sseWrite({ type: "status", text: msg }),
       );
 
       logCustomerActivity({
@@ -2114,7 +2089,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       calories: r.calories != null ? parseFloat(String(r.calories)) : null,
       proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
     }));
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }));
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }), (msg) => sseWrite({ type: "status", text: msg }));
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
