@@ -207,7 +207,7 @@ export function DashboardHome({
                   onClick={() => { if (heroQ.trim()) { askSage(heroQ.trim()); setHeroQ(""); } }}
                   disabled={!heroQ.trim()}
                   className="dh-send flex items-center justify-center rounded-lg shrink-0 active:scale-95"
-                  style={{ width: 40, height: 40, background: ACCENT, color: "#fff", opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
+                  style={{ width: 40, height: 40, background: "#fff", color: ACCENT, opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
                   title="Ask Sage"
                 >
                   <ArrowUp className="w-5 h-5" />
