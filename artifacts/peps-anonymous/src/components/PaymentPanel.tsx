@@ -38,6 +38,18 @@ function CryptoIconBadge({ currency = "USDT", size = 36 }: { currency?: string; 
   );
 }
 
+function getNetworkDisplay(network: string): { name: string; badge: string } {
+  const net = network.toLowerCase();
+  if (/erc.?20/.test(net))   return { name: "Ethereum",     badge: "ERC-20" };
+  if (/arbitrum/.test(net))  return { name: "Arbitrum One", badge: "ARB" };
+  if (/polygon/.test(net))   return { name: "Polygon",      badge: "MATIC" };
+  if (/tron|trc/.test(net))  return { name: "Tron",         badge: "TRC-20" };
+  if (/bitcoin|btc/.test(net)) return { name: "Bitcoin",    badge: "BTC" };
+  if (/solana/.test(net))    return { name: "Solana",       badge: "SOL" };
+  if (/bsc|bep.?20|binance/.test(net)) return { name: "BNB Chain", badge: "BEP-20" };
+  return { name: network, badge: "" };
+}
+
 function NetworkIcon({ network, size = 20 }: { network: string; size?: number }) {
   const net = network.toLowerCase();
   const r = Math.round(size * 0.25);
@@ -1752,8 +1764,13 @@ export default function PaymentPanel({
             >
               <NetworkIcon network={opt.network} size={38} />
               <span>
-                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{opt.network}</span>
-                <span className="block text-[10px] mt-0.5 leading-tight" style={{ color: "var(--crypto-text-muted)" }}>
+                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{getNetworkDisplay(opt.network).name}</span>
+                {getNetworkDisplay(opt.network).badge && (
+                  <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-1" style={{ background: "var(--crypto-glass-border)", color: "var(--crypto-text-muted)" }}>
+                    {getNetworkDisplay(opt.network).badge}
+                  </span>
+                )}
+                <span className="block text-[10px] mt-1 leading-tight" style={{ color: "var(--crypto-text-muted)" }}>
                   {isAutoVerified(cryptoCurrency, opt.network) ? "Auto-verified on-chain" : "Organiser confirms manually"}
                 </span>
               </span>
