@@ -150,9 +150,13 @@ function safeStrEqual(a: string, b: string): boolean {
   }
 }
 
-// Validate a transaction hash: Ethereum/BSC use 0x-prefixed 64-char hex; Bitcoin uses plain 64-char hex (txid)
+// Validate a transaction hash: EVM (0x-prefixed 64-char hex), BTC/Tron (plain 64-char hex), Solana (base58 86-88 chars)
 export function isValidTxHash(hash: string): boolean {
-  return /^0x[0-9a-fA-F]{64}$/.test(hash) || /^[0-9a-fA-F]{64}$/.test(hash);
+  return (
+    /^0x[0-9a-fA-F]{64}$/.test(hash) ||
+    /^[0-9a-fA-F]{64}$/.test(hash) ||
+    /^[1-9A-HJ-NP-Za-km-z]{86,88}$/.test(hash)
+  );
 }
 
 // Validate an Ethereum/BSC wallet address (0x + 40 hex chars)
@@ -377,34 +381,90 @@ export async function resolveOrderCrypto(
   return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
 }
 
+// ─── Admin multi-chain wallet configs ─────────────────────────
+// Each entry describes a site_config key that holds a wallet address for a
+// specific network.  Multiple currencies can share the same wallet (ERC-20 rail).
+const CHAIN_WALLET_CONFIGS: Array<{
+  configKey: string;
+  currencies: string[];
+  network: string;
+}> = [
+  { configKey: "walletAddress",   currencies: ["USDT", "USDC"], network: "ERC-20" },
+  { configKey: "wallet_arb",      currencies: ["USDT", "USDC"], network: "Arbitrum One" },
+  { configKey: "wallet_polygon",  currencies: ["USDT", "USDC"], network: "Polygon" },
+  { configKey: "wallet_solana",   currencies: ["USDC", "USDT"], network: "Solana" },
+  { configKey: "wallet_tron",     currencies: ["USDT"],         network: "TRC-20" },
+  { configKey: "wallet_ton",      currencies: ["USDT"],         network: "TON" },
+  { configKey: "wallet_btc",      currencies: ["BTC"],          network: "Bitcoin Mainnet" },
+  { configKey: "wallet_eth",      currencies: ["ETH"],          network: "Ethereum" },
+  { configKey: "wallet_xmr",      currencies: ["XMR"],          network: "Monero" },
+];
+
+/** All chain/currency pairs currently configured by admin, with their wallet addresses. */
+export async function getAdminCryptoOptions(): Promise<Array<{ currency: string; network: string; walletAddress: string }>> {
+  const opts: Array<{ currency: string; network: string; walletAddress: string }> = [];
+  for (const cfg of CHAIN_WALLET_CONFIGS) {
+    const wallet = await getConfig(cfg.configKey);
+    if (!wallet || !wallet.trim()) continue;
+    for (const cur of cfg.currencies) {
+      opts.push({ currency: cur, network: cfg.network, walletAddress: wallet.trim() });
+    }
+  }
+  return opts;
+}
+
 /**
  * Crypto payment options a customer may choose between for an order.
- * The first entry is the server's default (base) currency. On the Ethereum
- * ERC-20 USDT rail we additionally offer USDC (same wallet, different token).
- * For every other rail the only option is the resolved base currency.
+ * - Non-GB non-wholesale: all configured chain wallets (multi-chain).
+ * - ERC-20 rail (GB/wholesale/unconfigured): USDT + USDC same wallet.
+ * - Any other single-rail: the one resolved currency.
  */
 export async function getOrderCryptoOptions(
   order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null }
-): Promise<{ walletAddress: string | null; currency: string; network: string; options: { currency: string; network: string }[] }> {
+): Promise<{ walletAddress: string | null; currency: string; network: string; options: Array<{ currency: string; network: string; walletAddress: string | null }> }> {
   const base = await resolveOrderCrypto(order);
+
+  if (!order.groupBuyId && order.orderType !== "wholesale") {
+    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+    if (paymentRoutingEnabled) {
+      const chainOpts = await getAdminCryptoOptions();
+      if (chainOpts.length > 0) {
+        const first = chainOpts[0];
+        return { walletAddress: first.walletAddress, currency: first.currency, network: first.network, options: chainOpts };
+      }
+    }
+  }
+
   if (isEthErc20StableRail(base.currency, base.network, base.walletAddress)) {
     return {
       ...base,
-      options: ERC20_STABLE_CURRENCIES.map(c => ({ currency: c, network: base.network })),
+      options: ERC20_STABLE_CURRENCIES.map(c => ({ currency: c, network: base.network, walletAddress: base.walletAddress })),
     };
   }
-  return { ...base, options: [{ currency: base.currency, network: base.network }] };
+  return { ...base, options: [{ currency: base.currency, network: base.network, walletAddress: base.walletAddress }] };
 }
 
 /**
  * Resolve the wallet/currency/network to VERIFY against for an order, honouring
- * the customer's persisted stablecoin choice (order.paymentCryptoCurrency) but
- * only when it is a valid option on the resolved rail. Never trusts a raw client
- * value — the choice was validated against getOrderCryptoOptions at rate-lock time.
+ * the customer's persisted stablecoin choice (order.paymentCryptoCurrency + paymentCryptoNetwork)
+ * only when it is a valid option for this order's rail. Never trusts raw client values —
+ * the choice was validated against getOrderCryptoOptions at rate-lock time.
  */
 export async function resolveEffectiveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; paymentCryptoCurrency?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
+  // For non-GB non-wholesale orders: use the chain wallet matching the stored currency+network
+  if (!order.groupBuyId && order.orderType !== "wholesale" && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
+    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+    if (paymentRoutingEnabled) {
+      const allOpts = await getAdminCryptoOptions();
+      const match = allOpts.find(o =>
+        o.currency.toUpperCase() === order.paymentCryptoCurrency!.toUpperCase() &&
+        o.network.toLowerCase() === order.paymentCryptoNetwork!.toLowerCase()
+      );
+      if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+    }
+  }
   const base = await resolveOrderCrypto(order);
   const currency = effectiveStableCurrency(base.currency, base.network, base.walletAddress, order.paymentCryptoCurrency ?? null);
   return { walletAddress: base.walletAddress, currency, network: base.network };
@@ -440,6 +500,128 @@ const BSC_RPC_ENDPOINTS = [
   "https://1rpc.io/bnb",
   "https://bsc-mainnet.public.blastapi.io",
 ];
+
+const ARB_USDT_CONTRACT  = "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9";
+const ARB_USDC_CONTRACT  = "0xaf88d065e77c8cc2239327c5edb3a432268e5831";
+const POLY_USDT_CONTRACT = "0xc2132d05d31c914a87c6611c10748aeb04b58e8f";
+const POLY_USDC_CONTRACT = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359";
+const SOL_USDC_MINT      = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const SOL_USDT_MINT      = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+const TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+const ARB_RPC_ENDPOINTS = [
+  "https://arb1.arbitrum.io/rpc",
+  "https://arbitrum.llamarpc.com",
+  "https://rpc.ankr.com/arbitrum",
+  "https://arbitrum.blockpi.network/v1/rpc/public",
+  "https://1rpc.io/arb",
+];
+
+const POLYGON_RPC_ENDPOINTS = [
+  "https://polygon-rpc.com",
+  "https://polygon.llamarpc.com",
+  "https://rpc.ankr.com/polygon",
+  "https://polygon.blockpi.network/v1/rpc/public",
+  "https://1rpc.io/matic",
+];
+
+const SOL_RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://rpc.ankr.com/solana",
+];
+
+async function verifySolanaTokenTransfer(
+  signature: string,
+  walletAddress: string,
+  expectedAmount: number,
+  mintAddress: string,
+  tokenSymbol: string,
+  tolerancePct = 0.01,
+): Promise<VerifyResult> {
+  let txData: any = null;
+  for (const endpoint of SOL_RPC_ENDPOINTS) {
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getTransaction",
+          params: [signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }],
+        }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) continue;
+      const json: any = await r.json();
+      if (json.error || !json.result) continue;
+      txData = json.result;
+      break;
+    } catch { /* try next */ }
+  }
+  if (!txData) {
+    return { verified: false, pending: true, reason: "Solana transaction not found — it may still be propagating. Please wait and try again." };
+  }
+  if (txData.meta?.err !== null && txData.meta?.err !== undefined) {
+    return { verified: false, reason: "Solana transaction failed on-chain." };
+  }
+  const pre: any[] = txData.meta?.preTokenBalances ?? [];
+  const post: any[] = txData.meta?.postTokenBalances ?? [];
+  for (const postBal of post) {
+    if (postBal.mint !== mintAddress) continue;
+    if (postBal.owner !== walletAddress) continue;
+    const preBal = pre.find((p: any) => p.accountIndex === postBal.accountIndex && p.mint === mintAddress);
+    const preAmt = preBal ? parseFloat(preBal.uiTokenAmount?.uiAmount ?? "0") : 0;
+    const postAmt = parseFloat(postBal.uiTokenAmount?.uiAmount ?? "0");
+    const received = postAmt - preAmt;
+    if (received <= 0) continue;
+    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
+    if (received >= minAccepted) {
+      return { verified: true, amountUsdt: received, blockConfirmations: 1 };
+    }
+    const shortfall = parseFloat((expectedAmount - received).toFixed(2));
+    return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.` };
+  }
+  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.` };
+}
+
+async function verifyTronUsdtTransfer(
+  txHash: string,
+  walletAddress: string,
+  expectedAmount: number,
+  tolerancePct = 0.01,
+): Promise<VerifyResult> {
+  let data: any;
+  try {
+    const r = await fetch(`https://apilist.tronscanapi.com/api/transaction-info?hash=${txHash}`, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(14000),
+    });
+    if (!r.ok) return { verified: false, reason: "Could not reach Tron network — please try again." };
+    data = await r.json();
+  } catch {
+    return { verified: false, reason: "Could not reach Tron network — please try again." };
+  }
+  if (!data || !data.confirmed) {
+    return { verified: false, pending: true, reason: "Tron transaction not yet confirmed. Please wait for on-chain confirmation." };
+  }
+  const transfers: any[] = data.trc20TransferInfo ?? [];
+  for (const t of transfers) {
+    const contract = (t.contract_address ?? t.contractAddress ?? "").toLowerCase();
+    if (contract !== TRON_USDT_CONTRACT.toLowerCase()) continue;
+    const to = (t.to_address ?? t.to ?? "");
+    if (to !== walletAddress) continue;
+    const decimals = parseInt(t.decimals ?? "6", 10);
+    const amount = parseInt(t.amount ?? "0", 10) / Math.pow(10, decimals);
+    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
+    if (amount >= minAccepted && amount > 0) {
+      return { verified: true, amountUsdt: amount, blockConfirmations: 1 };
+    }
+    if (amount > 0) {
+      const shortfall = parseFloat((expectedAmount - amount).toFixed(2));
+      return { verified: false, reason: `Underpayment: ${amount.toFixed(2)} USDT received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} USDT.` };
+    }
+  }
+  return { verified: false, reason: "No USDT TRC-20 transfer to the expected wallet found in this Tron transaction." };
+}
 
 /**
  * @param retryOnNull - when true, a null result is treated like an error and the
@@ -704,6 +886,27 @@ export async function verifyTransaction(
   const cur = currency.toUpperCase().trim();
   const net = network.toLowerCase().trim();
 
+  if (cur === "USDT" && /arbitrum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ARB_RPC_ENDPOINTS, ARB_USDT_CONTRACT, USDT_DECIMALS, "Arbitrum", tolerancePct, "USDT");
+  }
+  if (cur === "USDC" && /arbitrum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ARB_RPC_ENDPOINTS, ARB_USDC_CONTRACT, USDC_DECIMALS, "Arbitrum", tolerancePct, "USDC");
+  }
+  if (cur === "USDT" && /polygon/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, POLYGON_RPC_ENDPOINTS, POLY_USDT_CONTRACT, USDT_DECIMALS, "Polygon", tolerancePct, "USDT");
+  }
+  if (cur === "USDC" && /polygon/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, POLYGON_RPC_ENDPOINTS, POLY_USDC_CONTRACT, USDC_DECIMALS, "Polygon", tolerancePct, "USDC");
+  }
+  if (cur === "USDC" && /solana/.test(net)) {
+    return verifySolanaTokenTransfer(txHash, walletAddress, expectedAmount, SOL_USDC_MINT, "USDC", tolerancePct);
+  }
+  if (cur === "USDT" && /solana/.test(net)) {
+    return verifySolanaTokenTransfer(txHash, walletAddress, expectedAmount, SOL_USDT_MINT, "USDT", tolerancePct);
+  }
+  if (cur === "USDT" && /tron|trc/.test(net)) {
+    return verifyTronUsdtTransfer(txHash, walletAddress, expectedAmount, tolerancePct);
+  }
   if (cur === "USDT" && /erc.?20|ethereum/.test(net)) {
     return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDT_CONTRACT, USDT_DECIMALS, "Ethereum", tolerancePct, "USDT");
   }
@@ -763,7 +966,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   const orderId = req.query["orderId"] as string | undefined;
   if (orderId) {
     const [order] = await db
-      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency })
+      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
 
@@ -909,14 +1112,30 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
         if (directShippingPaymentsEnabled) paymentsEnabled = true;
       }
 
-      // Reflect the buyer's previously-chosen token (e.g. USDC) so the panel
-      // re-opens on the same coin after a refresh — but only when it is still a
-      // valid option for this order's rail.
-      const persistedSel = (order.paymentCryptoCurrency ?? "").toUpperCase();
-      const selMatch = availableCryptoOptions.find(o => o.currency.toUpperCase() === persistedSel);
+      // Reflect the buyer's previously-chosen token so the panel re-opens on the
+      // same coin/network after a refresh — but only when it is still a valid option.
+      const persistedCur = (order.paymentCryptoCurrency ?? "").toUpperCase();
+      const persistedNet = (order.paymentCryptoNetwork  ?? "").toLowerCase();
+      const selMatch =
+        (persistedCur && persistedNet)
+          ? availableCryptoOptions.find(o => o.currency.toUpperCase() === persistedCur && o.network.toLowerCase() === persistedNet)
+          : persistedCur
+            ? availableCryptoOptions.find(o => o.currency.toUpperCase() === persistedCur)
+            : null;
       if (selMatch) {
         cryptoCurrency = selMatch.currency;
-        cryptoNetwork = selMatch.network;
+        cryptoNetwork  = selMatch.network;
+        // For non-GB multi-chain orders: surface the per-chain wallet so the frontend
+        // can validate the address format correctly (EVM vs Solana vs Tron).
+        if (!order.groupBuyId && (selMatch as any).walletAddress) {
+          cryptoWalletAddress = (selMatch as any).walletAddress;
+        }
+      } else if (!order.groupBuyId && availableCryptoOptions.length > 0) {
+        // No persisted match — surface first option's wallet for non-GB orders
+        const first = availableCryptoOptions[0];
+        cryptoCurrency = first.currency;
+        cryptoNetwork  = first.network;
+        if ((first as any).walletAddress) cryptoWalletAddress = (first as any).walletAddress;
       }
     }
   }
@@ -947,34 +1166,47 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const { currency: baseCurrency, network, options } = await getOrderCryptoOptions(order);
+  const { currency: baseCurrency, network: baseNetwork, options } = await getOrderCryptoOptions(order);
 
-  // Honour a customer-selected crypto currency, but only when it is a valid
-  // option for this order's rail (e.g. USDC on the ERC-20 USDT rail). When the
-  // client sends nothing, keep the previously-persisted choice so a page refresh
-  // never silently clobbers it. Anything invalid falls back to the server
-  // default — never trust the client blindly.
-  const requested = typeof req.body?.cryptoCurrency === "string" ? req.body.cryptoCurrency.toUpperCase().trim() : "";
-  const persisted = (order.paymentCryptoCurrency ?? "").toUpperCase();
-  const currency =
-    options.find(o => o.currency.toUpperCase() === requested)?.currency
-    ?? options.find(o => o.currency.toUpperCase() === persisted)?.currency
-    ?? baseCurrency;
+  // Honour a customer-selected crypto currency+network, but only when it is a valid
+  // option for this order's rail. When the client sends nothing, keep the
+  // previously-persisted choice so a page refresh never silently clobbers it.
+  // Anything invalid falls back to the server default — never trust the client blindly.
+  const reqCurrency = typeof req.body?.cryptoCurrency === "string" ? req.body.cryptoCurrency.toUpperCase().trim() : "";
+  const reqNetwork  = typeof req.body?.cryptoNetwork  === "string" ? req.body.cryptoNetwork.trim() : "";
+  const persistedCur = (order.paymentCryptoCurrency ?? "").toUpperCase();
+  const persistedNet = (order.paymentCryptoNetwork  ?? "").toLowerCase();
 
-  // Persist the chosen currency so the verify endpoints + auto-verifiers check
-  // the same token the buyer was shown. Stablecoins stay 1:1, so
-  // resolveLockedUsdPerCoin won't clobber this value.
-  if ((order.paymentCryptoCurrency ?? "").toUpperCase() !== currency.toUpperCase()) {
-    await db.update(ordersTable).set({ paymentCryptoCurrency: currency.toUpperCase() }).where(eq(ordersTable.id, order.id));
+  // Match by currency+network when client sends both; fall back to currency-only match; then persisted; then base
+  const resolvedOpt =
+    (reqCurrency && reqNetwork)
+      ? options.find(o => o.currency.toUpperCase() === reqCurrency && o.network.toLowerCase() === reqNetwork.toLowerCase())
+      : reqCurrency
+        ? options.find(o => o.currency.toUpperCase() === reqCurrency)
+        : null;
+  const persistedOpt =
+    (persistedCur && persistedNet)
+      ? options.find(o => o.currency.toUpperCase() === persistedCur && o.network.toLowerCase() === persistedNet)
+      : persistedCur
+        ? options.find(o => o.currency.toUpperCase() === persistedCur)
+        : null;
+  const chosenOpt = resolvedOpt ?? persistedOpt ?? options[0] ?? { currency: baseCurrency, network: baseNetwork, walletAddress: null };
+  const currency = chosenOpt.currency;
+  const network  = chosenOpt.network;
+  const walletAddress = chosenOpt.walletAddress ?? null;
+
+  // Persist the chosen currency+network so the verify endpoints + auto-verifiers
+  // check the same token/chain the buyer was shown.
+  const curChanged = (order.paymentCryptoCurrency ?? "").toUpperCase() !== currency.toUpperCase();
+  const netChanged = (order.paymentCryptoNetwork  ?? "").toLowerCase() !== network.toLowerCase();
+  if (curChanged || netChanged) {
+    await db.update(ordersTable)
+      .set({ paymentCryptoCurrency: currency.toUpperCase(), paymentCryptoNetwork: network })
+      .where(eq(ordersTable.id, order.id));
   }
 
   // Lock the USD total (fiat → USD). Re-use a cached value only when it is
-  // still within 3% of the current total — the same staleness check used in
-  // /pay so the displayed amount can never lag behind an edited grandTotal.
-  // The drift is checked in BOTH directions: an order edited DOWN leaves a
-  // higher stale lock (buyer would be shown/charged too much), an order edited
-  // UP leaves a lower stale lock (buyer would pay too little). Either way we
-  // re-lock to the fresh total.
+  // still within 3% of the current total.
   const currentUsd = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
   const lockedUsd = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
   const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentUsd) > currentUsd * 0.03;
@@ -984,7 +1216,7 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   }
 
   // Lock the coin price (USD → coin). Stablecoins are 1:1; for volatile coins we
-  // must have a live price — never guess, or the buyer overpays/underpays.
+  // must have a live price — never guess.
   const usdPerCoin = await resolveLockedUsdPerCoin(order, currency, true);
   if (usdPerCoin == null) {
     res.status(503).json({
@@ -1002,6 +1234,7 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
     usdAmount,
     cryptoCurrency: currency,
     cryptoNetwork: network,
+    walletAddress,
     usdPerCoin,
     cryptoAmount,
     isStable: stable,
@@ -1819,6 +2052,52 @@ router.patch("/admin/orders/:id/payment-status", async (req, res): Promise<void>
     .returning();
   if (paymentStatus === "confirmed") maybeSubmitSharedOrder(updated.id).catch(() => {});
   res.json({ id: updated.id, paymentStatus: updated.paymentStatus });
+});
+
+// ─── ADMIN: Chain wallet config ────────────────────────────────
+// Returns all configured chain wallets (excluding the main ERC-20 which has its
+// own protected endpoint).
+router.get("/admin/chain-wallets", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const result: Array<{ configKey: string; label: string; network: string; currencies: string[]; walletAddress: string | null }> = [];
+  for (const cfg of CHAIN_WALLET_CONFIGS) {
+    if (cfg.configKey === "walletAddress") continue; // handled by separate protected endpoint
+    const wallet = await getConfig(cfg.configKey);
+    result.push({
+      configKey: cfg.configKey,
+      label: cfg.network,
+      network: cfg.network,
+      currencies: cfg.currencies,
+      walletAddress: wallet ?? null,
+    });
+  }
+  res.json(result);
+});
+
+router.patch("/admin/chain-wallets", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const updates = req.body as Record<string, string | null>;
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+    res.status(400).json({ error: "Body must be an object of {configKey: walletAddress}" });
+    return;
+  }
+  const allowedKeys = new Set(CHAIN_WALLET_CONFIGS.map(c => c.configKey).filter(k => k !== "walletAddress"));
+  for (const [key, value] of Object.entries(updates)) {
+    if (!allowedKeys.has(key)) continue;
+    const v = typeof value === "string" ? value.trim() : "";
+    if (v) {
+      await setConfig(key, v);
+    } else {
+      await db.delete(siteConfigTable).where(eq(siteConfigTable.key, key));
+    }
+  }
+  const result: Array<{ configKey: string; walletAddress: string | null }> = [];
+  for (const cfg of CHAIN_WALLET_CONFIGS) {
+    if (cfg.configKey === "walletAddress") continue;
+    const wallet = await getConfig(cfg.configKey);
+    result.push({ configKey: cfg.configKey, walletAddress: wallet ?? null });
+  }
+  res.json(result);
 });
 
 export default router;

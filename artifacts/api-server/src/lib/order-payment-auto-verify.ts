@@ -110,6 +110,17 @@ async function resolveOrderCrypto(order: {
     return { walletAddress, currency, network };
   }
 
+  // For non-GB non-wholesale orders with a persisted chain choice, use the matching chain wallet.
+  if (!order.groupBuyId && order.orderType !== "wholesale" && (order as any).paymentCryptoCurrency && (order as any).paymentCryptoNetwork) {
+    const { getAdminCryptoOptions } = await import("../routes/payments");
+    const allOpts = await getAdminCryptoOptions();
+    const match = allOpts.find((o: { currency: string; network: string; walletAddress: string | null }) =>
+      o.currency.toUpperCase() === String((order as any).paymentCryptoCurrency).toUpperCase() &&
+      o.network.toLowerCase() === String((order as any).paymentCryptoNetwork).toLowerCase()
+    );
+    if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+  }
+
   const walletAddress = await getConfig("walletAddress");
   return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
 }
@@ -129,6 +140,7 @@ type PendingOrder = {
   paymentStatus: string;
   paymentTxHash: string | null;
   paymentCryptoCurrency: string | null;
+  paymentCryptoNetwork: string | null;
   paymentCryptoRate: string | null;
 };
 
@@ -360,6 +372,7 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
         paymentStatus: ordersTable.paymentStatus,
         paymentTxHash: ordersTable.paymentTxHash,
         paymentCryptoCurrency: ordersTable.paymentCryptoCurrency,
+        paymentCryptoNetwork: ordersTable.paymentCryptoNetwork,
         paymentCryptoRate: ordersTable.paymentCryptoRate,
       })
       .from(ordersTable)

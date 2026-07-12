@@ -6199,15 +6199,24 @@ function PaymentsTab({ secret }: { secret: string }) {
   const [showCodeForm, setShowCodeForm] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
 
+  // Chain wallet config (Arbitrum, Polygon, Solana, Tron, TON, BTC, ETH, XMR)
+  type ChainWalletEntry = { configKey: string; label: string; network: string; currencies: string[]; walletAddress: string | null };
+  const [chainWallets, setChainWallets] = useState<ChainWalletEntry[]>([]);
+  const [chainWalletInputs, setChainWalletInputs] = useState<Record<string, string>>({});
+  const [savingChainWallets, setSavingChainWallets] = useState(false);
+  const [chainWalletMsg, setChainWalletMsg] = useState("");
+  const [chainWalletError, setChainWalletError] = useState("");
+
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [cfgRes, ordRes] = await Promise.all([
+      const [cfgRes, ordRes, chainRes] = await Promise.all([
         fetch(apiUrl("/admin/payments-config"), { headers: { "x-admin-secret": secret } }),
         fetch(apiUrl("/admin/payment-orders"), { headers: { "x-admin-secret": secret } }),
+        fetch(apiUrl("/admin/chain-wallets"), { headers: { "x-admin-secret": secret } }),
       ]);
       if (!cfgRes.ok) throw new Error(`Config fetch failed: ${cfgRes.status}`);
       const cfg = await cfgRes.json();
@@ -6217,6 +6226,15 @@ function PaymentsTab({ secret }: { secret: string }) {
       if (cfg.anonPayNetwork) setAnonPayNetworkInput(cfg.anonPayNetwork);
       const orders = ordRes.ok ? await ordRes.json() : [];
       setPaymentOrders(Array.isArray(orders) ? orders : []);
+      if (chainRes.ok) {
+        const chains = await chainRes.json();
+        if (Array.isArray(chains)) {
+          setChainWallets(chains);
+          const inputs: Record<string, string> = {};
+          for (const c of chains) inputs[c.configKey] = c.walletAddress ?? "";
+          setChainWalletInputs(inputs);
+        }
+      }
     } catch (err: any) {
       setLoadError(err?.message ?? "Failed to load payments data");
     } finally {
@@ -6346,6 +6364,34 @@ function PaymentsTab({ secret }: { secret: string }) {
       setAnonPayError(d.error || "Failed to save");
     }
     setSavingAnonPay(false);
+  };
+
+  const saveChainWallets = async () => {
+    setSavingChainWallets(true); setChainWalletMsg(""); setChainWalletError("");
+    const body: Record<string, string | null> = {};
+    for (const [key, val] of Object.entries(chainWalletInputs)) {
+      body[key] = val.trim() || null;
+    }
+    const res = await fetch(apiUrl("/admin/chain-wallets"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      if (Array.isArray(updated)) {
+        setChainWallets(prev => prev.map(c => {
+          const found = updated.find((u: any) => u.configKey === c.configKey);
+          return found ? { ...c, walletAddress: found.walletAddress } : c;
+        }));
+      }
+      setChainWalletMsg("Chain wallets saved!");
+      setTimeout(() => setChainWalletMsg(""), 3000);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setChainWalletError(d.error || "Failed to save chain wallets");
+    }
+    setSavingChainWallets(false);
   };
 
   const updatePaymentStatus = async (orderId: string, paymentStatus: string) => {
@@ -6617,6 +6663,41 @@ function PaymentsTab({ secret }: { secret: string }) {
           Save AnonPay Config
         </Button>
       </Card>
+
+      {/* Chain wallet addresses */}
+      {chainWallets.length > 0 && (
+        <Card className="p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-primary" />
+            <p className="font-semibold text-sm">Multi-Chain Wallet Addresses</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Set a receiving wallet address for each supported chain. Customers will see these options when chain-specific routing is enabled.
+            Leave blank to hide that chain from checkout.
+          </p>
+          <div className="space-y-3">
+            {chainWallets.map(chain => (
+              <div key={chain.configKey} className="space-y-1">
+                <Label className="text-xs font-semibold">
+                  {chain.currencies.join(" / ")} — {chain.network}
+                </Label>
+                <Input
+                  className="font-mono text-xs"
+                  placeholder={`${chain.network} wallet address`}
+                  value={chainWalletInputs[chain.configKey] ?? ""}
+                  onChange={e => setChainWalletInputs(prev => ({ ...prev, [chain.configKey]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          {chainWalletMsg && <p className="text-sm text-green-600 font-medium">{chainWalletMsg}</p>}
+          {chainWalletError && <p className="text-xs text-destructive font-medium">⚠ {chainWalletError}</p>}
+          <Button size="sm" onClick={saveChainWallets} disabled={savingChainWallets} className="gap-2">
+            {savingChainWallets ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Save Chain Wallets
+          </Button>
+        </Card>
+      )}
 
       {/* Payment Reconciliation */}
       <PaymentReconciliationSection secret={secret} />
