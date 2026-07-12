@@ -32,6 +32,8 @@ interface SageChatProps {
   onClose: () => void;
   /** A question to auto-send when the panel opens. */
   seed?: string;
+  /** Open directly to the history panel instead of a new chat. */
+  openToHistory?: boolean;
   /** Theme tokens (from the dashboard palette). */
   t: Tokens;
   accent?: string;
@@ -180,7 +182,7 @@ function formatSessionDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatProps) {
+export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT }: SageChatProps) {
   const discuss = useBloodTestDiscuss();
   const [messages, setMessages] = useState<SageMessage[]>([]);
   const [input, setInput] = useState("");
@@ -365,17 +367,21 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
     requestIdRef.current++;
     convIdRef.current = null;
     convTitleRef.current = "New Chat";
-    setHistoryOpen(false);
     setMessages([makeGreeting()]);
     setInput("");
     setSending(false);
     setError(null);
     setLimitReached(false);
     void loadConversations();
-    if (seed && seed.trim()) {
-      void send(seed.trim(), []);
+    if (openToHistory) {
+      setHistoryOpen(true);
     } else {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setHistoryOpen(false);
+      if (seed && seed.trim()) {
+        void send(seed.trim(), []);
+      } else {
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

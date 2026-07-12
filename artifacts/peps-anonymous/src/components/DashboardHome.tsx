@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Plus, ArrowUp, MoreVertical, Star, Heart,
   Package, CheckCircle2, Award, FlaskConical, Clock, SlidersHorizontal,
   Syringe, Store, ArrowRight, QrCode, MapPin, Check, Sparkles, Droplet,
-  ClipboardList, HeartPulse, UsersRound, ReceiptText,
+  ClipboardList, HeartPulse, UsersRound, ReceiptText, History,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -51,7 +51,9 @@ export function DashboardHome({
   const [heroFocused, setHeroFocused] = useState(false);
   const [sageOpen, setSageOpen] = useState(false);
   const [sageSeed, setSageSeed] = useState("");
-  const askSage = (q: string) => { setSageSeed(q); setSageOpen(true); };
+  const [sageOpenHistory, setSageOpenHistory] = useState(false);
+  const askSage = (q: string) => { setSageOpenHistory(false); setSageSeed(q); setSageOpen(true); };
+  const openSageHistory = () => { setSageSeed(""); setSageOpenHistory(true); setSageOpen(true); };
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // ── Content dropdown menus (filter / card overflow) ──
@@ -212,7 +214,7 @@ export function DashboardHome({
                 </button>
               </div>
 
-              {/* Quick prompts */}
+              {/* Quick prompts + History */}
               <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
                 {([
                   { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
@@ -228,6 +230,13 @@ export function DashboardHome({
                     <chip.Icon className="w-3.5 h-3.5" /> {chip.label}
                   </button>
                 ))}
+                <button
+                  onClick={openSageHistory}
+                  className="dh-chip flex items-center gap-1.5 rounded-full"
+                  style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,.75)", padding: "9px 14px", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)" }}
+                >
+                  <History className="w-3.5 h-3.5" /> History
+                </button>
               </div>
             </div>
           </div>
@@ -611,7 +620,7 @@ export function DashboardHome({
         </div>
       </div>
 
-      <SageChat open={sageOpen} onClose={() => setSageOpen(false)} seed={sageSeed} t={T} accent={ACCENT} />
+      <SageChat open={sageOpen} onClose={() => { setSageOpen(false); setSageOpenHistory(false); }} seed={sageSeed} openToHistory={sageOpenHistory} t={T} accent={ACCENT} />
     </DashboardShell>
   );
 }
