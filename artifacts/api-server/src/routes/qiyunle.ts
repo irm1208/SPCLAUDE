@@ -287,6 +287,7 @@ OUTPUT FORMAT:
       maxTokens: 4096,
       enableWebSearch: false,
       temperature: 0,
+      jsonMode: true,
     });
     const raw = PREFILL + rawSuffix;
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();

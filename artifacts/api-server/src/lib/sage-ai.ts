@@ -89,6 +89,8 @@ export interface SageAIParams {
   enableWebSearch?: boolean;
   /** Optional sampling temperature (0-1). Omitted = provider default. Use a low value for deterministic extraction tasks. */
   temperature?: number;
+  /** When true, adds response_format: { type: "json_object" } to the request body. Required for GPT models to reliably return JSON. */
+  jsonMode?: boolean;
 }
 
 // ─── Tool definitions ────────────────────────────────────────────────────────
@@ -189,11 +191,13 @@ async function callModelRaw(
   maxTokens: number,
   tools?: unknown[],
   temperature?: number,
+  jsonMode?: boolean,
 ): Promise<ModelResponse> {
   const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
   if (tools && tools.length > 0) body.tools = tools;
   if (temperature != null) body.temperature = temperature;
+  if (jsonMode) body.response_format = { type: "json_object" };
 
   const res = await fetch(`${BASE_URL}/v1/messages`, {
     method: "POST",
@@ -235,10 +239,12 @@ async function callModel(
   messages: SageMessage[],
   maxTokens: number,
   temperature?: number,
+  jsonMode?: boolean,
 ): Promise<string> {
   const body: Record<string, unknown> = { model, max_tokens: maxTokens, messages, stream: false };
   if (system) body.system = system;
   if (temperature != null) body.temperature = temperature;
+  if (jsonMode) body.response_format = { type: "json_object" };
 
   const res = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
@@ -424,7 +430,7 @@ export async function callSageAIStream({
 }
 
 export async function callSageAI({
-  system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, enableWebSearch = true, temperature,
+  system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, enableWebSearch = true, temperature, jsonMode,
 }: SageAIParams): Promise<string> {
   const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
@@ -432,14 +438,14 @@ export async function callSageAI({
 
   // Explicit override (admin test panel): single attempt, no silent fallback substitution.
   if (model) {
-    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens, temperature);
+    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens, temperature, jsonMode);
   }
 
   const activeModel = await getActiveSageModel();
 
   const callFn = enableWebSearch
     ? (m: string, k: string) => callModelWithTools(m, k, system, messages, maxTokens, temperature)
-    : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens, temperature);
+    : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens, temperature, jsonMode);
 
   try {
     return await callFn(activeModel, apiKey);
