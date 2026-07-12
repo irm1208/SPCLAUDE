@@ -371,6 +371,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
     setSending(false);
     setError(null);
     setLimitReached(false);
+    void loadConversations();
     if (seed && seed.trim()) {
       void send(seed.trim(), []);
     } else {
@@ -451,12 +452,20 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           </button>
           <button
             onClick={openHistory}
-            className="flex items-center justify-center rounded-lg active:scale-95"
+            className="relative flex items-center justify-center rounded-lg active:scale-95"
             style={{ width: 32, height: 32, background: "rgba(255,255,255,.14)", color: "#fff" }}
             title="Past conversations"
             aria-label="Past conversations"
           >
             <History className="w-4 h-4" />
+            {conversations.length > 0 && (
+              <span
+                className="absolute -top-1 -right-1 flex items-center justify-center rounded-full text-white font-bold"
+                style={{ width: 14, height: 14, fontSize: 9, background: accent, lineHeight: 1 }}
+              >
+                {conversations.length > 9 ? "9+" : conversations.length}
+              </span>
+            )}
           </button>
           <button
             onClick={onClose}
@@ -495,26 +504,29 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
                 )}
                 {!loadingHistory &&
                   conversations.map((conv) => (
-                    <div
+                    <button
                       key={conv.id}
+                      type="button"
                       onClick={() => resumeConversation(conv)}
-                      className="flex items-start gap-2 rounded-xl cursor-pointer group"
-                      style={{ padding: "9px 10px", marginBottom: 4 }}
+                      className="flex items-start gap-2 rounded-xl w-full text-left group active:scale-[.98] transition-transform"
+                      style={{ padding: "9px 10px", marginBottom: 4, background: t.panel2, border: `1px solid ${t.border}` }}
                     >
-                      <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: t.subtle }} />
+                      <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accent }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold truncate" style={{ color: t.text }}>{conv.title}</p>
                         <p className="text-[10px]" style={{ color: t.muted }}>{relativeTime(conv.updatedAt)}</p>
                       </div>
-                      <button
+                      <span
                         onClick={(e) => deleteConversation(conv.id, e)}
                         className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                         style={{ color: t.subtle }}
                         aria-label="Delete conversation"
+                        role="button"
+                        tabIndex={0}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                   ))}
               </div>
             </div>
@@ -593,6 +605,42 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
                     )}
                   </div>
                 ),
+              )}
+
+              {/* Past-conversations widget — shown only on a fresh session before any user message */}
+              {messages.length === 1 && messages[0].greeting && conversations.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <p className="text-xs font-semibold" style={{ color: t.muted, paddingLeft: 2, marginBottom: 2 }}>
+                    Pick up where you left off
+                  </p>
+                  {conversations.slice(0, 4).map((conv) => (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => resumeConversation(conv)}
+                      className="flex items-center gap-2.5 rounded-xl text-left w-full active:scale-[.98] transition-transform"
+                      style={{ padding: "9px 11px", background: t.panel, border: `1px solid ${t.border}` }}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
+                      <span className="flex-1 min-w-0 text-xs font-semibold truncate" style={{ color: t.text }}>
+                        {conv.title}
+                      </span>
+                      <span className="text-[10px] shrink-0" style={{ color: t.muted }}>
+                        {relativeTime(conv.updatedAt)}
+                      </span>
+                    </button>
+                  ))}
+                  {conversations.length > 4 && (
+                    <button
+                      type="button"
+                      onClick={openHistory}
+                      className="text-xs text-left"
+                      style={{ color: accent, padding: "2px 11px" }}
+                    >
+                      View {conversations.length - 4} more…
+                    </button>
+                  )}
+                </div>
               )}
 
               {sending && (
