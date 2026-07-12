@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Plus, ArrowUp, MoreVertical, Star, Heart,
@@ -54,6 +54,22 @@ export function DashboardHome({
   const [sageOpenHistory, setSageOpenHistory] = useState(false);
   const askSage = (q: string) => { setSageOpenHistory(false); setSageSeed(q); setSageOpen(true); };
   const openSageHistory = () => { setSageSeed(""); setSageOpenHistory(true); setSageOpen(true); };
+
+  type RecentConv = { id: string; title: string; lastUserMsg: string };
+  const [recentConvs, setRecentConvs] = useState<RecentConv[]>([]);
+  useEffect(() => {
+    fetch("/api/blood-tests/conversations", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: Array<{ id: string; title: string; messages: Array<{ role: string; content: string }> }>) => {
+        const parsed: RecentConv[] = rows.slice(0, 3).map(r => {
+          const lastUserMsg = [...(r.messages ?? [])].reverse().find(m => m.role === "user")?.content ?? "";
+          return { id: r.id, title: r.title ?? "Untitled", lastUserMsg };
+        }).filter(r => r.lastUserMsg.length > 0);
+        setRecentConvs(parsed);
+      })
+      .catch(() => {});
+  }, []);
+
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // ── Content dropdown menus (filter / card overflow) ──
@@ -223,9 +239,41 @@ export function DashboardHome({
                 </button>
               </div>
 
-              {/* Quick prompts */}
+              {/* Quick prompts — personalised from history when available */}
               <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
-                {([
+                {recentConvs.length > 0 ? (() => {
+                  const staticFallbacks = [
+                    { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
+                    { label: "Review a protocol", Icon: ClipboardList, prompt: "Help me review a protocol — what should I keep in mind?" },
+                    { label: "My compounds", Icon: FlaskConical, prompt: "Give me an overview of my active compounds and how they work together." },
+                  ];
+                  // Show up to 2 personalised chips from recent convos, pad with 1 static chip
+                  const personalised = recentConvs.slice(0, 2).map(c => ({
+                    label: c.title.length > 28 ? c.title.slice(0, 26).trimEnd() + "…" : c.title,
+                    prompt: `Following up on our previous conversation — ${c.lastUserMsg}`,
+                    personal: true,
+                  }));
+                  const remaining = 3 - personalised.length;
+                  const statics = staticFallbacks.slice(0, remaining).map(s => ({ ...s, personal: false }));
+                  return [...personalised, ...statics].map((chip, i) => (
+                    <button
+                      key={i}
+                      onClick={() => askSage(chip.prompt)}
+                      className="dh-chip flex items-center gap-1.5 rounded-full"
+                      style={{
+                        fontSize: 12.5, fontWeight: 600, padding: "9px 14px",
+                        color: chip.personal ? "rgba(255,255,255,.95)" : "#fff",
+                        background: chip.personal ? "rgba(255,255,255,.15)" : "rgba(255,255,255,.1)",
+                        border: `1px solid ${chip.personal ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.2)"}`,
+                      }}
+                    >
+                      {chip.personal
+                        ? <><History className="w-3.5 h-3.5 shrink-0" /> {chip.label}</>
+                        : <>{('Icon' in chip) && <chip.Icon className="w-3.5 h-3.5" />} {chip.label}</>
+                      }
+                    </button>
+                  ));
+                })() : ([
                   { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
                   { label: "Review a protocol", Icon: ClipboardList, prompt: "Help me review a protocol — what should I keep in mind?" },
                   { label: "My compounds", Icon: FlaskConical, prompt: "Give me an overview of my active compounds and how they work together." },
