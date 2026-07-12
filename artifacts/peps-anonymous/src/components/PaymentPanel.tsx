@@ -348,7 +348,7 @@ function TxInput({ label, value, onChange, onSubmit, submitting, error, retry }:
 // ── Types ──────────────────────────────────────────────────────
 
 type PaymentMethod = "crypto" | "revolut" | "paypal" | "anonpay";
-type Step = "loading" | "unavailable" | "method" | "choice" | "test" | "pay" | "revolut" | "paypal" | "anonpay";
+type Step = "loading" | "unavailable" | "method" | "chain" | "choice" | "test" | "pay" | "revolut" | "paypal" | "anonpay";
 type FiatMethod = "revolut" | "paypal";
 
 interface Props {
@@ -1080,20 +1080,36 @@ export default function PaymentPanel({
         </div>
 
         <div className="space-y-2.5">
-          {availableMethods.includes("crypto") && (
-            <button
-              onClick={() => { setStep("choice"); setError(""); }}
-              className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
-              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
-            >
-              <CryptoIconBadge currency={cryptoCurrency} size={44} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{availableCryptoOptions.length > 1 ? [...new Set(availableCryptoOptions.map(o => o.currency))].join(" or ") + " Crypto" : `${cryptoCurrency} Crypto`}</p>
-                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{availableCryptoOptions.length > 1 ? [...new Set(availableCryptoOptions.map(o => o.network))].join(" · ") : cryptoNetwork} · {isAutoVerified(cryptoCurrency, cryptoNetwork) ? "Verified on-chain" : "Organiser confirms manually"}</p>
-              </div>
-              <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
-            </button>
-          )}
+          {availableMethods.includes("crypto") && [...new Set(availableCryptoOptions.map(o => o.currency))].map(cur => {
+            const nets = availableCryptoOptions.filter(o => o.currency === cur);
+            return (
+              <button
+                key={cur}
+                onClick={() => {
+                  setCryptoCurrency(cur);
+                  setError("");
+                  if (nets.length === 1) {
+                    setCryptoNetwork(nets[0].network);
+                    setPickedOption({ currency: cur, network: nets[0].network });
+                    setStep("choice");
+                  } else {
+                    setStep("chain");
+                  }
+                }}
+                className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
+                style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
+              >
+                <CryptoIconBadge currency={cur} size={44} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Pay with {cur}</p>
+                  <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                    {nets.map(o => o.network).join(" · ")} · {isAutoVerified(cur, nets[0].network) ? "Verified on-chain" : "Organiser confirms"}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
+              </button>
+            );
+          })}
 
           {availableMethods.includes("revolut") && (
             <button
@@ -1698,9 +1714,10 @@ export default function PaymentPanel({
     );
   }
 
-  // ── Crypto: choice ───────────────────────────────────────────
+  // ── Crypto: chain picker ─────────────────────────────────────
 
-  if (step === "choice") {
+  if (step === "chain") {
+    const networksForCurrency = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
     return (
       <Card className="p-5 space-y-4" style={cryptoStyle}>
         <CollectedByBanner collectedBy={collectedBy} />
@@ -1718,39 +1735,61 @@ export default function PaymentPanel({
           <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
         </div>
 
-        {availableCryptoOptions.length > 1 && (
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--crypto-text-muted)" }}>Choose your blockchain</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          {networksForCurrency.map(opt => (
+            <button
+              key={opt.network}
+              onClick={() => {
+                setCryptoNetwork(opt.network);
+                setPickedOption({ currency: cryptoCurrency, network: opt.network });
+                setStep("choice");
+                setError("");
+              }}
+              className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl transition-all text-center"
+              style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
+            >
+              <NetworkIcon network={opt.network} size={38} />
+              <span>
+                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{opt.network}</span>
+                <span className="block text-[10px] mt-0.5 leading-tight" style={{ color: "var(--crypto-text-muted)" }}>
+                  {isAutoVerified(cryptoCurrency, opt.network) ? "Auto-verified on-chain" : "Organiser confirms manually"}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  // ── Crypto: choice ───────────────────────────────────────────
+
+  if (step === "choice") {
+    return (
+      <Card className="p-5 space-y-4" style={cryptoStyle}>
+        <CollectedByBanner collectedBy={collectedBy} />
+        <div className="flex items-center gap-3">
+          {(multiMethod || availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase()).length > 1) && (
+            <button
+              onClick={() => {
+                const nets = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
+                if (nets.length > 1) { setStep("chain"); } else { goToMethodPicker(); }
+                setError("");
+              }}
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"
+              style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" style={{ color: "var(--crypto-text-primary)" }} />
+            </button>
+          )}
+          <CryptoIconBadge currency={cryptoCurrency} size={30} />
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "var(--crypto-text-muted)" }}>Choose your coin &amp; network</p>
-            <div className="flex flex-wrap gap-2">
-              {availableCryptoOptions.map(opt => {
-                const selected = cryptoCurrency.toUpperCase() === opt.currency.toUpperCase() && cryptoNetwork.toLowerCase() === opt.network.toLowerCase();
-                return (
-                  <button
-                    key={`${opt.currency}-${opt.network}`}
-                    onClick={() => {
-                      if (selected || rateLoading) return;
-                      setPickedOption({ currency: opt.currency, network: opt.network });
-                      setCryptoCurrency(opt.currency);
-                      setCryptoNetwork(opt.network);
-                      setError("");
-                    }}
-                    disabled={rateLoading}
-                    className="flex items-center gap-2 py-2 px-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 text-left"
-                    style={selected
-                      ? { background: "#1B3A7A", color: "#fff", border: "1px solid #1B3A7A" }
-                      : { background: "var(--crypto-glass-bg)", color: "var(--crypto-text-primary)", border: "1px solid var(--crypto-glass-border)" }}
-                  >
-                    <NetworkIcon network={opt.network} size={22} />
-                    <span>
-                      <span className="block font-bold leading-tight">{opt.currency}</span>
-                      <span className="block text-[10px] font-normal leading-tight" style={{ opacity: selected ? 0.75 : 0.65 }}>{opt.network}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <p className="font-bold text-base leading-tight" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
+            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--crypto-text-muted)" }}>{cryptoNetwork}</p>
           </div>
-        )}
+        </div>
 
         <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
           Send <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{usdToCoin(effectiveUsdTotal).toFixed(coinDecimals)} {cryptoCurrency}</span> on the {cryptoNetwork} network.{" "}
@@ -1786,8 +1825,8 @@ export default function PaymentPanel({
             className="w-full flex items-center gap-3 p-3.5 rounded-xl transition-colors text-left"
             style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
           >
-            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-              <Zap className="w-4 h-4 text-blue-600" />
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--crypto-warn-bg)" }}>
+              <Zap className="w-4 h-4" style={{ color: "var(--crypto-text-primary)" }} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">Skip to full payment</p>
@@ -1798,9 +1837,9 @@ export default function PaymentPanel({
         </div>
 
         {error && (
-          <div className="flex gap-2 items-start p-2.5 bg-red-50/80 rounded-lg border border-red-100">
-            <AlertCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
-            <p className="text-xs text-destructive">{error}</p>
+          <div className="flex gap-2 items-start p-2.5 rounded-lg" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.20)" }}>
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#ef4444" }} />
+            <p className="text-xs" style={{ color: "#ef4444" }}>{error}</p>
           </div>
         )}
 
