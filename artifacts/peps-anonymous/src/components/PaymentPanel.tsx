@@ -417,9 +417,9 @@ function CollectedByBanner({ collectedBy }: {
   }
   return (
     <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium"
-      style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.18)", color: "var(--t-subtle)" }}>
+      style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)", color: "var(--crypto-text-primary)" }}>
       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0 font-bold text-[10px]"
-        style={{ background: "rgba(100,116,139,0.15)", color: "rgb(100,116,139)" }}>A</span>
+        style={{ background: "var(--crypto-warn-bg)", color: "var(--crypto-text-primary)" }}>A</span>
       <span>Payment collected by admin</span>
     </div>
   );
