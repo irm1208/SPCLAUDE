@@ -5517,8 +5517,11 @@ function ProductsTab({ gb }: { gb: OrganiserGB }) {
       if (res.ok) {
         setProducts(prev => prev.map(p => p.id === productId ? { ...p, maxPerCustomer: parsed } : p));
         setPendingMaxPerCustomer(prev => { const n = { ...prev }; delete n[productId]; return n; });
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? "Failed to save limit");
       }
-    } catch { /* ignore */ } finally { setSavingMaxPerCustomer(null); }
+    } catch { setError("Connection error — please try again"); } finally { setSavingMaxPerCustomer(null); }
   };
 
   const handleFileAI = async (e: React.ChangeEvent<HTMLInputElement>) => {
