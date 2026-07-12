@@ -8,7 +8,7 @@ import { callSageAI, callSageAIStream } from "../lib/sage-ai";
 import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
-import { searchWebForSage, shouldSearchWeb } from "../lib/web-search";
+import { searchWebForSage, shouldSearchWeb, searchPubMed, type PubMedResult } from "../lib/web-search";
 import { fetchPepPediaContext } from "../lib/pep-pedia";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
 
@@ -1045,13 +1045,14 @@ async function callGeminiDiscuss(
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
-  // ── Pre-fetch context in parallel (Pep-Pedia + optional web search) ────────
-  // Both run concurrently so they don't add to each other's latency.
+  // ── Pre-fetch context in parallel (Pep-Pedia + web search + PubMed) ─────────
+  // All three run concurrently so they don't add to each other's latency.
   // Best-effort: any failure is silent and Sage proceeds without that context.
-  const webSearchEnabled = shouldSearchWeb(message) && await isWebSearchEnabled().catch(() => true);
-  const [pepPediaResult, searchResult] = await Promise.all([
+  const webSearchEnabled = await isWebSearchEnabled().catch(() => true);
+  const [pepPediaResult, searchResult, pubmedResult] = await Promise.all([
     fetchPepPediaContext(message).catch(() => null),
     webSearchEnabled ? searchWebForSage(message).catch(() => null) : Promise.resolve(null),
+    webSearchEnabled ? searchPubMed(message).catch(() => null) : Promise.resolve(null),
   ]);
 
   if (pepPediaResult) {
@@ -1061,8 +1062,27 @@ async function callGeminiDiscuss(
   let webSearchSources: DiscussSource[] = [];
   if (searchResult) {
     const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    systemPrompt += `\n\nLIVE WEB SEARCH RESULTS (retrieved ${today}):\n${searchResult.digest}\n\nUse the above only if relevant to the user's question. It reflects current, real information — you DO have real-time web access via this search, so never claim you can't search the internet or don't have access to current news when results like this are provided.`;
+    systemPrompt += `\n\n═══════════════════════════════════════════\nLIVE WEB SEARCH RESULTS (retrieved ${today})\n═══════════════════════════════════════════\n${searchResult.digest}\n\nYou have real-time web access via this search. Never claim you can't search the internet or access current information when results like this are provided.`;
     webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
+  }
+
+  if (pubmedResult && pubmedResult.studies.length > 0) {
+    const studyLines = pubmedResult.studies.map((s, i) =>
+      `[Study ${i + 1}] ${s.title}\nPMID: ${s.pmid} | URL: ${s.url}\nAbstract: ${s.abstract}`
+    ).join("\n\n");
+    systemPrompt += `\n\n═══════════════════════════════════════════\nPUBMED CLINICAL STUDIES (NCBI, retrieved live — PubMed query: "${pubmedResult.query}")\n═══════════════════════════════════════════\nThese are real published studies retrieved from PubMed for this question. Cite specific findings, statistics, and study details when relevant. Use the PMID URLs as SOURCES_JSON_START citations.\n\n${studyLines}`;
+    const pubmedSources = pubmedResult.studies.map(s => ({
+      label: s.title.length > 70 ? s.title.slice(0, 67) + "…" : s.title,
+      url: s.url,
+      type: "study" as const,
+    }));
+    const seenUrls = new Set(webSearchSources.map(s => s.url));
+    for (const s of pubmedSources) {
+      if (!seenUrls.has(s.url)) {
+        seenUrls.add(s.url);
+        webSearchSources.push(s);
+      }
+    }
   }
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
