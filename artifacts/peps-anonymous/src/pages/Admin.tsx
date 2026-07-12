@@ -14510,6 +14510,7 @@ const ALL_TABS_META = [
   { id: "inventory",    label: "Inventory",      icon: Database },
   { id: "wholesale",    label: "Wholesale",      icon: Package },
   { id: "wholesale-shares", label: "Shared Orders", icon: Users },
+  { id: "wholesale-access", label: "Access Requests", icon: Lock },
   { id: "dispatch",     label: "Dispatch",        icon: PackageCheck },
   { id: "dashboard",    label: "Dashboard",      icon: BarChart3 },
 ];
@@ -18770,6 +18771,124 @@ function SharePayBadge({ status, hasOrder }: { status: string | null; hasOrder: 
   else if (pending) { bg = "rgba(245,158,11,0.15)"; fg = "#f59e0b"; label = "Pending"; }
   else if (rejected) { bg = "rgba(239,68,68,0.15)"; fg = "#ef4444"; label = "Rejected"; }
   return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: bg, color: fg }}>{label}</span>;
+}
+
+function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<"pending" | "confirmed" | "rejected" | "all">("pending");
+  const [working, setWorking] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(apiUrl("/admin/wholesale-access-requests"), { headers: { "x-admin-secret": secret } });
+      const d = await r.json();
+      setRows(d.requests ?? []);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const confirm = async (id: string) => {
+    setWorking(id);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-access-requests/${id}/confirm`), { method: "POST", headers: { "x-admin-secret": secret } });
+      if (!r.ok) { const d = await r.json(); alert(d.error ?? "Failed"); }
+      else await load();
+    } finally { setWorking(null); }
+  };
+
+  const reject = async (id: string) => {
+    setWorking(id);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-access-requests/${id}/reject`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ reason: rejectionReason.trim() || undefined }),
+      });
+      if (!r.ok) { const d = await r.json(); alert(d.error ?? "Failed"); }
+      else { setRejecting(null); setRejectionReason(""); await load(); }
+    } finally { setWorking(null); }
+  };
+
+  const filtered = statusFilter === "all" ? rows : rows.filter(r => r.status === statusFilter);
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h2 className="text-base font-semibold text-white">Wholesale Access Requests</h2>
+        <button onClick={load} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">Refresh</button>
+        <div className="flex gap-1 ml-auto">
+          {(["all","pending","confirmed","rejected"] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`text-xs px-2.5 py-1 rounded-full border ${statusFilter===s ? "bg-blue-600 border-blue-500 text-white" : "border-slate-700 text-slate-400 hover:text-white"}`}>
+              {s.charAt(0).toUpperCase()+s.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-10 text-slate-500 text-sm">No requests found.</div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((req: any) => (
+            <div key={req.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-sm text-white">@{req.accountUsername}</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                      req.status === "confirmed" ? "bg-green-900/60 text-green-400"
+                      : req.status === "rejected" ? "bg-red-900/60 text-red-400"
+                      : "bg-yellow-900/60 text-yellow-400"
+                    }`}>{req.status}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400 space-y-0.5">
+                    <div>Amount: <span className="text-white font-semibold">${req.amountUsd}</span></div>
+                    {req.paymentCryptoCurrency && <div>Currency: <span className="text-slate-300">{req.paymentCryptoCurrency} ({req.paymentCryptoNetwork})</span></div>}
+                    {req.paymentTxHash && <div>Tx: <span className="font-mono text-slate-300 break-all">{req.paymentTxHash}</span></div>}
+                    {req.rejectionReason && <div>Reason: <span className="text-red-400">{req.rejectionReason}</span></div>}
+                    {req.adminUsername && <div>Handled by: <span className="text-slate-300">@{req.adminUsername}</span></div>}
+                    <div>Submitted: {new Date(req.createdAt).toLocaleString()}</div>
+                    {req.confirmedAt && <div>Confirmed: {new Date(req.confirmedAt).toLocaleString()}</div>}
+                  </div>
+                </div>
+                {req.status === "pending" && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => confirm(req.id)} disabled={!!working}
+                      className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white font-medium disabled:opacity-50">
+                      {working === req.id ? "…" : "Confirm"}
+                    </button>
+                    <button onClick={() => setRejecting(req.id)}
+                      className="text-xs px-3 py-1.5 rounded bg-red-900 hover:bg-red-800 text-white font-medium">
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+              {rejecting === req.id && (
+                <div className="flex gap-2 items-center flex-wrap border-t border-slate-700 pt-3">
+                  <input value={rejectionReason} onChange={e => setRejectionReason(e.target.value)}
+                    placeholder="Rejection reason (optional)" className="flex-1 min-w-0 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-500" />
+                  <button onClick={() => reject(req.id)} disabled={!!working}
+                    className="text-xs px-3 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white font-medium disabled:opacity-50">
+                    {working === req.id ? "…" : "Confirm Reject"}
+                  </button>
+                  <button onClick={() => { setRejecting(null); setRejectionReason(""); }} className="text-xs text-slate-400 hover:text-white">Cancel</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AdminWholesaleSharesTab({ secret }: { secret: string }) {
@@ -24609,6 +24728,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "tglog"         && <TelegramLogTab secret={secret} />}
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
+          {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}
           {activeTab === "dispatch"      && <AdminDispatch secret={secret} />}
           {activeTab === "invite-codes"  && <InviteCodesTab secret={secret} />}
           {activeTab === "coupons"       && <AdminCouponsTab secret={secret} />}

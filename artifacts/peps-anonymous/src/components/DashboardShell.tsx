@@ -308,7 +308,9 @@ export function DashboardShell({
           { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, active: activeSection === "wholesale", go: () => navigate("/wholesale") },
           { id: "shared-orders", label: "Shared Orders", Icon: Users, active: activeSection === "shared-orders", go: () => navigate("/wholesale/shared") },
         ]
-      : []),
+      : [
+          { id: "wholesale-access", label: "Get Wholesale Access", Icon: ShoppingBag, active: activeSection === "wholesale-access", go: () => onSection("wholesale-access") },
+        ]),
   ];
   const researchItems: SideLink[] = [
     { id: "protocols",   label: "Protocols",     Icon: BookMarked,    active: activeSection === "protocols",   go: () => navigate("/protocols") },
