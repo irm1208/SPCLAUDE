@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2 } from "lucide-react";
-import { useBloodTestDiscuss, type DiscussMessage, type DiscussChart } from "@/hooks/use-blood-tests";
+import { type DiscussMessage, type DiscussChart, type DiscussSource } from "@/hooks/use-blood-tests";
 import { SageTrendChart } from "@/components/SageTrendChart";
 
 const ACCENT = "#0176D3";
@@ -183,10 +183,10 @@ function formatSessionDate(iso: string): string {
 }
 
 export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT }: SageChatProps) {
-  const discuss = useBloodTestDiscuss();
   const [messages, setMessages] = useState<SageMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [streamingHasContent, setStreamingHasContent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
 
@@ -233,9 +233,15 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
       }
 
       const userMsg: SageMessage = { id: Math.random().toString(36).slice(2), role: "user", content: q, timestamp: new Date() };
-      setMessages((prev) => [...prev, userMsg]);
+      const streamId = Math.random().toString(36).slice(2);
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        { id: streamId, role: "assistant", content: "", timestamp: new Date() },
+      ]);
       setInput("");
       setSending(true);
+      setStreamingHasContent(false);
       setError(null);
 
       const myRequestId = ++requestIdRef.current;
@@ -249,37 +255,90 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
           .map((m) => ({ role: m.role, content: m.content }));
 
       try {
-        const res = await discuss.mutateAsync({ message: q, history });
+        const response = await fetch("/api/blood-tests/discuss", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: q, history }),
+          signal: AbortSignal.timeout(65_000),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({ error: "Request failed" })) as { error?: string; response?: string; used?: number; limit?: number };
+          if (!isStale()) {
+            setMessages((prev) => prev.filter((m) => m.id !== streamId));
+            if (errData.error === "limit_reached") {
+              setLimitReached(true);
+              setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: "You've reached your daily question limit. Please check back tomorrow.", timestamp: new Date() }]);
+            } else if (errData.response) {
+              setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: errData.response!, timestamp: new Date() }]);
+            } else {
+              setError("Sage couldn't respond just now. Please try again in a moment.");
+            }
+          }
+          return;
+        }
+
+        if (!response.body) throw new Error("No response body");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulated = "";
+        let donePayload: { sources?: DiscussSource[]; chips?: string[]; charts?: DiscussChart[]; contextSession?: { id: string; testName: string; testDate: string } | null; used?: number; limit?: number } | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            let event: Record<string, unknown>;
+            try { event = JSON.parse(jsonStr) as Record<string, unknown>; }
+            catch { continue; }
+            if (event["type"] === "token" && typeof event["text"] === "string") {
+              accumulated += event["text"] as string;
+              if (!isStale()) {
+                setStreamingHasContent(true);
+                setMessages((prev) => prev.map((m) => m.id === streamId ? { ...m, content: accumulated } : m));
+              }
+            } else if (event["type"] === "done") {
+              donePayload = event as typeof donePayload;
+            } else if (event["type"] === "error") {
+              throw new Error((event["error"] as string | undefined) ?? "ai_unavailable");
+            }
+          }
+        }
+
         if (isStale()) return;
-        const assistantMsg: SageMessage = {
-          id: Math.random().toString(36).slice(2),
+
+        const finalMsg: SageMessage = {
+          id: streamId,
           role: "assistant",
-          content: res.response,
-          chips: res.chips ?? [],
-          sources: res.sources ?? [],
-          charts: res.charts ?? [],
-          contextSession: res.contextSession ?? null,
+          content: accumulated,
+          chips: donePayload?.chips ?? [],
+          sources: donePayload?.sources ?? [],
+          charts: donePayload?.charts ?? [],
+          contextSession: donePayload?.contextSession ?? null,
           timestamp: new Date(),
         };
         setMessages((prev) => {
-          const next = [...prev, assistantMsg];
+          const next = prev.map((m) => m.id === streamId ? finalMsg : m);
           void persistConversation(next);
           return next;
         });
       } catch (e) {
         if (isStale()) return;
         const err = e as Error & { used?: number; limit?: number };
+        setMessages((prev) => prev.filter((m) => m.id !== streamId));
         if (err.message === "limit_reached") {
           setLimitReached(true);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Math.random().toString(36).slice(2),
-              role: "assistant",
-              content: "You've reached your daily question limit. Please check back tomorrow.",
-              timestamp: new Date(),
-            },
-          ]);
+          setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: "You've reached your daily question limit. Please check back tomorrow.", timestamp: new Date() }]);
         } else {
           setError("Sage couldn't respond just now. Please try again in a moment.");
         }
@@ -287,7 +346,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
         if (!isStale()) setSending(false);
       }
     },
-    [sending, limitReached, discuss, persistConversation],
+    [sending, limitReached, persistConversation],
   );
 
   const startNewChat = useCallback(() => {
@@ -649,7 +708,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
                 </div>
               )}
 
-              {sending && (
+              {sending && !streamingHasContent && (
                 <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 12.5, paddingLeft: 4 }}>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   Sage is thinking…

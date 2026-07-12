@@ -334,6 +334,95 @@ function isTokenExhaustedError(err: unknown): boolean {
   );
 }
 
+/**
+ * Streaming version of callSageAI. Calls onToken for each text delta as it
+ * arrives from the proxy, and returns the full combined text when done.
+ * Falls back to non-streaming callModel if the proxy returns a plain JSON body.
+ */
+export async function callSageAIStream({
+  system, messages, maxTokens = 1200, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, temperature, onToken,
+}: SageAIParams & { onToken: (text: string) => void }): Promise<string> {
+  const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
+  if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
+  const activeModel = model ?? await getActiveSageModel();
+
+  const tryStream = async (mdl: string): Promise<string> => {
+    const body: Record<string, unknown> = { model: mdl, max_tokens: maxTokens, messages, stream: true };
+    if (system) body.system = system;
+    if (temperature != null) body.temperature = temperature;
+
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => res.statusText);
+      throw new Error(`Sage AI proxy error ${res.status}: ${errText}`);
+    }
+
+    if (!res.body) throw new Error("no_stream_body");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let combined = "";
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr || jsonStr === "[DONE]") continue;
+          let event: Record<string, unknown>;
+          try { event = JSON.parse(jsonStr) as Record<string, unknown>; }
+          catch { continue; }
+          const delta = event["delta"] as Record<string, unknown> | undefined;
+          if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
+            const text = delta["text"] as string;
+            combined += text;
+            onToken(text);
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return combined;
+  };
+
+  try {
+    const result = await tryStream(activeModel);
+    // Empty result means proxy returned a non-streaming body — fall back
+    if (result) return result;
+    return callModel(activeModel, apiKey, baseUrl, system, messages, maxTokens, temperature);
+  } catch (primaryErr) {
+    const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+    if (msg === "no_stream_body") {
+      return callModel(activeModel, apiKey, baseUrl, system, messages, maxTokens, temperature);
+    }
+    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying stream with fallback "${FALLBACK_MODEL}"`);
+      return await tryStream(FALLBACK_MODEL);
+    }
+    throw primaryErr;
+  }
+}
+
 export async function callSageAI({
   system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride, baseUrl: baseUrlOverride, enableWebSearch = true, temperature,
 }: SageAIParams): Promise<string> {

@@ -4,7 +4,7 @@ import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accoun
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
-import { callSageAI } from "../lib/sage-ai";
+import { callSageAI, callSageAIStream } from "../lib/sage-ai";
 import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
@@ -1038,6 +1038,7 @@ async function callGeminiDiscuss(
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
   glp1Logs: Glp1LogCtx[] = [],
+  onToken?: (text: string) => void,
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[]; charts: ChartSeries[] }> {
   const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
@@ -1077,12 +1078,9 @@ async function callGeminiDiscuss(
 
   console.log(`[discuss] Calling Sage AI with ${messages.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
 
-  const raw = await callSageAI({
-    system: systemPrompt,
-    messages,
-    maxTokens: 1200,
-    enableWebSearch: false,
-  });
+  const raw = onToken
+    ? await callSageAIStream({ system: systemPrompt, messages, maxTokens: 1200, onToken })
+    : await callSageAI({ system: systemPrompt, messages, maxTokens: 1200, enableWebSearch: false });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
   const filtered = filterSageOutput(raw);
@@ -1900,6 +1898,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     }
     const newCountNoBt = quotaNoBt.used;
 
+    // ── Start SSE stream ──────────────────────────────────────────────────────
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    const sseWrite = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
     try {
       const [topics, labTests, glp1Rows] = await Promise.all([
         Promise.resolve(extractTopicsForCache(message, [])),
@@ -1931,6 +1937,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         allCompoundsNoBt,
         false,
         glp1Logs,
+        (text) => sseWrite({ type: "token", text }),
       );
 
       logCustomerActivity({
@@ -1951,28 +1958,16 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         metadata: { sender: "ai", content: result.text, conversationId: "compounds-only", characterCount: result.text.length },
       }).catch(() => {});
 
-      res.json({
-        response: result.text,
-        chips: result.chips,
-        sources: result.sources,
-        charts: result.charts,
-        contextSession: null,
-        used: newCountNoBt,
-        limit: effectiveLimit,
-      });
+      sseWrite({ type: "done", sources: result.sources, chips: result.chips, charts: result.charts, contextSession: null, used: newCountNoBt, limit: effectiveLimit });
+      res.end();
     } catch (err) {
       console.error("[discuss] Gemini error (compounds-only):", err);
       await db
         .update(accountsTable)
         .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
         .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
-      res.status(500).json({
-        error: "ai_unavailable",
-        response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
-        contextSession: null,
-        used: newCountNoBt - 1,
-        limit: effectiveLimit,
-      });
+      sseWrite({ type: "error", error: "ai_unavailable" });
+      res.end();
     }
     return;
   }
@@ -2062,6 +2057,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     })
   );
 
+  // ── Start SSE stream ──────────────────────────────────────────────────────
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const sseWrite = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
   // Step 4: Call Gemini — roll back the reserved slot if it fails
   let responseText: string;
   let responseChips: string[] = [];
@@ -2091,7 +2094,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       calories: r.calories != null ? parseFloat(String(r.calories)) : null,
       proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
     }));
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs);
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }));
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
@@ -2102,13 +2105,8 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       .update(accountsTable)
       .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
       .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
-    res.status(500).json({
-      error: "ai_unavailable",
-      response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
-      contextSession: null,
-      used: newCount - 1,
-      limit: effectiveLimit,
-    });
+    sseWrite({ type: "error", error: "ai_unavailable" });
+    res.end();
     return;
   }
 
@@ -2140,19 +2138,8 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     },
   }).catch(() => {});
 
-  res.json({
-    response: responseText,
-    chips: responseChips,
-    sources: responseSources,
-    charts: responseCharts,
-    contextSession: {
-      id: session.id,
-      testName: session.testName ?? session.labName ?? "Blood Test",
-      testDate: session.testDate,
-    },
-    used: newCount,
-    limit: effectiveLimit,
-  });
+  sseWrite({ type: "done", sources: responseSources, chips: responseChips, charts: responseCharts, contextSession: { id: session.id, testName: session.testName ?? session.labName ?? "Blood Test", testDate: session.testDate }, used: newCount, limit: effectiveLimit });
+  res.end();
 });
 
 // PATCH /api/blood-tests/:sessionId — update session metadata and replace all values
