@@ -5,6 +5,10 @@ import { SageTrendChart } from "@/components/SageTrendChart";
 
 const ACCENT = "#0176D3";
 
+function stripMarkers(text: string): string {
+  return text.replace(/[\n\r\s]*(?:I?SOURCES?_?JSON_?START|CHIPS?_?JSON_?START|CHARTS?_?JSON_?START)[\s\S]*/i, "").trim();
+}
+
 type Tokens = {
   panel: string;
   panel2: string;
@@ -285,7 +289,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
         const decoder = new TextDecoder();
         let buffer = "";
         let accumulated = "";
-        let donePayload: { sources?: DiscussSource[]; chips?: string[]; charts?: DiscussChart[]; contextSession?: { id: string; testName: string; testDate: string } | null; used?: number; limit?: number } | null = null;
+        let donePayload: { response?: string; sources?: DiscussSource[]; chips?: string[]; charts?: DiscussChart[]; contextSession?: { id: string; testName: string; testDate: string } | null; used?: number; limit?: number } | null = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -305,7 +309,8 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
               accumulated += event["text"] as string;
               if (!isStale()) {
                 setStreamingHasContent(true);
-                setMessages((prev) => prev.map((m) => m.id === streamId ? { ...m, content: accumulated } : m));
+                const displayText = stripMarkers(accumulated);
+                setMessages((prev) => prev.map((m) => m.id === streamId ? { ...m, content: displayText } : m));
               }
             } else if (event["type"] === "done") {
               donePayload = event as typeof donePayload;
@@ -320,7 +325,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
         const finalMsg: SageMessage = {
           id: streamId,
           role: "assistant",
-          content: accumulated,
+          content: donePayload?.response ?? stripMarkers(accumulated),
           chips: donePayload?.chips ?? [],
           sources: donePayload?.sources ?? [],
           charts: donePayload?.charts ?? [],

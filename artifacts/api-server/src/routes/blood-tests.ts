@@ -868,9 +868,9 @@ ${compoundsLine}${protocolSection}${glp1Section}${knowledgeSection}${labTestSect
     .split("{{CHARTABLE_MARKERS}}").join(chartMarkersBlock);
 }
 
-const CHIPS_RE = /CHIPS_JSON_START(\[[\s\S]*?\])CHIPS_JSON_END/;
-const SOURCES_RE = /SOURCES_JSON_START(\[[\s\S]*?\])SOURCES_JSON_END/;
-const CHART_RE = /CHART_JSON_START(\[[\s\S]*?\])CHART_JSON_END/;
+const CHIPS_RE = /CHIPS_?JSON_?START(\[[\s\S]*?\])CHIPS_?JSON_?END/;
+const SOURCES_RE = /I?SOURCES_?JSON_?START(\[[\s\S]*?\])SOURCES_?JSON_?END/;
+const CHART_RE = /CHARTS?_?JSON_?START(\[[\s\S]*?\])CHARTS?_?JSON_?END/;
 const Q_TAG_RE = /\[Q\]([\s\S]*?)\[\/Q\]/g;
 
 interface DiscussSource { label: string; url: string; type: "study" | "forum" | "other" }
@@ -1958,7 +1958,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         metadata: { sender: "ai", content: result.text, conversationId: "compounds-only", characterCount: result.text.length },
       }).catch(() => {});
 
-      sseWrite({ type: "done", sources: result.sources, chips: result.chips, charts: result.charts, contextSession: null, used: newCountNoBt, limit: effectiveLimit });
+      sseWrite({ type: "done", response: result.text, sources: result.sources, chips: result.chips, charts: result.charts, contextSession: null, used: newCountNoBt, limit: effectiveLimit });
       res.end();
     } catch (err) {
       console.error("[discuss] Gemini error (compounds-only):", err);
@@ -2138,7 +2138,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     },
   }).catch(() => {});
 
-  sseWrite({ type: "done", sources: responseSources, chips: responseChips, charts: responseCharts, contextSession: { id: session.id, testName: session.testName ?? session.labName ?? "Blood Test", testDate: session.testDate }, used: newCount, limit: effectiveLimit });
+  sseWrite({ type: "done", response: responseText, sources: responseSources, chips: responseChips, charts: responseCharts, contextSession: { id: session.id, testName: session.testName ?? session.labName ?? "Blood Test", testDate: session.testDate }, used: newCount, limit: effectiveLimit });
   res.end();
 });
 
