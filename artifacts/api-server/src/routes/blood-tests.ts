@@ -9,6 +9,7 @@ import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 import { searchWebForSage, shouldSearchWeb } from "../lib/web-search";
+import { fetchPepPediaContext } from "../lib/pep-pedia";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
 
 const router: IRouter = Router();
@@ -1042,6 +1043,15 @@ async function callGeminiDiscuss(
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
+
+  // ── Pep-Pedia.org reference fetch ─────────────────────────────────────────
+  // Always runs (not keyword-gated) — fetches the relevant compound article
+  // from pep-pedia.org and injects it as authoritative reference context.
+  // Best-effort: any failure is silent and Sage proceeds without it.
+  const pepPediaResult = await fetchPepPediaContext(message).catch(() => null);
+  if (pepPediaResult) {
+    systemPrompt += `\n\n─── PEP-PEDIA.ORG REFERENCE (${pepPediaResult.url}) ───\n${pepPediaResult.content}\n─── END PEP-PEDIA REFERENCE ───\n\nThe above is from the Pep-Pedia wiki — a curated peptide reference database. Prioritise this information for compound-specific facts (mechanism, dosing, half-life, storage). Cite the source as "${pepPediaResult.url}" when you use it.`;
+  }
 
   // ── Real-time web search pre-fetch (Gemini-grounded) ──────────────────────
   // Runs BEFORE the Sage/Claude call so results can be woven into its answer.

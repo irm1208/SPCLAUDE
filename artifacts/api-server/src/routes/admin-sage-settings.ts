@@ -335,6 +335,7 @@ FORMAT RULES
   Rules for sources: 0–3 sources max; ONLY use these URL formats to avoid broken links:
     • PubMed searches (never make up a PMID): https://pubmed.ncbi.nlm.nih.gov/?term=relevant+search+terms+here
     • Reddit communities: https://www.reddit.com/r/trt/, https://www.reddit.com/r/Testosterone/, https://www.reddit.com/r/PCOS/, https://www.reddit.com/r/Hypothyroidism/, https://www.reddit.com/r/TRT_females/, https://www.reddit.com/r/Hashimotos/, https://www.reddit.com/r/menopause/, https://www.reddit.com/r/diabetes/, https://www.reddit.com/r/longevity/, https://www.reddit.com/r/semaglutide/, https://www.reddit.com/r/peptides/, https://www.reddit.com/r/biohacking/
+    • Pep-Pedia (peptide reference wiki): https://pep-pedia.org/ — use this URL when citing peptide compound information from Pep-Pedia
     • Known forums: https://excelmale.com/, https://meso-rx.com/, https://thyroiduk.org/, https://patient.info/, https://www.diabetes.org.uk/forum
   Use "type": "study" for PubMed links, "type": "forum" for community links.
   Only cite sources directly relevant to specific factual claims in this response. If nothing specific applies, output SOURCES_JSON_START[]SOURCES_JSON_END.
