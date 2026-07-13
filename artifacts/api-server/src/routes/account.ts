@@ -3556,7 +3556,7 @@ router.put("/account/wholesale-access/test-tx", requireAccount, async (req: any,
 router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res: any): Promise<void> => {
   try {
     const username = req.account?.telegramUsername as string;
-    const { txHash } = req.body as { txHash?: string };
+    const { txHash, currency, network } = req.body as { txHash?: string; currency?: string; network?: string };
     if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
       res.status(400).json({ error: "txHash is required" }); return;
     }
@@ -3572,18 +3572,21 @@ router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res:
     if (!existing) {
       res.status(404).json({ error: "No pending wholesale access request found" }); return;
     }
-    if (!existing.testPaymentTxHash) {
-      res.status(400).json({ error: "Test payment must be completed first" }); return;
-    }
+    const resolvedCurrency = currency ?? existing.paymentCryptoCurrency ?? null;
+    const resolvedNetwork = network ?? existing.paymentCryptoNetwork ?? null;
     const [updated] = await db.update(wholesaleAccessRequestsTable)
-      .set({ paymentTxHash: txHash.trim() })
+      .set({
+        paymentTxHash: txHash.trim(),
+        paymentCryptoCurrency: resolvedCurrency,
+        paymentCryptoNetwork: resolvedNetwork,
+      })
       .where(eq(wholesaleAccessRequestsTable.id, existing.id))
       .returning();
     const cryptoOptions = await getAdminCryptoOptions();
-    const currency = existing.paymentCryptoCurrency ?? "";
-    const network = existing.paymentCryptoNetwork ?? "";
+    const currency2 = resolvedCurrency ?? "";
+    const network2 = resolvedNetwork ?? "";
     sendAdminMessage(
-      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency2} via ${network2}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
     ).catch(() => {});
     res.json({ request: updated, cryptoOptions });
   } catch (err: any) {
