@@ -3493,9 +3493,11 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
     const [amountRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_amount"));
     const fixedAmount = amountRow?.value ? parseFloat(amountRow.value) : NaN;
     const amountUsd = !isNaN(fixedAmount) && fixedAmount > 0 ? fixedAmount : parseFloat((Math.random() * 20 + 90).toFixed(2));
+    const paymentTestAmount = parseFloat((1 + Math.random()).toFixed(2));
     const [created] = await db.insert(wholesaleAccessRequestsTable).values({
       accountUsername: username,
       amountUsd,
+      paymentTestAmount,
       status: "pending",
     }).returning();
     sendAdminMessage(
@@ -3508,11 +3510,11 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
   }
 });
 
-// ── PUT /api/account/wholesale-access/tx — submit tx hash ────────────────────
-router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res: any): Promise<void> => {
+// ── PUT /api/account/wholesale-access/test-tx — submit test payment tx hash ──
+router.put("/account/wholesale-access/test-tx", requireAccount, async (req: any, res: any): Promise<void> => {
   try {
     const username = req.account?.telegramUsername as string;
-    const { txHash, currency, network, amountUsd: rawNewAmount } = req.body as { txHash?: string; currency?: string; network?: string; amountUsd?: unknown };
+    const { txHash, currency, network } = req.body as { txHash?: string; currency?: string; network?: string };
     if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
       res.status(400).json({ error: "txHash is required" }); return;
     }
@@ -3528,22 +3530,60 @@ router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res:
     if (!existing) {
       res.status(404).json({ error: "No pending wholesale access request found" }); return;
     }
-    const parsedNewAmount = typeof rawNewAmount === "number" ? rawNewAmount : parseFloat(String(rawNewAmount ?? ""));
-    const newAmountUsd = (!isNaN(parsedNewAmount) && parsedNewAmount >= 1 && parsedNewAmount <= 9999)
-      ? Math.round(parsedNewAmount * 100) / 100
-      : existing.amountUsd;
+    if (existing.paymentTxHash) {
+      res.status(409).json({ error: "Full payment already submitted" }); return;
+    }
     const [updated] = await db.update(wholesaleAccessRequestsTable)
       .set({
-        paymentTxHash: txHash.trim(),
+        testPaymentTxHash: txHash.trim(),
         paymentCryptoCurrency: currency ?? null,
         paymentCryptoNetwork: network ?? null,
-        amountUsd: newAmountUsd,
       })
       .where(eq(wholesaleAccessRequestsTable.id, existing.id))
       .returning();
     const cryptoOptions = await getAdminCryptoOptions();
     sendAdminMessage(
-      `💸 <b>Wholesale Payment Submitted</b>\n\n@${username.replace("@", "")} submitted a payment.\nAmount: <b>$${newAmountUsd}</b> ${currency ?? ""} via ${network ?? ""}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+      `🧪 <b>Wholesale Test Payment</b>\n\n@${username.replace("@", "")} submitted a test payment ($${existing.paymentTestAmount ?? "??"}).\nTx: <code>${txHash.trim()}</code>\nNetwork: ${currency ?? ""} / ${network ?? ""}\nRequest ID: ${existing.id}\n\nThey will now send the full payment.`
+    ).catch(() => {});
+    res.json({ request: updated, cryptoOptions });
+  } catch (err: any) {
+    console.error("[PUT /account/wholesale-access/test-tx]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── PUT /api/account/wholesale-access/tx — submit full tx hash ───────────────
+router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username = req.account?.telegramUsername as string;
+    const { txHash } = req.body as { txHash?: string };
+    if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
+      res.status(400).json({ error: "txHash is required" }); return;
+    }
+    const [existing] = await db
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "No pending wholesale access request found" }); return;
+    }
+    if (!existing.testPaymentTxHash) {
+      res.status(400).json({ error: "Test payment must be completed first" }); return;
+    }
+    const [updated] = await db.update(wholesaleAccessRequestsTable)
+      .set({ paymentTxHash: txHash.trim() })
+      .where(eq(wholesaleAccessRequestsTable.id, existing.id))
+      .returning();
+    const cryptoOptions = await getAdminCryptoOptions();
+    const currency = existing.paymentCryptoCurrency ?? "";
+    const network = existing.paymentCryptoNetwork ?? "";
+    sendAdminMessage(
+      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
     ).catch(() => {});
     res.json({ request: updated, cryptoOptions });
   } catch (err: any) {

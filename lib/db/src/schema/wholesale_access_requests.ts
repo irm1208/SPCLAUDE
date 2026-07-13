@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, serial, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, serial, integer, real } from "drizzle-orm/pg-core";
 import { accountsTable } from "./accounts";
 
 export const wholesaleAccessRequestsTable = pgTable("wholesale_access_requests", {
@@ -6,6 +6,8 @@ export const wholesaleAccessRequestsTable = pgTable("wholesale_access_requests",
   accountUsername: text("account_username").notNull().references(() => accountsTable.telegramUsername, { onDelete: "cascade", onUpdate: "cascade" }),
   amountUsd: integer("amount_usd").notNull(),
   status: text("status").notNull().default("pending"),
+  paymentTestAmount: real("payment_test_amount"),
+  testPaymentTxHash: text("test_payment_tx_hash"),
   paymentTxHash: text("payment_tx_hash"),
   paymentCryptoNetwork: text("payment_crypto_network"),
   paymentCryptoCurrency: text("payment_crypto_currency"),

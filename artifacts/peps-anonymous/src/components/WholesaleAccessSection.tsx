@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Shield, Copy, CheckCircle, Clock, XCircle, Loader2, ChevronRight, Boxes, AlertCircle } from "lucide-react";
+import { Copy, CheckCircle, Clock, XCircle, Loader2, ChevronRight, Boxes, AlertCircle, FlaskConical } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type CryptoOption = { currency: string; network: string; walletAddress: string };
@@ -8,6 +8,8 @@ type WARData = {
   id: number;
   amountUsd: number;
   status: WARStatus;
+  paymentTestAmount: number | null;
+  testPaymentTxHash: string | null;
   paymentTxHash: string | null;
   paymentCryptoNetwork: string | null;
   paymentCryptoCurrency: string | null;
@@ -16,15 +18,22 @@ type WARData = {
 };
 type ApiResp = { request: WARData | null; cryptoOptions: CryptoOption[] };
 
+function getStep(req: WARData | null): "none" | "test" | "pay" | "review" {
+  if (!req) return "none";
+  if (req.paymentTxHash) return "review";
+  if (req.testPaymentTxHash) return "pay";
+  return "test";
+}
+
 export function WholesaleAccessSection() {
   const [data, setData] = useState<ApiResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [selectedOption, setSelectedOption] = useState<CryptoOption | null>(null);
-  const [txHash, setTxHash] = useState("");
+  const [testTx, setTestTx] = useState("");
+  const [fullTx, setFullTx] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [amountInput, setAmountInput] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -33,7 +42,6 @@ export function WholesaleAccessSection() {
         const d: ApiResp = await r.json();
         setData(d);
         if (!selectedOption && d.cryptoOptions.length > 0) setSelectedOption(d.cryptoOptions[0]);
-        if (d.request?.amountUsd !== undefined) setAmountInput(String(d.request.amountUsd));
       }
     } finally {
       setLoading(false);
@@ -50,7 +58,6 @@ export function WholesaleAccessSection() {
         const d: ApiResp = await r.json();
         setData(d);
         if (d.cryptoOptions.length > 0) setSelectedOption(d.cryptoOptions[0]);
-        if (d.request?.amountUsd !== undefined) setAmountInput(String(d.request.amountUsd));
       } else {
         const e = await r.json().catch(() => ({})) as Record<string, string>;
         toast({ title: "Error", description: e.error || "Could not start your request.", variant: "destructive" });
@@ -60,57 +67,53 @@ export function WholesaleAccessSection() {
     }
   };
 
-  const handleCopyAddress = () => {
-    if (!selectedOption?.walletAddress) return;
-    navigator.clipboard.writeText(selectedOption.walletAddress).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast({ title: "Copied!", description: "Wallet address copied to clipboard." });
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+    toast({ title: "Copied!", description: "Copied to clipboard." });
   };
 
-  const handleSubmitTx = async () => {
-    if (!txHash.trim() || !selectedOption || !data?.request) return;
+  const handleSubmitTestTx = async () => {
+    if (!testTx.trim() || !selectedOption || !data?.request) return;
     setSubmitting(true);
-    const parsedAmount = parseFloat(amountInput);
-    const amountToSend = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : data.request.amountUsd;
     try {
-      const r = await fetch("/api/account/wholesale-access/tx", {
+      const r = await fetch("/api/account/wholesale-access/test-tx", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash: txHash.trim(), currency: selectedOption.currency, network: selectedOption.network, amountUsd: amountToSend }),
+        body: JSON.stringify({ txHash: testTx.trim(), currency: selectedOption.currency, network: selectedOption.network }),
       });
       if (r.ok) {
         const d: ApiResp = await r.json();
         setData(d);
-        toast({ title: "Submitted!", description: "Your payment has been submitted for review." });
+        setTestTx("");
+        toast({ title: "Test payment submitted", description: "Now send the remaining balance." });
       } else {
         const e = await r.json().catch(() => ({})) as Record<string, string>;
-        toast({ title: "Error", description: e.error || "Could not submit payment.", variant: "destructive" });
+        toast({ title: "Error", description: e.error || "Could not submit test payment.", variant: "destructive" });
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleTestPayment = async () => {
-    if (!data?.request) return;
+  const handleSubmitFullTx = async () => {
+    if (!fullTx.trim() || !data?.request) return;
     setSubmitting(true);
-    const parsedAmount = parseFloat(amountInput);
-    const amountToSend = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : data.request.amountUsd;
-    const testHash = `TEST-PAY-${Date.now()}`;
     try {
       const r = await fetch("/api/account/wholesale-access/tx", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash: testHash, currency: "TEST", network: "TEST", amountUsd: amountToSend }),
+        body: JSON.stringify({ txHash: fullTx.trim() }),
       });
       if (r.ok) {
         const d: ApiResp = await r.json();
         setData(d);
-        toast({ title: "Test payment submitted", description: "Pending admin review." });
+        setFullTx("");
+        toast({ title: "Payment submitted!", description: "We'll confirm your access shortly." });
       } else {
         const e = await r.json().catch(() => ({})) as Record<string, string>;
-        toast({ title: "Error", description: e.error || "Could not submit.", variant: "destructive" });
+        toast({ title: "Error", description: e.error || "Could not submit payment.", variant: "destructive" });
       }
     } finally {
       setSubmitting(false);
@@ -125,10 +128,12 @@ export function WholesaleAccessSection() {
     );
   }
 
-  const req = data?.request;
+  const req = data?.request ?? null;
   const opts = data?.cryptoOptions ?? [];
   const effective = selectedOption ?? opts[0] ?? null;
+  const step = getStep(req);
 
+  // ── Confirmed ─────────────────────────────────────────────────────────────
   if (req?.status === "confirmed") {
     return (
       <div className="w-full max-w-[520px] space-y-4">
@@ -154,6 +159,7 @@ export function WholesaleAccessSection() {
     );
   }
 
+  // ── Rejected ──────────────────────────────────────────────────────────────
   if (req?.status === "rejected") {
     return (
       <div className="w-full max-w-[520px] space-y-4">
@@ -177,7 +183,8 @@ export function WholesaleAccessSection() {
     );
   }
 
-  if (req?.status === "pending" && req.paymentTxHash) {
+  // ── Under review (full tx submitted) ──────────────────────────────────────
+  if (step === "review") {
     return (
       <div className="w-full max-w-[520px] space-y-4">
         <div className="rounded-xl p-5 space-y-3" style={{ background: "rgba(245,158,11,0.06)", border: "1.5px solid rgba(245,158,11,0.3)" }}>
@@ -192,11 +199,19 @@ export function WholesaleAccessSection() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-            <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: "var(--t-muted)" }}>Submitted Tx</p>
-            <p className="text-xs font-mono mt-1 break-all" style={{ color: "var(--t-subtle)" }}>{req.paymentTxHash}</p>
-          </div>
-          {req.paymentCryptoCurrency && req.paymentCryptoNetwork && (
+          {req?.testPaymentTxHash && (
+            <div className="rounded-lg px-3 py-2.5 space-y-0.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: "var(--t-muted)" }}>Test TX</p>
+              <p className="text-xs font-mono break-all" style={{ color: "var(--t-subtle)" }}>{req.testPaymentTxHash}</p>
+            </div>
+          )}
+          {req?.paymentTxHash && (
+            <div className="rounded-lg px-3 py-2.5 space-y-0.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: "var(--t-muted)" }}>Full Payment TX</p>
+              <p className="text-xs font-mono break-all" style={{ color: "var(--t-subtle)" }}>{req.paymentTxHash}</p>
+            </div>
+          )}
+          {req?.paymentCryptoCurrency && req?.paymentCryptoNetwork && (
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>
               {req.paymentCryptoCurrency} · {req.paymentCryptoNetwork} · ${req.amountUsd}
             </p>
@@ -209,34 +224,46 @@ export function WholesaleAccessSection() {
     );
   }
 
-  if (req?.status === "pending" && !req.paymentTxHash) {
+  // ── Step 1: Test payment ──────────────────────────────────────────────────
+  if (step === "test") {
+    const testAmount = req?.paymentTestAmount ?? null;
     return (
       <div className="w-full max-w-[520px] space-y-4">
-        <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-          <div className="flex-1 min-w-0 pr-4">
-            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Your access fee</p>
-            <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-2xl font-black" style={{ color: "var(--t-text)" }}>$</span>
-              <input
-                type="number"
-                min="1"
-                max="9999"
-                step="0.01"
-                value={amountInput}
-                onChange={e => setAmountInput(e.target.value)}
-                className="text-4xl font-black bg-transparent outline-none w-full"
-                style={{ color: "var(--t-text)", fontFamily: "inherit" }}
-              />
-            </div>
-            <p className="text-xs mt-1.5 max-w-[240px]" style={{ color: "var(--t-muted)" }}>
-              This exact amount will be credited back to your account once confirmed.
+        {/* Step indicator */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-black text-white" style={{ background: "var(--t-blue)" }}>1</div>
+          <span className="text-xs font-bold" style={{ color: "var(--t-blue)" }}>Test Payment</span>
+          <div className="flex-1 h-px mx-1" style={{ background: "var(--t-border)" }} />
+          <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>2</div>
+          <span className="text-xs" style={{ color: "var(--t-muted)" }}>Full Payment</span>
+        </div>
+
+        {/* Explanation banner */}
+        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)" }}>
+          <FlaskConical className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "var(--t-blue)" }} />
+          <div>
+            <p className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Verify your wallet first</p>
+            <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "var(--t-muted)" }}>
+              Send a small test amount to confirm you're using the right wallet and network. Once verified, send the remaining balance to complete your access.
             </p>
-          </div>
-          <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0" style={{ background: "var(--t-blue-10)" }}>
-            <Shield className="w-7 h-7" style={{ color: "var(--t-blue)" }} />
           </div>
         </div>
 
+        {/* Fee summary */}
+        <div className="rounded-xl p-4 grid grid-cols-2 gap-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Your access fee</p>
+            <p className="text-2xl font-black mt-0.5" style={{ color: "var(--t-text)" }}>${req?.amountUsd}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Send now (test)</p>
+            <p className="text-2xl font-black mt-0.5" style={{ color: "var(--t-blue)" }}>
+              ${testAmount != null ? testAmount.toFixed(2) : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Network selection */}
         {opts.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Select network</p>
@@ -262,73 +289,164 @@ export function WholesaleAccessSection() {
           </div>
         )}
 
-        {effective && (
+        {/* Wallet + copyable amount */}
+        {effective && testAmount != null && (
           <div className="space-y-1.5">
-            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Send to this address</p>
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Send test amount to</p>
             <div className="rounded-lg px-3 py-3 flex items-center gap-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-              <p className="font-mono text-xs flex-1 break-all min-w-0" style={{ color: "var(--t-subtle)" }}>
-                {effective.walletAddress}
-              </p>
+              <p className="font-mono text-xs flex-1 break-all min-w-0" style={{ color: "var(--t-subtle)" }}>{effective.walletAddress}</p>
               <button
-                onClick={handleCopyAddress}
-                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors"
+                onClick={() => handleCopy(effective.walletAddress, "wallet1")}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold"
                 style={{
-                  background: copied ? "rgba(22,163,74,0.12)" : "var(--t-surface2)",
-                  color: copied ? "#16a34a" : "var(--t-text)",
+                  background: copied === "wallet1" ? "rgba(22,163,74,0.12)" : "var(--t-surface2)",
+                  color: copied === "wallet1" ? "#16a34a" : "var(--t-text)",
                   border: "1px solid var(--t-border)",
                 }}
               >
-                {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? "Copied" : "Copy"}
+                {copied === "wallet1" ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied === "wallet1" ? "Copied" : "Copy"}
               </button>
             </div>
+            <button
+              onClick={() => handleCopy(testAmount.toFixed(2), "amt1")}
+              className="w-full rounded-lg px-3 py-2.5 flex items-center justify-between text-xs font-semibold"
+              style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)", color: "var(--t-blue)" }}
+            >
+              <span>Tap to copy test amount</span>
+              <span className="font-mono font-black">${testAmount.toFixed(2)} {effective.currency}</span>
+            </button>
             <div className="flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "light-dark(#d97706,#f0c880)" }} />
               <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                Send exactly <strong style={{ color: "var(--t-text)" }}>${amountInput || req.amountUsd} {effective.currency}</strong> via {effective.network}. Sending to the wrong network will result in lost funds.
+                Send <strong style={{ color: "var(--t-text)" }}>exactly ${testAmount.toFixed(2)} {effective.currency}</strong> via {effective.network}. Wrong network = lost funds.
               </p>
             </div>
           </div>
         )}
 
+        {/* TX input */}
         <div className="space-y-1.5">
-          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Transaction hash</p>
+          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Test payment transaction hash</p>
           <input
-            value={txHash}
-            onChange={e => setTxHash(e.target.value)}
-            placeholder="Paste your transaction hash here"
+            value={testTx}
+            onChange={e => setTestTx(e.target.value)}
+            placeholder="Paste your test transaction hash"
             className="w-full rounded-lg px-3 py-2.5 text-xs font-mono outline-none"
             style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
           />
           <button
-            onClick={handleSubmitTx}
-            disabled={!txHash.trim() || submitting}
+            onClick={handleSubmitTestTx}
+            disabled={!testTx.trim() || submitting}
             className="w-full rounded-lg py-3 text-sm font-bold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ background: "var(--t-blue)" }}
           >
-            {submitting
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
-              : "Submit Payment for Review"}
-          </button>
-          <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
-            <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "var(--t-faint, var(--t-muted))" }}>or</span>
-            <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
-          </div>
-          <button
-            onClick={handleTestPayment}
-            disabled={submitting}
-            className="w-full rounded-lg py-2.5 text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
-          >
-            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            Test Payment
+            {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> : "I've Sent the Test Payment →"}
           </button>
         </div>
       </div>
     );
   }
 
+  // ── Step 2: Full payment ──────────────────────────────────────────────────
+  if (step === "pay") {
+    const testAmount = req?.paymentTestAmount ?? 0;
+    const remaining = Math.max(0, parseFloat(((req?.amountUsd ?? 0) - testAmount).toFixed(2)));
+    const currency = req?.paymentCryptoCurrency ?? effective?.currency ?? "";
+    const network = req?.paymentCryptoNetwork ?? effective?.network ?? "";
+    const wallet = effective?.walletAddress ?? "";
+    return (
+      <div className="w-full max-w-[520px] space-y-4">
+        {/* Step indicator */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-black text-white" style={{ background: "#16a34a" }}>✓</div>
+          <span className="text-xs font-bold" style={{ color: "#16a34a" }}>Test Verified</span>
+          <div className="flex-1 h-px mx-1" style={{ background: "var(--t-border)" }} />
+          <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-black text-white" style={{ background: "var(--t-blue)" }}>2</div>
+          <span className="text-xs font-bold" style={{ color: "var(--t-blue)" }}>Full Payment</span>
+        </div>
+
+        {/* Success note */}
+        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)" }}>
+          <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#16a34a" }} />
+          <div>
+            <p className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Test payment received — wallet verified ✓</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+              Now send the remaining <strong style={{ color: "var(--t-text)" }}>${remaining.toFixed(2)} {currency}</strong> to complete your access fee.
+            </p>
+          </div>
+        </div>
+
+        {/* Amount breakdown */}
+        <div className="rounded-xl p-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span style={{ color: "var(--t-muted)" }}>Total access fee</span>
+            <span className="font-semibold" style={{ color: "var(--t-text)" }}>${req?.amountUsd}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs mb-3">
+            <span style={{ color: "var(--t-muted)" }}>Test payment sent</span>
+            <span className="font-semibold" style={{ color: "#16a34a" }}>−${testAmount.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between pt-2.5" style={{ borderTop: "1px solid var(--t-border)" }}>
+            <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Remaining to send</span>
+            <span className="text-2xl font-black" style={{ color: "var(--t-blue)" }}>${remaining.toFixed(2)}</span>
+          </div>
+        </div>
+
+        {/* Wallet */}
+        {wallet && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Same wallet — {network}</p>
+            <div className="rounded-lg px-3 py-3 flex items-center gap-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+              <p className="font-mono text-xs flex-1 break-all min-w-0" style={{ color: "var(--t-subtle)" }}>{wallet}</p>
+              <button
+                onClick={() => handleCopy(wallet, "wallet2")}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold"
+                style={{
+                  background: copied === "wallet2" ? "rgba(22,163,74,0.12)" : "var(--t-surface2)",
+                  color: copied === "wallet2" ? "#16a34a" : "var(--t-text)",
+                  border: "1px solid var(--t-border)",
+                }}
+              >
+                {copied === "wallet2" ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied === "wallet2" ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <button
+              onClick={() => handleCopy(remaining.toFixed(2), "amt2")}
+              className="w-full rounded-lg px-3 py-2.5 flex items-center justify-between text-xs font-semibold"
+              style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)", color: "var(--t-blue)" }}
+            >
+              <span>Tap to copy remaining amount</span>
+              <span className="font-mono font-black">${remaining.toFixed(2)} {currency}</span>
+            </button>
+          </div>
+        )}
+
+        {/* TX input */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Full payment transaction hash</p>
+          <input
+            value={fullTx}
+            onChange={e => setFullTx(e.target.value)}
+            placeholder="Paste your transaction hash"
+            className="w-full rounded-lg px-3 py-2.5 text-xs font-mono outline-none"
+            style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+          />
+          <button
+            onClick={handleSubmitFullTx}
+            disabled={!fullTx.trim() || submitting}
+            className="w-full rounded-lg py-3 text-sm font-bold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: "var(--t-blue)" }}
+          >
+            {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> : "Submit Full Payment for Review"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Landing: no request yet ───────────────────────────────────────────────
   return (
     <div className="w-full max-w-[520px] space-y-5">
       <div className="rounded-xl p-6 space-y-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
