@@ -71,6 +71,7 @@ interface OrganiserProfile {
     cryptoCurrency?: string;
     cryptoNetwork?: string;
     cryptoWalletAddress?: string;
+    cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null;
   } | null;
 }
 
@@ -95,7 +96,7 @@ interface OrganiserGB {
   paymentMessage: string | null;
   paymentMessageEnabled: boolean;
   shippingOptions: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }[];
-  organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
+  organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
   organiserId: string | null;
   labTestSupplier: string | null;
   vendorShippingEnabled: boolean;
@@ -6054,8 +6055,8 @@ function ProductForm({ product, gbId, currency, existingVendors, allowedVendors,
 
 const CRYPTO_CURRENCIES = ["USDT", "USDC", "BTC", "ETH", "BNB", "SOL", "TRX", "XRP", "DOGE", "LTC"] as const;
 const CRYPTO_NETWORKS: Record<string, string[]> = {
-  USDT: ["TRC-20 (Tron)", "ERC-20 (Ethereum)", "BEP-20 (BSC)", "SOL (Solana)", "Polygon"],
-  USDC: ["ERC-20 (Ethereum)", "SOL (Solana)", "BEP-20 (BSC)", "Polygon"],
+  USDT: ["TRC-20 (Tron)", "ERC-20 (Ethereum)", "Arbitrum One", "BEP-20 (BSC)", "SOL (Solana)", "Polygon"],
+  USDC: ["ERC-20 (Ethereum)", "Arbitrum One", "SOL (Solana)", "BEP-20 (BSC)", "Polygon"],
   BTC: ["Bitcoin (BTC)"],
   ETH: ["ERC-20 (Ethereum)"],
   BNB: ["BEP-20 (BSC)"],
@@ -6089,9 +6090,12 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
     (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
   );
   const [payments, setPayments] = useState({
-    cryptoCurrency: gb.organiserPayments?.cryptoCurrency ?? "USDT",
-    cryptoNetwork: gb.organiserPayments?.cryptoNetwork ?? "",
-    cryptoWalletAddress: gb.organiserPayments?.cryptoWalletAddress ?? gb.organiserPayments?.usdtWallet ?? "",
+    cryptoOptions: (() => {
+      const op = gb.organiserPayments;
+      if (op?.cryptoOptions?.length) return op.cryptoOptions;
+      if (op?.cryptoWalletAddress) return [{ currency: op.cryptoCurrency ?? "USDT", network: op.cryptoNetwork ?? "", walletAddress: op.cryptoWalletAddress }];
+      return [] as { currency: string; network: string; walletAddress: string }[];
+    })(),
     revolutHandle: gb.organiserPayments?.revolutHandle ?? "",
     paypalHandle: gb.organiserPayments?.paypalHandle ?? "",
     anonPayEnabled: gb.organiserPayments?.anonPayEnabled ?? false,
@@ -6192,9 +6196,7 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cryptoCurrency: payments.cryptoCurrency.trim() || null,
-          cryptoNetwork: payments.cryptoNetwork.trim() || null,
-          cryptoWalletAddress: payments.cryptoWalletAddress.trim() || null,
+          cryptoOptions: payments.cryptoOptions,
           revolutHandle: payments.revolutHandle.trim() || null,
           paypalHandle: payments.paypalHandle.trim() || null,
           anonPayEnabled: payments.anonPayEnabled,
@@ -6207,8 +6209,6 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
       setOkPay(true); setTimeout(() => setOkPay(false), 2000);
     } catch { setError("Connection error"); } finally { setSavingPay(false); }
   };
-
-  const availableNetworks = CRYPTO_NETWORKS[payments.cryptoCurrency] ?? [];
 
   return (
     <div className="space-y-5">
@@ -6410,37 +6410,57 @@ function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: Or
 
 
       <SectionCard>
-        <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Crypto Payment</p>
-        <Field label="Cryptocurrency" icon={Wallet}>
-          <select
-            value={payments.cryptoCurrency}
-            onChange={e => setPayments(p => ({ ...p, cryptoCurrency: e.target.value, cryptoNetwork: "" }))}
-            className={inputCls}
-            style={inputStyle}
-          >
-            {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
-        <Field label="Network" icon={Globe}>
-          <select
-            value={payments.cryptoNetwork}
-            onChange={e => setPayments(p => ({ ...p, cryptoNetwork: e.target.value }))}
-            className={inputCls}
-            style={inputStyle}
-          >
-            <option value="">Select network…</option>
-            {availableNetworks.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </Field>
-        <Field label="Wallet Address" icon={Wallet}>
-          <input
-            value={payments.cryptoWalletAddress}
-            onChange={e => setPayments(p => ({ ...p, cryptoWalletAddress: e.target.value }))}
-            placeholder="Your wallet address"
-            className={inputCls}
-            style={inputStyle}
-          />
-        </Field>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Crypto Wallets</p>
+          <button
+            type="button"
+            onClick={() => setPayments(p => ({ ...p, cryptoOptions: [...p.cryptoOptions, { currency: "USDT", network: "", walletAddress: "" }] }))}
+            className="h-7 px-3 rounded-lg text-xs font-bold flex items-center gap-1"
+            style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}>
+            <Plus className="w-3 h-3" /> Add Wallet
+          </button>
+        </div>
+        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Add one entry per chain. Members choose which to use when paying.</p>
+        {payments.cryptoOptions.length === 0 && (
+          <p className="text-[11px] italic" style={{ color: "var(--t-subtle)" }}>No crypto wallets configured yet.</p>
+        )}
+        {payments.cryptoOptions.map((opt, i) => (
+          <div key={i} className="rounded-xl p-3 space-y-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Wallet #{i + 1}</span>
+              <button
+                type="button"
+                onClick={() => setPayments(p => ({ ...p, cryptoOptions: p.cryptoOptions.filter((_, j) => j !== i) }))}
+                className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-red-50"
+                style={{ color: "#ef4444" }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Currency" icon={Wallet}>
+                <select value={opt.currency}
+                  onChange={e => setPayments(p => { const a = [...p.cryptoOptions]; a[i] = { ...a[i], currency: e.target.value, network: "" }; return { ...p, cryptoOptions: a }; })}
+                  className={inputCls} style={inputStyle}>
+                  {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="Network" icon={Globe}>
+                <select value={opt.network}
+                  onChange={e => setPayments(p => { const a = [...p.cryptoOptions]; a[i] = { ...a[i], network: e.target.value }; return { ...p, cryptoOptions: a }; })}
+                  className={inputCls} style={inputStyle}>
+                  <option value="">Select…</option>
+                  {(CRYPTO_NETWORKS[opt.currency] ?? []).map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="Wallet Address" icon={Wallet}>
+              <input value={opt.walletAddress}
+                onChange={e => setPayments(p => { const a = [...p.cryptoOptions]; a[i] = { ...a[i], walletAddress: e.target.value }; return { ...p, cryptoOptions: a }; })}
+                placeholder="Your wallet address"
+                className={inputCls} style={inputStyle} />
+            </Field>
+          </div>
+        ))}
         <p className="text-sm font-bold mt-2" style={{ color: "var(--t-text)" }}>Other Payment Methods</p>
         <Field label="Revolut Handle" icon={CreditCard}><input value={payments.revolutHandle} onChange={e => setPayments(p => ({ ...p, revolutHandle: e.target.value }))} placeholder="@yourhandle" className={inputCls} style={inputStyle} /></Field>
         <Field label="PayPal Handle / Email" icon={DollarSign}><input value={payments.paypalHandle} onChange={e => setPayments(p => ({ ...p, paypalHandle: e.target.value }))} placeholder="paypal.me/username or email" className={inputCls} style={inputStyle} /></Field>

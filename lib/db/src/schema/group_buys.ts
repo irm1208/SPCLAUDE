@@ -54,6 +54,7 @@ export const groupBuysTable = pgTable("group_buys", {
     cryptoCurrency?: string;
     cryptoNetwork?: string;
     cryptoWalletAddress?: string;
+    cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }>;
     anonPayEnabled?: boolean;
     anonPayWallet?: string;
     anonPayTicker?: string;

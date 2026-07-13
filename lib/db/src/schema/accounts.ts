@@ -43,6 +43,7 @@ export const accountsTable = pgTable("accounts", {
   poolLeaderAnonpayNetwork: text("pool_leader_anonpay_network"),
   poolLeaderRevolutHandle: text("pool_leader_revolut_handle"),
   poolLeaderPaypalEmail: text("pool_leader_paypal_email"),
+  poolLeaderCryptoOptions: jsonb("pool_leader_crypto_options").$type<Array<{ currency: string; network: string; walletAddress: string }>>(),
   // GB Organiser fields
   organiserStatus: text("organiser_status"), // null = not applied, "applied", "approved", "rejected", "suspended"
   organiserRole: text("organiser_role").$type<OrganiserRole>(), // null = not set, "standard", "trusted", "senior"
@@ -55,6 +56,7 @@ export const accountsTable = pgTable("accounts", {
     cryptoCurrency?: string;
     cryptoNetwork?: string;
     cryptoWalletAddress?: string;
+    cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }>;
     anonPayEnabled?: boolean;
     anonPayWallet?: string;
     anonPayTicker?: string;
@@ -70,6 +72,7 @@ export const accountsTable = pgTable("accounts", {
     cryptoCurrency?: string;
     cryptoNetwork?: string;
     cryptoWalletAddress?: string;
+    cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }>;
     anonPayEnabled?: boolean;
     anonPayWallet?: string;
     anonPayTicker?: string;
@@ -190,6 +193,7 @@ export const gbReshippersTable = pgTable("gb_reshippers", {
     cryptoCurrency?: string | null;
     cryptoNetwork?: string | null;
     cryptoWalletAddress?: string | null;
+    cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }>;
     anonPayEnabled?: boolean;
     anonPayWallet?: string | null;
     anonPayTicker?: string | null;

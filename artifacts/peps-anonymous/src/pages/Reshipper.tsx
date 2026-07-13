@@ -48,6 +48,7 @@ type ReshipperPaymentDetails = {
   cryptoCurrency?: string | null;
   cryptoNetwork?: string | null;
   cryptoWalletAddress?: string | null;
+  cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null;
   anonPayEnabled?: boolean;
   anonPayWallet?: string | null;
   anonPayTicker?: string | null;
@@ -2876,8 +2877,8 @@ function ParcelsTab({ gbId }: { gbId: string }) {
 
 const CRYPTO_CURRENCIES = ["USDT", "USDC", "BTC", "ETH", "BNB", "SOL", "TRX", "XRP", "DOGE", "LTC"] as const;
 const CRYPTO_NETWORKS: Record<string, string[]> = {
-  USDT: ["TRC-20 (Tron)", "ERC-20 (Ethereum)", "BEP-20 (BSC)", "SOL (Solana)", "Polygon"],
-  USDC: ["ERC-20 (Ethereum)", "SOL (Solana)", "BEP-20 (BSC)", "Polygon"],
+  USDT: ["TRC-20 (Tron)", "ERC-20 (Ethereum)", "Arbitrum One", "BEP-20 (BSC)", "SOL (Solana)", "Polygon"],
+  USDC: ["ERC-20 (Ethereum)", "Arbitrum One", "SOL (Solana)", "BEP-20 (BSC)", "Polygon"],
   BTC:  ["Bitcoin (BTC)"],
   ETH:  ["ERC-20 (Ethereum)"],
   BNB:  ["BEP-20 (BSC)"],
@@ -2927,21 +2928,22 @@ function PaymentsTab({ assignment, me, onAssignmentUpdate }: {
     usdtWallet: pd.usdtWallet ?? "",
     revolutHandle: pd.revolutHandle ?? "",
     paypalHandle: pd.paypalHandle ?? "",
-    cryptoCurrency: pd.cryptoCurrency ?? "USDT",
-    cryptoNetwork: pd.cryptoNetwork ?? "",
-    cryptoWalletAddress: pd.cryptoWalletAddress ?? "",
+    cryptoOptions: (() => {
+      if (pd.cryptoOptions?.length) return pd.cryptoOptions;
+      if (pd.cryptoWalletAddress) return [{ currency: pd.cryptoCurrency ?? "USDT", network: pd.cryptoNetwork ?? "", walletAddress: pd.cryptoWalletAddress }];
+      return [] as { currency: string; network: string; walletAddress: string }[];
+    })(),
     anonPayEnabled: pd.anonPayEnabled ?? false,
     anonPayWallet: pd.anonPayWallet ?? "",
     anonPayTicker: pd.anonPayTicker ?? "xmr",
     anonPayNetwork: pd.anonPayNetwork ?? "Mainnet",
   });
-  const availableNetworks = CRYPTO_NETWORKS[form.cryptoCurrency] ?? [];
 
   const hasPaymentDetails =
     form.usdtWallet.trim() !== "" ||
     form.revolutHandle.trim() !== "" ||
     form.paypalHandle.trim() !== "" ||
-    form.cryptoWalletAddress.trim() !== "" ||
+    form.cryptoOptions.some(o => o.walletAddress.trim() !== "") ||
     form.anonPayWallet.trim() !== "";
 
   const [saving, setSaving] = useState(false);
@@ -3104,31 +3106,50 @@ function PaymentsTab({ assignment, me, onAssignmentUpdate }: {
             )}
             {enabled.cryptoEnabled && (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <PField label="Cryptocurrency" icon={Wallet}>
-                    <select
-                      value={form.cryptoCurrency}
-                      onChange={e => setForm(f => ({ ...f, cryptoCurrency: e.target.value, cryptoNetwork: "" }))}
-                      className={inputCls("text-sm")} style={inputStyle}
-                    >
-                      {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </PField>
-                  <PField label="Network" icon={Globe}>
-                    <select
-                      value={form.cryptoNetwork}
-                      onChange={e => setForm(f => ({ ...f, cryptoNetwork: e.target.value }))}
-                      className={inputCls("text-sm")} style={inputStyle}
-                    >
-                      <option value="">Select network…</option>
-                      {availableNetworks.map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </PField>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Crypto Wallets</span>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, cryptoOptions: [...f.cryptoOptions, { currency: "USDT", network: "", walletAddress: "" }] }))}
+                    className="h-6 px-2 rounded text-[10px] font-bold flex items-center gap-1"
+                    style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}>
+                    + Add
+                  </button>
                 </div>
-                <PField label="Wallet Address" icon={Wallet}>
-                  <input value={form.cryptoWalletAddress} onChange={e => setForm(f => ({ ...f, cryptoWalletAddress: e.target.value }))}
-                    placeholder="0x…" className={inputCls("text-sm font-mono")} style={inputStyle} />
-                </PField>
+                {form.cryptoOptions.length === 0 && <p className="text-[11px] italic" style={{ color: "var(--t-subtle)" }}>No crypto wallets configured.</p>}
+                {form.cryptoOptions.map((opt, i) => (
+                  <div key={i} className="rounded-lg p-2.5 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Wallet #{i + 1}</span>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, cryptoOptions: f.cryptoOptions.filter((_, j) => j !== i) }))}
+                        className="w-5 h-5 flex items-center justify-center rounded" style={{ color: "#ef4444" }}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <PField label="Currency" icon={Wallet}>
+                        <select value={opt.currency}
+                          onChange={e => setForm(f => { const a = [...f.cryptoOptions]; a[i] = { ...a[i], currency: e.target.value, network: "" }; return { ...f, cryptoOptions: a }; })}
+                          className={inputCls("text-sm")} style={inputStyle}>
+                          {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </PField>
+                      <PField label="Network" icon={Globe}>
+                        <select value={opt.network}
+                          onChange={e => setForm(f => { const a = [...f.cryptoOptions]; a[i] = { ...a[i], network: e.target.value }; return { ...f, cryptoOptions: a }; })}
+                          className={inputCls("text-sm")} style={inputStyle}>
+                          <option value="">Select…</option>
+                          {(CRYPTO_NETWORKS[opt.currency] ?? []).map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </PField>
+                    </div>
+                    <PField label="Wallet Address" icon={Wallet}>
+                      <input value={opt.walletAddress}
+                        onChange={e => setForm(f => { const a = [...f.cryptoOptions]; a[i] = { ...a[i], walletAddress: e.target.value }; return { ...f, cryptoOptions: a }; })}
+                        placeholder="0x…" className={inputCls("text-sm font-mono")} style={inputStyle} />
+                    </PField>
+                  </div>
+                ))}
               </div>
             )}
             {enabled.anonPayEnabled && (

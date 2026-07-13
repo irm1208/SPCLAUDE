@@ -9,6 +9,7 @@ type LeaderStatus = {
   wallet: string | null;
   walletCurrency: string | null;
   walletNetwork: string | null;
+  cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null;
   anonpayWallet: string | null;
   anonpayTicker: string | null;
   anonpayNetwork: string | null;
@@ -715,8 +716,8 @@ function ApplyModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
 
 const WALLET_CURRENCIES = ["USDT", "USDC", "ETH", "BTC", "XMR", "BNB", "SOL", "LTC", "DOGE", "DASH", "ZEC"] as const;
 const WALLET_NETWORKS: Record<string, string[]> = {
-  USDT: ["ERC-20", "TRC-20", "BEP-20"],
-  USDC: ["ERC-20", "BEP-20"],
+  USDT: ["ERC-20", "TRC-20", "Arbitrum One", "BEP-20"],
+  USDC: ["ERC-20", "Arbitrum One", "BEP-20"],
   ETH:  ["Mainnet"],
   BTC:  ["Mainnet"],
   XMR:  ["Mainnet"],
@@ -780,9 +781,11 @@ function PaymentSettingsModal({
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
-  const [walletAddress, setWalletAddress] = useState(current.wallet ?? "");
-  const [walletCurrency, setWalletCurrency] = useState(current.walletCurrency ?? "USDT");
-  const [walletNetwork, setWalletNetwork] = useState(current.walletNetwork ?? "ERC-20");
+  const [cryptoOptions, setCryptoOptions] = useState<Array<{ currency: string; network: string; walletAddress: string }>>(() => {
+    if (current.cryptoOptions?.length) return current.cryptoOptions;
+    if (current.wallet) return [{ currency: current.walletCurrency ?? "USDT", network: current.walletNetwork ?? "ERC-20", walletAddress: current.wallet }];
+    return [];
+  });
   const [revolutHandle, setRevolutHandle] = useState(current.revolutHandle ?? "");
   const [paypalEmail, setPaypalEmail] = useState(current.paypalEmail ?? "");
 
@@ -794,15 +797,8 @@ function PaymentSettingsModal({
   const [submitting, setSubmitting] = useState(false);
 
   const selectedAnonCoin = ANONPAY_COINS.find(c => `${c.ticker}|${c.network}` === anonCoinKey) ?? ANONPAY_COINS[0];
-  const availableNetworks = WALLET_NETWORKS[walletCurrency] ?? ["Mainnet"];
 
-  const handleCurrencyChange = (c: string) => {
-    setWalletCurrency(c);
-    const nets = WALLET_NETWORKS[c] ?? ["Mainnet"];
-    setWalletNetwork(nets[0]);
-  };
-
-  const hasAtLeastOne = walletAddress.trim() || anonpayWallet.trim() || revolutHandle.trim() || paypalEmail.trim();
+  const hasAtLeastOne = cryptoOptions.some(o => o.walletAddress.trim()) || anonpayWallet.trim() || revolutHandle.trim() || paypalEmail.trim();
 
   const fld: React.CSSProperties = {
     border: "1px solid var(--t-border)",
@@ -822,9 +818,7 @@ function PaymentSettingsModal({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          walletAddress: walletAddress.trim() || null,
-          walletCurrency,
-          walletNetwork,
+          cryptoOptions: cryptoOptions.filter(o => o.walletAddress.trim()),
           anonpayWallet: anonpayWallet.trim() || null,
           anonpayTicker: anonpayWallet.trim() ? selectedAnonCoin.ticker : null,
           anonpayNetwork: anonpayWallet.trim() ? selectedAnonCoin.network : null,
@@ -865,30 +859,58 @@ function PaymentSettingsModal({
 
         <div className="px-6 py-5 space-y-4 max-h-[78vh] overflow-y-auto">
 
-          {/* ── Crypto Wallet ── */}
-          <PmSection icon="💎" label="Crypto Wallet">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <PmLabel>Currency</PmLabel>
-                <select value={walletCurrency} onChange={e => handleCurrencyChange(e.target.value)}
-                  className={fldCls + " cursor-pointer"} style={fld}>
-                  {WALLET_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <PmLabel>Network</PmLabel>
-                <select value={walletNetwork} onChange={e => setWalletNetwork(e.target.value)}
-                  className={fldCls + " cursor-pointer"} style={fld}>
-                  {availableNetworks.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
+          {/* ── Crypto Wallets ── */}
+          <PmSection icon="💎" label="Crypto Wallets">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px]" style={{ color: "var(--t-muted)" }}>Add one entry per chain. Members choose which to use.</p>
+              <button
+                type="button"
+                onClick={() => setCryptoOptions(o => [...o, { currency: "USDT", network: "ERC-20", walletAddress: "" }])}
+                className="h-6 px-2 rounded text-[10px] font-bold flex items-center gap-1 shrink-0 ml-2"
+                style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}>
+                + Add
+              </button>
             </div>
-            <div>
-              <PmLabel>Wallet Address — leave blank to remove</PmLabel>
-              <input value={walletAddress} onChange={e => setWalletAddress(e.target.value)}
-                placeholder={`${walletCurrency} address (0x… or bc1…)`}
-                className={fldCls} style={monoFld} />
-            </div>
+            {cryptoOptions.length === 0 && (
+              <p className="text-[11px] italic" style={{ color: "var(--t-muted)" }}>No crypto wallets configured yet.</p>
+            )}
+            {cryptoOptions.map((opt, i) => (
+              <div key={i} className="rounded-lg p-2.5 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Wallet #{i + 1}</span>
+                  <button type="button" onClick={() => setCryptoOptions(o => o.filter((_, j) => j !== i))}
+                    className="w-5 h-5 flex items-center justify-center rounded" style={{ color: "#ef4444" }}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <PmLabel>Currency</PmLabel>
+                    <select value={opt.currency}
+                      onChange={e => setCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], currency: e.target.value, network: WALLET_NETWORKS[e.target.value]?.[0] ?? "" }; return a; })}
+                      className={fldCls + " cursor-pointer"} style={fld}>
+                      {WALLET_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <PmLabel>Network</PmLabel>
+                    <select value={opt.network}
+                      onChange={e => setCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], network: e.target.value }; return a; })}
+                      className={fldCls + " cursor-pointer"} style={fld}>
+                      <option value="">Select…</option>
+                      {(WALLET_NETWORKS[opt.currency] ?? ["Mainnet"]).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <PmLabel>Wallet Address</PmLabel>
+                  <input value={opt.walletAddress}
+                    onChange={e => setCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], walletAddress: e.target.value }; return a; })}
+                    placeholder={`${opt.currency} address`}
+                    className={fldCls} style={monoFld} />
+                </div>
+              </div>
+            ))}
           </PmSection>
 
           {/* ── Revolut ── */}
@@ -1220,9 +1242,11 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const [namedReportCap, setNamedReportCap] = useState("");
 
   // Payment methods — entered at pool-creation time
-  const [walletAddress, setWalletAddress] = useState(leaderStatus.wallet ?? "");
-  const [walletCurrency, setWalletCurrency] = useState(leaderStatus.walletCurrency ?? "USDT");
-  const [walletNetwork, setWalletNetwork] = useState(leaderStatus.walletNetwork ?? "ERC-20");
+  const [createPoolCryptoOptions, setCreatePoolCryptoOptions] = useState<Array<{ currency: string; network: string; walletAddress: string }>>(() => {
+    if (leaderStatus.cryptoOptions?.length) return leaderStatus.cryptoOptions;
+    if (leaderStatus.wallet) return [{ currency: leaderStatus.walletCurrency ?? "USDT", network: leaderStatus.walletNetwork ?? "ERC-20", walletAddress: leaderStatus.wallet }];
+    return [];
+  });
   const [anonpayWallet, setAnonpayWallet] = useState(leaderStatus.anonpayWallet ?? "");
   const [anonpayTicker, setAnonpayTicker] = useState(leaderStatus.anonpayTicker ?? "XMR");
   const [anonpayNetwork, setAnonpayNetwork] = useState(leaderStatus.anonpayNetwork ?? "Monero");
@@ -1275,7 +1299,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const extraVialTotal = (vialAmount - 1) * EXTRA_VIAL;
   const target = tests.reduce((s, t) => s + testTotal(t), 0) + extraVialTotal;
 
-  const hasAtLeastOnePayment = walletAddress || anonpayWallet || revolutHandle || paypalEmail || janoshikUrl;
+  const hasAtLeastOnePayment = createPoolCryptoOptions.some(o => o.walletAddress.trim()) || anonpayWallet || revolutHandle || paypalEmail || janoshikUrl;
 
   const submit = async () => {
     if (!title) { toast({ title: "Title required", variant: "destructive" }); return; }
@@ -1288,11 +1312,10 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
     // Address validation — must be at least 20 characters of valid address chars.
     const addrRe = /^[A-Za-z0-9\-_:.+@]{20,}$/;
     let addrOk = true;
-    if (walletAddress) {
-      if (!addrRe.test(walletAddress.trim())) {
-        setWalletAddressError("Address looks invalid — check it's complete (min 20 chars, no spaces).");
-        addrOk = false;
-      } else { setWalletAddressError(""); }
+    const badCryptoIdx = createPoolCryptoOptions.findIndex(o => o.walletAddress.trim() && !addrRe.test(o.walletAddress.trim()));
+    if (badCryptoIdx !== -1) {
+      setWalletAddressError(`Wallet #${badCryptoIdx + 1} address looks invalid — check it's complete (min 20 chars, no spaces).`);
+      addrOk = false;
     } else { setWalletAddressError(""); }
     if (anonpayWallet) {
       if (!addrRe.test(anonpayWallet.trim())) {
@@ -1321,9 +1344,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           pageMessage: pageMessage || undefined,
           contributorNamedReportEnabled: namedReportEnabled,
           namedReportCap: namedReportEnabled && namedReportCap ? parseInt(namedReportCap, 10) : null,
-          walletAddress: walletAddress || undefined,
-          walletCurrency,
-          walletNetwork,
+          cryptoOptions: createPoolCryptoOptions.filter(o => o.walletAddress.trim()),
           anonpayWallet: anonpayWallet || undefined,
           anonpayTicker: anonpayWallet ? anonpayTicker : undefined,
           anonpayNetwork: anonpayWallet ? anonpayNetwork : undefined,
@@ -1339,7 +1360,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
       // Sync payment details back to leader profile so they appear in future pool
       // settings and don't have to be re-entered manually.
       const profileNeedsUpdate =
-        (walletAddress && walletAddress !== leaderStatus.wallet) ||
+        createPoolCryptoOptions.some(o => !leaderStatus.cryptoOptions?.some(co => co.walletAddress === o.walletAddress)) ||
         (anonpayWallet && anonpayWallet !== leaderStatus.anonpayWallet) ||
         (revolutHandle && revolutHandle !== leaderStatus.revolutHandle) ||
         (paypalEmail && paypalEmail !== leaderStatus.paypalEmail);
@@ -1349,9 +1370,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            walletAddress: walletAddress.trim() || leaderStatus.wallet || null,
-            walletCurrency,
-            walletNetwork,
+            cryptoOptions: createPoolCryptoOptions.filter(o => o.walletAddress.trim()),
             anonpayWallet: anonpayWallet.trim() || leaderStatus.anonpayWallet || null,
             anonpayTicker: anonpayWallet.trim() ? anonpayTicker : (leaderStatus.anonpayTicker ?? null),
             anonpayNetwork: anonpayWallet.trim() ? anonpayNetwork : (leaderStatus.anonpayNetwork ?? null),
@@ -1668,31 +1687,55 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
 
             {/* Crypto */}
             <div className="space-y-2 rounded-xl p-3" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>💎 Crypto</p>
-              <input value={walletAddress} onChange={e => { setWalletAddress(e.target.value); setWalletAddressError(""); }}
-                placeholder="Wallet address (0x… or bc1…)"
-                className={INPUT_CLS + " font-mono"} style={INPUT_STYLE} />
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>💎 Crypto</p>
+                <button type="button"
+                  onClick={() => { setCreatePoolCryptoOptions(o => [...o, { currency: "USDT", network: "ERC-20", walletAddress: "" }]); setWalletAddressError(""); }}
+                  className="h-5 px-2 rounded text-[9px] font-bold"
+                  style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}>
+                  + Add
+                </button>
+              </div>
               {walletAddressError && (
                 <p className="text-[11px] font-medium" style={{ color: "#ef4444" }}>{walletAddressError}</p>
               )}
-              {walletAddress && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10px] mb-1" style={{ color: "var(--t-muted)" }}>Currency</p>
-                    <select value={walletCurrency} onChange={e => setWalletCurrency(e.target.value)}
-                      className={INPUT_CLS} style={INPUT_STYLE}>
-                      <option>USDT</option><option>ETH</option><option>BTC</option><option>XMR</option>
-                    </select>
-                  </div>
-                  <div>
-                    <p className="text-[10px] mb-1" style={{ color: "var(--t-muted)" }}>Network</p>
-                    <select value={walletNetwork} onChange={e => setWalletNetwork(e.target.value)}
-                      className={INPUT_CLS} style={INPUT_STYLE}>
-                      <option>ERC-20</option><option>BEP-20</option><option>Mainnet</option><option>TRC-20</option>
-                    </select>
-                  </div>
-                </div>
+              {createPoolCryptoOptions.length === 0 && (
+                <p className="text-[11px] italic" style={{ color: "var(--t-muted)" }}>No crypto wallets yet — click + Add.</p>
               )}
+              {createPoolCryptoOptions.map((opt, i) => (
+                <div key={i} className="rounded-lg p-2.5 space-y-1.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Wallet #{i + 1}</span>
+                    <button type="button" onClick={() => setCreatePoolCryptoOptions(o => o.filter((_, j) => j !== i))}
+                      className="w-4 h-4 flex items-center justify-center rounded text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <p className="text-[9px] mb-0.5" style={{ color: "var(--t-muted)" }}>Currency</p>
+                      <select value={opt.currency}
+                        onChange={e => setCreatePoolCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], currency: e.target.value, network: WALLET_NETWORKS[e.target.value]?.[0] ?? "ERC-20" }; return a; })}
+                        className={INPUT_CLS} style={INPUT_STYLE}>
+                        {WALLET_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-[9px] mb-0.5" style={{ color: "var(--t-muted)" }}>Network</p>
+                      <select value={opt.network}
+                        onChange={e => setCreatePoolCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], network: e.target.value }; return a; })}
+                        className={INPUT_CLS} style={INPUT_STYLE}>
+                        <option value="">Select…</option>
+                        {(WALLET_NETWORKS[opt.currency] ?? ["Mainnet"]).map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <input value={opt.walletAddress}
+                    onChange={e => { setCreatePoolCryptoOptions(o => { const a = [...o]; a[i] = { ...a[i], walletAddress: e.target.value }; return a; }); setWalletAddressError(""); }}
+                    placeholder={`${opt.currency} address`}
+                    className={INPUT_CLS + " font-mono"} style={INPUT_STYLE} />
+                </div>
+              ))}
             </div>
 
             {/* AnonPay */}

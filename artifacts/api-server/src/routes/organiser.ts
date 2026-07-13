@@ -855,7 +855,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
 router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]);
-  const { usdtWallet, revolutHandle, paypalHandle, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
+  const { usdtWallet, revolutHandle, paypalHandle, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, cryptoOptions, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
 
   const [existing] = await db
     .select({ id: groupBuysTable.id })
@@ -864,13 +864,30 @@ router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req,
 
   if (!existing) { res.status(404).json({ error: "Group buy not found" }); return; }
 
+  // Validate and normalise cryptoOptions array
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | undefined =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : undefined;
+
+  // Derive legacy single-crypto fields from first entry for backward compat
+  const firstCrypto = normalizedCryptoOptions?.[0];
+
   const payments = {
     usdtWallet: usdtWallet ? String(usdtWallet).trim() : undefined,
     revolutHandle: revolutHandle ? String(revolutHandle).trim() : undefined,
     paypalHandle: paypalHandle ? String(paypalHandle).trim() : undefined,
-    cryptoCurrency: cryptoCurrency ? String(cryptoCurrency).trim() : undefined,
-    cryptoNetwork: cryptoNetwork ? String(cryptoNetwork).trim() : undefined,
-    cryptoWalletAddress: cryptoWalletAddress ? String(cryptoWalletAddress).trim() : undefined,
+    cryptoCurrency: firstCrypto?.currency ?? (cryptoCurrency ? String(cryptoCurrency).trim() : undefined),
+    cryptoNetwork: firstCrypto?.network ?? (cryptoNetwork ? String(cryptoNetwork).trim() : undefined),
+    cryptoWalletAddress: firstCrypto?.walletAddress ?? (cryptoWalletAddress ? String(cryptoWalletAddress).trim() : undefined),
+    cryptoOptions: normalizedCryptoOptions,
     anonPayEnabled: typeof anonPayEnabled === "boolean" ? anonPayEnabled : undefined,
     anonPayWallet: anonPayWallet != null ? (String(anonPayWallet).trim() || undefined) : undefined,
     anonPayTicker: anonPayTicker != null ? (String(anonPayTicker).trim() || undefined) : undefined,
