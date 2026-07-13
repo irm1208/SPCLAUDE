@@ -49,3 +49,4 @@ export * from "./hidden_orders";
 export * from "./inventory_turnover_log";
 export * from "./gb_testing_contributions";
 export * from "./wholesale_access_requests";
+export * from "./peppys_articles";

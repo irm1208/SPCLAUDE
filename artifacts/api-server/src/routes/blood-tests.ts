@@ -9,6 +9,7 @@ import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
 import { fetchPepPediaContext } from "../lib/pep-pedia";
+import { searchPeppysArticles } from "../lib/peppys-search";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
 
 const router: IRouter = Router();
@@ -1045,16 +1046,24 @@ async function callGeminiDiscuss(
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
-  // ── Pre-fetch Pep-Pedia context (fast, compound-specific wiki) ───────────────
+  // ── Pre-fetch Pep-Pedia context + Peppys community research in parallel ──────
   // Sage handles its own web search via tool_use (web_search + fetch_url tools).
-  // Only Pep-Pedia is pre-fetched here since it's a curated peptide-specific database
-  // that Sage cannot reach via Google search, and it loads in ~1s.
-  const [pepPediaResult] = await Promise.all([
+  // Pep-Pedia and Peppys are pre-fetched here since they are curated/private
+  // sources that Sage cannot reach via Google search.
+  const [pepPediaResult, peppysResults] = await Promise.all([
     fetchPepPediaContext(message).catch(() => null),
+    searchPeppysArticles(message).catch(() => null),
   ]);
 
   if (pepPediaResult) {
     systemPrompt += `\n\n─── PEP-PEDIA.ORG REFERENCE (${pepPediaResult.url}) ───\n${pepPediaResult.content}\n─── END PEP-PEDIA REFERENCE ───\n\nThe above is from the Pep-Pedia wiki — a curated peptide reference database. Prioritise this information for compound-specific facts (mechanism, dosing, half-life, storage). Cite the source as "${pepPediaResult.url}" when you use it.`;
+  }
+
+  if (peppysResults && peppysResults.length > 0) {
+    const snippets = peppysResults
+      .map(r => `**${r.title}** (${r.url})\n${r.snippet}`)
+      .join("\n\n---\n\n");
+    systemPrompt += `\n\n─── PEPPYS COMMUNITY RESEARCH ───\nThe following are relevant threads from the Peppys private peptide research community (chat.peppys.org):\n\n${snippets}\n─── END PEPPYS RESEARCH ───\n\nUse this community research as a real-world experience supplement to scientific sources. When citing, use the URL provided for each thread.`;
   }
 
   const webSearchSources: DiscussSource[] = [];
