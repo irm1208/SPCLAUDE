@@ -955,7 +955,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
 
           {isEmptyChat ? (
             /* ── Empty / landing state ── */
-            <div className="flex-1 flex flex-col items-center justify-center" style={{ padding: "0 24px 60px" }}>
+            <div className="flex-1 flex flex-col items-center justify-center pb-[calc(70px+env(safe-area-inset-bottom))] lg:pb-16" style={{ padding: "0 24px 0" }}>
               <h2 style={{ fontSize: 28, fontWeight: 600, color: t.text, marginBottom: 32, textAlign: "center", maxWidth: 520, lineHeight: 1.3 }}>
                 How can I help you today?
               </h2>
@@ -1083,7 +1083,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
               </div>
 
               {/* Sticky bottom input */}
-              <div style={{ padding: "10px 24px 14px", borderTop: `1px solid ${t.border}` }}>
+              <div className="pb-[calc(70px+env(safe-area-inset-bottom))] lg:pb-[14px]" style={{ paddingTop: 10, paddingLeft: 24, paddingRight: 24, borderTop: `1px solid ${t.border}` }}>
                 <div className="mx-auto" style={{ maxWidth: 700 }}>
                   <div
                     className="flex items-center gap-3 rounded-2xl"
