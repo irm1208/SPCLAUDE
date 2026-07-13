@@ -364,7 +364,8 @@ type Step = "loading" | "unavailable" | "method" | "chain" | "choice" | "test" |
 type FiatMethod = "revolut" | "paypal";
 
 interface Props {
-  orderId: string;
+  orderId?: string;
+  apiPrefix?: string;
   orderPin?: string;
   grandTotal: number;
   currency?: string | null;
@@ -428,7 +429,7 @@ function CollectedByBanner({ collectedBy }: {
 // ── Main component ─────────────────────────────────────────────
 
 export default function PaymentPanel({
-  orderId, orderPin, grandTotal, currency,
+  orderId, apiPrefix, orderPin, grandTotal, currency,
   paymentStatus: initStatus,
   paymentTxHash: initTxHash,
   paymentTestAmount: initTestAmount,
@@ -437,6 +438,7 @@ export default function PaymentPanel({
   paymentsEnabled: paymentsEnabledProp,
   creditsUsd = 0,
 }: Props) {
+  const apiBase = apiPrefix ?? (orderId ? `/api/orders/${orderId}` : null);
   const [paymentsEnabled, setPaymentsEnabled] = useState<boolean | null>(
     paymentsEnabledProp !== undefined ? paymentsEnabledProp : null
   );
@@ -494,11 +496,11 @@ export default function PaymentPanel({
   // must never display or send a guessed amount for volatile coins.
   const [rateReady, setRateReady] = useState(false);
   const loadRate = useCallback(() => {
-    if (!orderId) return;
+    if (!apiBase) return;
     setRateLoading(true);
     setRateUnavailable(false);
     setRateReady(false);
-    fetch(`/api/orders/${orderId}/lock-usdt-rate`, {
+    fetch(`${apiBase}/lock-usdt-rate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // Only send a choice once the buyer has actively switched options; otherwise
@@ -530,7 +532,7 @@ export default function PaymentPanel({
       })
       .catch(() => { setRateUnavailable(true); })
       .finally(() => setRateLoading(false));
-  }, [orderId, pickedOption]);
+  }, [apiBase, pickedOption]);
   useEffect(() => { loadRate(); }, [loadRate]);
   const usdTotal = lockedUsdTotal ?? grandTotal;
   // Credits are always in USD — deduct from the USD payment side after conversion
@@ -579,9 +581,11 @@ export default function PaymentPanel({
   const [postPayDone, setPostPayDone] = useState(false);
 
   useEffect(() => {
-    const url = orderId
-      ? `/api/payments-info?orderId=${encodeURIComponent(orderId)}`
-      : "/api/payments-info";
+    const url = apiPrefix
+      ? `${apiPrefix}/payments-info`
+      : orderId
+        ? `/api/payments-info?orderId=${encodeURIComponent(orderId)}`
+        : "/api/payments-info";
     fetch(url)
       .then(r => r.json())
       .then(d => {
@@ -649,7 +653,7 @@ export default function PaymentPanel({
       .catch(() => {
         if (paymentsEnabledProp === undefined) setPaymentsEnabled(false);
       });
-  }, [orderId, paymentsEnabledProp]);
+  }, [apiBase, apiPrefix, orderId, paymentsEnabledProp]);
 
   // Auto-poll Trocador for confirmation once customer has initiated payment.
   // Runs regardless of current UI step so page-refresh pending orders
@@ -922,7 +926,7 @@ export default function PaymentPanel({
     setGenerating(true);
     setError("");
     try {
-      const res = await fetch(`/api/orders/${orderId}/generate-test`, { method: "POST" });
+      const res = await fetch(`${apiBase}/generate-test`, { method: "POST" });
       const d = await res.json();
       if (!res.ok) { setError(d.error || "Failed to generate test amount"); }
       else { setTestAmount(d.paymentTestAmount); updateStatus("test_ready"); setStep("test"); }
@@ -934,7 +938,7 @@ export default function PaymentPanel({
     if (!testTx.trim()) { setError("Please enter your transaction hash"); return; }
     setError(""); setPendingTx(false); setConfirmations(null); setSubmitting(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/submit-test`, {
+      const res = await fetch(`${apiBase}/submit-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ txHash: testTx.trim() }),
@@ -959,7 +963,7 @@ export default function PaymentPanel({
     if (!fullTx.trim()) { setError("Please enter your transaction hash"); return; }
     setError(""); setPendingTx(false); setConfirmations(null); setSubmitting(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`${apiBase}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ txHash: fullTx.trim() }),
