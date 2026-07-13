@@ -36,6 +36,7 @@ import {
   ChevronDown,
   LifeBuoy,
   MessageSquarePlus,
+  Sparkles,
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "protocols",     label: "Protocols",          shortLabel: "Protocols",  icon: BookMarked,    path: "/protocols",     altPaths: ["/medications", "/medications/", "/trt-aas"], section: "research" },
   { id: "learn",         label: "Learning Hub",       shortLabel: "Learn",      icon: GraduationCap, path: "/learn",          altPaths: ["/learn/"],         section: "research" },
   { id: "lab",           label: "Lab Tests",          shortLabel: "Lab",        icon: ClipboardList, path: "/tests",                                        section: "research" },
+  { id: "sage",            label: "Sage AI",            shortLabel: "Sage",       icon: Sparkles,          path: "/sage",        section: "research" },
   { id: "calculator",      label: "Calculator",         shortLabel: "Calc",       icon: Hash,             path: "/calculator",  section: "tools"    },
   { id: "feedback",        label: "Feedback",           shortLabel: "Feedback",   icon: MessageSquarePlus, path: "/feedback",   section: "tools"    },
 ];
