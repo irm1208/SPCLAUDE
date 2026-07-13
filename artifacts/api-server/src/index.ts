@@ -616,6 +616,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_currency text`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_rate numeric(20,8)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_network text`);
     // vial_orders — locked USD-equivalent total used for crypto display + verification
     await db.execute(sql`ALTER TABLE vial_orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
     // vial_orders — ERC-20 stablecoin the buyer chose (USDT or USDC)
