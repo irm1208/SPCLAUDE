@@ -128,6 +128,7 @@ interface OrganiserGB {
   organiserCanEditNotes: boolean;
   organiserCanEditTxId: boolean;
   organiserCanEditQuantities: boolean;
+  organiserCanDeleteOrders: boolean;
   organiserCanMarkOos: boolean;
   qrUploadInpostEnabled: boolean;
   qrUploadRoyalMailEnabled: boolean;
@@ -9067,7 +9068,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                         </button>
                         <button onClick={() => closeEdit(o.id)} className="h-8 px-3 rounded-lg text-xs font-bold" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>Cancel</button>
                         <div className="flex-1" />
-                        {confirmDeleteOrgOrder === o.id ? (
+                        {gb.organiserCanDeleteOrders && (confirmDeleteOrgOrder === o.id ? (
                           <>
                             <button
                               onClick={() => deleteOrgOrder(o.id)}
@@ -9089,7 +9090,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                           >
                             <Trash2 className="w-3 h-3" /> Delete Order
                           </button>
-                        )}
+                        ))}
                       </div>
                       <div className="border-t pt-3" style={{ borderColor: "var(--t-border)" }}>
                         <label className="block text-[10px] font-bold mb-1 flex items-center gap-1" style={{ color: "var(--t-blue-deep)" }}>

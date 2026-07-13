@@ -2567,11 +2567,15 @@ router.delete("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, a
   const orderId = String(req.params["orderId"]);
 
   const [gb] = await db
-    .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency })
+    .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency, organiserCanDeleteOrders: groupBuysTable.organiserCanDeleteOrders })
     .from(groupBuysTable)
     .where(gbOwner(req, gbId));
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  if (!gb.organiserCanDeleteOrders) {
+    res.status(403).json({ error: "Order deletion is not enabled for this group buy" }); return;
+  }
 
   const [order] = await db
     .select()

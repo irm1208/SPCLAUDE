@@ -779,6 +779,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
               { field: "organiserCanEditTxId", label: "Transaction ID", desc: "Can edit the customer's payment transaction hash (use with care)", val: gb.organiserCanEditTxId ?? false },
               { field: "organiserCanEditQuantities", label: "Order Quantities", desc: "Can adjust the quantity of each product on an order (recalculates order total automatically)", val: gb.organiserCanEditQuantities ?? false },
               { field: "organiserCanMarkOos", label: "Mark / Unmark OOS", desc: "Can mark products as out of stock and restore them (recalculates order totals automatically)", val: (gb as any).organiserCanMarkOos ?? true },
+              { field: "organiserCanDeleteOrders", label: "Delete Orders", desc: "Can soft-delete orders from their group buy (customers are notified; 48h restore window via admin Trash)", val: (gb as any).organiserCanDeleteOrders ?? false },
             ] as { field: string; label: string; desc: string; val: boolean }[]).map(({ field, label, desc, val }) => (
               <div key={field} className="flex items-center justify-between px-3 py-2.5 gap-3">
                 <div className="min-w-0">

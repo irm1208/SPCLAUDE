@@ -112,6 +112,7 @@ export const groupBuysTable = pgTable("group_buys", {
   organiserCanEditTxId: boolean("organiser_can_edit_tx_id").notNull().default(false),
   organiserCanEditQuantities: boolean("organiser_can_edit_quantities").notNull().default(false),
   organiserCanMarkOos: boolean("organiser_can_mark_oos").notNull().default(true),
+  organiserCanDeleteOrders: boolean("organiser_can_delete_orders").notNull().default(false),
   organiserRules: jsonb("organiser_rules").$type<{ id: string; text: string; enabled: boolean; format: string }[]>(),
   qrViewerUsernames: jsonb("qr_viewer_usernames").$type<string[]>(),
   legViewerAccess: jsonb("leg_viewer_access").$type<{ username: string; legIds: string[] }[]>(),
