@@ -3488,6 +3488,14 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
       .limit(1);
     const cryptoOptions = await getAdminCryptoOptions();
     if (existing) {
+      if (existing.paymentTestAmount == null) {
+        const paymentTestAmount = parseFloat((1 + Math.random()).toFixed(2));
+        const [refreshed] = await db.update(wholesaleAccessRequestsTable)
+          .set({ paymentTestAmount })
+          .where(eq(wholesaleAccessRequestsTable.id, existing.id))
+          .returning();
+        res.json({ request: refreshed, cryptoOptions }); return;
+      }
       res.json({ request: existing, cryptoOptions }); return;
     }
     const [amountRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_amount"));

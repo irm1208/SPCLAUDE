@@ -321,7 +321,7 @@ export function WholesaleAccessSection() {
     const testAmount = req.paymentTestAmount;
 
     // ── Sub-screen: test payment TX form ──────────────────────────────────
-    if (paymentPath === "test" && effective && testAmount != null) {
+    if (paymentPath === "test" && effective) {
       return (
         <div className="w-full max-w-[520px] space-y-4">
           <button
@@ -337,7 +337,9 @@ export function WholesaleAccessSection() {
             <div>
               <p className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Test payment — verify your wallet</p>
               <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "var(--t-muted)" }}>
-                Send <strong style={{ color: "var(--t-text)" }}>${testAmount.toFixed(2)} {effective.currency}</strong> on {effective.network}. Once we see it, you'll send the rest.
+                {testAmount != null
+                  ? <>Send <strong style={{ color: "var(--t-text)" }}>${testAmount.toFixed(2)} {effective.currency}</strong> on {effective.network}. Once we see it, you'll send the rest.</>
+                  : <>Send a small test amount on {effective.network} to confirm your wallet. Once submitted, you'll send the full fee.</>}
               </p>
             </div>
           </div>
@@ -348,14 +350,16 @@ export function WholesaleAccessSection() {
               <p className="font-mono text-xs flex-1 break-all min-w-0" style={{ color: "var(--t-subtle)" }}>{effective.walletAddress}</p>
               <CopyButton text={effective.walletAddress} />
             </div>
-            <button
-              onClick={() => { navigator.clipboard.writeText(testAmount.toFixed(2)).catch(() => {}); toast({ title: "Copied!", description: "Amount copied." }); }}
-              className="w-full rounded-lg px-3 py-2.5 flex items-center justify-between text-xs font-semibold"
-              style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)", color: "var(--t-blue)" }}
-            >
-              <span>Tap to copy test amount</span>
-              <span className="font-mono font-black">${testAmount.toFixed(2)} {effective.currency}</span>
-            </button>
+            {testAmount != null && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(testAmount.toFixed(2)).catch(() => {}); toast({ title: "Copied!", description: "Amount copied." }); }}
+                className="w-full rounded-lg px-3 py-2.5 flex items-center justify-between text-xs font-semibold"
+                style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)", color: "var(--t-blue)" }}
+              >
+                <span>Tap to copy test amount</span>
+                <span className="font-mono font-black">${testAmount.toFixed(2)} {effective.currency}</span>
+              </button>
+            )}
             <div className="flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "light-dark(#d97706,#f0c880)" }} />
               <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
