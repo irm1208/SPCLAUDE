@@ -18782,12 +18782,32 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
   const [rejectionReason, setRejectionReason] = useState("");
   const [featureEnabled, setFeatureEnabled] = useState(false);
   const [featureToggling, setFeatureToggling] = useState(false);
+  const [accessAmount, setAccessAmount] = useState<string>("");
+  const [savingAmount, setSavingAmount] = useState(false);
+  const [amountSaved, setAmountSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean }) => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean; wholesaleAccessAmount?: number | null }) => {
       setFeatureEnabled(d.wholesaleAccessEnabled === true);
+      if (d.wholesaleAccessAmount != null) setAccessAmount(String(d.wholesaleAccessAmount));
     }).catch(() => {});
   }, []);
+
+  const saveAmount = async () => {
+    setSavingAmount(true);
+    setAmountSaved(false);
+    try {
+      const parsed = accessAmount.trim() === "" ? null : parseFloat(accessAmount);
+      if (parsed !== null && (isNaN(parsed) || parsed <= 0)) { alert("Enter a valid positive amount, or leave blank to use random."); return; }
+      const r = await fetch("/api/admin/config/wholesale-access-amount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ amount: parsed }),
+      });
+      if (r.ok) setAmountSaved(true);
+      else { const d = await r.json(); alert(d.error ?? "Failed"); }
+    } finally { setSavingAmount(false); setTimeout(() => setAmountSaved(false), 2000); }
+  };
 
   const toggleFeature = async () => {
     setFeatureToggling(true);
@@ -18857,6 +18877,33 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${featureEnabled ? "translate-x-5" : "translate-x-0"}`} />
         </button>
         <span className="text-xs font-semibold" style={{ color: featureEnabled ? "#16a34a" : "var(--adm-muted)" }}>{featureEnabled ? "Open" : "Closed"}</span>
+      </div>
+      <div className="flex items-center gap-3 p-3 rounded-lg flex-wrap" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold" style={{ color: "var(--adm-text)" }}>Access Fee Amount (USD)</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>Fixed fee assigned when a customer submits a request. Leave blank to use a random amount between $90–$110.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-semibold" style={{ color: "var(--adm-muted)" }}>$</span>
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            placeholder="e.g. 100"
+            value={accessAmount}
+            onChange={e => setAccessAmount(e.target.value)}
+            className="w-24 rounded px-2 py-1 text-sm text-right"
+            style={{ background: "var(--adm-input, var(--adm-btn))", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+          />
+          <button
+            onClick={saveAmount}
+            disabled={savingAmount}
+            className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+            style={{ background: amountSaved ? "#16a34a" : "var(--adm-accent)" }}
+          >
+            {savingAmount ? "…" : amountSaved ? "Saved!" : "Save"}
+          </button>
+        </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <h2 className="text-base font-semibold" style={{ color: "var(--adm-text)" }}>Wholesale Access Requests</h2>

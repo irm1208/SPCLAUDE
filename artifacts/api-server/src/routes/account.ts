@@ -3490,7 +3490,9 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
     if (existing) {
       res.json({ request: existing, cryptoOptions }); return;
     }
-    const amountUsd = parseFloat((Math.random() * 20 + 90).toFixed(2));
+    const [amountRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_amount"));
+    const fixedAmount = amountRow?.value ? parseFloat(amountRow.value) : NaN;
+    const amountUsd = !isNaN(fixedAmount) && fixedAmount > 0 ? fixedAmount : parseFloat((Math.random() * 20 + 90).toFixed(2));
     const [created] = await db.insert(wholesaleAccessRequestsTable).values({
       accountUsername: username,
       amountUsd,
