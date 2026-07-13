@@ -41,6 +41,8 @@ interface SageChatProps {
   /** Theme tokens (from the dashboard palette). */
   t: Tokens;
   accent?: string;
+  /** Render as a full-page layout (no modal backdrop, fills the container). */
+  fullPage?: boolean;
 }
 
 const GREETING =
@@ -186,7 +188,7 @@ function formatSessionDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT }: SageChatProps) {
+export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT, fullPage = false }: SageChatProps) {
   const [messages, setMessages] = useState<SageMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -475,25 +477,20 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, historyOpen]);
 
-  if (!open) return null;
+  if (!open && !fullPage) return null;
 
   const canSend = input.trim().length > 0 && !sending && !limitReached;
 
-  return (
+  const chatPanel = (
     <div
-      className="fixed inset-0 z-[120] flex items-stretch sm:items-center sm:justify-center"
-      style={{ background: "rgba(10,12,20,.55)", backdropFilter: "blur(3px)" }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      className={fullPage
+        ? "flex flex-col w-full h-full overflow-hidden"
+        : "flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-[88vh]"}
+      style={{
+        background: t.panel,
+        border: fullPage ? "none" : `1px solid ${t.border}`,
       }}
     >
-      <div
-        className="flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-[88vh]"
-        style={{
-          background: t.panel,
-          border: `1px solid ${t.border}`,
-        }}
-      >
         {/* Header */}
         <div
           className="flex items-center gap-2.5 shrink-0"
@@ -782,7 +779,20 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
             Sage offers general information, not medical advice.
           </p>
         </div>
-      </div>
+    </div>
+  );
+
+  if (fullPage) return chatPanel;
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-stretch sm:items-center sm:justify-center"
+      style={{ background: "rgba(10,12,20,.55)", backdropFilter: "blur(3px)" }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {chatPanel}
     </div>
   );
 }

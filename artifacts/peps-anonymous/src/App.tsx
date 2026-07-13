@@ -58,6 +58,7 @@ import WholesaleOrder from "@/pages/WholesaleOrder";
 import WholesaleShared from "@/pages/WholesaleShared";
 import WholesaleShareEntry from "@/pages/WholesaleShareEntry";
 import PublicTestingPools from "@/pages/PublicTestingPools";
+import SagePage from "@/pages/SagePage";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -155,6 +156,7 @@ function Router() {
       <Route path="/testing-pools" component={PublicTestingPools} />
       <Route path="/community-testing" component={PublicTestingPools} />
       <Route path="/pool/:slug" component={TestingPool} />
+      <Route path="/sage" component={SagePage} />
       <Route path="/reshipper" component={ReshipperPage} />
       <Route path="/reshipper-apply" component={ReshipperApply} />
       <Route path="/wholesale/shared/:id" component={WholesaleShared} />

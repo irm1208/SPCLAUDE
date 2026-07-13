@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
 import { useThemeStore } from "@/hooks/use-theme";
-import { SageChat } from "@/components/SageChat";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import {
   DashboardShell, palette, ACCENT, ACCENT_SOFT, HERO_GRAD, STAR_AMBER, LIVE_RED,
@@ -49,11 +48,8 @@ export function DashboardHome({
   const T = palette(dark);
   const [heroQ, setHeroQ] = useState("");
   const [heroFocused, setHeroFocused] = useState(false);
-  const [sageOpen, setSageOpen] = useState(false);
-  const [sageSeed, setSageSeed] = useState("");
-  const [sageOpenHistory, setSageOpenHistory] = useState(false);
-  const askSage = (q: string) => { setSageOpenHistory(false); setSageSeed(q); setSageOpen(true); };
-  const openSageHistory = () => { setSageSeed(""); setSageOpenHistory(true); setSageOpen(true); };
+  const askSage = (q: string) => { navigate(`/sage?q=${encodeURIComponent(q)}`); };
+  const openSageHistory = () => { navigate("/sage?history=1"); };
 
   type RecentConv = { id: string; title: string; lastUserMsg: string };
   const [recentConvs, setRecentConvs] = useState<RecentConv[]>([]);
@@ -670,7 +666,6 @@ export function DashboardHome({
         </div>
       </div>
 
-      <SageChat open={sageOpen} onClose={() => { setSageOpen(false); setSageOpenHistory(false); }} seed={sageSeed} openToHistory={sageOpenHistory} t={T} accent={ACCENT} />
     </DashboardShell>
   );
 }
