@@ -23,6 +23,26 @@ export const modules: ModuleMap = {
   "./components/mockups/coa-cards/DataMatrix.tsx": () => import("../components/mockups/coa-cards/DataMatrix.tsx"),
   "./components/mockups/coa-cards/LabSheet.tsx": () => import("../components/mockups/coa-cards/LabSheet.tsx"),
   "./components/mockups/coa-cards/SequenceCard.tsx": () => import("../components/mockups/coa-cards/SequenceCard.tsx"),
+<<<<<<< HEAD
+=======
+  "./components/mockups/gb-create/EssentialsJourney.tsx": () => import("../components/mockups/gb-create/EssentialsJourney.tsx"),
+  "./components/mockups/gb-create/EssentialsJourneyDesktop.tsx": () => import("../components/mockups/gb-create/EssentialsJourneyDesktop.tsx"),
+  "./components/mockups/gb-create/GuidedChecklist.tsx": () => import("../components/mockups/gb-create/GuidedChecklist.tsx"),
+  "./components/mockups/gb-create/GuidedChecklistDesktop.tsx": () => import("../components/mockups/gb-create/GuidedChecklistDesktop.tsx"),
+  "./components/mockups/gb-create/StepWizard.tsx": () => import("../components/mockups/gb-create/StepWizard.tsx"),
+  "./components/mockups/gb-create/StepWizardDesktop.tsx": () => import("../components/mockups/gb-create/StepWizardDesktop.tsx"),
+  "./components/mockups/home-atmosphere/AmbientGlass.tsx": () => import("../components/mockups/home-atmosphere/AmbientGlass.tsx"),
+  "./components/mockups/home-atmosphere/BleedHero.tsx": () => import("../components/mockups/home-atmosphere/BleedHero.tsx"),
+  "./components/mockups/home-atmosphere/DarkSurface.tsx": () => import("../components/mockups/home-atmosphere/DarkSurface.tsx"),
+  "./components/mockups/home-concepts/CatalogFirst.tsx": () => import("../components/mockups/home-concepts/CatalogFirst.tsx"),
+  "./components/mockups/home-concepts/ChatConversational.tsx": () => import("../components/mockups/home-concepts/ChatConversational.tsx"),
+  "./components/mockups/home-concepts/CommandPalette.tsx": () => import("../components/mockups/home-concepts/CommandPalette.tsx"),
+  "./components/mockups/home-concepts/StatusDashboard.tsx": () => import("../components/mockups/home-concepts/StatusDashboard.tsx"),
+  "./components/mockups/home-concepts-v2/ActivityTimeline.tsx": () => import("../components/mockups/home-concepts-v2/ActivityTimeline.tsx"),
+  "./components/mockups/home-concepts-v2/AppShellTabs.tsx": () => import("../components/mockups/home-concepts-v2/AppShellTabs.tsx"),
+  "./components/mockups/home-concepts-v2/HeroFunnel.tsx": () => import("../components/mockups/home-concepts-v2/HeroFunnel.tsx"),
+  "./components/mockups/home-concepts-v2/SplitPersona.tsx": () => import("../components/mockups/home-concepts-v2/SplitPersona.tsx"),
+>>>>>>> b831c084 (Add new home page concept and atmosphere mockup components)
   "./components/mockups/gb-cards/AsgardCard.tsx": () => import("../components/mockups/gb-cards/AsgardCard.tsx"),
   "./components/mockups/gb-cards/BadgeDriven.tsx": () => import("../components/mockups/gb-cards/BadgeDriven.tsx"),
   "./components/mockups/gb-cards/BoldIdentityV2.tsx": () => import("../components/mockups/gb-cards/BoldIdentityV2.tsx"),
@@ -76,6 +96,7 @@ export const modules: ModuleMap = {
   "./components/mockups/gb-cards/SwissGrid.tsx": () => import("../components/mockups/gb-cards/SwissGrid.tsx"),
   "./components/mockups/gb-cards/TicketStub.tsx": () => import("../components/mockups/gb-cards/TicketStub.tsx"),
   "./components/mockups/gb-cards/TraderCard.tsx": () => import("../components/mockups/gb-cards/TraderCard.tsx"),
+<<<<<<< HEAD
   "./components/mockups/gb-create/EssentialsJourney.tsx": () => import("../components/mockups/gb-create/EssentialsJourney.tsx"),
   "./components/mockups/gb-create/EssentialsJourneyDesktop.tsx": () => import("../components/mockups/gb-create/EssentialsJourneyDesktop.tsx"),
   "./components/mockups/gb-create/GuidedChecklist.tsx": () => import("../components/mockups/gb-create/GuidedChecklist.tsx"),
@@ -93,6 +114,8 @@ export const modules: ModuleMap = {
   "./components/mockups/home-concepts-v2/AppShellTabs.tsx": () => import("../components/mockups/home-concepts-v2/AppShellTabs.tsx"),
   "./components/mockups/home-concepts-v2/HeroFunnel.tsx": () => import("../components/mockups/home-concepts-v2/HeroFunnel.tsx"),
   "./components/mockups/home-concepts-v2/SplitPersona.tsx": () => import("../components/mockups/home-concepts-v2/SplitPersona.tsx"),
+=======
+>>>>>>> b831c084 (Add new home page concept and atmosphere mockup components)
   "./components/mockups/home-focus/DualPrimary.tsx": () => import("../components/mockups/home-focus/DualPrimary.tsx"),
   "./components/mockups/home-focus/MinimalistHero.tsx": () => import("../components/mockups/home-focus/MinimalistHero.tsx"),
   "./components/mockups/home-focus/VerticalFocus.tsx": () => import("../components/mockups/home-focus/VerticalFocus.tsx"),
@@ -322,9 +345,6 @@ export const modules: ModuleMap = {
   "./components/mockups/peps-swiss-vibes/ColdPrecision.tsx": () => import("../components/mockups/peps-swiss-vibes/ColdPrecision.tsx"),
   "./components/mockups/peps-swiss-vibes/MidnightMembers.tsx": () => import("../components/mockups/peps-swiss-vibes/MidnightMembers.tsx"),
   "./components/mockups/peps-swiss-vibes/WarmApothecary.tsx": () => import("../components/mockups/peps-swiss-vibes/WarmApothecary.tsx"),
-  "./components/mockups/peps-vibes/NaturalApothecary.tsx": () => import("../components/mockups/peps-vibes/NaturalApothecary.tsx"),
-  "./components/mockups/peps-vibes/PrecisionLab.tsx": () => import("../components/mockups/peps-vibes/PrecisionLab.tsx"),
-  "./components/mockups/peps-vibes/UndergroundChem.tsx": () => import("../components/mockups/peps-vibes/UndergroundChem.tsx"),
   "./components/mockups/peps-vibes-2/DarkLuxury.tsx": () => import("../components/mockups/peps-vibes-2/DarkLuxury.tsx"),
   "./components/mockups/peps-vibes-2/StarkClinical.tsx": () => import("../components/mockups/peps-vibes-2/StarkClinical.tsx"),
   "./components/mockups/peps-vibes-2/WarmUnderground.tsx": () => import("../components/mockups/peps-vibes-2/WarmUnderground.tsx"),
@@ -442,5 +462,8 @@ export const modules: ModuleMap = {
   "./components/mockups/temporal-home/ProtocolPosition.tsx": () => import("../components/mockups/temporal-home/ProtocolPosition.tsx"),
   "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx"),
   "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
-  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx")
+  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx"),
+  "./components/mockups/peps-vibes/NaturalApothecary.tsx": () => import("../components/mockups/peps-vibes/NaturalApothecary.tsx"),
+  "./components/mockups/peps-vibes/PrecisionLab.tsx": () => import("../components/mockups/peps-vibes/PrecisionLab.tsx"),
+  "./components/mockups/peps-vibes/UndergroundChem.tsx": () => import("../components/mockups/peps-vibes/UndergroundChem.tsx")
 };
