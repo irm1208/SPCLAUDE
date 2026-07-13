@@ -200,6 +200,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
 
   const convIdRef = useRef<string | null>(null);
   const convTitleRef = useRef<string>("New Chat");
@@ -797,15 +798,29 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
         {/* ── Left history sidebar (desktop only) ── */}
         <div
           className="hidden lg:flex flex-col"
-          style={{ width: 240, flexShrink: 0, background: t.panel2, borderRight: `1px solid ${t.border}` }}
+          onMouseEnter={() => setSidebarHovered(true)}
+          onMouseLeave={() => setSidebarHovered(false)}
+          style={{
+            width: sidebarHovered ? 240 : 52,
+            flexShrink: 0,
+            background: t.panel2,
+            borderRight: `1px solid ${t.border}`,
+            transition: "width 0.22s cubic-bezier(0.4,0,0.2,1)",
+            overflow: "hidden",
+          }}
         >
           {/* Brand */}
-          <div style={{ padding: "18px 14px 10px" }}>
-            <div className="flex items-center gap-2.5">
+          <div style={{ padding: "18px 11px 10px" }}>
+            <div className="flex items-center gap-2.5" style={{ whiteSpace: "nowrap" }}>
               <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 30, height: 30, background: accent }}>
                 <Sparkles className="w-3.5 h-3.5" style={{ color: "#fff" }} />
               </span>
-              <span className="font-semibold" style={{ fontSize: 15, color: t.text }}>Sage</span>
+              <span
+                className="font-semibold"
+                style={{ fontSize: 15, color: t.text, opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}
+              >
+                Sage
+              </span>
             </div>
           </div>
 
@@ -814,12 +829,13 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
             <button
               onClick={startNewChat}
               className="flex items-center gap-2 w-full rounded-lg text-left"
-              style={{ padding: "8px 10px", fontSize: 13.5, color: t.text, background: "transparent", transition: "background .12s" }}
+              style={{ padding: "8px 11px", fontSize: 13.5, color: t.text, background: "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
               onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              title={!sidebarHovered ? "New chat" : undefined}
             >
               <SquarePen className="w-4 h-4 shrink-0" style={{ color: t.muted }} />
-              New chat
+              <span style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>New chat</span>
             </button>
           </div>
 
@@ -827,12 +843,13 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
           <div style={{ padding: "0 8px 8px" }}>
             <button
               className="flex items-center gap-2 w-full rounded-lg text-left"
-              style={{ padding: "8px 10px", fontSize: 13.5, color: t.muted, background: "transparent", transition: "background .12s" }}
+              style={{ padding: "8px 11px", fontSize: 13.5, color: t.muted, background: "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
               onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              title={!sidebarHovered ? "Search chats" : undefined}
             >
               <Search className="w-4 h-4 shrink-0" />
-              Search chats
+              <span style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>Search chats</span>
             </button>
           </div>
 
@@ -845,11 +862,11 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
                 <Loader2 className="w-4 h-4 animate-spin" style={{ color: t.muted }} />
               </div>
             )}
-            {!loadingHistory && conversations.length === 0 && (
-              <p style={{ fontSize: 12, color: t.subtle, textAlign: "center", padding: "16px 8px" }}>No chats yet.</p>
+            {!loadingHistory && conversations.length === 0 && sidebarHovered && (
+              <p style={{ fontSize: 12, color: t.subtle, textAlign: "center", padding: "16px 8px", whiteSpace: "nowrap" }}>No chats yet.</p>
             )}
-            {conversations.length > 0 && (
-              <p style={{ fontSize: 11, fontWeight: 600, color: t.subtle, padding: "4px 8px 6px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            {conversations.length > 0 && sidebarHovered && (
+              <p style={{ fontSize: 11, fontWeight: 600, color: t.subtle, padding: "4px 8px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
                 Chats
               </p>
             )}
@@ -860,15 +877,17 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
                   key={conv.id}
                   onClick={() => resumeConversation(conv)}
                   className="flex items-center gap-1.5 w-full rounded-lg text-left group"
-                  style={{ padding: "7px 10px", marginBottom: 1, color: t.text, fontSize: 13, background: isActive ? t.chip : "transparent", transition: "background .12s" }}
+                  style={{ padding: "7px 11px", marginBottom: 1, color: t.text, fontSize: 13, background: isActive ? t.chip : "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
                   onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = t.chip; }}
                   onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  title={!sidebarHovered ? conv.title : undefined}
                 >
-                  <span className="flex-1 min-w-0 truncate">{conv.title}</span>
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0" style={{ color: t.subtle }} />
+                  <span className="flex-1 min-w-0 truncate" style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>{conv.title}</span>
                   <span
                     onClick={e => deleteConversation(conv.id, e as unknown as React.MouseEvent)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0"
-                    style={{ color: t.subtle }}
+                    style={{ color: t.subtle, display: sidebarHovered ? undefined : "none" }}
                     role="button"
                     tabIndex={0}
                   >
@@ -938,7 +957,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
             /* ── Empty / landing state ── */
             <div className="flex-1 flex flex-col items-center justify-center" style={{ padding: "0 24px 60px" }}>
               <h2 style={{ fontSize: 28, fontWeight: 600, color: t.text, marginBottom: 32, textAlign: "center", maxWidth: 520, lineHeight: 1.3 }}>
-                What's on your mind today?
+                How can I help you today?
               </h2>
 
               <div className="w-full" style={{ maxWidth: 680 }}>
