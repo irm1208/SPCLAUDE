@@ -5,7 +5,7 @@ import {
   Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send, Ticket,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
-  BookMarked, GraduationCap, Calculator as CalcIcon,
+  BookMarked, GraduationCap, Calculator as CalcIcon, Sparkles,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useAccount, useAccountNotifications } from "@/hooks/use-account";
@@ -319,6 +319,7 @@ export function DashboardShell({
       : []),
   ];
   const researchItems: SideLink[] = [
+    { id: "sage",        label: "Sage AI",       Icon: Sparkles,      active: activeSection === "sage",        go: () => navigate("/sage") },
     { id: "protocols",   label: "Protocols",     Icon: BookMarked,    active: activeSection === "protocols",   go: () => navigate("/protocols") },
     { id: "learn",       label: "Learning Hub",  Icon: GraduationCap, active: activeSection === "learn",       go: () => navigate("/learn") },
     { id: "calculator",  label: "Calculator",    Icon: CalcIcon,      active: activeSection === "calculator",  go: () => navigate("/calculator") },

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2 } from "lucide-react";
+import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2, Search, SquarePen, Activity, FlaskConical, BookMarked } from "lucide-react";
 import { type DiscussMessage, type DiscussChart, type DiscussSource } from "@/hooks/use-blood-tests";
 import { SageTrendChart } from "@/components/SageTrendChart";
 
@@ -782,7 +782,325 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
     </div>
   );
 
-  if (fullPage) return chatPanel;
+  if (fullPage) {
+    const isEmptyChat = messages.length <= 1 && (messages.length === 0 || !!messages[0]?.greeting) && !sending;
+
+    const SUGGESTIONS: Array<{ Icon: React.ElementType; text: string }> = [
+      { Icon: Activity,     text: "Explain my latest bloodwork" },
+      { Icon: FlaskConical, text: "Review my active compounds" },
+      { Icon: BookMarked,   text: "Build a peptide protocol" },
+    ];
+
+    return (
+      <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+
+        {/* ── Left history sidebar (desktop only) ── */}
+        <div
+          className="hidden lg:flex flex-col"
+          style={{ width: 240, flexShrink: 0, background: t.panel2, borderRight: `1px solid ${t.border}` }}
+        >
+          {/* Brand */}
+          <div style={{ padding: "18px 14px 10px" }}>
+            <div className="flex items-center gap-2.5">
+              <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 30, height: 30, background: accent }}>
+                <Sparkles className="w-3.5 h-3.5" style={{ color: "#fff" }} />
+              </span>
+              <span className="font-semibold" style={{ fontSize: 15, color: t.text }}>Sage</span>
+            </div>
+          </div>
+
+          {/* New chat */}
+          <div style={{ padding: "0 8px 2px" }}>
+            <button
+              onClick={startNewChat}
+              className="flex items-center gap-2 w-full rounded-lg text-left"
+              style={{ padding: "8px 10px", fontSize: 13.5, color: t.text, background: "transparent", transition: "background .12s" }}
+              onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <SquarePen className="w-4 h-4 shrink-0" style={{ color: t.muted }} />
+              New chat
+            </button>
+          </div>
+
+          {/* Search */}
+          <div style={{ padding: "0 8px 8px" }}>
+            <button
+              className="flex items-center gap-2 w-full rounded-lg text-left"
+              style={{ padding: "8px 10px", fontSize: 13.5, color: t.muted, background: "transparent", transition: "background .12s" }}
+              onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <Search className="w-4 h-4 shrink-0" />
+              Search chats
+            </button>
+          </div>
+
+          <div style={{ height: 1, background: t.border, margin: "0 12px 6px" }} />
+
+          {/* Chats list */}
+          <div className="flex-1 overflow-y-auto" style={{ padding: "0 8px 8px" }}>
+            {loadingHistory && (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-4 h-4 animate-spin" style={{ color: t.muted }} />
+              </div>
+            )}
+            {!loadingHistory && conversations.length === 0 && (
+              <p style={{ fontSize: 12, color: t.subtle, textAlign: "center", padding: "16px 8px" }}>No chats yet.</p>
+            )}
+            {conversations.length > 0 && (
+              <p style={{ fontSize: 11, fontWeight: 600, color: t.subtle, padding: "4px 8px 6px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                Chats
+              </p>
+            )}
+            {conversations.map(conv => {
+              const isActive = convIdRef.current === conv.id;
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => resumeConversation(conv)}
+                  className="flex items-center gap-1.5 w-full rounded-lg text-left group"
+                  style={{ padding: "7px 10px", marginBottom: 1, color: t.text, fontSize: 13, background: isActive ? t.chip : "transparent", transition: "background .12s" }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = t.chip; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span className="flex-1 min-w-0 truncate">{conv.title}</span>
+                  <span
+                    onClick={e => deleteConversation(conv.id, e as unknown as React.MouseEvent)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0"
+                    style={{ color: t.subtle }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Main chat area ── */}
+        <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: t.panel }}>
+
+          {/* Mobile-only top bar */}
+          <div
+            className="flex lg:hidden items-center justify-between shrink-0"
+            style={{ padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}
+          >
+            <span className="font-semibold" style={{ fontSize: 15, color: t.text }}>Sage</span>
+            <div className="flex items-center gap-2">
+              <button onClick={startNewChat} style={{ color: t.muted }} title="New chat"><Plus className="w-5 h-5" /></button>
+              <button onClick={openHistory} style={{ color: t.muted }} title="Past conversations"><History className="w-5 h-5" /></button>
+            </div>
+          </div>
+
+          {/* Mobile history overlay */}
+          {historyOpen && (
+            <div className="flex lg:hidden absolute inset-0 z-10 flex-col" style={{ background: t.panel }}>
+              <div className="flex items-center justify-between shrink-0" style={{ padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}>
+                <span className="text-sm font-bold" style={{ color: t.text }}>Past conversations</span>
+                <button onClick={() => setHistoryOpen(false)} style={{ color: t.muted }}><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto" style={{ padding: 10 }}>
+                {loadingHistory && <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin" style={{ color: t.muted }} /></div>}
+                {!loadingHistory && conversations.length === 0 && (
+                  <p className="text-xs text-center py-6" style={{ color: t.muted }}>No past conversations yet.</p>
+                )}
+                {conversations.map(conv => (
+                  <button
+                    key={conv.id}
+                    onClick={() => resumeConversation(conv)}
+                    className="flex items-start gap-2 rounded-xl w-full text-left group"
+                    style={{ padding: "9px 10px", marginBottom: 4, background: t.panel2, border: `1px solid ${t.border}` }}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accent }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate" style={{ color: t.text }}>{conv.title}</p>
+                      <p className="text-[10px]" style={{ color: t.muted }}>{relativeTime(conv.updatedAt)}</p>
+                    </div>
+                    <span
+                      onClick={e => deleteConversation(conv.id, e as unknown as React.MouseEvent)}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      style={{ color: t.subtle }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isEmptyChat ? (
+            /* ── Empty / landing state ── */
+            <div className="flex-1 flex flex-col items-center justify-center" style={{ padding: "0 24px 60px" }}>
+              <h2 style={{ fontSize: 28, fontWeight: 600, color: t.text, marginBottom: 32, textAlign: "center", maxWidth: 520, lineHeight: 1.3 }}>
+                What's on your mind today?
+              </h2>
+
+              <div className="w-full" style={{ maxWidth: 680 }}>
+                <div
+                  className="flex items-center gap-3 rounded-2xl"
+                  style={{ background: t.panel2, border: `1px solid ${t.border}`, padding: "14px 18px" }}
+                >
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && canSend) send(input); }}
+                    disabled={limitReached}
+                    placeholder="Message Sage…"
+                    maxLength={2000}
+                    className="flex-1 min-w-0 bg-transparent outline-none"
+                    style={{ color: t.text, fontSize: 15 }}
+                  />
+                  <button
+                    onClick={() => send(input)}
+                    disabled={!canSend}
+                    className="flex items-center justify-center rounded-full shrink-0 active:scale-95"
+                    style={{ width: 36, height: 36, background: canSend ? accent : t.chip, color: canSend ? "#fff" : t.subtle, cursor: canSend ? "pointer" : "default", transition: "background .15s" }}
+                  >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-[18px] h-[18px]" />}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                  {SUGGESTIONS.map(({ Icon, text }) => (
+                    <button
+                      key={text}
+                      onClick={() => send(text, [])}
+                      className="flex items-center gap-2 rounded-xl"
+                      style={{ padding: "8px 14px", background: t.panel2, border: `1px solid ${t.border}`, fontSize: 13, color: t.muted, transition: "background .12s" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+                      onMouseLeave={e => (e.currentTarget.style.background = t.panel2)}
+                    >
+                      <Icon className="w-3.5 h-3.5" style={{ color: t.subtle }} />
+                      {text}
+                    </button>
+                  ))}
+                </div>
+
+                <p style={{ textAlign: "center", fontSize: 11.5, color: t.subtle, marginTop: 14 }}>
+                  Sage offers general information, not medical advice.
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* ── Active chat ── */
+            <>
+              <div className="flex-1 relative overflow-hidden">
+                <div className="absolute inset-0 overflow-y-auto" style={{ padding: "20px 0 16px" }}>
+                  <div className="flex flex-col gap-5 mx-auto" style={{ maxWidth: 700, padding: "0 24px" }}>
+                    {messages.filter(m => !m.greeting).map(m =>
+                      m.role === "user" ? (
+                        <div key={m.id} className="flex justify-end">
+                          <div
+                            className="rounded-2xl"
+                            style={{ maxWidth: "80%", padding: "10px 16px", background: accent, color: "#fff", fontSize: 14, lineHeight: 1.6, borderBottomRightRadius: 6 }}
+                          >
+                            {m.content}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={m.id} className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 22, height: 22, background: accent }}>
+                              <Sparkles className="w-3 h-3" style={{ color: "#fff" }} />
+                            </span>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: t.muted }}>Sage</span>
+                          </div>
+                          {m.contextSession && (
+                            <p className="flex items-center gap-1" style={{ fontSize: 11, color: accent, paddingLeft: 30 }}>
+                              <CheckCircle2 className="w-3 h-3" />
+                              Retrieved {formatSessionDate(m.contextSession.testDate)} — {m.contextSession.testName}
+                            </p>
+                          )}
+                          {m.content && (
+                            <div style={{ paddingLeft: 30, fontSize: 14, lineHeight: 1.7, color: t.text }}>
+                              {renderRich(m.content)}
+                            </div>
+                          )}
+                          {m.charts && m.charts.length > 0 && (
+                            <div className="flex flex-col gap-2" style={{ paddingLeft: 30 }}>
+                              {m.charts.map((c: DiscussChart, i: number) => <SageTrendChart key={`${m.id}-chart-${i}`} chart={c} />)}
+                            </div>
+                          )}
+                          {m.chips && m.chips.length > 0 && !sending && (
+                            <div className="flex flex-wrap gap-1.5" style={{ paddingLeft: 30 }}>
+                              {m.chips.slice(0, 4).map((chip, ci) => (
+                                <button
+                                  key={ci}
+                                  onClick={() => send(chip)}
+                                  disabled={sending || limitReached}
+                                  className="rounded-full"
+                                  style={{ fontSize: 12, fontWeight: 600, color: accent, padding: "5px 12px", background: t.chip, border: `1px solid ${t.border}` }}
+                                >
+                                  {chip}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
+
+                    {sending && !streamingHasContent && (
+                      <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 13, paddingLeft: 30 }}>
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>{searchStatus ?? "Sage is thinking…"}</span>
+                      </div>
+                    )}
+
+                    {error && (
+                      <p style={{ paddingLeft: 30, color: "#dc2626", fontSize: 13 }}>{error}</p>
+                    )}
+
+                    <div ref={endRef} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sticky bottom input */}
+              <div style={{ padding: "10px 24px 14px", borderTop: `1px solid ${t.border}` }}>
+                <div className="mx-auto" style={{ maxWidth: 700 }}>
+                  <div
+                    className="flex items-center gap-3 rounded-2xl"
+                    style={{ background: t.panel2, border: `1px solid ${t.border}`, padding: "10px 16px" }}
+                  >
+                    <input
+                      ref={inputRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && canSend) send(input); }}
+                      disabled={limitReached}
+                      placeholder={limitReached ? "Question limit reached" : "Message Sage…"}
+                      maxLength={2000}
+                      className="flex-1 min-w-0 bg-transparent outline-none"
+                      style={{ color: t.text, fontSize: 14 }}
+                    />
+                    <button
+                      onClick={() => send(input)}
+                      disabled={!canSend}
+                      className="flex items-center justify-center rounded-full shrink-0 active:scale-95"
+                      style={{ width: 34, height: 34, background: canSend ? accent : t.chip, color: canSend ? "#fff" : t.subtle, cursor: canSend ? "pointer" : "default", transition: "background .15s" }}
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-[18px] h-[18px]" />}
+                    </button>
+                  </div>
+                  <p style={{ textAlign: "center", fontSize: 10.5, color: t.subtle, marginTop: 7 }}>
+                    Sage offers general information, not medical advice.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

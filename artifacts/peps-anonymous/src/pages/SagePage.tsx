@@ -1,7 +1,9 @@
+import { useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
 import { SageChat } from "@/components/SageChat";
 import { useThemeStore } from "@/hooks/use-theme";
-import { palette, ACCENT } from "@/components/DashboardShell";
+import { DashboardShell, palette, ACCENT } from "@/components/DashboardShell";
+import { useAccount, useLogout } from "@/hooks/use-account";
 
 export default function SagePage() {
   const { dark } = useThemeStore();
@@ -11,18 +13,40 @@ export default function SagePage() {
   const params = new URLSearchParams(search);
   const seedQ = decodeURIComponent(params.get("q") ?? "");
   const openHistory = params.get("history") === "1";
+  const { account } = useAccount();
+  const { mutate: logout } = useLogout();
+
+  const handleSection = useCallback((s: string) => {
+    navigate(`/account?s=${s}`);
+  }, [navigate]);
+
+  const handleLogout = useCallback(() => {
+    logout(undefined, { onSettled: () => navigate("/") });
+  }, [logout, navigate]);
 
   return (
-    <div className="h-dvh flex flex-col overflow-hidden" style={{ background: T.panel2 }}>
-      <SageChat
-        open={true}
-        onClose={() => { if (window.history.length > 1) window.history.back(); else navigate("/account"); }}
-        seed={seedQ || undefined}
-        openToHistory={openHistory}
-        t={T}
-        accent={ACCENT}
-        fullPage={true}
-      />
-    </div>
+    <DashboardShell
+      activeSection="sage"
+      title="Sage AI"
+      username={account?.telegramUsername ?? ""}
+      credits={account?.credits ?? null}
+      orders={[]}
+      activeCompounds={[]}
+      groupBuys={[]}
+      onSection={handleSection}
+      onLogout={handleLogout}
+    >
+      <div style={{ height: "calc(100lvh - 72px)", overflow: "hidden" }}>
+        <SageChat
+          open={true}
+          onClose={() => { if (window.history.length > 1) window.history.back(); else navigate("/account"); }}
+          seed={seedQ || undefined}
+          openToHistory={openHistory}
+          t={T}
+          accent={ACCENT}
+          fullPage={true}
+        />
+      </div>
+    </DashboardShell>
   );
 }
