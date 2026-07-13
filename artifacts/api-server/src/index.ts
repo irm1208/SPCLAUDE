@@ -197,6 +197,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_notes boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_tx_id boolean NOT NULL DEFAULT false`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_quantities boolean NOT NULL DEFAULT false`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_mark_oos boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_delete_orders boolean NOT NULL DEFAULT false`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_rules jsonb`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS qr_viewer_usernames jsonb`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS show_stock_view boolean NOT NULL DEFAULT true`);
