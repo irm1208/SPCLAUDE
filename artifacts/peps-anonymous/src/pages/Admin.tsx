@@ -18838,26 +18838,36 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
 
   const filtered = statusFilter === "all" ? rows : rows.filter(r => r.status === statusFilter);
 
+  const statusBadgeStyle = (status: string) => {
+    if (status === "confirmed") return { background: "rgba(22,163,74,0.16)", color: "#16a34a" };
+    if (status === "rejected")  return { background: "rgba(220,38,38,0.16)",  color: "#dc2626" };
+    return { background: "rgba(234,179,8,0.16)", color: "#b45309" };
+  };
+
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center gap-3 p-3 bg-slate-800 border border-slate-700 rounded-lg flex-wrap">
+      <div className="flex items-center gap-3 p-3 rounded-lg flex-wrap" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white">Accept Applications</p>
-          <p className="text-xs text-slate-400 mt-0.5">When on, non-wholesale customers see a "Get Wholesale Access" option in their sidebar and can submit a payment.</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--adm-text)" }}>Accept Applications</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>When on, non-wholesale customers see a "Get Wholesale Access" option in their sidebar and can submit a payment.</p>
         </div>
         <button onClick={toggleFeature} disabled={featureToggling}
-          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${featureEnabled ? "bg-green-600" : "bg-slate-600"}`}>
+          className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50"
+          style={{ background: featureEnabled ? "#16a34a" : "var(--adm-btn)" }}>
           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${featureEnabled ? "translate-x-5" : "translate-x-0"}`} />
         </button>
-        <span className={`text-xs font-semibold ${featureEnabled ? "text-green-400" : "text-slate-500"}`}>{featureEnabled ? "Open" : "Closed"}</span>
+        <span className="text-xs font-semibold" style={{ color: featureEnabled ? "#16a34a" : "var(--adm-muted)" }}>{featureEnabled ? "Open" : "Closed"}</span>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <h2 className="text-base font-semibold text-white">Wholesale Access Requests</h2>
-        <button onClick={load} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">Refresh</button>
+        <h2 className="text-base font-semibold" style={{ color: "var(--adm-text)" }}>Wholesale Access Requests</h2>
+        <button onClick={load} className="text-xs px-2 py-1 rounded" style={{ color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}>Refresh</button>
         <div className="flex gap-1 ml-auto">
           {(["all","pending","confirmed","rejected"] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              className={`text-xs px-2.5 py-1 rounded-full border ${statusFilter===s ? "bg-blue-600 border-blue-500 text-white" : "border-slate-700 text-slate-400 hover:text-white"}`}>
+              className="text-xs px-2.5 py-1 rounded-full"
+              style={statusFilter===s
+                ? { background: "var(--adm-accent)", color: "#fff", border: "1px solid transparent" }
+                : { border: "1px solid var(--adm-border)", color: "var(--adm-muted)" }}>
               {s.charAt(0).toUpperCase()+s.slice(1)}
             </button>
           ))}
@@ -18865,29 +18875,25 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--adm-muted)" }} /></div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-10 text-slate-500 text-sm">No requests found.</div>
+        <div className="text-center py-10 text-sm" style={{ color: "var(--adm-muted)" }}>No requests found.</div>
       ) : (
         <div className="space-y-3">
           {filtered.map((req: any) => (
-            <div key={req.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+            <div key={req.id} className="rounded-lg p-4 space-y-3" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
               <div className="flex items-start gap-3 flex-wrap">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-sm text-white">@{req.accountUsername}</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
-                      req.status === "confirmed" ? "bg-green-900/60 text-green-400"
-                      : req.status === "rejected" ? "bg-red-900/60 text-red-400"
-                      : "bg-yellow-900/60 text-yellow-400"
-                    }`}>{req.status}</span>
+                    <span className="font-mono text-sm font-semibold" style={{ color: "var(--adm-text)" }}>@{req.accountUsername}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={statusBadgeStyle(req.status)}>{req.status}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-400 space-y-0.5">
-                    <div>Amount: <span className="text-white font-semibold">${req.amountUsd}</span></div>
-                    {req.paymentCryptoCurrency && <div>Currency: <span className="text-slate-300">{req.paymentCryptoCurrency} ({req.paymentCryptoNetwork})</span></div>}
-                    {req.paymentTxHash && <div>Tx: <span className="font-mono text-slate-300 break-all">{req.paymentTxHash}</span></div>}
-                    {req.rejectionReason && <div>Reason: <span className="text-red-400">{req.rejectionReason}</span></div>}
-                    {req.adminUsername && <div>Handled by: <span className="text-slate-300">@{req.adminUsername}</span></div>}
+                  <div className="mt-1 text-xs space-y-0.5" style={{ color: "var(--adm-muted)" }}>
+                    <div>Amount: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>${req.amountUsd}</span></div>
+                    {req.paymentCryptoCurrency && <div>Currency: <span style={{ color: "var(--adm-text)" }}>{req.paymentCryptoCurrency} ({req.paymentCryptoNetwork})</span></div>}
+                    {req.paymentTxHash && <div>Tx: <span className="font-mono break-all" style={{ color: "var(--adm-text)" }}>{req.paymentTxHash}</span></div>}
+                    {req.rejectionReason && <div>Reason: <span style={{ color: "#dc2626" }}>{req.rejectionReason}</span></div>}
+                    {req.adminUsername && <div>Handled by: <span style={{ color: "var(--adm-text)" }}>@{req.adminUsername}</span></div>}
                     <div>Submitted: {new Date(req.createdAt).toLocaleString()}</div>
                     {req.confirmedAt && <div>Confirmed: {new Date(req.confirmedAt).toLocaleString()}</div>}
                   </div>
@@ -18895,25 +18901,30 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
                 {req.status === "pending" && (
                   <div className="flex gap-2 shrink-0">
                     <button onClick={() => confirm(req.id)} disabled={!!working}
-                      className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white font-medium disabled:opacity-50">
+                      className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+                      style={{ background: "#16a34a" }}>
                       {working === req.id ? "…" : "Confirm"}
                     </button>
                     <button onClick={() => setRejecting(req.id)}
-                      className="text-xs px-3 py-1.5 rounded bg-red-900 hover:bg-red-800 text-white font-medium">
+                      className="text-xs px-3 py-1.5 rounded font-medium text-white"
+                      style={{ background: "#dc2626" }}>
                       Reject
                     </button>
                   </div>
                 )}
               </div>
               {rejecting === req.id && (
-                <div className="flex gap-2 items-center flex-wrap border-t border-slate-700 pt-3">
+                <div className="flex gap-2 items-center flex-wrap pt-3" style={{ borderTop: "1px solid var(--adm-border)" }}>
                   <input value={rejectionReason} onChange={e => setRejectionReason(e.target.value)}
-                    placeholder="Rejection reason (optional)" className="flex-1 min-w-0 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-500" />
+                    placeholder="Rejection reason (optional)"
+                    className="flex-1 min-w-0 rounded px-2 py-1 text-xs"
+                    style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }} />
                   <button onClick={() => reject(req.id)} disabled={!!working}
-                    className="text-xs px-3 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white font-medium disabled:opacity-50">
+                    className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+                    style={{ background: "#dc2626" }}>
                     {working === req.id ? "…" : "Confirm Reject"}
                   </button>
-                  <button onClick={() => { setRejecting(null); setRejectionReason(""); }} className="text-xs text-slate-400 hover:text-white">Cancel</button>
+                  <button onClick={() => { setRejecting(null); setRejectionReason(""); }} className="text-xs" style={{ color: "var(--adm-muted)" }}>Cancel</button>
                 </div>
               )}
             </div>
