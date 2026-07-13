@@ -2561,6 +2561,51 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   });
 });
 
+// DELETE /api/organiser/group-buys/:gbId/orders/:orderId — organiser soft-deletes an order in their GB
+router.delete("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, async (req, res): Promise<void> => {
+  const gbId = String(req.params["gbId"]);
+  const orderId = String(req.params["orderId"]);
+
+  const [gb] = await db
+    .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency })
+    .from(groupBuysTable)
+    .where(gbOwner(req, gbId));
+
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  const [order] = await db
+    .select()
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const deletedLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
+
+  await db.update(ordersTable)
+    .set({ deletedAt: new Date(), deletedBy: "organiser" })
+    .where(eq(ordersTable.id, orderId));
+
+  const organiserId = (req as any).organiser?.telegramUsername ?? gb.organiserId ?? "organiser";
+
+  writeLog("order", "warn", "order_deleted_by_organiser",
+    `Organiser ${organiserId} deleted order ${order.code} (${order.telegramUsername}, status: ${order.status}) from GB ${gbId}`,
+    {
+      orderId: order.id, code: order.code, telegramUsername: order.telegramUsername,
+      status: order.status, gbId, organiserId,
+      snapshot: { grandTotal: order.grandTotal, lineItems: deletedLineItems.map(li => ({ productName: li.productName, quantity: li.quantity, unitPrice: li.unitPrice })) },
+    },
+  ).catch(() => {});
+
+  notifyUser(
+    order.telegramUsername,
+    "order",
+    `🗑 <b>Your order has been removed</b>\n\nYour order <b>${order.code}</b> in <b>${escapeHtml(gb.name ?? gbId)}</b> was deleted by the group buy organiser.\n\nIf you think this was a mistake, please contact the organiser directly.`,
+  ).catch(() => {});
+
+  res.json({ ok: true });
+});
+
 // POST /api/organiser/group-buys/:gbId/orders/:orderId/qr — organiser manually set/clear a QR code
 router.post("/organiser/group-buys/:gbId/orders/:orderId/qr", requireOrganiser, async (req, res): Promise<void> => {
   const gbId = String(req.params["gbId"]);

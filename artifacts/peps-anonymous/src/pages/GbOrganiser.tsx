@@ -6876,6 +6876,8 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saveOk, setSaveOk] = useState<Record<string, boolean>>({});
   const [saveErr, setSaveErr] = useState<Record<string, string>>({});
+  const [deletingOrgOrder, setDeletingOrgOrder] = useState<string | null>(null);
+  const [confirmDeleteOrgOrder, setConfirmDeleteOrgOrder] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [countryFilter, setCountryFilter] = useState("all");
@@ -7355,6 +7357,27 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       setOrgQrMsg(prev => ({ ...prev, [key]: { ok: false, text: "Network error" } }));
     }
     setOrgQrSaving(prev => ({ ...prev, [key]: false }));
+  };
+
+  const deleteOrgOrder = async (orderId: string) => {
+    setDeletingOrgOrder(orderId);
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders/${orderId}`, {
+        method: "DELETE", credentials: "include",
+      });
+      if (res.ok) {
+        setGbOrders(prev => prev.filter(o => o.id !== orderId));
+        setConfirmDeleteOrgOrder(null);
+        closeEdit(orderId);
+      } else {
+        const d = await res.json().catch(() => ({})) as Record<string, string>;
+        setSaveErr(prev => ({ ...prev, [orderId]: d.error ?? "Delete failed" }));
+      }
+    } catch {
+      setSaveErr(prev => ({ ...prev, [orderId]: "Connection error" }));
+    } finally {
+      setDeletingOrgOrder(null);
+    }
   };
 
   const saveEdit = async (o: OrgOrder) => {
@@ -9032,7 +9055,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                         })}
                       </div>
                       {saveErr[o.id] && <p className="text-xs text-red-500">{saveErr[o.id]}</p>}
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={() => saveEdit(o)}
                           disabled={saving[o.id]}
@@ -9043,6 +9066,30 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                           {saving[o.id] ? "Saving…" : saveOk[o.id] ? "Saved!" : "Save Changes"}
                         </button>
                         <button onClick={() => closeEdit(o.id)} className="h-8 px-3 rounded-lg text-xs font-bold" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>Cancel</button>
+                        <div className="flex-1" />
+                        {confirmDeleteOrgOrder === o.id ? (
+                          <>
+                            <button
+                              onClick={() => deleteOrgOrder(o.id)}
+                              disabled={deletingOrgOrder === o.id}
+                              className="h-8 px-3 rounded-lg text-xs font-bold text-white flex items-center gap-1.5"
+                              style={{ background: "#DC2626" }}
+                            >
+                              {deletingOrgOrder === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              {deletingOrgOrder === o.id ? "Deleting…" : "Confirm Delete"}
+                            </button>
+                            <button onClick={() => setConfirmDeleteOrgOrder(null)} className="h-8 px-2 rounded-lg text-xs font-semibold" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>Keep</button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteOrgOrder(o.id)}
+                            disabled={!!deletingOrgOrder}
+                            className="h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                            style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete Order
+                          </button>
+                        )}
                       </div>
                       <div className="border-t pt-3" style={{ borderColor: "var(--t-border)" }}>
                         <label className="block text-[10px] font-bold mb-1 flex items-center gap-1" style={{ color: "var(--t-blue-deep)" }}>
