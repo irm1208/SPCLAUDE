@@ -23325,6 +23325,8 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
   const [drilldownGbLogs, setDrilldownGbLogs] = useState<unknown[]>([]);
   const [drilldownGbTab, setDrilldownGbTab] = useState<"orders" | "logs">("orders");
   const [drilldownGbLoading, setDrilldownGbLoading] = useState(false);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<string | null>(null);
   // Role editing
   const [editingRole, setEditingRole] = useState<string | null>(null); // username being role-edited
   const [roleValue, setRoleValue] = useState<OrganiserRole | "">("");
@@ -23515,6 +23517,28 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
     finally { setDrilldownGbLoading(false); }
   };
 
+  const deleteGbOrder = async (orderId: string) => {
+    setDeletingOrderId(orderId);
+    try {
+      const res = await fetch(apiUrl(`/admin/orders/${orderId}`), {
+        method: "DELETE",
+        headers: { "x-admin-secret": secret },
+        credentials: "omit",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError((d as { error?: string }).error ?? "Failed to delete order");
+      } else {
+        setDrilldownGbOrders(prev => (prev as Array<Record<string, unknown>>).filter(o => String(o.id) !== orderId));
+      }
+    } catch {
+      setError("Connection error");
+    } finally {
+      setDeletingOrderId(null);
+      setConfirmDeleteOrderId(null);
+    }
+  };
+
   const startEditRole = (username: string, currentRole: OrganiserRole | null) => {
     setEditingRole(username);
     setRoleValue(currentRole ?? "");
@@ -23663,20 +23687,44 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                         {drilldownGbTab === "orders" && (
                           <div className="space-y-2">
                             {drilldownGbOrders.length === 0 && <p className="text-xs text-muted-foreground">No orders</p>}
-                            {(drilldownGbOrders as Array<Record<string, unknown>>).map((o) => (
-                              <div key={String(o.id)} className="flex items-center gap-3 bg-white rounded-lg border border-border px-3 py-2">
-                                <div className="flex-1 min-w-0">
-                                  <span className="font-mono text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{String(o.code)}</span>
-                                  <span className="ml-2 text-[11px] text-muted-foreground">@{String(o.telegramUsername)}</span>
+                            {(drilldownGbOrders as Array<Record<string, unknown>>).map((o) => {
+                              const oid = String(o.id);
+                              const confirming = confirmDeleteOrderId === oid;
+                              const deleting = deletingOrderId === oid;
+                              return (
+                                <div key={oid} className="flex items-center gap-2 bg-white rounded-lg border border-border px-3 py-2">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-mono text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{String(o.code)}</span>
+                                    <span className="ml-2 text-[11px] text-muted-foreground">@{String(o.telegramUsername)}</span>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
+                                    <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
+                                      {String(o.paymentStatus ?? "").replace(/_/g, " ")}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 flex items-center gap-1 ml-1">
+                                    {confirming ? (
+                                      <>
+                                        <button onClick={() => deleteGbOrder(oid)} disabled={deleting}
+                                          className="h-6 px-2 rounded text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center gap-1">
+                                          {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Delete"}
+                                        </button>
+                                        <button onClick={() => setConfirmDeleteOrderId(null)}
+                                          className="h-6 px-2 rounded text-[10px] font-bold text-slate-500 border border-border hover:bg-slate-50">
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button onClick={() => setConfirmDeleteOrderId(oid)} disabled={!!deletingOrderId}
+                                        className="h-6 px-2 rounded text-[10px] font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-40">
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="text-right shrink-0">
-                                  <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
-                                  <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
-                                    {String(o.paymentStatus ?? "").replace(/_/g, " ")}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                         {drilldownGbTab === "logs" && (
