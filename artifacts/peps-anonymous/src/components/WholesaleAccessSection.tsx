@@ -92,6 +92,31 @@ export function WholesaleAccessSection() {
     }
   };
 
+  const handleTestPayment = async () => {
+    if (!data?.request) return;
+    setSubmitting(true);
+    const parsedAmount = parseFloat(amountInput);
+    const amountToSend = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : data.request.amountUsd;
+    const testHash = `TEST-PAY-${Date.now()}`;
+    try {
+      const r = await fetch("/api/account/wholesale-access/tx", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash: testHash, currency: "TEST", network: "TEST", amountUsd: amountToSend }),
+      });
+      if (r.ok) {
+        const d: ApiResp = await r.json();
+        setData(d);
+        toast({ title: "Test payment submitted", description: "Pending admin review." });
+      } else {
+        const e = await r.json().catch(() => ({})) as Record<string, string>;
+        toast({ title: "Error", description: e.error || "Could not submit.", variant: "destructive" });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -285,6 +310,20 @@ export function WholesaleAccessSection() {
               ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
               : "Submit Payment for Review"}
           </button>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
+            <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "var(--t-faint, var(--t-muted))" }}>or</span>
+            <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
+          </div>
+          <button
+            onClick={handleTestPayment}
+            disabled={submitting}
+            className="w-full rounded-lg py-2.5 text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-muted)" }}
+          >
+            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            Test Payment
+          </button>
         </div>
       </div>
     );
@@ -299,7 +338,7 @@ export function WholesaleAccessSection() {
         <div>
           <h3 className="text-xl font-black" style={{ color: "var(--t-text)" }}>Wholesale Access</h3>
           <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--t-muted)" }}>
-            Get access to our private wholesale shop — bulk pricing, exclusive listings, and shared order tools for serious members.
+            Our wholesale shop is reserved for serious buyers. To keep it that way, we ask for a small one-time fee — not to make money, but to confirm you're here to buy.
           </p>
         </div>
         <ul className="space-y-2.5">
@@ -315,10 +354,12 @@ export function WholesaleAccessSection() {
             </li>
           ))}
         </ul>
-        <div className="rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+        <div className="rounded-lg p-4 space-y-2" style={{ background: "rgba(22,163,74,0.06)", border: "1.5px solid rgba(22,163,74,0.2)" }}>
+          <p className="text-xs font-bold" style={{ color: "light-dark(#166534,#86efac)" }}>
+            💰 Your fee comes straight back to you
+          </p>
           <p className="text-xs leading-relaxed" style={{ color: "var(--t-muted)" }}>
-            <strong style={{ color: "var(--t-text)" }}>One-time access fee:</strong> $90–$110 (your exact amount is assigned when you start).
-            This fee is <strong style={{ color: "var(--t-text)" }}>fully refunded as store credit</strong> once your payment is confirmed.
+            The access fee ($90–$110) is a buyer verification step — nothing more. Once your payment is confirmed, the full amount is <strong style={{ color: "var(--t-text)" }}>returned to your account as store credit</strong>, ready to use on your first order.
           </p>
         </div>
         <button
