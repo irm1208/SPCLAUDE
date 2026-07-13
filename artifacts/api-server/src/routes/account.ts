@@ -3490,7 +3490,7 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
     if (existing) {
       res.json({ request: existing, cryptoOptions }); return;
     }
-    const amountUsd = Math.floor(Math.random() * 21) + 90;
+    const amountUsd = parseFloat((Math.random() * 20 + 90).toFixed(2));
     const [created] = await db.insert(wholesaleAccessRequestsTable).values({
       accountUsername: username,
       amountUsd,
@@ -3510,7 +3510,7 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
 router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res: any): Promise<void> => {
   try {
     const username = req.account?.telegramUsername as string;
-    const { txHash, currency, network } = req.body as { txHash?: string; currency?: string; network?: string };
+    const { txHash, currency, network, amountUsd: rawNewAmount } = req.body as { txHash?: string; currency?: string; network?: string; amountUsd?: unknown };
     if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
       res.status(400).json({ error: "txHash is required" }); return;
     }
@@ -3526,17 +3526,22 @@ router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res:
     if (!existing) {
       res.status(404).json({ error: "No pending wholesale access request found" }); return;
     }
+    const parsedNewAmount = typeof rawNewAmount === "number" ? rawNewAmount : parseFloat(String(rawNewAmount ?? ""));
+    const newAmountUsd = (!isNaN(parsedNewAmount) && parsedNewAmount >= 1 && parsedNewAmount <= 9999)
+      ? Math.round(parsedNewAmount * 100) / 100
+      : existing.amountUsd;
     const [updated] = await db.update(wholesaleAccessRequestsTable)
       .set({
         paymentTxHash: txHash.trim(),
         paymentCryptoCurrency: currency ?? null,
         paymentCryptoNetwork: network ?? null,
+        amountUsd: newAmountUsd,
       })
       .where(eq(wholesaleAccessRequestsTable.id, existing.id))
       .returning();
     const cryptoOptions = await getAdminCryptoOptions();
     sendAdminMessage(
-      `💸 <b>Wholesale Payment Submitted</b>\n\n@${username.replace("@", "")} submitted a payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency ?? ""} via ${network ?? ""}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+      `💸 <b>Wholesale Payment Submitted</b>\n\n@${username.replace("@", "")} submitted a payment.\nAmount: <b>$${newAmountUsd}</b> ${currency ?? ""} via ${network ?? ""}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
     ).catch(() => {});
     res.json({ request: updated, cryptoOptions });
   } catch (err: any) {

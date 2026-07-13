@@ -24,6 +24,7 @@ export function WholesaleAccessSection() {
   const [txHash, setTxHash] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [amountInput, setAmountInput] = useState("");
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -32,6 +33,7 @@ export function WholesaleAccessSection() {
         const d: ApiResp = await r.json();
         setData(d);
         if (!selectedOption && d.cryptoOptions.length > 0) setSelectedOption(d.cryptoOptions[0]);
+        if (d.request?.amountUsd !== undefined) setAmountInput(String(d.request.amountUsd));
       }
     } finally {
       setLoading(false);
@@ -48,6 +50,7 @@ export function WholesaleAccessSection() {
         const d: ApiResp = await r.json();
         setData(d);
         if (d.cryptoOptions.length > 0) setSelectedOption(d.cryptoOptions[0]);
+        if (d.request?.amountUsd !== undefined) setAmountInput(String(d.request.amountUsd));
       } else {
         const e = await r.json().catch(() => ({})) as Record<string, string>;
         toast({ title: "Error", description: e.error || "Could not start your request.", variant: "destructive" });
@@ -68,11 +71,13 @@ export function WholesaleAccessSection() {
   const handleSubmitTx = async () => {
     if (!txHash.trim() || !selectedOption || !data?.request) return;
     setSubmitting(true);
+    const parsedAmount = parseFloat(amountInput);
+    const amountToSend = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : data.request.amountUsd;
     try {
       const r = await fetch("/api/account/wholesale-access/tx", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash: txHash.trim(), currency: selectedOption.currency, network: selectedOption.network }),
+        body: JSON.stringify({ txHash: txHash.trim(), currency: selectedOption.currency, network: selectedOption.network, amountUsd: amountToSend }),
       });
       if (r.ok) {
         const d: ApiResp = await r.json();
@@ -183,9 +188,21 @@ export function WholesaleAccessSection() {
     return (
       <div className="w-full max-w-[520px] space-y-4">
         <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-          <div>
+          <div className="flex-1 min-w-0 pr-4">
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Your access fee</p>
-            <p className="text-4xl font-black mt-0.5" style={{ color: "var(--t-text)" }}>${req.amountUsd}</p>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-2xl font-black" style={{ color: "var(--t-text)" }}>$</span>
+              <input
+                type="number"
+                min="1"
+                max="9999"
+                step="0.01"
+                value={amountInput}
+                onChange={e => setAmountInput(e.target.value)}
+                className="text-4xl font-black bg-transparent outline-none w-full"
+                style={{ color: "var(--t-text)", fontFamily: "inherit" }}
+              />
+            </div>
             <p className="text-xs mt-1.5 max-w-[240px]" style={{ color: "var(--t-muted)" }}>
               This exact amount will be credited back to your account once confirmed.
             </p>
@@ -243,7 +260,7 @@ export function WholesaleAccessSection() {
             <div className="flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "light-dark(#d97706,#f0c880)" }} />
               <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-                Send exactly <strong style={{ color: "var(--t-text)" }}>${req.amountUsd} {effective.currency}</strong> via {effective.network}. Sending to the wrong network will result in lost funds.
+                Send exactly <strong style={{ color: "var(--t-text)" }}>${amountInput || req.amountUsd} {effective.currency}</strong> via {effective.network}. Sending to the wrong network will result in lost funds.
               </p>
             </div>
           </div>
