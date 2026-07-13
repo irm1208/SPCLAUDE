@@ -443,6 +443,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     // ── Optional organiser fee (paid directly to the organiser/creator) ────────
     fees: {
       organiserPaymentInfo: share.organiserPaymentInfo ?? null,
+      leadRevolutHandle: share.leadRevolutHandle ?? null,
+      leadPaypalEmail: share.leadPaypalEmail ?? null,
+      leadCryptoOptions: share.leadCryptoOptions ?? [],
       organiserFeeTotal,
       active: organiserFeeTotal > 0,
       recipientUsername: share.deliveryUsername ?? null,
@@ -1999,6 +2002,9 @@ router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Pro
 
   const body = (req.body ?? {}) as {
     organiserPaymentInfo?: unknown;
+    leadRevolutHandle?: unknown;
+    leadPaypalEmail?: unknown;
+    leadCryptoOptions?: unknown;
     fees?: Array<{ username?: unknown; organiserFee?: unknown }>;
   };
 
@@ -2007,14 +2013,43 @@ router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Pro
     if (!isFinite(n) || n <= 0) return 0;
     return Number(Math.min(n, 100000).toFixed(2));
   };
+  const cleanHandle = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    const t = v.trim().slice(0, 200);
+    return t.length > 0 ? t : null;
+  };
   const cleanInfo = (v: unknown): string | null => {
     if (typeof v !== "string") return null;
     const t = v.trim().slice(0, 500);
     return t.length > 0 ? t : null;
   };
 
+  const VALID_CRYPTO_NETWORKS = new Set([
+    "ERC-20", "Arbitrum One", "Polygon", "Solana", "TRC-20", "Bitcoin Mainnet", "Ethereum",
+  ]);
+  const cleanCryptoOptions = (v: unknown): Array<{ currency: string; network: string; walletAddress: string }> | null => {
+    if (!Array.isArray(v)) return null;
+    const out: Array<{ currency: string; network: string; walletAddress: string }> = [];
+    for (const item of v) {
+      if (!item || typeof item !== "object") continue;
+      const currency = String((item as Record<string, unknown>).currency ?? "").trim().toUpperCase().slice(0, 10);
+      const network = String((item as Record<string, unknown>).network ?? "").trim().slice(0, 50);
+      const walletAddress = String((item as Record<string, unknown>).walletAddress ?? "").trim().slice(0, 200);
+      if (!currency || !network || !walletAddress) continue;
+      if (!VALID_CRYPTO_NETWORKS.has(network)) continue;
+      out.push({ currency, network, walletAddress });
+    }
+    return out.length > 0 ? out : [];
+  };
+
   const shareUpdates: Partial<typeof wholesaleSharesTable.$inferInsert> = {};
   if (body.organiserPaymentInfo !== undefined) shareUpdates.organiserPaymentInfo = cleanInfo(body.organiserPaymentInfo);
+  if (body.leadRevolutHandle !== undefined) shareUpdates.leadRevolutHandle = cleanHandle(body.leadRevolutHandle);
+  if (body.leadPaypalEmail !== undefined) shareUpdates.leadPaypalEmail = cleanHandle(body.leadPaypalEmail);
+  if (body.leadCryptoOptions !== undefined) {
+    const opts = cleanCryptoOptions(body.leadCryptoOptions);
+    if (opts !== null) shareUpdates.leadCryptoOptions = opts;
+  }
 
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
   const fees = Array.isArray(body.fees) ? body.fees : [];

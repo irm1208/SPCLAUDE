@@ -72,6 +72,11 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // to the organiser/creator). It never enters the per-member order total that the
   // admin/vendor collects. Free-text payment instructions shown to participants.
   organiserPaymentInfo: text("organiser_payment_info"),
+  // ── Lead payment methods (structured; peer-to-peer, never in order totals) ──
+  // Displayed to members so they know exactly where to send the organiser fee.
+  leadRevolutHandle: text("lead_revolut_handle"),
+  leadPaypalEmail: text("lead_paypal_email"),
+  leadCryptoOptions: jsonb("lead_crypto_options").$type<Array<{ currency: string; network: string; walletAddress: string }>>(),
   // ── Main parcel tracking (vendor → recipient) cache ─────────────────────────
   // Admin sets ONE tracking number for the whole shared order, written to every
   // member order (orders.trackingNumber is the source of truth). These columns are a

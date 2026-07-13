@@ -43,7 +43,8 @@ import {
 import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
-import { FeeLine } from "@/components/wholesale-shared/payment-fields";
+import { FeeLine, PaymentMethodEditor } from "@/components/wholesale-shared/payment-fields";
+import type { LeadCryptoOption } from "@/hooks/use-wholesale-shares";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
 import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
 import { buildGuide, GUIDE_ANCHORS } from "@/components/wholesale-shared/next-step";
@@ -146,6 +147,9 @@ export default function WholesaleShared() {
   // Organiser-only optional fee editor. Custom per-member organiser fee (paid to the
   // organiser). Paid SEPARATELY and never enters the per-member order total.
   const [orgPayInfo, setOrgPayInfo] = useState("");
+  const [leadRevolut, setLeadRevolut] = useState("");
+  const [leadPaypal, setLeadPaypal] = useState("");
+  const [leadCryptoOptions, setLeadCryptoOptions] = useState<LeadCryptoOption[]>([]);
   const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({});
   const [feesDirty, setFeesDirty] = useState(false);
   const feesSeeded = useRef(false);
@@ -337,6 +341,9 @@ export default function WholesaleShared() {
   useEffect(() => {
     if (!share || !share.fees?.canManage || feesDirty || feesSeeded.current) return;
     setOrgPayInfo(share.fees?.organiserPaymentInfo ?? "");
+    setLeadRevolut(share.fees?.leadRevolutHandle ?? "");
+    setLeadPaypal(share.fees?.leadPaypalEmail ?? "");
+    setLeadCryptoOptions(share.fees?.leadCryptoOptions ?? []);
     const seeded: Record<string, string> = {};
     for (const m of share.members) {
       seeded[m.username] = m.organiserFee > 0 ? String(m.organiserFee) : "";
@@ -818,7 +825,13 @@ export default function WholesaleShared() {
           organiserFee: isRecipient ? 0 : Math.max(0, parseFloat(feeAmounts[m.username] ?? "") || 0),
         };
       });
-      await setWholesaleShareFees(id, { organiserPaymentInfo: orgPayInfo.trim(), fees });
+      await setWholesaleShareFees(id, {
+        organiserPaymentInfo: orgPayInfo.trim(),
+        leadRevolutHandle: leadRevolut.trim(),
+        leadPaypalEmail: leadPaypal.trim(),
+        leadCryptoOptions,
+        fees,
+      });
       setFeesDirty(false);
       feesSeeded.current = false;
       invalidate(id);
@@ -1498,14 +1511,18 @@ export default function WholesaleShared() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>How to pay the organiser fee (to you)</label>
-        <input
-          value={orgPayInfo}
-          onChange={e => { setFeesDirty(true); setOrgPayInfo(e.target.value); }}
-          placeholder="e.g. PayPal me@example.com / Revolut @me"
-          maxLength={500}
-          className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
-          style={field}
+        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>How members pay you</label>
+        <PaymentMethodEditor
+          revolut={leadRevolut}
+          onRevolutChange={setLeadRevolut}
+          paypal={leadPaypal}
+          onPaypalChange={setLeadPaypal}
+          cryptoOptions={leadCryptoOptions}
+          onCryptoChange={setLeadCryptoOptions}
+          notes={orgPayInfo}
+          onNotesChange={setOrgPayInfo}
+          onAnyChange={() => setFeesDirty(true)}
+          field={field}
         />
       </div>
 
