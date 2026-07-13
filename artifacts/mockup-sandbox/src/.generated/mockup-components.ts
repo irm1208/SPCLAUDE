@@ -442,5 +442,9 @@ export const modules: ModuleMap = {
   "./components/mockups/temporal-home/ProtocolPosition.tsx": () => import("../components/mockups/temporal-home/ProtocolPosition.tsx"),
   "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx"),
   "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
+<<<<<<< HEAD
   "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx"),
+=======
+  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx")
+>>>>>>> 2180309 (Add sage chart components for data visualization)
 };
