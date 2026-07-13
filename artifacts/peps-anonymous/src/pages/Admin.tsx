@@ -18780,6 +18780,28 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
   const [working, setWorking] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [featureEnabled, setFeatureEnabled] = useState(false);
+  const [featureToggling, setFeatureToggling] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean }) => {
+      setFeatureEnabled(d.wholesaleAccessEnabled === true);
+    }).catch(() => {});
+  }, []);
+
+  const toggleFeature = async () => {
+    setFeatureToggling(true);
+    const next = !featureEnabled;
+    try {
+      const r = await fetch(apiUrl("/admin/config/wholesale-access-enabled"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (r.ok) setFeatureEnabled(next);
+      else alert("Failed to update setting");
+    } finally { setFeatureToggling(false); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -18818,6 +18840,17 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
 
   return (
     <div className="p-6 space-y-4">
+      <div className="flex items-center gap-3 p-3 bg-slate-800 border border-slate-700 rounded-lg flex-wrap">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white">Accept Applications</p>
+          <p className="text-xs text-slate-400 mt-0.5">When on, non-wholesale customers see a "Get Wholesale Access" option in their sidebar and can submit a payment.</p>
+        </div>
+        <button onClick={toggleFeature} disabled={featureToggling}
+          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${featureEnabled ? "bg-green-600" : "bg-slate-600"}`}>
+          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${featureEnabled ? "translate-x-5" : "translate-x-0"}`} />
+        </button>
+        <span className={`text-xs font-semibold ${featureEnabled ? "text-green-400" : "text-slate-500"}`}>{featureEnabled ? "Open" : "Closed"}</span>
+      </div>
       <div className="flex items-center gap-3 flex-wrap">
         <h2 className="text-base font-semibold text-white">Wholesale Access Requests</h2>
         <button onClick={load} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">Refresh</button>

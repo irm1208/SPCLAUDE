@@ -3473,6 +3473,10 @@ router.post("/account/wholesale-access", requireAccount, async (req: any, res: a
     if (req.account?.isWholesale) {
       res.status(400).json({ error: "You already have wholesale access." }); return;
     }
+    const [featureRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_enabled"));
+    if (featureRow?.value !== "true") {
+      res.status(403).json({ error: "Wholesale access applications are not currently open." }); return;
+    }
     const [existing] = await db
       .select()
       .from(wholesaleAccessRequestsTable)

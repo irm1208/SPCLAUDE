@@ -134,6 +134,12 @@ export function DashboardShell({
   const [, navigate] = useLocation();
   const T = palette(dark);
   const [collapsed, setCollapsed] = useState(false);
+  const [wholesaleAccessEnabled, setWholesaleAccessEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean }) => {
+      setWholesaleAccessEnabled(d.wholesaleAccessEnabled === true);
+    }).catch(() => {});
+  }, []);
 
   // ── Global search + profile menu ──
   const [searchQ, setSearchQ] = useState("");
@@ -308,9 +314,9 @@ export function DashboardShell({
           { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, active: activeSection === "wholesale", go: () => navigate("/wholesale") },
           { id: "shared-orders", label: "Shared Orders", Icon: Users, active: activeSection === "shared-orders", go: () => navigate("/wholesale/shared") },
         ]
-      : [
-          { id: "wholesale-access", label: "Get Wholesale Access", Icon: ShoppingBag, active: activeSection === "wholesale-access", go: () => onSection("wholesale-access") },
-        ]),
+      : wholesaleAccessEnabled
+      ? [{ id: "wholesale-access", label: "Get Wholesale Access", Icon: ShoppingBag, active: activeSection === "wholesale-access", go: () => onSection("wholesale-access") }]
+      : []),
   ];
   const researchItems: SideLink[] = [
     { id: "protocols",   label: "Protocols",     Icon: BookMarked,    active: activeSection === "protocols",   go: () => navigate("/protocols") },
