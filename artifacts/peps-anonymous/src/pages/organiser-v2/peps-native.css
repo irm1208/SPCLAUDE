@@ -1,0 +1,2342 @@
+/* Peps Native Workspace
+   Selected visual layer for /gborganiser-v2. Every rule remains scoped so the
+   original organiser and the public website keep their existing presentation. */
+
+.organiser-v2 {
+  color: #0f1f38;
+  background: #f4f6f9;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.organiser-v2 :focus-visible {
+  outline-color: #2d6bcc;
+  outline-offset: 2px;
+}
+
+.organiser-v2 .ov2-shell,
+.organiser-v2 .ov2-main {
+  background: #f4f6f9;
+}
+
+.organiser-v2 .ov2-shell.is-sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.organiser-v2 .ov2-sidebar-desktop,
+.organiser-v2 .ov2-sidebar,
+.organiser-v2 .ov2-sidebar-drawer {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  background: linear-gradient(165deg, #1b3164 0%, #1b3a7a 100%);
+}
+
+.organiser-v2 .ov2-brand-block {
+  height: 64px;
+  gap: 10px;
+  border-color: rgba(255, 255, 255, 0.11);
+  padding: 0 15px;
+}
+
+.organiser-v2 .ov2-brand-mark {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  grid-template-columns: repeat(2, 1fr);
+  flex: 0 0 32px;
+  gap: 2px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.organiser-v2 .ov2-brand-mark::before {
+  display: none;
+}
+
+.organiser-v2 .ov2-brand-mark span,
+.organiser-v2 .ov2-brand-mark span:first-child,
+.organiser-v2 .ov2-brand-mark span:last-child {
+  position: static;
+  width: auto;
+  height: auto;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.organiser-v2 .ov2-brand-mark span:last-child {
+  background: #e9a020;
+}
+
+.organiser-v2 .ov2-brand-copy strong {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-brand-copy span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 9px;
+}
+
+.organiser-v2 .ov2-sidebar-collapse {
+  width: 30px;
+  height: 30px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.organiser-v2 .ov2-sidebar-collapse:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.organiser-v2 .ov2-sidebar-scroll {
+  padding: 13px 11px 12px;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.organiser-v2 .ov2-nav-group + .ov2-nav-group {
+  margin-top: 7px;
+}
+
+.organiser-v2 .ov2-nav-group-toggle,
+.organiser-v2 .ov2-sidebar-kicker {
+  padding: 7px 9px 5px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 .ov2-nav-group-items.is-nested {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.organiser-v2 .ov2-nav-group-items.is-nested::before {
+  display: none;
+}
+
+.organiser-v2 .ov2-nav-link {
+  min-height: 32px;
+  gap: 9px;
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 9px;
+  color: rgba(255, 255, 255, 0.74);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 520;
+}
+
+.organiser-v2 .ov2-nav-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.organiser-v2 .ov2-nav-link.is-active {
+  border: 0;
+  color: #1b3a7a;
+  background: #fff;
+  box-shadow: 0 7px 16px rgba(5, 18, 47, 0.18);
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-nav-link svg {
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 5px;
+  color: currentColor;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.organiser-v2 .ov2-nav-link.is-active svg {
+  background: #e7eef9;
+}
+
+.organiser-v2 .ov2-nav-link em {
+  min-width: 19px;
+  height: 19px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.organiser-v2 .ov2-nav-link.is-active em {
+  color: #1b3a7a;
+  background: #e2ebfb;
+}
+
+.organiser-v2 .ov2-sidebar-utilities,
+.organiser-v2 .ov2-profile-block {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.organiser-v2 .ov2-sidebar-utilities {
+  padding: 9px 11px;
+}
+
+.organiser-v2 .ov2-profile-block {
+  min-height: 66px;
+  padding: 10px 15px;
+}
+
+.organiser-v2 .ov2-profile-avatar {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  color: #1b3a7a;
+  background: #fff;
+  box-shadow: none;
+}
+
+.organiser-v2 .ov2-profile-block strong {
+  color: #fff;
+  font-size: 10px;
+}
+
+.organiser-v2 .ov2-profile-block small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 8px;
+}
+
+.organiser-v2 .ov2-profile-block > svg {
+  width: 14px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-brand-block {
+  padding: 0 10px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-brand-mark {
+  display: grid;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-sidebar-collapse {
+  position: absolute;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #f4f6f9;
+  color: #1b3a7a;
+  background: #fff;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-sidebar-scroll {
+  padding-inline: 9px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-nav-link {
+  min-height: 38px;
+  padding-inline: 8px;
+}
+
+.organiser-v2 .ov2-topbar {
+  height: 64px;
+  min-height: 64px;
+  gap: 12px;
+  border-color: #dbe3ec;
+  padding: 0 20px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 2px 10px rgba(27, 49, 100, 0.025);
+}
+
+.organiser-v2 .ov2-breadcrumbs {
+  gap: 6px;
+  color: #78869a;
+  font-size: 10px;
+}
+
+.organiser-v2 .ov2-brand-crumb {
+  color: #2d6bcc;
+  font-weight: 650;
+}
+
+.organiser-v2 .ov2-breadcrumb-current,
+.organiser-v2 .ov2-page-crumb {
+  max-width: 175px;
+  color: #0f1f38;
+}
+
+.organiser-v2 .ov2-search-trigger {
+  width: clamp(190px, 21vw, 280px);
+  min-height: 36px;
+  gap: 8px;
+  border: 1px solid #d0dae4;
+  border-radius: 10px;
+  color: #8a9aaa;
+  background: #f8fafc;
+  font-size: 10px;
+}
+
+.organiser-v2 .ov2-search-trigger:hover {
+  border-color: #afc0d4;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-search-trigger kbd {
+  border-color: #d0dae4;
+  border-radius: 6px;
+  color: #728095;
+}
+
+.organiser-v2 .ov2-topbar-actions {
+  gap: 6px;
+}
+
+.organiser-v2 .ov2-topbar-link,
+.organiser-v2 .ov2-primary-button,
+.organiser-v2 .ov2-secondary-button {
+  min-height: 36px;
+  border-radius: 10px;
+  padding-inline: 12px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-topbar-link {
+  border: 1px solid #d0dae4;
+  color: #1b3a7a;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-primary-button {
+  border-color: #1b3a7a;
+  color: #fff;
+  background: #1b3a7a;
+  box-shadow: 0 5px 12px rgba(27, 58, 122, 0.14);
+}
+
+.organiser-v2 .ov2-primary-button:hover {
+  border-color: #1b3164;
+  background: #1b3164;
+}
+
+.organiser-v2 .ov2-secondary-button {
+  border-color: #d0dae4;
+  color: #1b3a7a;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-icon-button {
+  width: 36px;
+  height: 36px;
+  border-color: #d0dae4;
+  border-radius: 10px;
+  color: #64748b;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-icon-button:hover {
+  border-color: #afc0d4;
+  color: #1b3a7a;
+  background: #f8fafc;
+}
+
+@media (max-width: 1023px) {
+  .organiser-v2 .ov2-sidebar-drawer {
+    width: min(88vw, 270px);
+    box-shadow: 18px 0 50px rgba(5, 18, 47, 0.25);
+  }
+
+  .organiser-v2 .ov2-drawer-scrim {
+    background: rgba(15, 31, 56, 0.54);
+  }
+
+  .organiser-v2 .ov2-drawer-close {
+    top: 14px;
+    right: 11px;
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    background: rgba(255, 255, 255, 0.09);
+  }
+
+  .organiser-v2 .ov2-brand-crumb,
+  .organiser-v2 .ov2-brand-crumb + svg {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .organiser-v2 .ov2-topbar {
+    height: 64px;
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .organiser-v2 .ov2-breadcrumbs > span:first-of-type,
+  .organiser-v2 .ov2-breadcrumbs > svg:first-of-type {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-search-trigger {
+    width: 38px;
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .organiser-v2 .ov2-primary-button,
+  .organiser-v2 .ov2-secondary-button,
+  .organiser-v2 .ov2-topbar-link {
+    min-height: 40px;
+  }
+}
+
+/* Shared content surfaces -------------------------------------------------- */
+
+.organiser-v2 .ov2-page {
+  padding: 20px 22px 28px;
+}
+
+.organiser-v2 .ov2-page-header {
+  min-height: 92px;
+  gap: 20px;
+  padding-top: 0;
+}
+
+.organiser-v2 .ov2-page-header h1 {
+  color: #0f1f38;
+  font-size: clamp(22px, 2vw, 27px);
+  font-weight: 740;
+  letter-spacing: -0.04em;
+}
+
+.organiser-v2 .ov2-page-header > div > p {
+  max-width: 720px;
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.organiser-v2 .ov2-page-header-actions {
+  padding-top: 4px;
+}
+
+.organiser-v2 .ov2-status-pill {
+  gap: 5px;
+  padding: 4px 8px;
+  color: #17743d;
+  background: rgba(34, 197, 94, 0.13);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.organiser-v2 .ov2-status-pill::before {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  content: "";
+}
+
+.organiser-v2 .ov2-card {
+  border: 1px solid #dbe3ec;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035);
+}
+
+.organiser-v2 .ov2-card-title {
+  color: #0f1f38;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(.rounded-xl) {
+  border-radius: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(.rounded-lg) {
+  border-radius: 10px;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(.bg-white.rounded-xl, .bg-white.rounded-lg, .rounded-xl.bg-white, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  background: #fff !important;
+  box-shadow: 0 3px 12px rgba(27, 49, 100, 0.03);
+}
+
+.organiser-v2 .ov2-workspace-screen :where(input, select, textarea) {
+  border-color: #d0dae4 !important;
+  border-radius: 9px;
+  color: #0f1f38;
+  background-color: #fff !important;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(input, select, textarea):focus {
+  border-color: #2d6bcc !important;
+  box-shadow: 0 0 0 3px rgba(45, 107, 204, 0.12) !important;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(h1, h2, h3) {
+  color: #0f1f38;
+  letter-spacing: -0.03em;
+}
+
+.organiser-v2 .ov2-view-switcher {
+  border: 0;
+  border-radius: 10px;
+  padding: 3px;
+  background: #e7ecf2;
+}
+
+.organiser-v2 .ov2-view-switcher button {
+  min-height: 30px;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.organiser-v2 .ov2-view-switcher button.is-active {
+  color: #1b3a7a;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(27, 58, 122, 0.09);
+}
+
+.organiser-v2 .ov2-copy-toast {
+  border-color: #bce4cc;
+  border-radius: 10px;
+  color: #17743d;
+  background: #effaf3;
+  box-shadow: 0 10px 28px rgba(27, 49, 100, 0.11);
+}
+
+/* Overview and dashboard -------------------------------------------------- */
+
+.organiser-v2 .ov2-analytics-grid {
+  grid-template-columns: minmax(300px, 1.05fr) minmax(190px, 0.68fr) minmax(360px, 1.3fr);
+  grid-template-rows: 126px 126px;
+  gap: 10px;
+}
+
+.organiser-v2 .ov2-status-card,
+.organiser-v2 .ov2-trend-card,
+.organiser-v2 .ov2-metric-card {
+  border-color: #dbe3ec;
+  border-radius: 15px;
+}
+
+.organiser-v2 .ov2-status-card {
+  padding: 18px;
+}
+
+.organiser-v2 .ov2-status-values {
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.organiser-v2 .ov2-status-values strong {
+  color: #0f1f38;
+  font-size: 24px;
+  font-weight: 720;
+}
+
+.organiser-v2 .ov2-status-values span {
+  margin-top: 5px;
+  color: #6b7280;
+  font-size: 9px;
+}
+
+.organiser-v2 .ov2-segmented-bar {
+  height: 42px;
+  gap: 3px;
+  margin-top: 16px;
+  border-radius: 9px;
+  background: #edf1f6;
+}
+
+.organiser-v2 .ov2-segmented-bar span {
+  border-radius: 5px;
+  background: #e77b6c;
+}
+
+.organiser-v2 .ov2-segmented-bar span::after {
+  display: none;
+}
+
+.organiser-v2 .ov2-segmented-bar span[data-tone="orange"] { background: #22c55e; }
+.organiser-v2 .ov2-segmented-bar span[data-tone="pink"] { background: #879cc9; }
+.organiser-v2 .ov2-segmented-bar span[data-tone="green"] { background: #e9a020; }
+
+.organiser-v2 .ov2-card-range {
+  margin-top: 8px;
+  color: #8a9aaa;
+  font-size: 8px;
+}
+
+.organiser-v2 .ov2-metric-card {
+  min-height: 0;
+  padding: 16px 17px;
+}
+
+.organiser-v2 .ov2-metric-value {
+  margin-top: 10px;
+  color: #0f1f38;
+  font-size: clamp(24px, 2.3vw, 29px);
+  font-weight: 740;
+}
+
+.organiser-v2 .ov2-metric-delta {
+  width: max-content;
+  gap: 3px;
+  margin-top: 7px;
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #17743d;
+  background: rgba(34, 197, 94, 0.13);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-metric-delta[data-direction="down"] {
+  color: #b04435;
+  background: rgba(239, 68, 68, 0.11);
+}
+
+.organiser-v2 .ov2-mini-bars span {
+  background: #dfe6ee;
+}
+
+.organiser-v2 .ov2-mini-bars span[data-accent="true"] {
+  background: #2d6bcc;
+}
+
+.organiser-v2 .ov2-mini-dots {
+  border-color: #dbe3ec;
+}
+
+.organiser-v2 .ov2-mini-dots span {
+  background: #2d6bcc;
+}
+
+.organiser-v2 .ov2-trend-card {
+  padding: 18px;
+}
+
+.organiser-v2 .ov2-trend-legend,
+.organiser-v2 .ov2-axis-labels {
+  color: #8a9aaa;
+}
+
+.organiser-v2 .ov2-trend-legend i {
+  background: #2d6bcc;
+}
+
+.organiser-v2 .ov2-trend-legend i:last-of-type {
+  background: #e9a020;
+}
+
+.organiser-v2 .ov2-trend-chart {
+  inset: 56px 18px 16px 40px;
+}
+
+.organiser-v2 .ov2-grid-lines line {
+  stroke: #dbe3ec;
+}
+
+.organiser-v2 .ov2-line-purple {
+  stroke: #2d6bcc;
+  stroke-width: 2.5;
+}
+
+.organiser-v2 .ov2-line-orange {
+  stroke: #e9a020;
+  stroke-width: 2.5;
+}
+
+.organiser-v2 .ov2-board-toolbar {
+  margin-top: 18px;
+}
+
+.organiser-v2 .ov2-toolbar-action {
+  min-height: 34px;
+  border: 1px solid #d0dae4;
+  border-radius: 9px;
+  padding: 0 10px;
+  color: #1b3a7a;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.organiser-v2 .ov2-toolbar-action:hover {
+  border-color: #afc0d4;
+  background: #f8fafc;
+}
+
+.organiser-v2 .ov2-order-board {
+  gap: 10px;
+  margin-top: 14px;
+  padding-bottom: 6px;
+}
+
+.organiser-v2 .ov2-board-column {
+  overflow: hidden;
+  border: 1px solid #dbe3ec;
+  border-radius: 14px;
+  padding: 8px;
+  background: #eef2f7;
+}
+
+.organiser-v2 .ov2-board-column > header {
+  height: 34px;
+  align-items: center;
+  border: 0;
+  padding: 0 3px 5px;
+}
+
+.organiser-v2 .ov2-board-column > header > svg { color: #e77b6c; }
+.organiser-v2 .ov2-board-column[data-tone="orange"] > header > svg { color: #22a65d; }
+.organiser-v2 .ov2-board-column[data-tone="pink"] > header > svg { color: #879cc9; }
+.organiser-v2 .ov2-board-column[data-tone="green"] > header > svg { color: #e9a020; }
+
+.organiser-v2 .ov2-board-column > header h2 {
+  color: #0f1f38;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-board-column > header span {
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 7px;
+  color: #56657a;
+  background: #fff;
+  font-size: 8px;
+}
+
+.organiser-v2 .ov2-column-orders {
+  gap: 7px;
+}
+
+.organiser-v2 .ov2-order-card {
+  min-height: 183px;
+  border: 1px solid #e0e7ee;
+  border-radius: 11px;
+  padding: 12px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(27, 49, 100, 0.035);
+}
+
+.organiser-v2 .ov2-order-card h3 {
+  margin-top: 12px;
+  color: #0f1f38;
+  font-weight: 720;
+}
+
+.organiser-v2 .ov2-order-card > p,
+.organiser-v2 .ov2-order-meta,
+.organiser-v2 .ov2-order-card footer {
+  color: #7b899a;
+}
+
+.organiser-v2 .ov2-order-due {
+  border-color: #dbe3ec;
+  border-radius: 7px;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.organiser-v2 .ov2-member-dot {
+  border-radius: 7px;
+  background: #1b3a7a;
+}
+
+.organiser-v2 .ov2-empty-column {
+  border-color: #c8d4e0;
+  border-radius: 10px;
+  color: #8a9aaa;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.organiser-v2 .ov2-dispatch-note {
+  border-color: #b8dce8;
+  border-radius: 10px;
+  color: #1b3a7a;
+  background: #eaf4fb;
+}
+
+.organiser-v2 .ov2-overview-table-wrap {
+  margin-top: 14px;
+}
+
+.organiser-v2 .ov2-overview-table th,
+.organiser-v2 .ov2-overview-table td {
+  border-color: #e1e7ee;
+  padding: 11px 13px;
+  color: #526176;
+}
+
+.organiser-v2 .ov2-overview-table th {
+  color: #7c899a;
+  background: #f8fafc;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Table and board page treatments ----------------------------------------- */
+
+.organiser-v2 [data-treatment="table"] :where(table) {
+  border-collapse: collapse;
+}
+
+.organiser-v2 [data-treatment="table"] :where(thead, thead tr) {
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-treatment="table"] :where(th) {
+  border-color: #dbe3ec !important;
+  color: #7b899b !important;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 [data-treatment="table"] :where(td) {
+  border-color: #e2e8ef !important;
+  color: #374151;
+}
+
+.organiser-v2 [data-treatment="table"] :where(tbody tr:hover) {
+  background: #f6f9fd !important;
+}
+
+.organiser-v2 [data-treatment="table"] :where(.bg-blue-50, .bg-blue-50\/30, .bg-blue-50\/40) {
+  background: #edf4ff !important;
+}
+
+.organiser-v2 [data-treatment="table"] :where(.rounded-full) {
+  border-radius: 999px;
+}
+
+.organiser-v2 [data-treatment="table"] :where(button) {
+  border-radius: 9px;
+}
+
+.organiser-v2 [data-treatment="board"] :where(.bg-gray-50, .bg-slate-50) {
+  background: #eef2f7 !important;
+}
+
+.organiser-v2 [data-treatment="board"] :where(.border-gray-200, .border-slate-200) {
+  border-color: #dbe3ec !important;
+}
+
+.organiser-v2 [data-treatment="board"] :where(.shadow-sm) {
+  box-shadow: 0 3px 10px rgba(27, 49, 100, 0.035) !important;
+}
+
+/* Todo list --------------------------------------------------------------- */
+
+.organiser-v2 [data-page="todos"] {
+  --ov2-todo-section-size: 14px;
+  --ov2-todo-task-size: 13px;
+  --ov2-todo-meta-size: 10px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] > .ov2-page-header + .ov2-todo-workspace {
+  border-color: #dbe3ec !important;
+  border-radius: 15px !important;
+  background: #fff !important;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035) !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-header {
+  min-height: 66px;
+  align-items: center;
+  border-bottom: 1px solid #edf1f5;
+  padding: 14px 18px 12px;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-header h2 {
+  color: #0f1f38 !important;
+  font-size: var(--ov2-todo-section-size) !important;
+  font-weight: 720 !important;
+  line-height: 1.25;
+  letter-spacing: -0.02em !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-header p {
+  margin-top: 3px !important;
+  color: #8a9aaa !important;
+  font-size: 10px !important;
+  font-weight: 500;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-view-switcher {
+  gap: 2px;
+  border: 0 !important;
+  border-radius: 10px !important;
+  padding: 3px !important;
+  background: #e7ecf2 !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-view-switcher button {
+  height: 28px !important;
+  min-height: 28px;
+  border-radius: 8px !important;
+  padding-inline: 10px !important;
+  color: #6b7280 !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-view-switcher button[style*="background: rgb(255, 255, 255)"],
+.organiser-v2 [data-page="todos"] .ov2-todo-view-switcher button[style*="background: #fff"] {
+  color: #1b3a7a !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-categories {
+  border-bottom: 1px solid #edf1f5;
+  padding: 10px 18px 11px;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-categories :where(button, input) {
+  height: 27px !important;
+  min-height: 27px;
+  border-radius: 999px !important;
+  padding-inline: 10px !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-quick-add {
+  height: 40px !important;
+  border-color: #d0dae4 !important;
+  border-radius: 9px !important;
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-quick-add:focus-within {
+  border-color: #2d6bcc !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 3px rgba(45, 107, 204, 0.11) !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-quick-add input {
+  color: #0f1f38 !important;
+  font-size: 12px !important;
+  font-weight: 500;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-quick-add input::placeholder {
+  color: #8a9aaa;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-content {
+  padding: 0 18px 20px;
+  color: #374151;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-content > div:first-child > span:first-child {
+  color: #8a9aaa !important;
+  font-size: 9px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-content > div:first-child button {
+  font-size: 10px !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-group-label {
+  font-size: 10px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-group-card {
+  border-color: #dbe3ec !important;
+  border-radius: 10px !important;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(27, 49, 100, 0.025);
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-item {
+  border-color: #e3e9f0 !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-task-row {
+  min-height: 50px;
+  padding-block: 9px !important;
+  background: #fff;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-task-title {
+  color: #0f1f38 !important;
+  font-size: var(--ov2-todo-task-size) !important;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-task-title.line-through {
+  color: #8a9aaa !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-task-meta {
+  margin-top: 3px !important;
+  color: #6b7280 !important;
+  font-size: var(--ov2-todo-meta-size) !important;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-task-meta svg {
+  width: 11px;
+  height: 11px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-check {
+  width: 18px !important;
+  min-width: 18px;
+  height: 18px !important;
+  min-height: 18px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-check.is-subtask {
+  width: 14px !important;
+  min-width: 14px;
+  height: 14px !important;
+  min-height: 14px !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-detail {
+  border-color: #d0dae4 !important;
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-detail :where(input, select, textarea, span) {
+  font-size: 12px;
+}
+
+.organiser-v2 [data-page="todos"] .ov2-todo-detail :where(.rounded-md.bg-white) {
+  border-color: #dbe3ec !important;
+  border-radius: 10px !important;
+}
+
+@media (max-width: 1023px) {
+  .organiser-v2 .ov2-page {
+    padding: 18px 18px 26px;
+  }
+
+  .organiser-v2 .ov2-page-header {
+    min-height: 86px;
+  }
+
+  .organiser-v2 .ov2-analytics-grid {
+    grid-template-columns: minmax(270px, 1fr) minmax(190px, 0.7fr);
+    grid-template-rows: 126px 126px auto;
+    gap: 10px;
+  }
+
+  .organiser-v2 .ov2-order-board {
+    grid-template-columns: repeat(4, minmax(235px, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .organiser-v2 .ov2-page {
+    padding: 16px 12px 24px;
+  }
+
+  .organiser-v2 .ov2-page-header {
+    min-height: 92px;
+  }
+
+  .organiser-v2 .ov2-analytics-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .organiser-v2 .ov2-status-card,
+  .organiser-v2 .ov2-trend-card {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .organiser-v2 .ov2-order-board {
+    grid-template-columns: repeat(4, minmax(248px, 82vw));
+    margin-right: -12px;
+    padding-right: 12px;
+  }
+}
+
+/* Operational page treatments -------------------------------------------- */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] {
+  --dispatch-green: #2d6bcc;
+  --dispatch-green-deep: #1b3a7a;
+  --dispatch-ink: #0f1f38;
+  --dispatch-muted: #6b7280;
+  --dispatch-rule: #d0dae4;
+  --dispatch-amber: #e9a020;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.rounded-xl.bg-white, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035) !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.space-y-3 > .rounded-lg.bg-white, .grid > .rounded-xl.bg-white) {
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.space-y-3 > .rounded-lg.bg-white, .grid > .rounded-xl.bg-white):hover {
+  border-color: #b8c7d8 !important;
+  box-shadow: 0 8px 22px rgba(27, 49, 100, 0.065) !important;
+  transform: translateY(-1px);
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.uppercase) {
+  color: #7b899b !important;
+  font-size: 9px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.07em !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(table) {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(th) {
+  border-color: #dbe3ec !important;
+  color: #7b899b !important;
+  background: #f8fafc !important;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(td) {
+  border-color: #e2e8ef !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.dispatch-ruled) {
+  background-color: #f8fafc;
+  background-image: linear-gradient(rgba(45, 107, 204, 0.025) 1px, transparent 1px);
+  background-size: 100% 28px;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.dispatch-segment) {
+  border-radius: 0;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.dispatch-row):hover {
+  background: #f3f7fd !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.bg-green-50) {
+  background: #effaf3 !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.text-green-700) {
+  color: #17743d !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.border-green-200) {
+  border-color: #bce4cc !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.bg-amber-50) {
+  background: #fff7e8 !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.text-amber-700) {
+  color: #96610b !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(.border-amber-200) {
+  border-color: #f2d39f !important;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where(button) {
+  border-radius: 9px;
+}
+
+.organiser-v2 [data-treatment="logistics"] :where([role="dialog"]) {
+  border-color: #d0dae4 !important;
+  border-radius: 15px !important;
+  box-shadow: 0 24px 64px rgba(15, 31, 56, 0.2) !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.rounded-xl.bg-white, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035) !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where([class*="bg-gradient-to-br"]) {
+  border-color: #cad9ed !important;
+  background: linear-gradient(135deg, #f4f8ff 0%, #eef4fd 100%) !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where([class*="bg-gradient-to-br"] .rounded-full) {
+  color: #1b3a7a !important;
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1px #cbd8e8;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.text-2xl, .text-xl, [class*="text-[20px]"], [class*="text-[24px]"]) {
+  color: #0f1f38 !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(table) {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(th) {
+  color: #7b899b !important;
+  background: #f8fafc !important;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(th, td) {
+  border-color: #e0e7ee !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.bg-green-50, .bg-emerald-50) {
+  background: #effaf3 !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.bg-amber-50, .bg-yellow-50) {
+  background: #fff7e8 !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.bg-red-50) {
+  background: #fff1f1 !important;
+}
+
+.organiser-v2 [data-treatment="insight"] :where(.border-dashed) {
+  border-color: #b7c7d9 !important;
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-treatment="composer"] > div > .grid {
+  align-items: start;
+  gap: 16px;
+}
+
+.organiser-v2 [data-treatment="composer"] :where(.rounded-xl.bg-white, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035) !important;
+}
+
+.organiser-v2 [data-treatment="composer"] :where(textarea) {
+  min-height: 210px;
+  line-height: 1.65;
+}
+
+.organiser-v2 [data-treatment="composer"] :where(.rounded-xl.bg-white > h3) {
+  margin-bottom: 14px;
+  color: #0f1f38 !important;
+  font-size: 13px !important;
+  font-weight: 720 !important;
+}
+
+.organiser-v2 [data-treatment="composer"] :where(button) {
+  border-radius: 9px;
+}
+
+.organiser-v2 [data-treatment="composer"] :where(.rounded-full) {
+  border-radius: 999px;
+}
+
+.organiser-v2 [data-treatment="support"] {
+  display: flex;
+  min-height: calc(100dvh - 64px);
+  flex-direction: column;
+}
+
+.organiser-v2 [data-treatment="support"] > .ov2-page-header {
+  flex: 0 0 auto;
+}
+
+.organiser-v2 [data-treatment="support"] > .ov2-page-header + div {
+  min-height: 570px;
+  flex: 1 1 auto;
+  border-color: #d0dae4 !important;
+  border-radius: 15px !important;
+  box-shadow: 0 8px 24px rgba(27, 49, 100, 0.06);
+}
+
+.organiser-v2 [data-treatment="support"] :where([class*="md:w-[320px]"], [class*="lg:w-[360px]"]) {
+  background: #f8fafc;
+}
+
+.organiser-v2 [data-treatment="support"] :where(input, select, textarea) {
+  border-color: #d0dae4 !important;
+}
+
+.organiser-v2 [data-treatment="support"] :where(.shadow-lg) {
+  border: 1px solid #dbe3ec;
+  box-shadow: 0 14px 34px rgba(15, 31, 56, 0.13) !important;
+}
+
+.organiser-v2 [data-treatment="support"] :where(.rounded-full) {
+  border-radius: 999px !important;
+}
+
+.organiser-v2 [data-treatment="support"] :where(textarea) {
+  min-height: 40px;
+  line-height: 1.45;
+}
+
+.organiser-v2 [data-treatment="configuration"] > div {
+  max-width: 1280px;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(.rounded-xl.bg-white, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  box-shadow: 0 4px 14px rgba(27, 49, 100, 0.035) !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where([class*="bg-gradient-to-br"]) {
+  border-color: #cad9ed !important;
+  background: linear-gradient(135deg, #f5f8fe 0%, #eef4fd 100%) !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where([class*="bg-gradient-to-br"] .rounded-full) {
+  color: #fff !important;
+  background: #2d6bcc !important;
+  box-shadow: none !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(label.uppercase, .uppercase) {
+  color: #7b899b !important;
+  font-size: 9px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.07em !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(input, select) {
+  min-height: 40px;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(textarea) {
+  line-height: 1.6;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(.rounded-xl.overflow-hidden > button, .rounded-xl.overflow-hidden > div:first-child) {
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(button) {
+  border-radius: 9px;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(.border-dashed) {
+  border-color: #b8c7d8 !important;
+  background: #f8fafc !important;
+}
+
+.organiser-v2 [data-treatment="configuration"] :where(.border-red-200, [style*="FECACA"]) {
+  border-color: #f2b8b8 !important;
+  background: #fffafa !important;
+}
+
+/* Setup workspace --------------------------------------------------------- */
+
+.organiser-v2 .ov2-setup-nav {
+  display: grid;
+  gap: 4px;
+}
+
+.organiser-v2 .ov2-setup-link {
+  min-height: 43px;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 9px;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
+}
+
+.organiser-v2 .ov2-setup-link:hover {
+  border-color: transparent;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.organiser-v2 .ov2-setup-link.is-active {
+  border-color: #fff;
+  color: #1b3a7a;
+  background: #fff;
+  box-shadow: 0 7px 16px rgba(5, 18, 47, 0.18);
+}
+
+.organiser-v2 .ov2-step-number {
+  width: 25px;
+  height: 25px;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 9px;
+}
+
+.organiser-v2 .ov2-setup-link.is-active .ov2-step-number {
+  border-color: #1b3a7a;
+  color: #fff;
+  background: #1b3a7a;
+}
+
+.organiser-v2 .ov2-step-number[data-complete="true"] {
+  border-color: #22c55e;
+  color: #fff;
+  background: #22c55e;
+}
+
+.organiser-v2 .ov2-setup-link strong {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-setup-link small {
+  color: rgba(255, 255, 255, 0.47);
+  font-size: 8px;
+}
+
+.organiser-v2 .ov2-setup-link.is-active small {
+  color: #718096;
+}
+
+.organiser-v2 .ov2-setup-page .ov2-page-header {
+  min-height: 92px;
+}
+
+.organiser-v2 .ov2-setup-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.organiser-v2 .ov2-setup-stat {
+  min-height: 102px;
+  border-radius: 14px;
+  padding: 16px 17px;
+}
+
+.organiser-v2 .ov2-setup-stat > span {
+  color: #7b899b;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+}
+
+.organiser-v2 .ov2-setup-stat strong {
+  margin-top: 7px;
+  color: #0f1f38;
+  font-size: 22px;
+  font-weight: 740;
+}
+
+.organiser-v2 .ov2-form-panel {
+  margin-top: 14px;
+  border-radius: 15px;
+}
+
+.organiser-v2 .ov2-form-panel-heading {
+  border-color: #dbe3ec;
+  padding: 19px 21px;
+  background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+}
+
+.organiser-v2 .ov2-form-panel-heading > div:first-child > span {
+  color: #2d6bcc;
+}
+
+.organiser-v2 .ov2-form-panel-heading h2 {
+  color: #0f1f38;
+  font-size: 17px;
+  font-weight: 740;
+}
+
+.organiser-v2 .ov2-step-progress {
+  height: 6px;
+  background: #e5ebf2;
+}
+
+.organiser-v2 .ov2-step-progress span {
+  background: linear-gradient(90deg, #1b3a7a, #2d6bcc);
+}
+
+.organiser-v2 .ov2-form-content {
+  padding: 22px 21px 26px;
+}
+
+.organiser-v2 .ov2-form-content :where(input, select, textarea) {
+  border-color: #d0dae4 !important;
+  border-radius: 9px !important;
+  color: #0f1f38 !important;
+  background: #fff !important;
+}
+
+.organiser-v2 .ov2-form-content :where(input, select, textarea):focus {
+  border-color: #2d6bcc !important;
+  box-shadow: 0 0 0 3px rgba(45, 107, 204, 0.12) !important;
+}
+
+.organiser-v2 .ov2-form-content :where(.bg-white.rounded-lg, .rounded-lg.bg-white) {
+  border-color: #dbe3ec !important;
+  border-radius: 12px !important;
+  box-shadow: 0 3px 10px rgba(27, 49, 100, 0.025);
+}
+
+.organiser-v2 .ov2-form-content :where([style*="--t-surface2"]) {
+  background: #f8fafc !important;
+}
+
+.organiser-v2 .ov2-form-footer {
+  border-color: #dbe3ec;
+  padding: 14px 21px;
+  background: #f8fafc;
+}
+
+.organiser-v2 .ov2-launch-dialog {
+  width: min(100%, 500px);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 28px 76px rgba(15, 31, 56, 0.24);
+}
+
+.organiser-v2 .ov2-modal-scrim {
+  background: rgba(15, 31, 56, 0.56);
+}
+
+.organiser-v2 .ov2-launch-dialog > header span {
+  color: #2d6bcc;
+}
+
+.organiser-v2 .ov2-launch-dialog h2 {
+  color: #0f1f38;
+  font-size: 20px;
+  font-weight: 740;
+}
+
+.organiser-v2 .ov2-visibility-options {
+  gap: 8px;
+}
+
+.organiser-v2 .ov2-visibility-options label {
+  min-height: 66px;
+  border-color: #d0dae4;
+  border-radius: 11px;
+  padding: 12px 13px;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-visibility-options label:hover {
+  border-color: #aebfd2;
+  background: #f8fafc;
+}
+
+.organiser-v2 .ov2-visibility-options label[data-selected="true"] {
+  border-color: rgba(45, 107, 204, 0.5);
+  background: #f1f6fe;
+  box-shadow: 0 0 0 2px rgba(45, 107, 204, 0.08);
+}
+
+.organiser-v2 .ov2-visibility-options label > svg {
+  color: #1b3a7a;
+}
+
+/* Final responsive pass --------------------------------------------------- */
+
+@media (max-width: 1023px) {
+  .organiser-v2 .ov2-workspace-screen :where(.overflow-x-auto) {
+    overscroll-behavior-inline: contain;
+  }
+
+  .organiser-v2 [data-treatment="logistics"] nav > .grid {
+    min-width: 640px;
+  }
+
+  .organiser-v2 [data-treatment="support"] > .ov2-page-header + div {
+    min-height: calc(100dvh - 190px);
+  }
+}
+
+@media (max-width: 767px) {
+  .organiser-v2 .ov2-topbar-actions > .ov2-secondary-button,
+  .organiser-v2 .ov2-topbar-actions > .ov2-topbar-link {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-breadcrumb-current {
+    max-width: 112px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen :where(button, input, select) {
+    min-height: 40px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen :where(table) {
+    min-width: 680px;
+  }
+
+  .organiser-v2 [data-treatment="composer"] > div > .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 [data-treatment="composer"] :where(textarea) {
+    min-height: 180px;
+  }
+
+  .organiser-v2 [data-treatment="support"] {
+    min-height: auto;
+  }
+
+  .organiser-v2 [data-treatment="support"] > .ov2-page-header + div {
+    min-height: calc(100dvh - 190px);
+    border-radius: 12px !important;
+  }
+
+  .organiser-v2 .ov2-setup-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 .ov2-form-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 16px;
+  }
+
+  .organiser-v2 .ov2-step-progress {
+    width: 100%;
+  }
+
+  .organiser-v2 .ov2-form-content {
+    padding: 19px 16px 23px;
+  }
+
+  .organiser-v2 .ov2-form-footer {
+    gap: 10px;
+    padding: 13px 16px;
+  }
+
+  .organiser-v2 .ov2-form-footer button {
+    min-height: 42px;
+  }
+
+  .organiser-v2 .ov2-launch-dialog {
+    padding: 18px;
+  }
+
+  .organiser-v2 .ov2-visibility-options label {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+}
+
+/* Atlas operations command centre ----------------------------------------- */
+
+.organiser-v2 .ov2-command-center {
+  display: grid;
+  gap: 16px;
+  max-width: 1560px;
+  margin: 0 auto;
+}
+
+.organiser-v2 .ov2-command-hero {
+  position: relative;
+  display: grid;
+  min-height: 238px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.65fr);
+  gap: 34px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  padding: 30px 32px;
+  color: #fff;
+  background: linear-gradient(135deg, #1b3164 0%, #1b3a7a 58%, #235bb0 100%);
+  box-shadow: 0 20px 45px rgba(27, 49, 100, 0.19);
+}
+
+.organiser-v2 .ov2-command-hero::before,
+.organiser-v2 .ov2-command-hero::after {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  content: "";
+}
+
+.organiser-v2 .ov2-command-hero::before {
+  width: 430px;
+  height: 430px;
+  top: -275px;
+  right: 19%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.organiser-v2 .ov2-command-hero::after {
+  width: 230px;
+  height: 230px;
+  right: -82px;
+  bottom: -126px;
+  background: rgba(86, 164, 255, 0.2);
+  filter: blur(1px);
+}
+
+.organiser-v2 .ov2-command-hero-copy,
+.organiser-v2 .ov2-command-hero-side {
+  position: relative;
+  z-index: 1;
+}
+
+.organiser-v2 .ov2-command-hero-copy {
+  align-self: center;
+}
+
+.organiser-v2 .ov2-command-eyebrow,
+.organiser-v2 .ov2-section-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 .ov2-command-eyebrow {
+  width: max-content;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.organiser-v2 .ov2-command-eyebrow i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5ee38f;
+  box-shadow: 0 0 0 4px rgba(94, 227, 143, 0.12);
+}
+
+.organiser-v2 .ov2-command-hero h1 {
+  max-width: 760px;
+  margin-top: 20px;
+  color: #fff;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 760;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.organiser-v2 .ov2-command-hero-copy > p {
+  max-width: 680px;
+  margin-top: 11px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.organiser-v2 .ov2-command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 16px;
+  margin-top: 21px;
+}
+
+.organiser-v2 .ov2-command-meta span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.organiser-v2 .ov2-command-meta svg {
+  width: 13px;
+  height: 13px;
+  color: #a9caff;
+}
+
+.organiser-v2 .ov2-command-hero-side {
+  align-self: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 17px;
+  padding: 18px;
+  background: rgba(10, 28, 63, 0.25);
+  backdrop-filter: blur(10px);
+}
+
+.organiser-v2 .ov2-command-capacity {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.organiser-v2 .ov2-command-capacity div {
+  display: grid;
+  gap: 5px;
+}
+
+.organiser-v2 .ov2-command-capacity span,
+.organiser-v2 .ov2-command-collaborators > span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 .ov2-command-capacity strong {
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.organiser-v2 .ov2-command-capacity strong small {
+  color: rgba(255, 255, 255, 0.47);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-command-capacity b {
+  color: #b9d4ff;
+  font-size: 11px;
+}
+
+.organiser-v2 .ov2-command-progress {
+  height: 7px;
+  overflow: hidden;
+  margin-top: 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.organiser-v2 .ov2-command-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7fb1ff, #fff);
+}
+
+.organiser-v2 .ov2-command-collaborators {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 17px;
+}
+
+.organiser-v2 .ov2-command-hero .ov2-avatar {
+  border-color: #294d89;
+}
+
+.organiser-v2 .ov2-command-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.organiser-v2 .ov2-command-actions button {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-command-actions button:first-child {
+  border-color: #fff;
+  color: #1b3a7a;
+  background: #fff;
+}
+
+.organiser-v2 .ov2-command-actions button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.organiser-v2 .ov2-command-actions button:first-child:hover {
+  background: #f3f7ff;
+}
+
+.organiser-v2 .ov2-command-actions svg {
+  width: 13px;
+  height: 13px;
+}
+
+.organiser-v2 .ov2-command-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.organiser-v2 .ov2-command-metric {
+  position: relative;
+  display: grid;
+  min-height: 116px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 13px;
+  overflow: hidden;
+  border: 1px solid #dbe3ec;
+  border-radius: 16px;
+  padding: 17px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(27, 49, 100, 0.045);
+}
+
+.organiser-v2 .ov2-command-metric::after {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  right: -29px;
+  bottom: -35px;
+  border-radius: 50%;
+  background: rgba(45, 107, 204, 0.07);
+  content: "";
+}
+
+.organiser-v2 .ov2-command-metric-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: #2d6bcc;
+  background: #eaf2ff;
+}
+
+.organiser-v2 .ov2-command-metric-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.organiser-v2 .ov2-command-metric > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.organiser-v2 .ov2-command-metric > div > span {
+  color: #7b899b;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.organiser-v2 .ov2-command-metric strong {
+  overflow: hidden;
+  color: #0f1f38;
+  font-size: clamp(22px, 2.2vw, 29px);
+  font-weight: 760;
+  letter-spacing: -0.045em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organiser-v2 .ov2-command-metric small {
+  color: #8a9aaa;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.organiser-v2 .ov2-command-metric[data-tone="navy"] .ov2-command-metric-icon {
+  color: #fff;
+  background: #1b3164;
+}
+
+.organiser-v2 .ov2-command-metric[data-tone="amber"] .ov2-command-metric-icon {
+  color: #a76400;
+  background: #fff2d7;
+}
+
+.organiser-v2 .ov2-command-metric[data-tone="amber"]::after {
+  background: rgba(233, 160, 32, 0.1);
+}
+
+.organiser-v2 .ov2-command-metric[data-tone="green"] .ov2-command-metric-icon {
+  color: #17743d;
+  background: #e8f7ee;
+}
+
+.organiser-v2 .ov2-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.16fr) minmax(340px, 0.84fr);
+  gap: 11px;
+}
+
+.organiser-v2 .ov2-attention-panel,
+.organiser-v2 .ov2-pulse-panel {
+  min-height: 294px;
+  padding: 20px;
+}
+
+.organiser-v2 .ov2-attention-panel > header,
+.organiser-v2 .ov2-pulse-panel > header,
+.organiser-v2 .ov2-pipeline-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.organiser-v2 .ov2-section-kicker {
+  margin-bottom: 6px;
+  color: #2d6bcc;
+}
+
+.organiser-v2 .ov2-attention-panel h2,
+.organiser-v2 .ov2-pulse-panel h2,
+.organiser-v2 .ov2-pipeline-heading h2 {
+  color: #0f1f38;
+  font-size: 15px;
+  font-weight: 760;
+  letter-spacing: -0.035em;
+}
+
+.organiser-v2 .ov2-attention-panel > header > button {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  color: #2d6bcc;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.organiser-v2 .ov2-attention-panel > header > button svg,
+.organiser-v2 .ov2-attention-row em svg {
+  width: 12px;
+  height: 12px;
+}
+
+.organiser-v2 .ov2-attention-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+}
+
+.organiser-v2 .ov2-attention-row {
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid #e1e7ee;
+  border-radius: 12px;
+  padding: 10px 11px;
+  text-align: left;
+  background: #fbfcfe;
+}
+
+.organiser-v2 .ov2-attention-row:hover {
+  border-color: #b9cbe0;
+  background: #f7faff;
+  transform: translateX(2px);
+}
+
+.organiser-v2 .ov2-attention-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  color: #17743d;
+  background: #e8f7ee;
+}
+
+.organiser-v2 .ov2-attention-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.organiser-v2 .ov2-attention-row[data-severity="urgent"] {
+  border-color: #f1d59d;
+  background: #fffaf0;
+}
+
+.organiser-v2 .ov2-attention-row[data-severity="urgent"] .ov2-attention-icon {
+  color: #a76400;
+  background: #ffedc8;
+}
+
+.organiser-v2 .ov2-attention-row[data-severity="attention"] .ov2-attention-icon {
+  color: #2d6bcc;
+  background: #eaf2ff;
+}
+
+.organiser-v2 .ov2-attention-row > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.organiser-v2 .ov2-attention-row strong {
+  color: #243651;
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.organiser-v2 .ov2-attention-row small {
+  color: #7b899b;
+  font-size: 8px;
+}
+
+.organiser-v2 .ov2-attention-row em {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #2d6bcc;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.organiser-v2 .ov2-pulse-panel > header > strong {
+  color: #1b3a7a;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.organiser-v2 .ov2-pulse-panel > header > strong small {
+  color: #8a9aaa;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.organiser-v2 .ov2-pulse-stages {
+  display: grid;
+  gap: 13px;
+  margin-top: 19px;
+}
+
+.organiser-v2 .ov2-pulse-stage > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.organiser-v2 .ov2-pulse-stage span,
+.organiser-v2 .ov2-pulse-stage strong {
+  color: #66758a;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-pulse-stage strong {
+  color: #243651;
+}
+
+.organiser-v2 .ov2-pulse-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1f6;
+}
+
+.organiser-v2 .ov2-pulse-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #e77b6c;
+}
+
+.organiser-v2 .ov2-pulse-stage[data-tone="orange"] .ov2-pulse-track > span { background: #2d6bcc; }
+.organiser-v2 .ov2-pulse-stage[data-tone="pink"] .ov2-pulse-track > span { background: #879cc9; }
+.organiser-v2 .ov2-pulse-stage[data-tone="green"] .ov2-pulse-track > span { background: #22a65d; }
+
+.organiser-v2 .ov2-pulse-panel > footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 13px;
+  margin-top: 18px;
+  padding-top: 13px;
+  border-top: 1px solid #e4e9ef;
+}
+
+.organiser-v2 .ov2-pulse-panel > footer span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #8a9aaa;
+  font-size: 7px;
+  font-weight: 650;
+}
+
+.organiser-v2 .ov2-pulse-panel > footer i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2d6bcc;
+}
+
+.organiser-v2 .ov2-pipeline-section {
+  margin-top: 4px;
+}
+
+.organiser-v2 .ov2-pipeline-heading {
+  align-items: flex-end;
+  padding: 4px 1px 0;
+}
+
+.organiser-v2 .ov2-pipeline-heading p {
+  margin-top: 4px;
+  color: #7b899b;
+  font-size: 9px;
+}
+
+.organiser-v2 .ov2-pipeline-heading .ov2-board-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.organiser-v2 .ov2-command-center .ov2-order-board {
+  margin-top: 12px;
+}
+
+.organiser-v2 .ov2-command-center .ov2-board-column {
+  border-color: #d7e0e9;
+  background: #edf2f7;
+}
+
+.organiser-v2 .ov2-command-center .ov2-order-card {
+  min-height: 168px;
+  border-radius: 12px;
+  box-shadow: 0 5px 14px rgba(27, 49, 100, 0.045);
+}
+
+@media (max-width: 1180px) {
+  .organiser-v2 .ov2-command-hero {
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 22px;
+  }
+
+  .organiser-v2 .ov2-command-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .organiser-v2 .ov2-command-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .organiser-v2 .ov2-command-center {
+    gap: 12px;
+  }
+
+  .organiser-v2 .ov2-command-hero {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    border-radius: 18px;
+    padding: 24px 20px;
+  }
+
+  .organiser-v2 .ov2-command-hero h1 {
+    font-size: 28px;
+  }
+
+  .organiser-v2 .ov2-command-hero-side {
+    padding: 15px;
+  }
+
+  .organiser-v2 .ov2-command-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .organiser-v2 .ov2-command-metric {
+    min-height: 108px;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 14px;
+  }
+
+  .organiser-v2 .ov2-command-metric-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .organiser-v2 .ov2-attention-panel,
+  .organiser-v2 .ov2-pulse-panel {
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .organiser-v2 .ov2-attention-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .organiser-v2 .ov2-attention-row em {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-pipeline-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .organiser-v2 .ov2-pipeline-heading .ov2-board-toolbar {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}
+
+@media (max-width: 460px) {
+  .organiser-v2 .ov2-command-actions,
+  .organiser-v2 .ov2-command-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 .ov2-command-metric {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organiser-v2 *,
+  .organiser-v2 *::before,
+  .organiser-v2 *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
