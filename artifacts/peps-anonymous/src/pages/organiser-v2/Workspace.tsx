@@ -30,6 +30,7 @@ import { getReadyCount } from "./dispatch/model";
 import WorkspaceScreen from "./WorkspaceScreen";
 import { createPrototypeOrganiserRepositories } from "./domain/repositories";
 import { OrganiserRepositoryProvider } from "./domain/repository-context";
+import { countPendingPayments } from "./domain/order-selectors";
 
 export default function Workspace({ onModeChange }: { onModeChange?: () => void }) {
   const [active, setActive] = useState<WorkspaceTabId>("overview");
@@ -53,7 +54,7 @@ export default function Workspace({ onModeChange }: { onModeChange?: () => void 
   const tickets = loadGb<Array<{ id: string; unreadCount?: number }>>(gb.id, "tickets", [], "v2Tickets");
   const ticketUnreadCount = tickets.reduce((total, ticket) => total + (ticket.unreadCount ?? 0), 0);
   const pendingContributions = loadGb<unknown[]>(gb.id, "testingPendingContribs", [], "v2TestingPendingContribs");
-  const pendingPayments = repositoryOrders.filter(order => order.status === "pending").length;
+  const pendingPayments = countPendingPayments(repositoryOrders);
 
   const badges: Partial<Record<WorkspaceTabId, number>> = {
     tickets: ticketUnreadCount,
