@@ -4,8 +4,8 @@ import { V2_CARD_BORDER } from "./theme";
 import { fmtMoney } from "./data";
 import { loadGb, saveGb } from "./storage";
 import { SavedViewsSidebar, useSavedViews } from "./SavedViews";
-import type { OrganiserOrder as Order } from "./domain/order";
-import { SAMPLE_ORDERS } from "./domain/sample-orders";
+import { useOrderRepository, useOrders } from "./domain/repository-context";
+import type { OrganiserOrder as Order, OrderStatus } from "./domain/order";
 
 // Relative time for the card header, e.g. "03 min ago"
 function timeAgo(iso: string): string {
@@ -43,12 +43,8 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   const [paymentDateTo, setPaymentDateTo] = useState("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 
-  // Load orders from GB-scoped storage
-  const [orders, setOrders] = useState<Order[]>(() => loadGb<Order[]>(selectedGbId, "orders", SAMPLE_ORDERS, "orders"));
-
-  useEffect(() => {
-    setOrders(loadGb<Order[]>(selectedGbId, "orders", SAMPLE_ORDERS, "orders"));
-  }, [selectedGbId]);
+  const orderRepository = useOrderRepository();
+  const orders = useOrders();
 
   // Highlight specific order if passed via highlightId
   useEffect(() => {
@@ -217,14 +213,35 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   };
 
   const saveOrderChanges = () => {
-    // In real implementation, this would save to backend
-    console.log("Saving order changes:", {
-      orderId: editingOrder?.id,
-      status: editStatus,
-      trackingNumber: editTrackingNumber,
-      internalNotes: editInternalNotes,
-      txid: editTxid,
-    });
+    if (!editingOrder) return;
+    orderRepository.replaceOne(
+      {
+        ...editingOrder,
+        status: editStatus as OrderStatus,
+        trackingNumber: editTrackingNumber || undefined,
+        internalNotes: editInternalNotes || undefined,
+        paymentProof: editTxid
+          ? { type: editingOrder.paymentProof?.type ?? "txid", value: editTxid }
+          : undefined,
+        products: editProducts,
+        total: editProducts.reduce(
+          (total, product) => total + product.quantity * product.price,
+          0,
+        ),
+        flagged: flagNote.trim()
+          ? {
+              note: flagNote.trim(),
+              dueDate: flagDueDate || undefined,
+              dueTime: flagDueTime || undefined,
+            }
+          : undefined,
+      },
+      {
+        type: "order.updated",
+        actorId: "organiser",
+        summary: `Updated ${editingOrder.id}`,
+      },
+    );
     closeEditModal();
   };
 
@@ -254,13 +271,29 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   };
 
   const bulkAddProductToOrders = () => {
-    const targetOrders = selectedOrders.length > 0 ? selectedOrders : filteredOrders.map(o => o.id);
-    console.log("Adding product to orders:", {
-      orders: targetOrders,
-      product: bulkProductName,
-      quantity: bulkProductQuantity,
-      price: bulkProductPrice,
-    });
+    const targetOrders = selectedOrders.length > 0
+      ? selectedOrders
+      : filteredOrders.map(order => order.id);
+    const price = Number(bulkProductPrice);
+    if (!bulkProductName.trim() || !Number.isFinite(price) || price < 0) return;
+    const product = {
+      name: bulkProductName.trim(),
+      quantity: parseInt(bulkProductQuantity, 10) || 1,
+      price,
+    };
+    orderRepository.updateMany(
+      targetOrders,
+      order => ({
+        ...order,
+        products: [...order.products, product],
+        total: order.total + product.quantity * product.price,
+      }),
+      {
+        type: "order.product_added",
+        actorId: "organiser",
+        summary: `Added ${product.name} to ${targetOrders.length} orders`,
+      },
+    );
     setShowBulkAddProduct(false);
     setBulkProductName("");
     setBulkProductQuantity("1");
@@ -269,28 +302,27 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   };
 
   const bulkAddTask = () => {
-    // Update the orders to add the flag
-    const updatedOrders = orders.map(order =>
-      selectedOrders.includes(order.id)
-        ? {
-            ...order,
-            flagged: {
-              note: bulkTaskNote,
-              dueDate: bulkTaskDueDate,
-              dueTime: bulkTaskDueTime
-            }
-          }
-        : order
+    orderRepository.updateMany(
+      selectedOrders,
+      order => ({
+        ...order,
+        flagged: {
+          note: bulkTaskNote,
+          dueDate: bulkTaskDueDate || undefined,
+          dueTime: bulkTaskDueTime || undefined,
+        },
+      }),
+      {
+        type: "order.task_linked",
+        actorId: "organiser",
+        summary: `Linked a task to ${selectedOrders.length} orders`,
+      },
     );
 
-    setOrders(updatedOrders);
-    saveGb(selectedGbId, "orders", updatedOrders);
-
-    // Add task to todo list (via GB-scoped storage for cross-tab communication)
     const existingTodos = loadGb<any[]>(selectedGbId, "todos", [], "todos");
     const newTodo = {
       id: String(Date.now()),
-      title: `Task for ${selectedOrders.length} order${selectedOrders.length !== 1 ? 's' : ''}: ${selectedOrders.join(', ')}`,
+      title: `Task for ${selectedOrders.length} order${selectedOrders.length !== 1 ? "s" : ""}: ${selectedOrders.join(", ")}`,
       description: bulkTaskNote,
       status: "todo",
       dueDate: bulkTaskDueDate,
@@ -299,11 +331,7 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
       createdAt: new Date().toISOString(),
     };
     saveGb(selectedGbId, "todos", [newTodo, ...existingTodos]);
-
-    // Trigger a storage event for other components
-    window.dispatchEvent(new Event('storage'));
-
-    console.log("Task added to orders and todo list:", newTodo);
+    window.dispatchEvent(new Event("storage"));
 
     setShowBulkTaskModal(false);
     setBulkTaskNote("");
@@ -314,24 +342,29 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
 
   // Additional bulk actions
   const bulkMarkAsPaid = () => {
-    const updatedOrders = orders.map(order =>
-      selectedOrders.includes(order.id)
-        ? { ...order, status: "paid" as Order["status"], paidAt: new Date().toISOString() }
-        : order
+    const paidAt = new Date().toISOString();
+    orderRepository.updateMany(
+      selectedOrders,
+      order => ({ ...order, status: "paid", paidAt }),
+      {
+        type: "order.bulk_paid",
+        actorId: "organiser",
+        summary: `Marked ${selectedOrders.length} orders as paid`,
+      },
     );
-    setOrders(updatedOrders);
-    saveGb(selectedGbId, "orders", updatedOrders);
     setSelectedOrders([]);
   };
 
   const bulkMarkAsDispatched = () => {
-    const updatedOrders = orders.map(order =>
-      selectedOrders.includes(order.id)
-        ? { ...order, status: "dispatched" as Order["status"] }
-        : order
+    orderRepository.updateMany(
+      selectedOrders,
+      order => ({ ...order, status: "dispatched" }),
+      {
+        type: "order.bulk_dispatched",
+        actorId: "organiser",
+        summary: `Marked ${selectedOrders.length} orders as dispatched`,
+      },
     );
-    setOrders(updatedOrders);
-    saveGb(selectedGbId, "orders", updatedOrders);
     setSelectedOrders([]);
   };
 
@@ -388,18 +421,27 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
         }
       }
 
-      // Apply updates
-      const updatedOrders = orders.map(order =>
-        updates[order.id]
-          ? { ...order, trackingNumber: updates[order.id], status: "dispatched" as Order["status"] }
-          : order
+      const importedIds = Object.keys(updates).filter(orderId =>
+        orders.some(order => order.id === orderId),
+      );
+      orderRepository.updateMany(
+        importedIds,
+        order => ({
+          ...order,
+          trackingNumber: updates[order.id],
+          status: "dispatched",
+        }),
+        {
+          type: "order.tracking_imported",
+          actorId: "organiser",
+          summary: `Imported tracking for ${importedIds.length} orders`,
+        },
       );
 
-      setOrders(updatedOrders);
-      saveGb(selectedGbId, "orders", updatedOrders);
       setCsvImporting(false);
       setShowCsvImportModal(false);
       setCsvFile(null);
+      if (csvInputRef.current) csvInputRef.current.value = "";
     };
 
     reader.readAsText(csvFile);
