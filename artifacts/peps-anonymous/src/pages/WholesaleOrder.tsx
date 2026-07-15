@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X, AlertCircle } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
@@ -85,6 +85,12 @@ export default function WholesaleOrder() {
   const [showTip, setShowTip] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showError = (msg: string) => {
+    setError(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setError(""), 6000);
+  };
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
   const [editCode, setEditCode] = useState<string | null>(null);
   const [vendor, setVendor] = useState<WholesaleVendor | null>(null);
@@ -384,16 +390,16 @@ export default function WholesaleOrder() {
 
   const handleReview = () => {
     setError("");
-    if (!telegramUsername.trim()) { setError("Please enter your Telegram username."); return; }
-    if (!fullName.trim()) { setError("Please enter your full name."); return; }
-    if (!phone.trim()) { setError("Please enter your phone number."); return; }
-    if (!addrLine1.trim()) { setError("Please enter your street address."); return; }
-    if (!addrCity.trim()) { setError("Please enter your city."); return; }
-    if (!addrPostcode.trim()) { setError("Please enter your postcode."); return; }
-    if (!shippingCountry.trim()) { setError("Please select your shipping country."); return; }
-    if (lineItems.length === 0) { setError("Add at least one item to your order."); return; }
-    if (vendorLoading) { setError("Shipping configuration is still loading — please wait a moment and try again."); return; }
-    if (vendor && selectedRegionIdx === null) { setError("Please select your shipping region."); return; }
+    if (!telegramUsername.trim()) { showError("Please enter your Telegram username."); return; }
+    if (!fullName.trim()) { showError("Please enter your full name."); return; }
+    if (!phone.trim()) { showError("Please enter your phone number."); return; }
+    if (!addrLine1.trim()) { showError("Please enter your street address."); return; }
+    if (!addrCity.trim()) { showError("Please enter your city."); return; }
+    if (!addrPostcode.trim()) { showError("Please enter your postcode."); return; }
+    if (!shippingCountry.trim()) { showError("Please select your shipping country."); return; }
+    if (lineItems.length === 0) { showError("Add at least one item to your order."); return; }
+    if (vendorLoading) { showError("Shipping configuration is still loading — please wait a moment and try again."); return; }
+    if (vendor && selectedRegionIdx === null) { showError("Please select your shipping region."); return; }
 
     const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -1112,11 +1118,6 @@ export default function WholesaleOrder() {
               )}
             </section>
 
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-medium">
-                {error}
-              </div>
-            )}
 
           </motion.div>
         </main>
@@ -1340,6 +1341,42 @@ export default function WholesaleOrder() {
         onAgree={() => { setRulesOpen(false); handleReview(); }}
         context="order"
       />
+
+      {/* Fixed top error toast */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            key="error-toast"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed z-[80] flex items-center gap-3"
+            style={{
+              top: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              maxWidth: 420,
+              width: "calc(100% - 32px)",
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 14,
+              padding: "12px 14px",
+              boxShadow: "0 8px 24px rgba(185,28,28,0.14)",
+            }}
+          >
+            <AlertCircle className="w-5 h-5 shrink-0" style={{ color: "#b91c1c" }} />
+            <span className="flex-1 text-sm font-semibold" style={{ color: "#b91c1c" }}>{error}</span>
+            <button
+              onClick={() => { setError(""); if (errorTimerRef.current) clearTimeout(errorTimerRef.current); }}
+              className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full transition-colors"
+              style={{ color: "#b91c1c", background: "rgba(185,28,28,0.08)" }}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </WholesaleShell>
   );
 }
