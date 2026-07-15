@@ -5,7 +5,7 @@ import {
   Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send, Ticket,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
-  BookMarked, GraduationCap, Calculator as CalcIcon,
+  BookMarked, GraduationCap, Calculator as CalcIcon, Sparkles,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useAccount, useAccountNotifications } from "@/hooks/use-account";
@@ -134,6 +134,12 @@ export function DashboardShell({
   const [, navigate] = useLocation();
   const T = palette(dark);
   const [collapsed, setCollapsed] = useState(false);
+  const [wholesaleAccessEnabled, setWholesaleAccessEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean }) => {
+      setWholesaleAccessEnabled(d.wholesaleAccessEnabled === true);
+    }).catch(() => {});
+  }, []);
 
   // ── Global search + profile menu ──
   const [searchQ, setSearchQ] = useState("");
@@ -308,9 +314,12 @@ export function DashboardShell({
           { id: "wholesale", label: "Wholesale", Icon: ShoppingBag, active: activeSection === "wholesale", go: () => navigate("/wholesale") },
           { id: "shared-orders", label: "Shared Orders", Icon: Users, active: activeSection === "shared-orders", go: () => navigate("/wholesale/shared") },
         ]
+      : wholesaleAccessEnabled
+      ? [{ id: "wholesale-access", label: "Get Wholesale Access", Icon: ShoppingBag, active: activeSection === "wholesale-access", go: () => onSection("wholesale-access") }]
       : []),
   ];
   const researchItems: SideLink[] = [
+    { id: "sage",        label: "Sage AI",       Icon: Sparkles,      active: activeSection === "sage",        go: () => navigate("/sage") },
     { id: "protocols",   label: "Protocols",     Icon: BookMarked,    active: activeSection === "protocols",   go: () => navigate("/protocols") },
     { id: "learn",       label: "Learning Hub",  Icon: GraduationCap, active: activeSection === "learn",       go: () => navigate("/learn") },
     { id: "calculator",  label: "Calculator",    Icon: CalcIcon,      active: activeSection === "calculator",  go: () => navigate("/calculator") },

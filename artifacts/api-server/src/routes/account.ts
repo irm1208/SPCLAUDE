@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable } from "@workspace/db";
+import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
@@ -12,7 +12,7 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
 import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
-import { resolveOrderCrypto, getOrderCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
+import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 
@@ -3445,6 +3445,334 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
   } catch (err: any) {
     console.error("[account DELETE /account]", err);
     res.status(500).json({ error: "Failed to delete account", detail: err?.message });
+  }
+});
+
+// ── GET /api/account/wholesale-access — current request + crypto options ─────
+router.get("/account/wholesale-access", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username = req.account?.telegramUsername as string;
+    const [existing] = await db
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(eq(wholesaleAccessRequestsTable.accountUsername, username))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    const cryptoOptions = await getAdminCryptoOptions();
+    res.json({ request: existing ?? null, cryptoOptions });
+  } catch (err: any) {
+    console.error("[GET /account/wholesale-access]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── POST /api/account/wholesale-access — create request (idempotent) ─────────
+router.post("/account/wholesale-access", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username = req.account?.telegramUsername as string;
+    if (req.account?.isWholesale) {
+      res.status(400).json({ error: "You already have wholesale access." }); return;
+    }
+    const [featureRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_enabled"));
+    if (featureRow?.value !== "true") {
+      res.status(403).json({ error: "Wholesale access applications are not currently open." }); return;
+    }
+    const [existing] = await db
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        inArray(wholesaleAccessRequestsTable.status, ["pending", "confirmed"])
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    const cryptoOptions = await getAdminCryptoOptions();
+    if (existing) {
+      if (existing.paymentTestAmount == null) {
+        const paymentTestAmount = parseFloat((1 + Math.random()).toFixed(2));
+        const [refreshed] = await db.update(wholesaleAccessRequestsTable)
+          .set({ paymentTestAmount })
+          .where(eq(wholesaleAccessRequestsTable.id, existing.id))
+          .returning();
+        res.json({ request: refreshed, cryptoOptions }); return;
+      }
+      res.json({ request: existing, cryptoOptions }); return;
+    }
+    const [amountRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_access_amount"));
+    const fixedAmount = amountRow?.value ? parseFloat(amountRow.value) : NaN;
+    const amountUsd = !isNaN(fixedAmount) && fixedAmount > 0 ? fixedAmount : parseFloat((Math.random() * 20 + 90).toFixed(2));
+    const paymentTestAmount = parseFloat((1 + Math.random()).toFixed(2));
+    const [created] = await db.insert(wholesaleAccessRequestsTable).values({
+      accountUsername: username,
+      amountUsd,
+      paymentTestAmount,
+      status: "pending",
+    }).returning();
+    sendAdminMessage(
+      `🔓 <b>Wholesale Access Request</b>\n\n@${username.replace("@", "")} has requested wholesale access.\nFee assigned: <b>$${amountUsd}</b>\n\nReview via admin panel → Wholesale Access tab.`
+    ).catch(() => {});
+    res.json({ request: created, cryptoOptions });
+  } catch (err: any) {
+    console.error("[POST /account/wholesale-access]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── PUT /api/account/wholesale-access/test-tx — submit test payment tx hash ──
+router.put("/account/wholesale-access/test-tx", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username = req.account?.telegramUsername as string;
+    const { txHash, currency, network } = req.body as { txHash?: string; currency?: string; network?: string };
+    if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
+      res.status(400).json({ error: "txHash is required" }); return;
+    }
+    const [existing] = await db
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "No pending wholesale access request found" }); return;
+    }
+    if (existing.paymentTxHash) {
+      res.status(409).json({ error: "Full payment already submitted" }); return;
+    }
+    const [updated] = await db.update(wholesaleAccessRequestsTable)
+      .set({
+        testPaymentTxHash: txHash.trim(),
+        paymentCryptoCurrency: currency ?? null,
+        paymentCryptoNetwork: network ?? null,
+      })
+      .where(eq(wholesaleAccessRequestsTable.id, existing.id))
+      .returning();
+    const cryptoOptions = await getAdminCryptoOptions();
+    sendAdminMessage(
+      `🧪 <b>Wholesale Test Payment</b>\n\n@${username.replace("@", "")} submitted a test payment ($${existing.paymentTestAmount ?? "??"}).\nTx: <code>${txHash.trim()}</code>\nNetwork: ${currency ?? ""} / ${network ?? ""}\nRequest ID: ${existing.id}\n\nThey will now send the full payment.`
+    ).catch(() => {});
+    res.json({ request: updated, cryptoOptions });
+  } catch (err: any) {
+    console.error("[PUT /account/wholesale-access/test-tx]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── PUT /api/account/wholesale-access/tx — submit full tx hash ───────────────
+router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username = req.account?.telegramUsername as string;
+    const { txHash, currency, network } = req.body as { txHash?: string; currency?: string; network?: string };
+    if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
+      res.status(400).json({ error: "txHash is required" }); return;
+    }
+    const [existing] = await db
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "No pending wholesale access request found" }); return;
+    }
+    const resolvedCurrency = currency ?? existing.paymentCryptoCurrency ?? null;
+    const resolvedNetwork = network ?? existing.paymentCryptoNetwork ?? null;
+    const [updated] = await db.update(wholesaleAccessRequestsTable)
+      .set({
+        paymentTxHash: txHash.trim(),
+        paymentCryptoCurrency: resolvedCurrency,
+        paymentCryptoNetwork: resolvedNetwork,
+      })
+      .where(eq(wholesaleAccessRequestsTable.id, existing.id))
+      .returning();
+    const cryptoOptions = await getAdminCryptoOptions();
+    const currency2 = resolvedCurrency ?? "";
+    const network2 = resolvedNetwork ?? "";
+    sendAdminMessage(
+      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency2} via ${network2}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+    ).catch(() => {});
+    res.json({ request: updated, cryptoOptions });
+  } catch (err: any) {
+    console.error("[PUT /account/wholesale-access/tx]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── GET /api/account/wholesale-access/payments-info ───────────────────────────
+router.get("/account/wholesale-access/payments-info", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const cryptoOptions = await getAdminCryptoOptions();
+    res.json({
+      paymentsEnabled: true,
+      cryptoWalletAddress: cryptoOptions[0]?.walletAddress ?? null,
+      cryptoCurrency: cryptoOptions[0]?.currency ?? "USDT",
+      cryptoNetwork: cryptoOptions[0]?.network ?? "ERC-20",
+      availableCryptoOptions: cryptoOptions,
+      collectedBy: { type: "admin" },
+    });
+  } catch (err: any) {
+    console.error("[GET /account/wholesale-access/payments-info]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── POST /api/account/wholesale-access/lock-usdt-rate ─────────────────────────
+router.post("/account/wholesale-access/lock-usdt-rate", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username: string = req.account.telegramUsername;
+    const [existing] = await db.select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
+
+    const options = await getAdminCryptoOptions();
+    const reqCurrency = typeof req.body?.cryptoCurrency === "string" ? req.body.cryptoCurrency.toUpperCase().trim() : "";
+    const reqNetwork  = typeof req.body?.cryptoNetwork  === "string" ? req.body.cryptoNetwork.trim() : "";
+    const persistedCur = (existing.paymentCryptoCurrency ?? "").toUpperCase();
+    const persistedNet = (existing.paymentCryptoNetwork  ?? "").toLowerCase();
+
+    const resolvedOpt =
+      (reqCurrency && reqNetwork)
+        ? options.find(o => o.currency.toUpperCase() === reqCurrency && o.network.toLowerCase() === reqNetwork.toLowerCase())
+        : reqCurrency
+          ? options.find(o => o.currency.toUpperCase() === reqCurrency)
+          : null;
+    const persistedOpt =
+      (persistedCur && persistedNet)
+        ? options.find(o => o.currency.toUpperCase() === persistedCur && o.network.toLowerCase() === persistedNet)
+        : persistedCur
+          ? options.find(o => o.currency.toUpperCase() === persistedCur)
+          : null;
+    const chosenOpt = resolvedOpt ?? persistedOpt ?? options[0] ?? { currency: "USDT", network: "ERC-20", walletAddress: null as string | null };
+    const currency = chosenOpt.currency;
+    const network  = chosenOpt.network;
+    const walletAddress = chosenOpt.walletAddress ?? null;
+
+    const curChanged = (existing.paymentCryptoCurrency ?? "").toUpperCase() !== currency.toUpperCase();
+    const netChanged = (existing.paymentCryptoNetwork  ?? "").toLowerCase() !== network.toLowerCase();
+    if (curChanged || netChanged) {
+      await db.update(wholesaleAccessRequestsTable)
+        .set({ paymentCryptoCurrency: currency.toUpperCase(), paymentCryptoNetwork: network })
+        .where(eq(wholesaleAccessRequestsTable.id, existing.id));
+    }
+
+    const usdAmount = existing.amountUsd;
+    res.json({
+      usdAmount,
+      cryptoCurrency: currency,
+      cryptoNetwork: network,
+      walletAddress,
+      usdPerCoin: 1,
+      cryptoAmount: usdAmount,
+      isStable: true,
+      decimals: 2,
+      availableCryptoOptions: options,
+    });
+  } catch (err: any) {
+    console.error("[POST /account/wholesale-access/lock-usdt-rate]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── POST /api/account/wholesale-access/generate-test ──────────────────────────
+router.post("/account/wholesale-access/generate-test", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username: string = req.account.telegramUsername;
+    const [existing] = await db.select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
+
+    const testAmount = existing.paymentTestAmount ?? parseFloat((1 + Math.random()).toFixed(2));
+    if (!existing.paymentTestAmount) {
+      await db.update(wholesaleAccessRequestsTable)
+        .set({ paymentTestAmount: testAmount })
+        .where(eq(wholesaleAccessRequestsTable.id, existing.id));
+    }
+
+    res.json({ paymentTestAmount: testAmount, paymentStatus: "test_ready" });
+  } catch (err: any) {
+    console.error("[POST /account/wholesale-access/generate-test]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── POST /api/account/wholesale-access/submit-test ────────────────────────────
+router.post("/account/wholesale-access/submit-test", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username: string = req.account.telegramUsername;
+    const { txHash } = req.body ?? {};
+    if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
+      res.status(400).json({ error: "txHash is required" }); return;
+    }
+    const [existing] = await db.select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
+
+    await db.update(wholesaleAccessRequestsTable)
+      .set({ testPaymentTxHash: txHash.trim() })
+      .where(eq(wholesaleAccessRequestsTable.id, existing.id));
+
+    res.json({ verified: true });
+  } catch (err: any) {
+    console.error("[POST /account/wholesale-access/submit-test]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ── POST /api/account/wholesale-access/pay ────────────────────────────────────
+router.post("/account/wholesale-access/pay", requireAccount, async (req: any, res: any): Promise<void> => {
+  try {
+    const username: string = req.account.telegramUsername;
+    const { txHash } = req.body ?? {};
+    if (!txHash || typeof txHash !== "string" || !txHash.trim()) {
+      res.status(400).json({ error: "txHash is required" }); return;
+    }
+    const [existing] = await db.select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
+        eq(wholesaleAccessRequestsTable.accountUsername, username),
+        eq(wholesaleAccessRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
+
+    await db.update(wholesaleAccessRequestsTable)
+      .set({ paymentTxHash: txHash.trim() })
+      .where(eq(wholesaleAccessRequestsTable.id, existing.id));
+
+    const network = existing.paymentCryptoNetwork ?? "?";
+    const currency = existing.paymentCryptoCurrency ?? "USDT";
+    await sendAdminMessage(
+      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+    ).catch(() => {});
+
+    res.json({ verified: true });
+  } catch (err: any) {
+    console.error("[POST /account/wholesale-access/pay]", err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 

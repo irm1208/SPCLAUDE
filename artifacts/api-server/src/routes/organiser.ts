@@ -855,7 +855,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
 router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]);
-  const { usdtWallet, revolutHandle, paypalHandle, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
+  const { usdtWallet, revolutHandle, paypalHandle, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, cryptoOptions, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
 
   const [existing] = await db
     .select({ id: groupBuysTable.id })
@@ -864,13 +864,30 @@ router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req,
 
   if (!existing) { res.status(404).json({ error: "Group buy not found" }); return; }
 
+  // Validate and normalise cryptoOptions array
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | undefined =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : undefined;
+
+  // Derive legacy single-crypto fields from first entry for backward compat
+  const firstCrypto = normalizedCryptoOptions?.[0];
+
   const payments = {
     usdtWallet: usdtWallet ? String(usdtWallet).trim() : undefined,
     revolutHandle: revolutHandle ? String(revolutHandle).trim() : undefined,
     paypalHandle: paypalHandle ? String(paypalHandle).trim() : undefined,
-    cryptoCurrency: cryptoCurrency ? String(cryptoCurrency).trim() : undefined,
-    cryptoNetwork: cryptoNetwork ? String(cryptoNetwork).trim() : undefined,
-    cryptoWalletAddress: cryptoWalletAddress ? String(cryptoWalletAddress).trim() : undefined,
+    cryptoCurrency: firstCrypto?.currency ?? (cryptoCurrency ? String(cryptoCurrency).trim() : undefined),
+    cryptoNetwork: firstCrypto?.network ?? (cryptoNetwork ? String(cryptoNetwork).trim() : undefined),
+    cryptoWalletAddress: firstCrypto?.walletAddress ?? (cryptoWalletAddress ? String(cryptoWalletAddress).trim() : undefined),
+    cryptoOptions: normalizedCryptoOptions,
     anonPayEnabled: typeof anonPayEnabled === "boolean" ? anonPayEnabled : undefined,
     anonPayWallet: anonPayWallet != null ? (String(anonPayWallet).trim() || undefined) : undefined,
     anonPayTicker: anonPayTicker != null ? (String(anonPayTicker).trim() || undefined) : undefined,
@@ -2559,6 +2576,55 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       lineItems: updatedLineItems,
     },
   });
+});
+
+// DELETE /api/organiser/group-buys/:gbId/orders/:orderId — organiser soft-deletes an order in their GB
+router.delete("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, async (req, res): Promise<void> => {
+  const gbId = String(req.params["gbId"]);
+  const orderId = String(req.params["orderId"]);
+
+  const [gb] = await db
+    .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, currency: groupBuysTable.currency, organiserCanDeleteOrders: groupBuysTable.organiserCanDeleteOrders })
+    .from(groupBuysTable)
+    .where(gbOwner(req, gbId));
+
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  if (!gb.organiserCanDeleteOrders) {
+    res.status(403).json({ error: "Order deletion is not enabled for this group buy" }); return;
+  }
+
+  const [order] = await db
+    .select()
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const deletedLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
+
+  await db.update(ordersTable)
+    .set({ deletedAt: new Date(), deletedBy: "organiser" })
+    .where(eq(ordersTable.id, orderId));
+
+  const organiserId = (req as any).organiser?.telegramUsername ?? gb.organiserId ?? "organiser";
+
+  writeLog("order", "warn", "order_deleted_by_organiser",
+    `Organiser ${organiserId} deleted order ${order.code} (${order.telegramUsername}, status: ${order.status}) from GB ${gbId}`,
+    {
+      orderId: order.id, code: order.code, telegramUsername: order.telegramUsername,
+      status: order.status, gbId, organiserId,
+      snapshot: { grandTotal: order.grandTotal, lineItems: deletedLineItems.map(li => ({ productName: li.productName, quantity: li.quantity, unitPrice: li.unitPrice })) },
+    },
+  ).catch(() => {});
+
+  notifyUser(
+    order.telegramUsername,
+    "order",
+    `🗑 <b>Your order has been removed</b>\n\nYour order <b>${order.code}</b> in <b>${escapeHtml(gb.name ?? gbId)}</b> was deleted by the group buy organiser.\n\nIf you think this was a mistake, please contact the organiser directly.`,
+  ).catch(() => {});
+
+  res.json({ ok: true });
 });
 
 // POST /api/organiser/group-buys/:gbId/orders/:orderId/qr — organiser manually set/clear a QR code

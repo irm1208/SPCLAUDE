@@ -72,6 +72,7 @@ export type GroupBuy = Record<string, unknown> & {
   organiserCanEditTxId?: boolean;
   organiserCanEditQuantities?: boolean;
   organiserCanMarkOos?: boolean;
+  organiserCanDeleteOrders?: boolean;
   allowOrderAddons?: boolean;
   allowEditOrderWhenClosed?: boolean;
   allowEditAddressWhenClosed?: boolean;

@@ -95,14 +95,14 @@
   --t-gradient: linear-gradient(135deg, #1B3A7A 0%, #2D6BCC 100%);
   /* Crypto payment panel – theme-aware glass & text */
   --crypto-glass-bg:    rgba(255,255,255,0.82);
-  --crypto-glass-border: rgba(109,40,217,0.28);
+  --crypto-glass-border: rgba(27,58,122,0.25);
   --crypto-glass-hover: rgba(255,255,255,0.96);
-  --crypto-text-primary: #3b0764;
-  --crypto-text-body:    #4c1d95;
-  --crypto-text-muted:   rgba(76,29,149,0.72);
-  --crypto-warn-bg:      rgba(109,40,217,0.09);
-  --crypto-warn-border:  rgba(109,40,217,0.30);
-  --crypto-warn-text:    rgba(76,29,149,0.90);
+  --crypto-text-primary: #1B3A7A;
+  --crypto-text-body:    #2D6BCC;
+  --crypto-text-muted:   rgba(27,58,122,0.65);
+  --crypto-warn-bg:      rgba(45,107,204,0.09);
+  --crypto-warn-border:  rgba(27,58,122,0.28);
+  --crypto-warn-text:    rgba(27,58,122,0.85);
   /* AnonPay section – light mode */
   --anon-glass:        rgba(0,0,0,0.05);
   --anon-glass-border: rgba(0,0,0,0.12);
@@ -199,12 +199,12 @@
   --crypto-glass-bg:    rgba(255,255,255,0.09);
   --crypto-glass-border: rgba(255,255,255,0.18);
   --crypto-glass-hover: rgba(255,255,255,0.16);
-  --crypto-text-primary: #ede9fe;
-  --crypto-text-body:    #ddd6fe;
-  --crypto-text-muted:   rgba(196,181,253,0.80);
-  --crypto-warn-bg:      rgba(139,92,246,0.15);
+  --crypto-text-primary: #c0d4f5;
+  --crypto-text-body:    #a8c4ee;
+  --crypto-text-muted:   rgba(192,212,245,0.80);
+  --crypto-warn-bg:      rgba(45,107,204,0.18);
   --crypto-warn-border:  rgba(255,255,255,0.14);
-  --crypto-warn-text:    rgba(196,181,253,0.95);
+  --crypto-warn-text:    rgba(192,212,245,0.95);
   /* AnonPay section – dark mode */
   --anon-glass:        rgba(255,255,255,0.07);
   --anon-glass-border: rgba(255,255,255,0.14);

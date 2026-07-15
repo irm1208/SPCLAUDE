@@ -43,7 +43,8 @@ import {
 import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
-import { FeeLine } from "@/components/wholesale-shared/payment-fields";
+import { FeeLine, PaymentMethodEditor } from "@/components/wholesale-shared/payment-fields";
+import type { LeadCryptoOption } from "@/hooks/use-wholesale-shares";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
 import { InvitePrompt } from "@/components/wholesale-shared/InvitePrompt";
 import { buildGuide, GUIDE_ANCHORS } from "@/components/wholesale-shared/next-step";
@@ -59,58 +60,6 @@ interface ProductLite {
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
-
-// Address autocomplete (Royal Mail style) — type an address/postcode and pick a
-// match to auto-fill the fields. Uses the free, no-key Photon (OpenStreetMap)
-// geocoder; on any failure it returns [] so the manual fields still work.
-type AddrSuggestion = {
-  label: string;
-  line1: string;
-  city: string;
-  postcode: string;
-  country: string;
-};
-
-interface PhotonProps {
-  housenumber?: string;
-  street?: string;
-  name?: string;
-  city?: string;
-  town?: string;
-  village?: string;
-  district?: string;
-  county?: string;
-  locality?: string;
-  postcode?: string;
-  country?: string;
-}
-
-async function lookupAddresses(query: string): Promise<AddrSuggestion[]> {
-  try {
-    const res = await fetch(
-      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=en`
-    );
-    if (!res.ok) return [];
-    const data = (await res.json()) as { features?: Array<{ properties?: PhotonProps }> };
-    const feats = Array.isArray(data.features) ? data.features : [];
-    const seen = new Set<string>();
-    const out: AddrSuggestion[] = [];
-    for (const f of feats) {
-      const p = f.properties ?? {};
-      const line1 = [p.housenumber, p.street || p.name].filter(Boolean).join(" ").trim();
-      const city = p.city || p.town || p.village || p.district || p.county || p.locality || "";
-      const postcode = p.postcode || "";
-      const country = p.country || "";
-      const label = [line1 || p.name, postcode, city, country].filter(Boolean).join(", ");
-      if (!label || seen.has(label)) continue;
-      seen.add(label);
-      out.push({ label, line1: line1 || p.name || "", city, postcode, country });
-    }
-    return out;
-  } catch {
-    return [];
-  }
-}
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
 
@@ -198,6 +147,9 @@ export default function WholesaleShared() {
   // Organiser-only optional fee editor. Custom per-member organiser fee (paid to the
   // organiser). Paid SEPARATELY and never enters the per-member order total.
   const [orgPayInfo, setOrgPayInfo] = useState("");
+  const [leadRevolut, setLeadRevolut] = useState("");
+  const [leadPaypal, setLeadPaypal] = useState("");
+  const [leadCryptoOptions, setLeadCryptoOptions] = useState<LeadCryptoOption[]>([]);
   const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({});
   const [feesDirty, setFeesDirty] = useState(false);
   const feesSeeded = useRef(false);
@@ -232,16 +184,6 @@ export default function WholesaleShared() {
     name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
   });
   const onwardSeeded = useRef(false);
-
-  // Address autocomplete state for the recipient delivery form.
-  const [addrQuery, setAddrQuery] = useState("");
-  const [addrResults, setAddrResults] = useState<AddrSuggestion[]>([]);
-  const [addrSearching, setAddrSearching] = useState(false);
-  const [showAddrResults, setShowAddrResults] = useState(false);
-  const [addrActiveIdx, setAddrActiveIdx] = useState(-1);
-  const addrSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addrBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addrReqId = useRef(0);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
@@ -399,6 +341,9 @@ export default function WholesaleShared() {
   useEffect(() => {
     if (!share || !share.fees?.canManage || feesDirty || feesSeeded.current) return;
     setOrgPayInfo(share.fees?.organiserPaymentInfo ?? "");
+    setLeadRevolut(share.fees?.leadRevolutHandle ?? "");
+    setLeadPaypal(share.fees?.leadPaypalEmail ?? "");
+    setLeadCryptoOptions(share.fees?.leadCryptoOptions ?? []);
     const seeded: Record<string, string> = {};
     for (const m of share.members) {
       seeded[m.username] = m.organiserFee > 0 ? String(m.organiserFee) : "";
@@ -488,11 +433,6 @@ export default function WholesaleShared() {
     onwardSeeded.current = true;
   }, [share, account]);
 
-  // Clear pending address-search timers on unmount.
-  useEffect(() => () => {
-    if (addrSearchTimer.current) clearTimeout(addrSearchTimer.current);
-    if (addrBlurTimer.current) clearTimeout(addrBlurTimer.current);
-  }, []);
 
   // Delivery-address popup. Opens automatically the moment this member becomes
   // the recipient without a saved address (e.g. the organiser picks themselves),
@@ -678,67 +618,6 @@ export default function WholesaleShared() {
     } catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
-
-  // Debounced address search; runs once the user types at least 3 characters.
-  // A monotonic request id guards against a slow earlier response overwriting a
-  // newer one (out-of-order completion).
-  const runAddrSearch = (v: string) => {
-    setAddrQuery(v);
-    setAddrActiveIdx(-1);
-    if (addrSearchTimer.current) clearTimeout(addrSearchTimer.current);
-    // Bump on EVERY call (including the <3 chars / cleared path) so any in-flight
-    // fetch from an earlier query is invalidated and can't re-open stale results.
-    const reqId = ++addrReqId.current;
-    if (v.trim().length < 3) {
-      setAddrResults([]); setShowAddrResults(false); setAddrSearching(false);
-      return;
-    }
-    setAddrSearching(true);
-    addrSearchTimer.current = setTimeout(async () => {
-      const results = await lookupAddresses(v.trim());
-      if (reqId !== addrReqId.current) return; // superseded by a newer query
-      setAddrResults(results);
-      setShowAddrResults(true);
-      setAddrSearching(false);
-    }, 300);
-  };
-
-  // Fill the address fields from a chosen suggestion (keeps existing values when
-  // a suggestion omits a field).
-  const pickAddress = (s: AddrSuggestion) => {
-    addrReqId.current++; // ignore any in-flight search
-    setAddr(a => ({
-      ...a,
-      line1: s.line1 || a.line1,
-      city: s.city || a.city,
-      postcode: s.postcode || a.postcode,
-      country: s.country && (COUNTRIES as readonly string[]).includes(s.country) ? s.country : a.country,
-    }));
-    setAddrQuery(s.label);
-    setAddrResults([]);
-    setShowAddrResults(false);
-    setAddrActiveIdx(-1);
-  };
-
-  // Keyboard support for the address combobox (arrow keys, Enter, Escape).
-  const onAddrKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") { setShowAddrResults(false); setAddrActiveIdx(-1); return; }
-    if (!showAddrResults || addrResults.length === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setAddrActiveIdx(i => Math.min(i + 1, addrResults.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setAddrActiveIdx(i => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      const sel = addrResults[addrActiveIdx];
-      if (sel) { e.preventDefault(); pickAddress(sel); }
-    }
-  };
-
-  // Whether the suggestions dropdown is actually visible (results OR a no-match
-  // message for a settled >=3 char query). Drives both rendering and aria-expanded.
-  const addrDropdownOpen = showAddrResults && (addrResults.length > 0 || (addrQuery.trim().length >= 3 && !addrSearching));
 
   const saveDeliveryAddress = async () => {
     if (!id) return;
@@ -946,7 +825,13 @@ export default function WholesaleShared() {
           organiserFee: isRecipient ? 0 : Math.max(0, parseFloat(feeAmounts[m.username] ?? "") || 0),
         };
       });
-      await setWholesaleShareFees(id, { organiserPaymentInfo: orgPayInfo.trim(), fees });
+      await setWholesaleShareFees(id, {
+        organiserPaymentInfo: orgPayInfo.trim(),
+        leadRevolutHandle: leadRevolut.trim(),
+        leadPaypalEmail: leadPaypal.trim(),
+        leadCryptoOptions,
+        fees,
+      });
       setFeesDirty(false);
       feesSeeded.current = false;
       invalidate(id);
@@ -1626,14 +1511,18 @@ export default function WholesaleShared() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>How to pay the organiser fee (to you)</label>
-        <input
-          value={orgPayInfo}
-          onChange={e => { setFeesDirty(true); setOrgPayInfo(e.target.value); }}
-          placeholder="e.g. PayPal me@example.com / Revolut @me"
-          maxLength={500}
-          className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
-          style={field}
+        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>How members pay you</label>
+        <PaymentMethodEditor
+          revolut={leadRevolut}
+          onRevolutChange={setLeadRevolut}
+          paypal={leadPaypal}
+          onPaypalChange={setLeadPaypal}
+          cryptoOptions={leadCryptoOptions}
+          onCryptoChange={setLeadCryptoOptions}
+          notes={orgPayInfo}
+          onNotesChange={setOrgPayInfo}
+          onAnyChange={() => setFeesDirty(true)}
+          field={field}
         />
       </div>
 
@@ -2316,52 +2205,6 @@ export default function WholesaleShared() {
         <div>
           <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Recipient name</label>
           <input value={addr.name} onChange={e => setAddr(a => ({ ...a, name: e.target.value }))} placeholder="Full name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
-        </div>
-        <div className="relative">
-          <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Find your address</label>
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--t-muted)" }} />
-            <input
-              value={addrQuery}
-              onChange={e => runAddrSearch(e.target.value)}
-              onFocus={() => { if (addrResults.length) setShowAddrResults(true); }}
-              onBlur={() => { addrBlurTimer.current = setTimeout(() => setShowAddrResults(false), 150); }}
-              onKeyDown={onAddrKeyDown}
-              placeholder="Start typing your address or postcode"
-              autoComplete="off"
-              role="combobox"
-              aria-expanded={addrDropdownOpen}
-              aria-controls="addr-suggestions"
-              aria-autocomplete="list"
-              aria-activedescendant={addrActiveIdx >= 0 ? `addr-opt-${addrActiveIdx}` : undefined}
-              className="w-full h-10 pl-9 pr-9 rounded-lg border text-sm outline-none"
-              style={field}
-            />
-            {addrSearching && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: "var(--t-muted)" }} />}
-            {addrDropdownOpen && (
-              <div id="addr-suggestions" role="listbox" className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ background: "var(--t-card, #fff)", borderColor: "var(--t-border)" }}>
-                {addrResults.length > 0 ? addrResults.map((s, i) => (
-                  <div
-                    key={i}
-                    id={`addr-opt-${i}`}
-                    role="option"
-                    aria-selected={i === addrActiveIdx}
-                    onMouseDown={e => { e.preventDefault(); pickAddress(s); }}
-                    onMouseEnter={() => setAddrActiveIdx(i)}
-                    className="px-3 py-2 text-sm cursor-pointer"
-                    style={{ color: "var(--t-text)", background: i === addrActiveIdx ? "var(--t-hover, rgba(0,0,0,0.06))" : "transparent", borderBottom: i < addrResults.length - 1 ? "1px solid var(--t-border)" : "none" }}
-                  >
-                    {s.label}
-                  </div>
-                )) : (
-                  <div className="px-3 py-2 text-sm" style={{ color: "var(--t-muted)" }}>
-                    No matches — keep typing or fill the fields in manually.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <p className="text-xs mt-1.5" style={{ color: "var(--t-muted)" }}>Pick your address to auto-fill the fields below, or enter them manually.</p>
         </div>
         <div>
           <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Address line 1</label>

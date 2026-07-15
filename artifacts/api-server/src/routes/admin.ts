@@ -43,6 +43,7 @@ import {
   intlShippingRatesTable,
   fs3SubmissionsTable,
   organiserAuditLogTable,
+  wholesaleAccessRequestsTable,
 } from "@workspace/db";
 import { eq, inArray, notInArray, desc, asc, and, sql, or, ilike, like, gte, lte, isNotNull, isNull, lt, gt } from "drizzle-orm";
 import { GoogleGenAI } from "../lib/google-genai";
@@ -9209,6 +9210,92 @@ router.post("/admin/impersonate", async (req: any, res: any): Promise<void> => {
   const token = randomUUID();
   impersonateTokens.set(token, { telegramUsername: bare, expiresAt: now + 300_000 });
   res.json({ token });
+});
+
+// ── GET /api/admin/wholesale-access-requests — list requests ─────────────────
+router.get("/admin/wholesale-access-requests", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const status = req.query?.status as string | undefined;
+  let rows = await db
+    .select()
+    .from(wholesaleAccessRequestsTable)
+    .orderBy(desc(wholesaleAccessRequestsTable.createdAt));
+  if (status) rows = rows.filter(r => r.status === status);
+  res.json({ requests: rows });
+});
+
+// ── POST /api/admin/wholesale-access-requests/:id/confirm ─────────────────────
+router.post("/admin/wholesale-access-requests/:id/confirm", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const adminUser = getAdminUsername(res);
+  const id = parseInt(String(req.params["id"]), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [request] = await db
+    .select()
+    .from(wholesaleAccessRequestsTable)
+    .where(eq(wholesaleAccessRequestsTable.id, id));
+  if (!request) { res.status(404).json({ error: "Request not found" }); return; }
+  if (request.status !== "pending") {
+    res.status(409).json({ error: `Request is already ${request.status}` }); return;
+  }
+  const [acct] = await db
+    .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+    .from(accountsTable)
+    .where(or(
+      eq(accountsTable.telegramUsername, request.accountUsername),
+      eq(accountsTable.telegramUsername, request.accountUsername.startsWith("@") ? request.accountUsername.slice(1) : `@${request.accountUsername}`)
+    ));
+  if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
+  const newBalance = acct.credits + request.amountUsd;
+  await db.update(accountsTable)
+    .set({ isWholesale: true, credits: newBalance, updatedAt: new Date() })
+    .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+  await db.insert(creditTransactionsTable).values({
+    accountUsername: acct.telegramUsername,
+    amount: request.amountUsd,
+    reason: `Wholesale access fee refund ($${request.amountUsd} access fee)`,
+    adminUsername: adminUser ?? "admin",
+    createdAt: new Date(),
+  });
+  await db.update(wholesaleAccessRequestsTable)
+    .set({ status: "confirmed", confirmedAt: new Date(), adminUsername: adminUser ?? "admin" })
+    .where(eq(wholesaleAccessRequestsTable.id, id));
+  notifyUser(
+    acct.telegramUsername,
+    "profile",
+    `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${request.amountUsd}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`
+  ).catch(() => {});
+  writeLog("change", "info", "wholesale_access_confirmed",
+    `Admin @${adminUser} confirmed wholesale access for ${acct.telegramUsername} (request ${id}, $${request.amountUsd})`,
+    { username: acct.telegramUsername, requestId: id }
+  ).catch(() => {});
+  res.json({ ok: true, newBalance });
+});
+
+// ── POST /api/admin/wholesale-access-requests/:id/reject ─────────────────────
+router.post("/admin/wholesale-access-requests/:id/reject", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const adminUser = getAdminUsername(res);
+  const id = parseInt(String(req.params["id"]), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const { reason } = req.body as { reason?: string };
+  const [request] = await db
+    .select()
+    .from(wholesaleAccessRequestsTable)
+    .where(eq(wholesaleAccessRequestsTable.id, id));
+  if (!request) { res.status(404).json({ error: "Request not found" }); return; }
+  if (request.status !== "pending") {
+    res.status(409).json({ error: `Request is already ${request.status}` }); return;
+  }
+  await db.update(wholesaleAccessRequestsTable)
+    .set({ status: "rejected", adminUsername: adminUser ?? "admin", rejectionReason: reason ?? null })
+    .where(eq(wholesaleAccessRequestsTable.id, id));
+  notifyUser(
+    request.accountUsername,
+    "profile",
+    `❌ <b>Wholesale Access Not Approved</b>\n\n${reason ? `Reason: ${reason}\n\n` : ""}Please contact support via your account portal if you have any questions.`
+  ).catch(() => {});
+  res.json({ ok: true });
 });
 
 // ── GET /api/admin/impersonate-redirect?token=XYZ — set cookie and redirect ────

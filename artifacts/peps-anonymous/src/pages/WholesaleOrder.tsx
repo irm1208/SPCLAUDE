@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X } from "lucide-react";
@@ -73,13 +73,11 @@ export default function WholesaleOrder() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [shippingAddress, setShippingAddress] = useState("");
+  const [addrLine1, setAddrLine1] = useState("");
+  const [addrLine2, setAddrLine2] = useState("");
+  const [addrCity, setAddrCity] = useState("");
+  const [addrPostcode, setAddrPostcode] = useState("");
   const [shippingCountry, setShippingCountry] = useState("");
-  const [addrSuggestions, setAddrSuggestions] = useState<{ display_name: string; address: { country?: string } }[]>([]);
-  const [addrLoading, setAddrLoading] = useState(false);
-  const [addrOpen, setAddrOpen] = useState(false);
-  const addrDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addrRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<number>(0);
   const [showTip, setShowTip] = useState(false);
   const [notes, setNotes] = useState("");
@@ -136,7 +134,10 @@ export default function WholesaleOrder() {
         setFullName(d.fullName ?? "");
         setPhone(d.phone ?? "");
         setEmail(d.email ?? "");
-        setShippingAddress(d.shippingAddress ?? "");
+        setAddrLine1(d.addrLine1 ?? d.shippingAddress ?? "");
+        setAddrLine2(d.addrLine2 ?? "");
+        setAddrCity(d.addrCity ?? "");
+        setAddrPostcode(d.addrPostcode ?? "");
         setShippingCountry(d.shippingCountry ?? "");
         if (d.notes != null) setNotes(d.notes);
         if (d.tip != null) setTip(d.tip);
@@ -163,7 +164,11 @@ export default function WholesaleOrder() {
             if (d.fullName) setFullName(d.fullName as string);
             if (d.phone) setPhone(d.phone as string);
             if (d.email) setEmail(d.email as string);
-            if (d.shippingAddress) setShippingAddress(d.shippingAddress as string);
+            if (d.addrLine1) setAddrLine1(d.addrLine1 as string);
+            else if (d.shippingAddress) setAddrLine1(d.shippingAddress as string);
+            if (d.addrLine2) setAddrLine2(d.addrLine2 as string);
+            if (d.addrCity) setAddrCity(d.addrCity as string);
+            if (d.addrPostcode) setAddrPostcode(d.addrPostcode as string);
             if (d.shippingCountry) setShippingCountry(d.shippingCountry as string);
             if (d.notes != null) setNotes(d.notes as string);
             if (d.tip != null) setTip(d.tip as number);
@@ -171,7 +176,7 @@ export default function WholesaleOrder() {
             if (d.editCode) setEditCode(d.editCode as string);
             const hasContent =
               (!!d.quantities && Object.keys(d.quantities as object).length > 0) ||
-              !!(d.fullName || d.phone || d.email || d.shippingAddress || d.shippingCountry || d.notes) ||
+              !!(d.fullName || d.phone || d.email || d.addrLine1 || d.shippingCountry || d.notes) ||
               (typeof d.tip === "number" && d.tip > 0);
             if (hasContent) setDraftRestored(true);
           }
@@ -182,10 +187,10 @@ export default function WholesaleOrder() {
   }, []);
 
   // Build the current form as a draft payload, plus a helper to persist/clear it.
-  const buildDraft = () => ({ quantities, fullName, phone, email, shippingAddress, shippingCountry, notes, tip, editOrderId, editCode });
+  const buildDraft = () => ({ quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode });
   const draftHasContent =
     Object.keys(quantities).length > 0 ||
-    [fullName, phone, email, shippingAddress, shippingCountry, notes].some(s => s.trim() !== "") ||
+    [fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes].some(s => s.trim() !== "") ||
     tip > 0;
   const saveWholesaleDraft = (draft: Record<string, unknown> | null) => {
     // Latest write wins: abort any in-flight save so an older autosave PUT can
@@ -212,30 +217,8 @@ export default function WholesaleOrder() {
       saveWholesaleDraft(draftHasContent ? buildDraft() : null);
     }, 1500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [quantities, fullName, phone, email, shippingAddress, shippingCountry, notes, tip, editOrderId, editCode]);
+  }, [quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode]);
 
-  const searchAddress = useCallback((q: string) => {
-    if (q.trim().length < 3) { setAddrSuggestions([]); setAddrOpen(false); return; }
-    setAddrLoading(true);
-    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`, {
-      headers: { "Accept-Language": "en" },
-    })
-      .then(r => r.json())
-      .then((data: { display_name: string; address: { country?: string } }[]) => {
-        setAddrSuggestions(data);
-        setAddrOpen(data.length > 0);
-      })
-      .catch(() => { setAddrSuggestions([]); setAddrOpen(false); })
-      .finally(() => setAddrLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (addrRef.current && !addrRef.current.contains(e.target as Node)) setAddrOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   useEffect(() => {
     if (!vendor || !shippingCountry) return;
@@ -401,7 +384,9 @@ export default function WholesaleOrder() {
     if (!telegramUsername.trim()) { setError("Please enter your Telegram username."); return; }
     if (!fullName.trim()) { setError("Please enter your full name."); return; }
     if (!phone.trim()) { setError("Please enter your phone number."); return; }
-    if (!shippingAddress.trim()) { setError("Please enter your shipping address."); return; }
+    if (!addrLine1.trim()) { setError("Please enter your street address."); return; }
+    if (!addrCity.trim()) { setError("Please enter your city."); return; }
+    if (!addrPostcode.trim()) { setError("Please enter your postcode."); return; }
     if (!shippingCountry.trim()) { setError("Please select your shipping country."); return; }
     if (lineItems.length === 0) { setError("Add at least one item to your order."); return; }
     if (vendorLoading) { setError("Shipping configuration is still loading — please wait a moment and try again."); return; }
@@ -428,7 +413,7 @@ export default function WholesaleOrder() {
       shippingName: fullName.trim(),
       shippingPhone: phone.trim(),
       shippingEmail: email.trim(),
-      shippingAddress: shippingAddress.trim(),
+      shippingAddress: [addrLine1, addrLine2, addrCity, addrPostcode].filter(Boolean).map(s => s.trim()).join(", "),
       shippingCountry: shippingCountry.trim(),
       lineItems: lineItems.map(item => ({
         id: generateId(),
@@ -576,56 +561,49 @@ export default function WholesaleOrder() {
                     />
                   </div>
                 </div>
-                <div ref={addrRef} className="relative">
+                <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>
                     Shipping Address <span style={{ color: "var(--t-red, #ef4444)" }}>*</span>
                   </label>
-                  <div className="relative">
+                  <div className="flex flex-col gap-2">
                     <input
                       type="text"
-                      value={shippingAddress}
-                      onChange={e => {
-                        setShippingAddress(e.target.value);
-                        if (addrDebounce.current) clearTimeout(addrDebounce.current);
-                        addrDebounce.current = setTimeout(() => searchAddress(e.target.value), 400);
-                      }}
-                      onFocus={() => { if (addrSuggestions.length > 0) setAddrOpen(true); }}
-                      placeholder="Start typing your street address…"
-                      autoComplete="off"
+                      value={addrLine1}
+                      onChange={e => setAddrLine1(e.target.value)}
+                      placeholder="Address line 1"
                       required
-                      className="w-full h-10 px-3 pr-8 rounded-lg border text-sm bg-transparent outline-none"
+                      className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
                       style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
                     />
-                    {addrLoading && (
-                      <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" style={{ color: "var(--t-muted)" }} />
-                    )}
+                    <input
+                      type="text"
+                      value={addrLine2}
+                      onChange={e => setAddrLine2(e.target.value)}
+                      placeholder="Address line 2 (optional)"
+                      className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
+                      style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={addrCity}
+                        onChange={e => setAddrCity(e.target.value)}
+                        placeholder="City"
+                        required
+                        className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
+                        style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+                      />
+                      <input
+                        type="text"
+                        value={addrPostcode}
+                        onChange={e => setAddrPostcode(e.target.value)}
+                        placeholder="Postcode"
+                        required
+                        className="w-full h-10 px-3 rounded-lg border text-sm bg-transparent outline-none"
+                        style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+                      />
+                    </div>
                   </div>
-                  {addrOpen && addrSuggestions.length > 0 && (
-                    <ul
-                      className="absolute left-0 right-0 mt-1 rounded-xl border shadow-lg overflow-hidden"
-                      style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", zIndex: 80 }}
-                    >
-                      {addrSuggestions.map((s, i) => (
-                        <li key={i}>
-                          <button
-                            type="button"
-                            onMouseDown={e => {
-                              e.preventDefault();
-                              setShippingAddress(s.display_name);
-                              if (s.address?.country) setShippingCountry(s.address.country);
-                              setAddrOpen(false);
-                              setAddrSuggestions([]);
-                            }}
-                            className="w-full text-left px-3 py-2.5 text-xs hover:opacity-80 transition-opacity border-b last:border-b-0"
-                            style={{ color: "var(--t-text)", borderColor: "var(--t-border)", background: "transparent" }}
-                          >
-                            <Search className="inline w-3 h-3 mr-1.5 shrink-0" style={{ color: "var(--t-muted)", verticalAlign: "middle" }} />
-                            {s.display_name}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Country <span style={{ color: "var(--t-red, #ef4444)" }}>*</span></label>

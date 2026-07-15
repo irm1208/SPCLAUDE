@@ -81,8 +81,42 @@ export type VerifyResult =
   | { verified: true; amountUsdt: number; blockConfirmations: number }
   | { verified: false; reason: string; pending?: boolean; manual?: boolean };
 
+// New chain contracts
+export const ARB_USDT_CONTRACT  = "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9";
+export const ARB_USDC_CONTRACT  = "0xaf88d065e77c8cc2239327c5edb3a432268e5831";
+export const POLY_USDT_CONTRACT = "0xc2132d05d31c914a87c6611c10748aeb04b58e8f";
+export const POLY_USDC_CONTRACT = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359";
+export const SOL_USDC_MINT      = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const SOL_USDT_MINT      = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+export const TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+export const ARB_RPC_ENDPOINTS = [
+  "https://arb1.arbitrum.io/rpc",
+  "https://arbitrum.llamarpc.com",
+  "https://rpc.ankr.com/arbitrum",
+  "https://arbitrum.blockpi.network/v1/rpc/public",
+  "https://1rpc.io/arb",
+];
+
+export const POLYGON_RPC_ENDPOINTS = [
+  "https://polygon-rpc.com",
+  "https://polygon.llamarpc.com",
+  "https://rpc.ankr.com/polygon",
+  "https://polygon.blockpi.network/v1/rpc/public",
+  "https://1rpc.io/matic",
+];
+
+export const SOL_RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://rpc.ankr.com/solana",
+];
+
 export function isValidTxHash(hash: string): boolean {
-  return /^0x[0-9a-fA-F]{64}$/.test(hash) || /^[0-9a-fA-F]{64}$/.test(hash);
+  return (
+    /^0x[0-9a-fA-F]{64}$/.test(hash) ||
+    /^[0-9a-fA-F]{64}$/.test(hash) ||
+    /^[1-9A-HJ-NP-Za-km-z]{86,88}$/.test(hash)
+  );
 }
 
 export function isValidEthAddress(addr: string): boolean {
@@ -300,6 +334,99 @@ export async function verifyBtcPayment(
   };
 }
 
+async function verifySolanaTokenTransfer(
+  signature: string,
+  walletAddress: string,
+  expectedAmount: number,
+  mintAddress: string,
+  tokenSymbol: string,
+  tolerancePct = 0.01,
+): Promise<VerifyResult> {
+  let txData: any = null;
+  for (const endpoint of SOL_RPC_ENDPOINTS) {
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getTransaction",
+          params: [signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }],
+        }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) continue;
+      const json: any = await r.json();
+      if (json.error || !json.result) continue;
+      txData = json.result;
+      break;
+    } catch { /* try next */ }
+  }
+  if (!txData) {
+    return { verified: false, pending: true, reason: "Solana transaction not found — it may still be propagating. Please wait and try again." };
+  }
+  if (txData.meta?.err !== null && txData.meta?.err !== undefined) {
+    return { verified: false, reason: "Solana transaction failed on-chain." };
+  }
+  const pre: any[] = txData.meta?.preTokenBalances ?? [];
+  const post: any[] = txData.meta?.postTokenBalances ?? [];
+  for (const postBal of post) {
+    if (postBal.mint !== mintAddress) continue;
+    if (postBal.owner !== walletAddress) continue;
+    const preBal = pre.find((p: any) => p.accountIndex === postBal.accountIndex && p.mint === mintAddress);
+    const preAmt = preBal ? parseFloat(preBal.uiTokenAmount?.uiAmount ?? "0") : 0;
+    const postAmt = parseFloat(postBal.uiTokenAmount?.uiAmount ?? "0");
+    const received = postAmt - preAmt;
+    if (received <= 0) continue;
+    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
+    if (received >= minAccepted) {
+      return { verified: true, amountUsdt: received, blockConfirmations: 1 };
+    }
+    const shortfall = parseFloat((expectedAmount - received).toFixed(2));
+    return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.` };
+  }
+  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.` };
+}
+
+async function verifyTronUsdtTransfer(
+  txHash: string,
+  walletAddress: string,
+  expectedAmount: number,
+  tolerancePct = 0.01,
+): Promise<VerifyResult> {
+  let data: any;
+  try {
+    const r = await fetch(`https://apilist.tronscanapi.com/api/transaction-info?hash=${txHash}`, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(14000),
+    });
+    if (!r.ok) return { verified: false, reason: "Could not reach Tron network — please try again." };
+    data = await r.json();
+  } catch {
+    return { verified: false, reason: "Could not reach Tron network — please try again." };
+  }
+  if (!data || !data.confirmed) {
+    return { verified: false, pending: true, reason: "Tron transaction not yet confirmed. Please wait for on-chain confirmation." };
+  }
+  const transfers: any[] = data.trc20TransferInfo ?? [];
+  for (const t of transfers) {
+    const contract = (t.contract_address ?? t.contractAddress ?? "").toLowerCase();
+    if (contract !== TRON_USDT_CONTRACT.toLowerCase()) continue;
+    const to = (t.to_address ?? t.to ?? "");
+    if (to !== walletAddress) continue;
+    const decimals = parseInt(t.decimals ?? "6", 10);
+    const amount = parseInt(t.amount ?? "0", 10) / Math.pow(10, decimals);
+    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
+    if (amount >= minAccepted && amount > 0) {
+      return { verified: true, amountUsdt: amount, blockConfirmations: 1 };
+    }
+    if (amount > 0) {
+      const shortfall = parseFloat((expectedAmount - amount).toFixed(2));
+      return { verified: false, reason: `Underpayment: ${amount.toFixed(2)} USDT received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} USDT.` };
+    }
+  }
+  return { verified: false, reason: "No USDT TRC-20 transfer to the expected wallet found in this Tron transaction." };
+}
+
 export async function verifyTransaction(
   txHash: string,
   walletAddress: string,
@@ -311,6 +438,27 @@ export async function verifyTransaction(
   const cur = currency.toUpperCase().trim();
   const net = network.toLowerCase().trim();
 
+  if (cur === "USDT" && /arbitrum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ARB_RPC_ENDPOINTS, ARB_USDT_CONTRACT, USDT_DECIMALS, "Arbitrum", tolerancePct);
+  }
+  if (cur === "USDC" && /arbitrum/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ARB_RPC_ENDPOINTS, ARB_USDC_CONTRACT, USDC_DECIMALS, "Arbitrum", tolerancePct);
+  }
+  if (cur === "USDT" && /polygon/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, POLYGON_RPC_ENDPOINTS, POLY_USDT_CONTRACT, USDT_DECIMALS, "Polygon", tolerancePct);
+  }
+  if (cur === "USDC" && /polygon/.test(net)) {
+    return verifyErc20Transfer(txHash, walletAddress, expectedAmount, POLYGON_RPC_ENDPOINTS, POLY_USDC_CONTRACT, USDC_DECIMALS, "Polygon", tolerancePct);
+  }
+  if (cur === "USDC" && /solana/.test(net)) {
+    return verifySolanaTokenTransfer(txHash, walletAddress, expectedAmount, SOL_USDC_MINT, "USDC", tolerancePct);
+  }
+  if (cur === "USDT" && /solana/.test(net)) {
+    return verifySolanaTokenTransfer(txHash, walletAddress, expectedAmount, SOL_USDT_MINT, "USDT", tolerancePct);
+  }
+  if (cur === "USDT" && /tron|trc/.test(net)) {
+    return verifyTronUsdtTransfer(txHash, walletAddress, expectedAmount, tolerancePct);
+  }
   if (cur === "USDT" && /erc.?20|ethereum/.test(net)) {
     return verifyErc20Transfer(txHash, walletAddress, expectedAmount, ETH_RPC_ENDPOINTS, ETH_USDT_CONTRACT, USDT_DECIMALS, "Ethereum", tolerancePct);
   }

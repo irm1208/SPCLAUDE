@@ -74,16 +74,40 @@ router.patch("/reshipper/me", requireReshipper, async (req, res): Promise<void> 
   const {
     usdtWallet, revolutHandle, paypalHandle,
     cryptoCurrency, cryptoNetwork, cryptoWalletAddress,
+    cryptoOptions,
     anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork,
   } = req.body;
+
+  // Validate and normalise cryptoOptions array
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | undefined =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : undefined;
+
+  const firstCrypto = normalizedCryptoOptions?.[0];
 
   const methods: Record<string, unknown> = {};
   if (usdtWallet !== undefined) methods.usdtWallet = usdtWallet ? String(usdtWallet).trim() : null;
   if (revolutHandle !== undefined) methods.revolutHandle = revolutHandle ? String(revolutHandle).trim() : null;
   if (paypalHandle !== undefined) methods.paypalHandle = paypalHandle ? String(paypalHandle).trim() : null;
-  if (cryptoCurrency !== undefined) methods.cryptoCurrency = cryptoCurrency ? String(cryptoCurrency).trim() : null;
-  if (cryptoNetwork !== undefined) methods.cryptoNetwork = cryptoNetwork ? String(cryptoNetwork).trim() : null;
-  if (cryptoWalletAddress !== undefined) methods.cryptoWalletAddress = cryptoWalletAddress ? String(cryptoWalletAddress).trim() : null;
+  // Legacy single-crypto fields — derived from first cryptoOption for backward compat
+  if (normalizedCryptoOptions !== undefined) {
+    methods.cryptoCurrency = firstCrypto?.currency ?? null;
+    methods.cryptoNetwork = firstCrypto?.network ?? null;
+    methods.cryptoWalletAddress = firstCrypto?.walletAddress ?? null;
+    methods.cryptoOptions = normalizedCryptoOptions;
+  } else {
+    if (cryptoCurrency !== undefined) methods.cryptoCurrency = cryptoCurrency ? String(cryptoCurrency).trim() : null;
+    if (cryptoNetwork !== undefined) methods.cryptoNetwork = cryptoNetwork ? String(cryptoNetwork).trim() : null;
+    if (cryptoWalletAddress !== undefined) methods.cryptoWalletAddress = cryptoWalletAddress ? String(cryptoWalletAddress).trim() : null;
+  }
   if (anonPayEnabled !== undefined) methods.anonPayEnabled = Boolean(anonPayEnabled);
   if (anonPayWallet !== undefined) methods.anonPayWallet = anonPayWallet ? String(anonPayWallet).trim() : null;
   if (anonPayTicker !== undefined) methods.anonPayTicker = anonPayTicker ? String(anonPayTicker).trim() : null;
@@ -224,16 +248,38 @@ router.patch("/reshipper/gb/:gbId/payment-details", requireReshipper, async (req
   const {
     usdtWallet, revolutHandle, paypalHandle,
     cryptoCurrency, cryptoNetwork, cryptoWalletAddress,
+    cryptoOptions,
     anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork,
   } = req.body;
+
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | undefined =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : undefined;
+
+  const firstCrypto = normalizedCryptoOptions?.[0];
 
   const details: Record<string, unknown> = {};
   if (usdtWallet !== undefined) details.usdtWallet = usdtWallet ? String(usdtWallet).trim() : null;
   if (revolutHandle !== undefined) details.revolutHandle = revolutHandle ? String(revolutHandle).trim() : null;
   if (paypalHandle !== undefined) details.paypalHandle = paypalHandle ? String(paypalHandle).trim() : null;
-  if (cryptoCurrency !== undefined) details.cryptoCurrency = cryptoCurrency ? String(cryptoCurrency).trim() : null;
-  if (cryptoNetwork !== undefined) details.cryptoNetwork = cryptoNetwork ? String(cryptoNetwork).trim() : null;
-  if (cryptoWalletAddress !== undefined) details.cryptoWalletAddress = cryptoWalletAddress ? String(cryptoWalletAddress).trim() : null;
+  if (normalizedCryptoOptions !== undefined) {
+    details.cryptoCurrency = firstCrypto?.currency ?? null;
+    details.cryptoNetwork = firstCrypto?.network ?? null;
+    details.cryptoWalletAddress = firstCrypto?.walletAddress ?? null;
+    details.cryptoOptions = normalizedCryptoOptions;
+  } else {
+    if (cryptoCurrency !== undefined) details.cryptoCurrency = cryptoCurrency ? String(cryptoCurrency).trim() : null;
+    if (cryptoNetwork !== undefined) details.cryptoNetwork = cryptoNetwork ? String(cryptoNetwork).trim() : null;
+    if (cryptoWalletAddress !== undefined) details.cryptoWalletAddress = cryptoWalletAddress ? String(cryptoWalletAddress).trim() : null;
+  }
   if (anonPayEnabled !== undefined) details.anonPayEnabled = Boolean(anonPayEnabled);
   if (anonPayWallet !== undefined) details.anonPayWallet = anonPayWallet ? String(anonPayWallet).trim() : null;
   if (anonPayTicker !== undefined) details.anonPayTicker = anonPayTicker ? String(anonPayTicker).trim() : null;

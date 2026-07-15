@@ -609,6 +609,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         .where(and(
           eq(ordersTable.groupBuyId, normalizedGroupBuyId),
           eq(ordersTable.telegramUsername, tg),
+          isNull(ordersTable.deletedAt),
         ));
       const existingCustomerKits = parseFloat(customerKitsRow?.total ?? "0");
       if (existingCustomerKits + newKitCount > gb.maxKitsPerCustomer) {
@@ -625,7 +626,10 @@ router.post("/orders", async (req, res): Promise<void> => {
         .select({ total: sql<string>`coalesce(sum(cast(${orderLineItemsTable.quantity} as numeric)), 0)` })
         .from(orderLineItemsTable)
         .innerJoin(ordersTable, eq(orderLineItemsTable.orderId, ordersTable.id))
-        .where(eq(ordersTable.groupBuyId, normalizedGroupBuyId));
+        .where(and(
+          eq(ordersTable.groupBuyId, normalizedGroupBuyId),
+          isNull(ordersTable.deletedAt),
+        ));
       const existingTotalKits = parseFloat(totalKitsRow?.total ?? "0");
       if (existingTotalKits + newKitCount > gb.maxKitsTotal) {
         const remaining = Math.max(0, gb.maxKitsTotal - existingTotalKits);
@@ -660,6 +664,7 @@ router.post("/orders", async (req, res): Promise<void> => {
             eq(ordersTable.groupBuyId, normalizedGroupBuyId),
             eq(ordersTable.telegramUsername, tg),
             eq(orderLineItemsTable.productId, limit.productId),
+            isNull(ordersTable.deletedAt),
           ));
 
         const existingQty = parseFloat(existingRow?.total ?? "0");
@@ -1703,10 +1708,10 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
     return;
   }
 
-  // ── Per-product per-customer limit check (on edit / top-up) ──────────────
+  // ── Per-product and GB-level per-customer limit checks (on edit / top-up) ─
   if (order.groupBuyId) {
     const [editGb] = await db
-      .select({ allowExtraOrders: groupBuysTable.allowExtraOrders })
+      .select({ allowExtraOrders: groupBuysTable.allowExtraOrders, maxKitsPerCustomer: groupBuysTable.maxKitsPerCustomer })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
 
@@ -1715,10 +1720,37 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
       .from(accountGroupBuysTable)
       .where(and(
         eq(accountGroupBuysTable.groupBuyId, order.groupBuyId),
-        eq(accountGroupBuysTable.telegramUsername, tg),
+        eq(accountGroupBuysTable.accountId, tg),
       ));
 
     if (!editGb?.allowExtraOrders && !editMembership?.allowExtraOrder) {
+      // GB-level total-kits-per-customer check (exclude current order being replaced)
+      if (editGb?.maxKitsPerCustomer != null) {
+        const newKitCount = (clientLineItems as Array<{ quantity: number }>)
+          .reduce((sum, li) => sum + parseFloat(String(li.quantity)), 0);
+
+        const [customerKitsRow] = await db
+          .select({ total: sql<string>`coalesce(sum(cast(${orderLineItemsTable.quantity} as numeric)), 0)` })
+          .from(orderLineItemsTable)
+          .innerJoin(ordersTable, eq(orderLineItemsTable.orderId, ordersTable.id))
+          .where(and(
+            eq(ordersTable.groupBuyId, order.groupBuyId),
+            sql`lower(${ordersTable.telegramUsername}) = ${tg}`,
+            ne(ordersTable.id, rawId),
+            isNull(ordersTable.deletedAt),
+          ));
+
+        const existingCustomerKits = parseFloat(customerKitsRow?.total ?? "0");
+        if (existingCustomerKits + newKitCount > editGb.maxKitsPerCustomer) {
+          const remaining = Math.max(0, editGb.maxKitsPerCustomer - existingCustomerKits);
+          res.status(400).json({
+            error: `Kit limit exceeded. You can have at most ${editGb.maxKitsPerCustomer} kit(s) from this group buy. Your other orders total ${existingCustomerKits} and ${remaining} remain available.`,
+          });
+          return;
+        }
+      }
+
+      // Per-product per-customer check
       const productLimits = await db
         .select({ productId: groupBuyProductsTable.productId, maxPerCustomer: groupBuyProductsTable.maxPerCustomer })
         .from(groupBuyProductsTable)
@@ -1743,6 +1775,7 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
             eq(ordersTable.telegramUsername, tg),
             eq(orderLineItemsTable.productId, limit.productId),
             ne(ordersTable.id, rawId),
+            isNull(ordersTable.deletedAt),
           ));
 
         const existingQty = parseFloat(existingRow?.total ?? "0");

@@ -1,14 +1,13 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Plus, ArrowUp, MoreVertical, Star, Heart,
   Package, CheckCircle2, Award, FlaskConical, Clock, SlidersHorizontal,
   Syringe, Store, ArrowRight, QrCode, MapPin, Check, Sparkles, Droplet,
-  ClipboardList, HeartPulse, UsersRound, ReceiptText,
+  ClipboardList, HeartPulse, UsersRound, ReceiptText, History,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
 import { useThemeStore } from "@/hooks/use-theme";
-import { SageChat } from "@/components/SageChat";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import {
   DashboardShell, palette, ACCENT, ACCENT_SOFT, HERO_GRAD, STAR_AMBER, LIVE_RED,
@@ -49,9 +48,24 @@ export function DashboardHome({
   const T = palette(dark);
   const [heroQ, setHeroQ] = useState("");
   const [heroFocused, setHeroFocused] = useState(false);
-  const [sageOpen, setSageOpen] = useState(false);
-  const [sageSeed, setSageSeed] = useState("");
-  const askSage = (q: string) => { setSageSeed(q); setSageOpen(true); };
+  const askSage = (q: string) => { navigate(`/sage?q=${encodeURIComponent(q)}`); };
+  const openSageHistory = () => { navigate("/sage?history=1"); };
+
+  type RecentConv = { id: string; title: string; lastUserMsg: string };
+  const [recentConvs, setRecentConvs] = useState<RecentConv[]>([]);
+  useEffect(() => {
+    fetch("/api/blood-tests/conversations", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: Array<{ id: string; title: string; messages: Array<{ role: string; content: string }> }>) => {
+        const parsed: RecentConv[] = rows.slice(0, 3).map(r => {
+          const lastUserMsg = [...(r.messages ?? [])].reverse().find(m => m.role === "user")?.content ?? "";
+          return { id: r.id, title: r.title ?? "Untitled", lastUserMsg };
+        }).filter(r => r.lastUserMsg.length > 0);
+        setRecentConvs(parsed);
+      })
+      .catch(() => {});
+  }, []);
+
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // ── Content dropdown menus (filter / card overflow) ──
@@ -157,6 +171,15 @@ export function DashboardHome({
             <div className="dh-orb dh-float-b" style={{ bottom: -80, right: 130, width: 190, height: 190, background: "rgba(1,118,211,.4)" }} />
             <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.12), transparent 55%)", pointerEvents: "none" }} />
 
+            {/* Chat history — top-right corner */}
+            <button
+              onClick={openSageHistory}
+              className="absolute flex items-center gap-1.5 rounded-full z-10"
+              style={{ top: 18, right: 20, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)", padding: "7px 13px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.18)" }}
+            >
+              <History className="w-3 h-3" /> Chat history
+            </button>
+
             <div className="relative" style={{ maxWidth: 640 }}>
               {/* Assistant identity */}
               <div className="dh-rise flex items-center gap-2.5" style={{ animationDelay: "0ms" }}>
@@ -205,16 +228,48 @@ export function DashboardHome({
                   onClick={() => { if (heroQ.trim()) { askSage(heroQ.trim()); setHeroQ(""); } }}
                   disabled={!heroQ.trim()}
                   className="dh-send flex items-center justify-center rounded-lg shrink-0 active:scale-95"
-                  style={{ width: 40, height: 40, background: ACCENT, color: "#fff", opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
+                  style={{ width: 40, height: 40, background: "#fff", color: ACCENT, opacity: heroQ.trim() ? 1 : 0.55, cursor: heroQ.trim() ? "pointer" : "default" }}
                   title="Ask Sage"
                 >
                   <ArrowUp className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Quick prompts */}
+              {/* Quick prompts — personalised from history when available */}
               <div className="dh-rise flex flex-wrap items-center gap-2 mt-3" style={{ animationDelay: "240ms" }}>
-                {([
+                {recentConvs.length > 0 ? (() => {
+                  const staticFallbacks = [
+                    { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
+                    { label: "Review a protocol", Icon: ClipboardList, prompt: "Help me review a protocol — what should I keep in mind?" },
+                    { label: "My compounds", Icon: FlaskConical, prompt: "Give me an overview of my active compounds and how they work together." },
+                  ];
+                  // Show up to 2 personalised chips from recent convos, pad with 1 static chip
+                  const personalised = recentConvs.slice(0, 2).map(c => ({
+                    label: c.title.length > 28 ? c.title.slice(0, 26).trimEnd() + "…" : c.title,
+                    prompt: `Following up on our previous conversation — ${c.lastUserMsg}`,
+                    personal: true,
+                  }));
+                  const remaining = 3 - personalised.length;
+                  const statics = staticFallbacks.slice(0, remaining).map(s => ({ ...s, personal: false }));
+                  return [...personalised, ...statics].map((chip, i) => (
+                    <button
+                      key={i}
+                      onClick={() => askSage(chip.prompt)}
+                      className="dh-chip flex items-center gap-1.5 rounded-full"
+                      style={{
+                        fontSize: 12.5, fontWeight: 600, padding: "9px 14px",
+                        color: chip.personal ? "rgba(255,255,255,.95)" : "#fff",
+                        background: chip.personal ? "rgba(255,255,255,.15)" : "rgba(255,255,255,.1)",
+                        border: `1px solid ${chip.personal ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.2)"}`,
+                      }}
+                    >
+                      {chip.personal
+                        ? <><History className="w-3.5 h-3.5 shrink-0" /> {chip.label}</>
+                        : <>{('Icon' in chip) && <chip.Icon className="w-3.5 h-3.5" />} {chip.label}</>
+                      }
+                    </button>
+                  ));
+                })() : ([
                   { label: "Analyse my bloodwork", Icon: Droplet, prompt: "Analyse my latest bloodwork and highlight anything I should pay attention to." },
                   { label: "Review a protocol", Icon: ClipboardList, prompt: "Help me review a protocol — what should I keep in mind?" },
                   { label: "My compounds", Icon: FlaskConical, prompt: "Give me an overview of my active compounds and how they work together." },
@@ -611,7 +666,6 @@ export function DashboardHome({
         </div>
       </div>
 
-      <SageChat open={sageOpen} onClose={() => setSageOpen(false)} seed={sageSeed} t={T} accent={ACCENT} />
     </DashboardShell>
   );
 }

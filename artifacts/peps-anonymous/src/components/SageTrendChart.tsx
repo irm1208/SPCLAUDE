@@ -34,7 +34,7 @@ export function SageTrendChart({ chart }: { chart: DiscussChart }) {
       </div>
       <div style={{ height: 130 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 4, right: 10, bottom: 0, left: -18 }}>
+          <LineChart data={data} margin={{ top: 4, right: 10, bottom: 0, left: 4 }}>
             <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--t-subtle)" }} tickLine={false} axisLine={false} />
             <YAxis domain={[domainMin, displayMax]} tick={{ fontSize: 9, fill: "var(--t-subtle)" }} tickLine={false} axisLine={false} width={30} />
             <Tooltip

@@ -63,8 +63,13 @@ export interface WholesaleShareMember {
   canEditTracking: boolean;
 }
 
+export interface LeadCryptoOption { currency: string; network: string; walletAddress: string }
+
 export interface WholesaleShareFees {
   organiserPaymentInfo: string | null;
+  leadRevolutHandle: string | null;
+  leadPaypalEmail: string | null;
+  leadCryptoOptions: LeadCryptoOption[];
   organiserFeeTotal: number;
   active: boolean;
   recipientUsername: string | null;
@@ -377,7 +382,13 @@ export interface WholesaleFeeInput {
 // details for how it should be paid. Editable only while the share is open.
 export function setWholesaleShareFees(
   id: string,
-  payload: { organiserPaymentInfo?: string; fees: WholesaleFeeInput[] },
+  payload: {
+    organiserPaymentInfo?: string;
+    leadRevolutHandle?: string;
+    leadPaypalEmail?: string;
+    leadCryptoOptions?: LeadCryptoOption[];
+    fees: WholesaleFeeInput[];
+  },
 ) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees`, {
     method: "PUT",

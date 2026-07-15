@@ -6199,15 +6199,24 @@ function PaymentsTab({ secret }: { secret: string }) {
   const [showCodeForm, setShowCodeForm] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
 
+  // Chain wallet config (Arbitrum, Polygon, Solana, Tron, TON, BTC, ETH, XMR)
+  type ChainWalletEntry = { configKey: string; label: string; network: string; currencies: string[]; walletAddress: string | null };
+  const [chainWallets, setChainWallets] = useState<ChainWalletEntry[]>([]);
+  const [chainWalletInputs, setChainWalletInputs] = useState<Record<string, string>>({});
+  const [savingChainWallets, setSavingChainWallets] = useState(false);
+  const [chainWalletMsg, setChainWalletMsg] = useState("");
+  const [chainWalletError, setChainWalletError] = useState("");
+
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [cfgRes, ordRes] = await Promise.all([
+      const [cfgRes, ordRes, chainRes] = await Promise.all([
         fetch(apiUrl("/admin/payments-config"), { headers: { "x-admin-secret": secret } }),
         fetch(apiUrl("/admin/payment-orders"), { headers: { "x-admin-secret": secret } }),
+        fetch(apiUrl("/admin/chain-wallets"), { headers: { "x-admin-secret": secret } }),
       ]);
       if (!cfgRes.ok) throw new Error(`Config fetch failed: ${cfgRes.status}`);
       const cfg = await cfgRes.json();
@@ -6217,6 +6226,15 @@ function PaymentsTab({ secret }: { secret: string }) {
       if (cfg.anonPayNetwork) setAnonPayNetworkInput(cfg.anonPayNetwork);
       const orders = ordRes.ok ? await ordRes.json() : [];
       setPaymentOrders(Array.isArray(orders) ? orders : []);
+      if (chainRes.ok) {
+        const chains = await chainRes.json();
+        if (Array.isArray(chains)) {
+          setChainWallets(chains);
+          const inputs: Record<string, string> = {};
+          for (const c of chains) inputs[c.configKey] = c.walletAddress ?? "";
+          setChainWalletInputs(inputs);
+        }
+      }
     } catch (err: any) {
       setLoadError(err?.message ?? "Failed to load payments data");
     } finally {
@@ -6346,6 +6364,34 @@ function PaymentsTab({ secret }: { secret: string }) {
       setAnonPayError(d.error || "Failed to save");
     }
     setSavingAnonPay(false);
+  };
+
+  const saveChainWallets = async () => {
+    setSavingChainWallets(true); setChainWalletMsg(""); setChainWalletError("");
+    const body: Record<string, string | null> = {};
+    for (const [key, val] of Object.entries(chainWalletInputs)) {
+      body[key] = val.trim() || null;
+    }
+    const res = await fetch(apiUrl("/admin/chain-wallets"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      if (Array.isArray(updated)) {
+        setChainWallets(prev => prev.map(c => {
+          const found = updated.find((u: any) => u.configKey === c.configKey);
+          return found ? { ...c, walletAddress: found.walletAddress } : c;
+        }));
+      }
+      setChainWalletMsg("Chain wallets saved!");
+      setTimeout(() => setChainWalletMsg(""), 3000);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setChainWalletError(d.error || "Failed to save chain wallets");
+    }
+    setSavingChainWallets(false);
   };
 
   const updatePaymentStatus = async (orderId: string, paymentStatus: string) => {
@@ -6617,6 +6663,41 @@ function PaymentsTab({ secret }: { secret: string }) {
           Save AnonPay Config
         </Button>
       </Card>
+
+      {/* Chain wallet addresses */}
+      {chainWallets.length > 0 && (
+        <Card className="p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-primary" />
+            <p className="font-semibold text-sm">Multi-Chain Wallet Addresses</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Set a receiving wallet address for each supported chain. Customers will see these options when chain-specific routing is enabled.
+            Leave blank to hide that chain from checkout.
+          </p>
+          <div className="space-y-3">
+            {chainWallets.map(chain => (
+              <div key={chain.configKey} className="space-y-1">
+                <Label className="text-xs font-semibold">
+                  {chain.currencies.join(" / ")} — {chain.network}
+                </Label>
+                <Input
+                  className="font-mono text-xs"
+                  placeholder={`${chain.network} wallet address`}
+                  value={chainWalletInputs[chain.configKey] ?? ""}
+                  onChange={e => setChainWalletInputs(prev => ({ ...prev, [chain.configKey]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          {chainWalletMsg && <p className="text-sm text-green-600 font-medium">{chainWalletMsg}</p>}
+          {chainWalletError && <p className="text-xs text-destructive font-medium">⚠ {chainWalletError}</p>}
+          <Button size="sm" onClick={saveChainWallets} disabled={savingChainWallets} className="gap-2">
+            {savingChainWallets ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Save Chain Wallets
+          </Button>
+        </Card>
+      )}
 
       {/* Payment Reconciliation */}
       <PaymentReconciliationSection secret={secret} />
@@ -14429,6 +14510,7 @@ const ALL_TABS_META = [
   { id: "inventory",    label: "Inventory",      icon: Database },
   { id: "wholesale",    label: "Wholesale",      icon: Package },
   { id: "wholesale-shares", label: "Shared Orders", icon: Users },
+  { id: "wholesale-access", label: "Access Requests", icon: Lock },
   { id: "dispatch",     label: "Dispatch",        icon: PackageCheck },
   { id: "dashboard",    label: "Dashboard",      icon: BarChart3 },
 ];
@@ -18691,6 +18773,215 @@ function SharePayBadge({ status, hasOrder }: { status: string | null; hasOrder: 
   return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: bg, color: fg }}>{label}</span>;
 }
 
+function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<"pending" | "confirmed" | "rejected" | "all">("pending");
+  const [working, setWorking] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [featureEnabled, setFeatureEnabled] = useState(false);
+  const [featureToggling, setFeatureToggling] = useState(false);
+  const [accessAmount, setAccessAmount] = useState<string>("");
+  const [savingAmount, setSavingAmount] = useState(false);
+  const [amountSaved, setAmountSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean; wholesaleAccessAmount?: number | null }) => {
+      setFeatureEnabled(d.wholesaleAccessEnabled === true);
+      if (d.wholesaleAccessAmount != null) setAccessAmount(String(d.wholesaleAccessAmount));
+    }).catch(() => {});
+  }, []);
+
+  const saveAmount = async () => {
+    setSavingAmount(true);
+    setAmountSaved(false);
+    try {
+      const parsed = accessAmount.trim() === "" ? null : parseFloat(accessAmount);
+      if (parsed !== null && (isNaN(parsed) || parsed <= 0)) { alert("Enter a valid positive amount, or leave blank to use random."); return; }
+      const r = await fetch("/api/admin/config/wholesale-access-amount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ amount: parsed }),
+      });
+      if (r.ok) setAmountSaved(true);
+      else { const d = await r.json(); alert(d.error ?? "Failed"); }
+    } finally { setSavingAmount(false); setTimeout(() => setAmountSaved(false), 2000); }
+  };
+
+  const toggleFeature = async () => {
+    setFeatureToggling(true);
+    const next = !featureEnabled;
+    try {
+      const r = await fetch(apiUrl("/admin/config/wholesale-access-enabled"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (r.ok) setFeatureEnabled(next);
+      else alert("Failed to update setting");
+    } finally { setFeatureToggling(false); }
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(apiUrl("/admin/wholesale-access-requests"), { headers: { "x-admin-secret": secret } });
+      const d = await r.json();
+      setRows(d.requests ?? []);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const confirm = async (id: string) => {
+    setWorking(id);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-access-requests/${id}/confirm`), { method: "POST", headers: { "x-admin-secret": secret } });
+      if (!r.ok) { const d = await r.json(); alert(d.error ?? "Failed"); }
+      else await load();
+    } finally { setWorking(null); }
+  };
+
+  const reject = async (id: string) => {
+    setWorking(id);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-access-requests/${id}/reject`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ reason: rejectionReason.trim() || undefined }),
+      });
+      if (!r.ok) { const d = await r.json(); alert(d.error ?? "Failed"); }
+      else { setRejecting(null); setRejectionReason(""); await load(); }
+    } finally { setWorking(null); }
+  };
+
+  const filtered = statusFilter === "all" ? rows : rows.filter(r => r.status === statusFilter);
+
+  const statusBadgeStyle = (status: string) => {
+    if (status === "confirmed") return { background: "rgba(22,163,74,0.16)", color: "#16a34a" };
+    if (status === "rejected")  return { background: "rgba(220,38,38,0.16)",  color: "#dc2626" };
+    return { background: "rgba(234,179,8,0.16)", color: "#b45309" };
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-3 p-3 rounded-lg flex-wrap" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold" style={{ color: "var(--adm-text)" }}>Accept Applications</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>When on, non-wholesale customers see a "Get Wholesale Access" option in their sidebar and can submit a payment.</p>
+        </div>
+        <button onClick={toggleFeature} disabled={featureToggling}
+          className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50"
+          style={{ background: featureEnabled ? "#16a34a" : "var(--adm-btn)" }}>
+          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${featureEnabled ? "translate-x-5" : "translate-x-0"}`} />
+        </button>
+        <span className="text-xs font-semibold" style={{ color: featureEnabled ? "#16a34a" : "var(--adm-muted)" }}>{featureEnabled ? "Open" : "Closed"}</span>
+      </div>
+      <div className="flex items-center gap-3 p-3 rounded-lg flex-wrap" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold" style={{ color: "var(--adm-text)" }}>Access Fee Amount (USD)</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>Fixed fee assigned when a customer submits a request. Leave blank to use a random amount between $90–$110.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-semibold" style={{ color: "var(--adm-muted)" }}>$</span>
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            placeholder="e.g. 100"
+            value={accessAmount}
+            onChange={e => setAccessAmount(e.target.value)}
+            className="w-24 rounded px-2 py-1 text-sm text-right"
+            style={{ background: "var(--adm-input, var(--adm-btn))", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}
+          />
+          <button
+            onClick={saveAmount}
+            disabled={savingAmount}
+            className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+            style={{ background: amountSaved ? "#16a34a" : "var(--adm-accent)" }}
+          >
+            {savingAmount ? "…" : amountSaved ? "Saved!" : "Save"}
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <h2 className="text-base font-semibold" style={{ color: "var(--adm-text)" }}>Wholesale Access Requests</h2>
+        <button onClick={load} className="text-xs px-2 py-1 rounded" style={{ color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}>Refresh</button>
+        <div className="flex gap-1 ml-auto">
+          {(["all","pending","confirmed","rejected"] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className="text-xs px-2.5 py-1 rounded-full"
+              style={statusFilter===s
+                ? { background: "var(--adm-accent)", color: "#fff", border: "1px solid transparent" }
+                : { border: "1px solid var(--adm-border)", color: "var(--adm-muted)" }}>
+              {s.charAt(0).toUpperCase()+s.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--adm-muted)" }} /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-10 text-sm" style={{ color: "var(--adm-muted)" }}>No requests found.</div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((req: any) => (
+            <div key={req.id} className="rounded-lg p-4 space-y-3" style={{ background: "var(--adm-surface2)", border: "1px solid var(--adm-border)" }}>
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-sm font-semibold" style={{ color: "var(--adm-text)" }}>@{req.accountUsername}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={statusBadgeStyle(req.status)}>{req.status}</span>
+                  </div>
+                  <div className="mt-1 text-xs space-y-0.5" style={{ color: "var(--adm-muted)" }}>
+                    <div>Amount: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>${req.amountUsd}</span></div>
+                    {req.paymentCryptoCurrency && <div>Currency: <span style={{ color: "var(--adm-text)" }}>{req.paymentCryptoCurrency} ({req.paymentCryptoNetwork})</span></div>}
+                    {req.paymentTxHash && <div>Tx: <span className="font-mono break-all" style={{ color: "var(--adm-text)" }}>{req.paymentTxHash}</span></div>}
+                    {req.rejectionReason && <div>Reason: <span style={{ color: "#dc2626" }}>{req.rejectionReason}</span></div>}
+                    {req.adminUsername && <div>Handled by: <span style={{ color: "var(--adm-text)" }}>@{req.adminUsername}</span></div>}
+                    <div>Submitted: {new Date(req.createdAt).toLocaleString()}</div>
+                    {req.confirmedAt && <div>Confirmed: {new Date(req.confirmedAt).toLocaleString()}</div>}
+                  </div>
+                </div>
+                {req.status === "pending" && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => confirm(req.id)} disabled={!!working}
+                      className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+                      style={{ background: "#16a34a" }}>
+                      {working === req.id ? "…" : "Confirm"}
+                    </button>
+                    <button onClick={() => setRejecting(req.id)}
+                      className="text-xs px-3 py-1.5 rounded font-medium text-white"
+                      style={{ background: "#dc2626" }}>
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+              {rejecting === req.id && (
+                <div className="flex gap-2 items-center flex-wrap pt-3" style={{ borderTop: "1px solid var(--adm-border)" }}>
+                  <input value={rejectionReason} onChange={e => setRejectionReason(e.target.value)}
+                    placeholder="Rejection reason (optional)"
+                    className="flex-1 min-w-0 rounded px-2 py-1 text-xs"
+                    style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }} />
+                  <button onClick={() => reject(req.id)} disabled={!!working}
+                    className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
+                    style={{ background: "#dc2626" }}>
+                    {working === req.id ? "…" : "Confirm Reject"}
+                  </button>
+                  <button onClick={() => { setRejecting(null); setRejectionReason(""); }} className="text-xs" style={{ color: "var(--adm-muted)" }}>Cancel</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const money = (n: number) => `$${n.toFixed(2)}`;
   const [statusFilter, setStatusFilter] = useState<"made" | "open" | "cancelled" | "all">("made");
@@ -21404,8 +21695,9 @@ const SIDEBAR_SECTIONS = [
   {
     label: "Wholesale",
     items: [
-      { id: "wholesale",     label: "Wholesale",        icon: Package,         keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
-      { id: "dispatch",      label: "Dispatch",          icon: PackageCheck,    keywords: ["dispatch", "packing slips", "shipped items", "ready to ship", "group buy shipped", "parcels shipped", "vendor parcel", "dispatch status", "ready for dispatch", "waiting orders", "reshipper dispatch", "shipped qty"] },
+      { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
+      { id: "wholesale-access", label: "Access Requests",  icon: Lock,         keywords: ["wholesale access", "access requests", "pay in", "enable wholesale", "disable wholesale", "applications", "wholesale toggle", "open applications", "close applications"] },
+      { id: "dispatch",         label: "Dispatch",          icon: PackageCheck, keywords: ["dispatch", "packing slips", "shipped items", "ready to ship", "group buy shipped", "parcels shipped", "vendor parcel", "dispatch status", "ready for dispatch", "waiting orders", "reshipper dispatch", "shipped qty"] },
     ],
   },
   {
@@ -23080,6 +23372,8 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
   const [drilldownGbLogs, setDrilldownGbLogs] = useState<unknown[]>([]);
   const [drilldownGbTab, setDrilldownGbTab] = useState<"orders" | "logs">("orders");
   const [drilldownGbLoading, setDrilldownGbLoading] = useState(false);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<string | null>(null);
   // Role editing
   const [editingRole, setEditingRole] = useState<string | null>(null); // username being role-edited
   const [roleValue, setRoleValue] = useState<OrganiserRole | "">("");
@@ -23270,6 +23564,28 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
     finally { setDrilldownGbLoading(false); }
   };
 
+  const deleteGbOrder = async (orderId: string) => {
+    setDeletingOrderId(orderId);
+    try {
+      const res = await fetch(apiUrl(`/admin/orders/${orderId}`), {
+        method: "DELETE",
+        headers: { "x-admin-secret": secret },
+        credentials: "omit",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError((d as { error?: string }).error ?? "Failed to delete order");
+      } else {
+        setDrilldownGbOrders(prev => (prev as Array<Record<string, unknown>>).filter(o => String(o.id) !== orderId));
+      }
+    } catch {
+      setError("Connection error");
+    } finally {
+      setDeletingOrderId(null);
+      setConfirmDeleteOrderId(null);
+    }
+  };
+
   const startEditRole = (username: string, currentRole: OrganiserRole | null) => {
     setEditingRole(username);
     setRoleValue(currentRole ?? "");
@@ -23418,20 +23734,44 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                         {drilldownGbTab === "orders" && (
                           <div className="space-y-2">
                             {drilldownGbOrders.length === 0 && <p className="text-xs text-muted-foreground">No orders</p>}
-                            {(drilldownGbOrders as Array<Record<string, unknown>>).map((o) => (
-                              <div key={String(o.id)} className="flex items-center gap-3 bg-white rounded-lg border border-border px-3 py-2">
-                                <div className="flex-1 min-w-0">
-                                  <span className="font-mono text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{String(o.code)}</span>
-                                  <span className="ml-2 text-[11px] text-muted-foreground">@{String(o.telegramUsername)}</span>
+                            {(drilldownGbOrders as Array<Record<string, unknown>>).map((o) => {
+                              const oid = String(o.id);
+                              const confirming = confirmDeleteOrderId === oid;
+                              const deleting = deletingOrderId === oid;
+                              return (
+                                <div key={oid} className="flex items-center gap-2 bg-white rounded-lg border border-border px-3 py-2">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-mono text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{String(o.code)}</span>
+                                    <span className="ml-2 text-[11px] text-muted-foreground">@{String(o.telegramUsername)}</span>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
+                                    <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
+                                      {String(o.paymentStatus ?? "").replace(/_/g, " ")}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 flex items-center gap-1 ml-1">
+                                    {confirming ? (
+                                      <>
+                                        <button onClick={() => deleteGbOrder(oid)} disabled={deleting}
+                                          className="h-6 px-2 rounded text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center gap-1">
+                                          {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Delete"}
+                                        </button>
+                                        <button onClick={() => setConfirmDeleteOrderId(null)}
+                                          className="h-6 px-2 rounded text-[10px] font-bold text-slate-500 border border-border hover:bg-slate-50">
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button onClick={() => setConfirmDeleteOrderId(oid)} disabled={!!deletingOrderId}
+                                        className="h-6 px-2 rounded text-[10px] font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-40">
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="text-right shrink-0">
-                                  <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
-                                  <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
-                                    {String(o.paymentStatus ?? "").replace(/_/g, " ")}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                         {drilldownGbTab === "logs" && (
@@ -24528,6 +24868,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "tglog"         && <TelegramLogTab secret={secret} />}
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
+          {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}
           {activeTab === "dispatch"      && <AdminDispatch secret={secret} />}
           {activeTab === "invite-codes"  && <InviteCodesTab secret={secret} />}
           {activeTab === "coupons"       && <AdminCouponsTab secret={secret} />}

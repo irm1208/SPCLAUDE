@@ -1,11 +1,11 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard, Syringe, FlaskConical, HeartPulse,
   Scale, LineChart, Users, UsersRound, User, MessageCircle, History,
   Store, TestTube, LogOut, Sun, Moon, Home,
   ReceiptText, Truck, ShoppingBag, BookMarked, ClipboardList, MessageSquarePlus,
-  GraduationCap, Calculator as CalcIcon,
+  GraduationCap, Calculator as CalcIcon, Sparkles, ChevronDown,
 } from "lucide-react";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
@@ -74,6 +74,14 @@ export function HubBottomNav({
 
   const T = palette(dark);
   const activeBg = dark ? "rgba(1,118,211,0.18)" : "rgba(1,118,211,0.10)";
+  const navRef = useRef<HTMLElement>(null);
+  const [canScrollMore, setCanScrollMore] = useState(false);
+
+  const checkScroll = () => {
+    const el = navRef.current;
+    if (!el) return;
+    setCanScrollMore(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -81,6 +89,15 @@ export function HubBottomNav({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, setOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    checkScroll();
+    const el = navRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    return () => el.removeEventListener("scroll", checkScroll);
+  }, [open]);
 
   useEffect(() => {
     // The popover menu (and its backdrop) is hidden above the `hideAt`
@@ -153,6 +170,7 @@ export function HubBottomNav({
     {
       label: "Research",
       items: [
+        { key: "sage",         label: "Sage AI",      Icon: Sparkles,      onClick: () => go("/sage") },
         { key: "protocols",    label: "Protocols",    Icon: BookMarked,    onClick: () => go("/protocols") },
         { key: "learn",        label: "Learning Hub", Icon: GraduationCap, onClick: () => go("/learn") },
         { key: "calculator",   label: "Calculator",   Icon: CalcIcon,      onClick: () => go("/calculator") },
@@ -227,6 +245,10 @@ export function HubBottomNav({
           0%   { transform: translate(-50%,-50%) scale(0.85); opacity: 0.7; }
           100% { transform: translate(-50%,-50%) scale(1.55); opacity: 0; }
         }
+        @keyframes hbn-bounce {
+          0%,100% { transform: translateY(0); }
+          50%     { transform: translateY(3px); }
+        }
         .hbn-label-pulse { animation: hbn-pulse 2s ease-in-out infinite; }
         .hbn-ring        { animation: hbn-ring 1.8s ease-out infinite; }
       `}</style>
@@ -273,23 +295,46 @@ export function HubBottomNav({
               maxHeight: "min(62vh, 540px)",
             }}
           >
-            <nav className="flex-1 overflow-y-auto" style={{ padding: "10px 8px" }}>
-              {menuGroups.map((group, gi) => (
-                <React.Fragment key={group.label ?? "main"}>
-                  {group.label && (
-                    <p
-                      className="select-none font-bold uppercase"
-                      style={{ fontSize: 10.5, letterSpacing: ".05em", color: T.subtle, padding: "12px 14px 4px", marginTop: gi > 0 ? 2 : 0 }}
-                    >
-                      {group.label}
-                    </p>
-                  )}
-                  <div className="flex flex-col gap-0.5">
-                    {group.items.map(renderRow)}
-                  </div>
-                </React.Fragment>
-              ))}
-            </nav>
+            <div className="relative flex-1 min-h-0 flex flex-col">
+              <nav ref={navRef} className="flex-1 overflow-y-auto" style={{ padding: "10px 8px" }}>
+                {menuGroups.map((group, gi) => (
+                  <React.Fragment key={group.label ?? "main"}>
+                    {group.label && (
+                      <p
+                        className="select-none font-bold uppercase"
+                        style={{ fontSize: 10.5, letterSpacing: ".05em", color: T.subtle, padding: "12px 14px 4px", marginTop: gi > 0 ? 2 : 0 }}
+                      >
+                        {group.label}
+                      </p>
+                    )}
+                    <div className="flex flex-col gap-0.5">
+                      {group.items.map(renderRow)}
+                    </div>
+                  </React.Fragment>
+                ))}
+              </nav>
+              {/* Scroll-more indicator */}
+              <div
+                className="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-col items-center justify-end"
+                style={{
+                  height: 56,
+                  background: `linear-gradient(to bottom, transparent, ${T.panel})`,
+                  opacity: canScrollMore ? 1 : 0,
+                  transition: "opacity 200ms ease",
+                }}
+              >
+                <div
+                  className="flex items-center gap-1 mb-1.5"
+                  style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
+                    color: ACCENT, textTransform: "uppercase",
+                  }}
+                >
+                  <ChevronDown className="w-3.5 h-3.5" strokeWidth={2.5} style={{ animation: "hbn-bounce 1.2s ease-in-out infinite" }} />
+                  scroll for more
+                </div>
+              </div>
+            </div>
 
             {/* Footer */}
             <div
@@ -404,24 +449,33 @@ export function HubBottomNav({
               onClick={() => setOpen(!open)}
               aria-expanded={open}
               aria-label={open ? "Close menu" : "Open menu"}
-              className="flex items-center justify-center rounded-full transition-all"
+              className="flex flex-col items-center justify-center rounded-full transition-all"
               style={{
                 width: 44, height: 44,
                 background: ACCENT,
                 color: "#fff",
                 boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
+                gap: 0,
               }}
             >
               <span
-                className="select-none"
+                className="select-none leading-none"
                 style={{
-                  fontWeight: 800, fontSize: 12.5, letterSpacing: "-0.02em",
+                  fontWeight: 800, fontSize: 12, letterSpacing: "-0.02em",
                   transform: open ? "scale(0.85)" : "scale(1)",
                   transition: "transform 220ms ease",
                 }}
               >
                 S&amp;P
               </span>
+              {!open && (
+                <span
+                  className="select-none leading-none"
+                  style={{ fontSize: 7, fontWeight: 700, letterSpacing: "0.06em", opacity: 0.85, marginTop: 2 }}
+                >
+                  TAP ME
+                </span>
+              )}
             </button>
           </div>
 

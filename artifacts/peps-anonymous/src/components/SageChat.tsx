@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2 } from "lucide-react";
-import { useBloodTestDiscuss, type DiscussMessage, type DiscussChart } from "@/hooks/use-blood-tests";
+import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2, Search, SquarePen, Activity, FlaskConical, BookMarked } from "lucide-react";
+import { type DiscussMessage, type DiscussChart, type DiscussSource } from "@/hooks/use-blood-tests";
 import { SageTrendChart } from "@/components/SageTrendChart";
 
 const ACCENT = "#0176D3";
+
+function stripMarkers(text: string): string {
+  return text.replace(/[\n\r\s]*(?:I?SOURCES?_?JSON_?START|CHIPS?_?JSON_?START|CHARTS?_?JSON_?START)[\s\S]*/i, "").trim();
+}
 
 type Tokens = {
   panel: string;
@@ -32,9 +36,13 @@ interface SageChatProps {
   onClose: () => void;
   /** A question to auto-send when the panel opens. */
   seed?: string;
+  /** Open directly to the history panel instead of a new chat. */
+  openToHistory?: boolean;
   /** Theme tokens (from the dashboard palette). */
   t: Tokens;
   accent?: string;
+  /** Render as a full-page layout (no modal backdrop, fills the container). */
+  fullPage?: boolean;
 }
 
 const GREETING =
@@ -180,17 +188,19 @@ function formatSessionDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatProps) {
-  const discuss = useBloodTestDiscuss();
+export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT, fullPage = false }: SageChatProps) {
   const [messages, setMessages] = useState<SageMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [streamingHasContent, setStreamingHasContent] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
 
   const convIdRef = useRef<string | null>(null);
   const convTitleRef = useRef<string>("New Chat");
@@ -231,9 +241,16 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
       }
 
       const userMsg: SageMessage = { id: Math.random().toString(36).slice(2), role: "user", content: q, timestamp: new Date() };
-      setMessages((prev) => [...prev, userMsg]);
+      const streamId = Math.random().toString(36).slice(2);
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        { id: streamId, role: "assistant", content: "", timestamp: new Date() },
+      ]);
       setInput("");
       setSending(true);
+      setStreamingHasContent(false);
+      setSearchStatus(null);
       setError(null);
 
       const myRequestId = ++requestIdRef.current;
@@ -247,37 +264,94 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           .map((m) => ({ role: m.role, content: m.content }));
 
       try {
-        const res = await discuss.mutateAsync({ message: q, history });
+        const response = await fetch("/api/blood-tests/discuss", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: q, history }),
+          signal: AbortSignal.timeout(65_000),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({ error: "Request failed" })) as { error?: string; response?: string; used?: number; limit?: number };
+          if (!isStale()) {
+            setMessages((prev) => prev.filter((m) => m.id !== streamId));
+            if (errData.error === "limit_reached") {
+              setLimitReached(true);
+              setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: "You've reached your daily question limit. Please check back tomorrow.", timestamp: new Date() }]);
+            } else if (errData.response) {
+              setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: errData.response!, timestamp: new Date() }]);
+            } else {
+              setError("Sage couldn't respond just now. Please try again in a moment.");
+            }
+          }
+          return;
+        }
+
+        if (!response.body) throw new Error("No response body");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulated = "";
+        let donePayload: { response?: string; sources?: DiscussSource[]; chips?: string[]; charts?: DiscussChart[]; contextSession?: { id: string; testName: string; testDate: string } | null; used?: number; limit?: number } | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            let event: Record<string, unknown>;
+            try { event = JSON.parse(jsonStr) as Record<string, unknown>; }
+            catch { continue; }
+            if (event["type"] === "token" && typeof event["text"] === "string") {
+              accumulated += event["text"] as string;
+              if (!isStale()) {
+                setStreamingHasContent(true);
+                setSearchStatus(null);
+                const displayText = stripMarkers(accumulated);
+                setMessages((prev) => prev.map((m) => m.id === streamId ? { ...m, content: displayText } : m));
+              }
+            } else if (event["type"] === "status" && typeof event["text"] === "string") {
+              if (!isStale()) setSearchStatus(event["text"] as string);
+            } else if (event["type"] === "done") {
+              donePayload = event as typeof donePayload;
+            } else if (event["type"] === "error") {
+              throw new Error((event["error"] as string | undefined) ?? "ai_unavailable");
+            }
+          }
+        }
+
         if (isStale()) return;
-        const assistantMsg: SageMessage = {
-          id: Math.random().toString(36).slice(2),
+
+        const finalMsg: SageMessage = {
+          id: streamId,
           role: "assistant",
-          content: res.response,
-          chips: res.chips ?? [],
-          sources: res.sources ?? [],
-          charts: res.charts ?? [],
-          contextSession: res.contextSession ?? null,
+          content: donePayload?.response ?? stripMarkers(accumulated),
+          chips: donePayload?.chips ?? [],
+          sources: donePayload?.sources ?? [],
+          charts: donePayload?.charts ?? [],
+          contextSession: donePayload?.contextSession ?? null,
           timestamp: new Date(),
         };
         setMessages((prev) => {
-          const next = [...prev, assistantMsg];
+          const next = prev.map((m) => m.id === streamId ? finalMsg : m);
           void persistConversation(next);
           return next;
         });
       } catch (e) {
         if (isStale()) return;
         const err = e as Error & { used?: number; limit?: number };
+        setMessages((prev) => prev.filter((m) => m.id !== streamId));
         if (err.message === "limit_reached") {
           setLimitReached(true);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Math.random().toString(36).slice(2),
-              role: "assistant",
-              content: "You've reached your daily question limit. Please check back tomorrow.",
-              timestamp: new Date(),
-            },
-          ]);
+          setMessages((prev) => [...prev, { id: Math.random().toString(36).slice(2), role: "assistant" as const, content: "You've reached your daily question limit. Please check back tomorrow.", timestamp: new Date() }]);
         } else {
           setError("Sage couldn't respond just now. Please try again in a moment.");
         }
@@ -285,7 +359,7 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
         if (!isStale()) setSending(false);
       }
     },
-    [sending, limitReached, discuss, persistConversation],
+    [sending, limitReached, persistConversation],
   );
 
   const startNewChat = useCallback(() => {
@@ -365,16 +439,21 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
     requestIdRef.current++;
     convIdRef.current = null;
     convTitleRef.current = "New Chat";
-    setHistoryOpen(false);
     setMessages([makeGreeting()]);
     setInput("");
     setSending(false);
     setError(null);
     setLimitReached(false);
-    if (seed && seed.trim()) {
-      void send(seed.trim(), []);
+    void loadConversations();
+    if (openToHistory) {
+      setHistoryOpen(true);
     } else {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setHistoryOpen(false);
+      if (seed && seed.trim()) {
+        void send(seed.trim(), []);
+      } else {
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -399,25 +478,20 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, historyOpen]);
 
-  if (!open) return null;
+  if (!open && !fullPage) return null;
 
   const canSend = input.trim().length > 0 && !sending && !limitReached;
 
-  return (
+  const chatPanel = (
     <div
-      className="fixed inset-0 z-[120] flex items-stretch sm:items-center sm:justify-center"
-      style={{ background: "rgba(10,12,20,.55)", backdropFilter: "blur(3px)" }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      className={fullPage
+        ? "flex flex-col w-full h-full overflow-hidden"
+        : "flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-[88vh]"}
+      style={{
+        background: t.panel,
+        border: fullPage ? "none" : `1px solid ${t.border}`,
       }}
     >
-      <div
-        className="flex flex-col w-full sm:w-[520px] lg:w-[640px] sm:rounded-2xl overflow-hidden shadow-2xl h-dvh sm:h-auto sm:max-h-[88vh]"
-        style={{
-          background: t.panel,
-          border: `1px solid ${t.border}`,
-        }}
-      >
         {/* Header */}
         <div
           className="flex items-center gap-2.5 shrink-0"
@@ -451,12 +525,20 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
           </button>
           <button
             onClick={openHistory}
-            className="flex items-center justify-center rounded-lg active:scale-95"
+            className="relative flex items-center justify-center rounded-lg active:scale-95"
             style={{ width: 32, height: 32, background: "rgba(255,255,255,.14)", color: "#fff" }}
             title="Past conversations"
             aria-label="Past conversations"
           >
             <History className="w-4 h-4" />
+            {conversations.length > 0 && (
+              <span
+                className="absolute -top-1 -right-1 flex items-center justify-center rounded-full text-white font-bold"
+                style={{ width: 14, height: 14, fontSize: 9, background: accent, lineHeight: 1 }}
+              >
+                {conversations.length > 9 ? "9+" : conversations.length}
+              </span>
+            )}
           </button>
           <button
             onClick={onClose}
@@ -495,26 +577,29 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
                 )}
                 {!loadingHistory &&
                   conversations.map((conv) => (
-                    <div
+                    <button
                       key={conv.id}
+                      type="button"
                       onClick={() => resumeConversation(conv)}
-                      className="flex items-start gap-2 rounded-xl cursor-pointer group"
-                      style={{ padding: "9px 10px", marginBottom: 4 }}
+                      className="flex items-start gap-2 rounded-xl w-full text-left group active:scale-[.98] transition-transform"
+                      style={{ padding: "9px 10px", marginBottom: 4, background: t.panel2, border: `1px solid ${t.border}` }}
                     >
-                      <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: t.subtle }} />
+                      <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accent }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold truncate" style={{ color: t.text }}>{conv.title}</p>
                         <p className="text-[10px]" style={{ color: t.muted }}>{relativeTime(conv.updatedAt)}</p>
                       </div>
-                      <button
+                      <span
                         onClick={(e) => deleteConversation(conv.id, e)}
                         className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                         style={{ color: t.subtle }}
                         aria-label="Delete conversation"
+                        role="button"
+                        tabIndex={0}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                   ))}
               </div>
             </div>
@@ -595,10 +680,48 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
                 ),
               )}
 
-              {sending && (
+              {/* Past-conversations widget — shown only on a fresh session before any user message */}
+              {messages.length === 1 && messages[0].greeting && conversations.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <p className="text-xs font-semibold" style={{ color: t.muted, paddingLeft: 2, marginBottom: 2 }}>
+                    Pick up where you left off
+                  </p>
+                  {conversations.slice(0, 4).map((conv) => (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => resumeConversation(conv)}
+                      className="flex items-center gap-2.5 rounded-xl text-left w-full active:scale-[.98] transition-transform"
+                      style={{ padding: "9px 11px", background: t.panel, border: `1px solid ${t.border}` }}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
+                      <span className="flex-1 min-w-0 text-xs font-semibold truncate" style={{ color: t.text }}>
+                        {conv.title}
+                      </span>
+                      <span className="text-[10px] shrink-0" style={{ color: t.muted }}>
+                        {relativeTime(conv.updatedAt)}
+                      </span>
+                    </button>
+                  ))}
+                  {conversations.length > 4 && (
+                    <button
+                      type="button"
+                      onClick={openHistory}
+                      className="text-xs text-left"
+                      style={{ color: accent, padding: "2px 11px" }}
+                    >
+                      View {conversations.length - 4} more…
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {sending && !streamingHasContent && (
                 <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 12.5, paddingLeft: 4 }}>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Sage is thinking…
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {searchStatus ?? "Sage is thinking…"}
+                  </span>
                 </div>
               )}
 
@@ -657,7 +780,356 @@ export function SageChat({ open, onClose, seed, t, accent = ACCENT }: SageChatPr
             Sage offers general information, not medical advice.
           </p>
         </div>
+    </div>
+  );
+
+  if (fullPage) {
+    const isEmptyChat = messages.length <= 1 && (messages.length === 0 || !!messages[0]?.greeting) && !sending;
+
+    const SUGGESTIONS: Array<{ Icon: React.ElementType; text: string }> = [
+      { Icon: Activity,     text: "Explain my latest bloodwork" },
+      { Icon: FlaskConical, text: "Review my active compounds" },
+      { Icon: BookMarked,   text: "Build a peptide protocol" },
+    ];
+
+    return (
+      <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+
+        {/* ── Left history sidebar (desktop only) ── */}
+        <div
+          className="hidden lg:flex flex-col"
+          onMouseEnter={() => setSidebarHovered(true)}
+          onMouseLeave={() => setSidebarHovered(false)}
+          style={{
+            width: sidebarHovered ? 240 : 52,
+            flexShrink: 0,
+            background: t.panel2,
+            borderRight: `1px solid ${t.border}`,
+            transition: "width 0.22s cubic-bezier(0.4,0,0.2,1)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Brand */}
+          <div style={{ padding: "18px 11px 10px" }}>
+            <div className="flex items-center gap-2.5" style={{ whiteSpace: "nowrap" }}>
+              <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 30, height: 30, background: accent }}>
+                <Sparkles className="w-3.5 h-3.5" style={{ color: "#fff" }} />
+              </span>
+              <span
+                className="font-semibold"
+                style={{ fontSize: 15, color: t.text, opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}
+              >
+                Sage
+              </span>
+            </div>
+          </div>
+
+          {/* New chat */}
+          <div style={{ padding: "0 8px 2px" }}>
+            <button
+              onClick={startNewChat}
+              className="flex items-center gap-2 w-full rounded-lg text-left"
+              style={{ padding: "8px 11px", fontSize: 13.5, color: t.text, background: "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
+              onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              title={!sidebarHovered ? "New chat" : undefined}
+            >
+              <SquarePen className="w-4 h-4 shrink-0" style={{ color: t.muted }} />
+              <span style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>New chat</span>
+            </button>
+          </div>
+
+          {/* Search */}
+          <div style={{ padding: "0 8px 8px" }}>
+            <button
+              className="flex items-center gap-2 w-full rounded-lg text-left"
+              style={{ padding: "8px 11px", fontSize: 13.5, color: t.muted, background: "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
+              onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              title={!sidebarHovered ? "Search chats" : undefined}
+            >
+              <Search className="w-4 h-4 shrink-0" />
+              <span style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>Search chats</span>
+            </button>
+          </div>
+
+          <div style={{ height: 1, background: t.border, margin: "0 12px 6px" }} />
+
+          {/* Chats list */}
+          <div className="flex-1 overflow-y-auto" style={{ padding: "0 8px 8px" }}>
+            {loadingHistory && (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-4 h-4 animate-spin" style={{ color: t.muted }} />
+              </div>
+            )}
+            {!loadingHistory && conversations.length === 0 && sidebarHovered && (
+              <p style={{ fontSize: 12, color: t.subtle, textAlign: "center", padding: "16px 8px", whiteSpace: "nowrap" }}>No chats yet.</p>
+            )}
+            {conversations.length > 0 && sidebarHovered && (
+              <p style={{ fontSize: 11, fontWeight: 600, color: t.subtle, padding: "4px 8px 6px", letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                Chats
+              </p>
+            )}
+            {conversations.map(conv => {
+              const isActive = convIdRef.current === conv.id;
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => resumeConversation(conv)}
+                  className="flex items-center gap-1.5 w-full rounded-lg text-left group"
+                  style={{ padding: "7px 11px", marginBottom: 1, color: t.text, fontSize: 13, background: isActive ? t.chip : "transparent", transition: "background .12s", whiteSpace: "nowrap" }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = t.chip; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  title={!sidebarHovered ? conv.title : undefined}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0" style={{ color: t.subtle }} />
+                  <span className="flex-1 min-w-0 truncate" style={{ opacity: sidebarHovered ? 1 : 0, transition: "opacity 0.15s" }}>{conv.title}</span>
+                  <span
+                    onClick={e => deleteConversation(conv.id, e as unknown as React.MouseEvent)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0"
+                    style={{ color: t.subtle, display: sidebarHovered ? undefined : "none" }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Main chat area ── */}
+        <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: t.panel }}>
+
+          {/* Mobile-only top bar */}
+          <div
+            className="flex lg:hidden items-center justify-between shrink-0"
+            style={{ padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}
+          >
+            <span className="font-semibold" style={{ fontSize: 15, color: t.text }}>Sage</span>
+            <div className="flex items-center gap-2">
+              <button onClick={startNewChat} style={{ color: t.muted }} title="New chat"><Plus className="w-5 h-5" /></button>
+              <button onClick={openHistory} style={{ color: t.muted }} title="Past conversations"><History className="w-5 h-5" /></button>
+            </div>
+          </div>
+
+          {/* Mobile history overlay */}
+          {historyOpen && (
+            <div className="flex lg:hidden absolute inset-0 z-10 flex-col" style={{ background: t.panel }}>
+              <div className="flex items-center justify-between shrink-0" style={{ padding: "10px 16px", borderBottom: `1px solid ${t.border}` }}>
+                <span className="text-sm font-bold" style={{ color: t.text }}>Past conversations</span>
+                <button onClick={() => setHistoryOpen(false)} style={{ color: t.muted }}><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto" style={{ padding: 10 }}>
+                {loadingHistory && <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin" style={{ color: t.muted }} /></div>}
+                {!loadingHistory && conversations.length === 0 && (
+                  <p className="text-xs text-center py-6" style={{ color: t.muted }}>No past conversations yet.</p>
+                )}
+                {conversations.map(conv => (
+                  <button
+                    key={conv.id}
+                    onClick={() => resumeConversation(conv)}
+                    className="flex items-start gap-2 rounded-xl w-full text-left group"
+                    style={{ padding: "9px 10px", marginBottom: 4, background: t.panel2, border: `1px solid ${t.border}` }}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accent }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate" style={{ color: t.text }}>{conv.title}</p>
+                      <p className="text-[10px]" style={{ color: t.muted }}>{relativeTime(conv.updatedAt)}</p>
+                    </div>
+                    <span
+                      onClick={e => deleteConversation(conv.id, e as unknown as React.MouseEvent)}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      style={{ color: t.subtle }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isEmptyChat ? (
+            /* ── Empty / landing state ── */
+            <div className="flex-1 flex flex-col items-center justify-center pb-[calc(70px+env(safe-area-inset-bottom))] lg:pb-16" style={{ padding: "0 24px 0" }}>
+              <h2 style={{ fontSize: 28, fontWeight: 600, color: t.text, marginBottom: 32, textAlign: "center", maxWidth: 520, lineHeight: 1.3 }}>
+                How can I help you today?
+              </h2>
+
+              <div className="w-full" style={{ maxWidth: 680 }}>
+                <div
+                  className="flex items-center gap-3 rounded-2xl"
+                  style={{ background: t.panel2, border: `1px solid ${t.border}`, padding: "14px 18px" }}
+                >
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && canSend) send(input); }}
+                    disabled={limitReached}
+                    placeholder="Message Sage…"
+                    maxLength={2000}
+                    className="flex-1 min-w-0 bg-transparent outline-none"
+                    style={{ color: t.text, fontSize: 15 }}
+                  />
+                  <button
+                    onClick={() => send(input)}
+                    disabled={!canSend}
+                    className="flex items-center justify-center rounded-full shrink-0 active:scale-95"
+                    style={{ width: 36, height: 36, background: canSend ? accent : t.chip, color: canSend ? "#fff" : t.subtle, cursor: canSend ? "pointer" : "default", transition: "background .15s" }}
+                  >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-[18px] h-[18px]" />}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                  {SUGGESTIONS.map(({ Icon, text }) => (
+                    <button
+                      key={text}
+                      onClick={() => send(text, [])}
+                      className="flex items-center gap-2 rounded-xl"
+                      style={{ padding: "8px 14px", background: t.panel2, border: `1px solid ${t.border}`, fontSize: 13, color: t.muted, transition: "background .12s" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = t.chip)}
+                      onMouseLeave={e => (e.currentTarget.style.background = t.panel2)}
+                    >
+                      <Icon className="w-3.5 h-3.5" style={{ color: t.subtle }} />
+                      {text}
+                    </button>
+                  ))}
+                </div>
+
+                <p style={{ textAlign: "center", fontSize: 11.5, color: t.subtle, marginTop: 14 }}>
+                  Sage offers general information, not medical advice.
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* ── Active chat ── */
+            <>
+              <div className="flex-1 relative overflow-hidden">
+                <div className="absolute inset-0 overflow-y-auto" style={{ padding: "20px 0 16px" }}>
+                  <div className="flex flex-col gap-5 mx-auto" style={{ maxWidth: 700, padding: "0 24px" }}>
+                    {messages.filter(m => !m.greeting).map(m =>
+                      m.role === "user" ? (
+                        <div key={m.id} className="flex justify-end">
+                          <div
+                            className="rounded-2xl"
+                            style={{ maxWidth: "80%", padding: "10px 16px", background: accent, color: "#fff", fontSize: 14, lineHeight: 1.6, borderBottomRightRadius: 6 }}
+                          >
+                            {m.content}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={m.id} className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 22, height: 22, background: accent }}>
+                              <Sparkles className="w-3 h-3" style={{ color: "#fff" }} />
+                            </span>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: t.muted }}>Sage</span>
+                          </div>
+                          {m.contextSession && (
+                            <p className="flex items-center gap-1" style={{ fontSize: 11, color: accent, paddingLeft: 30 }}>
+                              <CheckCircle2 className="w-3 h-3" />
+                              Retrieved {formatSessionDate(m.contextSession.testDate)} — {m.contextSession.testName}
+                            </p>
+                          )}
+                          {m.content && (
+                            <div style={{ paddingLeft: 30, fontSize: 14, lineHeight: 1.7, color: t.text }}>
+                              {renderRich(m.content)}
+                            </div>
+                          )}
+                          {m.charts && m.charts.length > 0 && (
+                            <div className="flex flex-col gap-2" style={{ paddingLeft: 30 }}>
+                              {m.charts.map((c: DiscussChart, i: number) => <SageTrendChart key={`${m.id}-chart-${i}`} chart={c} />)}
+                            </div>
+                          )}
+                          {m.chips && m.chips.length > 0 && !sending && (
+                            <div className="flex flex-wrap gap-1.5" style={{ paddingLeft: 30 }}>
+                              {m.chips.slice(0, 4).map((chip, ci) => (
+                                <button
+                                  key={ci}
+                                  onClick={() => send(chip)}
+                                  disabled={sending || limitReached}
+                                  className="rounded-full"
+                                  style={{ fontSize: 12, fontWeight: 600, color: accent, padding: "5px 12px", background: t.chip, border: `1px solid ${t.border}` }}
+                                >
+                                  {chip}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
+
+                    {sending && !streamingHasContent && (
+                      <div className="flex items-center gap-2" style={{ color: t.muted, fontSize: 13, paddingLeft: 30 }}>
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>{searchStatus ?? "Sage is thinking…"}</span>
+                      </div>
+                    )}
+
+                    {error && (
+                      <p style={{ paddingLeft: 30, color: "#dc2626", fontSize: 13 }}>{error}</p>
+                    )}
+
+                    <div ref={endRef} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sticky bottom input */}
+              <div className="pb-[calc(70px+env(safe-area-inset-bottom))] lg:pb-[14px]" style={{ paddingTop: 10, paddingLeft: 24, paddingRight: 24, borderTop: `1px solid ${t.border}` }}>
+                <div className="mx-auto" style={{ maxWidth: 700 }}>
+                  <div
+                    className="flex items-center gap-3 rounded-2xl"
+                    style={{ background: t.panel2, border: `1px solid ${t.border}`, padding: "10px 16px" }}
+                  >
+                    <input
+                      ref={inputRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && canSend) send(input); }}
+                      disabled={limitReached}
+                      placeholder={limitReached ? "Question limit reached" : "Message Sage…"}
+                      maxLength={2000}
+                      className="flex-1 min-w-0 bg-transparent outline-none"
+                      style={{ color: t.text, fontSize: 14 }}
+                    />
+                    <button
+                      onClick={() => send(input)}
+                      disabled={!canSend}
+                      className="flex items-center justify-center rounded-full shrink-0 active:scale-95"
+                      style={{ width: 34, height: 34, background: canSend ? accent : t.chip, color: canSend ? "#fff" : t.subtle, cursor: canSend ? "pointer" : "default", transition: "background .15s" }}
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-[18px] h-[18px]" />}
+                    </button>
+                  </div>
+                  <p style={{ textAlign: "center", fontSize: 10.5, color: t.subtle, marginTop: 7 }}>
+                    Sage offers general information, not medical advice.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-stretch sm:items-center sm:justify-center"
+      style={{ background: "rgba(10,12,20,.55)", backdropFilter: "blur(3px)" }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {chatPanel}
     </div>
   );
 }

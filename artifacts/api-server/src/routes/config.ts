@@ -59,7 +59,7 @@ router.get("/config", async (_req, res): Promise<void> => {
     rawWarning, groupBuysPageMessage, wholesalePageMessage,
     rawWholesaleApproval, rawAdminFeeEnabled, rawAdminFeeAmount,
     rawAdminFeeCountries, rawSignupRequiresInvite, deliveryTips,
-    rawSharedComingSoon, rawSharedComingSoonMessage,
+    rawSharedComingSoon, rawSharedComingSoonMessage, rawWholesaleAccess, rawWholesaleAccessAmount,
   ] = await Promise.all([
     getConfigValue("vendorShippingWarning"),
     getConfigValue("groupBuysPageMessage"),
@@ -72,6 +72,8 @@ router.get("/config", async (_req, res): Promise<void> => {
     getDeliveryTips(),
     getConfigValue("wholesale_shared_coming_soon"),
     getConfigValue("wholesale_shared_coming_soon_message"),
+    getConfigValue("wholesale_access_enabled"),
+    getConfigValue("wholesale_access_amount"),
   ]);
 
   const vendorShippingWarning = rawWarning === null ? true : rawWarning === "true";
@@ -99,6 +101,8 @@ router.get("/config", async (_req, res): Promise<void> => {
     wholesaleSharedComingSoonMessage: rawSharedComingSoonMessage ?? "Coming soon",
     deliveryTipsEnabled: deliveryTips.enabled,
     deliveryTipsItems: deliveryTips.items,
+    wholesaleAccessEnabled: rawWholesaleAccess === "true",
+    wholesaleAccessAmount: rawWholesaleAccessAmount ? parseFloat(rawWholesaleAccessAmount) : null,
   });
 });
 
@@ -163,6 +167,28 @@ router.patch("/admin/vendor-shipping-warning", async (req, res): Promise<void> =
   }
   await setConfigValue("vendorShippingWarning", enabled ? "true" : "false");
   res.json({ vendorShippingWarning: enabled });
+});
+
+router.patch("/admin/config/wholesale-access-enabled", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { enabled } = req.body;
+  if (typeof enabled !== "boolean") {
+    res.status(400).json({ error: "enabled must be boolean" });
+    return;
+  }
+  await setConfigValue("wholesale_access_enabled", enabled ? "true" : "false");
+  res.json({ wholesaleAccessEnabled: enabled });
+});
+
+router.patch("/admin/config/wholesale-access-amount", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { amount } = req.body;
+  if (amount !== null && (typeof amount !== "number" || isNaN(amount) || amount <= 0)) {
+    res.status(400).json({ error: "amount must be a positive number or null" });
+    return;
+  }
+  await setConfigValue("wholesale_access_amount", amount === null ? "" : String(amount));
+  res.json({ wholesaleAccessAmount: amount });
 });
 
 router.get("/admin/telegram-config", async (req, res): Promise<void> => {

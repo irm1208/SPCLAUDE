@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, CreditCard, CheckCircle2 } from "lucide-react";
 import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
+import { PaymentMethodDisplay } from "./payment-fields";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -81,13 +82,14 @@ export function WhatYouOwe({ share, me, onPayOrder }: WhatYouOweProps) {
                 </span>
               </button>
               {expanded === "organiser" && (
-                <div className="rounded-lg p-3 text-sm" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                  <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text)" }}>
-                    Pay @{share.fees.organiserUsername.replace(/^@/, "")} directly — not part of your order.
-                  </p>
-                  {share.fees.organiserPaymentInfo
-                    ? <p className="whitespace-pre-line text-xs" style={{ color: "var(--t-muted)" }}>{share.fees.organiserPaymentInfo}</p>
-                    : <p className="text-xs" style={{ color: "var(--t-muted)" }}>Payment details not provided yet — ask the organiser.</p>}
+                <div className="rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                  <PaymentMethodDisplay
+                    organiserUsername={share.fees.organiserUsername}
+                    revolut={share.fees.leadRevolutHandle}
+                    paypal={share.fees.leadPaypalEmail}
+                    cryptoOptions={share.fees.leadCryptoOptions}
+                    notes={share.fees.organiserPaymentInfo}
+                  />
                 </div>
               )}
             </div>

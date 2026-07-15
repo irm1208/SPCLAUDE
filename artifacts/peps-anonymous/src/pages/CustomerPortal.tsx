@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
+import { WholesaleAccessSection } from "@/components/WholesaleAccessSection";
 import { COUNTRY_LIST } from "@/data/countries";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -98,8 +99,8 @@ type Order = {
   shippingCarrier?: string | null;
 };
 type CustomerProfile = { fullName: string; email: string; phone: string; address: string };
-type Section = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "protocols" | "medications" | "trtaas" | "community-testing" | "lab-tests" | "support" | "fh-risk" | "insulin-resistance";
-const PORTAL_SECTIONS: Section[] = ["home","orders","groups","compounds","blood-tests","health","glp1","plotter","profile","telegram","history","health-hub","lab-pool","gb-testing","protocols","medications","trtaas","community-testing","lab-tests","support"];
+type Section = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "protocols" | "medications" | "trtaas" | "community-testing" | "lab-tests" | "support" | "fh-risk" | "insulin-resistance" | "wholesale-access";
+const PORTAL_SECTIONS: Section[] = ["home","orders","groups","compounds","blood-tests","health","glp1","plotter","profile","telegram","history","health-hub","lab-pool","gb-testing","protocols","medications","trtaas","community-testing","lab-tests","support","wholesale-access"];
 
 const SECTION_ALL_META: { id: Section; label: string; icon: React.ElementType }[] = [
   { id: "home",        label: "Hub",          icon: LayoutDashboard },
@@ -116,7 +117,8 @@ const SECTION_ALL_META: { id: Section; label: string; icon: React.ElementType }[
   { id: "health-hub",  label: "Health",       icon: HeartPulse },
   { id: "lab-pool",    label: "Lab Pool",     icon: TestTube },
   { id: "support",     label: "Support",      icon: MessageSquare },
-  { id: "gb-testing",  label: "GB Testing",   icon: FlaskConical },
+  { id: "gb-testing",       label: "GB Testing",       icon: FlaskConical },
+  { id: "wholesale-access", label: "Wholesale Access",  icon: Lock },
 ];
 
 // ─── Compounds preset data ─────────────────────────────────────────────────────
@@ -7834,6 +7836,12 @@ export default function CustomerPortal() {
   }
 
   // ─── GB Testing section ──────────────────────────────────────────────────────
+
+  if (section === "wholesale-access") {
+    return inShell("wholesale-access", "Wholesale Access", (
+      <WholesaleAccessSection />
+    ));
+  }
 
   if (section === "gb-testing") {
     const fmtUsd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);

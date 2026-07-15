@@ -685,15 +685,31 @@ router.get("/test-catalog", async (_req, res): Promise<void> => {
 
 // POST /api/account/pool-leader/apply
 router.post("/account/pool-leader/apply", requireAccount, async (req, res): Promise<void> => {
-  const { bio, walletAddress, walletCurrency, walletNetwork, anonpayWallet, anonpayTicker, anonpayNetwork, revolutHandle, paypalEmail } = req.body ?? {};
+  const { bio, walletAddress, walletCurrency, walletNetwork, cryptoOptions, anonpayWallet, anonpayTicker, anonpayNetwork, revolutHandle, paypalEmail } = req.body ?? {};
   const tg = req.account!.telegramUsername;
+
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | null =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : null;
+
+  const firstCrypto = normalizedCryptoOptions?.[0];
+
   await db.update(accountsTable).set({
     poolLeaderStatus: "applied",
     poolLeaderAppliedAt: new Date(),
     poolLeaderBio: bio ? String(bio).slice(0, 1000) : null,
-    poolLeaderWallet: walletAddress ? String(walletAddress).slice(0, 200) : null,
-    poolLeaderWalletCurrency: walletCurrency ? String(walletCurrency).slice(0, 20) : "USDT",
-    poolLeaderWalletNetwork: walletNetwork ? String(walletNetwork).slice(0, 30) : "ERC-20",
+    poolLeaderWallet: (firstCrypto?.walletAddress ?? (walletAddress ? String(walletAddress) : null))?.slice(0, 200) ?? null,
+    poolLeaderWalletCurrency: (firstCrypto?.currency ?? (walletCurrency ? String(walletCurrency) : "USDT")).slice(0, 20),
+    poolLeaderWalletNetwork: (firstCrypto?.network ?? (walletNetwork ? String(walletNetwork) : "ERC-20")).slice(0, 30),
+    poolLeaderCryptoOptions: normalizedCryptoOptions ?? undefined,
     poolLeaderAnonpayWallet: anonpayWallet ? String(anonpayWallet).slice(0, 200) : null,
     poolLeaderAnonpayTicker: anonpayTicker ? String(anonpayTicker).slice(0, 20) : null,
     poolLeaderAnonpayNetwork: anonpayNetwork ? String(anonpayNetwork).slice(0, 30) : null,
@@ -714,6 +730,7 @@ router.get("/account/pool-leader/status", requireAccount, async (req, res): Prom
     wallet: accountsTable.poolLeaderWallet,
     walletCurrency: accountsTable.poolLeaderWalletCurrency,
     walletNetwork: accountsTable.poolLeaderWalletNetwork,
+    cryptoOptions: accountsTable.poolLeaderCryptoOptions,
     anonpayWallet: accountsTable.poolLeaderAnonpayWallet,
     anonpayTicker: accountsTable.poolLeaderAnonpayTicker,
     anonpayNetwork: accountsTable.poolLeaderAnonpayNetwork,
@@ -731,13 +748,36 @@ router.patch("/account/pool-leader/profile", requireAccount, async (req, res): P
   if (!acc || acc.status !== "approved") {
     res.status(403).json({ error: "Pool leader not approved" }); return;
   }
-  const { walletAddress, walletCurrency, walletNetwork, anonpayWallet, anonpayTicker, anonpayNetwork, revolutHandle, paypalEmail } = req.body ?? {};
-  const hasAtLeastOne = walletAddress || anonpayWallet || revolutHandle || paypalEmail;
+  const { walletAddress, walletCurrency, walletNetwork, cryptoOptions, anonpayWallet, anonpayTicker, anonpayNetwork, revolutHandle, paypalEmail } = req.body ?? {};
+
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | null =
+    Array.isArray(cryptoOptions)
+      ? cryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : null;
+
+  const firstCrypto = normalizedCryptoOptions?.[0];
+
+  const hasAtLeastOne = (normalizedCryptoOptions?.length ?? 0) > 0 || walletAddress || anonpayWallet || revolutHandle || paypalEmail;
   if (!hasAtLeastOne) { res.status(400).json({ error: "At least one payment method is required" }); return; }
+
   await db.update(accountsTable).set({
-    poolLeaderWallet: walletAddress !== undefined ? (walletAddress ? String(walletAddress).slice(0, 200) : null) : undefined,
-    poolLeaderWalletCurrency: walletCurrency ? String(walletCurrency).slice(0, 20) : undefined,
-    poolLeaderWalletNetwork: walletNetwork ? String(walletNetwork).slice(0, 30) : undefined,
+    poolLeaderCryptoOptions: normalizedCryptoOptions ?? undefined,
+    poolLeaderWallet: normalizedCryptoOptions !== null
+      ? (firstCrypto?.walletAddress?.slice(0, 200) ?? null)
+      : (walletAddress !== undefined ? (walletAddress ? String(walletAddress).slice(0, 200) : null) : undefined),
+    poolLeaderWalletCurrency: normalizedCryptoOptions !== null
+      ? (firstCrypto?.currency?.slice(0, 20) ?? undefined)
+      : (walletCurrency ? String(walletCurrency).slice(0, 20) : undefined),
+    poolLeaderWalletNetwork: normalizedCryptoOptions !== null
+      ? (firstCrypto?.network?.slice(0, 30) ?? undefined)
+      : (walletNetwork ? String(walletNetwork).slice(0, 30) : undefined),
     poolLeaderAnonpayWallet: anonpayWallet !== undefined ? (anonpayWallet ? String(anonpayWallet).slice(0, 200) : null) : undefined,
     poolLeaderAnonpayTicker: anonpayTicker !== undefined ? (anonpayTicker ? String(anonpayTicker).slice(0, 20) : null) : undefined,
     poolLeaderAnonpayNetwork: anonpayNetwork !== undefined ? (anonpayNetwork ? String(anonpayNetwork).slice(0, 30) : null) : undefined,
@@ -810,6 +850,7 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
     title, description, compoundName, manufacturer, batchNumber, votingMode, tests,
     resultsPassword, groupBuyId, contributorNamedReportEnabled, stopOnFunded, fixedOptInFeeUsd,
     walletAddress, walletCurrency, walletNetwork,
+    cryptoOptions: bodyCryptoOptions,
     anonpayWallet, anonpayTicker, anonpayNetwork,
     revolutHandle, paypalEmail, janoshikUrl,
     allowVialContribution, pageMessage,
@@ -821,18 +862,42 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
   const slug = await uniqueSlug(title);
   const passwordHash = resultsPassword ? await bcrypt.hash(String(resultsPassword), 10) : null;
 
-  // Build payment methods from the details supplied at pool-creation time
-  const poolPaymentMethods = buildPaymentMethods({
-    wallet: walletAddress || null,
-    currency: walletCurrency || "USDT",
-    network: walletNetwork || "ERC-20",
-    anonpayWallet: anonpayWallet || null,
-    anonpayTicker: anonpayTicker || "XMR",
-    anonpayNetwork: anonpayNetwork || "Monero",
-    revolutHandle: revolutHandle || null,
-    paypalEmail: paypalEmail || null,
-    janoshikUrl: janoshikUrl || null,
-  });
+  // Validate multi-chain crypto options if provided
+  const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | null =
+    Array.isArray(bodyCryptoOptions) && bodyCryptoOptions.length > 0
+      ? bodyCryptoOptions
+          .filter((o: unknown) => o && typeof o === "object")
+          .map((o: { currency?: string; network?: string; walletAddress?: string }) => ({
+            currency: String(o.currency ?? "").trim(),
+            network: String(o.network ?? "").trim(),
+            walletAddress: String(o.walletAddress ?? "").trim(),
+          }))
+          .filter(o => o.currency && o.network && o.walletAddress)
+      : null;
+
+  // Build payment methods — multi-chain or legacy single wallet
+  let poolPaymentMethods: PoolPaymentMethod[];
+  if (normalizedCryptoOptions?.length) {
+    poolPaymentMethods = [
+      ...normalizedCryptoOptions.map(o => ({ type: "crypto" as const, currency: o.currency, network: o.network, address: o.walletAddress })),
+      ...(anonpayWallet ? [{ type: "anonpay" as const, wallet: String(anonpayWallet), ticker: String(anonpayTicker || "XMR"), network: String(anonpayNetwork || "Monero") }] : []),
+      ...(revolutHandle ? [{ type: "revolut" as const, handle: String(revolutHandle) }] : []),
+      ...(paypalEmail ? [{ type: "paypal" as const, email: String(paypalEmail) }] : []),
+      ...(janoshikUrl ? [{ type: "janoshik", url: String(janoshikUrl) } as unknown as PoolPaymentMethod] : []),
+    ];
+  } else {
+    poolPaymentMethods = buildPaymentMethods({
+      wallet: walletAddress || null,
+      currency: walletCurrency || "USDT",
+      network: walletNetwork || "ERC-20",
+      anonpayWallet: anonpayWallet || null,
+      anonpayTicker: anonpayTicker || "XMR",
+      anonpayNetwork: anonpayNetwork || "Monero",
+      revolutHandle: revolutHandle || null,
+      paypalEmail: paypalEmail || null,
+      janoshikUrl: janoshikUrl || null,
+    });
+  }
   if (poolPaymentMethods.length === 0) {
     res.status(400).json({ error: "Add at least one payment method for this pool" }); return;
   }

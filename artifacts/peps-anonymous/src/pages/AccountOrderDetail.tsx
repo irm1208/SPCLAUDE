@@ -2429,45 +2429,6 @@ export default function AccountOrderDetail() {
 
                     {/* ---------- SIDEBAR ---------- */}
                     <div className="space-y-4 min-w-0">
-                      {/* Actions */}
-                      <div className="rounded-lg p-4 sm:p-5 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <SecIcon Icon={Pencil} />
-                          <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
-                        </div>
-                        {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" ? (
-                          <button
-                            className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
-                            style={{ background: ACCENT, padding: "10px 16px" }}
-                            onClick={handleTopUp}
-                          >
-                            <Plus className="w-4 h-4" /> Place Another Order
-                          </button>
-                        ) : order.orderType === "wholesale_shared" ? (
-                          <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                            This is a shared wholesale order. Items and shipping are managed from the shared order page.
-                          </div>
-                        ) : EDITABLE_STATUSES.includes(order.status) ? (
-                          <button
-                            className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
-                            style={{ background: ACCENT, padding: "10px 16px" }}
-                            onClick={handleEdit}
-                          >
-                            <Pencil className="w-4 h-4" /> Edit This Order
-                          </button>
-                        ) : order.paymentStatus !== "confirmed" ? (
-                          <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                            This order is <span className="font-semibold">{order.status}</span> and cannot be edited.
-                          </div>
-                        ) : null}
-                        <button
-                          onClick={handleDownloadReceipt}
-                          className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
-                          style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderColor: "var(--t-border)", padding: "10px 16px" }}
-                        >
-                          <Download className="w-4 h-4" /> Download PDF Receipt
-                        </button>
-                      </div>
                       {/* Order details */}
                       <div className="rounded-lg p-4 sm:p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
                         <div className="flex items-center gap-2 mb-3">
@@ -2777,6 +2738,46 @@ export default function AccountOrderDetail() {
                       </Card>
                     )
                   )}
+
+                  {/* Actions */}
+                  <div className="rounded-lg p-4 sm:p-5 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <SecIcon Icon={Pencil} />
+                      <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
+                    </div>
+                    {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" ? (
+                      <button
+                        className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
+                        style={{ background: ACCENT, padding: "10px 16px" }}
+                        onClick={handleTopUp}
+                      >
+                        <Plus className="w-4 h-4" /> Place Another Order
+                      </button>
+                    ) : order.orderType === "wholesale_shared" ? (
+                      <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        This is a shared wholesale order. Items and shipping are managed from the shared order page.
+                      </div>
+                    ) : EDITABLE_STATUSES.includes(order.status) ? (
+                      <button
+                        className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
+                        style={{ background: ACCENT, padding: "10px 16px" }}
+                        onClick={handleEdit}
+                      >
+                        <Pencil className="w-4 h-4" /> Edit This Order
+                      </button>
+                    ) : order.paymentStatus !== "confirmed" ? (
+                      <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        This order is <span className="font-semibold">{order.status}</span> and cannot be edited.
+                      </div>
+                    ) : null}
+                    <button
+                      onClick={handleDownloadReceipt}
+                      className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
+                      style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderColor: "var(--t-border)", padding: "10px 16px" }}
+                    >
+                      <Download className="w-4 h-4" /> Download PDF Receipt
+                    </button>
+                  </div>
 
                   {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
                   {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder && !order.groupBuyDeleteLocked && (

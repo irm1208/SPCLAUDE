@@ -30,17 +30,75 @@ function PayPalIcon({ size = 36 }: { size?: number }) {
 function CryptoIconBadge({ currency = "USDT", size = 36 }: { currency?: string; size?: number }) {
   return (
     <div
-      style={{ width: size, height: size }}
-      className="rounded-[9px] bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shrink-0 shadow-sm"
+      className="rounded-[9px] flex items-center justify-center shrink-0 shadow-sm"
+      style={{ width: size, height: size, background: "linear-gradient(135deg, #2D6BCC 0%, #1B3A7A 100%)" }}
     >
       <span className="text-white font-black text-[10px] tracking-tight leading-none">{currency.slice(0, 4)}</span>
     </div>
   );
 }
 
+function getNetworkDisplay(network: string): { name: string; badge: string } {
+  const net = network.toLowerCase();
+  if (/erc.?20/.test(net))   return { name: "Ethereum",     badge: "ERC-20" };
+  if (/arbitrum/.test(net))  return { name: "Arbitrum One", badge: "ARB" };
+  if (/polygon/.test(net))   return { name: "Polygon",      badge: "MATIC" };
+  if (/tron|trc/.test(net))  return { name: "Tron",         badge: "TRC-20" };
+  if (/bitcoin|btc/.test(net)) return { name: "Bitcoin",    badge: "BTC" };
+  if (/solana/.test(net))    return { name: "Solana",       badge: "SOL" };
+  if (/bsc|bep.?20|binance/.test(net)) return { name: "BNB Chain", badge: "BEP-20" };
+  return { name: network, badge: "" };
+}
+
+function NetworkIcon({ network, size = 20 }: { network: string; size?: number }) {
+  const net = network.toLowerCase();
+  const r = Math.round(size * 0.25);
+  if (/solana/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <defs><linearGradient id="sol-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#9945FF"/><stop offset="100%" stopColor="#14F195"/></linearGradient></defs>
+      <rect width="24" height="24" rx={r} fill="url(#sol-g)"/>
+      <rect x="4.5" y="7" width="12" height="2.2" rx="1.1" fill="white"/>
+      <rect x="4.5" y="10.9" width="15" height="2.2" rx="1.1" fill="white" opacity="0.85"/>
+      <rect x="4.5" y="14.8" width="12" height="2.2" rx="1.1" fill="white"/>
+    </svg>
+  );
+  if (/arbitrum/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#213147"/>
+      <path d="M12 5L7.5 17h2.4L12 12l2.1 5H16.5L12 5z" fill="#12AAFF"/>
+    </svg>
+  );
+  if (/polygon/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#8247E5"/>
+      <path d="M15.5 9.25L12 7.25 8.5 9.25v4L12 15.25l3.5-2v-4z" stroke="white" strokeWidth="1.5" fill="none" strokeLinejoin="round"/>
+      <path d="M12 7.25V15.25" stroke="white" strokeWidth="1.2" opacity="0.6"/>
+    </svg>
+  );
+  if (/tron|trc/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#E50915"/>
+      <path d="M6 8h12L12 18 6 8z" fill="white" opacity="0.9"/>
+    </svg>
+  );
+  if (/bitcoin|btc/.test(net)) return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#F7931A"/>
+      <text x="12" y="16.5" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold" fontFamily="sans-serif">₿</text>
+    </svg>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <rect width="24" height="24" rx={r} fill="#627EEA"/>
+      <path d="M12 4.5L8 11.5l4 2.5 4-2.5L12 4.5z" fill="white" opacity="0.8"/>
+      <path d="M12 15.5L8 13l4 6.5 4-6.5-4 2.5z" fill="white"/>
+    </svg>
+  );
+}
+
 // ── Shared small components ────────────────────────────────────
 
-function CopyBtn({ value, accentColor = "#7c3aed" }: { value: string; accentColor?: string }) {
+function CopyBtn({ value, accentColor = "#1B3A7A" }: { value: string; accentColor?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(value);
@@ -120,6 +178,22 @@ function buildPaymentUri(wallet: string, amount: number, currency: string, netwo
     const units = Math.round(amount * 1_000_000);
     return `ethereum:${ETH_USDC_CONTRACT}@1/transfer?address=${wallet}&uint256=${units}`;
   }
+  if (cur === "USDT" && /arbitrum/.test(net)) {
+    const units = Math.round(amount * 1_000_000);
+    return `ethereum:0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9@42161/transfer?address=${wallet}&uint256=${units}`;
+  }
+  if (cur === "USDC" && /arbitrum/.test(net)) {
+    const units = Math.round(amount * 1_000_000);
+    return `ethereum:0xaf88d065e77c8cC2239327C5EDb3A432268e5831@42161/transfer?address=${wallet}&uint256=${units}`;
+  }
+  if (cur === "USDT" && /polygon/.test(net)) {
+    const units = Math.round(amount * 1_000_000);
+    return `ethereum:0xc2132D05D31c914a87C6611C10748AEb04B58e8F@137/transfer?address=${wallet}&uint256=${units}`;
+  }
+  if (cur === "USDC" && /polygon/.test(net)) {
+    const units = Math.round(amount * 1_000_000);
+    return `ethereum:0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359@137/transfer?address=${wallet}&uint256=${units}`;
+  }
   if (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) {
     const units = (BigInt(Math.round(amount * 1_000_000)) * 1_000_000_000_000n).toString();
     return `ethereum:${BSC_USDT_CONTRACT}@56/transfer?address=${wallet}&uint256=${units}`;
@@ -140,6 +214,13 @@ function isAutoVerified(currency: string, network: string): boolean {
   return (
     (cur === "USDT" && /erc.?20|ethereum/.test(net)) ||
     (cur === "USDC" && /erc.?20|ethereum/.test(net)) ||
+    (cur === "USDT" && /arbitrum/.test(net)) ||
+    (cur === "USDC" && /arbitrum/.test(net)) ||
+    (cur === "USDT" && /polygon/.test(net)) ||
+    (cur === "USDC" && /polygon/.test(net)) ||
+    (cur === "USDC" && /solana/.test(net)) ||
+    (cur === "USDT" && /solana/.test(net)) ||
+    (cur === "USDT" && /tron|trc/.test(net)) ||
     (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) ||
     (cur === "ETH" && /mainnet|ethereum|erc.?20/.test(net)) ||
     (cur === "BTC" && /mainnet|bitcoin/.test(net))
@@ -150,6 +231,10 @@ function getTxExplorerUrl(txHash: string, currency: string, network: string): st
   const cur = currency.toUpperCase().trim();
   const net = network.toLowerCase().trim();
   if (cur === "BTC" && /mainnet|bitcoin/.test(net)) return `https://blockstream.info/tx/${txHash}`;
+  if (/arbitrum/.test(net)) return `https://arbiscan.io/tx/${txHash}`;
+  if (/polygon/.test(net)) return `https://polygonscan.com/tx/${txHash}`;
+  if (/solana/.test(net)) return `https://solscan.io/tx/${txHash}`;
+  if (/tron|trc/.test(net)) return `https://tronscan.org/#/transaction/${txHash}`;
   if (cur === "USDT" && /bep.?20|bsc|binance/.test(net)) return `https://bscscan.com/tx/${txHash}`;
   return `https://etherscan.io/tx/${txHash}`;
 }
@@ -171,19 +256,23 @@ function OpenWalletButton({ wallet, amount, currency, network }: { wallet: strin
 
 function QrBlock({ wallet, amount, currency, network }: { wallet: string; amount: number; currency: string; network: string }) {
   const cur = currency.toUpperCase().trim();
-  // For ERC-20 stablecoins (USDT/USDC), encode just the wallet address — the full
-  // EIP-681 transfer URI causes wallets like Cake Wallet to display the coin as
-  // "ETH" rather than the token. Plain address QRs are universally recognised; the
-  // amount is shown on screen.
-  const uri = (cur === "USDT" || cur === "USDC") ? wallet : (buildPaymentUri(wallet, amount, currency, network) ?? wallet);
-  const isBtc = cur === "BTC";
+  const net = network.toLowerCase().trim();
+  // For stablecoins on EVM chains, encode just the wallet address — the full EIP-681 transfer
+  // URI causes some wallets to display the token incorrectly. For BTC/Solana/Tron use address only.
+  const uri = wallet;
+  const isBtc = cur === "BTC" && /mainnet|bitcoin/.test(net);
+  const isSolana = /solana/.test(net);
+  const isTron = /tron|trc/.test(net);
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="bg-white p-3 rounded-xl shadow-sm border border-white/60 inline-block">
         <QRCode value={uri} size={152} level="M" />
       </div>
       <p className="text-[10px] text-emerald-800/70 text-center">
-        {isBtc ? "Scan with any Bitcoin wallet" : "Scan with MetaMask, Trust Wallet, or any compatible wallet"}
+        {isBtc ? "Scan with any Bitcoin wallet"
+          : isSolana ? "Scan with Phantom, Solflare, or any Solana wallet"
+          : isTron ? "Scan with TronLink or any TRON-compatible wallet"
+          : "Scan with MetaMask, Trust Wallet, or any compatible wallet"}
       </p>
     </div>
   );
@@ -271,11 +360,12 @@ function TxInput({ label, value, onChange, onSubmit, submitting, error, retry }:
 // ── Types ──────────────────────────────────────────────────────
 
 type PaymentMethod = "crypto" | "revolut" | "paypal" | "anonpay";
-type Step = "loading" | "unavailable" | "method" | "choice" | "test" | "pay" | "revolut" | "paypal" | "anonpay";
+type Step = "loading" | "unavailable" | "method" | "chain" | "choice" | "test" | "pay" | "revolut" | "paypal" | "anonpay";
 type FiatMethod = "revolut" | "paypal";
 
 interface Props {
-  orderId: string;
+  orderId?: string;
+  apiPrefix?: string;
   orderPin?: string;
   grandTotal: number;
   currency?: string | null;
@@ -292,8 +382,8 @@ interface Props {
 // ── Gradient styles ────────────────────────────────────────────
 
 const cryptoStyle = {
-  background: "linear-gradient(135deg, color-mix(in srgb, #8B5CF6 18%, var(--t-surface)) 0%, color-mix(in srgb, #7C3AED 15%, var(--t-surface)) 50%, color-mix(in srgb, #3B82F6 13%, var(--t-surface)) 100%)",
-  borderColor: "rgba(139, 92, 246, 0.35)",
+  background: "linear-gradient(135deg, color-mix(in srgb, #1B3A7A 15%, var(--t-surface)) 0%, color-mix(in srgb, #2D6BCC 12%, var(--t-surface)) 50%, color-mix(in srgb, #1B3164 10%, var(--t-surface)) 100%)",
+  borderColor: "rgba(27, 58, 122, 0.30)",
 };
 const revStyle = {
   background: "linear-gradient(135deg, color-mix(in srgb, #0666EB 13%, var(--t-surface)) 0%, color-mix(in srgb, #3B82F6 11%, var(--t-surface)) 60%, color-mix(in srgb, #6366F1 11%, var(--t-surface)) 100%)",
@@ -328,9 +418,9 @@ function CollectedByBanner({ collectedBy }: {
   }
   return (
     <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium"
-      style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.18)", color: "var(--t-subtle)" }}>
+      style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)", color: "var(--crypto-text-primary)" }}>
       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0 font-bold text-[10px]"
-        style={{ background: "rgba(100,116,139,0.15)", color: "rgb(100,116,139)" }}>A</span>
+        style={{ background: "var(--crypto-warn-bg)", color: "var(--crypto-text-primary)" }}>A</span>
       <span>Payment collected by admin</span>
     </div>
   );
@@ -339,7 +429,7 @@ function CollectedByBanner({ collectedBy }: {
 // ── Main component ─────────────────────────────────────────────
 
 export default function PaymentPanel({
-  orderId, orderPin, grandTotal, currency,
+  orderId, apiPrefix, orderPin, grandTotal, currency,
   paymentStatus: initStatus,
   paymentTxHash: initTxHash,
   paymentTestAmount: initTestAmount,
@@ -348,6 +438,7 @@ export default function PaymentPanel({
   paymentsEnabled: paymentsEnabledProp,
   creditsUsd = 0,
 }: Props) {
+  const apiBase = apiPrefix ?? (orderId ? `/api/orders/${orderId}` : null);
   const [paymentsEnabled, setPaymentsEnabled] = useState<boolean | null>(
     paymentsEnabledProp !== undefined ? paymentsEnabledProp : null
   );
@@ -357,12 +448,12 @@ export default function PaymentPanel({
   const [orderCode, setOrderCode] = useState<string | null>(null);
   const [cryptoCurrency, setCryptoCurrency] = useState<string>("USDT");
   const [cryptoNetwork, setCryptoNetwork] = useState<string>("ERC-20");
-  // Crypto tokens the buyer may choose between (e.g. USDT/USDC on the ERC-20 rail).
-  const [availableCryptoOptions, setAvailableCryptoOptions] = useState<{ currency: string; network: string }[]>([]);
-  // Only set once the buyer actively switches tokens this session. We send it to
+  // Crypto options the buyer may choose between (USDT/USDC on multiple chains).
+  const [availableCryptoOptions, setAvailableCryptoOptions] = useState<{ currency: string; network: string; walletAddress?: string | null }[]>([]);
+  // Only set once the buyer actively picks an option this session. We send it to
   // rate-lock so the server persists the choice; until then we send nothing and
-  // let the server keep its previously-persisted currency (survives refreshes).
-  const [pickedCurrency, setPickedCurrency] = useState<string | null>(null);
+  // let the server keep its previously-persisted choice (survives refreshes).
+  const [pickedOption, setPickedOption] = useState<{ currency: string; network: string } | null>(null);
 
   const [collectedBy, setCollectedBy] = useState<{ type: "admin" | "organiser" | "reshipper"; username?: string } | null>(null);
 
@@ -405,16 +496,18 @@ export default function PaymentPanel({
   // must never display or send a guessed amount for volatile coins.
   const [rateReady, setRateReady] = useState(false);
   const loadRate = useCallback(() => {
-    if (!orderId) return;
+    if (!apiBase) return;
     setRateLoading(true);
     setRateUnavailable(false);
     setRateReady(false);
-    fetch(`/api/orders/${orderId}/lock-usdt-rate`, {
+    fetch(`${apiBase}/lock-usdt-rate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Only send a currency once the buyer has actively switched tokens; otherwise
+      // Only send a choice once the buyer has actively switched options; otherwise
       // let the server keep whatever was last persisted for this order.
-      body: JSON.stringify(pickedCurrency ? { cryptoCurrency: pickedCurrency } : {}),
+      body: JSON.stringify(pickedOption
+        ? { cryptoCurrency: pickedOption.currency, cryptoNetwork: pickedOption.network }
+        : {}),
     })
       .then(async r => {
         // Any non-OK response (503 or otherwise) means we have no trustworthy
@@ -422,22 +515,24 @@ export default function PaymentPanel({
         if (!r.ok) { setRateUnavailable(true); return null; }
         return r.json();
       })
-      .then((d: { usdAmount?: number; usdPerCoin?: number; decimals?: number; isStable?: boolean; cryptoCurrency?: string; cryptoNetwork?: string; availableCryptoOptions?: { currency: string; network: string }[] } | null) => {
+      .then((d: { usdAmount?: number; usdPerCoin?: number; decimals?: number; isStable?: boolean; cryptoCurrency?: string; cryptoNetwork?: string; walletAddress?: string | null; availableCryptoOptions?: { currency: string; network: string; walletAddress?: string | null }[] } | null) => {
         if (!d) return;
         if (typeof d.usdAmount === "number") setLockedUsdTotal(d.usdAmount);
         if (typeof d.usdPerCoin === "number") setUsdPerCoin(d.usdPerCoin);
         if (typeof d.decimals === "number") setCoinDecimals(d.decimals);
         if (typeof d.isStable === "boolean") setIsStableCoin(d.isStable);
-        // The server returns the EFFECTIVE currency it locked (persisted choice or
+        // The server returns the EFFECTIVE currency+network it locked (persisted choice or
         // base). Mirror it so the panel always shows what verification will accept.
         if (d.cryptoCurrency) setCryptoCurrency(d.cryptoCurrency);
         if (d.cryptoNetwork) setCryptoNetwork(d.cryptoNetwork);
+        // For multi-chain orders: update wallet address to the chain-specific wallet
+        if (d.walletAddress) setWalletAddress(d.walletAddress);
         if (Array.isArray(d.availableCryptoOptions)) setAvailableCryptoOptions(d.availableCryptoOptions);
         setRateReady(true);
       })
       .catch(() => { setRateUnavailable(true); })
       .finally(() => setRateLoading(false));
-  }, [orderId, pickedCurrency]);
+  }, [apiBase, pickedOption]);
   useEffect(() => { loadRate(); }, [loadRate]);
   const usdTotal = lockedUsdTotal ?? grandTotal;
   // Credits are always in USD — deduct from the USD payment side after conversion
@@ -486,9 +581,11 @@ export default function PaymentPanel({
   const [postPayDone, setPostPayDone] = useState(false);
 
   useEffect(() => {
-    const url = orderId
-      ? `/api/payments-info?orderId=${encodeURIComponent(orderId)}`
-      : "/api/payments-info";
+    const url = apiPrefix
+      ? `${apiPrefix}/payments-info`
+      : orderId
+        ? `/api/payments-info?orderId=${encodeURIComponent(orderId)}`
+        : "/api/payments-info";
     fetch(url)
       .then(r => r.json())
       .then(d => {
@@ -506,11 +603,16 @@ export default function PaymentPanel({
         // BTC addresses use base58/bech32 and don't start with 0x.
         const loadedCur = (d.cryptoCurrency ?? "USDT").toUpperCase();
         const loadedNet = (d.cryptoNetwork ?? "ERC-20").toLowerCase();
-        const isBtcRail = loadedCur === "BTC" || /bitcoin/.test(loadedNet);
+        const isBtcRail    = loadedCur === "BTC" || /bitcoin/.test(loadedNet);
+        const isSolanaRail = /solana/.test(loadedNet);
+        const isTronRail   = /tron|trc/.test(loadedNet);
+        const isEvmRail    = !isBtcRail && !isSolanaRail && !isTronRail;
         const isValidCryptoAddr = (a: string | null) => {
           if (!a || !a.trim()) return false;
-          if (isBtcRail) return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(a) || /^bc1[a-z0-9]{6,87}$/.test(a);
-          if (isAutoVerified(loadedCur, loadedNet)) return /^0x[0-9a-fA-F]{40}$/.test(a);
+          if (isBtcRail)    return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(a) || /^bc1[a-z0-9]{6,87}$/.test(a);
+          if (isSolanaRail) return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a); // base58
+          if (isTronRail)   return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a);
+          if (isEvmRail && isAutoVerified(loadedCur, loadedNet)) return /^0x[0-9a-fA-F]{40}$/.test(a);
           // Unsupported/manual rails: accept any non-empty address for organiser-manual confirmation
           return a.trim().length > 0;
         };
@@ -551,7 +653,7 @@ export default function PaymentPanel({
       .catch(() => {
         if (paymentsEnabledProp === undefined) setPaymentsEnabled(false);
       });
-  }, [orderId, paymentsEnabledProp]);
+  }, [apiBase, apiPrefix, orderId, paymentsEnabledProp]);
 
   // Auto-poll Trocador for confirmation once customer has initiated payment.
   // Runs regardless of current UI step so page-refresh pending orders
@@ -824,7 +926,7 @@ export default function PaymentPanel({
     setGenerating(true);
     setError("");
     try {
-      const res = await fetch(`/api/orders/${orderId}/generate-test`, { method: "POST" });
+      const res = await fetch(`${apiBase}/generate-test`, { method: "POST" });
       const d = await res.json();
       if (!res.ok) { setError(d.error || "Failed to generate test amount"); }
       else { setTestAmount(d.paymentTestAmount); updateStatus("test_ready"); setStep("test"); }
@@ -836,7 +938,7 @@ export default function PaymentPanel({
     if (!testTx.trim()) { setError("Please enter your transaction hash"); return; }
     setError(""); setPendingTx(false); setConfirmations(null); setSubmitting(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/submit-test`, {
+      const res = await fetch(`${apiBase}/submit-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ txHash: testTx.trim() }),
@@ -861,7 +963,7 @@ export default function PaymentPanel({
     if (!fullTx.trim()) { setError("Please enter your transaction hash"); return; }
     setError(""); setPendingTx(false); setConfirmations(null); setSubmitting(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`${apiBase}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ txHash: fullTx.trim() }),
@@ -994,20 +1096,36 @@ export default function PaymentPanel({
         </div>
 
         <div className="space-y-2.5">
-          {availableMethods.includes("crypto") && (
-            <button
-              onClick={() => { setStep("choice"); setError(""); }}
-              className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
-              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
-            >
-              <CryptoIconBadge currency={cryptoCurrency} size={44} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{availableCryptoOptions.length > 1 ? availableCryptoOptions.map(o => o.currency).join(" or ") : `${cryptoCurrency} Crypto`}</p>
-                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{cryptoNetwork} · {isAutoVerified(cryptoCurrency, cryptoNetwork) ? "Verified automatically on-chain" : "Organiser confirms manually"}</p>
-              </div>
-              <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
-            </button>
-          )}
+          {availableMethods.includes("crypto") && [...new Set(availableCryptoOptions.map(o => o.currency))].map(cur => {
+            const nets = availableCryptoOptions.filter(o => o.currency === cur);
+            return (
+              <button
+                key={cur}
+                onClick={() => {
+                  setCryptoCurrency(cur);
+                  setError("");
+                  if (nets.length === 1) {
+                    setCryptoNetwork(nets[0].network);
+                    setPickedOption({ currency: cur, network: nets[0].network });
+                    setStep("choice");
+                  } else {
+                    setStep("chain");
+                  }
+                }}
+                className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
+                style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
+              >
+                <CryptoIconBadge currency={cur} size={44} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Pay with {cur}</p>
+                  <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                    {nets.map(o => o.network).join(" · ")} · {isAutoVerified(cur, nets[0].network) ? "Verified on-chain" : "Organiser confirms"}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
+              </button>
+            );
+          })}
 
           {availableMethods.includes("revolut") && (
             <button
@@ -1612,9 +1730,10 @@ export default function PaymentPanel({
     );
   }
 
-  // ── Crypto: choice ───────────────────────────────────────────
+  // ── Crypto: chain picker ─────────────────────────────────────
 
-  if (step === "choice") {
+  if (step === "chain") {
+    const networksForCurrency = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
     return (
       <Card className="p-5 space-y-4" style={cryptoStyle}>
         <CollectedByBanner collectedBy={collectedBy} />
@@ -1632,36 +1751,66 @@ export default function PaymentPanel({
           <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
         </div>
 
-        {availableCryptoOptions.length > 1 && (
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--crypto-text-muted)" }}>Choose your blockchain</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          {networksForCurrency.map(opt => (
+            <button
+              key={opt.network}
+              onClick={() => {
+                setCryptoNetwork(opt.network);
+                setPickedOption({ currency: cryptoCurrency, network: opt.network });
+                setStep("choice");
+                setError("");
+              }}
+              className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl transition-all text-center"
+              style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
+            >
+              <NetworkIcon network={opt.network} size={38} />
+              <span>
+                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{getNetworkDisplay(opt.network).name}</span>
+                {getNetworkDisplay(opt.network).badge && (
+                  <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-1" style={{ background: "var(--crypto-glass-border)", color: "var(--crypto-text-muted)" }}>
+                    {getNetworkDisplay(opt.network).badge}
+                  </span>
+                )}
+                <span className="block text-[10px] mt-1 leading-tight" style={{ color: "var(--crypto-text-muted)" }}>
+                  {isAutoVerified(cryptoCurrency, opt.network) ? "Auto-verified on-chain" : "Organiser confirms manually"}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  // ── Crypto: choice ───────────────────────────────────────────
+
+  if (step === "choice") {
+    return (
+      <Card className="p-5 space-y-4" style={cryptoStyle}>
+        <CollectedByBanner collectedBy={collectedBy} />
+        <div className="flex items-center gap-3">
+          {(multiMethod || availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase()).length > 1) && (
+            <button
+              onClick={() => {
+                const nets = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
+                if (nets.length > 1) { setStep("chain"); } else { goToMethodPicker(); }
+                setError("");
+              }}
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"
+              style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" style={{ color: "var(--crypto-text-primary)" }} />
+            </button>
+          )}
+          <CryptoIconBadge currency={cryptoCurrency} size={30} />
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "var(--crypto-text-muted)" }}>Choose your coin</p>
-            <div className="flex gap-2">
-              {availableCryptoOptions.map(opt => {
-                const selected = cryptoCurrency.toUpperCase() === opt.currency.toUpperCase();
-                return (
-                  <button
-                    key={opt.currency}
-                    onClick={() => {
-                      if (selected || rateLoading) return;
-                      setPickedCurrency(opt.currency);
-                      setCryptoCurrency(opt.currency);
-                      setCryptoNetwork(opt.network);
-                      setError("");
-                    }}
-                    disabled={rateLoading}
-                    className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
-                    style={selected
-                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
-                      : { background: "var(--crypto-glass-bg)", color: "var(--crypto-text-primary)", border: "1px solid var(--crypto-glass-border)" }}
-                  >
-                    {opt.currency}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] mt-1.5" style={{ color: "var(--crypto-text-muted)" }}>Both are sent to the same wallet on the {cryptoNetwork} network.</p>
+            <p className="font-bold text-base leading-tight" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
+            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--crypto-text-muted)" }}>{cryptoNetwork}</p>
           </div>
-        )}
+        </div>
 
         <p className="text-xs" style={{ color: "var(--crypto-text-body)" }}>
           Send <span className="font-bold" style={{ color: "var(--crypto-text-primary)" }}>{usdToCoin(effectiveUsdTotal).toFixed(coinDecimals)} {cryptoCurrency}</span> on the {cryptoNetwork} network.{" "}
@@ -1697,8 +1846,8 @@ export default function PaymentPanel({
             className="w-full flex items-center gap-3 p-3.5 rounded-xl transition-colors text-left"
             style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
           >
-            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-              <Zap className="w-4 h-4 text-blue-600" />
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--crypto-warn-bg)" }}>
+              <Zap className="w-4 h-4" style={{ color: "var(--crypto-text-primary)" }} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">Skip to full payment</p>
@@ -1709,9 +1858,9 @@ export default function PaymentPanel({
         </div>
 
         {error && (
-          <div className="flex gap-2 items-start p-2.5 bg-red-50/80 rounded-lg border border-red-100">
-            <AlertCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
-            <p className="text-xs text-destructive">{error}</p>
+          <div className="flex gap-2 items-start p-2.5 rounded-lg" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.20)" }}>
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#ef4444" }} />
+            <p className="text-xs" style={{ color: "#ef4444" }}>{error}</p>
           </div>
         )}
 

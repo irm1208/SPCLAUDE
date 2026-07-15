@@ -4,11 +4,12 @@ import { bloodTestSessionsTable, bloodTestValuesTable, compoundLogsTable, accoun
 import { eq, and, desc, sql, inArray, gte, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
-import { callSageAI } from "../lib/sage-ai";
+import { callSageAI, callSageAIStreamWithTools } from "../lib/sage-ai";
 import { type Glp1LogCtx } from "../lib/sage-system-prompt";
 import { findProtocol, formatProtocolForSage } from "../lib/protocol-data";
 import { logCustomerActivity } from "../lib/activity-log";
-import { searchWebForSage, shouldSearchWeb } from "../lib/web-search";
+import { fetchPepPediaContext } from "../lib/pep-pedia";
+import { searchPeppysArticles } from "../lib/peppys-search";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
 
 const router: IRouter = Router();
@@ -867,9 +868,9 @@ ${compoundsLine}${protocolSection}${glp1Section}${knowledgeSection}${labTestSect
     .split("{{CHARTABLE_MARKERS}}").join(chartMarkersBlock);
 }
 
-const CHIPS_RE = /CHIPS_JSON_START(\[[\s\S]*?\])CHIPS_JSON_END/;
-const SOURCES_RE = /SOURCES_JSON_START(\[[\s\S]*?\])SOURCES_JSON_END/;
-const CHART_RE = /CHART_JSON_START(\[[\s\S]*?\])CHART_JSON_END/;
+const CHIPS_RE = /CHIPS_?JSON_?START(\[[\s\S]*?\])CHIPS_?JSON_?END/;
+const SOURCES_RE = /I?SOURCES_?JSON_?START(\[[\s\S]*?\])SOURCES_?JSON_?END/;
+const CHART_RE = /CHARTS?_?JSON_?START(\[[\s\S]*?\])CHARTS?_?JSON_?END/;
 const Q_TAG_RE = /\[Q\]([\s\S]*?)\[\/Q\]/g;
 
 interface DiscussSource { label: string; url: string; type: "study" | "forum" | "other" }
@@ -1037,25 +1038,35 @@ async function callGeminiDiscuss(
   allCompounds: CompoundWithDose[] = [],
   hasBloodTest = true,
   glp1Logs: Glp1LogCtx[] = [],
+  onToken?: (text: string) => void,
+  onStatus?: (msg: string) => void,
 ): Promise<{ text: string; chips: string[]; sources: DiscussSource[]; charts: ChartSeries[] }> {
   const seriesMap = buildChartableSeries(sessionDate, biomarkers, historicalSessions);
   const chartableMarkers = [...seriesMap.values()].filter(s => s.points.length >= 2).map(s => s.marker);
 
   let systemPrompt = await buildBloodTestSystemPrompt(sessionName, sessionDate, biomarkers, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompounds, hasBloodTest, chartableMarkers, glp1Logs);
 
-  // ── Real-time web search pre-fetch (Gemini-grounded) ──────────────────────
-  // Runs BEFORE the Sage/Claude call so results can be woven into its answer.
-  // Gated by admin toggle + a keyword heuristic to avoid latency on ordinary
-  // biomarker questions. Never throws — worst case Sage answers without it.
-  let webSearchSources: DiscussSource[] = [];
-  if (shouldSearchWeb(message) && await isWebSearchEnabled().catch(() => true)) {
-    const searchResult = await searchWebForSage(message);
-    if (searchResult) {
-      const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      systemPrompt += `\n\nLIVE WEB SEARCH RESULTS (retrieved ${today}):\n${searchResult.digest}\n\nUse the above only if relevant to the user's question. It reflects current, real information — you DO have real-time web access via this search, so never claim you can't search the internet or don't have access to current news when results like this are provided.`;
-      webSearchSources = searchResult.sources.map(s => ({ label: s.title, url: s.url, type: "other" as const }));
-    }
+  // ── Pre-fetch Pep-Pedia context + Peppys community research in parallel ──────
+  // Sage handles its own web search via tool_use (web_search + fetch_url tools).
+  // Pep-Pedia and Peppys are pre-fetched here since they are curated/private
+  // sources that Sage cannot reach via Google search.
+  const [pepPediaResult, peppysResults] = await Promise.all([
+    fetchPepPediaContext(message).catch(() => null),
+    searchPeppysArticles(message).catch(() => null),
+  ]);
+
+  if (pepPediaResult) {
+    systemPrompt += `\n\n─── PEP-PEDIA.ORG REFERENCE (${pepPediaResult.url}) ───\n${pepPediaResult.content}\n─── END PEP-PEDIA REFERENCE ───\n\nThe above is from the Pep-Pedia wiki — a curated peptide reference database. Prioritise this information for compound-specific facts (mechanism, dosing, half-life, storage). Cite the source as "${pepPediaResult.url}" when you use it.`;
   }
+
+  if (peppysResults && peppysResults.length > 0) {
+    const snippets = peppysResults
+      .map(r => `**${r.title}** (${r.url})\n${r.snippet}`)
+      .join("\n\n---\n\n");
+    systemPrompt += `\n\n─── PEPPYS COMMUNITY RESEARCH ───\nThe following are relevant threads from the Peppys private peptide research community (chat.peppys.org):\n\n${snippets}\n─── END PEPPYS RESEARCH ───\n\nUse this community research as a real-world experience supplement to scientific sources. When citing, use the URL provided for each thread.`;
+  }
+
+  const webSearchSources: DiscussSource[] = [];
 
   // Cap history at last 20 messages (10 turns each side) to keep tokens manageable
   const cappedHistory = history.slice(-20);
@@ -1070,12 +1081,9 @@ async function callGeminiDiscuss(
 
   console.log(`[discuss] Calling Sage AI with ${messages.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
 
-  const raw = await callSageAI({
-    system: systemPrompt,
-    messages,
-    maxTokens: 8192,
-    enableWebSearch: false,
-  });
+  const raw = onToken
+    ? await callSageAIStreamWithTools({ system: systemPrompt, messages, maxTokens: 1200, onToken, onStatus })
+    : await callSageAI({ system: systemPrompt, messages, maxTokens: 1200, enableWebSearch: true });
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
   const filtered = filterSageOutput(raw);
@@ -1893,6 +1901,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     }
     const newCountNoBt = quotaNoBt.used;
 
+    // ── Start SSE stream ──────────────────────────────────────────────────────
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    const sseWrite = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
     try {
       const [topics, labTests, glp1Rows] = await Promise.all([
         Promise.resolve(extractTopicsForCache(message, [])),
@@ -1924,6 +1940,8 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         allCompoundsNoBt,
         false,
         glp1Logs,
+        (text) => sseWrite({ type: "token", text }),
+        (msg) => sseWrite({ type: "status", text: msg }),
       );
 
       logCustomerActivity({
@@ -1944,28 +1962,16 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
         metadata: { sender: "ai", content: result.text, conversationId: "compounds-only", characterCount: result.text.length },
       }).catch(() => {});
 
-      res.json({
-        response: result.text,
-        chips: result.chips,
-        sources: result.sources,
-        charts: result.charts,
-        contextSession: null,
-        used: newCountNoBt,
-        limit: effectiveLimit,
-      });
+      sseWrite({ type: "done", response: result.text, sources: result.sources, chips: result.chips, charts: result.charts, contextSession: null, used: newCountNoBt, limit: effectiveLimit });
+      res.end();
     } catch (err) {
       console.error("[discuss] Gemini error (compounds-only):", err);
       await db
         .update(accountsTable)
         .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
         .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
-      res.status(500).json({
-        error: "ai_unavailable",
-        response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
-        contextSession: null,
-        used: newCountNoBt - 1,
-        limit: effectiveLimit,
-      });
+      sseWrite({ type: "error", error: "ai_unavailable" });
+      res.end();
     }
     return;
   }
@@ -2055,6 +2061,14 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     })
   );
 
+  // ── Start SSE stream ──────────────────────────────────────────────────────
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const sseWrite = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
   // Step 4: Call Gemini — roll back the reserved slot if it fails
   let responseText: string;
   let responseChips: string[] = [];
@@ -2084,7 +2098,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       calories: r.calories != null ? parseFloat(String(r.calories)) : null,
       proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
     }));
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs);
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }), (msg) => sseWrite({ type: "status", text: msg }));
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;
@@ -2095,13 +2109,8 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       .update(accountsTable)
       .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
       .where(and(eq(accountsTable.telegramUsername, tg), eq(accountsTable.discussCountDate, sql`CURRENT_DATE`)));
-    res.status(500).json({
-      error: "ai_unavailable",
-      response: "I'm having trouble reaching the AI right now. Please try again in a moment.",
-      contextSession: null,
-      used: newCount - 1,
-      limit: effectiveLimit,
-    });
+    sseWrite({ type: "error", error: "ai_unavailable" });
+    res.end();
     return;
   }
 
@@ -2133,19 +2142,8 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     },
   }).catch(() => {});
 
-  res.json({
-    response: responseText,
-    chips: responseChips,
-    sources: responseSources,
-    charts: responseCharts,
-    contextSession: {
-      id: session.id,
-      testName: session.testName ?? session.labName ?? "Blood Test",
-      testDate: session.testDate,
-    },
-    used: newCount,
-    limit: effectiveLimit,
-  });
+  sseWrite({ type: "done", response: responseText, sources: responseSources, chips: responseChips, charts: responseCharts, contextSession: { id: session.id, testName: session.testName ?? session.labName ?? "Blood Test", testDate: session.testDate }, used: newCount, limit: effectiveLimit });
+  res.end();
 });
 
 // PATCH /api/blood-tests/:sessionId — update session metadata and replace all values

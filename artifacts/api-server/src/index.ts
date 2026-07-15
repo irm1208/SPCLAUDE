@@ -197,6 +197,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_notes boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_tx_id boolean NOT NULL DEFAULT false`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_edit_quantities boolean NOT NULL DEFAULT false`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_mark_oos boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_can_delete_orders boolean NOT NULL DEFAULT false`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS organiser_rules jsonb`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS qr_viewer_usernames jsonb`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS show_stock_view boolean NOT NULL DEFAULT true`);
@@ -616,6 +618,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_currency text`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_rate numeric(20,8)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_crypto_network text`);
     // vial_orders — locked USD-equivalent total used for crypto display + verification
     await db.execute(sql`ALTER TABLE vial_orders ADD COLUMN IF NOT EXISTS payment_usd_amount numeric(10,2)`);
     // vial_orders — ERC-20 stablecoin the buyer chose (USDT or USDC)
@@ -876,6 +879,48 @@ async function runStartupMigrations(): Promise<void> {
           FOREIGN KEY (group_buy_id) REFERENCES group_buys(id) ON DELETE CASCADE
       )
     `);
+    // accounts — multi-chain crypto wallet list for pool leaders
+    await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS pool_leader_crypto_options jsonb`);
+    // wholesale_shares — lead's peer-to-peer payment collection fields
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lead_revolut_handle text`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lead_paypal_email text`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lead_crypto_options jsonb`);
+    // wholesale_access_requests — crypto wholesale access request system
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS wholesale_access_requests (
+        id                      SERIAL PRIMARY KEY,
+        account_username        TEXT NOT NULL REFERENCES accounts(telegram_username) ON DELETE CASCADE ON UPDATE CASCADE,
+        amount_usd              INTEGER NOT NULL,
+        status                  TEXT NOT NULL DEFAULT 'pending',
+        payment_test_amount     REAL,
+        test_payment_tx_hash    TEXT,
+        payment_tx_hash         TEXT,
+        payment_crypto_network  TEXT,
+        payment_crypto_currency TEXT,
+        created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+        confirmed_at            TIMESTAMPTZ,
+        admin_username          TEXT,
+        rejection_reason        TEXT
+      )
+    `);
+    // self-heal: table may have been created before test-payment columns were added
+    await db.execute(sql`ALTER TABLE wholesale_access_requests ADD COLUMN IF NOT EXISTS payment_test_amount real`);
+    await db.execute(sql`ALTER TABLE wholesale_access_requests ADD COLUMN IF NOT EXISTS test_payment_tx_hash text`);
+    // peppys_articles — community forum content imported via bookmarklet for Sage context
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS peppys_articles (
+        id            TEXT PRIMARY KEY,
+        title         TEXT NOT NULL,
+        url           TEXT NOT NULL,
+        content       TEXT NOT NULL,
+        category_name TEXT,
+        tags          TEXT NOT NULL DEFAULT '[]',
+        post_count    INTEGER NOT NULL DEFAULT 1,
+        imported_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_peppys_imported ON peppys_articles (imported_at)`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
