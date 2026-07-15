@@ -284,6 +284,9 @@ export const modules: ModuleMap = {
   "./components/mockups/order-layouts-v3/FullScroll.tsx": () => import("../components/mockups/order-layouts-v3/FullScroll.tsx"),
   "./components/mockups/order-layouts-v3/GradientAccordion.tsx": () => import("../components/mockups/order-layouts-v3/GradientAccordion.tsx"),
   "./components/mockups/order-layouts-v3/SplitPane.tsx": () => import("../components/mockups/order-layouts-v3/SplitPane.tsx"),
+  "./components/mockups/order-vibes/BoldBlocks.tsx": () => import("../components/mockups/order-vibes/BoldBlocks.tsx"),
+  "./components/mockups/order-vibes/DarkImmersive.tsx": () => import("../components/mockups/order-vibes/DarkImmersive.tsx"),
+  "./components/mockups/order-vibes/ProgressiveReveal.tsx": () => import("../components/mockups/order-vibes/ProgressiveReveal.tsx"),
   "./components/mockups/order-vibes-v2/BoldEnergetic.tsx": () => import("../components/mockups/order-vibes-v2/BoldEnergetic.tsx"),
   "./components/mockups/order-vibes-v2/ClinicalCalm.tsx": () => import("../components/mockups/order-vibes-v2/ClinicalCalm.tsx"),
   "./components/mockups/order-vibes-v2/Current.tsx": () => import("../components/mockups/order-vibes-v2/Current.tsx"),
@@ -292,9 +295,6 @@ export const modules: ModuleMap = {
   "./components/mockups/order-vibes-v2/RefinedClarity.tsx": () => import("../components/mockups/order-vibes-v2/RefinedClarity.tsx"),
   "./components/mockups/order-vibes-v2/RefinedRhythm.tsx": () => import("../components/mockups/order-vibes-v2/RefinedRhythm.tsx"),
   "./components/mockups/order-vibes-v2/WarmApothecary.tsx": () => import("../components/mockups/order-vibes-v2/WarmApothecary.tsx"),
-  "./components/mockups/order-vibes/BoldBlocks.tsx": () => import("../components/mockups/order-vibes/BoldBlocks.tsx"),
-  "./components/mockups/order-vibes/DarkImmersive.tsx": () => import("../components/mockups/order-vibes/DarkImmersive.tsx"),
-  "./components/mockups/order-vibes/ProgressiveReveal.tsx": () => import("../components/mockups/order-vibes/ProgressiveReveal.tsx"),
   "./components/mockups/orders-redesign/Current.tsx": () => import("../components/mockups/orders-redesign/Current.tsx"),
   "./components/mockups/orders-redesign/OrdersDashboard.tsx": () => import("../components/mockups/orders-redesign/OrdersDashboard.tsx"),
   "./components/mockups/orders-redesign/Redesign.tsx": () => import("../components/mockups/orders-redesign/Redesign.tsx"),
@@ -442,9 +442,5 @@ export const modules: ModuleMap = {
   "./components/mockups/temporal-home/ProtocolPosition.tsx": () => import("../components/mockups/temporal-home/ProtocolPosition.tsx"),
   "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx"),
   "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
-<<<<<<< HEAD
-  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx"),
-=======
   "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx")
->>>>>>> 2180309 (Add sage chart components for data visualization)
 };
