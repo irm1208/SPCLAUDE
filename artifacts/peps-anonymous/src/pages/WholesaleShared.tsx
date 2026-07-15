@@ -11,6 +11,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { WholesaleRulesModal, hasAgreedToWholesaleRules } from "@/components/WholesaleRulesModal";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
@@ -127,6 +128,8 @@ export default function WholesaleShared() {
 
   const { data: result, isLoading: shareLoading } = useWholesaleShare(id);
   const share = result?.ok ? result.share : null;
+
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [productSearch, setProductSearch] = useState("");
@@ -506,11 +509,13 @@ export default function WholesaleShared() {
                 {actionError && <p className="text-sm" style={{ color: "#ef4444" }}>{actionError}</p>}
                 <button
                   disabled={busy === "join"}
-                  onClick={async () => {
-                    setActionError(""); setBusy("join");
-                    try { await joinWholesaleShare(id!); invalidate(id!); }
-                    catch (e) { setActionError((e as Error).message); }
-                    finally { setBusy(null); }
+                  onClick={() => {
+                    if (hasAgreedToWholesaleRules()) {
+                      setActionError(""); setBusy("join");
+                      joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
+                    } else {
+                      setRulesOpen(true);
+                    }
                   }}
                   className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60"
                   style={{ background: "var(--t-blue)" }}
@@ -2879,6 +2884,17 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
           </>
         )}
       </AnimatePresence>
+
+      <WholesaleRulesModal
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        onAgree={() => {
+          setRulesOpen(false);
+          setActionError(""); setBusy("join");
+          joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
+        }}
+        context="join"
+      />
     </>
   );
 }

@@ -8,6 +8,7 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { WholesaleRulesModal, hasAgreedToWholesaleRules } from "@/components/WholesaleRulesModal";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
@@ -60,6 +61,8 @@ interface WholesaleVendor {
 export default function WholesaleOrder() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
+
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -1302,7 +1305,11 @@ export default function WholesaleOrder() {
                   {draftSavedFlash ? "Saved!" : "Save draft"}
                 </button>
                 <button
-                  onClick={() => { setSummaryOpen(false); handleReview(); }}
+                  onClick={() => {
+                    setSummaryOpen(false);
+                    if (hasAgreedToWholesaleRules()) { handleReview(); }
+                    else { setRulesOpen(true); }
+                  }}
                   disabled={lineItems.length === 0}
                   className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98] hover:brightness-110"
                   style={{ background: "var(--t-blue)" }}
@@ -1326,6 +1333,13 @@ export default function WholesaleOrder() {
           />
         )}
       </AnimatePresence>
+
+      <WholesaleRulesModal
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        onAgree={() => { setRulesOpen(false); handleReview(); }}
+        context="order"
+      />
     </WholesaleShell>
   );
 }
