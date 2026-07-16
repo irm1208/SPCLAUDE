@@ -822,6 +822,7 @@ interface SellerSummary {
   totalRevenue: number; totalOrders: number;
   lastLogin: string | null;
   walletAddress: string | null; revolutLink: string | null; paypalLink: string | null;
+  notifyVendor: boolean;
   rating: number | null; logoUrl: string | null; hasDashboard: boolean;
 }
 
@@ -877,6 +878,9 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
   const [logoSaving, setLogoSaving] = useState(false);
   const [logoSaved, setLogoSaved] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [notifyVendor, setNotifyVendor] = useState(seller.notifyVendor ?? true);
+  const [notifyToggling, setNotifyToggling] = useState(false);
+  const [notifyError, setNotifyError] = useState<string | null>(null);
 
   const saveLogo = async () => {
     setLogoSaving(true); setLogoError(null); setLogoSaved(false);
@@ -893,6 +897,24 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
       setLogoError("Failed to save — please try again.");
     } finally {
       setLogoSaving(false);
+    }
+  };
+
+  const toggleNotify = async () => {
+    const next = !notifyVendor;
+    setNotifyToggling(true); setNotifyError(null);
+    try {
+      const res = await fetch(apiUrl(`/admin/vial/vendors/${seller.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ notifyVendor: next }),
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      setNotifyVendor(next);
+    } catch {
+      setNotifyError("Failed to update — please try again.");
+    } finally {
+      setNotifyToggling(false);
     }
   };
 
@@ -1100,6 +1122,29 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
               </div>
             )}
           </div>
+          {/* Notify vendor toggle */}
+          <div className="rounded-lg bg-white border border-border p-2.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Vendor Notifications</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {notifyVendor ? "Vendor receives Telegram alerts for new & paid orders" : "Telegram alerts to vendor are paused"}
+              </p>
+              {notifyError && <p className="text-[10px] text-red-500 mt-0.5">{notifyError}</p>}
+            </div>
+            <button
+              onClick={toggleNotify}
+              disabled={notifyToggling}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors",
+                notifyVendor ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                notifyToggling && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {notifyToggling ? <Loader2 className="w-3 h-3 animate-spin" /> : notifyVendor ? <ToggleRight className="w-3 h-3" /> : <ToggleLeft className="w-3 h-3" />}
+              {notifyVendor ? "On" : "Off"}
+            </button>
+          </div>
+
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground pt-1">
             <span>Joined {new Date(seller.createdAt).toLocaleDateString()}</span>
             {seller.lastLogin && <span>· Last login {fmtRelativeTime(seller.lastLogin)}</span>}
