@@ -98,6 +98,7 @@ export default function WholesaleOrder() {
   const [selectedRegionIdx, setSelectedRegionIdx] = useState<number | null>(null);
   const [regionAutoSelected, setRegionAutoSelected] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [draftDismissed, setDraftDismissed] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftSavedFlash, setDraftSavedFlash] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -500,11 +501,60 @@ export default function WholesaleOrder() {
               </p>
             </div>
 
-            {draftRestored && (
-              <div className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3" style={{ background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", color: "var(--t-text)" }}>
-                <span>Resumed your saved draft — pick up where you left off.</span>
-                <button onClick={handleDiscardDraft} className="shrink-0 text-xs font-bold px-3 h-8 rounded-lg" style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}>Discard draft</button>
-              </div>
+            {draftRestored && !draftDismissed && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid color-mix(in srgb, var(--t-blue) 30%, transparent)", boxShadow: "0 4px 20px color-mix(in srgb, var(--t-blue) 10%, transparent)" }}
+              >
+                {/* Accent top strip */}
+                <div style={{ height: 4, background: "var(--t-blue)" }} />
+                <div className="p-4" style={{ background: "color-mix(in srgb, var(--t-blue) 6%, var(--t-surface))" }}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--t-blue) 15%, transparent)" }}>
+                      <Save className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm" style={{ color: "var(--t-text)" }}>You have a saved draft</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+                        {[
+                          Object.values(quantities).reduce((a, b) => a + b, 0) > 0
+                            ? `${Object.values(quantities).reduce((a, b) => a + b, 0)} kit${Object.values(quantities).reduce((a, b) => a + b, 0) !== 1 ? "s" : ""} selected`
+                            : null,
+                          fullName ? fullName : null,
+                          shippingCountry ? shippingCountry : null,
+                        ].filter(Boolean).join(" · ") || "Your form details and items have been restored."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDraftDismissed(true)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg"
+                      style={{ color: "var(--t-muted)", background: "var(--t-chip)" }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => setDraftDismissed(true)}
+                      className="flex-1 h-9 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 text-white"
+                      style={{ background: "var(--t-blue)" }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Continue draft
+                    </button>
+                    <button
+                      onClick={() => { handleDiscardDraft(); setDraftDismissed(true); }}
+                      className="h-9 px-4 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-1.5"
+                      style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.2)" }}
+                    >
+                      Start fresh
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             )}
 
             {pageMessage && (
