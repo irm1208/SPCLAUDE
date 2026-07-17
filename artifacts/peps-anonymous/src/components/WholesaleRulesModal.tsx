@@ -84,17 +84,17 @@ export function WholesaleRulesModal({ open, onClose, onAgree, context = "order" 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed z-[75] inset-x-4 flex flex-col"
+            className="fixed z-[75] inset-x-4 flex flex-col overflow-hidden"
             style={{
               top: "50%",
               transform: "translateY(-50%)",
               maxWidth: 520,
               margin: "0 auto",
-              maxHeight: "88vh",
+              maxHeight: "min(88vh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px))",
             }}
           >
             <div
-              className="flex flex-col rounded-2xl overflow-hidden"
+              className="flex flex-col rounded-2xl overflow-hidden min-h-0 flex-1"
               style={{
                 background: "var(--t-panel)",
                 border: "1px solid var(--t-border)",
