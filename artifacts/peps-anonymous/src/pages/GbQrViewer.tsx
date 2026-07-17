@@ -43,6 +43,10 @@ function hasAnyQr(order: QrOrder): boolean {
   return !!order.inpostQrCode || !!order.royalMailQrCode || getExtraQrCodes(order).length > 0;
 }
 
+function isPdfDataUrl(src: string): boolean {
+  return src.startsWith("data:application/pdf");
+}
+
 // ─── Full-screen image lightbox ─────────────────────────────────────────────
 function ImageModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
   useEffect(() => {
@@ -50,6 +54,13 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
+
+  const isPdf = isPdfDataUrl(src);
+
+  const openPdf = () => {
+    const win = window.open();
+    if (win) { win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }
+  };
 
   return (
     <div
@@ -72,12 +83,27 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
         <p className="text-[11px] font-bold uppercase tracking-wide text-center mb-3" style={{ color: "#94A3B8" }}>
           {label} · @{stripAt(username)}
         </p>
-        <img
-          src={src}
-          alt={`${label} QR for @${stripAt(username)}`}
-          className="w-full h-auto rounded-xl object-contain"
-          style={{ maxHeight: "70vh" }}
-        />
+        {isPdf ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <span className="text-5xl">📄</span>
+            <p className="text-sm font-semibold" style={{ color: NAVY }}>PDF QR Code</p>
+            <button
+              type="button"
+              onClick={openPdf}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+            >
+              Open PDF
+            </button>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt={`${label} QR for @${stripAt(username)}`}
+            className="w-full h-auto rounded-xl object-contain"
+            style={{ maxHeight: "70vh" }}
+          />
+        )}
       </div>
     </div>
   );
@@ -86,20 +112,39 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 // ─── QR image thumbnail (click to enlarge) ──────────────────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
+  const isPdf = isPdfDataUrl(src);
+
+  const openPdf = () => {
+    const win = window.open();
+    if (win) { win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }
+  };
+
   return (
     <>
       <div className="flex flex-col items-center gap-2">
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
-        <img
-          src={src}
-          alt={`${label} for @${stripAt(username)}`}
-          className="w-56 h-56 object-contain rounded-2xl p-2 cursor-zoom-in transition-opacity hover:opacity-80"
-          style={{ border: `1px solid rgba(27,58,122,0.15)`, background: "#fff" }}
-          onClick={() => setShowModal(true)}
-          title="Click to enlarge"
-        />
+        {isPdf ? (
+          <button
+            type="button"
+            onClick={openPdf}
+            className="w-56 h-24 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-opacity hover:opacity-80"
+            style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "rgba(27,58,122,0.04)" }}
+          >
+            <span className="text-3xl">📄</span>
+            <span className="text-xs font-bold" style={{ color: NAVY }}>Open PDF</span>
+          </button>
+        ) : (
+          <img
+            src={src}
+            alt={`${label} for @${stripAt(username)}`}
+            className="w-56 h-56 object-contain rounded-2xl p-2 cursor-zoom-in transition-opacity hover:opacity-80"
+            style={{ border: `1px solid rgba(27,58,122,0.15)`, background: "#fff" }}
+            onClick={() => setShowModal(true)}
+            title="Click to enlarge"
+          />
+        )}
       </div>
-      {showModal && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
+      {showModal && !isPdf && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
     </>
   );
 }
