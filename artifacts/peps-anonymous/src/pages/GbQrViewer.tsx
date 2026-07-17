@@ -84,32 +84,13 @@ function downloadPdf(src: string, filename: string) {
   }
 }
 
-// Inline PDF preview: converts data URL → blob URL so Chrome's PDF viewer works
-function PdfPreview({ src, style, className }: { src: string; style?: React.CSSProperties; className?: string }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let url = "";
-    try { url = dataToPdfBlob(src); setBlobUrl(url); } catch { setBlobUrl(null); }
-    return () => { if (url) URL.revokeObjectURL(url); };
-  }, [src]);
-
-  if (!blobUrl) return (
-    <div style={{ ...style, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(27,58,122,0.04)" }}>
-      <Loader2 className="w-4 h-4 animate-spin" style={{ color: "#94A3B8" }} />
-    </div>
-  );
-  return <iframe src={blobUrl} style={{ ...style, border: "none" }} className={className} title="PDF" />;
-}
-
-// ─── Full-screen image / PDF lightbox ───────────────────────────────────────
+// ─── Full-screen image lightbox (images only — PDFs open natively) ──────────
 function ImageModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
-
-  const isPdf = isPdfDataUrl(src);
 
   return (
     <div
@@ -133,44 +114,18 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
         <p className="text-[11px] font-bold uppercase tracking-wide text-center pt-4 pb-2 px-4 shrink-0" style={{ color: "#94A3B8" }}>
           {label} · @{stripAt(username)}
         </p>
-        {isPdf ? (
-          <>
-            <PdfPreview src={src} style={{ minHeight: "60vh", width: "100%" }} className="grow" />
-            <div className="flex gap-2 justify-center p-3 shrink-0" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
-              <button
-                type="button"
-                onClick={() => openPdfInTab(src)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-                style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Open in new tab
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold"
-                style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Download
-              </button>
-            </div>
-          </>
-        ) : (
-          <img
-            src={src}
-            alt={`${label} QR for @${stripAt(username)}`}
-            className="w-full h-auto object-contain p-2"
-            style={{ maxHeight: "80vh" }}
-          />
-        )}
+        <img
+          src={src}
+          alt={`${label} QR for @${stripAt(username)}`}
+          className="w-full h-auto object-contain p-2"
+          style={{ maxHeight: "80vh" }}
+        />
       </div>
     </div>
   );
 }
 
-// ─── QR image thumbnail (click to enlarge) ──────────────────────────────────
+// ─── QR image thumbnail (click to enlarge / open PDF) ───────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
   // imgFailed: onError fallback catches PDFs stored with unexpected MIME types
@@ -186,13 +141,13 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             className="w-56 rounded-2xl overflow-hidden flex flex-col"
             style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
           >
-            {/* PDF placeholder — iframes are unreliable for inline PDF rendering across browsers */}
+            {/* PDF — open natively in a new tab; iframes blank on mobile */}
             <button
               type="button"
-              onClick={() => setShowModal(true)}
+              onClick={() => openPdfInTab(src)}
               className="flex flex-col items-center justify-center gap-3 w-full"
               style={{ height: 180, background: "rgba(27,58,122,0.03)", cursor: "pointer" }}
-              title="Click to view PDF"
+              title="Click to open PDF"
             >
               <div
                 className="flex flex-col items-center justify-center rounded-xl"
@@ -200,7 +155,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
               >
                 <span style={{ fontSize: 22, lineHeight: 1 }}>📄</span>
               </div>
-              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to view</span>
+              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to open</span>
             </button>
             <div
               className="flex gap-1.5 justify-center py-2 px-2"
@@ -208,18 +163,9 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             >
               <button
                 type="button"
-                onClick={() => setShowModal(true)}
+                onClick={() => openPdfInTab(src)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
                 style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
-              >
-                <ExternalLink className="w-3 h-3" />
-                View
-              </button>
-              <button
-                type="button"
-                onClick={() => openPdfInTab(src)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
-                style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
               >
                 <ExternalLink className="w-3 h-3" />
                 Open
@@ -247,7 +193,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
           />
         )}
       </div>
-      {showModal && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
+      {showModal && !isPdf && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
     </>
   );
 }
