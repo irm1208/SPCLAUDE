@@ -295,6 +295,7 @@ export interface GbPaymentConfig {
   cryptoWalletAddress: string | null;
   cryptoCurrency: string;
   cryptoNetwork: string;
+  cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string | null }> | null;
   revolutHandle: string | null;
   paypalHandle: string | null;
   anonPayEnabled: boolean;
@@ -321,7 +322,7 @@ export const TROCADOR_COINS = [
   { label: "Zcash (ZEC)",     ticker: "zec",  network: "Mainnet" },
 ];
 export const CRYPTO_NETWORKS: Record<string, string[]> = {
-  USDT: ["ERC-20", "TRC-20", "BEP-20", "Polygon", "Arbitrum", "Optimism"],
+  USDT: ["ERC-20", "TRC-20", "BEP-20", "Polygon", "Arbitrum", "Optimism", "Solana"],
   USDC: ["ERC-20", "Polygon", "Arbitrum", "Optimism", "Solana"],
   ETH:  ["ERC-20", "Arbitrum", "Optimism", "Polygon"],
   BNB:  ["BEP-20"],
@@ -333,9 +334,7 @@ export const DEFAULT_CRYPTO_NETWORKS: Record<string, string> = {
 
 export function GbPaymentGatewayInlineContent({ secret, gbId }: { secret: string; gbId: string }) {
   const [loading, setLoading] = useState(true);
-  const [wallet, setWallet] = useState("");
-  const [currency, setCurrency] = useState("USDT");
-  const [network, setNetwork] = useState("ERC-20");
+  const [cryptoOptions, setCryptoOptions] = useState<Array<{ currency: string; network: string; wallet: string }>>([]);
   const [revolut, setRevolut] = useState("");
   const [paypal, setPaypal] = useState("");
   const [anonPayEnabled, setAnonPayEnabled] = useState(false);
@@ -352,9 +351,11 @@ export function GbPaymentGatewayInlineContent({ secret, gbId }: { secret: string
       .then((d: GbPaymentConfig[]) => {
         const found = Array.isArray(d) ? d.find(c => c.id === gbId) ?? null : null;
         if (found) {
-          setWallet(found.cryptoWalletAddress ?? "");
-          setCurrency(found.cryptoCurrency || "USDT");
-          setNetwork(found.cryptoNetwork || "ERC-20");
+          // Load from cryptoOptions array, falling back to legacy single fields
+          const opts = found.cryptoOptions && found.cryptoOptions.length > 0
+            ? found.cryptoOptions.map(o => ({ currency: o.currency, network: o.network, wallet: o.walletAddress ?? "" }))
+            : (found.cryptoWalletAddress ? [{ currency: found.cryptoCurrency || "USDT", network: found.cryptoNetwork || "ERC-20", wallet: found.cryptoWalletAddress }] : []);
+          setCryptoOptions(opts);
           setRevolut(found.revolutHandle ?? "");
           setPaypal(found.paypalHandle ?? "");
           setAnonPayEnabled(found.anonPayEnabled ?? false);
@@ -367,24 +368,38 @@ export function GbPaymentGatewayInlineContent({ secret, gbId }: { secret: string
       .finally(() => setLoading(false));
   }, [secret, gbId]);
 
-  const availableNetworks = CRYPTO_NETWORKS[currency] ?? ["ERC-20"];
+  const addCryptoOption = () => {
+    setCryptoOptions(prev => [...prev, { currency: "USDT", network: "ERC-20", wallet: "" }]);
+  };
 
-  const handleCurrencyChange = (c: string) => {
-    setCurrency(c);
-    const nets = CRYPTO_NETWORKS[c] ?? ["ERC-20"];
-    if (!nets.includes(network)) setNetwork(DEFAULT_CRYPTO_NETWORKS[c] ?? nets[0]);
+  const removeCryptoOption = (i: number) => {
+    setCryptoOptions(prev => prev.filter((_, j) => j !== i));
+  };
+
+  const updateCryptoOption = (i: number, field: "currency" | "network" | "wallet", value: string) => {
+    setCryptoOptions(prev => prev.map((o, j) => {
+      if (j !== i) return o;
+      if (field === "currency") {
+        const nets = CRYPTO_NETWORKS[value] ?? ["ERC-20"];
+        const net = nets.includes(o.network) ? o.network : (DEFAULT_CRYPTO_NETWORKS[value] ?? nets[0]);
+        return { ...o, currency: value, network: net };
+      }
+      return { ...o, [field]: value };
+    }));
   };
 
   const save = async () => {
     setSaving(true); setMsg(""); setErr("");
     try {
+      const validOptions = cryptoOptions.filter(o => o.wallet.trim());
       const res = await fetch(apiUrl(`/admin/group-buys/${gbId}/payment-methods`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({
-          cryptoWalletAddress: wallet.trim() || null,
-          cryptoCurrency: currency,
-          cryptoNetwork: network,
+          cryptoOptions: validOptions.map(o => ({ currency: o.currency, network: o.network, walletAddress: o.wallet.trim() })),
+          cryptoWalletAddress: validOptions[0]?.wallet.trim() || null,
+          cryptoCurrency: validOptions[0]?.currency || "USDT",
+          cryptoNetwork: validOptions[0]?.network || "ERC-20",
           revolutHandle: revolut.trim() || null,
           paypalHandle: paypal.trim() || null,
           anonPayEnabled,
@@ -414,41 +429,69 @@ export function GbPaymentGatewayInlineContent({ secret, gbId }: { secret: string
       <div className="space-y-4">
         {/* Crypto */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-violet-500" />
-            <p className="text-sm font-semibold">Crypto</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Currency</Label>
-              <select
-                value={currency}
-                onChange={e => handleCurrencyChange(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-violet-500" />
+              <p className="text-sm font-semibold">Crypto</p>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Network</Label>
-              <select
-                value={network}
-                onChange={e => setNetwork(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {availableNetworks.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+            <button
+              type="button"
+              onClick={addCryptoOption}
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Plus className="w-3 h-3" /> Add wallet
+            </button>
+          </div>
+          {cryptoOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No crypto wallets configured. Click "Add wallet" to add one.</p>
+          ) : (
+            <div className="space-y-3">
+              {cryptoOptions.map((opt, i) => {
+                const availableNetworks = CRYPTO_NETWORKS[opt.currency] ?? ["ERC-20"];
+                return (
+                  <div key={i} className="p-3 rounded-lg border border-input bg-muted/20 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">Wallet {i + 1}</span>
+                      <button type="button" onClick={() => removeCryptoOption(i)} className="text-muted-foreground hover:text-destructive">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Currency</Label>
+                        <select
+                          value={opt.currency}
+                          onChange={e => updateCryptoOption(i, "currency", e.target.value)}
+                          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          {CRYPTO_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Network</Label>
+                        <select
+                          value={opt.network}
+                          onChange={e => updateCryptoOption(i, "network", e.target.value)}
+                          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          {availableNetworks.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Wallet Address</Label>
+                      <Input
+                        className="font-mono text-xs"
+                        placeholder="0x… or T… or sol…"
+                        value={opt.wallet}
+                        onChange={e => updateCryptoOption(i, "wallet", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Wallet Address</Label>
-            <Input
-              className="font-mono text-xs"
-              placeholder="0x… or T… (leave blank to disable crypto)"
-              value={wallet}
-              onChange={e => setWallet(e.target.value)}
-            />
-          </div>
+          )}
         </div>
 
         {/* Revolut */}

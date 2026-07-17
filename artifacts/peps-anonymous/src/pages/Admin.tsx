@@ -19190,6 +19190,9 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
 
   // Payment settings state
   const [wsUsdtWallet, setWsUsdtWallet] = useState("");
+  const [wsUsdcErc20Wallet, setWsUsdcErc20Wallet] = useState("");
+  const [wsUsdtSolWallet, setWsUsdtSolWallet] = useState("");
+  const [wsUsdcSolWallet, setWsUsdcSolWallet] = useState("");
   const [wsAnonPayEnabled, setWsAnonPayEnabled] = useState(false);
   const [wsAnonPayWallet, setWsAnonPayWallet] = useState("");
   const [wsAnonPayTicker, setWsAnonPayTicker] = useState("usdt");
@@ -19207,6 +19210,9 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
       setRequiresApproval(settings.requiresApproval ?? false);
       setPageMessage(settings.pageMessage ?? "");
       setWsUsdtWallet(settings.usdtWallet ?? "");
+      setWsUsdcErc20Wallet(settings.usdcErc20Wallet ?? "");
+      setWsUsdtSolWallet(settings.usdtSolWallet ?? "");
+      setWsUsdcSolWallet(settings.usdcSolWallet ?? "");
       setWsAnonPayEnabled(settings.anonPayEnabled ?? false);
       setWsAnonPayWallet(settings.anonPayWallet ?? "");
       setWsAnonPayTicker(settings.anonPayTicker ?? "usdt");
@@ -19240,6 +19246,9 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({
           usdtWallet: wsUsdtWallet.trim() || null,
+          usdcErc20Wallet: wsUsdcErc20Wallet.trim() || null,
+          usdtSolWallet: wsUsdtSolWallet.trim() || null,
+          usdcSolWallet: wsUsdcSolWallet.trim() || null,
           anonPayEnabled: wsAnonPayEnabled,
           anonPayWallet: wsAnonPayWallet.trim() || null,
           anonPayTicker: wsAnonPayTicker || "usdt",
@@ -19485,7 +19494,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
 
           {/* USDT ERC-20 */}
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDT / USDC ERC-20 Wallet Address</label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDT ERC-20 Wallet Address</label>
             <input
               type="text"
               value={wsUsdtWallet}
@@ -19493,7 +19502,43 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
               placeholder="0x… (leave blank to disable)"
               className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs font-mono outline-none focus:ring-1 focus:ring-orange-400"
             />
-            <p className="text-[10px] text-muted-foreground">Wholesale customers paying with USDT or USDC will be shown this ERC-20 wallet address.</p>
+          </div>
+
+          {/* USDC ERC-20 */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDC ERC-20 Wallet Address</label>
+            <input
+              type="text"
+              value={wsUsdcErc20Wallet}
+              onChange={e => setWsUsdcErc20Wallet(e.target.value)}
+              placeholder="0x… (leave blank to disable)"
+              className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs font-mono outline-none focus:ring-1 focus:ring-orange-400"
+            />
+          </div>
+
+          {/* USDT Solana */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDT Solana Wallet Address</label>
+            <input
+              type="text"
+              value={wsUsdtSolWallet}
+              onChange={e => setWsUsdtSolWallet(e.target.value)}
+              placeholder="Sol… (leave blank to disable)"
+              className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs font-mono outline-none focus:ring-1 focus:ring-orange-400"
+            />
+          </div>
+
+          {/* USDC Solana */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">USDC Solana Wallet Address</label>
+            <input
+              type="text"
+              value={wsUsdcSolWallet}
+              onChange={e => setWsUsdcSolWallet(e.target.value)}
+              placeholder="Sol… (leave blank to disable)"
+              className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs font-mono outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <p className="text-[10px] text-muted-foreground">Configure wallet addresses for each currency and network. Only networks with a wallet address set will be shown to wholesale customers.</p>
           </div>
 
           <div className="border-t border-slate-100" />

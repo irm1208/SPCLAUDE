@@ -983,20 +983,29 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
 
       // Wholesale orders: prefer wholesale-specific payment settings
       if (order.orderType === "wholesale") {
-        const [wsUsdtWallet, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
+        const [wsUsdtWallet, wsUsdcErc20Wallet, wsUsdtSolWallet, wsUsdcSolWallet, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
           getConfig("wholesale_usdt_wallet"),
+          getConfig("wholesale_usdc_erc20_wallet"),
+          getConfig("wholesale_usdt_sol_wallet"),
+          getConfig("wholesale_usdc_sol_wallet"),
           getConfig("wholesale_anon_pay_enabled"),
           getConfig("wholesale_anon_pay_wallet"),
           getConfig("wholesale_anon_pay_ticker"),
           getConfig("wholesale_anon_pay_network"),
         ]);
-        const hasWsUsdt = !!wsUsdtWallet;
+        // Build ordered list of all configured wholesale crypto wallets
+        const wsCryptoOpts: { currency: string; network: string; walletAddress: string }[] = [];
+        if (wsUsdtWallet)      wsCryptoOpts.push({ currency: "USDT", network: "ERC-20",  walletAddress: wsUsdtWallet });
+        if (wsUsdcErc20Wallet) wsCryptoOpts.push({ currency: "USDC", network: "ERC-20",  walletAddress: wsUsdcErc20Wallet });
+        if (wsUsdtSolWallet)   wsCryptoOpts.push({ currency: "USDT", network: "Solana",  walletAddress: wsUsdtSolWallet });
+        if (wsUsdcSolWallet)   wsCryptoOpts.push({ currency: "USDC", network: "Solana",  walletAddress: wsUsdcSolWallet });
         const hasWsAnonPay = wsAnonPayEnabled === "true" && !!wsAnonPayWallet;
-        if (hasWsUsdt || hasWsAnonPay) {
-          if (hasWsUsdt) {
-            cryptoWalletAddress = wsUsdtWallet;
-            cryptoCurrency      = "USDT";
-            cryptoNetwork       = "ERC-20";
+        if (wsCryptoOpts.length > 0 || hasWsAnonPay) {
+          if (wsCryptoOpts.length > 0) {
+            cryptoWalletAddress    = wsCryptoOpts[0].walletAddress;
+            cryptoCurrency         = wsCryptoOpts[0].currency;
+            cryptoNetwork          = wsCryptoOpts[0].network;
+            availableCryptoOptions = wsCryptoOpts;
           }
           if (hasWsAnonPay) {
             anonPayEnabled = true;
@@ -1103,6 +1112,17 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
             if (op.anonPayWallet)  anonPayWallet  = op.anonPayWallet;
             if (op.anonPayTicker)  anonPayTicker  = op.anonPayTicker;
             if (op.anonPayNetwork) anonPayNetwork = op.anonPayNetwork;
+            // When multiple crypto wallets are configured, expose all as availableCryptoOptions
+            const gbCryptoOpts = Array.isArray((op as Record<string, unknown>)["cryptoOptions"])
+              ? ((op as Record<string, unknown>)["cryptoOptions"] as Array<{ currency: string; network: string; walletAddress?: string | null }>)
+                  .filter(o => o.currency && o.network)
+              : [];
+            if (gbCryptoOpts.length > 0) {
+              availableCryptoOptions = gbCryptoOpts.map(o => ({ currency: o.currency, network: o.network, walletAddress: o.walletAddress ?? null }));
+              cryptoWalletAddress    = gbCryptoOpts[0].walletAddress ?? null;
+              cryptoCurrency         = gbCryptoOpts[0].currency;
+              cryptoNetwork          = gbCryptoOpts[0].network;
+            }
           }
           const hasOrganiserDetails = !!(revolutHandle || paypalHandle || cryptoWalletAddress || (anonPayEnabled && anonPayWallet));
           collectedBy = hasOrganiserDetails ? { type: "organiser" } : { type: "admin" };
