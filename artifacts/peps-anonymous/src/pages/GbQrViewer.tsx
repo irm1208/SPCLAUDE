@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
-import { Loader2, QrCode, Search, ChevronDown, ChevronUp, RefreshCw, X, Truck, Package, LogIn, CheckCircle2, RotateCcw } from "lucide-react";
+import { Loader2, QrCode, Search, ChevronDown, ChevronUp, RefreshCw, X, Truck, Package, LogIn, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
 import { useAccount } from "@/hooks/use-account";
 
 interface QrOrder {
@@ -47,6 +47,13 @@ function isPdfDataUrl(src: string): boolean {
   return src.startsWith("data:application/pdf");
 }
 
+function downloadPdf(src: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = src;
+  a.download = filename;
+  a.click();
+}
+
 // ─── Full-screen image lightbox ─────────────────────────────────────────────
 function ImageModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
   useEffect(() => {
@@ -87,14 +94,26 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
           <div className="flex flex-col items-center gap-3 py-6">
             <span className="text-5xl">📄</span>
             <p className="text-sm font-semibold" style={{ color: NAVY }}>PDF QR Code</p>
-            <button
-              type="button"
-              onClick={openPdf}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
-            >
-              Open PDF
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={openPdf}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+                style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download
+              </button>
+            </div>
           </div>
         ) : (
           <img
@@ -124,15 +143,32 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
       <div className="flex flex-col items-center gap-2">
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
         {isPdf ? (
-          <button
-            type="button"
-            onClick={openPdf}
-            className="w-56 h-24 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-opacity hover:opacity-80"
+          <div
+            className="w-56 rounded-2xl flex flex-col items-center justify-center gap-2 py-4"
             style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "rgba(27,58,122,0.04)" }}
           >
             <span className="text-3xl">📄</span>
-            <span className="text-xs font-bold" style={{ color: NAVY }}>Open PDF</span>
-          </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={openPdf}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
+                style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
+                style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
+              >
+                <Download className="w-3 h-3" />
+                Save
+              </button>
+            </div>
+          </div>
         ) : (
           <img
             src={src}

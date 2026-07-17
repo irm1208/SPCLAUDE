@@ -8677,12 +8677,20 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                       <div>
                         <p style={{ fontSize: 9, fontWeight: 700, color: "var(--t-muted)", margin: "0 0 4px" }}>Delivery QR</p>
                         {o.inpostQrCode.startsWith("data:application/pdf") ? (
-                          <button
-                            type="button"
-                            onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${o.inpostQrCode}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
-                            className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold"
-                            style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
-                          >📄 Open PDF</button>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${o.inpostQrCode}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
+                              style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
+                            >📄 Open</button>
+                            <button
+                              type="button"
+                              onClick={() => { const a = document.createElement("a"); a.href = o.inpostQrCode!; a.download = `qr-${o.code}-inpost.pdf`; a.click(); }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
+                              style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
+                            >↓ Save</button>
+                          </div>
                         ) : (
                           <ImageLightbox src={o.inpostQrCode} alt="Delivery QR Code" wrapperClassName="inline-block rounded-xl overflow-hidden border group relative cursor-zoom-in" wrapperStyle={{ borderColor: "rgba(99,102,241,0.35)", maxWidth: 100 }} thumbnailClassName="w-full h-auto block" thumbnailStyle={{ maxHeight: 80, objectFit: "contain" as const }} />
                         )}
@@ -9061,13 +9069,22 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                               {existing ? (
                                 <div className="flex items-center gap-2">
                                   {existing.startsWith("data:application/pdf") ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${existing}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
-                                      className="w-9 h-9 rounded border bg-white flex items-center justify-center text-base leading-none"
-                                      style={{ borderColor: "rgba(124,58,237,0.3)" }}
-                                      title="Open PDF"
-                                    >📄</button>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${existing}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
+                                        className="w-9 h-9 rounded border bg-white flex items-center justify-center text-base leading-none"
+                                        style={{ borderColor: "rgba(124,58,237,0.3)" }}
+                                        title="Open PDF"
+                                      >📄</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { const a = document.createElement("a"); a.href = existing; a.download = `qr-${o.id}-${courier}.pdf`; a.click(); }}
+                                        className="w-9 h-9 rounded border bg-white flex items-center justify-center text-[10px] font-bold"
+                                        style={{ borderColor: "rgba(124,58,237,0.3)", color: "#7C3AED" }}
+                                        title="Download PDF"
+                                      >↓</button>
+                                    </div>
                                   ) : (
                                     <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
                                   )}
