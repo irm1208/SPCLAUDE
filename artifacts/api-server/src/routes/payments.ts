@@ -169,6 +169,11 @@ function isValidBtcAddress(addr: string): boolean {
   return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(addr) || /^bc1[a-z0-9]{6,87}$/.test(addr);
 }
 
+// Validate a Solana wallet address (base58, 32–44 chars)
+function isValidSolanaAddress(addr: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+}
+
 async function getConfig(key: string): Promise<string | null> {
   const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
   return row?.value ?? null;
@@ -370,7 +375,7 @@ export async function resolveOrderCrypto(
     const network = op?.["cryptoNetwork"]?.trim() ?? defaultNetwork;
     const gbWallet = op?.["cryptoWalletAddress"] ?? null;
     let walletAddress: string | null = null;
-    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet))) {
+    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet) || isValidSolanaAddress(gbWallet))) {
       walletAddress = gbWallet;
     } else {
       walletAddress = await getConfig("walletAddress");

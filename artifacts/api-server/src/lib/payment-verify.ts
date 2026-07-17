@@ -127,6 +127,10 @@ export function isValidBtcAddress(addr: string): boolean {
   return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(addr) || /^bc1[a-z0-9]{6,87}$/.test(addr);
 }
 
+export function isValidSolanaAddress(addr: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+}
+
 /**
  * Call a JSON-RPC method across a list of endpoints, trying each in turn.
  * @param retryOnNull - when true, a null result is treated the same as an error
