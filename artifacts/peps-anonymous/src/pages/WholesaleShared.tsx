@@ -11,7 +11,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { LabReportPopup } from "@/components/LabTestsPopup";
-import { WholesaleRulesModal, hasAgreedToWholesaleRules } from "@/components/WholesaleRulesModal";
+
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
@@ -129,7 +129,14 @@ export default function WholesaleShared() {
   const { data: result, isLoading: shareLoading } = useWholesaleShare(id);
   const share = result?.ok ? result.share : null;
 
-  const [rulesOpen, setRulesOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState(true);
+  useEffect(() => {
+    fetch("/api/wholesale-terms")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTermsEnabled(d.enabled !== false); })
+      .catch(() => {});
+  }, []);
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [productSearch, setProductSearch] = useState("");
@@ -508,15 +515,24 @@ export default function WholesaleShared() {
               {canJoin && (
                 <>
                   {actionError && <p className="text-sm" style={{ color: "#ef4444" }}>{actionError}</p>}
+                  {termsEnabled && (
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={e => setTermsAccepted(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--t-blue)] cursor-pointer"
+                      />
+                      <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                        I have read and agree to the Terms &amp; Conditions
+                      </span>
+                    </label>
+                  )}
                   <button
-                    disabled={busy === "join"}
+                    disabled={busy === "join" || (termsEnabled && !termsAccepted)}
                     onClick={() => {
-                      if (hasAgreedToWholesaleRules()) {
-                        setActionError(""); setBusy("join");
-                        joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
-                      } else {
-                        setRulesOpen(true);
-                      }
+                      setActionError(""); setBusy("join");
+                      joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
                     }}
                     className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60"
                     style={{ background: "var(--t-blue)" }}
@@ -538,16 +554,7 @@ export default function WholesaleShared() {
             </div>
           </main>
         </PageLayout>
-        <WholesaleRulesModal
-          open={rulesOpen}
-          onClose={() => setRulesOpen(false)}
-          onAgree={() => {
-            setRulesOpen(false);
-            setActionError(""); setBusy("join");
-            joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
-          }}
-          context="join"
-        />
+
       </>
     );
   }
@@ -2451,16 +2458,7 @@ export default function WholesaleShared() {
         )}
       </AnimatePresence>
 
-      <WholesaleRulesModal
-        open={rulesOpen}
-        onClose={() => setRulesOpen(false)}
-        onAgree={() => {
-          setRulesOpen(false);
-          setActionError(""); setBusy("join");
-          joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
-        }}
-        context="join"
-      />
+
     </WholesaleShell>
   );
 }

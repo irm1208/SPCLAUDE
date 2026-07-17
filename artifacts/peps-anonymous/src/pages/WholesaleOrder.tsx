@@ -8,7 +8,7 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
 import { LabReportPopup } from "@/components/LabTestsPopup";
-import { WholesaleRulesModal, hasAgreedToWholesaleRules } from "@/components/WholesaleRulesModal";
+
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
@@ -62,7 +62,14 @@ export default function WholesaleOrder() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
 
-  const [rulesOpen, setRulesOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState(true);
+  useEffect(() => {
+    fetch("/api/wholesale-terms")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTermsEnabled(d.enabled !== false); })
+      .catch(() => {});
+  }, []);
 
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -1355,13 +1362,22 @@ export default function WholesaleOrder() {
                   {draftSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSavedFlash ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                   {draftSavedFlash ? "Saved!" : "Save draft"}
                 </button>
+                {termsEnabled && (
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={e => setTermsAccepted(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--t-blue)] cursor-pointer"
+                    />
+                    <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                      I have read and agree to the Terms &amp; Conditions
+                    </span>
+                  </label>
+                )}
                 <button
-                  onClick={() => {
-                    setSummaryOpen(false);
-                    if (hasAgreedToWholesaleRules()) { handleReview(); }
-                    else { setRulesOpen(true); }
-                  }}
-                  disabled={lineItems.length === 0}
+                  onClick={() => { setSummaryOpen(false); handleReview(); }}
+                  disabled={lineItems.length === 0 || (termsEnabled && !termsAccepted)}
                   className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98] hover:brightness-110"
                   style={{ background: "var(--t-blue)" }}
                 >
@@ -1385,12 +1401,7 @@ export default function WholesaleOrder() {
         )}
       </AnimatePresence>
 
-      <WholesaleRulesModal
-        open={rulesOpen}
-        onClose={() => setRulesOpen(false)}
-        onAgree={() => { setRulesOpen(false); handleReview(); }}
-        context="order"
-      />
+
 
       {/* Fixed top error toast */}
       <AnimatePresence>
