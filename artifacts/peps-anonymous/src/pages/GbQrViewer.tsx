@@ -186,7 +186,22 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             className="w-56 rounded-2xl overflow-hidden flex flex-col"
             style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
           >
-            <PdfPreview src={src} style={{ height: 180, width: "100%", pointerEvents: "none" }} />
+            {/* PDF placeholder — iframes are unreliable for inline PDF rendering across browsers */}
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="flex flex-col items-center justify-center gap-3 w-full"
+              style={{ height: 180, background: "rgba(27,58,122,0.03)", cursor: "pointer" }}
+              title="Click to view PDF"
+            >
+              <div
+                className="flex flex-col items-center justify-center rounded-xl"
+                style={{ width: 52, height: 64, background: "rgba(99,102,241,0.1)", border: "1.5px solid rgba(99,102,241,0.3)" }}
+              >
+                <span style={{ fontSize: 22, lineHeight: 1 }}>📄</span>
+              </div>
+              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to view</span>
+            </button>
             <div
               className="flex gap-1.5 justify-center py-2 px-2"
               style={{ borderTop: "1px solid rgba(27,58,122,0.1)", background: "rgba(27,58,122,0.03)" }}
