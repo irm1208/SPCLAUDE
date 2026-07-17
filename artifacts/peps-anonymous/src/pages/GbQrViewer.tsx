@@ -55,7 +55,7 @@ function downloadPdf(src: string, filename: string) {
   a.click();
 }
 
-// ─── Full-screen image lightbox ─────────────────────────────────────────────
+// ─── Full-screen image / PDF lightbox ───────────────────────────────────────
 function ImageModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -77,7 +77,8 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
       onClick={onClose}
     >
       <div
-        className="relative max-w-md w-full rounded-2xl overflow-hidden bg-white p-4 shadow-2xl"
+        className="relative rounded-2xl overflow-hidden bg-white shadow-2xl flex flex-col"
+        style={{ width: "min(92vw, 680px)", maxHeight: "92vh" }}
         onClick={e => e.stopPropagation()}
       >
         <button
@@ -88,14 +89,18 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
         >
           <X className="w-4 h-4" style={{ color: "#64748B" }} />
         </button>
-        <p className="text-[11px] font-bold uppercase tracking-wide text-center mb-3" style={{ color: "#94A3B8" }}>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-center pt-4 pb-2 px-4 shrink-0" style={{ color: "#94A3B8" }}>
           {label} · @{stripAt(username)}
         </p>
         {isPdf ? (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <span className="text-5xl">📄</span>
-            <p className="text-sm font-semibold" style={{ color: NAVY }}>PDF QR Code</p>
-            <div className="flex gap-2">
+          <>
+            <iframe
+              src={src}
+              title={`${label} PDF`}
+              className="w-full grow"
+              style={{ border: "none", minHeight: "60vh" }}
+            />
+            <div className="flex gap-2 justify-center p-3 shrink-0" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
               <button
                 type="button"
                 onClick={openPdf}
@@ -103,7 +108,7 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
                 style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Open
+                Open in new tab
               </button>
               <button
                 type="button"
@@ -115,13 +120,13 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
                 Download
               </button>
             </div>
-          </div>
+          </>
         ) : (
           <img
             src={src}
             alt={`${label} QR for @${stripAt(username)}`}
-            className="w-full h-auto rounded-xl object-contain"
-            style={{ maxHeight: "70vh" }}
+            className="w-full h-auto object-contain p-2"
+            style={{ maxHeight: "80vh" }}
           />
         )}
       </div>
@@ -132,7 +137,9 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 // ─── QR image thumbnail (click to enlarge) ──────────────────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
-  const isPdf = isPdfDataUrl(src);
+  // imgFailed: onError fallback catches cases where MIME type detection doesn't match stored value
+  const [imgFailed, setImgFailed] = useState(false);
+  const isPdf = isPdfDataUrl(src) || imgFailed;
 
   const openPdf = () => {
     const win = window.open();
@@ -145,16 +152,34 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
         {isPdf ? (
           <div
-            className="w-56 rounded-2xl flex flex-col items-center justify-center gap-2 py-4"
-            style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "rgba(27,58,122,0.04)" }}
+            className="w-56 rounded-2xl overflow-hidden flex flex-col"
+            style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
           >
-            <span className="text-3xl">📄</span>
-            <div className="flex gap-2">
+            <iframe
+              src={src}
+              title={`${label} PDF`}
+              className="w-full"
+              style={{ height: 180, border: "none", display: "block", pointerEvents: "none" }}
+              tabIndex={-1}
+            />
+            <div
+              className="flex gap-1.5 justify-center py-2 px-2"
+              style={{ borderTop: "1px solid rgba(27,58,122,0.1)", background: "rgba(27,58,122,0.03)" }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+                style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+              >
+                <ExternalLink className="w-3 h-3" />
+                View
+              </button>
               <button
                 type="button"
                 onClick={openPdf}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
-                style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
               >
                 <ExternalLink className="w-3 h-3" />
                 Open
@@ -162,7 +187,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
               <button
                 type="button"
                 onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
                 style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
               >
                 <Download className="w-3 h-3" />
@@ -177,11 +202,12 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             className="w-56 h-56 object-contain rounded-2xl p-2 cursor-zoom-in transition-opacity hover:opacity-80"
             style={{ border: `1px solid rgba(27,58,122,0.15)`, background: "#fff" }}
             onClick={() => setShowModal(true)}
+            onError={() => setImgFailed(true)}
             title="Click to enlarge"
           />
         )}
       </div>
-      {showModal && !isPdf && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
+      {showModal && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
     </>
   );
 }
