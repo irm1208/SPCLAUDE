@@ -95,65 +95,6 @@ function downloadPdf(src: string, filename: string) {
   }
 }
 
-// ─── Full-screen PDF modal (desktop inline viewer) ───────────────────────────
-function PdfModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let url: string | null = null;
-    try { url = dataToPdfBlob(src); setBlobUrl(url); } catch { /* fallback to data url */ setBlobUrl(src); }
-    return () => { if (url) setTimeout(() => URL.revokeObjectURL(url!), 1000); };
-  }, [src]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
-    >
-      {/* toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 shrink-0" style={{ background: NAVY }}>
-        <p className="text-white text-xs font-semibold truncate">{label} · @{stripAt(username)}</p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white/80 hover:text-white"
-            style={{ background: "rgba(255,255,255,0.12)" }}
-          >
-            <Download className="w-3 h-3" /> Save
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20"
-          >
-            <X className="w-4 h-4 text-white" />
-          </button>
-        </div>
-      </div>
-      {/* viewer */}
-      <div className="flex-1 relative">
-        {blobUrl ? (
-          <iframe
-            src={blobUrl}
-            className="w-full h-full border-0"
-            title={`${label} PDF`}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-8 h-8 text-white animate-spin" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── Full-screen image lightbox (images only — PDFs open natively) ──────────
 function ImageModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
@@ -199,7 +140,6 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 // ─── QR image thumbnail (click to enlarge / open PDF) ───────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
-  const [showPdfModal, setShowPdfModal] = useState(false);
   // imgFailed: onError fallback catches PDFs stored with unexpected MIME types
   const [imgFailed, setImgFailed] = useState(false);
   const isPdf = isPdfDataUrl(src) || imgFailed;
@@ -210,37 +150,33 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
         {isPdf ? (
           <div
-            className="w-56 rounded-2xl overflow-hidden flex flex-col"
-            style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
+            className="rounded-2xl overflow-hidden flex flex-col"
+            style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff", width: 224 }}
           >
-            {/* PDF — tap card to view inline, or use buttons below */}
-            <button
-              type="button"
-              onClick={() => setShowPdfModal(true)}
-              className="flex flex-col items-center justify-center gap-3 w-full"
-              style={{ height: 180, background: "rgba(27,58,122,0.03)", cursor: "pointer" }}
-              title="Click to view PDF"
+            <div
+              className="flex flex-col items-center justify-center gap-3"
+              style={{ height: 120, background: "rgba(27,58,122,0.03)" }}
             >
               <div
                 className="flex flex-col items-center justify-center rounded-xl"
-                style={{ width: 52, height: 64, background: "rgba(99,102,241,0.1)", border: "1.5px solid rgba(99,102,241,0.3)" }}
+                style={{ width: 44, height: 54, background: "rgba(99,102,241,0.1)", border: "1.5px solid rgba(99,102,241,0.3)" }}
               >
-                <span style={{ fontSize: 22, lineHeight: 1 }}>📄</span>
+                <span style={{ fontSize: 20, lineHeight: 1 }}>📄</span>
               </div>
-              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to view</span>
-            </button>
+              <span className="text-xs font-semibold" style={{ color: "#64748B" }}>PDF document</span>
+            </div>
             <div
               className="flex gap-1.5 justify-center py-2 px-2"
               style={{ borderTop: "1px solid rgba(27,58,122,0.1)", background: "rgba(27,58,122,0.03)" }}
             >
               <button
                 type="button"
-                onClick={() => setShowPdfModal(true)}
+                onClick={() => openPdfInTab(src)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
                 style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
                 <ExternalLink className="w-3 h-3" />
-                View
+                Open PDF
               </button>
               <button
                 type="button"
@@ -266,7 +202,6 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
         )}
       </div>
       {showModal && !isPdf && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
-      {showPdfModal && <PdfModal src={src} label={label} username={username} onClose={() => setShowPdfModal(false)} />}
     </>
   );
 }
