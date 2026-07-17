@@ -5407,11 +5407,15 @@ const DEFAULT_WHOLESALE_TERMS = [
 // GET /api/wholesale-terms — public, used by WholesaleRulesModal
 router.get("/wholesale-terms", async (_req: any, res: any): Promise<void> => {
   try {
-    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms"));
-    const terms = row?.value ? JSON.parse(row.value) : DEFAULT_WHOLESALE_TERMS;
-    res.json({ terms });
+    const [termsRow, enabledRow] = await Promise.all([
+      db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms")).then(r => r[0]),
+      db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms_enabled")).then(r => r[0]),
+    ]);
+    const terms = termsRow?.value ? JSON.parse(termsRow.value) : DEFAULT_WHOLESALE_TERMS;
+    const enabled = enabledRow?.value !== "false";
+    res.json({ terms, enabled });
   } catch {
-    res.json({ terms: DEFAULT_WHOLESALE_TERMS });
+    res.json({ terms: DEFAULT_WHOLESALE_TERMS, enabled: true });
   }
 });
 
@@ -5419,9 +5423,13 @@ router.get("/wholesale-terms", async (_req: any, res: any): Promise<void> => {
 router.get("/admin/wholesale-terms", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   try {
-    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms"));
-    const terms = row?.value ? JSON.parse(row.value) : DEFAULT_WHOLESALE_TERMS;
-    res.json({ terms });
+    const [termsRow, enabledRow] = await Promise.all([
+      db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms")).then(r => r[0]),
+      db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms_enabled")).then(r => r[0]),
+    ]);
+    const terms = termsRow?.value ? JSON.parse(termsRow.value) : DEFAULT_WHOLESALE_TERMS;
+    const enabled = enabledRow?.value !== "false";
+    res.json({ terms, enabled });
   } catch {
     res.status(500).json({ error: "Failed to fetch wholesale terms" });
   }
@@ -5430,7 +5438,7 @@ router.get("/admin/wholesale-terms", async (req: any, res: any): Promise<void> =
 // PUT /api/admin/wholesale-terms
 router.put("/admin/wholesale-terms", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { terms } = req.body;
+  const { terms, enabled } = req.body;
   if (!Array.isArray(terms)) { res.status(400).json({ error: "terms must be an array" }); return; }
   for (const t of terms) {
     if (typeof t.heading !== "string" || typeof t.body !== "string") {
@@ -5438,9 +5446,18 @@ router.put("/admin/wholesale-terms", async (req: any, res: any): Promise<void> =
     }
   }
   try {
-    await db.insert(siteConfigTable).values({ key: "wholesale_terms", value: JSON.stringify(terms) })
-      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: JSON.stringify(terms) } });
-    res.json({ ok: true, terms });
+    const ops: Promise<unknown>[] = [
+      db.insert(siteConfigTable).values({ key: "wholesale_terms", value: JSON.stringify(terms) })
+        .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: JSON.stringify(terms) } }),
+    ];
+    if (enabled !== undefined) {
+      ops.push(
+        db.insert(siteConfigTable).values({ key: "wholesale_terms_enabled", value: enabled ? "true" : "false" })
+          .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: enabled ? "true" : "false" } })
+      );
+    }
+    await Promise.all(ops);
+    res.json({ ok: true, terms, enabled: enabled ?? true });
   } catch {
     res.status(500).json({ error: "Failed to save wholesale terms" });
   }

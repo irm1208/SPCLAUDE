@@ -19207,6 +19207,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
   const [termsSaving, setTermsSaving] = useState(false);
   const [termsMsg, setTermsMsg] = useState<string | null>(null);
   const [termsLoaded, setTermsLoaded] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState(true);
 
   const load = () => {
     setLoadingVendors(true);
@@ -19234,7 +19235,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
   useEffect(() => {
     fetch(apiUrl("/admin/wholesale-terms"), { headers: { "x-admin-secret": secret } })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.terms) { setTerms(d.terms); setTermsDraft(d.terms); setTermsLoaded(true); } })
+      .then(d => { if (d?.terms) { setTerms(d.terms); setTermsDraft(d.terms); setTermsLoaded(true); setTermsEnabled(d.enabled !== false); } })
       .catch(() => {});
   }, [secret]);
 
@@ -19637,6 +19638,30 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
         <p className={SECTION}>Terms &amp; Conditions</p>
         <div className={cn(CARD, "p-4 space-y-3")}>
           <p className="text-[11px] text-muted-foreground">These are the terms customers must accept before placing a wholesale order. Changes take effect immediately for all new sessions.</p>
+          {/* Enabled/disabled toggle */}
+          <div className="flex items-start gap-4 pb-3 border-b border-slate-100">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-800">Require terms acceptance</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">When enabled, customers must read and accept these terms before placing a wholesale order. Disable to skip the modal entirely.</p>
+            </div>
+            <button
+              onClick={async () => {
+                const next = !termsEnabled;
+                setTermsEnabled(next);
+                try {
+                  await fetch(apiUrl("/admin/wholesale-terms"), {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+                    body: JSON.stringify({ terms: termsDraft, enabled: next }),
+                  });
+                } catch { setTermsEnabled(!next); }
+              }}
+              className="relative shrink-0 w-10 h-5 rounded-full transition-colors"
+              style={{ background: termsEnabled ? "#F24908" : "#E2E8F0" }}
+            >
+              <span className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style={{ transform: termsEnabled ? "translateX(20px)" : "none" }} />
+            </button>
+          </div>
           {!termsLoaded ? (
             <div className="flex items-center gap-2 text-sm py-4" style={{ color: "var(--adm-muted)" }}><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
           ) : (
@@ -19684,7 +19709,7 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
                       const r = await fetch(apiUrl("/admin/wholesale-terms"), {
                         method: "PUT",
                         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-                        body: JSON.stringify({ terms: termsDraft }),
+                        body: JSON.stringify({ terms: termsDraft, enabled: termsEnabled }),
                       });
                       if (r.ok) { setTerms(termsDraft); setTermsMsg("Saved ✓"); setTimeout(() => setTermsMsg(null), 3000); }
                       else { setTermsMsg("Failed to save"); }

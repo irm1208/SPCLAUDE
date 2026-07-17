@@ -3,9 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, X, CheckSquare, Square, ScrollText } from "lucide-react";
 
 const STORAGE_KEY = "sp_wholesale_rules_agreed_v1";
+const ENABLED_KEY = "sp_wholesale_terms_enabled";
 
+// Returns true if terms are disabled OR the customer has already agreed
 export function hasAgreedToWholesaleRules(): boolean {
-  try { return localStorage.getItem(STORAGE_KEY) === "true"; } catch { return false; }
+  try {
+    if (localStorage.getItem(ENABLED_KEY) === "false") return true;
+    return localStorage.getItem(STORAGE_KEY) === "true";
+  } catch { return false; }
 }
 
 function markAgreed() {
@@ -25,13 +30,20 @@ const DEFAULT_RULES: { heading: string; body: string }[] = [
 
 function useWholesaleTerms() {
   const [rules, setRules] = useState(DEFAULT_RULES);
+  const [enabled, setEnabled] = useState(true);
   useEffect(() => {
     fetch("/api/wholesale-terms")
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.terms?.length) setRules(d.terms); })
+      .then(d => {
+        if (!d) return;
+        if (d.terms?.length) setRules(d.terms);
+        const isEnabled = d.enabled !== false;
+        setEnabled(isEnabled);
+        try { localStorage.setItem(ENABLED_KEY, isEnabled ? "true" : "false"); } catch {}
+      })
       .catch(() => {});
   }, []);
-  return rules;
+  return { rules, enabled };
 }
 
 interface Props {
@@ -42,7 +54,7 @@ interface Props {
 }
 
 export function WholesaleRulesModal({ open, onClose, onAgree, context = "order" }: Props) {
-  const rules = useWholesaleTerms();
+  const { rules, enabled } = useWholesaleTerms();
   const [checked, setChecked] = useState(false);
 
   const handleAgree = () => {
@@ -51,9 +63,14 @@ export function WholesaleRulesModal({ open, onClose, onAgree, context = "order" 
     onAgree();
   };
 
+  // If terms are disabled, treat as agreed immediately
+  useEffect(() => {
+    if (open && !enabled) { onAgree(); }
+  }, [open, enabled, onAgree]);
+
   return (
     <AnimatePresence>
-      {open && (
+      {open && enabled && (
         <>
           <motion.div
             key="rules-backdrop"
