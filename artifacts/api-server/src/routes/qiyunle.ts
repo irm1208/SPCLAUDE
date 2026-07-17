@@ -12,7 +12,7 @@ import {
   clearQiyunleCredentials,
   loginToQiyunle,
 } from "../lib/qiyunle-sync";
-import { callSageAI } from "../lib/sage-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const router = Router();
 
@@ -277,14 +277,18 @@ OUTPUT FORMAT:
 
     const userMessage = `QIYUNLE ITEMS TO MATCH (unmapped):\n${unmapped.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name ?? ""}"`).join("\n")}`;
 
-    const raw = await callSageAI({
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-      maxTokens: 4096,
-      enableWebSearch: false,
-      temperature: 0,
-      jsonMode: true,
+    const geminiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+    if (!geminiKey) throw new Error("Gemini API key is not configured (AI_INTEGRATIONS_GEMINI_API_KEY)");
+    const gemini = new GoogleGenAI({
+      apiKey: geminiKey,
+      httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
     });
+    const geminiResponse = await gemini.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+      config: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+    });
+    const raw = geminiResponse.text ?? "";
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as { suggestions: unknown[] };
     // Attach the manufacturer to each suggestion so the frontend can persist it
