@@ -51,7 +51,7 @@ function isPdfDataUrl(src: string): boolean {
   return ci !== -1 && src.slice(ci + 1, ci + 5) === "JVBE";
 }
 
-// Convert any data URL to an application/pdf blob URL (Chrome needs blob: not data: to render PDFs in iframes)
+// Convert any data URL to an application/pdf blob URL
 function dataToPdfBlob(src: string): string {
   const ci = src.indexOf(",");
   const b64 = ci !== -1 ? src.slice(ci + 1) : src;
@@ -61,14 +61,22 @@ function dataToPdfBlob(src: string): string {
   return URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
 }
 
+// Opens a PDF in a new tab reliably (anchor-click avoids popup blockers; works on desktop)
 function openPdfInTab(src: string): void {
   try {
     const url = dataToPdfBlob(src);
-    window.open(url, "_blank");
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch {
-    const win = window.open();
-    if (win) win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0"></iframe>`);
+    // last-resort fallback
+    const a = document.createElement("a");
+    a.href = src; a.target = "_blank"; a.click();
   }
 }
 
@@ -76,12 +84,75 @@ function downloadPdf(src: string, filename: string) {
   try {
     const url = dataToPdfBlob(src);
     const a = document.createElement("a");
-    a.href = url; a.download = filename; a.click();
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   } catch {
     const a = document.createElement("a");
     a.href = src; a.download = filename; a.click();
   }
+}
+
+// ─── Full-screen PDF modal (desktop inline viewer) ───────────────────────────
+function PdfModal({ src, label, username, onClose }: { src: string; label: string; username: string; onClose: () => void }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let url: string | null = null;
+    try { url = dataToPdfBlob(src); setBlobUrl(url); } catch { /* fallback to data url */ setBlobUrl(src); }
+    return () => { if (url) setTimeout(() => URL.revokeObjectURL(url!), 1000); };
+  }, [src]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
+    >
+      {/* toolbar */}
+      <div className="flex items-center justify-between px-4 py-2 shrink-0" style={{ background: NAVY }}>
+        <p className="text-white text-xs font-semibold truncate">{label} · @{stripAt(username)}</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => downloadPdf(src, `${label}-${stripAt(username)}.pdf`)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white/80 hover:text-white"
+            style={{ background: "rgba(255,255,255,0.12)" }}
+          >
+            <Download className="w-3 h-3" /> Save
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </div>
+      {/* viewer */}
+      <div className="flex-1 relative">
+        {blobUrl ? (
+          <iframe
+            src={blobUrl}
+            className="w-full h-full border-0"
+            title={`${label} PDF`}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-8 h-8 text-white animate-spin" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Full-screen image lightbox (images only — PDFs open natively) ──────────
@@ -128,6 +199,7 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 // ─── QR image thumbnail (click to enlarge / open PDF) ───────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
   // imgFailed: onError fallback catches PDFs stored with unexpected MIME types
   const [imgFailed, setImgFailed] = useState(false);
   const isPdf = isPdfDataUrl(src) || imgFailed;
@@ -141,13 +213,13 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             className="w-56 rounded-2xl overflow-hidden flex flex-col"
             style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
           >
-            {/* PDF — open natively in a new tab; iframes blank on mobile */}
+            {/* PDF — tap card to view inline, or use buttons below */}
             <button
               type="button"
-              onClick={() => openPdfInTab(src)}
+              onClick={() => setShowPdfModal(true)}
               className="flex flex-col items-center justify-center gap-3 w-full"
               style={{ height: 180, background: "rgba(27,58,122,0.03)", cursor: "pointer" }}
-              title="Click to open PDF"
+              title="Click to view PDF"
             >
               <div
                 className="flex flex-col items-center justify-center rounded-xl"
@@ -155,7 +227,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
               >
                 <span style={{ fontSize: 22, lineHeight: 1 }}>📄</span>
               </div>
-              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to open</span>
+              <span className="text-xs font-semibold" style={{ color: NAVY }}>PDF · tap to view</span>
             </button>
             <div
               className="flex gap-1.5 justify-center py-2 px-2"
@@ -163,12 +235,12 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             >
               <button
                 type="button"
-                onClick={() => openPdfInTab(src)}
+                onClick={() => setShowPdfModal(true)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
                 style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
                 <ExternalLink className="w-3 h-3" />
-                Open
+                View
               </button>
               <button
                 type="button"
@@ -194,6 +266,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
         )}
       </div>
       {showModal && !isPdf && <ImageModal src={src} label={label} username={username} onClose={() => setShowModal(false)} />}
+      {showPdfModal && <PdfModal src={src} label={label} username={username} onClose={() => setShowPdfModal(false)} />}
     </>
   );
 }
