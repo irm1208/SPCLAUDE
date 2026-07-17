@@ -44,7 +44,8 @@ function hasAnyQr(order: QrOrder): boolean {
 }
 
 function isPdfDataUrl(src: string): boolean {
-  return src.startsWith("data:application/pdf");
+  // Any data URL that is not an image should be opened/downloaded rather than shown as <img>
+  return src.startsWith("data:") && !src.startsWith("data:image/");
 }
 
 function downloadPdf(src: string, filename: string) {

@@ -8676,7 +8676,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     {o.inpostQrCode && (
                       <div>
                         <p style={{ fontSize: 9, fontWeight: 700, color: "var(--t-muted)", margin: "0 0 4px" }}>Delivery QR</p>
-                        {o.inpostQrCode.startsWith("data:application/pdf") ? (
+                        {(o.inpostQrCode.startsWith("data:") && !o.inpostQrCode.startsWith("data:image/")) ? (
                           <div className="flex gap-1.5">
                             <button
                               type="button"
@@ -9068,7 +9068,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                               <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
                               {existing ? (
                                 <div className="flex items-center gap-2">
-                                  {existing.startsWith("data:application/pdf") ? (
+                                  {(existing.startsWith("data:") && !existing.startsWith("data:image/")) ? (
                                     <div className="flex items-center gap-1">
                                       <button
                                         type="button"
