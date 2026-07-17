@@ -5392,6 +5392,60 @@ router.put("/admin/home-sections", async (req: any, res: any): Promise<void> => 
   }
 });
 
+// ─── Wholesale Terms & Conditions ────────────────────────────────────────────
+const DEFAULT_WHOLESALE_TERMS = [
+  { heading: "Research use only", body: "All products are sold strictly for laboratory research purposes. They are not intended for human or veterinary use, consumption, or clinical application of any kind." },
+  { heading: "You are of legal age", body: "By placing an order you confirm you are 18 years of age or older and legally permitted to purchase research compounds in your jurisdiction." },
+  { heading: "No resale to unverified parties", body: "You agree not to resell or redistribute products to any party who has not independently agreed to these terms and whose intended use is not research." },
+  { heading: "Accurate information", body: "You are responsible for providing accurate shipping, contact, and account details. Orders delayed or lost due to incorrect information cannot be refunded." },
+  { heading: "Payment & order finality", body: "Once an order has been confirmed and payment sent, it is considered final. Cancellations after payment processing has begun are at the discretion of the admin." },
+  { heading: "No chargebacks", body: "Initiating a chargeback or payment dispute without first contacting us will result in immediate account suspension and potential legal action to recover losses." },
+  { heading: "Shipping & customs risk", body: "You acknowledge that international shipments may be subject to customs inspection. Salt & Peps accepts no liability for seizures, delays, or additional duties imposed by your country's customs authority." },
+  { heading: "Compliance with local laws", body: "It is your sole responsibility to ensure that purchasing, importing, and possessing these research compounds is lawful in your country or region. Salt & Peps bears no liability for your compliance." },
+];
+
+// GET /api/wholesale-terms — public, used by WholesaleRulesModal
+router.get("/wholesale-terms", async (_req: any, res: any): Promise<void> => {
+  try {
+    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms"));
+    const terms = row?.value ? JSON.parse(row.value) : DEFAULT_WHOLESALE_TERMS;
+    res.json({ terms });
+  } catch {
+    res.json({ terms: DEFAULT_WHOLESALE_TERMS });
+  }
+});
+
+// GET /api/admin/wholesale-terms
+router.get("/admin/wholesale-terms", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_terms"));
+    const terms = row?.value ? JSON.parse(row.value) : DEFAULT_WHOLESALE_TERMS;
+    res.json({ terms });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch wholesale terms" });
+  }
+});
+
+// PUT /api/admin/wholesale-terms
+router.put("/admin/wholesale-terms", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { terms } = req.body;
+  if (!Array.isArray(terms)) { res.status(400).json({ error: "terms must be an array" }); return; }
+  for (const t of terms) {
+    if (typeof t.heading !== "string" || typeof t.body !== "string") {
+      res.status(400).json({ error: "Each term must have heading and body strings" }); return;
+    }
+  }
+  try {
+    await db.insert(siteConfigTable).values({ key: "wholesale_terms", value: JSON.stringify(terms) })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: JSON.stringify(terms) } });
+    res.json({ ok: true, terms });
+  } catch {
+    res.status(500).json({ error: "Failed to save wholesale terms" });
+  }
+});
+
 // ─── Landing page sections ──────────────────────────────────────────────────
 const DEFAULT_LANDING_SECTIONS = [
   { id: "announcements",  label: "Site Announcements",     enabled: true },

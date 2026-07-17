@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, X, CheckSquare, Square, ScrollText } from "lucide-react";
 
@@ -12,40 +12,27 @@ function markAgreed() {
   try { localStorage.setItem(STORAGE_KEY, "true"); } catch {}
 }
 
-const RULES: { heading: string; body: string }[] = [
-  {
-    heading: "Research use only",
-    body: "All products are sold strictly for laboratory research purposes. They are not intended for human or veterinary use, consumption, or clinical application of any kind.",
-  },
-  {
-    heading: "You are of legal age",
-    body: "By placing an order you confirm you are 18 years of age or older and legally permitted to purchase research compounds in your jurisdiction.",
-  },
-  {
-    heading: "No resale to unverified parties",
-    body: "You agree not to resell or redistribute products to any party who has not independently agreed to these terms and whose intended use is not research.",
-  },
-  {
-    heading: "Accurate information",
-    body: "You are responsible for providing accurate shipping, contact, and account details. Orders delayed or lost due to incorrect information cannot be refunded.",
-  },
-  {
-    heading: "Payment & order finality",
-    body: "Once an order has been confirmed and payment sent, it is considered final. Cancellations after payment processing has begun are at the discretion of the admin.",
-  },
-  {
-    heading: "No chargebacks",
-    body: "Initiating a chargeback or payment dispute without first contacting us will result in immediate account suspension and potential legal action to recover losses.",
-  },
-  {
-    heading: "Shipping & customs risk",
-    body: "You acknowledge that international shipments may be subject to customs inspection. Salt & Peps accepts no liability for seizures, delays, or additional duties imposed by your country's customs authority.",
-  },
-  {
-    heading: "Compliance with local laws",
-    body: "It is your sole responsibility to ensure that purchasing, importing, and possessing these research compounds is lawful in your country or region. Salt & Peps bears no liability for your compliance.",
-  },
+const DEFAULT_RULES: { heading: string; body: string }[] = [
+  { heading: "Research use only", body: "All products are sold strictly for laboratory research purposes. They are not intended for human or veterinary use, consumption, or clinical application of any kind." },
+  { heading: "You are of legal age", body: "By placing an order you confirm you are 18 years of age or older and legally permitted to purchase research compounds in your jurisdiction." },
+  { heading: "No resale to unverified parties", body: "You agree not to resell or redistribute products to any party who has not independently agreed to these terms and whose intended use is not research." },
+  { heading: "Accurate information", body: "You are responsible for providing accurate shipping, contact, and account details. Orders delayed or lost due to incorrect information cannot be refunded." },
+  { heading: "Payment & order finality", body: "Once an order has been confirmed and payment sent, it is considered final. Cancellations after payment processing has begun are at the discretion of the admin." },
+  { heading: "No chargebacks", body: "Initiating a chargeback or payment dispute without first contacting us will result in immediate account suspension and potential legal action to recover losses." },
+  { heading: "Shipping & customs risk", body: "You acknowledge that international shipments may be subject to customs inspection. Salt & Peps accepts no liability for seizures, delays, or additional duties imposed by your country's customs authority." },
+  { heading: "Compliance with local laws", body: "It is your sole responsibility to ensure that purchasing, importing, and possessing these research compounds is lawful in your country or region. Salt & Peps bears no liability for your compliance." },
 ];
+
+function useWholesaleTerms() {
+  const [rules, setRules] = useState(DEFAULT_RULES);
+  useEffect(() => {
+    fetch("/api/wholesale-terms")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.terms?.length) setRules(d.terms); })
+      .catch(() => {});
+  }, []);
+  return rules;
+}
 
 interface Props {
   open: boolean;
@@ -55,6 +42,7 @@ interface Props {
 }
 
 export function WholesaleRulesModal({ open, onClose, onAgree, context = "order" }: Props) {
+  const rules = useWholesaleTerms();
   const [checked, setChecked] = useState(false);
 
   const handleAgree = () => {
@@ -134,7 +122,7 @@ export function WholesaleRulesModal({ open, onClose, onAgree, context = "order" 
               {/* Scrollable rules body */}
               <div className="flex-1 overflow-y-auto px-5 py-4" style={{ minHeight: 0 }}>
                 <div className="flex flex-col gap-3">
-                  {RULES.map((rule, i) => (
+                  {rules.map((rule, i) => (
                     <div
                       key={i}
                       className="rounded-xl px-4 py-3"

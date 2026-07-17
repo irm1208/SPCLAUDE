@@ -19201,6 +19201,13 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
   const [paymentMsg, setPaymentMsg] = useState<string | null>(null);
   const [togglingWsAnonPay, setTogglingWsAnonPay] = useState(false);
 
+  // Terms & Conditions editor state
+  const [terms, setTerms] = useState<{ heading: string; body: string }[]>([]);
+  const [termsDraft, setTermsDraft] = useState<{ heading: string; body: string }[]>([]);
+  const [termsSaving, setTermsSaving] = useState(false);
+  const [termsMsg, setTermsMsg] = useState<string | null>(null);
+  const [termsLoaded, setTermsLoaded] = useState(false);
+
   const load = () => {
     setLoadingVendors(true);
     Promise.all([
@@ -19223,6 +19230,13 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
   };
 
   useEffect(() => { load(); }, [secret]);
+
+  useEffect(() => {
+    fetch(apiUrl("/admin/wholesale-terms"), { headers: { "x-admin-secret": secret } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.terms) { setTerms(d.terms); setTermsDraft(d.terms); setTermsLoaded(true); } })
+      .catch(() => {});
+  }, [secret]);
 
   const saveSettings = async () => {
     setSettingsSaving(true);
@@ -19616,6 +19630,86 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
         <p className={SECTION}>Products</p>
         <HalfKitProductsSection secret={secret} />
         <WholesaleProductsSection secret={secret} />
+      </div>
+
+      {/* Terms & Conditions Editor */}
+      <div>
+        <p className={SECTION}>Terms &amp; Conditions</p>
+        <div className={cn(CARD, "p-4 space-y-3")}>
+          <p className="text-[11px] text-muted-foreground">These are the terms customers must accept before placing a wholesale order. Changes take effect immediately for all new sessions.</p>
+          {!termsLoaded ? (
+            <div className="flex items-center gap-2 text-sm py-4" style={{ color: "var(--adm-muted)" }}><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+          ) : (
+            <div className="space-y-3">
+              {termsDraft.map((term, i) => (
+                <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-[11px] font-bold text-slate-400 mt-2 shrink-0 w-5 text-right">{i + 1}.</span>
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-orange-400"
+                        placeholder="Heading…"
+                        value={term.heading}
+                        onChange={e => setTermsDraft(prev => prev.map((t, j) => j === i ? { ...t, heading: e.target.value } : t))}
+                      />
+                      <textarea
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 outline-none focus:ring-1 focus:ring-orange-400 resize-y"
+                        rows={3}
+                        placeholder="Body text…"
+                        value={term.body}
+                        onChange={e => setTermsDraft(prev => prev.map((t, j) => j === i ? { ...t, body: e.target.value } : t))}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setTermsDraft(prev => prev.filter((_, j) => j !== i))}
+                      className="mt-1.5 w-7 h-7 rounded-lg flex items-center justify-center border border-slate-200 hover:bg-red-50 shrink-0"
+                      title="Remove clause"
+                    ><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+                  </div>
+                  <div className="flex gap-1.5 pl-7">
+                    <button disabled={i === 0} onClick={() => setTermsDraft(prev => { const a = [...prev]; [a[i-1],a[i]]=[a[i],a[i-1]]; return a; })} className="text-[10px] px-2 py-1 rounded border border-slate-200 hover:bg-slate-100 disabled:opacity-30">↑ Up</button>
+                    <button disabled={i === termsDraft.length - 1} onClick={() => setTermsDraft(prev => { const a = [...prev]; [a[i],a[i+1]]=[a[i+1],a[i]]; return a; })} className="text-[10px] px-2 py-1 rounded border border-slate-200 hover:bg-slate-100 disabled:opacity-30">↓ Down</button>
+                  </div>
+                </div>
+              ))}
+              <button
+                onClick={() => setTermsDraft(prev => [...prev, { heading: "", body: "" }])}
+                className="flex items-center gap-1.5 text-xs font-semibold h-8 px-3 rounded-xl border border-dashed border-slate-300 hover:bg-slate-50 text-slate-500"
+              ><Plus className="w-3.5 h-3.5" /> Add clause</button>
+              <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                <button
+                  onClick={async () => {
+                    setTermsSaving(true);
+                    try {
+                      const r = await fetch(apiUrl("/admin/wholesale-terms"), {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+                        body: JSON.stringify({ terms: termsDraft }),
+                      });
+                      if (r.ok) { setTerms(termsDraft); setTermsMsg("Saved ✓"); setTimeout(() => setTermsMsg(null), 3000); }
+                      else { setTermsMsg("Failed to save"); }
+                    } catch { setTermsMsg("Error saving"); }
+                    setTermsSaving(false);
+                  }}
+                  disabled={termsSaving}
+                  className="h-9 px-5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 flex items-center gap-2"
+                  style={{ background: "#F24908" }}
+                >
+                  {termsSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {termsSaving ? "Saving…" : "Save Terms"}
+                </button>
+                <button
+                  onClick={() => setTermsDraft(terms)}
+                  disabled={termsSaving}
+                  className="h-9 px-4 rounded-xl text-sm font-semibold border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Reset
+                </button>
+                {termsMsg && <p className={"text-xs font-medium " + (termsMsg.includes("ail") || termsMsg.includes("rror") ? "text-red-500" : "text-green-600")}>{termsMsg}</p>}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Vendor modal */}
