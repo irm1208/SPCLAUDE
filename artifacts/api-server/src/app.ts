@@ -225,7 +225,7 @@ if (process.env["NODE_ENV"] === "production") {
       "font-src 'self' https://fonts.gstatic.com data:",
       "connect-src 'self' https: wss:",
       "img-src 'self' data: blob: https:",
-      "frame-src 'self' https://trocador.app",
+      "frame-src 'self' blob: https://trocador.app",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

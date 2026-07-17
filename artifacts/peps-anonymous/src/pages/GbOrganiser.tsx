@@ -8680,13 +8680,13 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                           <div className="flex gap-1.5">
                             <button
                               type="button"
-                              onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${o.inpostQrCode}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
+                              onClick={() => { const s=o.inpostQrCode!,ci=s.indexOf(","),b64=ci!==-1?s.slice(ci+1):s,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),60000); }}
                               className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
                               style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
                             >📄 Open</button>
                             <button
                               type="button"
-                              onClick={() => { const a = document.createElement("a"); a.href = o.inpostQrCode!; a.download = `qr-${o.code}-inpost.pdf`; a.click(); }}
+                              onClick={() => { const s=o.inpostQrCode!,ci=s.indexOf(","),b64=ci!==-1?s.slice(ci+1):s,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));const a=document.createElement("a");a.href=url;a.download=`qr-${o.code}-inpost.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000); }}
                               className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
                               style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
                             >↓ Save</button>
@@ -9072,14 +9072,14 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                                     <div className="flex items-center gap-1">
                                       <button
                                         type="button"
-                                        onClick={() => { const w = window.open(); if (w) w.document.write(`<iframe src="${existing}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }}
+                                        onClick={() => { const ci=existing.indexOf(","),b64=ci!==-1?existing.slice(ci+1):existing,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),60000); }}
                                         className="w-9 h-9 rounded border bg-white flex items-center justify-center text-base leading-none"
                                         style={{ borderColor: "rgba(124,58,237,0.3)" }}
                                         title="Open PDF"
                                       >📄</button>
                                       <button
                                         type="button"
-                                        onClick={() => { const a = document.createElement("a"); a.href = existing; a.download = `qr-${o.id}-${courier}.pdf`; a.click(); }}
+                                        onClick={() => { const ci=existing.indexOf(","),b64=ci!==-1?existing.slice(ci+1):existing,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));const a=document.createElement("a");a.href=url;a.download=`qr-${o.id}-${courier}.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000); }}
                                         className="w-9 h-9 rounded border bg-white flex items-center justify-center text-[10px] font-bold"
                                         style={{ borderColor: "rgba(124,58,237,0.3)", color: "#7C3AED" }}
                                         title="Download PDF"

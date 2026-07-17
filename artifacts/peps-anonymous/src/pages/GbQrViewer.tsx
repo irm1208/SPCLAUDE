@@ -44,15 +44,61 @@ function hasAnyQr(order: QrOrder): boolean {
 }
 
 function isPdfDataUrl(src: string): boolean {
-  // Any data URL that is not an image should be opened/downloaded rather than shown as <img>
-  return src.startsWith("data:") && !src.startsWith("data:image/");
+  if (!src.startsWith("data:")) return false;
+  if (!src.startsWith("data:image/")) return true;
+  // Also detect by magic bytes: PDF starts with %PDF → base64 JVBE
+  const ci = src.indexOf(",");
+  return ci !== -1 && src.slice(ci + 1, ci + 5) === "JVBE";
+}
+
+// Convert any data URL to an application/pdf blob URL (Chrome needs blob: not data: to render PDFs in iframes)
+function dataToPdfBlob(src: string): string {
+  const ci = src.indexOf(",");
+  const b64 = ci !== -1 ? src.slice(ci + 1) : src;
+  const raw = atob(b64);
+  const buf = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+  return URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+}
+
+function openPdfInTab(src: string): void {
+  try {
+    const url = dataToPdfBlob(src);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    const win = window.open();
+    if (win) win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0"></iframe>`);
+  }
 }
 
 function downloadPdf(src: string, filename: string) {
-  const a = document.createElement("a");
-  a.href = src;
-  a.download = filename;
-  a.click();
+  try {
+    const url = dataToPdfBlob(src);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch {
+    const a = document.createElement("a");
+    a.href = src; a.download = filename; a.click();
+  }
+}
+
+// Inline PDF preview: converts data URL → blob URL so Chrome's PDF viewer works
+function PdfPreview({ src, style, className }: { src: string; style?: React.CSSProperties; className?: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let url = "";
+    try { url = dataToPdfBlob(src); setBlobUrl(url); } catch { setBlobUrl(null); }
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [src]);
+
+  if (!blobUrl) return (
+    <div style={{ ...style, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(27,58,122,0.04)" }}>
+      <Loader2 className="w-4 h-4 animate-spin" style={{ color: "#94A3B8" }} />
+    </div>
+  );
+  return <iframe src={blobUrl} style={{ ...style, border: "none" }} className={className} title="PDF" />;
 }
 
 // ─── Full-screen image / PDF lightbox ───────────────────────────────────────
@@ -64,11 +110,6 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
   }, [onClose]);
 
   const isPdf = isPdfDataUrl(src);
-
-  const openPdf = () => {
-    const win = window.open();
-    if (win) { win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }
-  };
 
   return (
     <div
@@ -94,16 +135,11 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
         </p>
         {isPdf ? (
           <>
-            <iframe
-              src={src}
-              title={`${label} PDF`}
-              className="w-full grow"
-              style={{ border: "none", minHeight: "60vh" }}
-            />
+            <PdfPreview src={src} style={{ minHeight: "60vh", width: "100%" }} className="grow" />
             <div className="flex gap-2 justify-center p-3 shrink-0" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
               <button
                 type="button"
-                onClick={openPdf}
+                onClick={() => openPdfInTab(src)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
                 style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
@@ -137,14 +173,9 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 // ─── QR image thumbnail (click to enlarge) ──────────────────────────────────
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
-  // imgFailed: onError fallback catches cases where MIME type detection doesn't match stored value
+  // imgFailed: onError fallback catches PDFs stored with unexpected MIME types
   const [imgFailed, setImgFailed] = useState(false);
   const isPdf = isPdfDataUrl(src) || imgFailed;
-
-  const openPdf = () => {
-    const win = window.open();
-    if (win) { win.document.write(`<iframe src="${src}" width="100%" height="100%" style="border:none;position:fixed;inset:0;width:100%;height:100%"></iframe>`); }
-  };
 
   return (
     <>
@@ -155,13 +186,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
             className="w-56 rounded-2xl overflow-hidden flex flex-col"
             style={{ border: `1px solid rgba(27,58,122,0.2)`, background: "#fff" }}
           >
-            <iframe
-              src={src}
-              title={`${label} PDF`}
-              className="w-full"
-              style={{ height: 180, border: "none", display: "block", pointerEvents: "none" }}
-              tabIndex={-1}
-            />
+            <PdfPreview src={src} style={{ height: 180, width: "100%", pointerEvents: "none" }} />
             <div
               className="flex gap-1.5 justify-center py-2 px-2"
               style={{ borderTop: "1px solid rgba(27,58,122,0.1)", background: "rgba(27,58,122,0.03)" }}
@@ -177,7 +202,7 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
               </button>
               <button
                 type="button"
-                onClick={openPdf}
+                onClick={() => openPdfInTab(src)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
                 style={{ background: "rgba(27,58,122,0.08)", border: `1px solid rgba(27,58,122,0.2)`, color: NAVY }}
               >
