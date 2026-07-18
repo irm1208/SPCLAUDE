@@ -751,3 +751,22 @@ test("Batch Studio makes broad edits reviewable before applying", () => {
   assert.match(batchStudio, /data-testid="apply-change-set"/);
   assert.match(batchStudio, /aria-label="Affected products"/);
 });
+
+test("Vendor Matrix puts supplier reconciliation in catalogue context", () => {
+  const vendorMatrix = source("./VendorMatrix.tsx");
+  for (const text of [
+    "Vendor Matrix",
+    "Vendors",
+    "Supplier price",
+    "Live price",
+    "Review changes",
+    "Import update",
+    "CSV Import",
+    "AI Price List",
+  ]) {
+    assert.match(vendorMatrix, new RegExp(text));
+  }
+  assert.match(vendorMatrix, /aria-label="Vendor list"/);
+  assert.match(vendorMatrix, /data-testid="review-import"/);
+  assert.match(vendorMatrix, /price-changed|duplicate/);
+});
