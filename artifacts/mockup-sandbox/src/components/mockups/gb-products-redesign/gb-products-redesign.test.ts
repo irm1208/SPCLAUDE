@@ -507,3 +507,23 @@ test("reduced motion suppresses effects on elements and pseudo-elements", () => 
     );
   }
 });
+
+test("Category Workbench exposes category navigation and bulk workflows", () => {
+  const workbench = source("./CategoryWorkbench.tsx");
+
+  for (const label of [
+    "Category Workbench",
+    "Catalogue map",
+    "Saved views",
+    "Low stock",
+    "Missing vendor",
+    "Edit group",
+    "Expand all",
+  ]) {
+    assert.match(workbench, new RegExp(label));
+  }
+
+  assert.match(workbench, /aria-label="Catalogue map"/);
+  assert.match(workbench, /data-testid="category-bulk-action"/);
+  assert.match(workbench, /aria-expanded=/);
+});
