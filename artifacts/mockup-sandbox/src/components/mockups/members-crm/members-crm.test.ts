@@ -335,6 +335,21 @@ test("member CRM shell exposes accessible mobile navigation contracts", () => {
   );
 });
 
+test("member CRM mobile drawer manages focus and isolates its background", () => {
+  const shell = source("./MembersCrmShell.tsx");
+
+  assert.match(shell, /useRef/);
+  assert.match(shell, /useEffect/);
+  assert.match(shell, /\.key\s*===\s*["']Escape["']/);
+  assert.match(shell, /\binert\s*=\s*\{/);
+  assert.match(shell, /ref\s*=\s*\{mobileNavCloseRef\}/);
+  assert.match(shell, /mobileNavCloseRef\.current\?\.focus\(\)/);
+  assert.match(shell, /ref\s*=\s*\{mobileMenuTriggerRef\}/);
+  assert.match(shell, /mobileMenuTriggerRef\.current\?\.focus\(\)/);
+  assert.match(shell, /removeEventListener/);
+  assert.match(shell, /cancelAnimationFrame/);
+});
+
 test("member directory exposes search, sort, and selection semantics", () => {
   const directory = source("./MemberCrmDirectory.tsx");
 

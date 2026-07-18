@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -83,10 +83,80 @@ export function MembersCrmShell({
   onOpenSearch,
 }: Props) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
+  const restoreMobileTriggerFocusRef = useRef(false);
+
+  const closeMobileNavigation = () => {
+    restoreMobileTriggerFocusRef.current = true;
+    setMobileNavigationOpen(false);
+  };
+
+  const toggleMobileNavigation = () => {
+    if (mobileNavigationOpen) {
+      closeMobileNavigation();
+      return;
+    }
+
+    setMobileNavigationOpen(true);
+  };
+
+  useEffect(() => {
+    if (!mobileNavigationOpen) {
+      if (!restoreMobileTriggerFocusRef.current) {
+        return;
+      }
+
+      const restoreFocusFrame = window.requestAnimationFrame(() => {
+        mobileMenuTriggerRef.current?.focus();
+        restoreMobileTriggerFocusRef.current = false;
+      });
+
+      return () => window.cancelAnimationFrame(restoreFocusFrame);
+    }
+
+    const mobileViewport = window.matchMedia("(max-width: 767px)");
+    if (!mobileViewport.matches) {
+      setMobileNavigationOpen(false);
+      return;
+    }
+
+    const focusDrawerFrame = window.requestAnimationFrame(() => {
+      mobileNavCloseRef.current?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        restoreMobileTriggerFocusRef.current = true;
+        setMobileNavigationOpen(false);
+      }
+    };
+
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) {
+        restoreMobileTriggerFocusRef.current = false;
+        setMobileNavigationOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    mobileViewport.addEventListener("change", handleViewportChange);
+
+    return () => {
+      window.cancelAnimationFrame(focusDrawerFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      mobileViewport.removeEventListener("change", handleViewportChange);
+    };
+  }, [mobileNavigationOpen]);
 
   return (
     <div className="members-crm" data-page="members">
-      <a className="members-crm__skip-link" href="#members-crm-main">
+      <a
+        className="members-crm__skip-link"
+        href="#members-crm-main"
+        inert={mobileNavigationOpen ? true : undefined}
+      >
         Skip to member workspace
       </a>
 
@@ -97,9 +167,10 @@ export function MembersCrmShell({
         data-mobile-open={mobileNavigationOpen ? "true" : "false"}
       >
         <button
+          ref={mobileNavCloseRef}
           className="members-crm__close-nav"
           type="button"
-          onClick={() => setMobileNavigationOpen(false)}
+          onClick={closeMobileNavigation}
           aria-label="Close GB Organiser navigation"
           title="Close navigation"
         >
@@ -222,19 +293,23 @@ export function MembersCrmShell({
       <button
         className="members-crm__backdrop"
         type="button"
-        onClick={() => setMobileNavigationOpen(false)}
+        onClick={closeMobileNavigation}
         aria-label="Close GB Organiser navigation"
         data-mobile-open={mobileNavigationOpen ? "true" : "false"}
         tabIndex={mobileNavigationOpen ? 0 : -1}
       />
 
-      <div className="members-crm__workspace">
+      <div
+        className="members-crm__workspace"
+        inert={mobileNavigationOpen ? true : undefined}
+      >
         <header className="members-crm__topbar">
           <div className="members-crm__topbar-leading">
             <button
+              ref={mobileMenuTriggerRef}
               className="members-crm__mobile-menu"
               type="button"
-              onClick={() => setMobileNavigationOpen((isOpen) => !isOpen)}
+              onClick={toggleMobileNavigation}
               aria-label={
                 mobileNavigationOpen
                   ? "Close GB Organiser navigation"
