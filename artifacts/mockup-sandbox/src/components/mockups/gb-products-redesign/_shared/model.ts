@@ -87,21 +87,46 @@ function importKey(candidate: ImportCandidate): string {
   return [candidate.name, candidate.vendor, candidate.mgSize].map(normalise).join("\u001f");
 }
 
+function importIdentity(candidate: ImportCandidate): string {
+  const price = Number.isNaN(candidate.price)
+    ? "NaN"
+    : candidate.price === Number.POSITIVE_INFINITY
+      ? "Infinity"
+      : candidate.price === Number.NEGATIVE_INFINITY
+        ? "-Infinity"
+        : Object.is(candidate.price, -0)
+          ? "-0"
+          : String(candidate.price);
+
+  return JSON.stringify([
+    candidate.name,
+    candidate.vendor,
+    candidate.mgSize,
+    price,
+  ]);
+}
+
 export function classifyImportRows(
   existing: readonly ProductRecord[],
   incoming: readonly ImportCandidate[],
 ): ImportReviewRow[] {
   const existingByKey = new Map(existing.map((product) => [importKey(product), product]));
+  const identityCounts = new Map<string, number>();
 
   return incoming.map((candidate) => {
+    const identity = importIdentity(candidate);
+    const occurrence = (identityCounts.get(identity) ?? 0) + 1;
+    identityCounts.set(identity, occurrence);
+    const id = `import-${encodeURIComponent(identity)}-${occurrence}`;
     const match = existingByKey.get(importKey(candidate));
     if (!match) {
-      return { ...candidate, status: "new", included: true };
+      return { ...candidate, id, status: "new", included: true };
     }
 
     if (match.price !== candidate.price) {
       return {
         ...candidate,
+        id,
         status: "price-changed",
         existingPrice: match.price,
         included: true,
@@ -110,6 +135,7 @@ export function classifyImportRows(
 
     return {
       ...candidate,
+      id,
       status: "duplicate",
       existingPrice: match.price,
       included: false,

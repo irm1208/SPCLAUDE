@@ -29,6 +29,7 @@ export interface ProductFilters {
 export type ImportCandidate = Pick<ProductRecord, "name" | "vendor" | "mgSize" | "price">;
 
 export type ImportReviewRow = ImportCandidate & {
+  id: string;
   status: ImportStatus;
   existingPrice?: number;
   included: boolean;

@@ -1004,6 +1004,11 @@
   opacity: 0.68;
 }
 
+.gbpr-import-table tbody tr[data-invalid="true"] {
+  background: #FFF9F8;
+  box-shadow: inset 3px 0 0 var(--gbpr-danger);
+}
+
 .gbpr-table-input {
   width: 100%;
   min-width: 130px;
@@ -1026,6 +1031,20 @@
 .gbpr-table-input-size {
   min-width: 90px;
   max-width: 115px;
+}
+
+.gbpr-table-input[aria-invalid="true"] {
+  border-color: var(--gbpr-danger);
+  background: #FFF9F8;
+}
+
+.gbpr-table-error {
+  display: block;
+  margin-top: 3px;
+  color: var(--gbpr-danger);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .gbpr-import-toggle {
@@ -1140,6 +1159,7 @@
   inset: 0;
   display: grid;
   place-items: center;
+  overscroll-behavior: contain;
   padding: 20px;
   background: rgba(15, 31, 56, 0.56);
   backdrop-filter: blur(3px);

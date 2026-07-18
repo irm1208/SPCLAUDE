@@ -60,11 +60,51 @@ test("shared shell navigation and topbar controls are explicitly labelled", () =
   assert.match(shell, /aria-current=\{item\.active \? "page" : undefined\}/);
 });
 
-test("controlled import rows keep their identity while editable names change", () => {
+test("shared shell owns one defaultable page heading for its label contract", () => {
+  const shell = source("./_shared/ProductShell.tsx");
+  const styles = source("./_group.css");
+
+  assert.match(shell, /pageTitle\?:\s*string/);
+  assert.match(shell, /pageTitle = "Products"/);
+  assert.match(
+    shell,
+    /<h1 className="gbpr-visually-hidden" id="gbpr-page-title">\s*\{pageTitle\}\s*<\/h1>/s,
+  );
+  assert.equal([...shell.matchAll(/id="gbpr-page-title"/g)].length, 1);
+  assert.match(
+    styles,
+    /\.gbpr-visually-hidden\s*\{[^}]*position:\s*absolute\s*!important;[^}]*clip-path:\s*inset\(50%\)\s*!important;/s,
+  );
+});
+
+test("product form focuses the first invalid control in rendered DOM order", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+  const submitStart = tools.indexOf("function handleSubmit");
+  const submitEnd = tools.indexOf("\n  return (", submitStart);
+  const handleSubmit = tools.slice(submitStart, submitEnd);
+
+  assert.notEqual(submitStart, -1);
+  assert.notEqual(submitEnd, -1);
+  assert.match(handleSubmit, /Object\.values\(nextErrors\)\.some\(Boolean\)/);
+  assert.match(
+    handleSubmit,
+    /querySelector<HTMLElement>\('\[aria-invalid="true"\]'\)/,
+  );
+  assert.doesNotMatch(handleSubmit, /Object\.keys\(nextErrors\)\[0\]/);
+});
+
+test("controlled import rows and callbacks use immutable row IDs", () => {
+  const data = source("./data.ts");
   const tools = source("./_shared/ProductTools.tsx");
 
-  assert.doesNotMatch(tools, /key=\{`\$\{index\}-\$\{row\.name\}`\}/);
-  assert.match(tools, /<tr key=\{index\} data-included=\{row\.included\}>/);
+  assert.match(data, /ImportReviewRow[\s\S]*?id:\s*string/);
+  assert.match(tools, /onToggle:\s*\(rowId:\s*ImportReviewRow\["id"\]\)/);
+  assert.match(tools, /onEdit:\s*\(\s*rowId:\s*ImportReviewRow\["id"\]/);
+  assert.match(tools, /key=\{row\.id\}/);
+  assert.match(tools, /onToggle\(row\.id\)/);
+  assert.match(tools, /onEdit\(row\.id,/);
+  assert.doesNotMatch(tools, /key=\{index\}/);
+  assert.doesNotMatch(tools, /on(?:Toggle|Edit)\(index/);
 });
 
 test("import checkboxes keep a stable accessible name for their checked state", () => {
@@ -72,6 +112,42 @@ test("import checkboxes keep a stable accessible name for their checked state", 
 
   assert.match(tools, /aria-label=\{`Include \$\{rowName\}`\}/);
   assert.match(tools, /row\.included \? "Include" : "Skip"/);
+});
+
+test("import price drafts preserve intermediate values by immutable row ID", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(
+    tools,
+    /type ImportPriceDrafts = Record<ImportReviewRow\["id"\], string>/,
+  );
+  assert.match(tools, /useState<ImportPriceDrafts>/);
+  assert.match(tools, /priceDrafts\[row\.id\]/);
+  assert.match(tools, /event\.currentTarget\.value/);
+  assert.doesNotMatch(tools, /valueAsNumber/);
+});
+
+test("included import rows guard confirmation and focus the first invalid field", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(tools, /if \(!row\.included\) continue/);
+  assert.match(tools, /!row\.name\.trim\(\)/);
+  assert.match(tools, /!row\.vendor\.trim\(\)/);
+  assert.match(
+    tools,
+    /!priceDraft\.trim\(\) \|\| !Number\.isFinite\(price\) \|\| price < 0/,
+  );
+  assert.match(
+    tools,
+    /const nextErrors = validateImportRows\(rows, priceDrafts\)/,
+  );
+  assert.match(
+    tools,
+    /querySelector<HTMLElement>\('\[aria-invalid="true"\]'\)/,
+  );
+  assert.match(tools, /aria-invalid=\{rowErrors\.(?:name|price|vendor)/);
+  assert.match(tools, /className="gbpr-table-error"/);
+  assert.match(tools, /if \(Object\.keys\(nextErrors\)\.length > 0\)[\s\S]*?return;[\s\S]*?onConfirm\(\)/);
 });
 
 test("confirmation dialog provides labelled dismissal and keyboard escape routes", () => {
@@ -93,6 +169,49 @@ test("confirmation dialog keeps its listener stable across callback changes", ()
   assert.match(tools, /onCancelRef\.current = onCancel/);
   assert.match(tools, /onCancelRef\.current\(\)/);
   assert.doesNotMatch(tools, /\[open, onCancel\]/);
+});
+
+test("confirmation dialog wraps Tab and Shift+Tab inside its focusable controls", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(tools, /const FOCUSABLE_SELECTOR/);
+  assert.match(tools, /event\.key === "Tab"/);
+  assert.match(
+    tools,
+    /querySelectorAll<HTMLElement>\(FOCUSABLE_SELECTOR\)/,
+  );
+  assert.match(tools, /event\.shiftKey/);
+  assert.match(tools, /firstFocusable\.focus\(\)/);
+  assert.match(tools, /lastFocusable\.focus\(\)/);
+  assert.match(tools, /ref=\{dialogRef\}/);
+  assert.match(tools, /closeRef\.current\?\.focus\(\)/);
+});
+
+test("confirmation dialog restores document scrolling during lifecycle cleanup", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(
+    tools,
+    /const previousBodyOverflow = document\.body\.style\.overflow/,
+  );
+  assert.match(tools, /document\.body\.style\.overflow = "hidden"/);
+  assert.match(
+    tools,
+    /document\.body\.style\.overflow = previousBodyOverflow/,
+  );
+  assert.match(
+    tools,
+    /document\.documentElement\.style\.overflow = previousRootOverflow/,
+  );
+});
+
+test("confirmation overlay contains overscroll", () => {
+  const styles = source("./_group.css");
+
+  assert.match(
+    styles,
+    /\.gbpr-modal-layer\s*\{[^}]*overscroll-behavior:\s*contain;/s,
+  );
 });
 
 test("shared styles retain the complete approved Peps token set", () => {

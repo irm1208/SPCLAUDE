@@ -28,6 +28,7 @@ export type ProductShellProps = {
   concept: string;
   children: React.ReactNode;
   onReset?: () => void;
+  pageTitle?: string;
 };
 
 type NavigationItem = {
@@ -77,7 +78,12 @@ const NAVIGATION_GROUPS: NavigationGroup[] = [
   },
 ];
 
-export function ProductShell({ concept, children, onReset }: ProductShellProps) {
+export function ProductShell({
+  concept,
+  children,
+  onReset,
+  pageTitle = "Products",
+}: ProductShellProps) {
   return (
     <div className="gbpr-shell">
       <a className="gbpr-skip-link" href="#gbpr-content">
@@ -160,7 +166,7 @@ export function ProductShell({ concept, children, onReset }: ProductShellProps) 
             <span aria-hidden="true">/</span>
             <span>Winter Peptide Run 2025</span>
             <span aria-hidden="true">/</span>
-            <strong aria-current="page">Products</strong>
+            <strong aria-current="page">{pageTitle}</strong>
           </nav>
 
           <div className="gbpr-topbar-actions">
@@ -203,6 +209,9 @@ export function ProductShell({ concept, children, onReset }: ProductShellProps) 
           id="gbpr-content"
           aria-labelledby="gbpr-page-title"
         >
+          <h1 className="gbpr-visually-hidden" id="gbpr-page-title">
+            {pageTitle}
+          </h1>
           <div className="gbpr-concept-kicker">
             <ClipboardList aria-hidden="true" />
             <span>Products workspace</span>

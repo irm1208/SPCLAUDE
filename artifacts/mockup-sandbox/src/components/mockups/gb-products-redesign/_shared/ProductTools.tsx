@@ -141,11 +141,11 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
     const nextErrors = validateProductDraft(draft);
     setErrors(nextErrors);
 
-    const firstError = Object.keys(nextErrors)[0];
-    if (firstError) {
+    const hasErrors = Object.values(nextErrors).some(Boolean);
+    if (hasErrors) {
       requestAnimationFrame(() => {
         formRef.current
-          ?.querySelector<HTMLElement>(`[name="${firstError}"]`)
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
           ?.focus();
       });
       return;
@@ -461,14 +461,58 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
 export type ImportReviewProps = {
   rows: ImportReviewRow[];
   mode: "csv" | "ai";
-  onToggle: (index: number) => void;
+  onToggle: (rowId: ImportReviewRow["id"]) => void;
   onEdit: (
-    index: number,
+    rowId: ImportReviewRow["id"],
     patch: Partial<Pick<ImportReviewRow, "name" | "price" | "vendor" | "mgSize">>,
   ) => void;
   onConfirm: () => void;
   onCancel: () => void;
 };
+
+type ImportPriceDrafts = Record<ImportReviewRow["id"], string>;
+type ImportEditableField = "name" | "price" | "vendor";
+type ImportRowErrors = Partial<Record<ImportEditableField, string>>;
+type ImportErrors = Record<ImportReviewRow["id"], ImportRowErrors>;
+
+function createImportPriceDrafts(
+  rows: readonly ImportReviewRow[],
+): ImportPriceDrafts {
+  return Object.fromEntries(
+    rows.map((row) => [row.id, String(row.price)]),
+  );
+}
+
+function validateImportRows(
+  rows: readonly ImportReviewRow[],
+  priceDrafts: ImportPriceDrafts,
+): ImportErrors {
+  const errors: ImportErrors = {};
+
+  for (const row of rows) {
+    if (!row.included) continue;
+
+    const rowErrors: ImportRowErrors = {};
+    const priceDraft = priceDrafts[row.id] ?? String(row.price);
+    const price = Number(priceDraft);
+
+    if (!row.name.trim()) {
+      rowErrors.name = "Enter a product name.";
+    }
+    if (!priceDraft.trim() || !Number.isFinite(price) || price < 0) {
+      rowErrors.price = "Enter a finite price of zero or more.";
+    }
+    if (!row.vendor.trim()) {
+      rowErrors.vendor = "Enter a vendor.";
+    }
+
+    if (Object.keys(rowErrors).length > 0) {
+      errors[row.id] = rowErrors;
+    }
+  }
+
+  return errors;
+}
 
 const STATUS_LABELS: Record<ImportReviewRow["status"], string> = {
   new: "New",
@@ -480,6 +524,15 @@ const MONEY = new Intl.NumberFormat("en-GB", {
   style: "currency",
   currency: "GBP",
 });
+
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
 
 export function StatusBadge({
   status,
@@ -502,6 +555,11 @@ export function ImportReview({
   onCancel,
 }: ImportReviewProps) {
   const headingId = useId();
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [priceDrafts, setPriceDrafts] = useState<ImportPriceDrafts>(() =>
+    createImportPriceDrafts(rows),
+  );
+  const [importErrors, setImportErrors] = useState<ImportErrors>({});
   const includedCount = rows.reduce(
     (count, row) => count + (row.included ? 1 : 0),
     0,
@@ -512,6 +570,75 @@ export function ImportReview({
       ? "Review the rows detected in your CSV before adding them to the catalogue."
       : "AI extracted these products from the price list. Check every field before confirming.";
   const HeadingIcon = mode === "csv" ? FileSpreadsheet : Sparkles;
+
+  useEffect(() => {
+    setPriceDrafts((current) => {
+      const next: ImportPriceDrafts = {};
+      let changed = Object.keys(current).length !== rows.length;
+
+      for (const row of rows) {
+        next[row.id] = current[row.id] ?? String(row.price);
+        if (next[row.id] !== current[row.id]) changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [rows]);
+
+  function clearImportError(
+    rowId: ImportReviewRow["id"],
+    field: ImportEditableField,
+  ) {
+    setImportErrors((current) => {
+      const rowErrors = current[rowId];
+      if (!rowErrors?.[field]) return current;
+
+      const nextRowErrors = { ...rowErrors };
+      delete nextRowErrors[field];
+      const next = { ...current };
+      if (Object.keys(nextRowErrors).length === 0) {
+        delete next[rowId];
+      } else {
+        next[rowId] = nextRowErrors;
+      }
+      return next;
+    });
+  }
+
+  function clearImportRowErrors(rowId: ImportReviewRow["id"]) {
+    setImportErrors((current) => {
+      if (!current[rowId]) return current;
+      const next = { ...current };
+      delete next[rowId];
+      return next;
+    });
+  }
+
+  function updatePriceDraft(rowId: ImportReviewRow["id"], value: string) {
+    setPriceDrafts((current) => ({ ...current, [rowId]: value }));
+    clearImportError(rowId, "price");
+
+    const price = Number(value);
+    if (value.trim() && Number.isFinite(price) && price >= 0) {
+      onEdit(rowId, { price });
+    }
+  }
+
+  function handleConfirm() {
+    const nextErrors = validateImportRows(rows, priceDrafts);
+    setImportErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      requestAnimationFrame(() => {
+        tableRef.current
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+          ?.focus();
+      });
+      return;
+    }
+
+    onConfirm();
+  }
 
   return (
     <section className="gbpr-import-review" aria-labelledby={headingId}>
@@ -527,7 +654,7 @@ export function ImportReview({
       </header>
 
       <div className="gbpr-table-wrap">
-        <table className="gbpr-table gbpr-import-table">
+        <table ref={tableRef} className="gbpr-table gbpr-import-table">
           <caption className="gbpr-visually-hidden">
             Products detected for {heading}
           </caption>
@@ -545,14 +672,25 @@ export function ImportReview({
           <tbody>
             {rows.map((row, index) => {
               const rowName = row.name || `row ${index + 1}`;
+              const rowErrors: ImportRowErrors = importErrors[row.id] ?? {};
+              const priceDraft = priceDrafts[row.id] ?? String(row.price);
+              const rowInvalid =
+                row.included && Object.keys(rowErrors).length > 0;
               return (
-                <tr key={index} data-included={row.included}>
+                <tr
+                  key={row.id}
+                  data-included={row.included}
+                  data-invalid={rowInvalid ? "true" : undefined}
+                >
                   <td>
                     <label className="gbpr-import-toggle">
                       <input
                         type="checkbox"
                         checked={row.included}
-                        onChange={() => onToggle(index)}
+                        onChange={() => {
+                          clearImportRowErrors(row.id);
+                          onToggle(row.id);
+                        }}
                         aria-label={`Include ${rowName}`}
                       />
                       <span>{row.included ? "Include" : "Skip"}</span>
@@ -569,10 +707,26 @@ export function ImportReview({
                       id={`${headingId}-${index}-name`}
                       className="gbpr-table-input"
                       value={row.name}
-                      onChange={(event) =>
-                        onEdit(index, { name: event.currentTarget.value })
+                      onChange={(event) => {
+                        clearImportError(row.id, "name");
+                        onEdit(row.id, { name: event.currentTarget.value });
+                      }}
+                      aria-invalid={rowErrors.name ? "true" : undefined}
+                      aria-describedby={
+                        rowErrors.name
+                          ? `${headingId}-${index}-name-error`
+                          : undefined
                       }
                     />
+                    {rowErrors.name ? (
+                      <span
+                        className="gbpr-table-error"
+                        id={`${headingId}-${index}-name-error`}
+                        role="alert"
+                      >
+                        {rowErrors.name}
+                      </span>
+                    ) : null}
                   </td>
                   <td>
                     <label className="gbpr-visually-hidden" htmlFor={`${headingId}-${index}-price`}>
@@ -584,14 +738,26 @@ export function ImportReview({
                       type="number"
                       min="0"
                       step="0.01"
-                      value={row.price}
-                      onChange={(event) => {
-                        const nextPrice = event.currentTarget.valueAsNumber;
-                        if (Number.isFinite(nextPrice)) {
-                          onEdit(index, { price: nextPrice });
-                        }
-                      }}
+                      value={priceDraft}
+                      onChange={(event) =>
+                        updatePriceDraft(row.id, event.currentTarget.value)
+                      }
+                      aria-invalid={rowErrors.price ? "true" : undefined}
+                      aria-describedby={
+                        rowErrors.price
+                          ? `${headingId}-${index}-price-error`
+                          : undefined
+                      }
                     />
+                    {rowErrors.price ? (
+                      <span
+                        className="gbpr-table-error"
+                        id={`${headingId}-${index}-price-error`}
+                        role="alert"
+                      >
+                        {rowErrors.price}
+                      </span>
+                    ) : null}
                   </td>
                   <td>
                     <label className="gbpr-visually-hidden" htmlFor={`${headingId}-${index}-vendor`}>
@@ -601,10 +767,26 @@ export function ImportReview({
                       id={`${headingId}-${index}-vendor`}
                       className="gbpr-table-input"
                       value={row.vendor}
-                      onChange={(event) =>
-                        onEdit(index, { vendor: event.currentTarget.value })
+                      onChange={(event) => {
+                        clearImportError(row.id, "vendor");
+                        onEdit(row.id, { vendor: event.currentTarget.value });
+                      }}
+                      aria-invalid={rowErrors.vendor ? "true" : undefined}
+                      aria-describedby={
+                        rowErrors.vendor
+                          ? `${headingId}-${index}-vendor-error`
+                          : undefined
                       }
                     />
+                    {rowErrors.vendor ? (
+                      <span
+                        className="gbpr-table-error"
+                        id={`${headingId}-${index}-vendor-error`}
+                        role="alert"
+                      >
+                        {rowErrors.vendor}
+                      </span>
+                    ) : null}
                   </td>
                   <td>
                     <label className="gbpr-visually-hidden" htmlFor={`${headingId}-${index}-size`}>
@@ -615,7 +797,7 @@ export function ImportReview({
                       className="gbpr-table-input gbpr-table-input-size"
                       value={row.mgSize}
                       onChange={(event) =>
-                        onEdit(index, { mgSize: event.currentTarget.value })
+                        onEdit(row.id, { mgSize: event.currentTarget.value })
                       }
                     />
                   </td>
@@ -655,7 +837,7 @@ export function ImportReview({
             type="button"
             className="gbpr-button"
             data-variant="primary"
-            onClick={onConfirm}
+            onClick={handleConfirm}
             disabled={includedCount === 0}
           >
             Confirm {includedCount} {includedCount === 1 ? "product" : "products"}
@@ -687,6 +869,7 @@ export function ConfirmAction({
 }: ConfirmActionProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCancelRef = useRef(onCancel);
 
@@ -701,9 +884,54 @@ export function ConfirmAction({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onCancelRef.current();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+
+        const focusable = Array.from(
+          dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+        ).filter(
+          (element) =>
+            !element.hasAttribute("disabled") &&
+            element.getAttribute("aria-hidden") !== "true",
+        );
+
+        if (focusable.length === 0) {
+          event.preventDefault();
+          dialog.focus();
+          return;
+        }
+
+        const firstFocusable = focusable[0];
+        const lastFocusable = focusable[focusable.length - 1];
+        const activeElement = document.activeElement;
+
+        if (
+          event.shiftKey &&
+          (activeElement === firstFocusable || !dialog.contains(activeElement))
+        ) {
+          event.preventDefault();
+          lastFocusable.focus();
+        } else if (
+          !event.shiftKey &&
+          (activeElement === lastFocusable || !dialog.contains(activeElement))
+        ) {
+          event.preventDefault();
+          firstFocusable.focus();
+        }
       }
     };
 
@@ -712,6 +940,8 @@ export function ConfirmAction({
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
       previousFocus?.focus();
     };
   }, [open]);
@@ -731,8 +961,10 @@ export function ConfirmAction({
       onClick={handleOverlayClick}
     >
       <section
+        ref={dialogRef}
         className="gbpr-modal"
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}

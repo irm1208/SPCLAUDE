@@ -259,3 +259,23 @@ test("classifyImportRows normalizes keys and identifies duplicate, price-changed
   assert.deepEqual(incoming, incomingSnapshot);
   result.forEach((row, index) => assert.notStrictEqual(row, incoming[index]));
 });
+
+test("classifyImportRows assigns unique stable IDs across row reordering", () => {
+  const incoming = [
+    { name: "BPC-157", vendor: "QSC", mgSize: "5 mg", price: 28.5 },
+    { name: "BPC-157", vendor: "QSC", mgSize: "5 mg", price: 31 },
+    { name: "TB-500", vendor: "Chilton", mgSize: "10 mg", price: 44 },
+  ];
+  const reordered = [incoming[2], incoming[0], incoming[1]];
+  const signature = ({ name, vendor, mgSize, price }: (typeof incoming)[number]) =>
+    JSON.stringify([name, vendor, mgSize, price]);
+
+  const first = classifyImportRows([], incoming);
+  const second = classifyImportRows([], reordered);
+  const firstIds = new Map(first.map((row) => [signature(row), row.id]));
+  const secondIds = new Map(second.map((row) => [signature(row), row.id]));
+
+  assert.equal(new Set(first.map(({ id }) => id)).size, incoming.length);
+  assert.equal(new Set(second.map(({ id }) => id)).size, reordered.length);
+  assert.deepEqual(secondIds, firstIds);
+});
