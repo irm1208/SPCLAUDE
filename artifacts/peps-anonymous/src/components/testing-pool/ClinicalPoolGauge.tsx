@@ -12,6 +12,7 @@ const SEGMENT_COLORS = ["#2D6BCC", "#6E91D0", "#E9A020", "#16A34A"];
 const THRESHOLD_LABEL_MIN_X = 116;
 const THRESHOLD_LABEL_MAX_X = 304;
 const THRESHOLD_LABEL_MAX_CHARS = 20;
+const STATUS_LABEL_MAX_CHARS = 16;
 
 export interface ClinicalPoolGaugeProps {
   raised: number;
@@ -41,10 +42,10 @@ function constrainThresholdLabelX(
   );
 }
 
-function truncateThresholdLabel(label: string): string {
+function truncateSvgLabel(label: string, maxChars: number): string {
   const normalized = label.trim();
-  if (normalized.length <= THRESHOLD_LABEL_MAX_CHARS) return normalized;
-  return `${normalized.slice(0, THRESHOLD_LABEL_MAX_CHARS - 1).trimEnd()}…`;
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
 export function ClinicalPoolGauge({
@@ -59,13 +60,26 @@ export function ClinicalPoolGauge({
   const descriptionId = useId();
   const reduceMotion = useReducedMotion();
   const model = buildGaugeModel(raised, milestones);
+  const hasGoal = model.goal > 0;
   const contributors = Number.isFinite(contributorCount)
     ? Math.max(0, Math.trunc(contributorCount))
     : 0;
   const contributorLabel = `${contributors} ${contributors === 1 ? "CONTRIBUTOR" : "CONTRIBUTORS"}`;
   const accessibleContributorLabel = `${contributors} ${contributors === 1 ? "contributor" : "contributors"}`;
-  const fundingLabel = `Testing pool funding: ${money(model.raised, currency)} of ${money(model.goal, currency)}`;
-  const progressValueText = `${money(model.raised, currency)} of ${money(model.goal, currency)} funded; ${model.progressPct}% funded; ${accessibleContributorLabel}; ${statusLabel}`;
+  const accessibleStatusLabel = statusLabel.trim() || "Status pending";
+  const visualStatusLabel = truncateSvgLabel(
+    accessibleStatusLabel,
+    STATUS_LABEL_MAX_CHARS,
+  ).toUpperCase();
+  const fundingLabel = hasGoal
+    ? `Testing pool funding: ${money(model.raised, currency)} of ${money(model.goal, currency)}`
+    : "Testing pool funding: target not configured";
+  const progressValueText = hasGoal
+    ? `${money(model.raised, currency)} of ${money(model.goal, currency)} funded; ${model.progressPct}% funded; ${accessibleContributorLabel}; ${accessibleStatusLabel}`
+    : `Testing pool target not configured; ${money(model.raised, currency)} raised; ${accessibleContributorLabel}; ${accessibleStatusLabel}`;
+  const fundingSummary = hasGoal
+    ? `${money(model.raised, currency)} raised toward ${money(model.goal, currency)} from ${accessibleContributorLabel}.`
+    : `${money(model.raised, currency)} raised; testing pool target not configured. ${accessibleContributorLabel}.`;
   const thresholdSummary = model.thresholds.map(threshold => {
     const target = money(threshold.amount, currency);
     if (threshold.state === "unlocked") {
@@ -84,9 +98,9 @@ export function ClinicalPoolGauge({
         role="progressbar"
         aria-label={fundingLabel}
         aria-describedby={descriptionId}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={model.progressPct}
+        aria-valuemin={hasGoal ? 0 : undefined}
+        aria-valuemax={hasGoal ? 100 : undefined}
+        aria-valuenow={hasGoal ? model.progressPct : undefined}
         aria-valuetext={progressValueText}
       >
         <svg viewBox="0 0 420 380" aria-hidden="true">
@@ -165,7 +179,7 @@ export function ClinicalPoolGauge({
                   y={labelY + 14}
                   textAnchor={threshold.textAnchor}
                 >
-                  {truncateThresholdLabel(threshold.label)}
+                  {truncateSvgLabel(threshold.label, THRESHOLD_LABEL_MAX_CHARS)}
                 </text>
                 {threshold.state === "unlocked" ? (
                   <CheckCircle2
@@ -197,15 +211,16 @@ export function ClinicalPoolGauge({
             y="162"
             textAnchor="middle"
           >
-            POOL TOTAL
+            {hasGoal ? "POOL TOTAL" : "FUNDING TARGET"}
           </text>
           <text
             className="clinical-pool-gauge__total"
+            data-state={hasGoal ? undefined : "pending"}
             x="210"
             y="202"
             textAnchor="middle"
           >
-            {money(model.raised, currency)}
+            {hasGoal ? money(model.raised, currency) : "TARGET PENDING"}
           </text>
           <text
             className="clinical-pool-gauge__contributors"
@@ -221,13 +236,13 @@ export function ClinicalPoolGauge({
             y="245"
             textAnchor="middle"
           >
-            {statusLabel.toUpperCase()} · {model.progressPct}% FUNDED
+            {visualStatusLabel} · {hasGoal ? `${model.progressPct}% FUNDED` : "TARGET NOT CONFIGURED"}
           </text>
         </svg>
       </div>
 
       <span id={descriptionId} className="clinical-testing__sr-only">
-        {money(model.raised, currency)} raised toward {money(model.goal, currency)} from {accessibleContributorLabel}. {statusLabel}.
+        {fundingSummary} {accessibleStatusLabel}.
         {thresholdSummary ? ` Thresholds: ${thresholdSummary}.` : ""}
       </span>
     </div>

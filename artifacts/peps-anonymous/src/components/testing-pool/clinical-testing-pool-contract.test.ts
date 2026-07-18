@@ -42,9 +42,9 @@ test("ClinicalPoolGauge exposes accessible progress and complete SVG telemetry",
   assert.match(source, /aria-describedby=\{descriptionId\}/);
   assert.match(source, /model\.raised/);
   assert.match(source, /model\.goal/);
-  assert.match(source, /aria-valuemin=\{0\}/);
-  assert.match(source, /aria-valuemax=\{100\}/);
-  assert.match(source, /aria-valuenow=\{model\.progressPct\}/);
+  assert.match(source, /aria-valuemin=\{hasGoal \? 0 : undefined\}/);
+  assert.match(source, /aria-valuemax=\{hasGoal \? 100 : undefined\}/);
+  assert.match(source, /aria-valuenow=\{hasGoal \? model\.progressPct : undefined\}/);
   assert.match(source, /aria-valuetext=/);
   assert.match(source, /viewBox="0 0 420 380"/);
   assert.match(source, /model\.segments\.map/);
@@ -73,9 +73,9 @@ test("ClinicalPoolGauge exposes accessible progress and complete SVG telemetry",
   assert.match(source, /textAnchor=\{threshold\.textAnchor\}/);
   assert.match(source, /threshold\.state === "unlocked"/);
   assert.match(source, /active && model\.goal > 0/);
-  assert.match(source, />\s*POOL TOTAL\s*</);
+  assert.match(source, /\{hasGoal \? "POOL TOTAL" : "FUNDING TARGET"\}/);
   assert.match(source, /contributorLabel/);
-  assert.match(source, /statusLabel\.toUpperCase\(\)/);
+  assert.match(source, /const visualStatusLabel = truncateSvgLabel\(/);
 });
 
 test("ClinicalTestingPoolUi exports typed clinical command primitives", () => {
@@ -268,6 +268,39 @@ test("SSR markup preserves progress descriptions, bounded labels, and list seman
     "a long visual label must be truncated",
   );
   assert.ok(visualLabels.every(([, , label]) => label !== longLabel));
+
+  const pendingStatus = "Configuration pending while laboratory scope and funding target are reviewed";
+  const emptyGaugeMarkup = renderToStaticMarkup(createElement(
+    gaugeModule.ClinicalPoolGauge,
+    {
+      raised: 0,
+      milestones: [],
+      contributorCount: 0,
+      statusLabel: pendingStatus,
+    },
+  ));
+  const emptyProgressMarkup = emptyGaugeMarkup.match(
+    /<div class="clinical-pool-gauge__progress"[\s\S]*?<\/div>/,
+  )?.[0];
+  assert.ok(emptyProgressMarkup, "missing zero-target progress element");
+  assert.match(
+    emptyProgressMarkup,
+    /aria-label="Testing pool funding: target not configured"/,
+  );
+  assert.match(
+    emptyProgressMarkup,
+    /aria-valuetext="Testing pool target not configured; \$0 raised; 0 contributors; Configuration pending while laboratory scope and funding target are reviewed"/,
+  );
+  assert.doesNotMatch(emptyProgressMarkup, /aria-value(?:min|max|now)=/);
+  assert.match(emptyGaugeMarkup, />TARGET PENDING<\/text>/);
+  assert.match(emptyGaugeMarkup, /TARGET NOT CONFIGURED/);
+  assert.doesNotMatch(emptyGaugeMarkup, /0% FUNDED/);
+  assert.ok(emptyGaugeMarkup.includes(pendingStatus));
+  const pendingVisualStatus = emptyGaugeMarkup.match(
+    /<text class="clinical-pool-gauge__status"[^>]*>([^<]*)<\/text>/,
+  )?.[1];
+  assert.ok(pendingVisualStatus?.includes("…"));
+  assert.ok(!pendingVisualStatus?.includes(pendingStatus));
 
   const leaderboardMarkup = renderToStaticMarkup(createElement(
     uiModule.VoteLeaderboard,

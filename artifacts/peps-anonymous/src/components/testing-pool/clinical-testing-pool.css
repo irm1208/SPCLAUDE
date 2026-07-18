@@ -311,6 +311,12 @@
   font-size: 34px;
 }
 
+.clinical-pool-gauge .clinical-pool-gauge__total[data-state="pending"] {
+  font-family: "Inter", "Avenir Next", system-ui, sans-serif;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
 .clinical-testing__status-rail {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
