@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { SAMPLE_PRODUCTS } from "./data.ts";
+import { classifyImportRows } from "./_shared/model.ts";
+
 const source = (file: string) =>
   readFileSync(new URL(file, import.meta.url), "utf8");
 
@@ -232,6 +235,95 @@ test("shared styles retain the complete approved Peps token set", () => {
   ]) {
     assert.match(styles, new RegExp(token));
   }
+});
+
+test("Command Grid exposes the complete standalone product workflow", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  for (const label of [
+    "Command Grid",
+    "Select all products",
+    "Search name, vendor, category",
+    "Set price",
+    "Set stock",
+    "Columns",
+    "Import CSV",
+    "AI Price List",
+  ]) {
+    assert.match(grid, new RegExp(label));
+  }
+
+  assert.match(grid, /data-testid="bulk-toolbar"/);
+  assert.match(grid, /aria-label=\{`Select product \$\{product\.name\}`\}/);
+  assert.match(grid, /onBlur=/);
+  assert.match(grid, /<ProductShell/);
+  assert.match(grid, /filteredProducts\.length === 0/);
+  assert.match(grid, /No products match/);
+  assert.match(grid, /Clear filters/);
+});
+
+test("empty-catalogue imports retain duplicate and price-changed review statuses", () => {
+  const grid = source("./CommandGrid.tsx");
+  const existing = SAMPLE_PRODUCTS;
+  const rows = classifyImportRows(existing, [
+    {
+      name: existing[0].name,
+      vendor: existing[0].vendor,
+      mgSize: existing[0].mgSize,
+      price: existing[0].price,
+    },
+    {
+      name: existing[1].name,
+      vendor: existing[1].vendor,
+      mgSize: existing[1].mgSize,
+      price: existing[1].price + 5,
+    },
+    {
+      name: "Empty catalogue new row",
+      vendor: "QSC",
+      mgSize: "10 mg",
+      price: 64,
+    },
+  ]);
+
+  assert.deepEqual(
+    rows.map((row) => row.status),
+    ["duplicate", "price-changed", "new"],
+  );
+  assert.match(
+    grid,
+    /const existing = products\.length \? products : SAMPLE_PRODUCTS/,
+  );
+  assert.match(grid, /classifyImportRows\(existing, incoming\)/);
+});
+
+test("imports require explicit confirmation before applying accepted rows", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  assert.match(grid, /function requestImportConfirmation/);
+  assert.match(
+    grid,
+    /setConfirmationState\(\{\s*kind: "import",\s*mode: importMode,\s*count: includedCount/s,
+  );
+  assert.match(grid, /onConfirm=\{requestImportConfirmation\}/);
+  assert.match(grid, /confirmationState\.kind === "import"/);
+  assert.match(
+    grid,
+    /confirmationState\.kind === "import"[\s\S]*?confirmImport\(\)/,
+  );
+  assert.match(grid, /Import \$\{confirmationState\.count\} products from/);
+});
+
+test("import previews generate a collision-free new candidate", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  assert.match(grid, /function createNewImportCandidate/);
+  assert.match(grid, /createNewImportCandidate\(mode, existing\)/);
+  assert.match(
+    grid,
+    /existing\.some\(\(product\) => productIdentity\(product\) === productIdentity\(candidate\)\)/,
+  );
+  assert.match(grid, /status.*"new"|classifyImportRows\(existing, incoming\)/s);
 });
 
 test("shared layout contains scrolling inside the workspace", () => {
