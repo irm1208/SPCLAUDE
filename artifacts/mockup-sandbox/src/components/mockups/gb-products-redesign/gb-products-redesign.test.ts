@@ -4,6 +4,10 @@ import test from "node:test";
 
 import { SAMPLE_PRODUCTS } from "./data.ts";
 import { classifyImportRows } from "./_shared/model.ts";
+import {
+  findDirtyImportConflict,
+  pinSelectedProduct,
+} from "./_shared/split-inspector-model.ts";
 
 const source = (file: string) =>
   readFileSync(new URL(file, import.meta.url), "utf8");
@@ -506,6 +510,163 @@ test("reduced motion suppresses effects on elements and pseudo-elements", () => 
       `Reduced-motion styles must include ${declaration}`,
     );
   }
+});
+
+test("Split Inspector exposes a guarded standalone master-detail workflow", () => {
+  const split = source("./SplitInspector.tsx");
+  const styles = source("./_group.css");
+
+  for (const label of [
+    "Split Inspector",
+    "Product inspector",
+    "Unsaved changes",
+    "Save changes",
+    "Max per customer",
+    "Half kits",
+  ]) {
+    assert.match(split, new RegExp(label));
+  }
+
+  assert.match(split, /aria-label="Product inspector"/);
+  assert.match(split, /data-testid="save-product"/);
+  assert.match(split, /const selectedProduct/);
+  assert.match(split, /<ProductShell/);
+  assert.match(split, /pendingSwitchId/);
+  assert.match(split, /confirmationState[\s\S]*?kind: "switch"/);
+  assert.match(split, /listedProducts\.length === 0/);
+  assert.match(split, /No products match/);
+  assert.match(split, /Clear filters/);
+  assert.match(split, /selectedIds/);
+  assert.match(split, /data-testid="bulk-toolbar"/);
+  assert.match(split, /applyBulkPatch/);
+  assert.match(split, /pinSelectedProduct\(/);
+  assert.match(split, /Unsaved draft pinned outside current filters/);
+  assert.match(split, /findDirtyImportConflict\(/);
+  assert.match(split, /kind: "import-conflict"/);
+  assert.match(
+    split,
+    /confirmationState\.kind === "import"[\s\S]*?findDirtyImportConflict\([\s\S]*?dirty \? draft : null[\s\S]*?kind: "import-conflict"/,
+  );
+  assert.match(split, /confirmImport\(confirmationState\.productId\)/);
+  assert.match(split, /refreshDraft: true/);
+
+  assert.match(styles, /\.gbpr-split-layout\s*\{/);
+  assert.match(styles, /\.gbpr-inspector-panel\s*\{/);
+  assert.match(
+    styles,
+    /\.gbpr-split-layout\s*\{[^}]*grid-template-columns:\s*minmax\(\d+px,\s*\d+px\)\s+minmax\(\d+px,\s*1fr\);/s,
+  );
+  assert.match(
+    styles,
+    /\.gbpr-inspector-panel\s*\{[^}]*position:\s*sticky;/s,
+  );
+});
+
+test("Split Inspector pins a dirty selected product outside the filtered results", () => {
+  const selected = SAMPLE_PRODUCTS[0];
+  const visibleProducts = [SAMPLE_PRODUCTS[1], SAMPLE_PRODUCTS[2]];
+
+  const result = pinSelectedProduct(
+    visibleProducts,
+    selected,
+    selected.id,
+    true,
+  );
+
+  assert.deepEqual(
+    result.map((product) => product.id),
+    [selected.id, SAMPLE_PRODUCTS[1].id, SAMPLE_PRODUCTS[2].id],
+  );
+  assert.deepEqual(visibleProducts, [SAMPLE_PRODUCTS[1], SAMPLE_PRODUCTS[2]]);
+});
+
+test("Split Inspector does not duplicate a dirty selection already in the filtered results", () => {
+  const selected = SAMPLE_PRODUCTS[0];
+  const visibleProducts = [selected, SAMPLE_PRODUCTS[1]];
+
+  const result = pinSelectedProduct(
+    visibleProducts,
+    selected,
+    selected.id,
+    true,
+  );
+
+  assert.deepEqual(
+    result.map((product) => product.id),
+    visibleProducts.map((product) => product.id),
+  );
+  assert.equal(new Set(result.map((product) => product.id)).size, result.length);
+});
+
+test("Split Inspector finds an included import conflict by normalized saved identity", () => {
+  const selected = SAMPLE_PRODUCTS[0];
+  const conflictingRow = {
+    id: "conflicting-import",
+    name: `  ${selected.name.toUpperCase()}  `,
+    vendor: selected.vendor.toUpperCase(),
+    mgSize: ` ${selected.mgSize.toUpperCase()} `,
+    price: selected.price + 8,
+    status: "price-changed" as const,
+    existingPrice: selected.price,
+    included: true,
+  };
+
+  const result = findDirtyImportConflict(
+    SAMPLE_PRODUCTS,
+    selected.id,
+    {
+      name: "Unsaved renamed product",
+      vendor: selected.vendor,
+      mgSize: selected.mgSize,
+    },
+    [conflictingRow],
+  );
+
+  assert.strictEqual(result, conflictingRow);
+});
+
+test("Split Inspector ignores skipped and non-matching dirty import rows", () => {
+  const selected = SAMPLE_PRODUCTS[0];
+  const draft = {
+    name: selected.name,
+    vendor: selected.vendor,
+    mgSize: selected.mgSize,
+  };
+  const matchingRow = {
+    id: "skipped-import",
+    name: selected.name,
+    vendor: selected.vendor,
+    mgSize: selected.mgSize,
+    price: selected.price + 8,
+    status: "price-changed" as const,
+    existingPrice: selected.price,
+    included: false,
+  };
+  const differentRow = {
+    ...matchingRow,
+    id: "different-import",
+    name: "Different product",
+    included: true,
+  };
+
+  assert.equal(
+    findDirtyImportConflict(
+      SAMPLE_PRODUCTS,
+      selected.id,
+      draft,
+      [matchingRow, differentRow],
+    ),
+    null,
+  );
+  assert.equal(
+    findDirtyImportConflict(
+      SAMPLE_PRODUCTS,
+      selected.id,
+      null,
+      [{ ...matchingRow, included: true }],
+    ),
+    null,
+  );
 });
 
 test("Category Workbench exposes category navigation and bulk workflows", () => {
