@@ -15,7 +15,12 @@ import {
   filterProducts,
   getProductStatus,
   resetProducts,
+  type ProductPatch,
 } from "./model.ts";
+
+// @ts-expect-error Product identity is not a bulk-editable field.
+const identityChangingPatch: ProductPatch = { id: "replacement" };
+void identityChangingPatch;
 
 const ALL_FILTERS: ProductFilters = {
   query: "",
@@ -61,11 +66,18 @@ test("catalogue constants expose the Winter group buy taxonomy", () => {
 });
 
 test("SAMPLE_PRODUCTS contains exactly 120 stable, zero-padded rows", () => {
-  assert.equal(SAMPLE_PRODUCTS.length, 120);
-  assert.deepEqual(
-    SAMPLE_PRODUCTS.slice(0, 3).map(({ id }) => id),
-    ["prod-001", "prod-002", "prod-003"],
+  const ids = SAMPLE_PRODUCTS.map(({ id }) => id);
+  const expectedIds = Array.from(
+    { length: 120 },
+    (_, index) => `prod-${String(index + 1).padStart(3, "0")}`,
   );
+
+  assert.equal(ids.length, 120);
+  assert.equal(new Set(ids).size, 120);
+  ids.forEach((id) => assert.match(id, /^prod-\d{3}$/));
+  assert.deepEqual(ids.slice(0, 3), ["prod-001", "prod-002", "prod-003"]);
+  assert.equal(ids.at(-1), "prod-120");
+  assert.deepEqual(ids, expectedIds);
 });
 
 test("SAMPLE_PRODUCTS covers the catalogue's operational edge cases", () => {
@@ -171,6 +183,18 @@ test("applyBulkPatch changes only selected rows and stays immutable", () => {
   );
   assert.notStrictEqual(result, products);
   result.forEach((row, index) => assert.notStrictEqual(row, products[index]));
+});
+
+test("applyBulkPatch preserves identity when an unsafe caller supplies an id", () => {
+  const products = [product({ id: "one", name: "One" })];
+  const snapshot = structuredClone(products);
+  const unsafePatch = { id: "replacement", visible: false } as unknown as ProductPatch;
+
+  const result = applyBulkPatch(products, new Set(["one"]), unsafePatch);
+
+  assert.equal(result[0].id, "one");
+  assert.equal(result[0].visible, false);
+  assert.deepEqual(products, snapshot);
 });
 
 test("resetProducts restores an independent fresh clone of the fixture", () => {

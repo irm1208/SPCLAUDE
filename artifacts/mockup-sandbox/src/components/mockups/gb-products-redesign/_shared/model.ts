@@ -62,7 +62,7 @@ export function getProductStatus(product: ProductRecord): ProductStatus {
   return "live";
 }
 
-export type ProductPatch = Partial<ProductRecord>;
+export type ProductPatch = Partial<Omit<ProductRecord, "id">>;
 export type ProductIdCollection = ReadonlySet<string> | readonly string[];
 
 export function applyBulkPatch(
@@ -71,9 +71,10 @@ export function applyBulkPatch(
   patch: ProductPatch,
 ): ProductRecord[] {
   const selected = selectedIds instanceof Set ? selectedIds : new Set(selectedIds);
+  const { id: _ignoredId, ...safePatch } = patch as ProductPatch & { id?: unknown };
   return products.map((product) =>
     selected.has(product.id)
-      ? { ...product, ...patch }
+      ? { ...product, ...safePatch }
       : cloneProduct(product),
   );
 }
