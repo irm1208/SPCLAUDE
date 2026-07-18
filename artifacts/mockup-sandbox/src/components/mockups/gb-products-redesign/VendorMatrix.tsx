@@ -405,6 +405,32 @@ function importIdentity(row: Pick<ImportCandidate, "name" | "mgSize">): string {
   return `${normalise(row.name)}\u001f${normalise(row.mgSize)}`;
 }
 
+const IMPORT_PRODUCT_ID_PATTERN = /^prod-import-(\d+)$/;
+
+function createImportIdAllocator(
+  products: readonly ProductRecord[],
+): () => string {
+  const usedIds = new Set(products.map((product) => product.id));
+  let nextSequence = 1;
+
+  for (const product of products) {
+    const match = IMPORT_PRODUCT_ID_PATTERN.exec(product.id);
+    if (!match) continue;
+    nextSequence = Math.max(nextSequence, Number(match[1]) + 1);
+  }
+
+  return () => {
+    let candidate = `prod-import-${nextSequence}`;
+    while (usedIds.has(candidate)) {
+      nextSequence += 1;
+      candidate = `prod-import-${nextSequence}`;
+    }
+    usedIds.add(candidate);
+    nextSequence += 1;
+    return candidate;
+  };
+}
+
 function createImportCandidates(
   mode: "csv" | "ai",
   products: readonly ProductRecord[],
@@ -503,8 +529,9 @@ export function applyVendorImport(
 ): ProductRecord[] {
   const acceptedRows = rows.filter((row) => row.included);
   const next = cloneProducts(products);
+  const allocateImportId = createImportIdAllocator(next);
 
-  for (const [rowIndex, row] of acceptedRows.entries()) {
+  for (const row of acceptedRows) {
     const rowVendor = resolveVendorName(row.vendor);
     if (rowVendor !== selectedVendor) continue;
     const identity = importIdentity(row);
@@ -524,7 +551,7 @@ export function applyVendorImport(
     }
 
     next.push({
-      id: `prod-import-${next.length + rowIndex + 1}`,
+      id: allocateImportId(),
       name: row.name.trim(),
       description: `Imported from the ${rowVendor} supplier price list.`,
       vendor: rowVendor,

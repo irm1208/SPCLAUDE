@@ -1160,3 +1160,42 @@ test("Vendor Matrix exception counts follow the selected vendor context", async 
   assert.equal(qscCounts["low-stock"], expectedLowStock);
   assert.deepEqual(withoutQsc, { "price-changed": 0, "low-stock": 0 });
 });
+
+test("Vendor Matrix preserves unique monotonic IDs across sequential imports", async () => {
+  const { applyVendorImport } = await loadVendorMatrixModule();
+  const products = SAMPLE_PRODUCTS.slice(0, 2).map((product, index) => ({
+    ...product,
+    id: index === 0 ? "prod-import-7" : product.id,
+  }));
+  const createRow = (id: string, name: string): ImportReviewRow => ({
+    id,
+    name,
+    vendor: "QSC",
+    mgSize: "10 mg",
+    price: 40,
+    status: "new",
+    included: true,
+  });
+
+  const afterFirstImport = applyVendorImport(
+    products,
+    [
+      createRow("first-row", "First sequential import"),
+      createRow("second-row", "Second sequential import"),
+    ],
+    "QSC",
+  );
+  const afterSecondImport = applyVendorImport(
+    afterFirstImport,
+    [createRow("third-row", "Third sequential import")],
+    "QSC",
+  );
+  const productIds = afterSecondImport.map((product) => product.id);
+  const importedSequences = productIds
+    .map((id) => /^prod-import-(\d+)$/.exec(id)?.[1])
+    .filter((sequence): sequence is string => sequence !== undefined)
+    .map(Number);
+
+  assert.equal(new Set(productIds).size, productIds.length);
+  assert.deepEqual(importedSequences, [7, 8, 9, 10]);
+});
