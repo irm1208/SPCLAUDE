@@ -603,12 +603,6 @@
   box-shadow: 0 12px 32px rgba(15, 31, 56, 0.14);
 }
 
-.members-crm__directory,
-.members-crm__profile,
-.members-crm__entry {
-  min-width: 0;
-}
-
 @media (max-width: 1199px) {
   .members-crm {
     grid-template-columns: 72px minmax(0, 1fr);
