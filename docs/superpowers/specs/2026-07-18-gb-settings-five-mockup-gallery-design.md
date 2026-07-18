@@ -61,6 +61,7 @@ The following interactions are demonstrated locally and do not leave the gallery
 - Copy the join code and show copied feedback.
 - Add or remove an info card.
 - Show dirty, save, and saved feedback states.
+- Cancel local edits back to the last saved mock snapshot.
 - Trigger archive/delete affordances as visibly restricted mock actions without destructive side effects.
 
 ## Five Concepts
