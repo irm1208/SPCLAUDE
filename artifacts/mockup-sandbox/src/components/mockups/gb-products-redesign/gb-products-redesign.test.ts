@@ -955,11 +955,11 @@ test("desktop grids retain usable narrow-width fallbacks", () => {
   assert.match(vendorMatrix, /className="gbpr-vendor-matrix-layout"/);
   assert.match(
     styles,
-    /@media \(max-width: 900px\)[\s\S]*?\.gbpr-batch-studio-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
+    /@media \(max-width: 1200px\)[\s\S]*?\.gbpr-batch-studio-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
   );
   assert.match(
     styles,
-    /@media \(max-width: 900px\)[\s\S]*?\.gbpr-vendor-matrix-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
+    /@media \(max-width: 1200px\)[\s\S]*?\.gbpr-vendor-matrix-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
   );
 });
 
