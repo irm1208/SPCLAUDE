@@ -1199,3 +1199,29 @@ test("Vendor Matrix preserves unique monotonic IDs across sequential imports", a
   assert.equal(new Set(productIds).size, productIds.length);
   assert.deepEqual(importedSequences, [7, 8, 9, 10]);
 });
+
+test("all five concepts share ProductShell and stay out of production", () => {
+  for (const name of [
+    "CommandGrid",
+    "SplitInspector",
+    "CategoryWorkbench",
+    "BatchStudio",
+    "VendorMatrix",
+  ]) {
+    const concept = source(`./${name}.tsx`);
+    assert.match(concept, /ProductShell/);
+    assert.doesNotMatch(concept, /pages\/organiser-v2|GbOrganiser\.tsx/);
+  }
+});
+
+test("all five public preview component files exist", () => {
+  for (const file of [
+    "CommandGrid.tsx",
+    "SplitInspector.tsx",
+    "CategoryWorkbench.tsx",
+    "BatchStudio.tsx",
+    "VendorMatrix.tsx",
+  ]) {
+    assert.equal(typeof source(`./${file}`), "string");
+  }
+});
