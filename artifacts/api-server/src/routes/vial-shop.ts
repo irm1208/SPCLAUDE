@@ -102,6 +102,7 @@ function fmtVendor(v: any, productCount?: number) {
     walletAddress: v.walletAddress ?? null,
     revolutLink: v.revolutLink ?? null,
     paypalLink: v.paypalLink ?? null,
+    notifyVendor: v.notifyVendor !== false,
     active: v.active, sortOrder: v.sortOrder, createdAt: v.createdAt,
     productCount: productCount ?? 0,
     hasDashboard: !!v.sellerPasswordHash,
@@ -268,7 +269,21 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
     ? total
     : parseFloat((total * await fetchFiatToUsd(orderCurrency)).toFixed(2));
 
-  const walletAddress = await getConfig("walletAddress");
+  // Resolve the wallet address: prefer the vendor's own wallet (if all items
+  // belong to a single vendor that has one set), then fall back to the admin wallet.
+  let walletAddress: string | null = null;
+  {
+    const productIds0 = validatedItems.map(i => i.productId);
+    const products0 = await db.select({ vendorId: vialProductsTable.vendorId })
+      .from(vialProductsTable).where(inArray(vialProductsTable.id, productIds0));
+    const uniqueVendorIds0 = [...new Set(products0.map(p => p.vendorId).filter(Boolean))] as string[];
+    if (uniqueVendorIds0.length === 1) {
+      const [v0] = await db.select({ walletAddress: vialVendorsTable.walletAddress })
+        .from(vialVendorsTable).where(eq(vialVendorsTable.id, uniqueVendorIds0[0]));
+      walletAddress = v0?.walletAddress ?? null;
+    }
+    if (!walletAddress) walletAddress = await getConfig("walletAddress");
+  }
 
   let code = genOrderCode();
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -327,6 +342,7 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
       const itemsList2 = validatedItems.map(i => `• ${i.productName} ×${i.quantity} — $${i.lineTotal.toFixed(2)} USDT`).join("\n");
       for (const vendor2 of vendors2) {
         if (!vendor2.telegramChatId) continue;
+        if (vendor2.notifyVendor === false) continue;
         const msg2 =
           `📦 <b>New Order — Awaiting Your Approval</b>\n\n` +
           `Order: <code>${code}</code>\n` +
@@ -482,6 +498,7 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
           .where(inArray(vialVendorsTable.id, vendorIds));
         for (const vendor of vendors) {
           if (!vendor.telegramChatId) continue;
+          if (vendor.notifyVendor === false) continue;
           const vendorProductIds = new Set(products.filter(p => p.vendorId === vendor.id).map(p => p.id));
           const vendorItems = orderItems.filter(i => vendorProductIds.has(i.productId));
           const itemsList = vendorItems.map(i => `• ${i.productName} ×${i.quantity} — $${parseFloat(i.lineTotal).toFixed(2)} ${payCurrency}`).join("\n");
@@ -808,7 +825,7 @@ router.get("/admin/vial/vendors", async (req, res): Promise<void> => {
 
 router.post("/admin/vial/vendors", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { name, tagline, description, contactTelegram, telegramChatId, logoUrl, shipsTo, country, rating, active, sortOrder, sellerPassword, walletAddress, revolutLink, paypalLink } = req.body;
+  const { name, tagline, description, contactTelegram, telegramChatId, logoUrl, shipsTo, country, rating, active, sortOrder, sellerPassword, walletAddress, revolutLink, paypalLink, notifyVendor } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: "name required" }); return; }
   const [created] = await db.insert(vialVendorsTable).values({
     id: randomUUID(), name: String(name).trim(),
@@ -824,6 +841,7 @@ router.post("/admin/vial/vendors", async (req, res): Promise<void> => {
     walletAddress: walletAddress ? String(walletAddress).trim() : null,
     revolutLink: revolutLink ? String(revolutLink).trim() : null,
     paypalLink: paypalLink ? String(paypalLink).trim() : null,
+    notifyVendor: notifyVendor !== false,
     active: active !== false,
     sortOrder: sortOrder ? parseInt(sortOrder) : null,
   }).returning();
@@ -838,7 +856,7 @@ router.post("/admin/vial/vendors", async (req, res): Promise<void> => {
 
 router.put("/admin/vial/vendors/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { name, tagline, description, contactTelegram, telegramChatId, logoUrl, shipsTo, country, rating, active, sortOrder, sellerPassword, walletAddress, revolutLink, paypalLink } = req.body;
+  const { name, tagline, description, contactTelegram, telegramChatId, logoUrl, shipsTo, country, rating, active, sortOrder, sellerPassword, walletAddress, revolutLink, paypalLink, notifyVendor } = req.body;
   const updates: any = {};
   if (name !== undefined) updates.name = String(name).trim();
   if (tagline !== undefined) updates.tagline = tagline ? String(tagline).trim() : null;
@@ -853,6 +871,7 @@ router.put("/admin/vial/vendors/:id", async (req, res): Promise<void> => {
   if (walletAddress !== undefined) updates.walletAddress = walletAddress ? String(walletAddress).trim() : null;
   if (revolutLink !== undefined) updates.revolutLink = revolutLink ? String(revolutLink).trim() : null;
   if (paypalLink !== undefined) updates.paypalLink = paypalLink ? String(paypalLink).trim() : null;
+  if (notifyVendor !== undefined) updates.notifyVendor = Boolean(notifyVendor);
   if (active !== undefined) updates.active = Boolean(active);
   if (sortOrder !== undefined) updates.sortOrder = sortOrder !== null ? parseInt(sortOrder) : null;
   const [updated] = await db.update(vialVendorsTable).set(updates).where(eq(vialVendorsTable.id, req.params.id)).returning();

@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X, AlertCircle } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount } from "@/hooks/use-account";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
@@ -61,6 +62,15 @@ export default function WholesaleOrder() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
 
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState(true);
+  useEffect(() => {
+    fetch("/api/wholesale-terms")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTermsEnabled(d.enabled !== false); })
+      .catch(() => {});
+  }, []);
+
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
@@ -82,6 +92,12 @@ export default function WholesaleOrder() {
   const [showTip, setShowTip] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showError = (msg: string) => {
+    setError(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setError(""), 6000);
+  };
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
   const [editCode, setEditCode] = useState<string | null>(null);
   const [vendor, setVendor] = useState<WholesaleVendor | null>(null);
@@ -89,6 +105,7 @@ export default function WholesaleOrder() {
   const [selectedRegionIdx, setSelectedRegionIdx] = useState<number | null>(null);
   const [regionAutoSelected, setRegionAutoSelected] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [draftDismissed, setDraftDismissed] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftSavedFlash, setDraftSavedFlash] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -381,16 +398,16 @@ export default function WholesaleOrder() {
 
   const handleReview = () => {
     setError("");
-    if (!telegramUsername.trim()) { setError("Please enter your Telegram username."); return; }
-    if (!fullName.trim()) { setError("Please enter your full name."); return; }
-    if (!phone.trim()) { setError("Please enter your phone number."); return; }
-    if (!addrLine1.trim()) { setError("Please enter your street address."); return; }
-    if (!addrCity.trim()) { setError("Please enter your city."); return; }
-    if (!addrPostcode.trim()) { setError("Please enter your postcode."); return; }
-    if (!shippingCountry.trim()) { setError("Please select your shipping country."); return; }
-    if (lineItems.length === 0) { setError("Add at least one item to your order."); return; }
-    if (vendorLoading) { setError("Shipping configuration is still loading — please wait a moment and try again."); return; }
-    if (vendor && selectedRegionIdx === null) { setError("Please select your shipping region."); return; }
+    if (!telegramUsername.trim()) { showError("Please enter your Telegram username."); return; }
+    if (!fullName.trim()) { showError("Please enter your full name."); return; }
+    if (!phone.trim()) { showError("Please enter your phone number."); return; }
+    if (!addrLine1.trim()) { showError("Please enter your street address."); return; }
+    if (!addrCity.trim()) { showError("Please enter your city."); return; }
+    if (!addrPostcode.trim()) { showError("Please enter your postcode."); return; }
+    if (!shippingCountry.trim()) { showError("Please select your shipping country."); return; }
+    if (lineItems.length === 0) { showError("Add at least one item to your order."); return; }
+    if (vendorLoading) { showError("Shipping configuration is still loading — please wait a moment and try again."); return; }
+    if (vendor && selectedRegionIdx === null) { showError("Please select your shipping region."); return; }
 
     const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -491,11 +508,60 @@ export default function WholesaleOrder() {
               </p>
             </div>
 
-            {draftRestored && (
-              <div className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3" style={{ background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)", color: "var(--t-text)" }}>
-                <span>Resumed your saved draft — pick up where you left off.</span>
-                <button onClick={handleDiscardDraft} className="shrink-0 text-xs font-bold px-3 h-8 rounded-lg" style={{ background: "rgba(239,68,68,0.10)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.25)" }}>Discard draft</button>
-              </div>
+            {draftRestored && !draftDismissed && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid color-mix(in srgb, var(--t-blue) 30%, transparent)", boxShadow: "0 4px 20px color-mix(in srgb, var(--t-blue) 10%, transparent)" }}
+              >
+                {/* Accent top strip */}
+                <div style={{ height: 4, background: "var(--t-blue)" }} />
+                <div className="p-4" style={{ background: "color-mix(in srgb, var(--t-blue) 6%, var(--t-surface))" }}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--t-blue) 15%, transparent)" }}>
+                      <Save className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm" style={{ color: "var(--t-text)" }}>You have a saved draft</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+                        {[
+                          Object.values(quantities).reduce((a, b) => a + b, 0) > 0
+                            ? `${Object.values(quantities).reduce((a, b) => a + b, 0)} kit${Object.values(quantities).reduce((a, b) => a + b, 0) !== 1 ? "s" : ""} selected`
+                            : null,
+                          fullName ? fullName : null,
+                          shippingCountry ? shippingCountry : null,
+                        ].filter(Boolean).join(" · ") || "Your form details and items have been restored."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDraftDismissed(true)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg"
+                      style={{ color: "var(--t-muted)", background: "var(--t-chip)" }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => setDraftDismissed(true)}
+                      className="flex-1 h-9 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 text-white"
+                      style={{ background: "var(--t-blue)" }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Continue draft
+                    </button>
+                    <button
+                      onClick={() => { handleDiscardDraft(); setDraftDismissed(true); }}
+                      className="h-9 px-4 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-1.5"
+                      style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c", border: "1px solid rgba(239,68,68,0.2)" }}
+                    >
+                      Start fresh
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             )}
 
             {pageMessage && (
@@ -1109,11 +1175,6 @@ export default function WholesaleOrder() {
               )}
             </section>
 
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-medium">
-                {error}
-              </div>
-            )}
 
           </motion.div>
         </main>
@@ -1301,9 +1362,22 @@ export default function WholesaleOrder() {
                   {draftSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSavedFlash ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                   {draftSavedFlash ? "Saved!" : "Save draft"}
                 </button>
+                {termsEnabled && (
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={e => setTermsAccepted(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--t-blue)] cursor-pointer"
+                    />
+                    <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                      I have read and agree to the Terms &amp; Conditions
+                    </span>
+                  </label>
+                )}
                 <button
                   onClick={() => { setSummaryOpen(false); handleReview(); }}
-                  disabled={lineItems.length === 0}
+                  disabled={lineItems.length === 0 || (termsEnabled && !termsAccepted)}
                   className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98] hover:brightness-110"
                   style={{ background: "var(--t-blue)" }}
                 >
@@ -1324,6 +1398,44 @@ export default function WholesaleOrder() {
             batchPrefixes={labTestsProduct.batchPrefixes}
             onClose={() => setLabTestsProduct(null)}
           />
+        )}
+      </AnimatePresence>
+
+
+
+      {/* Fixed top error toast */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            key="error-toast"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed z-[80] flex items-center gap-3"
+            style={{
+              top: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              maxWidth: 420,
+              width: "calc(100% - 32px)",
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 14,
+              padding: "12px 14px",
+              boxShadow: "0 8px 24px rgba(185,28,28,0.14)",
+            }}
+          >
+            <AlertCircle className="w-5 h-5 shrink-0" style={{ color: "#b91c1c" }} />
+            <span className="flex-1 text-sm font-semibold" style={{ color: "#b91c1c" }}>{error}</span>
+            <button
+              onClick={() => { setError(""); if (errorTimerRef.current) clearTimeout(errorTimerRef.current); }}
+              className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full transition-colors"
+              style={{ color: "#b91c1c", background: "rgba(185,28,28,0.08)" }}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
     </WholesaleShell>

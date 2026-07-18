@@ -15,6 +15,7 @@ export const vialVendorsTable = pgTable("vial_vendors", {
   walletAddress: text("wallet_address"),
   revolutLink: text("revolut_link"),
   paypalLink: text("paypal_link"),
+  notifyVendor: boolean("notify_vendor").notNull().default(true),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order"),
   resetCode: text("reset_code"),

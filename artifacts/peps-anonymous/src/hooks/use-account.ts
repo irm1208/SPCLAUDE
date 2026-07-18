@@ -377,11 +377,11 @@ export function useEntryFeeStatus(groupBuyId: string | null, options?: { refetch
 export function useSubmitEntryFeeTx() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ paymentId, txHash }: { paymentId: string; txHash: string }) => {
+    mutationFn: async ({ paymentId, txHash, paymentCryptoCurrency }: { paymentId: string; txHash: string; paymentCryptoCurrency?: string }) => {
       const res = await fetch(`/api/account/entry-fee/${paymentId}/submit-tx`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash }),
+        body: JSON.stringify({ txHash, ...(paymentCryptoCurrency ? { paymentCryptoCurrency } : {}) }),
         credentials: "include",
       });
       const data = await res.json();

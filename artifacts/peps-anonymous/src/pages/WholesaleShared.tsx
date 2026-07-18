@@ -11,6 +11,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
@@ -127,6 +128,15 @@ export default function WholesaleShared() {
 
   const { data: result, isLoading: shareLoading } = useWholesaleShare(id);
   const share = result?.ok ? result.share : null;
+
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState(true);
+  useEffect(() => {
+    fetch("/api/wholesale-terms")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTermsEnabled(d.enabled !== false); })
+      .catch(() => {});
+  }, []);
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [productSearch, setProductSearch] = useState("");
@@ -480,58 +490,72 @@ export default function WholesaleShared() {
     // working member's own order looks like an invite they haven't accepted.
     const loadError = !notFound && !canJoin;
     return (
-      <PageLayout>
-        <main className="px-4 py-8 max-w-md mx-auto w-full">
-          <button onClick={() => setLocation("/wholesale/shared")} className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "var(--t-muted)" }}>
-            <ArrowLeft className="w-4 h-4" /> Back to shared orders
-          </button>
-          <div className="rounded-2xl p-6 text-center space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-            <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: "var(--t-blue-08)" }}>
-              {canJoin ? <Users className="w-6 h-6" style={{ color: "var(--t-blue)" }} /> : <AlertCircle className="w-6 h-6" style={{ color: "var(--t-blue)" }} />}
-            </div>
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
-                {notFound ? "Shared order not found" : loadError ? "Couldn't load this shared order" : "Join shared wholesale order"}
-              </h1>
-              <p className="text-sm mt-1" style={{ color: "var(--t-muted)" }}>
-                {notFound
-                  ? "This code doesn't match any shared order. Double-check the code with the organiser."
-                  : loadError
-                    ? "Something went wrong loading this shared order. Check your connection and try again — your items and details are safe."
-                    : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>{result.creatorUsername ? <> by the order lead ({result.creatorUsername})</> : null}. Join to add your own items.</>}
-              </p>
-            </div>
-            {canJoin && (
-              <>
-                {actionError && <p className="text-sm" style={{ color: "#ef4444" }}>{actionError}</p>}
+      <>
+        <PageLayout>
+          <main className="px-4 py-8 max-w-md mx-auto w-full">
+            <button onClick={() => setLocation("/wholesale/shared")} className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "var(--t-muted)" }}>
+              <ArrowLeft className="w-4 h-4" /> Back to shared orders
+            </button>
+            <div className="rounded-2xl p-6 text-center space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+              <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: "var(--t-blue-08)" }}>
+                {canJoin ? <Users className="w-6 h-6" style={{ color: "var(--t-blue)" }} /> : <AlertCircle className="w-6 h-6" style={{ color: "var(--t-blue)" }} />}
+              </div>
+              <div>
+                <h1 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
+                  {notFound ? "Shared order not found" : loadError ? "Couldn't load this shared order" : "Join shared wholesale order"}
+                </h1>
+                <p className="text-sm mt-1" style={{ color: "var(--t-muted)" }}>
+                  {notFound
+                    ? "This code doesn't match any shared order. Double-check the code with the organiser."
+                    : loadError
+                      ? "Something went wrong loading this shared order. Check your connection and try again — your items and details are safe."
+                      : <>You've been invited to shared order <span className="font-mono font-bold" style={{ color: "var(--t-text)" }}>{id}</span>{result.creatorUsername ? <> by the order lead ({result.creatorUsername})</> : null}. Join to add your own items.</>}
+                </p>
+              </div>
+              {canJoin && (
+                <>
+                  {actionError && <p className="text-sm" style={{ color: "#ef4444" }}>{actionError}</p>}
+                  {termsEnabled && (
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={e => setTermsAccepted(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--t-blue)] cursor-pointer"
+                      />
+                      <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                        I have read and agree to the Terms &amp; Conditions
+                      </span>
+                    </label>
+                  )}
+                  <button
+                    disabled={busy === "join" || (termsEnabled && !termsAccepted)}
+                    onClick={() => {
+                      setActionError(""); setBusy("join");
+                      joinWholesaleShare(id!).then(() => invalidate(id!)).catch(e => setActionError((e as Error).message)).finally(() => setBusy(null));
+                    }}
+                    className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                    style={{ background: "var(--t-blue)" }}
+                  >
+                    {busy === "join" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                    Join this shared order
+                  </button>
+                </>
+              )}
+              {loadError && (
                 <button
-                  disabled={busy === "join"}
-                  onClick={async () => {
-                    setActionError(""); setBusy("join");
-                    try { await joinWholesaleShare(id!); invalidate(id!); }
-                    catch (e) { setActionError((e as Error).message); }
-                    finally { setBusy(null); }
-                  }}
-                  className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                  onClick={() => invalidate(id!)}
+                  className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2"
                   style={{ background: "var(--t-blue)" }}
                 >
-                  {busy === "join" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-                  Join this shared order
+                  <RefreshCw className="w-4 h-4" /> Try again
                 </button>
-              </>
-            )}
-            {loadError && (
-              <button
-                onClick={() => invalidate(id!)}
-                className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2"
-                style={{ background: "var(--t-blue)" }}
-              >
-                <RefreshCw className="w-4 h-4" /> Try again
-              </button>
-            )}
-          </div>
-        </main>
-      </PageLayout>
+              )}
+            </div>
+          </main>
+        </PageLayout>
+
+      </>
     );
   }
 
@@ -2433,6 +2457,8 @@ export default function WholesaleShared() {
           />
         )}
       </AnimatePresence>
+
+
     </WholesaleShell>
   );
 }

@@ -283,7 +283,6 @@ OUTPUT FORMAT:
       maxTokens: 4096,
       enableWebSearch: false,
       temperature: 0,
-      jsonMode: true,
     });
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as { suggestions: unknown[] };

@@ -20,6 +20,7 @@ import { randomUUID } from "crypto";
 import {
   isValidEthAddress,
   isValidBtcAddress,
+  isValidSolanaAddress,
   effectiveStableCurrency,
   isEthErc20StableRail,
   ERC20_STABLE_CURRENCIES,
@@ -56,7 +57,7 @@ export async function resolveEntryFeeCrypto(gb: EntryFeeGb): Promise<{ walletAdd
   const network = op?.["cryptoNetwork"]?.trim() || defaultNetwork;
   const gbWallet = op?.["cryptoWalletAddress"] ?? null;
   let walletAddress: string | null;
-  if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet))) {
+  if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet) || isValidSolanaAddress(gbWallet))) {
     walletAddress = gbWallet;
   } else {
     walletAddress = await getConfig("walletAddress");

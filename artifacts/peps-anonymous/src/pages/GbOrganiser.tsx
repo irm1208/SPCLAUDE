@@ -8676,7 +8676,24 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     {o.inpostQrCode && (
                       <div>
                         <p style={{ fontSize: 9, fontWeight: 700, color: "var(--t-muted)", margin: "0 0 4px" }}>Delivery QR</p>
-                        <ImageLightbox src={o.inpostQrCode} alt="Delivery QR Code" wrapperClassName="inline-block rounded-xl overflow-hidden border group relative cursor-zoom-in" wrapperStyle={{ borderColor: "rgba(99,102,241,0.35)", maxWidth: 100 }} thumbnailClassName="w-full h-auto block" thumbnailStyle={{ maxHeight: 80, objectFit: "contain" as const }} />
+                        {(o.inpostQrCode.startsWith("data:") && !o.inpostQrCode.startsWith("data:image/")) ? (
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => { const s=o.inpostQrCode!,ci=s.indexOf(","),b64=ci!==-1?s.slice(ci+1):s,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),60000); }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
+                              style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
+                            >📄 Open</button>
+                            <button
+                              type="button"
+                              onClick={() => { const s=o.inpostQrCode!,ci=s.indexOf(","),b64=ci!==-1?s.slice(ci+1):s,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));const a=document.createElement("a");a.href=url;a.download=`qr-${o.code}-inpost.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000); }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold"
+                              style={{ borderColor: "rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.05)", color: "#6366F1" }}
+                            >↓ Save</button>
+                          </div>
+                        ) : (
+                          <ImageLightbox src={o.inpostQrCode} alt="Delivery QR Code" wrapperClassName="inline-block rounded-xl overflow-hidden border group relative cursor-zoom-in" wrapperStyle={{ borderColor: "rgba(99,102,241,0.35)", maxWidth: 100 }} thumbnailClassName="w-full h-auto block" thumbnailStyle={{ maxHeight: 80, objectFit: "contain" as const }} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -9051,7 +9068,26 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                               <span className="text-[10px] font-semibold w-16 shrink-0" style={{ color: "#7C3AED" }}>{label}</span>
                               {existing ? (
                                 <div className="flex items-center gap-2">
-                                  <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
+                                  {(existing.startsWith("data:") && !existing.startsWith("data:image/")) ? (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => { const ci=existing.indexOf(","),b64=ci!==-1?existing.slice(ci+1):existing,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),60000); }}
+                                        className="w-9 h-9 rounded border bg-white flex items-center justify-center text-base leading-none"
+                                        style={{ borderColor: "rgba(124,58,237,0.3)" }}
+                                        title="Open PDF"
+                                      >📄</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { const ci=existing.indexOf(","),b64=ci!==-1?existing.slice(ci+1):existing,raw=atob(b64),buf=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)buf[i]=raw.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:"application/pdf"}));const a=document.createElement("a");a.href=url;a.download=`qr-${o.id}-${courier}.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000); }}
+                                        className="w-9 h-9 rounded border bg-white flex items-center justify-center text-[10px] font-bold"
+                                        style={{ borderColor: "rgba(124,58,237,0.3)", color: "#7C3AED" }}
+                                        title="Download PDF"
+                                      >↓</button>
+                                    </div>
+                                  ) : (
+                                    <img src={existing} alt={`${label} QR`} className="w-9 h-9 object-contain rounded border bg-white p-0.5" style={{ borderColor: "rgba(124,58,237,0.3)" }} />
+                                  )}
                                   <button
                                     className="text-[10px] font-semibold disabled:opacity-50"
                                     style={{ color: "#DC2626" }}

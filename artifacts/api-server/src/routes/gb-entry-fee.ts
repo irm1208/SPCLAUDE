@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, groupBuysTable, gbEntryFeePaymentsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "../middleware/account-auth";
-import { shapeEntryFeePayment, type EntryFeeGb } from "../lib/gb-entry-fee";
+import { shapeEntryFeePayment, getEntryFeeCryptoOptions, type EntryFeeGb } from "../lib/gb-entry-fee";
 import { sendAdminMessage, notifyUser } from "../lib/telegram";
 
 const router: IRouter = Router();
@@ -45,7 +45,7 @@ router.get("/account/entry-fee/:groupBuyId", requireAccount, async (req, res): P
 router.post("/account/entry-fee/:paymentId/submit-tx", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
   const paymentId = String(req.params["paymentId"]);
-  const { txHash } = req.body ?? {};
+  const { txHash, paymentCryptoCurrency } = req.body ?? {};
 
   if (!txHash || typeof txHash !== "string" || txHash.length < 8 || txHash.length > 200) {
     res.status(400).json({ error: "Provide a valid transaction hash" });
@@ -67,6 +67,17 @@ router.post("/account/entry-fee/:paymentId/submit-tx", requireAccount, async (re
     return;
   }
 
+  // If the customer specifies which stablecoin they paid with, persist it — this
+  // is required so the auto-verifier checks the right token contract (e.g. USDC vs
+  // USDT on the ERC-20 rail, which share the same wallet but use different contracts).
+  let resolvedCurrency: string | null = null;
+  if (paymentCryptoCurrency && typeof paymentCryptoCurrency === "string") {
+    const chosen = paymentCryptoCurrency.toUpperCase().trim();
+    const cryptoOptions = await getEntryFeeCryptoOptions(gb as EntryFeeGb);
+    const isValid = cryptoOptions.options.some(o => o.currency.toUpperCase() === chosen);
+    if (isValid) resolvedCurrency = chosen;
+  }
+
   const [updated] = await db
     .update(gbEntryFeePaymentsTable)
     .set({
@@ -74,6 +85,7 @@ router.post("/account/entry-fee/:paymentId/submit-tx", requireAccount, async (re
       status: "submitted",
       submittedAt: new Date(),
       rejectionReason: null,
+      ...(resolvedCurrency ? { paymentCryptoCurrency: resolvedCurrency } : {}),
     })
     .where(eq(gbEntryFeePaymentsTable.id, paymentId))
     .returning();

@@ -20,6 +20,7 @@ import {
   verifyTransaction,
   isValidEthAddress,
   isValidBtcAddress,
+  isValidSolanaAddress,
   effectiveStableCurrency,
 } from "./payment-verify";
 import { isStablecoin, roundCrypto, fetchUsdPerCoin, fetchFiatToUsd } from "./crypto-pricing";
@@ -103,7 +104,7 @@ async function resolveOrderCrypto(order: {
     const currency = op?.["cryptoCurrency"]?.trim() ?? defaultCurrency;
     const network  = op?.["cryptoNetwork"]?.trim()  ?? defaultNetwork;
     const gbWallet = op?.["cryptoWalletAddress"] ?? null;
-    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet))) {
+    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet) || isValidSolanaAddress(gbWallet))) {
       return { walletAddress: gbWallet, currency, network };
     }
     const walletAddress = await getConfig("walletAddress");

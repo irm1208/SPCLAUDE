@@ -426,6 +426,12 @@ function isTokenExhaustedError(err: unknown): boolean {
   );
 }
 
+/** Returns true when the proxy returns 403 because the API key can't access the requested model/group. */
+function isModelPermissionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("proxy error 403") || msg.includes("无权访问");
+}
+
 /**
  * Streaming + tools hybrid for the discuss endpoint.
  *
@@ -475,8 +481,8 @@ export async function callSageAIStreamWithTools({
   try {
     return await tryWithTools(activeModel);
   } catch (primaryErr) {
-    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
+    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
       return await tryWithTools(FALLBACK_MODEL);
     }
     throw primaryErr;
@@ -512,8 +518,8 @@ export async function callSageAIStream({
   try {
     return await tryStream(activeModel);
   } catch (primaryErr) {
-    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying stream with fallback "${FALLBACK_MODEL}"`);
+    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying stream with fallback "${FALLBACK_MODEL}"`);
       return await tryStream(FALLBACK_MODEL);
     }
     throw primaryErr;
@@ -544,8 +550,8 @@ export async function callSageAI({
   try {
     return await callFn(activeModel, apiKey);
   } catch (primaryErr) {
-    if (isTokenExhaustedError(primaryErr) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" out of tokens — retrying with fallback "${FALLBACK_MODEL}"`);
+    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
       return await callFn(FALLBACK_MODEL, apiKey);
     }
     throw primaryErr;

@@ -169,6 +169,11 @@ function isValidBtcAddress(addr: string): boolean {
   return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(addr) || /^bc1[a-z0-9]{6,87}$/.test(addr);
 }
 
+// Validate a Solana wallet address (base58, 32–44 chars)
+function isValidSolanaAddress(addr: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+}
+
 async function getConfig(key: string): Promise<string | null> {
   const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
   return row?.value ?? null;
@@ -370,7 +375,7 @@ export async function resolveOrderCrypto(
     const network = op?.["cryptoNetwork"]?.trim() ?? defaultNetwork;
     const gbWallet = op?.["cryptoWalletAddress"] ?? null;
     let walletAddress: string | null = null;
-    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet))) {
+    if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet) || isValidSolanaAddress(gbWallet))) {
       walletAddress = gbWallet;
     } else {
       walletAddress = await getConfig("walletAddress");
@@ -978,20 +983,29 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
 
       // Wholesale orders: prefer wholesale-specific payment settings
       if (order.orderType === "wholesale") {
-        const [wsUsdtWallet, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
+        const [wsUsdtWallet, wsUsdcErc20Wallet, wsUsdtSolWallet, wsUsdcSolWallet, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
           getConfig("wholesale_usdt_wallet"),
+          getConfig("wholesale_usdc_erc20_wallet"),
+          getConfig("wholesale_usdt_sol_wallet"),
+          getConfig("wholesale_usdc_sol_wallet"),
           getConfig("wholesale_anon_pay_enabled"),
           getConfig("wholesale_anon_pay_wallet"),
           getConfig("wholesale_anon_pay_ticker"),
           getConfig("wholesale_anon_pay_network"),
         ]);
-        const hasWsUsdt = !!wsUsdtWallet;
+        // Build ordered list of all configured wholesale crypto wallets
+        const wsCryptoOpts: { currency: string; network: string; walletAddress: string }[] = [];
+        if (wsUsdtWallet)      wsCryptoOpts.push({ currency: "USDT", network: "ERC-20",  walletAddress: wsUsdtWallet });
+        if (wsUsdcErc20Wallet) wsCryptoOpts.push({ currency: "USDC", network: "ERC-20",  walletAddress: wsUsdcErc20Wallet });
+        if (wsUsdtSolWallet)   wsCryptoOpts.push({ currency: "USDT", network: "Solana",  walletAddress: wsUsdtSolWallet });
+        if (wsUsdcSolWallet)   wsCryptoOpts.push({ currency: "USDC", network: "Solana",  walletAddress: wsUsdcSolWallet });
         const hasWsAnonPay = wsAnonPayEnabled === "true" && !!wsAnonPayWallet;
-        if (hasWsUsdt || hasWsAnonPay) {
-          if (hasWsUsdt) {
-            cryptoWalletAddress = wsUsdtWallet;
-            cryptoCurrency      = "USDT";
-            cryptoNetwork       = "ERC-20";
+        if (wsCryptoOpts.length > 0 || hasWsAnonPay) {
+          if (wsCryptoOpts.length > 0) {
+            cryptoWalletAddress    = wsCryptoOpts[0].walletAddress;
+            cryptoCurrency         = wsCryptoOpts[0].currency;
+            cryptoNetwork          = wsCryptoOpts[0].network;
+            availableCryptoOptions = wsCryptoOpts;
           }
           if (hasWsAnonPay) {
             anonPayEnabled = true;
@@ -1098,6 +1112,17 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
             if (op.anonPayWallet)  anonPayWallet  = op.anonPayWallet;
             if (op.anonPayTicker)  anonPayTicker  = op.anonPayTicker;
             if (op.anonPayNetwork) anonPayNetwork = op.anonPayNetwork;
+            // When multiple crypto wallets are configured, expose all as availableCryptoOptions
+            const gbCryptoOpts = Array.isArray((op as Record<string, unknown>)["cryptoOptions"])
+              ? ((op as Record<string, unknown>)["cryptoOptions"] as Array<{ currency: string; network: string; walletAddress?: string | null }>)
+                  .filter(o => o.currency && o.network)
+              : [];
+            if (gbCryptoOpts.length > 0) {
+              availableCryptoOptions = gbCryptoOpts.map(o => ({ currency: o.currency, network: o.network, walletAddress: o.walletAddress ?? null }));
+              cryptoWalletAddress    = gbCryptoOpts[0].walletAddress ?? null;
+              cryptoCurrency         = gbCryptoOpts[0].currency;
+              cryptoNetwork          = gbCryptoOpts[0].network;
+            }
           }
           const hasOrganiserDetails = !!(revolutHandle || paypalHandle || cryptoWalletAddress || (anonPayEnabled && anonPayWallet));
           collectedBy = hasOrganiserDetails ? { type: "organiser" } : { type: "admin" };

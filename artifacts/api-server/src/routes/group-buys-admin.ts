@@ -1800,6 +1800,7 @@ router.get("/admin/group-buys/payment-configs", async (req, res): Promise<void> 
     cryptoWalletAddress: (r.organiserPayments as Record<string, unknown> | null)?.["cryptoWalletAddress"] as string ?? null,
     cryptoCurrency: (r.organiserPayments as Record<string, unknown> | null)?.["cryptoCurrency"] as string ?? "USDT",
     cryptoNetwork: (r.organiserPayments as Record<string, unknown> | null)?.["cryptoNetwork"] as string ?? "ERC-20",
+    cryptoOptions: (r.organiserPayments as Record<string, unknown> | null)?.["cryptoOptions"] as Array<{ currency: string; network: string; walletAddress: string | null }> ?? null,
     revolutHandle: (r.organiserPayments as Record<string, unknown> | null)?.["revolutHandle"] as string ?? null,
     paypalHandle: (r.organiserPayments as Record<string, unknown> | null)?.["paypalHandle"] as string ?? null,
     anonPayEnabled: !!((r.organiserPayments as Record<string, unknown> | null)?.["anonPayEnabled"]),
@@ -1814,7 +1815,7 @@ router.patch("/admin/group-buys/:id/payment-methods", async (req, res): Promise<
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
-  const { cryptoWalletAddress, cryptoCurrency, cryptoNetwork, revolutHandle, paypalHandle, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
+  const { cryptoWalletAddress, cryptoCurrency, cryptoNetwork, cryptoOptions, revolutHandle, paypalHandle, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
 
   const [existing] = await db
     .select({ organiserPayments: groupBuysTable.organiserPayments })
@@ -1824,11 +1825,27 @@ router.patch("/admin/group-buys/:id/payment-methods", async (req, res): Promise<
   if (!existing) { res.status(404).json({ error: "Group buy not found" }); return; }
 
   const current = (existing.organiserPayments as Record<string, unknown>) ?? {};
+
+  // Normalize cryptoOptions array
+  const normalizedCryptoOptions = Array.isArray(cryptoOptions)
+    ? (cryptoOptions as Array<Record<string, unknown>>)
+      .filter(o => o && typeof o === "object" && o["walletAddress"])
+      .map(o => ({
+        currency: String(o["currency"] ?? "USDT").trim(),
+        network: String(o["network"] ?? "ERC-20").trim(),
+        walletAddress: String(o["walletAddress"] ?? "").trim() || null,
+      }))
+      .filter(o => o.walletAddress)
+    : undefined;
+
+  const firstCrypto = normalizedCryptoOptions?.[0];
+
   const updated: Record<string, unknown> = {
     ...current,
-    cryptoWalletAddress: cryptoWalletAddress !== undefined ? (cryptoWalletAddress?.trim() || null) : (current["cryptoWalletAddress"] ?? null),
-    cryptoCurrency: cryptoCurrency !== undefined ? (cryptoCurrency?.trim() || "USDT") : (current["cryptoCurrency"] ?? "USDT"),
-    cryptoNetwork: cryptoNetwork !== undefined ? (cryptoNetwork?.trim() || "ERC-20") : (current["cryptoNetwork"] ?? "ERC-20"),
+    cryptoOptions: normalizedCryptoOptions !== undefined ? (normalizedCryptoOptions.length > 0 ? normalizedCryptoOptions : null) : (current["cryptoOptions"] ?? null),
+    cryptoWalletAddress: firstCrypto?.walletAddress ?? (cryptoWalletAddress !== undefined ? (cryptoWalletAddress?.trim() || null) : (current["cryptoWalletAddress"] ?? null)),
+    cryptoCurrency: firstCrypto?.currency ?? (cryptoCurrency !== undefined ? (cryptoCurrency?.trim() || "USDT") : (current["cryptoCurrency"] ?? "USDT")),
+    cryptoNetwork: firstCrypto?.network ?? (cryptoNetwork !== undefined ? (cryptoNetwork?.trim() || "ERC-20") : (current["cryptoNetwork"] ?? "ERC-20")),
     revolutHandle: revolutHandle !== undefined ? (revolutHandle?.trim() || null) : (current["revolutHandle"] ?? null),
     paypalHandle: paypalHandle !== undefined ? (paypalHandle?.trim() || null) : (current["paypalHandle"] ?? null),
     anonPayEnabled: anonPayEnabled !== undefined ? !!anonPayEnabled : (!!current["anonPayEnabled"]),
@@ -1845,6 +1862,7 @@ router.patch("/admin/group-buys/:id/payment-methods", async (req, res): Promise<
   res.json({
     ok: true,
     id,
+    cryptoOptions: updated["cryptoOptions"],
     cryptoWalletAddress: updated["cryptoWalletAddress"],
     cryptoCurrency: updated["cryptoCurrency"],
     cryptoNetwork: updated["cryptoNetwork"],

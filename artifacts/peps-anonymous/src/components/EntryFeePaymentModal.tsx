@@ -59,6 +59,18 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
 
   const fee = data ?? initial;
 
+  // Currency selector — only shown when the rail supports multiple stablecoins
+  // (e.g. USDT + USDC on ERC-20). Defaults to the payment row's current currency.
+  const availableOptions = fee.payment.availableCryptoOptions ?? [];
+  const hasChoice = availableOptions.length > 1;
+  const [pickedCurrency, setPickedCurrency] = useState<string>(fee.payment.currency);
+
+  // When fee data refreshes (e.g. after polling), sync the picker to the stored value
+  // unless the user has already made an explicit selection this session.
+  useEffect(() => {
+    setPickedCurrency(fee.payment.currency);
+  }, [fee.payment.currency]);
+
   useEffect(() => {
     if (fee.status === "confirmed" && !confirmedHandled) {
       setConfirmedHandled(true);
@@ -75,7 +87,11 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
       return;
     }
     try {
-      await submitTx.mutateAsync({ paymentId: fee.id, txHash: trimmed });
+      await submitTx.mutateAsync({
+        paymentId: fee.id,
+        txHash: trimmed,
+        paymentCryptoCurrency: hasChoice ? pickedCurrency : undefined,
+      });
       setTxHash("");
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit transaction");
@@ -151,9 +167,32 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                 <div className="rounded-2xl p-3 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-100 flex items-center justify-between">
                   <p className="text-xs font-medium text-slate-600">Amount to send</p>
                   <p className="text-sm font-bold text-slate-900">
-                    {(fee.payment.amountUsd ?? fee.payment.amount).toFixed(2)} {fee.payment.currency}
+                    {(fee.payment.amountUsd ?? fee.payment.amount).toFixed(2)} {hasChoice ? pickedCurrency : fee.payment.currency}
                   </p>
                 </div>
+
+                {/* Stablecoin selector — only shown when the rail supports multiple options (e.g. USDT/USDC on ERC-20) */}
+                {hasChoice && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5 text-slate-400">Pay with</p>
+                    <div className="flex gap-2">
+                      {availableOptions.map(opt => (
+                        <button
+                          key={opt.currency}
+                          type="button"
+                          onClick={() => setPickedCurrency(opt.currency)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                            pickedCurrency === opt.currency
+                              ? "bg-violet-600 text-white border-violet-600"
+                              : "bg-white text-slate-600 border-slate-200 hover:border-violet-300"
+                          }`}
+                        >
+                          {opt.currency}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {fee.payment.walletAddress ? (
                   <>
@@ -162,7 +201,10 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                         <QRCode value={fee.payment.walletAddress} size={132} level="M" />
                       </div>
                     </div>
-                    <CopyableField label={`${fee.payment.currency} · ${fee.payment.network} address`} value={fee.payment.walletAddress} />
+                    <CopyableField
+                      label={`${hasChoice ? pickedCurrency : fee.payment.currency} · ${fee.payment.network} address`}
+                      value={fee.payment.walletAddress}
+                    />
                   </>
                 ) : (
                   <div className="flex gap-2 items-start p-2.5 bg-slate-50 rounded-lg border border-slate-100">

@@ -424,10 +424,13 @@ router.patch("/admin/wholesale-vendors/deactivate", async (req, res): Promise<vo
 // GET /api/admin/wholesale-settings — get approval + page message + payment settings
 router.get("/admin/wholesale-settings", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const [requiresApproval, pageMessage, usdtWallet, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork] = await Promise.all([
+  const [requiresApproval, pageMessage, usdtWallet, usdcErc20Wallet, usdtSolWallet, usdcSolWallet, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork] = await Promise.all([
     getConfigValue("wholesale_requires_approval"),
     getConfigValue("wholesale_page_message"),
     getConfigValue("wholesale_usdt_wallet"),
+    getConfigValue("wholesale_usdc_erc20_wallet"),
+    getConfigValue("wholesale_usdt_sol_wallet"),
+    getConfigValue("wholesale_usdc_sol_wallet"),
     getConfigValue("wholesale_anon_pay_enabled"),
     getConfigValue("wholesale_anon_pay_wallet"),
     getConfigValue("wholesale_anon_pay_ticker"),
@@ -437,6 +440,9 @@ router.get("/admin/wholesale-settings", async (req, res): Promise<void> => {
     requiresApproval: requiresApproval === "true",
     pageMessage: pageMessage ?? null,
     usdtWallet: usdtWallet ?? null,
+    usdcErc20Wallet: usdcErc20Wallet ?? null,
+    usdtSolWallet: usdtSolWallet ?? null,
+    usdcSolWallet: usdcSolWallet ?? null,
     anonPayEnabled: anonPayEnabled === "true",
     anonPayWallet: anonPayWallet ?? null,
     anonPayTicker: anonPayTicker ?? "usdt",
@@ -447,10 +453,13 @@ router.get("/admin/wholesale-settings", async (req, res): Promise<void> => {
 // PATCH /api/admin/wholesale-settings — update approval + page message + payment settings
 router.patch("/admin/wholesale-settings", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { requiresApproval, pageMessage, usdtWallet, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body as {
+  const { requiresApproval, pageMessage, usdtWallet, usdcErc20Wallet, usdtSolWallet, usdcSolWallet, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body as {
     requiresApproval?: boolean;
     pageMessage?: string | null;
     usdtWallet?: string | null;
+    usdcErc20Wallet?: string | null;
+    usdtSolWallet?: string | null;
+    usdcSolWallet?: string | null;
     anonPayEnabled?: boolean;
     anonPayWallet?: string | null;
     anonPayTicker?: string | null;
@@ -469,6 +478,21 @@ router.patch("/admin/wholesale-settings", async (req, res): Promise<void> => {
     if (trimmed) await setConfigValue("wholesale_usdt_wallet", trimmed);
     else await db.delete(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_usdt_wallet"));
   }
+  if (usdcErc20Wallet !== undefined) {
+    const trimmed = typeof usdcErc20Wallet === "string" ? usdcErc20Wallet.trim() : "";
+    if (trimmed) await setConfigValue("wholesale_usdc_erc20_wallet", trimmed);
+    else await db.delete(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_usdc_erc20_wallet"));
+  }
+  if (usdtSolWallet !== undefined) {
+    const trimmed = typeof usdtSolWallet === "string" ? usdtSolWallet.trim() : "";
+    if (trimmed) await setConfigValue("wholesale_usdt_sol_wallet", trimmed);
+    else await db.delete(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_usdt_sol_wallet"));
+  }
+  if (usdcSolWallet !== undefined) {
+    const trimmed = typeof usdcSolWallet === "string" ? usdcSolWallet.trim() : "";
+    if (trimmed) await setConfigValue("wholesale_usdc_sol_wallet", trimmed);
+    else await db.delete(siteConfigTable).where(eq(siteConfigTable.key, "wholesale_usdc_sol_wallet"));
+  }
   if (anonPayEnabled !== undefined) {
     await setConfigValue("wholesale_anon_pay_enabled", anonPayEnabled ? "true" : "false");
   }
@@ -485,10 +509,13 @@ router.patch("/admin/wholesale-settings", async (req, res): Promise<void> => {
     const trimmed = typeof anonPayNetwork === "string" ? anonPayNetwork.trim() : "";
     if (trimmed) await setConfigValue("wholesale_anon_pay_network", trimmed);
   }
-  const [ra, pm, uw, ape, apw, apt, apn] = await Promise.all([
+  const [ra, pm, uw, uew, usw, ucw, ape, apw, apt, apn] = await Promise.all([
     getConfigValue("wholesale_requires_approval"),
     getConfigValue("wholesale_page_message"),
     getConfigValue("wholesale_usdt_wallet"),
+    getConfigValue("wholesale_usdc_erc20_wallet"),
+    getConfigValue("wholesale_usdt_sol_wallet"),
+    getConfigValue("wholesale_usdc_sol_wallet"),
     getConfigValue("wholesale_anon_pay_enabled"),
     getConfigValue("wholesale_anon_pay_wallet"),
     getConfigValue("wholesale_anon_pay_ticker"),
@@ -498,6 +525,9 @@ router.patch("/admin/wholesale-settings", async (req, res): Promise<void> => {
     requiresApproval: ra === "true",
     pageMessage: pm ?? null,
     usdtWallet: uw ?? null,
+    usdcErc20Wallet: uew ?? null,
+    usdtSolWallet: usw ?? null,
+    usdcSolWallet: ucw ?? null,
     anonPayEnabled: ape === "true",
     anonPayWallet: apw ?? null,
     anonPayTicker: apt ?? "usdt",
