@@ -65,6 +65,13 @@ export const GAUGE = {
   sweepAngle: 270,
 } as const;
 
+const ROUND_STAGE_INDEX: Readonly<Record<string, number>> = {
+  active: 0,
+  closed: 1,
+  sent_to_lab: 2,
+  results_received: 3,
+} satisfies Record<RoundStatus, number>;
+
 function finitePositive(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -182,12 +189,5 @@ export function buildLeaderboardRows(
 }
 
 export function getRoundStageIndex(status: string): number {
-  const stageByStatus: Record<RoundStatus, number> = {
-    active: 0,
-    closed: 1,
-    sent_to_lab: 2,
-    results_received: 3,
-  };
-
-  return stageByStatus[status as RoundStatus] ?? 0;
+  return ROUND_STAGE_INDEX[status] ?? 0;
 }

@@ -12,6 +12,18 @@ const milestones = [
   { label: "10 additional vials", amount: 480, type: "vial" as const, vialNum: 10 },
 ];
 
+function assertApprox(actual: number, expected: number): void {
+  assert.ok(
+    Math.abs(actual - expected) < 1e-9,
+    `expected ${actual} to approximately equal ${expected}`,
+  );
+}
+
+function assertFinitePoint(point: { x: number; y: number }): void {
+  assert.ok(Number.isFinite(point.x));
+  assert.ok(Number.isFinite(point.y));
+}
+
 test("buildGaugeModel derives cumulative segments, labels, and a safe endpoint", () => {
   const model = buildGaugeModel(318, milestones);
 
@@ -22,11 +34,26 @@ test("buildGaugeModel derives cumulative segments, labels, and a safe endpoint",
     model.segments.map(segment => [segment.startAmount, segment.endAmount]),
     [[0, 245], [245, 360], [360, 480]],
   );
+  const expectedAngles = [
+    [135, 135 + (245 / 480) * 270, 135 + (245 / 480) * 270],
+    [135 + (245 / 480) * 270, 135 + (360 / 480) * 270, 135 + (318 / 480) * 270],
+    [135 + (360 / 480) * 270, 135 + (480 / 480) * 270, 135 + (360 / 480) * 270],
+  ];
+  model.segments.forEach((segment, index) => {
+    assertApprox(segment.startAngle, expectedAngles[index][0]);
+    assertApprox(segment.endAngle, expectedAngles[index][1]);
+    assertApprox(segment.filledEndAngle, expectedAngles[index][2]);
+  });
   assert.equal(model.thresholds[0].state, "unlocked");
   assert.equal(model.thresholds[1].state, "locked");
   assert.equal(model.thresholds[1].remaining, 42);
-  assert.ok(Number.isFinite(model.endpoint.x));
-  assert.ok(Number.isFinite(model.endpoint.y));
+  for (const threshold of model.thresholds) {
+    assertFinitePoint(threshold.marker);
+    assertFinitePoint(threshold.tickStart);
+    assertFinitePoint(threshold.tickEnd);
+    assertFinitePoint(threshold.labelPoint);
+  }
+  assertFinitePoint(model.endpoint);
 });
 
 test("buildGaugeModel returns zero-safe geometry for missing or invalid milestones", () => {
@@ -41,13 +68,15 @@ test("buildGaugeModel returns zero-safe geometry for missing or invalid mileston
   assert.equal(model.segments.length, 0);
   assert.equal(model.thresholds.length, 0);
   assert.match(model.trackPath, /^M /);
+  assert.doesNotMatch(model.trackPath, /NaN|Infinity/);
+  assertFinitePoint(model.endpoint);
 });
 
 test("buildLeaderboardRows calculates rank and percentage against cast ballots", () => {
   const rows = buildLeaderboardRows([
+    { peptideName: "Semaglutide 5mg", totalVotes: 3, vials: {} },
     { peptideName: "BPC-157 5mg", totalVotes: 9, vials: {} },
     { peptideName: "TB-500 10mg", totalVotes: 6, vials: {} },
-    { peptideName: "Semaglutide 5mg", totalVotes: 3, vials: {} },
   ], 18);
 
   assert.deepEqual(rows.map(row => [row.rank, row.totalVotes, row.percentage]), [
