@@ -688,3 +688,25 @@ test("Category Workbench exposes category navigation and bulk workflows", () => 
   assert.match(workbench, /data-testid="category-bulk-action"/);
   assert.match(workbench, /aria-expanded=/);
 });
+
+test("Batch Studio makes broad edits reviewable before applying", () => {
+  const batchStudio = source("./BatchStudio.tsx");
+
+  for (const label of [
+    "Batch Studio",
+    "Change set",
+    "Choose products",
+    "Stage changes",
+    "Review",
+    "Before",
+    "After",
+    "Apply changes",
+    "Validation errors",
+  ]) {
+    assert.match(batchStudio, new RegExp(label));
+  }
+
+  assert.match(batchStudio, /data-testid="change-set"/);
+  assert.match(batchStudio, /data-testid="apply-change-set"/);
+  assert.match(batchStudio, /aria-label="Affected products"/);
+});
