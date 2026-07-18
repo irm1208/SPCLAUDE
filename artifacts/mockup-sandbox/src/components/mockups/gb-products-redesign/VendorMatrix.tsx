@@ -374,6 +374,13 @@ function selectedVendorProducts(
   return products.filter((product) => product.vendor === vendor);
 }
 
+function resolveVendorName(value: string): VendorName | null {
+  const normalisedVendor = normalise(value);
+  return (
+    VENDORS.find((vendor) => normalise(vendor) === normalisedVendor) ?? null
+  );
+}
+
 function getSupplierPrice(product: ProductRecord): number {
   return SUPPLIER_PRICES.get(product.id) ?? product.price;
 }
@@ -472,24 +479,44 @@ function reclassifyImportRows(
   }));
 }
 
-function applyVendorImport(
+export function validateVendorImportRows(
+  rows: readonly ImportReviewRow[],
+  selectedVendor: VendorName,
+): string | null {
+  for (const row of rows) {
+    if (!row.included) continue;
+    const rowVendor = resolveVendorName(row.vendor);
+    if (!rowVendor) {
+      return `Choose a recognised vendor for ${row.name || "the imported row"}.`;
+    }
+    if (rowVendor !== selectedVendor) {
+      return `Imported rows must stay within the selected ${selectedVendor} vendor.`;
+    }
+  }
+  return null;
+}
+
+export function applyVendorImport(
   products: readonly ProductRecord[],
   rows: readonly ImportReviewRow[],
-  vendor: VendorName,
+  selectedVendor: VendorName,
 ): ProductRecord[] {
   const acceptedRows = rows.filter((row) => row.included);
   const next = cloneProducts(products);
 
   for (const [rowIndex, row] of acceptedRows.entries()) {
+    const rowVendor = resolveVendorName(row.vendor);
+    if (rowVendor !== selectedVendor) continue;
     const identity = importIdentity(row);
     const existingIndex = next.findIndex(
       (product) =>
-        product.vendor === vendor && importIdentity(product) === identity,
+        product.vendor === rowVendor && importIdentity(product) === identity,
     );
 
     if (existingIndex >= 0) {
       next[existingIndex] = {
         ...next[existingIndex],
+        vendor: rowVendor,
         price: row.price,
         lastEdited: new Date().toISOString(),
       };
@@ -499,8 +526,8 @@ function applyVendorImport(
     next.push({
       id: `prod-import-${next.length + rowIndex + 1}`,
       name: row.name.trim(),
-      description: `Imported from the ${vendor} supplier price list.`,
-      vendor,
+      description: `Imported from the ${rowVendor} supplier price list.`,
+      vendor: rowVendor,
       category: CATEGORIES[0],
       mgSize: row.mgSize.trim(),
       price: row.price,
@@ -513,6 +540,17 @@ function applyVendorImport(
   }
 
   return next;
+}
+
+export function getVendorExceptionCounts(
+  products: readonly ProductRecord[],
+  selectedVendor: VendorName,
+): Record<Exclude<ExceptionView, "all">, number> {
+  const vendorProducts = selectedVendorProducts(products, selectedVendor);
+  return {
+    "price-changed": vendorProducts.filter(hasSupplierPriceChange).length,
+    "low-stock": vendorProducts.filter(isLowStock).length,
+  };
 }
 
 function vendorInitials(vendor: VendorName): string {
@@ -536,6 +574,7 @@ export default function VendorMatrix() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [tool, setTool] = useState<ToolState>(null);
   const [importRows, setImportRows] = useState<ImportReviewRow[]>([]);
+  const [importScopeError, setImportScopeError] = useState<string | null>(null);
   const [confirmationState, setConfirmationState] =
     useState<ConfirmationState>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
@@ -551,30 +590,34 @@ export default function VendorMatrix() {
     [products],
   );
 
-  const exceptionCounts = useMemo(
-    () => ({
-      "price-changed": products.filter(hasSupplierPriceChange).length,
-      "low-stock": products.filter(isLowStock).length,
-    }),
-    [products],
-  );
-
-  const visibleProducts = useMemo(() => {
+  const vendorContextProducts = useMemo(() => {
     const normalisedQuery = normalise(query);
-    return products.filter((product) => {
-      if (product.vendor !== selectedVendor) return false;
+    return selectedVendorProducts(products, selectedVendor).filter((product) => {
       if (category !== "all" && product.category !== category) return false;
       if (!matchesStock(product, stock)) return false;
-      if (exceptionView === "price-changed" && !hasSupplierPriceChange(product)) {
-        return false;
-      }
-      if (exceptionView === "low-stock" && !isLowStock(product)) return false;
       if (!normalisedQuery) return true;
       return [product.name, product.mgSize, product.category].some((value) =>
         normalise(value).includes(normalisedQuery),
       );
     });
-  }, [category, exceptionView, products, query, selectedVendor, stock]);
+  }, [category, products, query, selectedVendor, stock]);
+
+  const exceptionCounts = useMemo(
+    () => getVendorExceptionCounts(vendorContextProducts, selectedVendor),
+    [selectedVendor, vendorContextProducts],
+  );
+
+  const visibleProducts = useMemo(
+    () =>
+      vendorContextProducts.filter((product) => {
+        if (exceptionView === "price-changed") {
+          return hasSupplierPriceChange(product);
+        }
+        if (exceptionView === "low-stock") return isLowStock(product);
+        return true;
+      }),
+    [exceptionView, vendorContextProducts],
+  );
 
   const selectedVendorCount = vendorCounts[selectedVendor];
   const selectedPriceChanges = products.filter(
@@ -595,6 +638,7 @@ export default function VendorMatrix() {
     setExceptionView("all");
     setSelectedIds(new Set());
     setTool(null);
+    setImportScopeError(null);
   }
 
   function chooseException(view: Exclude<ExceptionView, "all">) {
@@ -634,6 +678,7 @@ export default function VendorMatrix() {
   function openImport(mode: "csv" | "ai") {
     setImportRows(createImportReviewRows(mode, products, selectedVendor));
     setTool({ kind: "import", mode });
+    setImportScopeError(null);
     setConfirmationState(null);
   }
 
@@ -643,6 +688,7 @@ export default function VendorMatrix() {
       Pick<ImportReviewRow, "name" | "price" | "vendor" | "mgSize">
     >,
   ) {
+    setImportScopeError(null);
     setImportRows((current) => {
       const nextRows = current.map((row) =>
         row.id === rowId ? { ...row, ...patch } : row,
@@ -652,6 +698,11 @@ export default function VendorMatrix() {
   }
 
   function requestImportConfirmation() {
+    const scopeError = validateVendorImportRows(importRows, selectedVendor);
+    if (scopeError) {
+      setImportScopeError(scopeError);
+      return;
+    }
     const count = importRows.filter((row) => row.included).length;
     if (count === 0) return;
     setConfirmationState({ kind: "import", count });
@@ -659,12 +710,19 @@ export default function VendorMatrix() {
 
   function confirmImport() {
     if (confirmationState?.kind !== "import") return;
+    const scopeError = validateVendorImportRows(importRows, selectedVendor);
+    if (scopeError) {
+      setConfirmationState(null);
+      setImportScopeError(scopeError);
+      return;
+    }
     const previousProducts = cloneProducts(products);
     const nextProducts = applyVendorImport(products, importRows, selectedVendor);
     setProducts(nextProducts);
     setSelectedIds(new Set());
     setTool(null);
     setImportRows([]);
+    setImportScopeError(null);
     setConfirmationState(null);
     setFeedback({
       message: `${confirmationState.count} ${selectedVendor} ${confirmationState.count === 1 ? "product" : "products"} imported.`,
@@ -740,6 +798,7 @@ export default function VendorMatrix() {
       setFeedback({ message: `${newProduct.name} added.`, previousProducts });
     }
     setTool(null);
+    setImportScopeError(null);
   }
 
   function resetPreview() {
@@ -752,6 +811,7 @@ export default function VendorMatrix() {
     setSelectedIds(new Set());
     setTool(null);
     setImportRows([]);
+    setImportScopeError(null);
     setConfirmationState(null);
     setFeedback(null);
   }
@@ -813,21 +873,40 @@ export default function VendorMatrix() {
 
         {tool?.kind === "import" ? (
           <section data-testid="review-import">
+            {importScopeError ? (
+              <p
+                role="alert"
+                style={{
+                  margin: "0 0 10px",
+                  border: "1px solid rgba(180, 35, 24, 0.2)",
+                  borderRadius: 7,
+                  padding: "10px 12px",
+                  color: "#9B2C25",
+                  background: "#FFF1EF",
+                  fontSize: 11,
+                  fontWeight: 680,
+                }}
+              >
+                {importScopeError}
+              </p>
+            ) : null}
             <ImportReview
               rows={importRows}
               mode={tool.mode}
-              onToggle={(rowId) =>
+              onToggle={(rowId) => {
+                setImportScopeError(null);
                 setImportRows((current) =>
                   current.map((row) =>
                     row.id === rowId ? { ...row, included: !row.included } : row,
                   ),
-                )
-              }
+                );
+              }}
               onEdit={editImportRow}
               onConfirm={requestImportConfirmation}
               onCancel={() => {
                 setTool(null);
                 setImportRows([]);
+                setImportScopeError(null);
               }}
             />
           </section>

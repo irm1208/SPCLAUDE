@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { SAMPLE_PRODUCTS, type ProductRecord } from "./data.ts";
+import {
+  SAMPLE_PRODUCTS,
+  type ImportReviewRow,
+  type ProductRecord,
+} from "./data.ts";
 import { applyBulkPatch, classifyImportRows } from "./_shared/model.ts";
 import {
   findDirtyImportConflict,
@@ -104,6 +108,49 @@ function loadBatchStudioModule(): Promise<BatchStudioTestModule> {
   }
 
   return batchStudioModulePromise;
+}
+
+type VendorMatrixTestModule = {
+  applyVendorImport: (
+    products: readonly ProductRecord[],
+    rows: readonly ImportReviewRow[],
+    vendor: "QSC" | "Amino Asylum" | "Peptide Sciences" | "Chilton" | "Unassigned",
+  ) => ProductRecord[];
+  getVendorExceptionCounts: (
+    products: readonly ProductRecord[],
+    vendor: "QSC" | "Amino Asylum" | "Peptide Sciences" | "Chilton" | "Unassigned",
+  ) => { "price-changed": number; "low-stock": number };
+  validateVendorImportRows: (
+    rows: readonly ImportReviewRow[],
+    vendor: "QSC" | "Amino Asylum" | "Peptide Sciences" | "Chilton" | "Unassigned",
+  ) => string | null;
+};
+
+let vendorMatrixModulePromise: Promise<VendorMatrixTestModule> | null = null;
+
+function loadVendorMatrixModule(): Promise<VendorMatrixTestModule> {
+  if (!vendorMatrixModulePromise) {
+    vendorMatrixModulePromise = (async () => {
+      const { createServer } = await import("vite");
+      const server = await createServer({
+        configFile: false,
+        root: new URL("../../../..", import.meta.url).pathname,
+        server: { middlewareMode: true },
+        appType: "custom",
+        logLevel: "silent",
+      });
+
+      try {
+        return (await server.ssrLoadModule(
+          "/src/components/mockups/gb-products-redesign/VendorMatrix.tsx",
+        )) as VendorMatrixTestModule;
+      } finally {
+        await server.close();
+      }
+    })();
+  }
+
+  return vendorMatrixModulePromise;
 }
 
 test("shared shell preserves the approved organiser context", () => {
@@ -1036,4 +1083,80 @@ test("Vendor Matrix puts supplier reconciliation in catalogue context", () => {
   assert.match(vendorMatrix, /aria-label="Vendor list"/);
   assert.match(vendorMatrix, /data-testid="review-import"/);
   assert.match(vendorMatrix, /price-changed|duplicate/);
+});
+
+test("Vendor Matrix validates reviewed vendors and prevents cross-vendor or duplicate writes", async () => {
+  const {
+    applyVendorImport,
+    validateVendorImportRows,
+  } = await loadVendorMatrixModule();
+  const products = SAMPLE_PRODUCTS.slice(0, 2).map((product) => ({ ...product }));
+  const originalProducts = products.map((product) => ({ ...product }));
+  const qscRows: ImportReviewRow[] = [
+    {
+      id: "reviewed-qsc-1",
+      name: "Reviewed QSC addition",
+      vendor: " qsc ",
+      mgSize: "10 mg",
+      price: 41,
+      status: "new",
+      included: true,
+    },
+    {
+      id: "reviewed-qsc-2",
+      name: "Reviewed QSC addition",
+      vendor: "QSC",
+      mgSize: "10 mg",
+      price: 43,
+      status: "new",
+      included: true,
+    },
+  ];
+  const crossVendorRow: ImportReviewRow = {
+    id: "cross-vendor",
+    name: products[1].name,
+    vendor: "Amino Asylum",
+    mgSize: products[1].mgSize,
+    price: products[1].price + 50,
+    status: "price-changed",
+    existingPrice: products[1].price,
+    included: true,
+  };
+
+  assert.equal(validateVendorImportRows(qscRows, "QSC"), null);
+  assert.match(
+    validateVendorImportRows([...qscRows, crossVendorRow], "QSC") ?? "",
+    /selected QSC vendor/i,
+  );
+
+  const result = applyVendorImport(
+    products,
+    [...qscRows, crossVendorRow],
+    "QSC",
+  );
+  const additions = result.filter(
+    (product) => product.name === "Reviewed QSC addition",
+  );
+
+  assert.deepEqual(products, originalProducts);
+  assert.equal(additions.length, 1);
+  assert.equal(additions[0].vendor, "QSC");
+  assert.equal(additions[0].price, 43);
+  assert.equal(result[1].price, products[1].price);
+});
+
+test("Vendor Matrix exception counts follow the selected vendor context", async () => {
+  const { getVendorExceptionCounts } = await loadVendorMatrixModule();
+  const qscProducts = SAMPLE_PRODUCTS.filter((product) => product.vendor === "QSC");
+  const expectedLowStock = qscProducts.filter(
+    (product) => product.stock !== null && product.stock > 0 && product.stock <= 5,
+  ).length;
+  const qscCounts = getVendorExceptionCounts(SAMPLE_PRODUCTS, "QSC");
+  const withoutQsc = getVendorExceptionCounts(
+    SAMPLE_PRODUCTS.filter((product) => product.vendor !== "QSC"),
+    "QSC",
+  );
+
+  assert.equal(qscCounts["low-stock"], expectedLowStock);
+  assert.deepEqual(withoutQsc, { "price-changed": 0, "low-stock": 0 });
 });
