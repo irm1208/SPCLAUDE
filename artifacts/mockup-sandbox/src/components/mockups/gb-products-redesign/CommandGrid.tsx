@@ -71,6 +71,15 @@ type InlineField = "price" | "stock" | "limit";
 type InlineValues = Record<string, Partial<Record<InlineField, string>>>;
 type InlineErrors = Record<string, Partial<Record<InlineField, string>>>;
 type ImportMode = "csv" | "ai";
+const INLINE_FIELDS = ["price", "stock", "limit"] as const;
+
+type DraftClearSpec =
+  | { mode: "none" }
+  | { mode: "all" }
+  | {
+      mode: "cells";
+      cells: Readonly<Record<string, readonly InlineField[]>>;
+    };
 
 type FormState =
   | { mode: "add" }
@@ -91,10 +100,23 @@ type ConfirmationState =
   | { kind: "delete-product"; productId: string }
   | null;
 
+type ViewSnapshot = {
+  query: string;
+  vendor: string;
+  category: string;
+  stock: ProductFilters["stock"];
+  sortKey: SortKey;
+  sortDirection: SortDirection;
+  visibleColumns: Record<ColumnKey, boolean>;
+};
+
 type FeedbackState = {
   message: string;
   products: ProductRecord[];
   selectedIds: string[];
+  inlineValues: InlineValues;
+  inlineErrors: InlineErrors;
+  view?: ViewSnapshot;
 };
 
 type DisplayStatus = "live" | "paused" | "low" | "out" | "unlimited";
@@ -340,6 +362,55 @@ function cloneProducts(products: readonly ProductRecord[]): ProductRecord[] {
   return products.map((product) => ({ ...product }));
 }
 
+function cloneInlineMap(map: InlineValues): InlineValues {
+  return Object.fromEntries(
+    Object.entries(map).map(([productId, fields]) => [productId, { ...fields }]),
+  ) as InlineValues;
+}
+
+function reconcileInlineDrafts(
+  values: InlineValues,
+  errors: InlineErrors,
+  spec: DraftClearSpec,
+): { values: InlineValues; errors: InlineErrors } {
+  if (spec.mode === "none") return { values, errors };
+  if (spec.mode === "all") return { values: {}, errors: {} };
+
+  const nextValues = cloneInlineMap(values);
+  const nextErrors = cloneInlineMap(errors);
+  for (const [productId, fields] of Object.entries(spec.cells)) {
+    const valueRow = nextValues[productId];
+    if (valueRow) {
+      for (const field of fields) delete valueRow[field];
+      if (!Object.values(valueRow).some((value) => value !== undefined)) {
+        delete nextValues[productId];
+      }
+    }
+
+    const errorRow = nextErrors[productId];
+    if (errorRow) {
+      for (const field of fields) delete errorRow[field];
+      if (!Object.values(errorRow).some((value) => value !== undefined)) {
+        delete nextErrors[productId];
+      }
+    }
+  }
+  return { values: nextValues, errors: nextErrors };
+}
+
+function createDraftClearSpec(
+  productIds: Iterable<string>,
+  fields: readonly InlineField[],
+): DraftClearSpec {
+  if (fields.length === 0) return { mode: "none" };
+  return {
+    mode: "cells",
+    cells: Object.fromEntries(
+      [...productIds].map((productId) => [productId, fields]),
+    ),
+  };
+}
+
 function getDisplayStatus(product: ProductRecord): DisplayStatus {
   const status = getProductStatus(product);
   if (status === "paused") return "paused";
@@ -443,6 +514,96 @@ function createNewImportCandidate(
   return candidate;
 }
 
+function reclassifyImportRows(
+  existing: readonly ProductRecord[],
+  rows: readonly ImportReviewRow[],
+): ImportReviewRow[] {
+  const candidates: ImportCandidate[] = rows.map(({ name, vendor, mgSize, price }) => ({
+    name,
+    vendor,
+    mgSize,
+    price,
+  }));
+  const classified = classifyImportRows(existing, candidates);
+
+  return classified.map((next, index) => {
+    const current = rows[index];
+    return {
+      ...next,
+      id: current.id,
+      included: next.status === "duplicate" ? false : current.included,
+    };
+  });
+}
+
+function moveProductCell(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key === "Escape") return;
+
+  const isTextInput =
+    event.currentTarget instanceof HTMLInputElement &&
+    event.currentTarget.type !== "checkbox";
+  if (event.key === "Enter" && !isTextInput) return;
+
+  if (isTextInput && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+    const input = event.currentTarget as HTMLInputElement;
+    const selectionStart = input.selectionStart ?? 0;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    if (selectionStart !== selectionEnd) return;
+    if (event.key === "ArrowLeft" && selectionStart > 0) return;
+    if (event.key === "ArrowRight" && selectionEnd < input.value.length) return;
+  }
+
+  const isMovementKey =
+    event.key === "ArrowDown" ||
+    event.key === "ArrowUp" ||
+    event.key === "ArrowLeft" ||
+    event.key === "ArrowRight" ||
+    event.key === "Enter";
+  if (!isMovementKey) return;
+
+  const current = event.currentTarget;
+  const rowId = current.getAttribute("data-product-row");
+  const cellKey = current.getAttribute("data-product-cell");
+  if (!rowId || !cellKey) return;
+
+  const root = current.closest<HTMLElement>("[data-command-grid-root]") ?? document;
+  const cells = Array.from(root.querySelectorAll<HTMLElement>("[data-product-cell][data-product-row]")).filter(
+    (cell) =>
+      cell.isConnected &&
+      !cell.hasAttribute("disabled") &&
+      !cell.closest("[hidden]") &&
+      cell.getAttribute("aria-hidden") !== "true",
+  );
+  const rowIds = [...new Set(cells.map((cell) => cell.getAttribute("data-product-row")))];
+  const rowIndex = rowIds.indexOf(rowId);
+  const currentRowCells = cells.filter(
+    (cell) => cell.getAttribute("data-product-row") === rowId,
+  );
+  const currentCellIndex = currentRowCells.indexOf(current);
+  let targetCell: HTMLElement | undefined;
+
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    targetCell =
+      currentRowCells[currentCellIndex + (event.key === "ArrowLeft" ? -1 : 1)];
+  } else {
+    const nextRowIndex = rowIndex + (event.key === "ArrowUp" ? -1 : 1);
+    const nextRowId = rowIds[nextRowIndex];
+    if (nextRowId) {
+      const nextRowCells = cells.filter(
+        (cell) => cell.getAttribute("data-product-row") === nextRowId,
+      );
+      targetCell =
+        nextRowCells.find(
+          (cell) => cell.getAttribute("data-product-cell") === cellKey,
+        ) ?? nextRowCells[Math.min(currentCellIndex, nextRowCells.length - 1)];
+    }
+  }
+
+  if (!targetCell) return;
+  event.preventDefault();
+  targetCell?.focus();
+}
+
 export default function CommandGrid() {
   const [products, setProducts] = useState<ProductRecord[]>(() =>
     cloneProducts(SAMPLE_PRODUCTS),
@@ -502,6 +663,14 @@ export default function CommandGrid() {
     vendor !== "all" ||
     category !== "all" ||
     stock !== "all";
+  const activeFilterSummary = [
+    query.trim() ? `Search "${query.trim()}"` : null,
+    vendor !== "all" ? `Vendor ${vendor}` : null,
+    category !== "all" ? `Category ${category}` : null,
+    stock !== "all" ? `Stock ${stock}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" | ");
 
   const formProduct =
     formState?.mode === "edit"
@@ -515,18 +684,38 @@ export default function CommandGrid() {
     }
   }, [allVisibleSelected, someVisibleSelected]);
 
+  function clearDrafts(spec: DraftClearSpec) {
+    setInlineValues((current) =>
+      reconcileInlineDrafts(current, {}, spec).values,
+    );
+    setInlineErrors((current) =>
+      reconcileInlineDrafts({}, current, spec).errors,
+    );
+  }
+
   function commitProducts(
     nextProducts: ProductRecord[],
     message: string,
     clearSelection = false,
+    selectionOverride?: ReadonlySet<string>,
+    draftClear: DraftClearSpec = { mode: "none" },
   ) {
+    const reconciledDrafts = reconcileInlineDrafts(
+      inlineValues,
+      inlineErrors,
+      draftClear,
+    );
     setFeedback({
       message,
       products: cloneProducts(products),
       selectedIds: [...selectedIds],
+      inlineValues: cloneInlineMap(reconciledDrafts.values),
+      inlineErrors: cloneInlineMap(reconciledDrafts.errors),
     });
     setProducts(cloneProducts(nextProducts));
-    if (clearSelection) setSelectedIds(new Set());
+    clearDrafts(draftClear);
+    if (selectionOverride) setSelectedIds(new Set(selectionOverride));
+    else if (clearSelection) setSelectedIds(new Set());
   }
 
   function clearFilters() {
@@ -539,6 +728,15 @@ export default function CommandGrid() {
   function resetPreview() {
     const previousProducts = cloneProducts(products);
     const previousSelection = [...selectedIds];
+    const previousView: ViewSnapshot = {
+      query,
+      vendor,
+      category,
+      stock,
+      sortKey,
+      sortDirection,
+      visibleColumns: { ...visibleColumns },
+    };
     setProducts(resetProducts(products));
     clearFilters();
     setSortKey("name");
@@ -551,13 +749,15 @@ export default function CommandGrid() {
     setImportRows([]);
     setPendingBulkOperation(null);
     setConfirmationState(null);
-    setInlineValues({});
-    setInlineErrors({});
+    clearDrafts({ mode: "all" });
     setOpenRowActionsId(null);
     setFeedback({
       message: "Preview reset to the 120 sample products.",
       products: previousProducts,
       selectedIds: previousSelection,
+      inlineValues: cloneInlineMap(inlineValues),
+      inlineErrors: cloneInlineMap(inlineErrors),
+      view: previousView,
     });
   }
 
@@ -565,8 +765,17 @@ export default function CommandGrid() {
     if (!feedback) return;
     setProducts(cloneProducts(feedback.products));
     setSelectedIds(new Set(feedback.selectedIds));
-    setInlineValues({});
-    setInlineErrors({});
+    setInlineValues(cloneInlineMap(feedback.inlineValues));
+    setInlineErrors(cloneInlineMap(feedback.inlineErrors));
+    if (feedback.view) {
+      setQuery(feedback.view.query);
+      setVendor(feedback.view.vendor);
+      setCategory(feedback.view.category);
+      setStock(feedback.view.stock);
+      setSortKey(feedback.view.sortKey);
+      setSortDirection(feedback.view.sortDirection);
+      setVisibleColumns({ ...feedback.view.visibleColumns });
+    }
     setFeedback(null);
   }
 
@@ -602,6 +811,14 @@ export default function CommandGrid() {
     setSortDirection("ascending");
   }
 
+  function toggleColumn(column: ColumnKey, visible: boolean) {
+    setVisibleColumns((current) => ({ ...current, [column]: visible }));
+    if (!visible && sortKey === column) {
+      setSortKey("name");
+      setSortDirection("ascending");
+    }
+  }
+
   function setInlineValue(
     productId: string,
     field: InlineField,
@@ -618,14 +835,7 @@ export default function CommandGrid() {
   }
 
   function clearInlineCell(productId: string, field: InlineField) {
-    setInlineValues((current) => ({
-      ...current,
-      [productId]: { ...current[productId], [field]: undefined },
-    }));
-    setInlineErrors((current) => ({
-      ...current,
-      [productId]: { ...current[productId], [field]: undefined },
-    }));
+    clearDrafts(createDraftClearSpec([productId], [field]));
   }
 
   function saveInlineEdit(product: ProductRecord, field: InlineField) {
@@ -670,8 +880,13 @@ export default function CommandGrid() {
         ? { ...current, ...patch, lastEdited: new Date().toISOString() }
         : { ...current },
     );
-    commitProducts(nextProducts, `${product.name} updated.`);
-    clearInlineCell(product.id, field);
+    commitProducts(
+      nextProducts,
+      `${product.name} updated.`,
+      false,
+      undefined,
+      createDraftClearSpec([product.id], [field]),
+    );
   }
 
   function handleInlineKeyDown(
@@ -698,7 +913,13 @@ export default function CommandGrid() {
           ? { ...product, ...patch, lastEdited: new Date().toISOString() }
           : { ...product },
       );
-      commitProducts(nextProducts, `${target.name} saved.`);
+      commitProducts(
+        nextProducts,
+        `${target.name} saved.`,
+        false,
+        undefined,
+        createDraftClearSpec([target.id], INLINE_FIELDS),
+      );
       setFormState(null);
       return;
     }
@@ -738,6 +959,7 @@ export default function CommandGrid() {
   function confirmImport() {
     const includedRows = importRows.filter((row) => row.included);
     let nextProducts = cloneProducts(products);
+    const affectedDraftIds = new Set<string>();
 
     for (const row of includedRows) {
       const identity = productIdentity(row);
@@ -745,6 +967,7 @@ export default function CommandGrid() {
         (product) => productIdentity(product) === identity,
       );
       if (existingIndex >= 0) {
+        affectedDraftIds.add(nextProducts[existingIndex].id);
         nextProducts[existingIndex] = {
           ...nextProducts[existingIndex],
           name: row.name,
@@ -774,6 +997,9 @@ export default function CommandGrid() {
     commitProducts(
       nextProducts,
       `${includedRows.length} imported ${includedRows.length === 1 ? "product" : "products"} applied.`,
+      false,
+      undefined,
+      createDraftClearSpec(affectedDraftIds, INLINE_FIELDS),
     );
     setImportMode(null);
     setImportRows([]);
@@ -836,10 +1062,13 @@ export default function CommandGrid() {
         (product) => product.id === confirmationState.productId,
       );
       if (target) {
+        const remainingSelection = new Set([...selectedIds].filter((id) => id !== target.id));
         commitProducts(
           products.filter((product) => product.id !== target.id),
           `${target.name} deleted.`,
-          true,
+          false,
+          remainingSelection,
+          createDraftClearSpec([target.id], INLINE_FIELDS),
         );
       }
       setConfirmationState(null);
@@ -849,9 +1078,11 @@ export default function CommandGrid() {
     const operation = confirmationState.operation;
     let nextProducts: ProductRecord[];
     let message: string;
+    let draftClear: DraftClearSpec = { mode: "none" };
     if (operation.kind === "delete") {
       nextProducts = products.filter((product) => !selectedIds.has(product.id));
       message = `${selectedIds.size} selected products deleted.`;
+      draftClear = createDraftClearSpec(selectedIds, INLINE_FIELDS);
     } else {
       const patch: Partial<Omit<ProductRecord, "id">> =
         operation.kind === "price"
@@ -870,8 +1101,13 @@ export default function CommandGrid() {
         lastEdited: new Date().toISOString(),
       });
       message = `${selectedIds.size} selected products updated.`;
+      if (operation.kind === "price") {
+        draftClear = createDraftClearSpec(selectedIds, ["price"]);
+      } else if (operation.kind === "stock") {
+        draftClear = createDraftClearSpec(selectedIds, ["stock"]);
+      }
     }
-    commitProducts(nextProducts, message, true);
+    commitProducts(nextProducts, message, true, undefined, draftClear);
     setConfirmationState(null);
     setPendingBulkOperation(null);
   }
@@ -1088,7 +1324,7 @@ export default function CommandGrid() {
             <span className="gbpr-eyebrow">Catalogue command centre</span>
             <h2 style={STYLES.pageHeading}>Products</h2>
             <p style={STYLES.pageCopy}>
-              Manage {SAMPLE_PRODUCTS.length} products for {GROUP_BUY_NAME}. {filteredProducts.length} currently in view.
+              Manage {products.length} products for {GROUP_BUY_NAME}. {filteredProducts.length} currently in view.
             </p>
           </div>
           <div style={STYLES.headerActions}>
@@ -1143,11 +1379,12 @@ export default function CommandGrid() {
               )
             }
             onEdit={(rowId, patch) =>
-              setImportRows((current) =>
-                current.map((row) =>
+              setImportRows((current) => {
+                const nextRows = current.map((row) =>
                   row.id === rowId ? { ...row, ...patch } : row,
-                ),
-              )
+                );
+                return reclassifyImportRows(products.length ? products : SAMPLE_PRODUCTS, nextRows);
+              })
             }
             onConfirm={requestImportConfirmation}
             onCancel={() => {
@@ -1256,12 +1493,7 @@ export default function CommandGrid() {
                           <input
                             type="checkbox"
                             checked={visibleColumns[column.key]}
-                            onChange={(event) =>
-                              setVisibleColumns((current) => ({
-                                ...current,
-                                [column.key]: event.currentTarget.checked,
-                              }))
-                            }
+                            onChange={(event) => toggleColumn(column.key, event.currentTarget.checked)}
                             style={STYLES.checkbox}
                           />
                           {column.label}
@@ -1375,7 +1607,10 @@ export default function CommandGrid() {
                 <div>
                   <Search aria-hidden="true" />
                   <h2>No products match these filters</h2>
-                  <p>Adjust the search or clear the active filters to see the catalogue.</p>
+                  <p>
+                    {activeFilterSummary ? `${activeFilterSummary}. ` : ""}
+                    No products match these filters. Clear filters to see all products.
+                  </p>
                   <button
                     type="button"
                     className="gbpr-button"
@@ -1388,7 +1623,12 @@ export default function CommandGrid() {
                 </div>
               </section>
             ) : (
-              <section className="gbpr-panel" style={STYLES.panel} aria-label="Products table">
+              <section
+                className="gbpr-panel"
+                style={STYLES.panel}
+                aria-label="Products table"
+                data-command-grid-root
+              >
                 <div className="gbpr-table-wrap" style={STYLES.tableWrap}>
                   <table className="gbpr-table" style={STYLES.table}>
                     <caption className="gbpr-visually-hidden">
@@ -1453,6 +1693,9 @@ export default function CommandGrid() {
                                 checked={selectedIds.has(product.id)}
                                 onChange={() => toggleProduct(product.id)}
                                 aria-label={`Select product ${product.name}`}
+                                data-product-cell="select"
+                                data-product-row={product.id}
+                                onKeyDown={moveProductCell}
                                 style={STYLES.checkbox}
                               />
                             </td>
@@ -1476,11 +1719,16 @@ export default function CommandGrid() {
                                   style={STYLES.cellInput}
                                   inputMode="decimal"
                                   value={priceValue}
+                                  data-product-cell="price"
+                                  data-product-row={product.id}
                                   onChange={(event) =>
                                     setInlineValue(product.id, "price", event.currentTarget.value)
                                   }
                                   onBlur={() => saveInlineEdit(product, "price")}
-                                  onKeyDown={(event) => handleInlineKeyDown(event, product, "price")}
+                                  onKeyDown={(event) => {
+                                    handleInlineKeyDown(event, product, "price");
+                                    moveProductCell(event);
+                                  }}
                                   aria-invalid={errors.price ? "true" : undefined}
                                   aria-describedby={errors.price ? `${product.id}-price-error` : undefined}
                                 />
@@ -1507,11 +1755,16 @@ export default function CommandGrid() {
                                   inputMode="numeric"
                                   value={stockValue}
                                   placeholder="Unlimited"
+                                  data-product-cell="stock"
+                                  data-product-row={product.id}
                                   onChange={(event) =>
                                     setInlineValue(product.id, "stock", event.currentTarget.value)
                                   }
                                   onBlur={() => saveInlineEdit(product, "stock")}
-                                  onKeyDown={(event) => handleInlineKeyDown(event, product, "stock")}
+                                  onKeyDown={(event) => {
+                                    handleInlineKeyDown(event, product, "stock");
+                                    moveProductCell(event);
+                                  }}
                                   aria-invalid={errors.stock ? "true" : undefined}
                                   aria-describedby={errors.stock ? `${product.id}-stock-error` : undefined}
                                 />
@@ -1538,11 +1791,16 @@ export default function CommandGrid() {
                                   inputMode="numeric"
                                   value={limitValue}
                                   placeholder="No limit"
+                                  data-product-cell="limit"
+                                  data-product-row={product.id}
                                   onChange={(event) =>
                                     setInlineValue(product.id, "limit", event.currentTarget.value)
                                   }
                                   onBlur={() => saveInlineEdit(product, "limit")}
-                                  onKeyDown={(event) => handleInlineKeyDown(event, product, "limit")}
+                                  onKeyDown={(event) => {
+                                    handleInlineKeyDown(event, product, "limit");
+                                    moveProductCell(event);
+                                  }}
                                   aria-invalid={errors.limit ? "true" : undefined}
                                   aria-describedby={errors.limit ? `${product.id}-limit-error` : undefined}
                                 />
@@ -1569,8 +1827,11 @@ export default function CommandGrid() {
                                   type="button"
                                   className="gbpr-button"
                                   data-variant="ghost"
+                                  data-product-cell="actions"
+                                  data-product-row={product.id}
                                   aria-label={`Actions for ${product.name}`}
                                   aria-expanded={openRowActionsId === product.id}
+                                  onKeyDown={moveProductCell}
                                   onClick={() =>
                                     setOpenRowActionsId((current) =>
                                       current === product.id ? null : product.id,

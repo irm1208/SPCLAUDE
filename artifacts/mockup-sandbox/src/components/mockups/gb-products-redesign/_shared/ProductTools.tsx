@@ -942,7 +942,12 @@ export function ConfirmAction({
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousRootOverflow;
-      previousFocus?.focus();
+      if (previousFocus?.isConnected) {
+        previousFocus.focus();
+      } else {
+        const focusFallback = document.querySelector<HTMLElement>("#gbpr-page-title");
+        focusFallback?.focus();
+      }
     };
   }, [open]);
 

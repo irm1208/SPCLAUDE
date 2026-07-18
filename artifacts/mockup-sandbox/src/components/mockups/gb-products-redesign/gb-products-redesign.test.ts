@@ -71,7 +71,7 @@ test("shared shell owns one defaultable page heading for its label contract", ()
   assert.match(shell, /pageTitle = "Products"/);
   assert.match(
     shell,
-    /<h1 className="gbpr-visually-hidden" id="gbpr-page-title">\s*\{pageTitle\}\s*<\/h1>/s,
+    /<h1[^>]*className="gbpr-visually-hidden"[^>]*id="gbpr-page-title"[^>]*tabIndex=\{-1\}[^>]*data-gbpr-focus-fallback[^>]*>\s*\{pageTitle\}\s*<\/h1>/s,
   );
   assert.equal([...shell.matchAll(/id="gbpr-page-title"/g)].length, 1);
   assert.match(
@@ -324,6 +324,121 @@ test("import previews generate a collision-free new candidate", () => {
     /existing\.some\(\(product\) => productIdentity\(product\) === productIdentity\(candidate\)\)/,
   );
   assert.match(grid, /status.*"new"|classifyImportRows\(existing, incoming\)/s);
+});
+
+test("import row edits reclassify status without replacing row IDs", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  assert.match(grid, /function reclassifyImportRows/);
+  assert.match(
+    grid,
+    /reclassifyImportRows\(products\.length \? products : SAMPLE_PRODUCTS, nextRows\)/,
+  );
+  assert.match(grid, /id: current\.id/);
+  assert.match(
+    grid,
+    /included: next\.status === "duplicate" \? false : current\.included/,
+  );
+  assert.match(grid, /row\.id === rowId \? \{ \.\.\.row, \.\.\.patch \} : row/);
+});
+
+test("confirmation cleanup falls back when the trigger unmounts", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+  const shell = source("./_shared/ProductShell.tsx");
+
+  assert.match(tools, /previousFocus\?\.isConnected/);
+  assert.match(
+    tools,
+    /querySelector<HTMLElement>\("#gbpr-page-title"\)/,
+  );
+  assert.match(tools, /focusFallback\?\.focus\(\)/);
+  assert.match(
+    shell,
+    /<h1[^>]*id="gbpr-page-title"[^>]*tabIndex=\{-1\}[^>]*data-gbpr-focus-fallback/s,
+  );
+  assert.doesNotMatch(shell, /<span[^>]*data-gbpr-focus-fallback/);
+});
+
+test("Command Grid supports keyboard movement across editable cells", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  assert.match(grid, /data-product-cell/);
+  assert.match(grid, /event\.key === "ArrowDown"/);
+  assert.match(grid, /event\.key === "ArrowUp"/);
+  assert.match(grid, /event\.key === "ArrowLeft"/);
+  assert.match(grid, /event\.key === "ArrowRight"/);
+  assert.match(grid, /event\.key === "Enter"/);
+  assert.match(grid, /event\.key === "Escape"/);
+  assert.match(
+    grid,
+    /root\.querySelectorAll<HTMLElement>\("\[data-product-cell\]\[data-product-row\]"\)/,
+  );
+  assert.match(grid, /targetCell\?\.focus\(\)/);
+  assert.match(grid, /if \(selectionStart !== selectionEnd\) return/);
+  assert.match(grid, /onKeyDown=\{\(event\) => \{[\s\S]*?moveProductCell/);
+});
+
+test("catalogue mutations reconcile drafts, selection, live counts, and sort state", () => {
+  const grid = source("./CommandGrid.tsx");
+
+  assert.match(grid, /function commitProducts/);
+  assert.match(grid, /type DraftClearSpec/);
+  assert.match(grid, /function reconcileInlineDrafts/);
+  assert.match(grid, /function clearDrafts/);
+  assert.match(grid, /function createDraftClearSpec/);
+  assert.match(
+    grid,
+    /saveInlineEdit[\s\S]*?createDraftClearSpec\(\[product\.id\], \[field\]\)/,
+  );
+  assert.doesNotMatch(
+    grid,
+    /function commitProducts[\s\S]*?setInlineValues\(\{\}\)/,
+  );
+  assert.match(
+    grid,
+    /const remainingSelection = new Set\(\[\.\.\.selectedIds\]\.filter\(\(id\) => id !== target\.id\)\)/,
+  );
+  assert.match(grid, /commitProducts\([\s\S]*?remainingSelection/);
+  assert.match(grid, /Manage \{products\.length\} products/);
+  assert.match(grid, /function toggleColumn/);
+  assert.match(grid, /if \(!visible && sortKey === column\)/);
+  assert.match(grid, /toggleColumn\(column\.key, event\.currentTarget\.checked\)/);
+  assert.match(grid, /type ViewSnapshot/);
+  assert.match(grid, /feedback\.view/);
+  assert.match(grid, /const activeFilterSummary/);
+  assert.match(grid, /activeFilterSummary[\s\S]*?No products match these filters/);
+});
+
+test("undo snapshots clear committed drafts while retaining unrelated drafts", () => {
+  const grid = source("./CommandGrid.tsx");
+  const commitStart = grid.indexOf("function commitProducts");
+  const commitEnd = grid.indexOf("\n  function clearFilters", commitStart);
+  const commitProducts = grid.slice(commitStart, commitEnd);
+  const reconciliationMatch = commitProducts.match(
+    /const reconciledDrafts = reconcileInlineDrafts\([\s\S]*?inlineValues,[\s\S]*?inlineErrors,[\s\S]*?draftClear,[\s\S]*?\)/,
+  );
+  const reconciliation = reconciliationMatch?.index ?? -1;
+  const snapshot = commitProducts.indexOf("setFeedback({");
+
+  assert.notEqual(commitStart, -1);
+  assert.notEqual(commitEnd, -1);
+  assert.notEqual(reconciliation, -1);
+  assert.ok(
+    reconciliation < snapshot,
+    "commitProducts must reconcile affected drafts before creating its undo snapshot",
+  );
+  assert.match(
+    commitProducts,
+    /inlineValues: cloneInlineMap\(reconciledDrafts\.values\)/,
+  );
+  assert.match(
+    commitProducts,
+    /inlineErrors: cloneInlineMap\(reconciledDrafts\.errors\)/,
+  );
+  assert.match(
+    commitProducts,
+    /clearDrafts\(draftClear\)/,
+  );
 });
 
 test("shared layout contains scrolling inside the workspace", () => {

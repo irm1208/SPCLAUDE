@@ -209,7 +209,12 @@ export function ProductShell({
           id="gbpr-content"
           aria-labelledby="gbpr-page-title"
         >
-          <h1 className="gbpr-visually-hidden" id="gbpr-page-title">
+          <h1
+            className="gbpr-visually-hidden"
+            id="gbpr-page-title"
+            tabIndex={-1}
+            data-gbpr-focus-fallback
+          >
             {pageTitle}
           </h1>
           <div className="gbpr-concept-kicker">
