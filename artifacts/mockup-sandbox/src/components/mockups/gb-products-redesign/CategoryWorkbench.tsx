@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,7 @@ import {
   type ImportCandidate,
   type ImportReviewRow,
   type ProductRecord,
+  type ProductStatus,
 } from "./data";
 import { ProductShell } from "./_shared/ProductShell";
 import {
@@ -61,6 +63,25 @@ const MONEY = new Intl.NumberFormat("en-GB", {
   style: "currency",
   currency: "GBP",
 });
+
+const STATUS_STYLES: Record<ProductStatus, CSSProperties> = {
+  live: {
+    color: "var(--gbpr-success)",
+    background: "rgba(22, 121, 79, 0.1)",
+  },
+  paused: {
+    color: "var(--gbpr-muted)",
+    background: "var(--gbpr-border-soft)",
+  },
+  "low-stock": {
+    color: "#8A5700",
+    background: "rgba(233, 160, 32, 0.16)",
+  },
+  "out-of-stock": {
+    color: "var(--gbpr-danger)",
+    background: "rgba(180, 35, 24, 0.1)",
+  },
+};
 
 const STYLES: Record<string, CSSProperties> = {
   workspace: {
@@ -346,21 +367,30 @@ const STYLES: Record<string, CSSProperties> = {
     fontWeight: 760,
   },
   status: {
-    display: "inline-flex",
+    display: "inline-grid",
     width: "fit-content",
-    minHeight: 24,
+    minHeight: 42,
+    gridTemplateColumns: "12px minmax(0, 1fr)",
     alignItems: "center",
-    gap: 5,
-    borderRadius: 7,
-    padding: "3px 7px",
+    gap: "3px 5px",
     color: "var(--gbpr-muted)",
-    background: "var(--gbpr-border-soft)",
     fontSize: 9,
     fontWeight: 760,
   },
   statusIcon: {
     width: 12,
     height: 12,
+  },
+  statusLabel: {
+    display: "inline-flex",
+    minHeight: 20,
+    gridColumn: "1 / -1",
+    alignItems: "center",
+    borderRadius: 6,
+    padding: "2px 6px",
+    fontSize: 9,
+    fontWeight: 780,
+    whiteSpace: "nowrap",
   },
   emptyGroup: {
     display: "flex",
@@ -444,6 +474,100 @@ function createImportCandidates(
   });
 
   return incoming;
+}
+
+function reclassifyImportRows(
+  existing: readonly ProductRecord[],
+  rows: readonly ImportReviewRow[],
+): ImportReviewRow[] {
+  const candidates: ImportCandidate[] = rows.map(
+    ({ name, vendor, mgSize, price }) => ({ name, vendor, mgSize, price }),
+  );
+  const classified = classifyImportRows(existing, candidates);
+  const seenReviewRows = new Map<string, ImportCandidate>();
+
+  return classified.map((classifiedRow, index) => {
+    const current = rows[index];
+    const candidate = candidates[index];
+    const identity = productIdentity(candidate);
+    const earlierCandidate = seenReviewRows.get(identity);
+    seenReviewRows.set(identity, candidate);
+
+    const next: ImportReviewRow = earlierCandidate
+      ? {
+          ...classifiedRow,
+          status:
+            earlierCandidate.price === candidate.price
+              ? "duplicate"
+              : "price-changed",
+          existingPrice: earlierCandidate.price,
+        }
+      : classifiedRow;
+    const identityChanged =
+      productIdentity(current) !== productIdentity(candidate);
+    const classificationChanged = current.status !== next.status;
+    const requiresExplicitInclusion = next.status !== "new";
+
+    if (
+      requiresExplicitInclusion &&
+      (identityChanged || classificationChanged)
+    ) {
+      return { ...next, id: current.id, included: false };
+    }
+
+    return { ...next, id: current.id, included: current.included };
+  });
+}
+
+function createImportReviewRows(
+  existing: readonly ProductRecord[],
+  incoming: readonly ImportCandidate[],
+): ImportReviewRow[] {
+  const initialRows = classifyImportRows(existing, incoming);
+  return reclassifyImportRows(existing, initialRows).map((row) =>
+    row.status === "new" ? row : { ...row, included: false },
+  );
+}
+
+type CategorySelectionCheckboxProps = {
+  category: Category;
+  checked: boolean;
+  mixed: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+};
+
+function CategorySelectionCheckbox({
+  category,
+  checked,
+  mixed,
+  disabled,
+  onChange,
+}: CategorySelectionCheckboxProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = mixed;
+    }
+  }, [mixed]);
+
+  return (
+    <label style={STYLES.groupCheckbox}>
+      <span className="gbpr-visually-hidden">
+        Select all {category} products in this view
+      </span>
+      <input
+        ref={inputRef}
+        type="checkbox"
+        style={STYLES.checkbox}
+        checked={checked}
+        aria-checked={mixed ? "mixed" : checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+      />
+    </label>
+  );
 }
 
 export default function CategoryWorkbench() {
@@ -584,7 +708,9 @@ export default function CategoryWorkbench() {
   }
 
   function openImport(mode: "csv" | "ai") {
-    setImportRows(classifyImportRows(products, createImportCandidates(mode, products)));
+    setImportRows(
+      createImportReviewRows(products, createImportCandidates(mode, products)),
+    );
     setTool(mode);
   }
 
@@ -592,9 +718,12 @@ export default function CategoryWorkbench() {
     rowId: ImportReviewRow["id"],
     patch: Partial<Pick<ImportReviewRow, "name" | "price" | "vendor" | "mgSize">>,
   ) {
-    setImportRows((current) =>
-      current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
-    );
+    setImportRows((current) => {
+      const nextRows = current.map((row) =>
+        row.id === rowId ? { ...row, ...patch } : row,
+      );
+      return reclassifyImportRows(products, nextRows);
+    });
   }
 
   function confirmImport() {
@@ -871,23 +1000,15 @@ export default function CategoryWorkbench() {
                 return (
                   <section style={STYLES.category} key={category}>
                     <header style={STYLES.categoryHeader}>
-                      <label style={STYLES.groupCheckbox}>
-                        <span className="gbpr-visually-hidden">
-                          Select all {category} products in this view
-                        </span>
-                        <input
-                          type="checkbox"
-                          style={STYLES.checkbox}
-                          checked={allSelected}
-                          disabled={categoryProducts.length === 0}
-                          onChange={(event) =>
-                            toggleCategorySelection(
-                              category,
-                              event.currentTarget.checked,
-                            )
-                          }
-                        />
-                      </label>
+                      <CategorySelectionCheckbox
+                        category={category}
+                        checked={allSelected}
+                        mixed={selectedCount > 0 && !allSelected}
+                        disabled={categoryProducts.length === 0}
+                        onChange={(checked) =>
+                          toggleCategorySelection(category, checked)
+                        }
+                      />
                       <button
                         type="button"
                         style={STYLES.categoryToggle}
@@ -969,7 +1090,9 @@ export default function CategoryWorkbench() {
                                   <span style={STYLES.status}>
                                     <Boxes aria-hidden="true" style={STYLES.statusIcon} />
                                     {product.stock === null ? "Unlimited" : product.stock}
-                                    <span className="gbpr-visually-hidden">, {statusLabel}</span>
+                                    <span style={{ ...STYLES.statusLabel, ...STATUS_STYLES[status] }}>
+                                      {statusLabel}
+                                    </span>
                                   </span>
                                 </li>
                               );

@@ -669,6 +669,47 @@ test("Split Inspector ignores skipped and non-matching dirty import rows", () =>
   );
 });
 
+test("Category Workbench reclassifies edited imports without implicit conflicts", () => {
+  const workbench = source("./CategoryWorkbench.tsx");
+
+  assert.match(workbench, /function reclassifyImportRows/);
+  assert.match(workbench, /classifyImportRows\(existing, candidates\)/);
+  assert.match(workbench, /id: current\.id/);
+  assert.match(workbench, /const requiresExplicitInclusion = next\.status !== "new"/);
+  assert.match(
+    workbench,
+    /requiresExplicitInclusion[\s\S]*?identityChanged[\s\S]*?included: false/,
+  );
+  assert.match(
+    workbench,
+    /setImportRows\(\(current\) =>[\s\S]*?reclassifyImportRows\(products, nextRows\)/,
+  );
+});
+
+test("Category Workbench renders product status labels visibly", () => {
+  const workbench = source("./CategoryWorkbench.tsx");
+
+  for (const label of ["Live", "Hidden", "Low stock", "Out of stock"]) {
+    assert.match(workbench, new RegExp(label));
+  }
+  assert.match(
+    workbench,
+    /<span style=\{\{ \.\.\.STYLES\.statusLabel, \.\.\.STATUS_STYLES\[status\] \}\}>\s*\{statusLabel\}\s*<\/span>/,
+  );
+  assert.doesNotMatch(
+    workbench,
+    /className="gbpr-visually-hidden">, \{statusLabel\}/,
+  );
+});
+
+test("Category Workbench exposes mixed category selection state", () => {
+  const workbench = source("./CategoryWorkbench.tsx");
+
+  assert.match(workbench, /inputRef\.current\.indeterminate = mixed/);
+  assert.match(workbench, /aria-checked=\{mixed \? "mixed" : checked\}/);
+  assert.match(workbench, /mixed=\{selectedCount > 0 && !allSelected\}/);
+});
+
 test("Category Workbench exposes category navigation and bulk workflows", () => {
   const workbench = source("./CategoryWorkbench.tsx");
 
