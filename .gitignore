@@ -4,6 +4,7 @@ peps_dump_*.sql
 # Build output
 dist/
 artifacts/*/dist/
+.worktrees/
 
 # Database dumps & exports
 backup_clean.sql
