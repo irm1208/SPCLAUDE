@@ -358,6 +358,45 @@ test("member directory exposes search, sort, and selection semantics", () => {
   assert.match(directory, /aria-selected/);
 });
 
+test("member summary exposes five derived metrics and locale currency", () => {
+  const summary = source("./MemberCrmSummary.tsx");
+
+  for (const label of [
+    "Members",
+    "Orders",
+    "Collected",
+    "Payment confirmed",
+    "Needs attention",
+  ]) {
+    assert.match(summary, new RegExp(label));
+  }
+  assert.match(summary, /MemberSummary/);
+  assert.match(summary, /formatMoney/);
+  assert.match(summary, /toLocaleString\(\s*["']en-GB["']/);
+});
+
+test("member directory exposes controlled states and responsive CSS contracts", () => {
+  const directory = source("./MemberCrmDirectory.tsx");
+  const styles = source("./_group.css");
+
+  for (const label of [
+    "Search members",
+    "aria-sort",
+    "aria-selected",
+    "loading",
+    "Retry",
+    "No members yet",
+    "No members found",
+    "Clear filters",
+  ]) {
+    assert.match(directory, new RegExp(label));
+  }
+  assert.match(styles, /\.members-crm__summary/);
+  assert.match(styles, /\.members-crm__directory/);
+  assert.match(styles, /@media\s*\(max-width:\s*767px\)/);
+  assert.match(styles, /min-height:\s*44px/);
+});
+
 test("member profile and activity timeline expose empty and time semantics", () => {
   const profile = source("./MemberCrmProfile.tsx");
   const timeline = source("./MemberActivityTimeline.tsx");
