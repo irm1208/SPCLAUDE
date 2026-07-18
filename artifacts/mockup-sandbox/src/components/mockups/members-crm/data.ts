@@ -53,7 +53,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "JR",
     country: "United Kingdom",
     countryCode: "GB",
-    memberSince: "Jan 2025",
+    memberSince: "2025-01-01",
     orderCount: 5,
     productCount: 11,
     totalSpent: 1_860,
@@ -69,7 +69,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "R9",
     country: "Germany",
     countryCode: "DE",
-    memberSince: "Mar 2025",
+    memberSince: "2025-03-01",
     orderCount: 4,
     productCount: 8,
     totalSpent: 1_240,
@@ -85,7 +85,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "MC",
     country: "Netherlands",
     countryCode: "NL",
-    memberSince: "Jun 2026",
+    memberSince: "2026-06-01",
     orderCount: 3,
     productCount: 6,
     totalSpent: 980,
@@ -101,7 +101,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "NS",
     country: "France",
     countryCode: "FR",
-    memberSince: "Feb 2025",
+    memberSince: "2025-02-01",
     orderCount: 2,
     productCount: 4,
     totalSpent: 720,
@@ -117,7 +117,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "UB",
     country: "United States",
     countryCode: "US",
-    memberSince: "Nov 2024",
+    memberSince: "2024-11-01",
     orderCount: 6,
     productCount: 14,
     totalSpent: 2_340,
@@ -133,7 +133,7 @@ export const FEATURED_MEMBERS: MemberRecord[] = [
     initials: "LK",
     country: "Ireland",
     countryCode: "IE",
-    memberSince: "Apr 2026",
+    memberSince: "2026-04-01",
     orderCount: 3,
     productCount: 7,
     totalSpent: 1_105,
@@ -294,6 +294,9 @@ const JAMES_ORDER_SEEDS = [
   },
 ];
 
+const clampToMemberSince = (createdAt: string, memberSince: string) =>
+  createdAt < memberSince ? memberSince : createdAt;
+
 const createOrdersForMember = (
   member: MemberRecord,
   memberIndex: number,
@@ -301,6 +304,7 @@ const createOrdersForMember = (
   if (member.id === "james-reed") {
     return JAMES_ORDER_SEEDS.map((order) => ({
       ...order,
+      createdAt: clampToMemberSince(order.createdAt, member.memberSince),
       memberId: member.id,
       paymentStatus: member.paymentStatus,
     }));
@@ -318,9 +322,12 @@ const createOrdersForMember = (
 
   return Array.from({ length: member.orderCount }, (_, orderIndex) => {
     const isLatest = orderIndex === member.orderCount - 1;
-    const createdAt = dateBefore(
-      lastOrderAt,
-      (member.orderCount - orderIndex - 1) * 21,
+    const createdAt = clampToMemberSince(
+      dateBefore(
+        lastOrderAt,
+        (member.orderCount - orderIndex - 1) * 21,
+      ),
+      member.memberSince,
     );
 
     return {
