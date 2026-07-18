@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -21,6 +22,7 @@ import {
   Ticket,
   Truck,
   Users,
+  X,
 } from "lucide-react";
 
 import "./_group.css";
@@ -80,12 +82,30 @@ export function MembersCrmShell({
   onCreateOrder,
   onOpenSearch,
 }: Props) {
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+
   return (
     <div className="members-crm" data-page="members">
+      <a className="members-crm__skip-link" href="#members-crm-main">
+        Skip to member workspace
+      </a>
+
       <aside
+        id="members-crm-navigation"
         className="members-crm__sidebar"
         aria-label="GB Organiser navigation"
+        data-mobile-open={mobileNavigationOpen ? "true" : "false"}
       >
+        <button
+          className="members-crm__close-nav"
+          type="button"
+          onClick={() => setMobileNavigationOpen(false)}
+          aria-label="Close GB Organiser navigation"
+          title="Close navigation"
+        >
+          <X size={20} aria-hidden="true" />
+        </button>
+
         <div
           className="members-crm__brand"
           aria-label="Peps Anonymous, GB Organiser"
@@ -159,7 +179,8 @@ export function MembersCrmShell({
             <button
               type="button"
               aria-label="Back to group buys"
-              title="Back to group buys"
+              title="Back to group buys unavailable"
+              disabled
             >
               <ArrowLeft size={16} aria-hidden="true" />
               <span className="members-crm__utility-label">Back to group buys</span>
@@ -167,7 +188,8 @@ export function MembersCrmShell({
             <button
               type="button"
               aria-label="Edit group buy setup"
-              title="Edit group buy setup"
+              title="Edit group buy setup unavailable"
+              disabled
             >
               <Pencil size={16} aria-hidden="true" />
               <span className="members-crm__utility-label">Edit setup</span>
@@ -177,8 +199,9 @@ export function MembersCrmShell({
           <button
             className="members-crm__organiser"
             type="button"
-            aria-label="Open profile for Alex Morgan, Lead organiser"
-            title="Alex Morgan — Lead organiser"
+            aria-label="Alex Morgan, Lead organiser profile unavailable"
+            title="Alex Morgan — Lead organiser profile unavailable"
+            disabled
           >
             <span className="members-crm__avatar" aria-hidden="true">
               AM
@@ -196,14 +219,30 @@ export function MembersCrmShell({
         </div>
       </aside>
 
+      <button
+        className="members-crm__backdrop"
+        type="button"
+        onClick={() => setMobileNavigationOpen(false)}
+        aria-label="Close GB Organiser navigation"
+        data-mobile-open={mobileNavigationOpen ? "true" : "false"}
+        tabIndex={mobileNavigationOpen ? 0 : -1}
+      />
+
       <div className="members-crm__workspace">
         <header className="members-crm__topbar">
           <div className="members-crm__topbar-leading">
             <button
               className="members-crm__mobile-menu"
               type="button"
-              aria-label="Open GB Organiser navigation"
-              title="Open navigation"
+              onClick={() => setMobileNavigationOpen((isOpen) => !isOpen)}
+              aria-label={
+                mobileNavigationOpen
+                  ? "Close GB Organiser navigation"
+                  : "Open GB Organiser navigation"
+              }
+              title={mobileNavigationOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileNavigationOpen}
+              aria-controls="members-crm-navigation"
             >
               <Menu size={20} aria-hidden="true" />
             </button>
@@ -254,8 +293,9 @@ export function MembersCrmShell({
               <button
                 className="members-crm__icon-button"
                 type="button"
-                aria-label="View notifications"
-                title="Notifications"
+                aria-label="View notifications, 1 unread"
+                title="Notifications unavailable — 1 unread"
+                disabled
               >
                 <Bell size={18} aria-hidden="true" />
                 <span className="members-crm__notification-dot" aria-hidden="true" />
@@ -263,9 +303,9 @@ export function MembersCrmShell({
               <button
                 className="members-crm__topbar-profile"
                 type="button"
-                aria-label="Open Alex Morgan profile menu"
-                title="Alex Morgan profile"
-                aria-haspopup="menu"
+                aria-label="Alex Morgan profile unavailable"
+                title="Alex Morgan profile unavailable"
+                disabled
               >
                 <span className="members-crm__avatar" aria-hidden="true">
                   AM
@@ -276,7 +316,11 @@ export function MembersCrmShell({
           </div>
         </header>
 
-        <main className="members-crm__main" aria-labelledby="members-crm-title">
+        <main
+          id="members-crm-main"
+          className="members-crm__main"
+          aria-labelledby="members-crm-title"
+        >
           {children}
         </main>
 

@@ -312,6 +312,29 @@ test("member CRM shell carries campaign styling and reduced motion", () => {
   assert.match(styles, /#2D6BCC/);
 });
 
+test("member CRM shell exposes accessible mobile navigation contracts", () => {
+  const shell = source("./MembersCrmShell.tsx");
+  const styles = source("./_group.css");
+
+  assert.match(shell, /useState/);
+  assert.match(shell, /aria-expanded\s*=\s*\{/);
+  assert.match(
+    shell,
+    /aria-controls\s*=\s*["']members-crm-navigation["']/,
+  );
+  assert.match(shell, /Skip to member workspace/);
+  assert.match(shell, /id\s*=\s*["']members-crm-main["']/);
+  assert.match(shell, /View notifications, 1 unread/);
+  assert.doesNotMatch(shell, /aria-haspopup\s*=\s*["']menu["']/);
+
+  assert.match(styles, /\[data-mobile-open\s*=\s*["']true["']\]/);
+  assert.match(styles, /\.members-crm__skip-link:focus-visible/);
+  assert.doesNotMatch(
+    styles,
+    /var\(--members-blue\)\s*45%\s*,\s*white/,
+  );
+});
+
 test("member directory exposes search, sort, and selection semantics", () => {
   const directory = source("./MemberCrmDirectory.tsx");
 

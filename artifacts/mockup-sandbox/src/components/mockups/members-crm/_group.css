@@ -41,9 +41,46 @@
   cursor: pointer;
 }
 
+.members-crm button:disabled {
+  cursor: not-allowed;
+}
+
 .members-crm :where(button, input, select):focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--members-blue) 45%, white);
+  outline: 3px solid var(--members-blue);
   outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px var(--members-white),
+    0 0 0 5px var(--members-blue) !important;
+}
+
+.members-crm__skip-link {
+  position: fixed;
+  z-index: 50;
+  top: 8px;
+  left: 8px;
+  padding: 9px 13px;
+  transform: translateY(calc(-100% - 16px));
+  border-radius: 8px;
+  background: var(--members-white);
+  color: var(--members-navy);
+  font-size: 12px;
+  font-weight: 750;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.members-crm__skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid var(--members-blue);
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px var(--members-white),
+    0 0 0 5px var(--members-blue);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .members-crm__sidebar {
@@ -60,6 +97,11 @@
   box-shadow: 8px 0 24px rgba(15, 31, 56, 0.08);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+
+.members-crm__close-nav,
+.members-crm__backdrop {
+  display: none;
 }
 
 .members-crm__brand {
@@ -212,7 +254,7 @@
 .members-crm__nav-group-title {
   margin: 0;
   padding: 0 10px;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.74);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -295,9 +337,16 @@
     color 140ms ease;
 }
 
-.members-crm__utilities button:hover {
+.members-crm__utilities button:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--members-white);
+}
+
+.members-crm__utilities button:disabled,
+.members-crm__organiser:disabled,
+.members-crm__icon-button:disabled,
+.members-crm__topbar-profile:disabled {
+  opacity: 0.68;
 }
 
 .members-crm__organiser {
@@ -683,7 +732,124 @@
   }
 
   .members-crm__sidebar {
-    display: none;
+    position: fixed;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: min(320px, calc(100vw - 48px));
+    max-width: 100%;
+    gap: 18px;
+    padding: 18px 14px 14px;
+    transform: translateX(calc(-100% - 12px));
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform 180ms ease,
+      visibility 0s linear 180ms;
+  }
+
+  .members-crm__sidebar[data-mobile-open="true"] {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .members-crm__backdrop {
+    position: fixed;
+    z-index: 15;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    background: rgba(15, 31, 56, 0.54);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 180ms ease,
+      visibility 0s linear 180ms;
+  }
+
+  .members-crm__backdrop[data-mobile-open="true"] {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .members-crm__close-nav {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--members-white);
+  }
+
+  .members-crm__brand {
+    justify-content: flex-start;
+    padding: 1px 48px 1px 4px;
+  }
+
+  .members-crm__brand-copy,
+  .members-crm__profile-copy {
+    display: grid;
+  }
+
+  .members-crm__group-buy-copy,
+  .members-crm__nav-group-title {
+    display: block;
+  }
+
+  .members-crm__nav-text,
+  .members-crm__utility-label {
+    display: inline;
+  }
+
+  .members-crm__profile-chevron {
+    display: block;
+  }
+
+  .members-crm__group-buy {
+    justify-content: flex-start;
+    padding: 12px;
+  }
+
+  .members-crm__nav {
+    gap: 15px;
+  }
+
+  .members-crm__nav-group {
+    gap: 5px;
+  }
+
+  .members-crm__nav-item {
+    min-height: 44px;
+    justify-content: flex-start;
+    padding: 7px 10px;
+  }
+
+  .members-crm__utilities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .members-crm__utilities button,
+  .members-crm__organiser {
+    min-height: 44px;
+  }
+
+  .members-crm__organiser {
+    justify-content: flex-start;
+    padding: 9px;
   }
 
   .members-crm__workspace {
