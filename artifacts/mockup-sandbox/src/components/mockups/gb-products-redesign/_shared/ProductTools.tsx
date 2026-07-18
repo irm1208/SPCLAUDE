@@ -24,6 +24,7 @@ import {
 export type ProductFormProps = {
   product: ProductRecord | null;
   onSave: (patch: Partial<Omit<ProductRecord, "id">>) => void;
+  onDelete?: () => void;
   onCancel: () => void;
 };
 
@@ -104,7 +105,12 @@ function validateProductDraft(draft: ProductDraft): ProductFormErrors {
   return errors;
 }
 
-export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
+export function ProductForm({
+  product,
+  onSave,
+  onDelete,
+  onCancel,
+}: ProductFormProps) {
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [draft, setDraft] = useState<ProductDraft>(() =>
@@ -112,14 +118,12 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
   );
   const [errors, setErrors] = useState<ProductFormErrors>({});
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteNotice, setDeleteNotice] = useState("");
   const editing = product !== null;
 
   useEffect(() => {
     setDraft(createProductDraft(product));
     setErrors({});
     setDeleteOpen(false);
-    setDeleteNotice("");
   }, [product]);
 
   function updateDraft<Key extends keyof ProductDraft>(
@@ -409,7 +413,7 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
 
         <footer className="gbpr-form-footer">
           <div className="gbpr-form-danger-zone">
-            {editing ? (
+            {editing && onDelete ? (
               <button
                 type="button"
                 className="gbpr-button"
@@ -420,7 +424,6 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
                 Delete product
               </button>
             ) : null}
-            {deleteNotice ? <p role="status">{deleteNotice}</p> : null}
           </div>
           <div className="gbpr-form-actions">
             <button
@@ -445,12 +448,12 @@ export function ProductForm({ product, onSave, onCancel }: ProductFormProps) {
       <ConfirmAction
         open={deleteOpen}
         title="Delete product?"
-        description="This is a mock preview. Confirming demonstrates the destructive flow without changing catalogue data."
+        description="This removes the product from the working catalogue. You can undo the change from the confirmation message."
         confirmLabel="Delete product"
         tone="danger"
         onConfirm={() => {
           setDeleteOpen(false);
-          setDeleteNotice("Preview only — no product was deleted.");
+          if (onDelete) onDelete();
         }}
         onCancel={() => setDeleteOpen(false)}
       />
@@ -858,6 +861,46 @@ export type ConfirmActionProps = {
   onCancel: () => void;
 };
 
+type InertSiblingState = {
+  sibling: HTMLElement;
+  inert: boolean;
+  ariaHidden: string | null;
+};
+
+function makeModalBackgroundInert(dialog: HTMLElement): InertSiblingState[] {
+  const state: InertSiblingState[] = [];
+  let activeBranch: HTMLElement | null = dialog;
+
+  while (activeBranch && activeBranch !== document.body) {
+    const parent: HTMLElement | null = activeBranch.parentElement;
+    if (!parent) break;
+
+    for (const child of Array.from(parent.children)) {
+      if (child === activeBranch || !(child instanceof HTMLElement)) continue;
+      const sibling = child;
+      state.push({
+        sibling,
+        inert: sibling.inert,
+        ariaHidden: sibling.getAttribute("aria-hidden"),
+      });
+      sibling.inert = true;
+      sibling.setAttribute("aria-hidden", "true");
+    }
+
+    activeBranch = parent;
+  }
+
+  return state;
+}
+
+function restoreModalBackground(state: readonly InertSiblingState[]): void {
+  for (const { sibling, inert, ariaHidden } of state) {
+    sibling.inert = inert;
+    if (ariaHidden === null) sibling.removeAttribute("aria-hidden");
+    else sibling.setAttribute("aria-hidden", ariaHidden);
+  }
+}
+
 export function ConfirmAction({
   open,
   title,
@@ -886,6 +929,9 @@ export function ConfirmAction({
         : null;
     const previousBodyOverflow = document.body.style.overflow;
     const previousRootOverflow = document.documentElement.style.overflow;
+    const backgroundState = dialogRef.current
+      ? makeModalBackgroundInert(dialogRef.current)
+      : [];
 
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
@@ -940,6 +986,7 @@ export function ConfirmAction({
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      restoreModalBackground(backgroundState);
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousRootOverflow;
       if (previousFocus?.isConnected) {

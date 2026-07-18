@@ -58,6 +58,10 @@ type BatchDraftEvaluation = {
 };
 
 type BatchStudioTestModule = {
+  reclassifyBatchImportRows: (
+    products: readonly ProductRecord[],
+    rows: readonly ImportReviewRow[],
+  ) => ImportReviewRow[];
   evaluateBatchDraft: (
     products: readonly ProductRecord[],
     conditions: BatchConditions,
@@ -193,6 +197,28 @@ test("shared tools expose the complete product and import vocabulary", () => {
   ]) {
     assert.match(tools, new RegExp(label));
   }
+});
+
+test("shared product deletion invokes the owning concept after confirmation", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(tools, /onDelete\?:\s*\(\)\s*=>\s*void/);
+  assert.match(tools, /onDelete\(\)/);
+  assert.doesNotMatch(tools, /no product was deleted/);
+
+  for (const file of ["CommandGrid.tsx", "BatchStudio.tsx", "VendorMatrix.tsx"]) {
+    const concept = source(`./${file}`);
+    assert.match(concept, /<ProductForm[\s\S]*?onDelete=/);
+  }
+});
+
+test("confirmation dialogs make background subtrees inert while open", () => {
+  const tools = source("./_shared/ProductTools.tsx");
+
+  assert.match(tools, /function makeModalBackgroundInert/);
+  assert.match(tools, /sibling\.inert = true/);
+  assert.match(tools, /sibling\.setAttribute\("aria-hidden", "true"\)/);
+  assert.match(tools, /restoreModalBackground\(backgroundState\)/);
 });
 
 test("shared shell navigation and topbar controls are explicitly labelled", () => {
@@ -891,6 +917,50 @@ test("Batch Studio makes broad edits reviewable before applying", () => {
   assert.match(batchStudio, /data-testid="change-set"/);
   assert.match(batchStudio, /data-testid="apply-change-set"/);
   assert.match(batchStudio, /aria-label="Affected products"/);
+});
+
+test("Batch Studio reclassifies edited import identities", async () => {
+  const { reclassifyBatchImportRows } = await loadBatchStudioModule();
+  const existing = SAMPLE_PRODUCTS[0];
+  const initial = classifyImportRows(SAMPLE_PRODUCTS, [
+    {
+      name: "Unique batch import",
+      vendor: existing.vendor,
+      mgSize: existing.mgSize,
+      price: existing.price,
+    },
+  ]);
+  const rowId = initial[0].id;
+  const result = reclassifyBatchImportRows(SAMPLE_PRODUCTS, [
+    {
+      ...initial[0],
+      name: existing.name,
+      vendor: existing.vendor,
+      mgSize: existing.mgSize,
+    },
+  ]);
+
+  assert.equal(result[0].id, rowId);
+  assert.equal(result[0].status, "duplicate");
+  assert.equal(result[0].included, false);
+});
+
+test("desktop grids retain usable narrow-width fallbacks", () => {
+  const batchStudio = source("./BatchStudio.tsx");
+  const vendorMatrix = source("./VendorMatrix.tsx");
+  const styles = source("./_group.css");
+
+  assert.match(batchStudio, /className="gbpr-batch-studio-layout"/);
+  assert.match(batchStudio, /className="gbpr-batch-stage"/);
+  assert.match(vendorMatrix, /className="gbpr-vendor-matrix-layout"/);
+  assert.match(
+    styles,
+    /@media \(max-width: 900px\)[\s\S]*?\.gbpr-batch-studio-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 900px\)[\s\S]*?\.gbpr-vendor-matrix-layout[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)\s*!important;/,
+  );
 });
 
 test("Batch Studio retains invalid field drafts and counts every validation error", async () => {

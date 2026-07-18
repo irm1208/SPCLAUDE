@@ -790,6 +790,28 @@ function productIdentity(
     .join("\u001f");
 }
 
+export function reclassifyBatchImportRows(
+  existing: readonly ProductRecord[],
+  rows: readonly ImportReviewRow[],
+): ImportReviewRow[] {
+  const candidates: ImportCandidate[] = rows.map(
+    ({ name, vendor, mgSize, price }) => ({ name, vendor, mgSize, price }),
+  );
+  const classified = classifyImportRows(existing, candidates);
+
+  return classified.map((nextRow, index) => {
+    const previousRow = rows[index];
+    const newlyConflicting =
+      nextRow.status !== "new" && previousRow.status !== nextRow.status;
+
+    return {
+      ...nextRow,
+      id: previousRow.id,
+      included: newlyConflicting ? false : previousRow.included,
+    };
+  });
+}
+
 function createImportCandidates(
   mode: "csv" | "ai",
   products: readonly ProductRecord[],
@@ -940,9 +962,12 @@ export default function BatchStudio() {
       Pick<ImportReviewRow, "name" | "price" | "vendor" | "mgSize">
     >,
   ) {
-    setImportRows((current) =>
-      current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
-    );
+    setImportRows((current) => {
+      const editedRows = current.map((row) =>
+        row.id === rowId ? { ...row, ...patch } : row,
+      );
+      return reclassifyBatchImportRows(products, editedRows);
+    });
   }
 
   function confirmImport() {
@@ -1030,6 +1055,24 @@ export default function BatchStudio() {
     setTool(null);
   }
 
+  function deleteFormProduct() {
+    if (tool?.kind !== "form" || !tool.productId) return;
+    const target = products.find((product) => product.id === tool.productId);
+    if (!target) {
+      setTool(null);
+      return;
+    }
+
+    const snapshot = createBatchStudioSnapshot(snapshotCurrentState());
+    setProducts((current) =>
+      current
+        .filter((product) => product.id !== target.id)
+        .map((product) => ({ ...product })),
+    );
+    setFeedback({ message: `${target.name} deleted.`, snapshot });
+    setTool(null);
+  }
+
   function resetStudio() {
     const transition = resetBatchStudioState(snapshotCurrentState());
     setProducts(transition.products);
@@ -1101,6 +1144,7 @@ export default function BatchStudio() {
           <ProductForm
             product={formProduct}
             onSave={saveProduct}
+            onDelete={tool.productId ? deleteFormProduct : undefined}
             onCancel={() => setTool(null)}
           />
         ) : tool?.kind === "import" ? (
@@ -1161,9 +1205,9 @@ export default function BatchStudio() {
             </div>
           </header>
 
-          <div style={STYLES.studioLayout}>
+          <div className="gbpr-batch-studio-layout" style={STYLES.studioLayout}>
             <div style={STYLES.stages}>
-              <section style={STYLES.stage}>
+              <section className="gbpr-batch-stage" style={STYLES.stage}>
                 <div style={STYLES.stageHeading}>
                   <span style={STYLES.stageNumber}>1</span>
                   <div>
@@ -1171,7 +1215,10 @@ export default function BatchStudio() {
                     <p style={STYLES.stageHint}>Define the catalogue query.</p>
                   </div>
                 </div>
-                <div style={STYLES.conditionGrid}>
+                <div
+                  className="gbpr-batch-condition-grid"
+                  style={STYLES.conditionGrid}
+                >
                   <div className="gbpr-field" style={STYLES.searchField}>
                     <label htmlFor="batch-query">Search products</label>
                     <Search style={STYLES.searchIcon} aria-hidden="true" />
@@ -1223,7 +1270,7 @@ export default function BatchStudio() {
                 </div>
               </section>
 
-              <section style={STYLES.stage}>
+              <section className="gbpr-batch-stage" style={STYLES.stage}>
                 <div style={STYLES.stageHeading}>
                   <span style={STYLES.stageNumber}>2</span>
                   <div>
@@ -1231,7 +1278,10 @@ export default function BatchStudio() {
                     <p style={STYLES.stageHint}>Blank fields stay unchanged.</p>
                   </div>
                 </div>
-                <div style={STYLES.changesGrid}>
+                <div
+                  className="gbpr-batch-changes-grid"
+                  style={STYLES.changesGrid}
+                >
                   <div className="gbpr-field">
                     <label htmlFor="batch-price">Set price</label>
                     <input
@@ -1357,7 +1407,10 @@ export default function BatchStudio() {
                 </div>
               </section>
 
-              <section style={{ ...STYLES.stage, ...STYLES.stageLast }}>
+              <section
+                className="gbpr-batch-stage"
+                style={{ ...STYLES.stage, ...STYLES.stageLast }}
+              >
                 <div style={STYLES.stageHeading}>
                   <span style={STYLES.stageNumber}>3</span>
                   <div>
@@ -1472,7 +1525,11 @@ export default function BatchStudio() {
               </section>
             </div>
 
-            <aside style={STYLES.summary} aria-label="Change set summary">
+            <aside
+              className="gbpr-batch-summary"
+              style={STYLES.summary}
+              aria-label="Change set summary"
+            >
               <section style={STYLES.summarySection}>
                 <h3 style={STYLES.summaryTitle}>
                   <Filter style={STYLES.summaryTitleIcon} aria-hidden="true" />

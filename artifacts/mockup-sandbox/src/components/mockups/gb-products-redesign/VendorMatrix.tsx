@@ -828,6 +828,30 @@ export default function VendorMatrix() {
     setImportScopeError(null);
   }
 
+  function deleteFormProduct() {
+    if (tool?.kind !== "form" || !tool.productId) return;
+    const target = products.find((product) => product.id === tool.productId);
+    if (!target) {
+      setTool(null);
+      return;
+    }
+
+    const previousProducts = cloneProducts(products);
+    setProducts((current) =>
+      current
+        .filter((product) => product.id !== target.id)
+        .map((product) => ({ ...product })),
+    );
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      next.delete(target.id);
+      return next;
+    });
+    setFeedback({ message: `${target.name} deleted.`, previousProducts });
+    setTool(null);
+    setImportScopeError(null);
+  }
+
   function resetPreview() {
     setProducts(resetProducts(products));
     setSelectedVendor("QSC");
@@ -894,6 +918,7 @@ export default function VendorMatrix() {
           <ProductForm
             product={editingProduct}
             onSave={saveProduct}
+            onDelete={tool.productId ? deleteFormProduct : undefined}
             onCancel={() => setTool(null)}
           />
         ) : null}
@@ -939,7 +964,7 @@ export default function VendorMatrix() {
           </section>
         ) : null}
 
-        <div style={STYLES.matrix}>
+        <div className="gbpr-vendor-matrix-layout" style={STYLES.matrix}>
           <aside
             className="gbpr-panel"
             style={STYLES.vendorRail}

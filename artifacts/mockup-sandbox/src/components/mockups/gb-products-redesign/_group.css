@@ -2187,6 +2187,25 @@
   }
 }
 
+@media (max-width: 900px) {
+  .gbpr-batch-studio-layout,
+  .gbpr-batch-stage,
+  .gbpr-batch-condition-grid,
+  .gbpr-batch-changes-grid,
+  .gbpr-vendor-matrix-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .gbpr-batch-summary {
+    border-top: 1px solid var(--gbpr-border) !important;
+    border-left: 0 !important;
+  }
+
+  .gbpr-vendor-matrix-layout > aside {
+    position: static !important;
+  }
+}
+
 @media (max-width: 960px) {
   .gbpr-shell {
     grid-template-columns: 80px minmax(0, 1fr);

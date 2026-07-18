@@ -942,6 +942,29 @@ export default function CommandGrid() {
     setFormState(null);
   }
 
+  function deleteFormProduct() {
+    if (formState?.mode !== "edit") return;
+    const target = products.find(
+      (product) => product.id === formState.productId,
+    );
+    if (!target) {
+      setFormState(null);
+      return;
+    }
+
+    const remainingSelection = new Set(
+      [...selectedIds].filter((productId) => productId !== target.id),
+    );
+    commitProducts(
+      products.filter((product) => product.id !== target.id),
+      `${target.name} deleted.`,
+      false,
+      remainingSelection,
+      createDraftClearSpec([target.id], INLINE_FIELDS),
+    );
+    setFormState(null);
+  }
+
   function openImport(mode: ImportMode) {
     const existing = products.length ? products : SAMPLE_PRODUCTS;
     const duplicate = existing[0];
@@ -1365,6 +1388,9 @@ export default function CommandGrid() {
           <ProductForm
             product={formProduct}
             onSave={handleProductSave}
+            onDelete={
+              formState.mode === "edit" ? deleteFormProduct : undefined
+            }
             onCancel={() => setFormState(null)}
           />
         ) : importMode ? (
