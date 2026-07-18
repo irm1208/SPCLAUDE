@@ -76,6 +76,29 @@ type AppliedChangeSet = {
   appliedAt: string;
 };
 
+type BatchStudioSnapshot = {
+  products: ProductRecord[];
+  applied: AppliedChangeSet[];
+  conditions: Conditions;
+  fieldChanges: FieldChanges;
+  changeSetName: string;
+};
+
+type BatchDraftEvaluation = {
+  fieldChanges: FieldChanges;
+  validationErrors: ValidationError[];
+  validationErrorCount: number;
+  stagedPatch: ProductPatch;
+  previewRows: PreviewRow[];
+};
+
+type BatchCommitInput = BatchStudioSnapshot & {
+  previewRows: PreviewRow[];
+  stagedPatch: ProductPatch;
+  appliedAt: string;
+  historyId: string;
+};
+
 type ToolState =
   | { kind: "form"; productId: string | null }
   | { kind: "import"; mode: "csv" | "ai" }
@@ -83,8 +106,11 @@ type ToolState =
 
 type FeedbackState = {
   message: string;
-  previousProducts: ProductRecord[];
-  previousApplied: AppliedChangeSet[];
+  snapshot: BatchStudioSnapshot;
+};
+
+type BatchStudioTransition = BatchStudioSnapshot & {
+  feedback: FeedbackState;
 };
 
 const DEFAULT_CONDITIONS: Conditions = {
@@ -99,6 +125,8 @@ const EMPTY_FIELD_CHANGES: FieldChanges = {
   maxPerCustomer: "",
   halfKitEnabled: "unchanged",
 };
+
+const DEFAULT_CHANGE_SET_NAME = "QSC GLP-1 supplier refresh";
 
 const MONEY = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -531,6 +559,27 @@ function cloneProducts(products: readonly ProductRecord[]): ProductRecord[] {
   return products.map((product) => ({ ...product }));
 }
 
+function cloneApplied(
+  applied: readonly AppliedChangeSet[],
+): AppliedChangeSet[] {
+  return applied.map((entry) => ({
+    ...entry,
+    changes: [...entry.changes],
+  }));
+}
+
+function createBatchStudioSnapshot(
+  state: BatchStudioSnapshot,
+): BatchStudioSnapshot {
+  return {
+    products: cloneProducts(state.products),
+    applied: cloneApplied(state.applied),
+    conditions: { ...state.conditions },
+    fieldChanges: { ...state.fieldChanges },
+    changeSetName: state.changeSetName,
+  };
+}
+
 function validateFieldChanges(fieldChanges: FieldChanges): ValidationError[] {
   const errors: ValidationError[] = [];
 
@@ -634,6 +683,24 @@ function createPreviewRows(
     });
 }
 
+export function evaluateBatchDraft(
+  products: readonly ProductRecord[],
+  conditions: Conditions,
+  fieldChanges: FieldChanges,
+): BatchDraftEvaluation {
+  const retainedFieldChanges = { ...fieldChanges };
+  const validationErrors = validateFieldChanges(retainedFieldChanges);
+  const stagedPatch = createPatch(retainedFieldChanges, validationErrors);
+
+  return {
+    fieldChanges: retainedFieldChanges,
+    validationErrors,
+    validationErrorCount: validationErrors.length,
+    stagedPatch,
+    previewRows: createPreviewRows(products, conditions, stagedPatch),
+  };
+}
+
 function describePatch(patch: ProductPatch): string[] {
   const descriptions: string[] = [];
   if (patch.price !== undefined)
@@ -648,6 +715,60 @@ function describePatch(patch: ProductPatch): string[] {
     );
   }
   return descriptions;
+}
+
+export function commitBatchChangeSet(
+  input: BatchCommitInput,
+  patchProducts: typeof applyBulkPatch = applyBulkPatch,
+): BatchStudioTransition {
+  const affectedIds = input.previewRows.map((row) => row.id);
+  const appliedName = input.changeSetName.trim() || "Untitled change set";
+  const changes = describePatch(input.stagedPatch);
+  const historyEntry: AppliedChangeSet = {
+    id: input.historyId,
+    name: appliedName,
+    affectedCount: affectedIds.length,
+    changes: [...changes],
+    appliedAt: input.appliedAt,
+  };
+  const nextProducts = patchProducts(input.products, affectedIds, {
+    ...input.stagedPatch,
+    lastEdited: input.appliedAt,
+  });
+
+  return {
+    products: nextProducts,
+    applied: [historyEntry, ...cloneApplied(input.applied)].slice(0, 6),
+    conditions: { ...DEFAULT_CONDITIONS },
+    fieldChanges: { ...EMPTY_FIELD_CHANGES },
+    changeSetName: "",
+    feedback: {
+      message: `${appliedName} applied to ${affectedIds.length} ${affectedIds.length === 1 ? "product" : "products"}.`,
+      snapshot: createBatchStudioSnapshot(input),
+    },
+  };
+}
+
+export function undoBatchStudioState(
+  feedback: FeedbackState,
+): BatchStudioSnapshot {
+  return createBatchStudioSnapshot(feedback.snapshot);
+}
+
+export function resetBatchStudioState(
+  state: BatchStudioSnapshot,
+): BatchStudioTransition {
+  return {
+    products: resetProducts(state.products),
+    applied: [],
+    conditions: { ...DEFAULT_CONDITIONS },
+    fieldChanges: { ...EMPTY_FIELD_CHANGES },
+    changeSetName: DEFAULT_CHANGE_SET_NAME,
+    feedback: {
+      message: "Batch Studio reset.",
+      snapshot: createBatchStudioSnapshot(state),
+    },
+  };
 }
 
 function productValueSummary(product: ProductRecord): string[] {
@@ -723,32 +844,24 @@ export default function BatchStudio() {
   const [fieldChanges, setFieldChanges] = useState<FieldChanges>(() => ({
     ...EMPTY_FIELD_CHANGES,
   }));
-  const [changeSetName, setChangeSetName] = useState(
-    "QSC GLP-1 supplier refresh",
-  );
+  const [changeSetName, setChangeSetName] = useState(DEFAULT_CHANGE_SET_NAME);
   const [applied, setApplied] = useState<AppliedChangeSet[]>([]);
   const [tool, setTool] = useState<ToolState>(null);
   const [importRows, setImportRows] = useState<ImportReviewRow[]>([]);
   const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
 
-  const validationErrors = useMemo(
-    () => validateFieldChanges(fieldChanges),
-    [fieldChanges],
+  const draftEvaluation = useMemo(
+    () => evaluateBatchDraft(products, conditions, fieldChanges),
+    [conditions, fieldChanges, products],
   );
-  const stagedPatch = useMemo(
-    () => createPatch(fieldChanges, validationErrors),
-    [fieldChanges, validationErrors],
-  );
-  const previewRows = useMemo(
-    () => createPreviewRows(products, conditions, stagedPatch),
-    [conditions, products, stagedPatch],
-  );
+  const { validationErrors, validationErrorCount, stagedPatch, previewRows } =
+    draftEvaluation;
   const changeDescriptions = useMemo(
     () => describePatch(stagedPatch),
     [stagedPatch],
   );
-  const applyDisabled = previewRows.length === 0 || validationErrors.length > 0;
+  const applyDisabled = previewRows.length === 0 || validationErrorCount > 0;
 
   function updateCondition<Key extends keyof Conditions>(
     field: Key,
@@ -764,10 +877,14 @@ export default function BatchStudio() {
     setFieldChanges((current) => ({ ...current, [field]: value }));
   }
 
-  function clearDraft() {
-    setConditions({ ...DEFAULT_CONDITIONS });
-    setFieldChanges({ ...EMPTY_FIELD_CHANGES });
-    setChangeSetName("");
+  function snapshotCurrentState(): BatchStudioSnapshot {
+    return {
+      products,
+      applied,
+      conditions,
+      fieldChanges,
+      changeSetName,
+    };
   }
 
   function requestApply() {
@@ -781,46 +898,32 @@ export default function BatchStudio() {
       return;
     }
 
-    const previousProducts = cloneProducts(products);
-    const previousApplied = applied.map((entry) => ({
-      ...entry,
-      changes: [...entry.changes],
-    }));
-    const affectedIds = previewRows.map((row) => row.id);
     const appliedAt = new Date().toISOString();
-    const appliedName = changeSetName.trim() || "Untitled change set";
-    const nextProducts = applyBulkPatch(products, affectedIds, {
-      ...stagedPatch,
-      lastEdited: appliedAt,
-    });
-    const historyEntry: AppliedChangeSet = {
-      id: `batch-history-${historySequenceRef.current++}`,
-      name: appliedName,
-      affectedCount: affectedIds.length,
-      changes: [...changeDescriptions],
+    const transition = commitBatchChangeSet({
+      ...snapshotCurrentState(),
+      previewRows,
+      stagedPatch,
       appliedAt,
-    };
-
-    setProducts(nextProducts);
-    setApplied((current) => [historyEntry, ...current].slice(0, 6));
-    setFeedback({
-      message: `${appliedName} applied to ${affectedIds.length} ${affectedIds.length === 1 ? "product" : "products"}.`,
-      previousProducts,
-      previousApplied,
+      historyId: `batch-history-${historySequenceRef.current++}`,
     });
+
+    setProducts(transition.products);
+    setApplied(transition.applied);
+    setConditions(transition.conditions);
+    setFieldChanges(transition.fieldChanges);
+    setChangeSetName(transition.changeSetName);
+    setFeedback(transition.feedback);
     setApplyConfirmationOpen(false);
-    clearDraft();
   }
 
   function undoLastAction() {
     if (!feedback) return;
-    setProducts(cloneProducts(feedback.previousProducts));
-    setApplied(
-      feedback.previousApplied.map((entry) => ({
-        ...entry,
-        changes: [...entry.changes],
-      })),
-    );
+    const restored = undoBatchStudioState(feedback);
+    setProducts(restored.products);
+    setApplied(restored.applied);
+    setConditions(restored.conditions);
+    setFieldChanges(restored.fieldChanges);
+    setChangeSetName(restored.changeSetName);
     setFeedback(null);
   }
 
@@ -843,11 +946,7 @@ export default function BatchStudio() {
   }
 
   function confirmImport() {
-    const previousProducts = cloneProducts(products);
-    const previousApplied = applied.map((entry) => ({
-      ...entry,
-      changes: [...entry.changes],
-    }));
+    const snapshot = createBatchStudioSnapshot(snapshotCurrentState());
     const acceptedRows = importRows.filter((row) => row.included);
     let nextProducts = cloneProducts(products);
 
@@ -885,19 +984,14 @@ export default function BatchStudio() {
     setProducts(nextProducts);
     setFeedback({
       message: `${acceptedRows.length} ${acceptedRows.length === 1 ? "product" : "products"} imported.`,
-      previousProducts,
-      previousApplied,
+      snapshot,
     });
     setTool(null);
     setImportRows([]);
   }
 
   function saveProduct(patch: Partial<Omit<ProductRecord, "id">>) {
-    const previousProducts = cloneProducts(products);
-    const previousApplied = applied.map((entry) => ({
-      ...entry,
-      changes: [...entry.changes],
-    }));
+    const snapshot = createBatchStudioSnapshot(snapshotCurrentState());
     const editingId = tool?.kind === "form" ? tool.productId : null;
 
     if (editingId) {
@@ -909,8 +1003,7 @@ export default function BatchStudio() {
       );
       setFeedback({
         message: `${patch.name ?? "Product"} updated.`,
-        previousProducts,
-        previousApplied,
+        snapshot,
       });
     } else {
       const nextProduct: ProductRecord = {
@@ -930,8 +1023,7 @@ export default function BatchStudio() {
       setProducts((current) => [...current, nextProduct]);
       setFeedback({
         message: `${nextProduct.name} added.`,
-        previousProducts,
-        previousApplied,
+        snapshot,
       });
     }
 
@@ -939,15 +1031,16 @@ export default function BatchStudio() {
   }
 
   function resetStudio() {
-    setProducts((current) => resetProducts(current));
-    setConditions({ ...DEFAULT_CONDITIONS });
-    setFieldChanges({ ...EMPTY_FIELD_CHANGES });
-    setChangeSetName("QSC GLP-1 supplier refresh");
-    setApplied([]);
+    const transition = resetBatchStudioState(snapshotCurrentState());
+    setProducts(transition.products);
+    setConditions(transition.conditions);
+    setFieldChanges(transition.fieldChanges);
+    setChangeSetName(transition.changeSetName);
+    setApplied(transition.applied);
     setTool(null);
     setImportRows([]);
     setApplyConfirmationOpen(false);
-    setFeedback(null);
+    setFeedback(transition.feedback);
   }
 
   const formProduct =
@@ -1057,11 +1150,11 @@ export default function BatchStudio() {
               <div
                 style={{
                   ...STYLES.metric,
-                  ...(validationErrors.length > 0 ? STYLES.metricError : {}),
+                  ...(validationErrorCount > 0 ? STYLES.metricError : {}),
                 }}
               >
                 <strong style={STYLES.metricValue}>
-                  {validationErrors.length}
+                  {validationErrorCount}
                 </strong>
                 <span style={STYLES.metricLabel}>Validation errors</span>
               </div>
@@ -1440,7 +1533,7 @@ export default function BatchStudio() {
                   />
                   Validation errors
                 </h3>
-                {validationErrors.length > 0 ? (
+                {validationErrorCount > 0 ? (
                   <ul style={STYLES.errorList}>
                     {validationErrors.map((error) => (
                       <li key={error.field}>{error.message}</li>

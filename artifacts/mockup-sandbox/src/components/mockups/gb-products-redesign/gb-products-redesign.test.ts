@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { SAMPLE_PRODUCTS } from "./data.ts";
-import { classifyImportRows } from "./_shared/model.ts";
+import { SAMPLE_PRODUCTS, type ProductRecord } from "./data.ts";
+import { applyBulkPatch, classifyImportRows } from "./_shared/model.ts";
 import {
   findDirtyImportConflict,
   pinSelectedProduct,
@@ -11,6 +11,100 @@ import {
 
 const source = (file: string) =>
   readFileSync(new URL(file, import.meta.url), "utf8");
+
+type BatchConditions = {
+  query: string;
+  vendor: string;
+  category: string;
+};
+
+type BatchFieldChanges = {
+  price: string;
+  stock: string;
+  maxPerCustomer: string;
+  halfKitEnabled: "unchanged" | "enabled" | "disabled";
+};
+
+type BatchAppliedEntry = {
+  id: string;
+  name: string;
+  affectedCount: number;
+  changes: string[];
+  appliedAt: string;
+};
+
+type BatchSnapshot = {
+  products: ProductRecord[];
+  applied: BatchAppliedEntry[];
+  conditions: BatchConditions;
+  fieldChanges: BatchFieldChanges;
+  changeSetName: string;
+};
+
+type BatchDraftEvaluation = {
+  fieldChanges: BatchFieldChanges;
+  validationErrors: Array<{ field: string; message: string }>;
+  validationErrorCount: number;
+  stagedPatch: Partial<ProductRecord>;
+  previewRows: Array<{
+    id: string;
+    before: ProductRecord;
+    after: ProductRecord;
+  }>;
+};
+
+type BatchStudioTestModule = {
+  evaluateBatchDraft: (
+    products: readonly ProductRecord[],
+    conditions: BatchConditions,
+    fieldChanges: BatchFieldChanges,
+  ) => BatchDraftEvaluation;
+  commitBatchChangeSet: (
+    input: BatchSnapshot & {
+      previewRows: BatchDraftEvaluation["previewRows"];
+      stagedPatch: Partial<ProductRecord>;
+      appliedAt: string;
+      historyId: string;
+    },
+    patchProducts?: typeof applyBulkPatch,
+  ) => BatchSnapshot & {
+    feedback: { message: string; snapshot: BatchSnapshot };
+  };
+  undoBatchStudioState: (feedback: {
+    message: string;
+    snapshot: BatchSnapshot;
+  }) => BatchSnapshot;
+  resetBatchStudioState: (state: BatchSnapshot) => BatchSnapshot & {
+    feedback: { message: string; snapshot: BatchSnapshot };
+  };
+};
+
+let batchStudioModulePromise: Promise<BatchStudioTestModule> | null = null;
+
+function loadBatchStudioModule(): Promise<BatchStudioTestModule> {
+  if (!batchStudioModulePromise) {
+    batchStudioModulePromise = (async () => {
+      const { createServer } = await import("vite");
+      const server = await createServer({
+        configFile: false,
+        root: new URL("../../../..", import.meta.url).pathname,
+        server: { middlewareMode: true },
+        appType: "custom",
+        logLevel: "silent",
+      });
+
+      try {
+        return (await server.ssrLoadModule(
+          "/src/components/mockups/gb-products-redesign/BatchStudio.tsx",
+        )) as BatchStudioTestModule;
+      } finally {
+        await server.close();
+      }
+    })();
+  }
+
+  return batchStudioModulePromise;
+}
 
 test("shared shell preserves the approved organiser context", () => {
   const shell = source("./_shared/ProductShell.tsx");
@@ -750,6 +844,179 @@ test("Batch Studio makes broad edits reviewable before applying", () => {
   assert.match(batchStudio, /data-testid="change-set"/);
   assert.match(batchStudio, /data-testid="apply-change-set"/);
   assert.match(batchStudio, /aria-label="Affected products"/);
+});
+
+test("Batch Studio retains invalid field drafts and counts every validation error", async () => {
+  const { evaluateBatchDraft } = await loadBatchStudioModule();
+  const fieldChanges = Object.freeze({
+    price: "-1",
+    stock: "2.5",
+    maxPerCustomer: "0",
+    halfKitEnabled: "unchanged" as const,
+  });
+
+  const result = evaluateBatchDraft(
+    SAMPLE_PRODUCTS.slice(0, 3),
+    { query: "", vendor: "all", category: "all" },
+    fieldChanges,
+  );
+
+  assert.deepEqual(result.fieldChanges, fieldChanges);
+  assert.equal(result.validationErrorCount, 3);
+  assert.deepEqual(
+    result.validationErrors.map((error) => error.field),
+    ["price", "stock", "maxPerCustomer"],
+  );
+  assert.deepEqual(result.stagedPatch, {});
+  assert.deepEqual(result.previewRows, []);
+});
+
+test("Batch Studio builds preview rows without mutating source products", async () => {
+  const { evaluateBatchDraft } = await loadBatchStudioModule();
+  const products = SAMPLE_PRODUCTS.slice(0, 3).map((product) => ({
+    ...product,
+  }));
+  const originalProducts = products.map((product) => ({ ...product }));
+
+  const result = evaluateBatchDraft(
+    products,
+    { query: "", vendor: "all", category: "all" },
+    {
+      price: "99",
+      stock: "12",
+      maxPerCustomer: "4",
+      halfKitEnabled: "enabled",
+    },
+  );
+
+  assert.deepEqual(products, originalProducts);
+  assert.equal(result.previewRows.length, products.length);
+  assert.notStrictEqual(result.previewRows[0].before, products[0]);
+  assert.notStrictEqual(result.previewRows[0].after, products[0]);
+  assert.equal(result.previewRows[0].before.price, originalProducts[0].price);
+  assert.equal(result.previewRows[0].after.price, 99);
+  assert.equal(result.previewRows[0].after.stock, 12);
+  assert.equal(result.previewRows[0].after.maxPerCustomer, 4);
+  assert.equal(result.previewRows[0].after.halfKitEnabled, true);
+});
+
+test("Batch Studio commits through the confirmed apply transition", async () => {
+  const { commitBatchChangeSet, evaluateBatchDraft } =
+    await loadBatchStudioModule();
+  const products = SAMPLE_PRODUCTS.slice(0, 3).map((product) => ({
+    ...product,
+  }));
+  const conditions = { query: "", vendor: "all", category: "all" };
+  const fieldChanges: BatchFieldChanges = {
+    price: "88",
+    stock: "",
+    maxPerCustomer: "",
+    halfKitEnabled: "unchanged",
+  };
+  const evaluation = evaluateBatchDraft(products, conditions, fieldChanges);
+  let applyCalls = 0;
+
+  assert.equal(applyCalls, 0, "previewing must not apply catalogue changes");
+
+  const committed = commitBatchChangeSet(
+    {
+      products,
+      applied: [],
+      conditions,
+      fieldChanges,
+      changeSetName: "Confirmed supplier price",
+      previewRows: evaluation.previewRows,
+      stagedPatch: evaluation.stagedPatch,
+      appliedAt: "2026-07-18T12:00:00.000Z",
+      historyId: "batch-history-test",
+    },
+    (currentProducts, selectedIds, patch) => {
+      applyCalls += 1;
+      return applyBulkPatch(currentProducts, selectedIds, patch);
+    },
+  );
+
+  assert.equal(applyCalls, 1);
+  assert.deepEqual(products, SAMPLE_PRODUCTS.slice(0, 3));
+  assert.deepEqual(
+    committed.products.map((product) => product.price),
+    [88, 88, 88],
+  );
+  assert.equal(committed.applied[0].name, "Confirmed supplier price");
+  assert.equal(committed.applied[0].affectedCount, 3);
+  assert.deepEqual(committed.feedback.snapshot.products, products);
+  assert.equal(committed.changeSetName, "");
+
+  const batchStudio = source("./BatchStudio.tsx");
+  const requestStart = batchStudio.indexOf("function requestApply");
+  const requestEnd = batchStudio.indexOf(
+    "\n  function confirmApply",
+    requestStart,
+  );
+  const requestApply = batchStudio.slice(requestStart, requestEnd);
+
+  assert.match(requestApply, /setApplyConfirmationOpen\(true\)/);
+  assert.doesNotMatch(requestApply, /commitBatchChangeSet|applyBulkPatch/);
+  assert.match(batchStudio, /onConfirm=\{confirmApply\}/);
+  assert.match(
+    batchStudio,
+    /function confirmApply[\s\S]*?commitBatchChangeSet\(/,
+  );
+  assert.match(
+    batchStudio,
+    /function commitBatchChangeSet[\s\S]*?applyBulkPatch/,
+  );
+});
+
+test("Batch Studio history snapshots support undo after apply and reset", async () => {
+  const {
+    commitBatchChangeSet,
+    evaluateBatchDraft,
+    resetBatchStudioState,
+    undoBatchStudioState,
+  } = await loadBatchStudioModule();
+  const initialState: BatchSnapshot = {
+    products: SAMPLE_PRODUCTS.slice(0, 2).map((product) => ({ ...product })),
+    applied: [],
+    conditions: { query: "", vendor: "all", category: "all" },
+    fieldChanges: {
+      price: "77",
+      stock: "",
+      maxPerCustomer: "",
+      halfKitEnabled: "unchanged",
+    },
+    changeSetName: "Undoable price",
+  };
+  const evaluation = evaluateBatchDraft(
+    initialState.products,
+    initialState.conditions,
+    initialState.fieldChanges,
+  );
+  const committed = commitBatchChangeSet({
+    ...initialState,
+    previewRows: evaluation.previewRows,
+    stagedPatch: evaluation.stagedPatch,
+    appliedAt: "2026-07-18T12:00:00.000Z",
+    historyId: "batch-history-undo",
+  });
+
+  const undoneApply = undoBatchStudioState(committed.feedback);
+  assert.deepEqual(undoneApply, initialState);
+  assert.notStrictEqual(undoneApply.products, initialState.products);
+
+  const reset = resetBatchStudioState(committed);
+  assert.deepEqual(reset.products, SAMPLE_PRODUCTS);
+  assert.deepEqual(reset.applied, []);
+  assert.deepEqual(reset.fieldChanges, {
+    price: "",
+    stock: "",
+    maxPerCustomer: "",
+    halfKitEnabled: "unchanged",
+  });
+
+  const undoneReset = undoBatchStudioState(reset.feedback);
+  assert.deepEqual(undoneReset.products, committed.products);
+  assert.deepEqual(undoneReset.applied, committed.applied);
 });
 
 test("Vendor Matrix puts supplier reconciliation in catalogue context", () => {
