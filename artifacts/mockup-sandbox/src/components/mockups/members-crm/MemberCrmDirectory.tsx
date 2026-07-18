@@ -78,25 +78,137 @@ const FULFILMENT_LABELS: Record<FulfilmentStatus, string> = {
 const formatMoney = (value: number): string =>
   `£${value.toLocaleString("en-GB")}`;
 
-const formatDate = (value: string | null): string => {
+export function formatDate(value: string | null): string {
   if (!value) {
     return "No orders yet";
   }
 
-  return new Date(`${value}T00:00:00Z`).toLocaleDateString("en-GB", {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = new Date(`${value}T00:00:00Z`);
+
+  if (
+    !parts ||
+    Number.isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== Number(parts[1]) ||
+    date.getUTCMonth() + 1 !== Number(parts[2]) ||
+    date.getUTCDate() !== Number(parts[3])
+  ) {
+    return "Invalid date";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
-};
+    timeZone: "UTC",
+  }).format(date);
+}
 
-const hasActiveFilters = (filters: DirectoryFilters): boolean =>
-  filters.query !== DEFAULT_DIRECTORY_FILTERS.query ||
+export const hasActiveFilters = (filters: DirectoryFilters): boolean =>
+  filters.query.trim() !== DEFAULT_DIRECTORY_FILTERS.query ||
   filters.country !== DEFAULT_DIRECTORY_FILTERS.country ||
   filters.payment !== DEFAULT_DIRECTORY_FILTERS.payment ||
   filters.fulfilment !== DEFAULT_DIRECTORY_FILTERS.fulfilment ||
   filters.sortKey !== DEFAULT_DIRECTORY_FILTERS.sortKey ||
   filters.direction !== DEFAULT_DIRECTORY_FILTERS.direction;
+
+export function getDirectoryResultLabel(
+  state: MemberCrmDirectoryProps["state"],
+  count: number,
+): string {
+  if (state === "loading") {
+    return "Loading members";
+  }
+
+  if (state === "error") {
+    return "Directory unavailable";
+  }
+
+  if (state === "empty") {
+    return "No members yet";
+  }
+
+  return `${count} ${count === 1 ? "member" : "members"}`;
+}
+
+const DIRECTORY_SORT_KEYS: readonly DirectorySortKey[] = [
+  "name",
+  "orders",
+  "totalSpent",
+  "lastOrderAt",
+];
+
+const MOBILE_SORT_OPTIONS: ReadonlyArray<{
+  value: `${DirectorySortKey}:${DirectoryFilters["direction"]}`;
+  label: string;
+  key: DirectorySortKey;
+  direction: DirectoryFilters["direction"];
+}> = [
+  {
+    value: "name:asc",
+    label: "Member (A to Z)",
+    key: "name",
+    direction: "asc",
+  },
+  {
+    value: "name:desc",
+    label: "Member (Z to A)",
+    key: "name",
+    direction: "desc",
+  },
+  {
+    value: "orders:asc",
+    label: "Orders (low to high)",
+    key: "orders",
+    direction: "asc",
+  },
+  {
+    value: "orders:desc",
+    label: "Orders (high to low)",
+    key: "orders",
+    direction: "desc",
+  },
+  {
+    value: "totalSpent:asc",
+    label: "Total spent (low to high)",
+    key: "totalSpent",
+    direction: "asc",
+  },
+  {
+    value: "totalSpent:desc",
+    label: "Total spent (high to low)",
+    key: "totalSpent",
+    direction: "desc",
+  },
+  {
+    value: "lastOrderAt:asc",
+    label: "Last order (oldest first)",
+    key: "lastOrderAt",
+    direction: "asc",
+  },
+  {
+    value: "lastOrderAt:desc",
+    label: "Last order (newest first)",
+    key: "lastOrderAt",
+    direction: "desc",
+  },
+];
+
+const isDirectorySortKey = (value: string): value is DirectorySortKey =>
+  DIRECTORY_SORT_KEYS.some((key) => key === value);
+
+const isSortDirection = (
+  value: string,
+): value is DirectoryFilters["direction"] =>
+  value === "asc" || value === "desc";
+
+const isPaymentFilter = (value: string): value is DirectoryFilters["payment"] =>
+  PAYMENT_OPTIONS.some((option) => option.value === value);
+
+const isFulfilmentFilter = (
+  value: string,
+): value is DirectoryFilters["fulfilment"] =>
+  FULFILMENT_OPTIONS.some((option) => option.value === value);
 
 const nextSortDirection = (
   filters: DirectoryFilters,
@@ -104,17 +216,13 @@ const nextSortDirection = (
 ): DirectoryFilters["direction"] =>
   filters.sortKey === key && filters.direction === "asc" ? "desc" : "asc";
 
-function StatusBadge({
-  kind,
-  status,
-}: {
-  kind: "payment" | "fulfilment";
-  status: PaymentStatus | FulfilmentStatus;
-}) {
+type StatusBadgeProps =
+  | { kind: "payment"; status: PaymentStatus }
+  | { kind: "fulfilment"; status: FulfilmentStatus };
+
+function StatusBadge({ kind, status }: StatusBadgeProps) {
   const label =
-    kind === "payment"
-      ? PAYMENT_LABELS[status as PaymentStatus]
-      : FULFILMENT_LABELS[status as FulfilmentStatus];
+    kind === "payment" ? PAYMENT_LABELS[status] : FULFILMENT_LABELS[status];
   const Icon =
     kind === "payment"
       ? status === "confirmed"
@@ -181,17 +289,20 @@ export function MemberCrmDirectory({
   onReset,
 }: MemberCrmDirectoryProps) {
   const countryOptions = Array.from(new Set(countries));
-  const resultLabel = `${members.length} ${members.length === 1 ? "member" : "members"}`;
+  const resultLabel = getDirectoryResultLabel(state, members.length);
 
   const updateFilters = (patch: Partial<DirectoryFilters>) => {
     onFiltersChange({ ...filters, ...patch });
   };
 
-  const handleSort = (key: DirectorySortKey) => {
+  const handleSort = (
+    key: DirectorySortKey,
+    direction?: DirectoryFilters["direction"],
+  ) => {
     onFiltersChange({
       ...filters,
       sortKey: key,
-      direction: nextSortDirection(filters, key),
+      direction: direction ?? nextSortDirection(filters, key),
     });
   };
 
@@ -224,7 +335,7 @@ export function MemberCrmDirectory({
           : ArrowUpDown;
 
     return (
-      <th scope="col" aria-sort={direction}>
+      <th scope="col" role="columnheader" aria-sort={direction}>
         <button
           className="members-crm__sort-button"
           type="button"
@@ -239,19 +350,23 @@ export function MemberCrmDirectory({
   };
 
   const renderStaticHeader = (label: string) => (
-    <th scope="col" aria-sort="none">
+    <th scope="col" role="columnheader">
       {label}
     </th>
   );
 
   const renderDirectoryTable = () => (
     <div className="members-crm__table-wrap">
-      <table className="members-crm__table">
+      <table
+        className="members-crm__table"
+        role="grid"
+        aria-multiselectable={false}
+      >
         <caption className="members-crm__visually-hidden">
           Member directory
         </caption>
         <thead>
-          <tr>
+          <tr role="row">
             {renderSortableHeader("Member", "name")}
             {renderStaticHeader("Country")}
             {renderSortableHeader("Orders", "orders")}
@@ -267,6 +382,7 @@ export function MemberCrmDirectory({
 
             return (
               <tr
+                role="row"
                 className={
                   selected
                     ? "members-crm__directory-row members-crm__directory-row--selected"
@@ -278,7 +394,7 @@ export function MemberCrmDirectory({
                 onClick={() => onSelect(member.id)}
                 onKeyDown={(event) => handleRowKeyDown(event, member.id)}
               >
-                <td data-label="Member">
+                <td data-label="Member" role="gridcell">
                   <div className="members-crm__person">
                     <span
                       className="members-crm__directory-avatar"
@@ -289,35 +405,51 @@ export function MemberCrmDirectory({
                     <span className="members-crm__person-copy">
                       <strong>{member.name}</strong>
                       <span>{member.username}</span>
+                      {selected ? (
+                        <span className="members-crm__selected-cue">
+                          Selected
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                 </td>
-                <td data-label="Country">
+                <td data-label="Country" role="gridcell">
                   <span className="members-crm__country">
                     <span aria-hidden="true">{member.countryCode}</span>
                     {member.country}
                   </span>
                 </td>
-                <td data-label="Orders">{member.orderCount}</td>
-                <td data-label="Total spent">
-                  {formatMoney(member.totalSpent)}
+                <td data-label="Orders" role="gridcell">
+                  <span className="members-crm__cell-value">
+                    {member.orderCount}
+                  </span>
                 </td>
-                <td data-label="Payment">
+                <td data-label="Total spent" role="gridcell">
+                  <span className="members-crm__cell-value">
+                    {formatMoney(member.totalSpent)}
+                  </span>
+                </td>
+                <td data-label="Payment" role="gridcell">
                   <StatusBadge kind="payment" status={member.paymentStatus} />
                 </td>
-                <td data-label="Fulfilment">
+                <td data-label="Fulfilment" role="gridcell">
                   <StatusBadge
                     kind="fulfilment"
                     status={member.fulfilmentStatus}
                   />
                 </td>
-                <td data-label="Last order">
+                <td data-label="Last order" role="gridcell">
                   {member.lastOrderAt ? (
-                    <time dateTime={member.lastOrderAt}>
+                    <time
+                      className="members-crm__cell-value"
+                      dateTime={member.lastOrderAt}
+                    >
                       {formatDate(member.lastOrderAt)}
                     </time>
                   ) : (
-                    formatDate(member.lastOrderAt)
+                    <span className="members-crm__cell-value">
+                      {formatDate(member.lastOrderAt)}
+                    </span>
                   )}
                 </td>
               </tr>
@@ -419,6 +551,27 @@ export function MemberCrmDirectory({
           />
         </div>
 
+        <div className="members-crm__mobile-sort">
+          <label htmlFor="members-crm-sort-filter">Sort members</label>
+          <select
+            id="members-crm-sort-filter"
+            value={`${filters.sortKey}:${filters.direction}`}
+            onChange={(event) => {
+              const [key, direction] = event.currentTarget.value.split(":");
+              if (isDirectorySortKey(key) && isSortDirection(direction)) {
+                handleSort(key, direction);
+              }
+            }}
+            aria-label="Sort members"
+          >
+            {MOBILE_SORT_OPTIONS.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="members-crm__directory-filters">
           <div className="members-crm__filter-control">
             <label htmlFor="members-crm-country-filter">Country</label>
@@ -444,12 +597,12 @@ export function MemberCrmDirectory({
             <select
               id="members-crm-payment-filter"
               value={filters.payment}
-              onChange={(event) =>
-                updateFilters({
-                  payment: event.currentTarget
-                    .value as DirectoryFilters["payment"],
-                })
-              }
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (isPaymentFilter(value)) {
+                  updateFilters({ payment: value });
+                }
+              }}
               aria-label="Filter by payment status"
             >
               {PAYMENT_OPTIONS.map((option) => (
@@ -465,12 +618,12 @@ export function MemberCrmDirectory({
             <select
               id="members-crm-fulfilment-filter"
               value={filters.fulfilment}
-              onChange={(event) =>
-                updateFilters({
-                  fulfilment: event.currentTarget
-                    .value as DirectoryFilters["fulfilment"],
-                })
-              }
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (isFulfilmentFilter(value)) {
+                  updateFilters({ fulfilment: value });
+                }
+              }}
               aria-label="Filter by fulfilment status"
             >
               {FULFILMENT_OPTIONS.map((option) => (

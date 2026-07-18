@@ -95,9 +95,7 @@ test("member accounting agrees with related orders and activity", () => {
       member.totalSpent,
     );
     assert.equal(productQuantity, member.productCount);
-    assert.ok(
-      ACTIVITY_EVENTS.some((event) => event.memberId === member.id),
-    );
+    assert.ok(ACTIVITY_EVENTS.some((event) => event.memberId === member.id));
   }
 });
 
@@ -176,9 +174,7 @@ test("member directory filters by country and fulfilment", () => {
   assert.ok(germany.length > 0);
   assert.ok(germany.every((member) => member.country === "Germany"));
   assert.ok(blocked.length > 0);
-  assert.ok(
-    blocked.every((member) => member.fulfilmentStatus === "blocked"),
-  );
+  assert.ok(blocked.every((member) => member.fulfilmentStatus === "blocked"));
 });
 
 test("member directory sort returns descending spend without mutation", () => {
@@ -318,10 +314,7 @@ test("member CRM shell exposes accessible mobile navigation contracts", () => {
 
   assert.match(shell, /useState/);
   assert.match(shell, /aria-expanded\s*=\s*\{/);
-  assert.match(
-    shell,
-    /aria-controls\s*=\s*["']members-crm-navigation["']/,
-  );
+  assert.match(shell, /aria-controls\s*=\s*["']members-crm-navigation["']/);
   assert.match(shell, /Skip to member workspace/);
   assert.match(shell, /id\s*=\s*["']members-crm-main["']/);
   assert.match(shell, /View notifications, 1 unread/);
@@ -329,10 +322,7 @@ test("member CRM shell exposes accessible mobile navigation contracts", () => {
 
   assert.match(styles, /\[data-mobile-open\s*=\s*["']true["']\]/);
   assert.match(styles, /\.members-crm__skip-link:focus-visible/);
-  assert.doesNotMatch(
-    styles,
-    /var\(--members-blue\)\s*45%\s*,\s*white/,
-  );
+  assert.doesNotMatch(styles, /var\(--members-blue\)\s*45%\s*,\s*white/);
 });
 
 test("member CRM mobile drawer manages focus and isolates its background", () => {
@@ -356,6 +346,63 @@ test("member directory exposes search, sort, and selection semantics", () => {
   assert.match(directory, /aria-label="Search members"/);
   assert.match(directory, /aria-sort/);
   assert.match(directory, /aria-selected/);
+});
+
+test("member directory formats valid and malformed order dates deterministically", () => {
+  const directory = source("./MemberCrmDirectory.tsx");
+  const start = directory.indexOf("export function formatDate");
+  const end = directory.indexOf("\n\nexport const hasActiveFilters", start);
+
+  assert.ok(start >= 0, "formatDate should be exported as a testable helper");
+  assert.ok(end > start, "formatDate should remain a focused helper");
+
+  const executable = directory
+    .slice(start, end)
+    .replace(/^export\s+/, "")
+    .replace(/value:\s*string\s*\|\s*null/g, "value")
+    .replace(/\):\s*string\s*\{/g, "){\n");
+  const formatDate = new Function(`${executable}; return formatDate;`)() as (
+    value: string | null,
+  ) => string;
+
+  assert.equal(formatDate("2026-07-12"), "12 Jul 2026");
+  assert.equal(formatDate("not-a-date"), "Invalid date");
+  assert.equal(formatDate(null), "No orders yet");
+});
+
+test("member directory keeps mobile sorting and selection in an explicit grid context", () => {
+  const directory = source("./MemberCrmDirectory.tsx");
+  const styles = source("./_group.css");
+
+  assert.match(directory, /aria-label="Sort members"/);
+  for (const key of ["name", "orders", "totalSpent", "lastOrderAt"]) {
+    assert.ok(directory.includes(`value: "${key}:asc"`));
+    assert.ok(directory.includes(`value: "${key}:desc"`));
+  }
+  assert.match(directory, /role="grid"/);
+  assert.match(directory, /aria-multiselectable=\{false\}/);
+  assert.match(directory, /role="row"/);
+  assert.match(directory, /role="gridcell"/);
+  assert.match(directory, /Selected/);
+  assert.doesNotMatch(directory, /renderStaticHeader[\s\S]*aria-sort="none"/);
+  assert.match(directory, /Loading members/);
+  assert.match(directory, /Directory unavailable/);
+  assert.match(directory, /No members yet/);
+  assert.match(directory, /getDirectoryResultLabel/);
+  assert.match(directory, /filters\.query\.trim\(\)/);
+  assert.match(directory, /handleSort\(/);
+  assert.match(styles, /\.members-crm__table thead\s*\{\s*display:\s*none/);
+  assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(
+    styles,
+    /members-crm__directory-row--selected[\s\S]*background:/,
+  );
+});
+
+test("whitespace-only directory queries do not activate reset filters", () => {
+  const directory = source("./MemberCrmDirectory.tsx");
+  assert.match(directory, /export const hasActiveFilters/);
+  assert.match(directory, /filters\.query\.trim\(\)\s*!==/);
 });
 
 test("member summary exposes five derived metrics and locale currency", () => {

@@ -1,17 +1,17 @@
 .members-crm {
-  --members-navy: #1B3A7A;
-  --members-blue: #2D6BCC;
-  --members-deep-navy: #1B3164;
-  --members-ink: #0F1F38;
+  --members-navy: #1b3a7a;
+  --members-blue: #2d6bcc;
+  --members-deep-navy: #1b3164;
+  --members-ink: #0f1f38;
   --members-body: #374151;
-  --members-muted: #6B7280;
-  --members-label: #8A9AAA;
-  --members-canvas: #F8FAFC;
-  --members-border: #D0DAE4;
-  --members-success: #22C55E;
-  --members-warning: #E9A020;
-  --members-danger: #EF4444;
-  --members-white: #FFFFFF;
+  --members-muted: #6b7280;
+  --members-label: #8a9aaa;
+  --members-canvas: #f8fafc;
+  --members-border: #d0dae4;
+  --members-success: #22c55e;
+  --members-warning: #e9a020;
+  --members-danger: #ef4444;
+  --members-white: #ffffff;
 
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
@@ -20,8 +20,14 @@
   overflow: hidden;
   background: var(--members-canvas);
   color: var(--members-body);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   line-height: 1.45;
@@ -514,7 +520,11 @@
 }
 
 .members-crm__search:hover {
-  border-color: color-mix(in srgb, var(--members-blue) 42%, var(--members-border));
+  border-color: color-mix(
+    in srgb,
+    var(--members-blue) 42%,
+    var(--members-border)
+  );
   background: var(--members-white);
 }
 
@@ -569,7 +579,11 @@
 }
 
 .members-crm__button--secondary:hover {
-  border-color: color-mix(in srgb, var(--members-blue) 38%, var(--members-border));
+  border-color: color-mix(
+    in srgb,
+    var(--members-blue) 38%,
+    var(--members-border)
+  );
   background: var(--members-canvas);
 }
 
@@ -643,7 +657,8 @@
   bottom: 20px;
   max-width: min(380px, calc(100% - 40px));
   padding: 11px 14px;
-  border: 1px solid color-mix(in srgb, var(--members-success) 38%, var(--members-border));
+  border: 1px solid
+    color-mix(in srgb, var(--members-success) 38%, var(--members-border));
   border-radius: 10px;
   background: var(--members-white);
   color: var(--members-ink);
@@ -1136,7 +1151,8 @@
 }
 
 .members-crm__directory-search label,
-.members-crm__filter-control label {
+.members-crm__filter-control label,
+.members-crm__mobile-sort label {
   grid-column: 1 / -1;
   color: var(--members-muted);
   font-size: 10px;
@@ -1185,6 +1201,24 @@
 }
 
 .members-crm__filter-control select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--members-border);
+  border-radius: 8px;
+  padding: 0 28px 0 10px;
+  background: var(--members-white);
+  color: var(--members-ink);
+  font: inherit;
+  font-size: 11px;
+}
+
+.members-crm__mobile-sort {
+  display: none;
+  min-width: 0;
+}
+
+.members-crm__mobile-sort select {
   width: 100%;
   min-width: 0;
   height: 40px;
@@ -1364,6 +1398,14 @@
   font-size: 10px;
 }
 
+.members-crm__person-copy .members-crm__selected-cue {
+  color: var(--members-navy);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .members-crm__country {
   display: inline-flex;
   min-width: 0;
@@ -1387,6 +1429,16 @@
   letter-spacing: 0.04em;
 }
 
+.members-crm__country {
+  overflow-wrap: anywhere;
+}
+
+.members-crm__cell-value {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .members-crm__badge {
   display: inline-flex;
   min-height: 26px;
@@ -1399,6 +1451,10 @@
   font-weight: 750;
   line-height: 1;
   white-space: nowrap;
+}
+
+.members-crm__badge > span {
+  min-width: 0;
 }
 
 .members-crm__badge--confirmed,
@@ -1484,10 +1540,9 @@
 .members-crm__skeleton-row {
   display: grid;
   min-height: 68px;
-  grid-template-columns: minmax(190px, 1.5fr) minmax(120px, 1fr) 70px minmax(
-      90px,
-      0.8fr
-    ) repeat(2, 100px) minmax(110px, 0.9fr);
+  grid-template-columns:
+    minmax(190px, 1.5fr) minmax(120px, 1fr) 70px minmax(90px, 0.8fr)
+    repeat(2, 100px) minmax(110px, 0.9fr);
   align-items: center;
   gap: 14px;
   padding: 10px 20px;
@@ -1605,6 +1660,7 @@
   }
 
   .members-crm__directory-search,
+  .members-crm__mobile-sort,
   .members-crm__directory-filters {
     width: 100%;
     min-width: 0;
@@ -1616,9 +1672,15 @@
 
   .members-crm__directory-search input,
   .members-crm__filter-control select,
+  .members-crm__mobile-sort select,
   .members-crm__directory-action {
     min-height: 44px;
     height: 44px;
+  }
+
+  .members-crm__mobile-sort {
+    display: grid;
+    gap: 5px;
   }
 
   .members-crm__directory-filters {
@@ -1646,13 +1708,7 @@
   }
 
   .members-crm__table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
+    display: none;
   }
 
   .members-crm__table tbody {
@@ -1663,9 +1719,10 @@
 
   .members-crm__directory-row {
     display: grid;
+    width: 100%;
     min-height: 44px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
     border: 1px solid var(--members-border);
     border-radius: 9px;
     background: var(--members-white);
@@ -1673,11 +1730,19 @@
   }
 
   .members-crm__directory-row--selected {
+    background: #eef5ff;
     border-color: color-mix(
       in srgb,
       var(--members-blue) 45%,
       var(--members-border)
     );
+    box-shadow:
+      inset 4px 0 0 var(--members-blue),
+      0 2px 8px rgba(15, 31, 56, 0.035);
+  }
+
+  .members-crm__directory-row--selected:hover {
+    background: #e8f1ff;
   }
 
   .members-crm__table td,
@@ -1696,6 +1761,14 @@
     padding: 8px 10px;
     border: 0;
     font-size: 11px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .members-crm__table td > * {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   .members-crm__table td::before {
@@ -1725,7 +1798,7 @@
   .members-crm__table td:nth-child(5),
   .members-crm__table td:nth-child(6),
   .members-crm__table td:nth-child(7) {
-    grid-column: span 1;
+    grid-column: 1 / -1;
   }
 
   .members-crm__table td:nth-child(7) {
@@ -1733,7 +1806,46 @@
   }
 
   .members-crm__person {
+    width: 100%;
+    min-width: 0;
     gap: 9px;
+  }
+
+  .members-crm__person-copy {
+    overflow-wrap: anywhere;
+  }
+
+  .members-crm__person-copy strong,
+  .members-crm__person-copy span {
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .members-crm__country {
+    flex-wrap: wrap;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .members-crm__badge {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+  }
+
+  .members-crm__table time {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .members-crm__cell-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .members-crm__directory-state {
