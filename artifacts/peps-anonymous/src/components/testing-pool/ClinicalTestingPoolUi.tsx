@@ -32,7 +32,7 @@ export function ClinicalPanel({
     <section className={`clinical-panel ${className}`.trim()}>
       <header className="clinical-panel__head">
         <h3>{title}</h3>
-        {meta ? <div className="clinical-panel__meta">{meta}</div> : null}
+        {meta != null ? <div className="clinical-panel__meta">{meta}</div> : null}
       </header>
       <div className="clinical-panel__body">{children}</div>
     </section>
@@ -127,7 +127,7 @@ export function ThresholdStepGrid({
 
         return (
           <article
-            key={`${threshold.label}-${threshold.amount}`}
+            key={`${threshold.label}-${threshold.amount}-${index}`}
             data-state={threshold.state}
           >
             <div className="clinical-testing__threshold-head">
@@ -163,12 +163,12 @@ export function VoteLeaderboard({
   const rows = buildLeaderboardRows(votes, totalVotes);
 
   return (
-    <div className="clinical-testing__leaderboard" aria-label="Testing vote leaderboard">
+    <ol className="clinical-testing__leaderboard" aria-label="Testing vote leaderboard">
       {rows.map(row => {
         const visualPercentage = Math.min(100, Math.max(0, row.percentage));
 
         return (
-          <article key={`${row.peptideName}-${row.rank}`}>
+          <li key={`${row.peptideName}-${row.rank}`}>
             <span className="clinical-testing__rank">
               {String(row.rank).padStart(2, "0")}
             </span>
@@ -189,11 +189,11 @@ export function VoteLeaderboard({
               <i aria-hidden="true" style={{ width: `${visualPercentage}%` }} />
             </div>
             <span className="clinical-testing__vote-value">
-              {row.totalVotes.toLocaleString("en-US")} votes · {row.percentage}%
+              {row.totalVotes.toLocaleString("en-US")} votes · {visualPercentage}%
             </span>
-          </article>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }

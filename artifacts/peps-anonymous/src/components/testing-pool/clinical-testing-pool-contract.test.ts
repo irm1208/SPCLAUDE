@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 function readSibling(fileName: string): string {
   return readFileSync(new URL(fileName, import.meta.url), "utf8");
@@ -34,8 +35,11 @@ test("ClinicalPoolGauge keeps its typed, presentation-only public contract", () 
 test("ClinicalPoolGauge exposes accessible progress and complete SVG telemetry", () => {
   const source = readSibling("ClinicalPoolGauge.tsx");
 
+  assert.match(source, /\buseId\(\)/);
+  assert.match(source, /className="clinical-pool-gauge__progress"/);
   assert.match(source, /role="progressbar"/);
   assert.match(source, /aria-label=\{fundingLabel\}/);
+  assert.match(source, /aria-describedby=\{descriptionId\}/);
   assert.match(source, /model\.raised/);
   assert.match(source, /model\.goal/);
   assert.match(source, /aria-valuemin=\{0\}/);
@@ -92,6 +96,7 @@ test("ClinicalTestingPoolUi exports typed clinical command primitives", () => {
   assert.match(source, /status\s*}:\s*\{\s*status:\s*string\s*\}/);
   assert.match(source, /export interface ThresholdStepGridProps\s*\{/);
   assert.match(source, /export interface VoteLeaderboardProps\s*\{/);
+  assert.match(source, /meta != null/);
 });
 
 test("status, threshold, and leaderboard primitives expose their visible states", () => {
@@ -113,8 +118,12 @@ test("status, threshold, and leaderboard primitives expose their visible states"
   assert.match(source, /"Locked"/);
   assert.match(source, /threshold\.remaining/);
   assert.match(source, /target \$\{money\(threshold\.amount, currency\)\}/);
+  assert.match(source, /key=\{`\$\{threshold\.label\}-\$\{threshold\.amount\}-\$\{index\}`\}/);
 
   assert.match(source, /\bbuildLeaderboardRows\(votes, totalVotes\)/);
+  assert.match(source, /<ol\s+className="clinical-testing__leaderboard"/);
+  assert.match(source, /<li key=\{`\$\{row\.peptideName\}-\$\{row\.rank\}`\}>/);
+  assert.match(source, /\{visualPercentage\}%/);
   for (const hook of [
     "row.rank",
     "row.peptideName",
@@ -137,6 +146,9 @@ test("clinical testing pool styles are Peps-branded and component-scoped", () =>
     "#0F1F38",
     "#F8FAFC",
     "#E9A020",
+    "#64748B",
+    "#15803D",
+    "#92400E",
   ]) {
     assert.ok(source.includes(token), `missing Peps brand token ${token}`);
   }
@@ -166,6 +178,18 @@ test("clinical testing pool styles are Peps-branded and component-scoped", () =>
     source,
     /(?:^|[{}])\s*(?:button|a|input|select|textarea|svg|path|section|article|ol|li|h[1-6])(?=[\s,.:#\[{])[^{}]*\{/,
   );
+  assert.match(source, /\.clinical-pool-gauge__progress\s*>\s*svg\s*\{/);
+  assert.doesNotMatch(source, /\.clinical-pool-gauge\s+svg\s*\{/);
+  assert.match(
+    source,
+    /\.clinical-pool-gauge__check\s*\{[^}]*width:\s*14px;[^}]*height:\s*14px;/s,
+  );
+  assert.match(
+    source,
+    /\.clinical-testing__leaderboard\s*\{[^}]*list-style:\s*none;/s,
+  );
+  assert.match(source, /\.clinical-testing__leaderboard li\s*\{/);
+  assert.doesNotMatch(source, /\.clinical-testing__leaderboard article/);
 });
 
 test("clinical testing pool styles own responsive, focus, target, and motion behavior", () => {
@@ -178,4 +202,92 @@ test("clinical testing pool styles own responsive, focus, target, and motion beh
   assert.match(source, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(source, /animation-duration:\s*0\.01ms\s*!important/);
   assert.match(source, /transition-duration:\s*0\.01ms\s*!important/);
+});
+
+test("SSR markup preserves progress descriptions, bounded labels, and list semantics", async t => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createServer } = await import("vite");
+  const server = await createServer({
+    root: fileURLToPath(new URL("../../../", import.meta.url)),
+    configFile: false,
+    esbuild: { jsx: "automatic" },
+    logLevel: "silent",
+    server: { middlewareMode: true },
+    appType: "custom",
+  });
+  t.after(() => server.close());
+
+  const gaugeModule = await server.ssrLoadModule(
+    "/src/components/testing-pool/ClinicalPoolGauge.tsx",
+  );
+  const uiModule = await server.ssrLoadModule(
+    "/src/components/testing-pool/ClinicalTestingPoolUi.tsx",
+  );
+  const longLabel = "Independent identity purity sterility endotoxin confirmation panel";
+  const milestones = [
+    { label: longLabel, amount: 100, type: "test" },
+    { label: "Secondary verification", amount: 200, type: "test" },
+    { label: "Additional vials", amount: 300, type: "vial", vialNum: 10 },
+  ];
+  const gaugeMarkup = renderToStaticMarkup(createElement(
+    gaugeModule.ClinicalPoolGauge,
+    {
+      raised: 150,
+      milestones,
+      contributorCount: 23,
+      statusLabel: "Funding and voting open",
+      active: true,
+    },
+  ));
+
+  const descriptionId = gaugeMarkup.match(/aria-describedby="([^"]+)"/)?.[1];
+  assert.ok(descriptionId, "progressbar must reference a description");
+  assert.ok(gaugeMarkup.includes(`id="${descriptionId}"`));
+  const progressMarkup = gaugeMarkup.match(
+    /<div class="clinical-pool-gauge__progress"[\s\S]*?<\/div>/,
+  )?.[0];
+  assert.ok(progressMarkup, "missing dedicated progress element");
+  assert.match(progressMarkup, /role="progressbar"/);
+  assert.doesNotMatch(progressMarkup, /clinical-testing__sr-only/);
+  assert.match(
+    progressMarkup,
+    /aria-valuetext="\$150 of \$300 funded; 50% funded; 23 contributors; Funding and voting open"/,
+  );
+  assert.ok(gaugeMarkup.includes(longLabel), "full threshold label must remain accessible");
+
+  const visualLabels = [...gaugeMarkup.matchAll(
+    /<text class="clinical-pool-gauge__threshold-name" x="([^"]+)"[^>]*>([^<]*)<\/text>/g,
+  )];
+  assert.equal(visualLabels.length, milestones.length);
+  for (const [, x] of visualLabels) {
+    assert.ok(Number(x) >= 116 && Number(x) <= 304, `label x ${x} is outside safe bounds`);
+  }
+  assert.ok(
+    visualLabels.some(([, , label]) => label.endsWith("…")),
+    "a long visual label must be truncated",
+  );
+  assert.ok(visualLabels.every(([, , label]) => label !== longLabel));
+
+  const leaderboardMarkup = renderToStaticMarkup(createElement(
+    uiModule.VoteLeaderboard,
+    {
+      votes: [{ peptideName: "BPC-157 5mg", totalVotes: 3, vials: {} }],
+      totalVotes: 2,
+    },
+  ));
+  assert.match(
+    leaderboardMarkup,
+    /^<ol class="clinical-testing__leaderboard" aria-label="Testing vote leaderboard">/,
+  );
+  assert.match(leaderboardMarkup, /<li>/);
+  assert.doesNotMatch(leaderboardMarkup, /<article>/);
+  assert.match(leaderboardMarkup, /aria-valuenow="100"/);
+  assert.match(leaderboardMarkup, />3 votes · 100%<\/span>/);
+
+  const panelMarkup = renderToStaticMarkup(createElement(
+    uiModule.ClinicalPanel,
+    { title: "Round health", meta: "", children: "Ready" },
+  ));
+  assert.match(panelMarkup, /<div class="clinical-panel__meta"><\/div>/);
 });

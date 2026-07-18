@@ -6,11 +6,13 @@
   --clinical-ink: #0F1F38;
   --clinical-body: #374151;
   --clinical-muted: #6B7280;
-  --clinical-subtle: #8A9AAA;
+  --clinical-subtle: #64748B;
   --clinical-border: #D0DAE4;
   --clinical-canvas: #F8FAFC;
   --clinical-amber: #E9A020;
+  --clinical-amber-text: #92400E;
   --clinical-green: #16A34A;
+  --clinical-green-text: #15803D;
   color: var(--clinical-ink);
   font-family: "Inter", "Avenir Next", system-ui, sans-serif;
 }
@@ -88,7 +90,7 @@
 
 .clinical-testing__metrics span {
   display: block;
-  color: var(--clinical-subtle, #8A9AAA);
+  color: var(--clinical-subtle, #64748B);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.11em;
@@ -186,7 +188,7 @@
   max-width: 450px;
 }
 
-.clinical-pool-gauge svg {
+.clinical-pool-gauge__progress > svg {
   display: block;
   width: 100%;
   height: auto;
@@ -258,7 +260,9 @@
 }
 
 .clinical-pool-gauge__check {
-  color: var(--clinical-green, #16A34A);
+  width: 14px;
+  height: 14px;
+  stroke: var(--clinical-green, #16A34A);
   filter: drop-shadow(0 1px 1px rgba(22, 163, 74, 0.18));
 }
 
@@ -327,7 +331,7 @@
   align-items: flex-start;
   gap: 9px;
   padding: 5px 4px;
-  color: var(--clinical-subtle, #8A9AAA);
+  color: var(--clinical-subtle, #64748B);
 }
 
 .clinical-testing__status-rail li:not(:last-child)::after {
@@ -349,7 +353,7 @@
   border: 1px solid #DCE5ED;
   border-radius: 50%;
   background: #EDF2F7;
-  color: var(--clinical-subtle, #8A9AAA);
+  color: var(--clinical-subtle, #64748B);
   font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
   font-weight: 800;
@@ -373,13 +377,13 @@
 }
 
 .clinical-testing__status-rail li[data-state="complete"] {
-  color: var(--clinical-green, #16A34A);
+  color: var(--clinical-green-text, #15803D);
 }
 
 .clinical-testing__status-rail li[data-state="complete"] .clinical-testing__stage-marker {
   border-color: #A7DFB6;
   background: #F0FDF4;
-  color: var(--clinical-green, #16A34A);
+  color: var(--clinical-green-text, #15803D);
 }
 
 .clinical-testing__status-rail li > div {
@@ -446,7 +450,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: var(--clinical-amber, #E9A020);
+  color: var(--clinical-amber-text, #92400E);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -455,7 +459,7 @@
 }
 
 .clinical-testing__threshold-grid article[data-state="unlocked"] .clinical-testing__threshold-head {
-  color: var(--clinical-green, #16A34A);
+  color: var(--clinical-green-text, #15803D);
 }
 
 .clinical-testing__threshold-head svg {
@@ -487,7 +491,13 @@
   line-height: 1.45;
 }
 
-.clinical-testing__leaderboard article {
+.clinical-testing__leaderboard {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clinical-testing__leaderboard li {
   display: grid;
   grid-template-columns: 30px minmax(120px, 1fr) minmax(90px, 1.45fr) minmax(86px, auto);
   gap: 11px;
@@ -496,12 +506,12 @@
   border-bottom: 1px solid #E6EDF4;
 }
 
-.clinical-testing__leaderboard article:last-child {
+.clinical-testing__leaderboard li:last-child {
   border-bottom: 0;
 }
 
 .clinical-testing__rank {
-  color: var(--clinical-subtle, #8A9AAA);
+  color: var(--clinical-subtle, #64748B);
   font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -634,7 +644,7 @@
     min-height: 0;
   }
 
-  .clinical-testing__leaderboard article {
+  .clinical-testing__leaderboard li {
     grid-template-columns: 26px minmax(0, 1fr) minmax(78px, auto);
     row-gap: 8px;
     padding-block: 13px;
