@@ -304,8 +304,8 @@ test("member CRM shell carries campaign styling and reduced motion", () => {
 
   assert.match(shell, /Winter Peptide Run 2025/);
   assert.match(styles, /prefers-reduced-motion/);
-  assert.match(styles, /#1B3A7A/);
-  assert.match(styles, /#2D6BCC/);
+  assert.match(styles, /#1B3A7A/i);
+  assert.match(styles, /#2D6BCC/i);
 });
 
 test("member CRM shell exposes accessible mobile navigation contracts", () => {
