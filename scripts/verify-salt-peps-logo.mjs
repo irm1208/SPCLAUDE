@@ -73,6 +73,10 @@ function documentBody(source) {
     .replace(/^(?:<!--[\s\S]*?-->\s*)*/, "");
 }
 
+function stripXmlComments(source) {
+  return source.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 function collectPaintValues(source) {
   const values = [];
 
@@ -89,8 +93,19 @@ function collectPaintValues(source) {
 
 function validateSvg(fileName, expectedViewBox, source) {
   const failures = [];
-  const body = documentBody(source);
+  const sourceWithoutComments = stripXmlComments(source);
+  const body = documentBody(sourceWithoutComments);
   const rootOpening = body.match(/^<svg\b([^>]*)>/);
+  const svgOpeningCount = (sourceWithoutComments.match(/<svg\b[^>]*>/g) ?? [])
+    .length;
+  const svgClosingCount = (sourceWithoutComments.match(/<\/svg>/g) ?? [])
+    .length;
+
+  if (svgOpeningCount !== 1 || svgClosingCount !== 1) {
+    failures.push(
+      `must contain exactly one <svg> opening and closing tag (found ${svgOpeningCount} opening, ${svgClosingCount} closing)`,
+    );
+  }
 
   if (!rootOpening) {
     failures.push("must begin with an <svg> root element");
@@ -114,20 +129,25 @@ function validateSvg(fileName, expectedViewBox, source) {
     }
   }
 
-  const pathCount = (source.match(/<\s*(?:[A-Za-z_][\w.-]*:)?path\b/g) ?? [])
-    .length;
+  const pathCount = (
+    sourceWithoutComments.match(/<\s*(?:[A-Za-z_][\w.-]*:)?path\b/g) ?? []
+  ).length;
   if (pathCount === 0) {
     failures.push("must contain at least one <path> element");
   }
 
   for (const [description, pattern] of forbiddenFeatures) {
-    if (pattern.test(source)) {
+    if (pattern.test(sourceWithoutComments)) {
       failures.push(`must not contain ${description}`);
     }
   }
 
+  if (/\s(?:href|xlink:href)\s*=/i.test(sourceWithoutComments)) {
+    failures.push("must not contain href or xlink:href attributes");
+  }
+
   const externalUrls = [
-    ...new Set(source.match(/https?:\/\/[^\s"'<>)]*/gi) ?? []),
+    ...new Set(sourceWithoutComments.match(/https?:\/\/[^\s"'<>)]*/gi) ?? []),
   ].filter((url) => !allowedNamespaceUrls.has(url));
   if (externalUrls.length > 0) {
     failures.push(`contains external URL(s): ${externalUrls.join(", ")}`);
@@ -142,7 +162,9 @@ function validateSvg(fileName, expectedViewBox, source) {
 
   const colors = [
     ...new Set(
-      (source.match(hexColorPattern) ?? []).map((color) => color.toUpperCase()),
+      (sourceWithoutComments.match(hexColorPattern) ?? []).map((color) =>
+        color.toUpperCase(),
+      ),
     ),
   ];
   const unapprovedColors = colors.filter((color) => !allowedColors.has(color));
@@ -156,7 +178,7 @@ function validateSvg(fileName, expectedViewBox, source) {
     failures.push("must contain at least one approved hex palette color");
   }
 
-  const nonHexPaintValues = collectPaintValues(source).filter(
+  const nonHexPaintValues = collectPaintValues(sourceWithoutComments).filter(
     (value) =>
       value.toLowerCase() !== "none" && !exactHexColorPattern.test(value),
   );
