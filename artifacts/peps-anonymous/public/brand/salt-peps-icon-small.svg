@@ -1,11 +1,11 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  aria-labelledby="salt-peps-icon-small-title salt-peps-icon-small-description"
+  aria-label="SALT&amp;PEPS small icon"
   role="img"
   viewBox="0 0 64 64"
 >
-  <title id="salt-peps-icon-small-title">SALT and PEPS small icon</title>
-  <desc id="salt-peps-icon-small-description">
+  <title>SALT&amp;PEPS small icon</title>
+  <desc>
     A simplified SALT and PEPS peptide-bond ampersand for small sizes.
   </desc>
   <g>

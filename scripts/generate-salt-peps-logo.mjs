@@ -108,14 +108,22 @@ function renderMark({ accent, primary, small = false, transform }) {
   </g>`;
 }
 
-function svgDocument({ body, description, fileName, title, viewBox }) {
-  const metadataId = fileName.replace(/\.svg$/, "");
-  const titleId = `${metadataId}-title`;
-  const descriptionId = `${metadataId}-description`;
+function escapeXml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" role="img" aria-labelledby="${titleId} ${descriptionId}">
-  <title id="${titleId}">${title}</title>
-  <desc id="${descriptionId}">${description}</desc>
+function svgDocument({ body, description, title, viewBox }) {
+  const escapedTitle = escapeXml(title);
+  const escapedDescription = escapeXml(description);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" role="img" aria-label="${escapedTitle}">
+  <title>${escapedTitle}</title>
+  <desc>${escapedDescription}</desc>
   ${body}
 </svg>`;
 }
@@ -138,7 +146,7 @@ const assets = [
     description:
       "A peptide-bond ampersand with two blue carbonyl groups for SALT and PEPS.",
     fileName: "salt-peps-icon.svg",
-    title: "SALT and PEPS icon",
+    title: "SALT&PEPS icon",
     viewBox: "0 0 64 64",
   },
   {
@@ -146,14 +154,14 @@ const assets = [
     description:
       "The white SALT and PEPS peptide-bond ampersand for dark backgrounds.",
     fileName: "salt-peps-icon-reverse.svg",
-    title: "SALT and PEPS reverse icon",
+    title: "SALT&PEPS reverse icon",
     viewBox: "0 0 64 64",
   },
   {
     body: renderMark({ primary: palette.mono, accent: palette.mono }),
     description: "The single-color SALT and PEPS peptide-bond ampersand.",
     fileName: "salt-peps-icon-mono.svg",
-    title: "SALT and PEPS monochrome icon",
+    title: "SALT&PEPS monochrome icon",
     viewBox: "0 0 64 64",
   },
   {
@@ -165,7 +173,7 @@ const assets = [
     description:
       "A simplified SALT and PEPS peptide-bond ampersand for small sizes.",
     fileName: "salt-peps-icon-small.svg",
-    title: "SALT and PEPS small icon",
+    title: "SALT&PEPS small icon",
     viewBox: "0 0 64 64",
   },
   {
@@ -178,7 +186,7 @@ const assets = [
     description:
       "The white SALT and PEPS peptide-bond icon on a deep navy square.",
     fileName: "salt-peps-social.svg",
-    title: "SALT and PEPS social icon",
+    title: "SALT&PEPS social icon",
     viewBox: "0 0 180 180",
   },
 ];

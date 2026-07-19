@@ -1,13 +1,11 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  aria-labelledby="salt-peps-social-title salt-peps-social-description"
+  aria-label="SALT&amp;PEPS social icon"
   role="img"
   viewBox="0 0 180 180"
 >
-  <title id="salt-peps-social-title">SALT and PEPS social icon</title>
-  <desc id="salt-peps-social-description">
-    The white SALT and PEPS peptide-bond icon on a deep navy square.
-  </desc>
+  <title>SALT&amp;PEPS social icon</title>
+  <desc>The white SALT and PEPS peptide-bond icon on a deep navy square.</desc>
   <path
     fill="#1B3164"
     d="M18 0h144a18 18 0 0 1 18 18v144a18 18 0 0 1-18 18H18a18 18 0 0 1-18-18V18A18 18 0 0 1 18 0Z"
