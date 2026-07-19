@@ -1,0 +1,31 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  aria-labelledby="title description"
+  role="img"
+  viewBox="0 0 64 64"
+>
+  <title id="title">SALT and PEPS icon</title>
+  <desc id="description">
+    A peptide-bond ampersand with two blue carbonyl groups for SALT and PEPS.
+  </desc>
+  <g>
+    <path
+      fill="none"
+      stroke="#1B3A7A"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="7.25"
+      d="M 49 44 L 43 51 L 36 56 L 28 57 L 21 53 L 19 47 L 23 41 L 31 35 L 40 29 L 45 23 L 46 16 L 41 10 L 32 7 L 23 9 L 18 15 L 18 22 L 23 28 L 43 50 L 49 56"
+    />
+    <path
+      fill="none"
+      stroke="#1B3A7A"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2.25"
+      d="M 43.8 21.4 55.5 13.5 M 45.7 24 57.2 16.2 M 23.2 40.6 8.4 44.8 M 24.1 43.4 9.2 47.6"
+    />
+    <path fill="#2D6BCC" d="M57 10.75 60.75 14.5 57 18.25 53.25 14.5Z" />
+    <path fill="#2D6BCC" d="M7 43.25 10.75 47 7 50.75 3.25 47Z" />
+  </g>
+</svg>
