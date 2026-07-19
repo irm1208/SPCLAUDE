@@ -1,11 +1,35 @@
-import { useState, useEffect, useRef } from "react";
-import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, AlertCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, AlertCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload, SlidersHorizontal } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { V2_CARD_BORDER } from "./theme";
 import { fmtMoney } from "./data";
-import { loadGb, saveGb } from "./storage";
-import { SavedViewsSidebar, useSavedViews } from "./SavedViews";
+import { organiserApi } from "./api/organiser-api";
 import { useOrderRepository, useOrders } from "./domain/repository-context";
 import type { OrganiserOrder as Order, OrderStatus } from "./domain/order";
+import {
+  cloneOrderFilters,
+  countActiveOrderFilterCategories,
+  createOrderFilterChips,
+  filterOrders,
+  validateOrderFilterDates,
+  type OrderFilterChipId,
+  type OrderFilterValues,
+  type OrderSortOrder,
+  type OrderStatusFilter,
+} from "./orders-filter-model";
+import {
+  AtlasDataTable,
+  AtlasDrawerSection,
+  AtlasEmptyState,
+  AtlasPerson,
+  AtlasQuickViewDrawer,
+  AtlasStatusBadge,
+  type AtlasColumn,
+  type AtlasStatusTone,
+} from "./AtlasUi";
+import OrdersMobileWorkspace from "./OrdersMobileWorkspace";
+import OrdersFilterSurface from "./OrdersFilterSurface";
+import { applyMobileOrderAction, buildMobileOrdersModel, type MobileOrderAction, type MobileOrderView } from "./orders-mobile-model";
 
 // Relative time for the card header, e.g. "03 min ago"
 function timeAgo(iso: string): string {
@@ -32,19 +56,60 @@ const STATUS_CONFIG = {
   dispatched: { label: "Dispatched", color: "#1B3A7A", bg: "rgba(27,58,122,0.10)", icon: Truck },
 };
 
-export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?: string; highlightId?: string } = {}) {
+const STATUS_FILTER_OPTIONS = [
+  { value: "paid", label: "Paid" },
+  { value: "unpaid", label: "Unpaid" },
+  { value: "pending-confirmation", label: "Pending payment confirmation" },
+  { value: "ready-dispatch", label: "Ready to dispatch" },
+  { value: "completed", label: "Completed" },
+] as const satisfies ReadonlyArray<{ value: OrderStatusFilter; label: string }>;
+
+const DEFAULT_FILTER_VALUES: OrderFilterValues = {
+  statusFilters: ["all"],
+  countryFilters: [],
+  paymentMethodFilters: [],
+  orderDateFrom: "",
+  orderDateTo: "",
+  paymentDateFrom: "",
+  paymentDateTo: "",
+  sortOrder: "newest",
+};
+
+function atlasOrderTone(status: OrderStatus): AtlasStatusTone {
+  if (status === "pending") return "warning";
+  if (status === "cancelled") return "danger";
+  if (status === "paid" || status === "delivered") return "success";
+  if (status === "processing" || status === "shipped") return "info";
+  return "navy";
+}
+
+export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void } = {}) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilters, setStatusFilters] = useState<string[]>(["all"]);
+  const [statusFilters, setStatusFilters] = useState<OrderStatusFilter[]>(["all"]);
   const [countryFilters, setCountryFilters] = useState<string[]>([]);
   const [paymentMethodFilters, setPaymentMethodFilters] = useState<string[]>([]);
   const [orderDateFrom, setOrderDateFrom] = useState("");
   const [orderDateTo, setOrderDateTo] = useState("");
   const [paymentDateFrom, setPaymentDateFrom] = useState("");
   const [paymentDateTo, setPaymentDateTo] = useState("");
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortOrder, setSortOrder] = useState<OrderSortOrder>("newest");
+  const [filterStudioOpen, setFilterStudioOpen] = useState(false);
+  const filterToggleRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState<MobileOrderView>("needs-action");
+  const [draftFilters, setDraftFilters] = useState<OrderFilterValues>(() => (
+    cloneOrderFilters(DEFAULT_FILTER_VALUES)
+  ));
+
+  useEffect(() => {
+    if (isMobile && filterStudioOpen && mobileView !== "all") {
+      setMobileView("all");
+    }
+  }, [isMobile, filterStudioOpen, mobileView]);
 
   const orderRepository = useOrderRepository();
   const orders = useOrders();
+  const mobileModel = useMemo(() => buildMobileOrdersModel(orders), [orders]);
 
   // Highlight specific order if passed via highlightId
   useEffect(() => {
@@ -57,14 +122,9 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
     }
   }, [highlightId]);
 
-  // Dropdown open states
-  const [filtersDropdownOpen, setFiltersDropdownOpen] = useState(false);
-  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
-  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
-  const [paymentDropdownOpen, setPaymentDropdownOpen] = useState(false);
-
   // Edit modal
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [quickViewOrder, setQuickViewOrder] = useState<Order | null>(null);
   const [editStatus, setEditStatus] = useState("");
   const [editTrackingNumber, setEditTrackingNumber] = useState("");
   const [editInternalNotes, setEditInternalNotes] = useState("");
@@ -101,10 +161,6 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   const [csvImporting, setCsvImporting] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  // Saved Views
-  const { views, activeViewId, setActiveViewId, createView, deleteView, getActiveView } =
-    useSavedViews(`v2:orders:savedViews:${selectedGbId}`);
-
   // Expanded orders
   const [expandedOrders, setExpandedOrders] = useState<string[]>([]);
 
@@ -120,77 +176,34 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
   ).map(s => JSON.parse(s));
 
   // Get unique countries and payment methods from orders (for filters)
-  const uniqueCountries = Array.from(new Set(orders.map(o => o.country)));
-  const uniquePaymentMethods = Array.from(new Set(orders.map(o => o.paymentMethod)));
+  const uniqueCountries = useMemo(
+    () => Array.from(new Set(orders.map(order => order.country))).sort(),
+    [orders],
+  );
+  const uniquePaymentMethods = useMemo(
+    () => Array.from(new Set(orders.map(order => order.paymentMethod))).sort(),
+    [orders],
+  );
 
-  const toggleFilter = (value: string, current: string[], setter: (v: string[]) => void) => {
-    if (value === "all") {
-      setter(["all"]);
-    } else {
-      const newFilters = current.includes(value)
-        ? current.filter(v => v !== value)
-        : [...current.filter(v => v !== "all"), value];
-      setter(newFilters.length === 0 ? ["all"] : newFilters);
-    }
-  };
-
-  // Apply saved view filters
-  useEffect(() => {
-    const view = getActiveView();
-    if (view) {
-      // Apply filters from saved view
-      if (view.filters.statusFilters) setStatusFilters(view.filters.statusFilters);
-      if (view.filters.countryFilters) setCountryFilters(view.filters.countryFilters);
-      if (view.filters.paymentMethodFilters) setPaymentMethodFilters(view.filters.paymentMethodFilters);
-      if (view.filters.searchQuery !== undefined) setSearchQuery(view.filters.searchQuery);
-      if (view.filters.orderDateFrom !== undefined) setOrderDateFrom(view.filters.orderDateFrom);
-      if (view.filters.orderDateTo !== undefined) setOrderDateTo(view.filters.orderDateTo);
-      if (view.filters.paymentDateFrom !== undefined) setPaymentDateFrom(view.filters.paymentDateFrom);
-      if (view.filters.paymentDateTo !== undefined) setPaymentDateTo(view.filters.paymentDateTo);
-      if (view.filters.sortOrder) setSortOrder(view.filters.sortOrder);
-    }
-  }, [activeViewId]);
-
-  // Get current filters for saving
-  const currentFilters = {
+  const appliedFilters = useMemo<OrderFilterValues>(() => ({
     statusFilters,
     countryFilters,
     paymentMethodFilters,
-    searchQuery,
     orderDateFrom,
     orderDateTo,
     paymentDateFrom,
     paymentDateTo,
     sortOrder,
-  };
-
-  // Update badge counts for saved views
-  const viewsWithBadges = views.map(view => {
-    // Calculate count by applying view's filters
-    const count = orders.filter(order => {
-      const filters = view.filters;
-
-      const matchesSearch = !filters.searchQuery ||
-        order.memberUsername.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        order.memberName.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        order.id.toLowerCase().includes(filters.searchQuery.toLowerCase());
-
-      const matchesStatus = !filters.statusFilters || filters.statusFilters.includes("all") ||
-        (filters.statusFilters.includes("paid") && order.status === "paid") ||
-        (filters.statusFilters.includes("unpaid") && order.status === "pending") ||
-        (filters.statusFilters.includes("pending-confirmation") && order.status === "processing");
-
-      const matchesCountry = !filters.countryFilters || filters.countryFilters.length === 0 ||
-        filters.countryFilters.includes(order.country);
-
-      const matchesPaymentMethod = !filters.paymentMethodFilters || filters.paymentMethodFilters.length === 0 ||
-        filters.paymentMethodFilters.includes(order.paymentMethod);
-
-      return matchesSearch && matchesStatus && matchesCountry && matchesPaymentMethod;
-    }).length;
-
-    return { ...view, badge: count };
-  });
+  }), [
+    statusFilters,
+    countryFilters,
+    paymentMethodFilters,
+    orderDateFrom,
+    orderDateTo,
+    paymentDateFrom,
+    paymentDateTo,
+    sortOrder,
+  ]);
 
   const openEditModal = (order: Order) => {
     setEditingOrder(order);
@@ -319,19 +332,21 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
       },
     );
 
-    const existingTodos = loadGb<any[]>(selectedGbId, "todos", [], "todos");
     const newTodo = {
       id: String(Date.now()),
       title: `Task for ${selectedOrders.length} order${selectedOrders.length !== 1 ? "s" : ""}: ${selectedOrders.join(", ")}`,
       description: bulkTaskNote,
-      status: "todo",
+      status: "todo" as const,
       dueDate: bulkTaskDueDate,
       dueTime: bulkTaskDueTime,
       linkedOrderIds: selectedOrders,
       createdAt: new Date().toISOString(),
     };
-    saveGb(selectedGbId, "todos", [newTodo, ...existingTodos]);
-    window.dispatchEvent(new Event("storage"));
+    if (selectedGbId) {
+      organiserApi.createTodo(selectedGbId, newTodo).catch(error => {
+        console.error("Failed to create linked todo", error);
+      });
+    }
 
     setShowBulkTaskModal(false);
     setBulkTaskNote("");
@@ -470,58 +485,179 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
     }
   };
 
-  const filteredOrders = orders
-    .filter(order => {
-      const matchesSearch = order.memberUsername.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           order.memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           (order.paymentProof?.value && order.paymentProof.value.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredOrders = useMemo(
+    () => filterOrders(orders, appliedFilters, searchQuery),
+    [orders, appliedFilters, searchQuery],
+  );
+  const draftPreviewOrders = useMemo(
+    () => filterOrders(orders, draftFilters, searchQuery),
+    [orders, draftFilters, searchQuery],
+  );
+  const draftDateErrors = useMemo(
+    () => validateOrderFilterDates(draftFilters),
+    [draftFilters],
+  );
+  const activeFilterCount = countActiveOrderFilterCategories(appliedFilters);
+  const applyMobileAction = (action: MobileOrderAction) => {
+    const next = applyMobileOrderAction(appliedFilters, action);
+    setStatusFilters([...next.statusFilters]);
+    setDraftFilters(cloneOrderFilters(next));
+    setMobileView("all");
+  };
+  const appliedFilterChips = createOrderFilterChips(appliedFilters);
 
-      const matchesStatus = statusFilters.includes("all") ||
-                           (statusFilters.includes("paid") && order.status === "paid") ||
-                           (statusFilters.includes("unpaid") && order.status === "pending") ||
-                           (statusFilters.includes("pending-confirmation") && order.status === "processing");
+  const openFilterStudio = () => {
+    setDraftFilters(cloneOrderFilters(appliedFilters));
+    setFilterStudioOpen(true);
+  };
 
-      const matchesCountry = countryFilters.length === 0 || countryFilters.includes(order.country);
-      const matchesPaymentMethod = paymentMethodFilters.length === 0 || paymentMethodFilters.includes(order.paymentMethod);
+  const closeFilterStudio = () => {
+    setFilterStudioOpen(false);
+    window.requestAnimationFrame(() => filterToggleRef.current?.focus());
+  };
 
-      // Date filters
-      const orderDate = new Date(order.createdAt);
-      const matchesOrderDate = (!orderDateFrom || orderDate >= new Date(orderDateFrom)) &&
-                              (!orderDateTo || orderDate <= new Date(orderDateTo));
+  const cancelFilterStudio = () => {
+    setDraftFilters(cloneOrderFilters(appliedFilters));
+    closeFilterStudio();
+  };
 
-      const paymentDate = order.paidAt ? new Date(order.paidAt) : null;
-      const matchesPaymentDate = !paymentDateFrom && !paymentDateTo ||
-                                 (paymentDate &&
-                                  (!paymentDateFrom || paymentDate >= new Date(paymentDateFrom)) &&
-                                  (!paymentDateTo || paymentDate <= new Date(paymentDateTo)));
+  const applyDraftFilters = () => {
+    if (Object.keys(draftDateErrors).length > 0) return;
+    setStatusFilters([...draftFilters.statusFilters]);
+    setCountryFilters([...draftFilters.countryFilters]);
+    setPaymentMethodFilters([...draftFilters.paymentMethodFilters]);
+    setOrderDateFrom(draftFilters.orderDateFrom);
+    setOrderDateTo(draftFilters.orderDateTo);
+    setPaymentDateFrom(draftFilters.paymentDateFrom);
+    setPaymentDateTo(draftFilters.paymentDateTo);
+    setSortOrder(draftFilters.sortOrder);
+    closeFilterStudio();
+  };
 
-      return matchesSearch && matchesStatus && matchesCountry && matchesPaymentMethod && matchesOrderDate && matchesPaymentDate;
-    })
-    .sort((a, b) => {
-      const dateA = new Date(a.createdAt).getTime();
-      const dateB = new Date(b.createdAt).getTime();
-      return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
+  const resetDraftFilters = () => {
+    setDraftFilters(current => ({
+      ...current,
+      statusFilters: ["all"],
+      countryFilters: [],
+      paymentMethodFilters: [],
+      orderDateFrom: "",
+      orderDateTo: "",
+      paymentDateFrom: "",
+      paymentDateTo: "",
+      sortOrder,
+    }));
+  };
+
+  const toggleDraftStatus = (value: OrderStatusFilter) => {
+    setDraftFilters(current => {
+      const selected = current.statusFilters.filter(status => status !== "all");
+      const next = selected.includes(value)
+        ? selected.filter(status => status !== value)
+        : [...selected, value];
+      return { ...current, statusFilters: next.length > 0 ? next : ["all"] };
     });
+  };
+
+  const toggleDraftListValue = (
+    key: "countryFilters" | "paymentMethodFilters",
+    value: string,
+  ) => {
+    setDraftFilters(current => ({
+      ...current,
+      [key]: current[key].includes(value)
+        ? current[key].filter(item => item !== value)
+        : [...current[key], value],
+    }));
+  };
+
+  const handleSortChange = (nextSort: OrderSortOrder) => {
+    setSortOrder(nextSort);
+    if (filterStudioOpen) {
+      setDraftFilters(current => ({ ...current, sortOrder: nextSort }));
+    }
+  };
+
+  const clearAppliedFilter = (chipId: OrderFilterChipId) => {
+    if (chipId === "status") {
+      setStatusFilters(["all"]);
+      setDraftFilters(current => ({ ...current, statusFilters: ["all"] }));
+    } else if (chipId === "country") {
+      setCountryFilters([]);
+      setDraftFilters(current => ({ ...current, countryFilters: [] }));
+    } else if (chipId === "payment") {
+      setPaymentMethodFilters([]);
+      setDraftFilters(current => ({ ...current, paymentMethodFilters: [] }));
+    } else if (chipId === "order-date") {
+      setOrderDateFrom("");
+      setOrderDateTo("");
+      setDraftFilters(current => ({ ...current, orderDateFrom: "", orderDateTo: "" }));
+    } else {
+      setPaymentDateFrom("");
+      setPaymentDateTo("");
+      setDraftFilters(current => ({ ...current, paymentDateFrom: "", paymentDateTo: "" }));
+    }
+  };
+
+  const clearAllAppliedFilters = () => {
+    setStatusFilters(["all"]);
+    setCountryFilters([]);
+    setPaymentMethodFilters([]);
+    setOrderDateFrom("");
+    setOrderDateTo("");
+    setPaymentDateFrom("");
+    setPaymentDateTo("");
+    setDraftFilters(current => ({
+      ...current,
+      statusFilters: ["all"],
+      countryFilters: [],
+      paymentMethodFilters: [],
+      orderDateFrom: "",
+      orderDateTo: "",
+      paymentDateFrom: "",
+      paymentDateTo: "",
+    }));
+  };
+
+  const orderColumns: AtlasColumn<Order>[] = [
+    {
+      id: "member",
+      label: "Member",
+      width: "20%",
+      render: order => <AtlasPerson name={order.memberName} username={order.memberUsername} />,
+    },
+    {
+      id: "status",
+      label: "Status",
+      width: "20%",
+      render: order => <AtlasStatusBadge tone={order.status === "pending" ? "warning" : order.status === "cancelled" ? "danger" : order.status === "dispatched" || order.status === "delivered" ? "success" : "info"}>{STATUS_CONFIG[order.status].label}</AtlasStatusBadge>,
+    },
+    { id: "items", label: "Items", width: "21%", render: order => <span className="atlas-muted-cell">{order.products.map(product => `${product.name} × ${product.quantity}`).join(", ") || "No products"}</span> },
+    { id: "total", label: "Total", width: "9%", align: "right", render: order => <strong>{fmtMoney(order.total, "GBP")}</strong> },
+    { id: "payment", label: "Payment", width: "12%", render: order => <span className="atlas-muted-cell">{order.paymentMethod}</span> },
+    { id: "created", label: "Created", width: "11%", align: "right", render: order => <span className="atlas-muted-cell">{new Date(order.createdAt).toLocaleDateString("en-GB")}</span> },
+  ];
 
   return (
-    <>
-    <div className="flex gap-4">
-      {/* Saved Views Sidebar - Desktop only */}
-      <div className="hidden lg:block w-64 shrink-0">
-        <SavedViewsSidebar
-          views={viewsWithBadges}
-          activeViewId={activeViewId}
-          onSelectView={setActiveViewId}
-          onCreateView={createView}
-          onDeleteView={deleteView}
-          currentFilters={currentFilters}
-          storageKey={`v2:orders:savedViews:${selectedGbId}`}
+    <div className="approved-order-desk">
+      <div className="orders-mobile-view">
+        <OrdersMobileWorkspace
+          model={mobileModel}
+          orders={mobileView === "all" ? filteredOrders : orders}
+          view={mobileView}
+          searchQuery={searchQuery}
+          activeFilterCount={activeFilterCount}
+          filterButtonRef={isMobile ? filterToggleRef : undefined}
+          onViewChange={setMobileView}
+          onSearchChange={setSearchQuery}
+          onOpenFilters={openFilterStudio}
+          onChasePayments={() => applyMobileAction("chase-payment")}
+          onOpenDispatch={onOpenDispatch ?? (() => undefined)}
+          onOpenOrder={setQuickViewOrder}
         />
       </div>
-
+      <div className="orders-desktop-view">
       {/* Main content */}
-      <div className="flex-1 space-y-4">
+      <div className="orders-main-content space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -585,205 +721,253 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl p-3 sm:p-4 bg-white space-y-3" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-        {/* Search and controls row */}
-        <div className="flex flex-col gap-2.5">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "var(--t-subtle)" }} />
+      <section className="orders-filter-workspace" aria-label="Order filters">
+        <div className="orders-filter-toolbar">
+          <label className="orders-filter-search">
+            <span className="sr-only">Search orders</span>
+            <Search aria-hidden="true" />
             <input
-              type="text"
-              placeholder="Search by member, username, order ID, or TXID..."
+              type="search"
+              placeholder="Search member, order ID, username or TXID…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-lg text-[13px]"
-              style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
+              onChange={event => setSearchQuery(event.target.value)}
             />
-          </div>
+          </label>
 
-          {/* Filters and Sort row */}
-          <div className="flex gap-2">
-            {/* Filters dropdown */}
-            <div className="relative flex-1">
-              <button
-                onClick={() => setFiltersDropdownOpen(!filtersDropdownOpen)}
-                className="w-full h-10 px-3 sm:px-4 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-2"
-                style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
+          <button
+            ref={!isMobile ? filterToggleRef : undefined}
+            type="button"
+            className="orders-filter-toggle"
+            aria-expanded={filterStudioOpen}
+            aria-controls="orders-filter-studio"
+            onClick={filterStudioOpen ? cancelFilterStudio : openFilterStudio}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            <span>Filters</span>
+            {activeFilterCount > 0 ? (
+              <span
+                className="orders-filter-count"
+                aria-label={`${activeFilterCount} filter categories applied`}
               >
-                Filters
-                <ChevronDown className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-              </button>
-              {filtersDropdownOpen && (
-              <div className="absolute top-full left-0 sm:left-auto sm:right-0 mt-1 rounded-lg bg-white shadow-lg z-10 p-4 w-full sm:w-auto" style={{ border: `1px solid ${V2_CARD_BORDER}`, minWidth: "320px", maxWidth: "100vw" }}>
-                <div className="space-y-4">
-                  {/* Status Filter */}
-                  <div className="relative">
-                    <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Status</label>
-                    <button
-                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                      className="w-full h-10 px-3 pr-8 rounded-lg text-[13px] text-left flex items-center justify-between"
-                      style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
-                    >
-                      <span>{statusFilters.includes("all") ? "All" : `${statusFilters.length} selected`}</span>
-                      <ChevronDown className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-                    </button>
-                    {statusDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 rounded-lg bg-white shadow-lg z-20 p-2" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                        {[
-                          { value: "all", label: "All" },
-                          { value: "paid", label: "Paid" },
-                          { value: "unpaid", label: "Unpaid" },
-                          { value: "pending-confirmation", label: "Pending Payment Confirmation" },
-                        ].map(option => (
-                          <label key={option.value} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              checked={statusFilters.includes(option.value)}
-                              onChange={() => toggleFilter(option.value, statusFilters, setStatusFilters)}
-                              className="w-4 h-4 rounded"
-                              style={{ accentColor: "var(--t-blue)" }}
-                            />
-                            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{option.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                {activeFilterCount}
+              </span>
+            ) : null}
+            <ChevronDown className="orders-filter-chevron" aria-hidden="true" />
+          </button>
 
-                  {/* Country Filter */}
-                  <div className="relative">
-                    <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Country</label>
-                    <button
-                      onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
-                      className="w-full h-10 px-3 pr-8 rounded-lg text-[13px] text-left flex items-center justify-between"
-                      style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
-                    >
-                      <span>{countryFilters.length === 0 ? "All Countries" : `${countryFilters.length} selected`}</span>
-                      <ChevronDown className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-                    </button>
-                    {countryDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 rounded-lg bg-white shadow-lg z-20 p-2" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                        {uniqueCountries.map(country => (
-                          <label key={country} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              checked={countryFilters.includes(country)}
-                              onChange={() => toggleFilter(country, countryFilters, setCountryFilters)}
-                              className="w-4 h-4 rounded"
-                              style={{ accentColor: "var(--t-blue)" }}
-                            />
-                            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{country}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Payment Method Filter */}
-                  <div className="relative">
-                    <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Payment Method</label>
-                    <button
-                      onClick={() => setPaymentDropdownOpen(!paymentDropdownOpen)}
-                      className="w-full h-10 px-3 pr-8 rounded-lg text-[13px] text-left flex items-center justify-between"
-                      style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
-                    >
-                      <span>{paymentMethodFilters.length === 0 ? "All Methods" : `${paymentMethodFilters.length} selected`}</span>
-                      <ChevronDown className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-                    </button>
-                    {paymentDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 rounded-lg bg-white shadow-lg z-20 p-2" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                        {uniquePaymentMethods.map(method => (
-                          <label key={method} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              checked={paymentMethodFilters.includes(method)}
-                              onChange={() => toggleFilter(method, paymentMethodFilters, setPaymentMethodFilters)}
-                              className="w-4 h-4 rounded"
-                              style={{ accentColor: "var(--t-blue)" }}
-                            />
-                            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{method}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Date Filter */}
-                  <div className="pt-3 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-                    <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Date</label>
-                    <div className="space-y-3">
-                      {/* Order Date */}
-                      <div>
-                        <div className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>Order Date</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="date"
-                            value={orderDateFrom}
-                            onChange={(e) => setOrderDateFrom(e.target.value)}
-                            placeholder="From"
-                            className="w-full h-9 px-2 rounded-md text-[12px]"
-                            style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                          />
-                          <input
-                            type="date"
-                            value={orderDateTo}
-                            onChange={(e) => setOrderDateTo(e.target.value)}
-                            placeholder="To"
-                            className="w-full h-9 px-2 rounded-md text-[12px]"
-                            style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Payment Date */}
-                      <div>
-                        <div className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>Payment Date</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="date"
-                            value={paymentDateFrom}
-                            onChange={(e) => setPaymentDateFrom(e.target.value)}
-                            placeholder="From"
-                            className="w-full h-9 px-2 rounded-md text-[12px]"
-                            style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                          />
-                          <input
-                            type="date"
-                            value={paymentDateTo}
-                            onChange={(e) => setPaymentDateTo(e.target.value)}
-                            placeholder="To"
-                            className="w-full h-9 px-2 rounded-md text-[12px]"
-                            style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            </div>
-
-            {/* Sort By */}
-            <div className="relative flex-1">
-              <select
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as "newest" | "oldest")}
-                className="w-full h-10 px-3 pr-8 rounded-lg text-[13px] appearance-none cursor-pointer"
-                style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
-              >
-                <option value="newest">Newest Order</option>
-                <option value="oldest">Oldest Order</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--t-subtle)" }} />
-            </div>
-          </div>
+          <label className="orders-sort-control">
+            <span className="sr-only">Sort orders</span>
+            <select
+              value={sortOrder}
+              onChange={event => handleSortChange(event.target.value as OrderSortOrder)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <ChevronDown aria-hidden="true" />
+          </label>
         </div>
-      </div>
+
+        {appliedFilterChips.length > 0 ? (
+          <div className="orders-applied-filters" aria-label="Applied filters">
+            <div className="orders-filter-chip-list">
+              {appliedFilterChips.map(chip => (
+                <button
+                  type="button"
+                  key={chip.id}
+                  className="orders-filter-chip"
+                  onClick={() => clearAppliedFilter(chip.id)}
+                  aria-label={`Remove ${chip.label}`}
+                >
+                  <span>{chip.label}</span>
+                  <X aria-hidden="true" />
+                </button>
+              ))}
+              <button
+                type="button"
+                className="orders-clear-filters"
+                onClick={clearAllAppliedFilters}
+              >
+                Clear all
+              </button>
+            </div>
+            <span className="orders-filter-result-copy">
+              <strong>{filteredOrders.length}</strong> matching orders
+            </span>
+          </div>
+        ) : null}
+
+        <OrdersFilterSurface
+          open={filterStudioOpen}
+          mobile={isMobile}
+          onOpenChange={open => {
+            if (!open) closeFilterStudio();
+          }}
+        >
+            <header className="orders-filter-studio-header">
+              <div>
+                <span className="orders-filter-kicker">Refine orders</span>
+                <h3>Filter Studio</h3>
+                <p>Review your choices, then apply them to the order table.</p>
+              </div>
+              <span className="orders-filter-preview" aria-live="polite">
+                <strong>{draftPreviewOrders.length}</strong> orders match this draft
+              </span>
+            </header>
+
+            <div className="orders-filter-studio-grid">
+              <fieldset className="orders-filter-group">
+                <legend>Status</legend>
+                <div className="orders-filter-choice-list">
+                  {STATUS_FILTER_OPTIONS.map(option => (
+                    <label className="orders-filter-choice" key={option.value}>
+                      <span>{option.label}</span>
+                      <input
+                        type="checkbox"
+                        checked={
+                          !draftFilters.statusFilters.includes("all")
+                          && draftFilters.statusFilters.includes(option.value)
+                        }
+                        onChange={() => toggleDraftStatus(option.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="orders-filter-group">
+                <legend>Country</legend>
+                <div className="orders-filter-choice-list orders-filter-scroll-list">
+                  {uniqueCountries.length > 0 ? uniqueCountries.map(country => (
+                    <label className="orders-filter-choice" key={country}>
+                      <span>{country}</span>
+                      <input
+                        type="checkbox"
+                        checked={draftFilters.countryFilters.includes(country)}
+                        onChange={() => toggleDraftListValue("countryFilters", country)}
+                      />
+                    </label>
+                  )) : <span className="orders-filter-empty-choice">No countries available</span>}
+                </div>
+              </fieldset>
+
+              <fieldset className="orders-filter-group">
+                <legend>Payment method</legend>
+                <div className="orders-filter-choice-list orders-filter-scroll-list">
+                  {uniquePaymentMethods.length > 0 ? uniquePaymentMethods.map(method => (
+                    <label className="orders-filter-choice" key={method}>
+                      <span>{method}</span>
+                      <input
+                        type="checkbox"
+                        checked={draftFilters.paymentMethodFilters.includes(method)}
+                        onChange={() => toggleDraftListValue("paymentMethodFilters", method)}
+                      />
+                    </label>
+                  )) : <span className="orders-filter-empty-choice">No payment methods available</span>}
+                </div>
+              </fieldset>
+
+              <fieldset className="orders-filter-group orders-filter-date-group">
+                <legend>Dates and sort</legend>
+                <div className="orders-filter-date-section">
+                  <span>Order date</span>
+                  <div className="orders-filter-date-pair">
+                    <label>
+                      <span>From</span>
+                      <input
+                        type="date"
+                        value={draftFilters.orderDateFrom}
+                        onChange={event => setDraftFilters(current => ({
+                          ...current,
+                          orderDateFrom: event.target.value,
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <input
+                        type="date"
+                        value={draftFilters.orderDateTo}
+                        onChange={event => setDraftFilters(current => ({
+                          ...current,
+                          orderDateTo: event.target.value,
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  {draftDateErrors.orderDate ? (
+                    <p className="orders-filter-error" role="alert">{draftDateErrors.orderDate}</p>
+                  ) : null}
+                </div>
+
+                <div className="orders-filter-date-section">
+                  <span>Payment date</span>
+                  <div className="orders-filter-date-pair">
+                    <label>
+                      <span>From</span>
+                      <input
+                        type="date"
+                        value={draftFilters.paymentDateFrom}
+                        onChange={event => setDraftFilters(current => ({
+                          ...current,
+                          paymentDateFrom: event.target.value,
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <input
+                        type="date"
+                        value={draftFilters.paymentDateTo}
+                        onChange={event => setDraftFilters(current => ({
+                          ...current,
+                          paymentDateTo: event.target.value,
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  {draftDateErrors.paymentDate ? (
+                    <p className="orders-filter-error" role="alert">{draftDateErrors.paymentDate}</p>
+                  ) : null}
+                </div>
+
+                <label className="orders-filter-draft-sort">
+                  <span>Sort order</span>
+                  <select
+                    value={draftFilters.sortOrder}
+                    onChange={event => setDraftFilters(current => ({
+                      ...current,
+                      sortOrder: event.target.value as OrderSortOrder,
+                    }))}
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                  </select>
+                  <ChevronDown aria-hidden="true" />
+                </label>
+              </fieldset>
+            </div>
+
+            <footer className="orders-filter-studio-footer">
+              <button type="button" className="orders-filter-reset" onClick={resetDraftFilters}>Reset</button>
+              <div>
+                <button type="button" className="orders-filter-cancel" onClick={cancelFilterStudio}>Cancel</button>
+                <button
+                  type="button"
+                  className="orders-filter-apply"
+                  onClick={applyDraftFilters}
+                  disabled={Object.keys(draftDateErrors).length > 0}
+                >
+                  Apply filters · {draftPreviewOrders.length} orders
+                </button>
+              </div>
+            </footer>
+        </OrdersFilterSurface>
+      </section>
 
       {/* Orders List */}
       {filteredOrders.length === 0 ? (
-        <div className="rounded-xl p-12 text-center bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+        <div className="atlas-legacy-order-empty rounded-xl p-12 text-center bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
           <p className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>No orders found</p>
           <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Try adjusting your filters</p>
@@ -791,7 +975,7 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
       ) : (
         <>
           {/* Select All */}
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+          <div className="atlas-legacy-order-select-all flex items-center gap-2 px-4 py-2 rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
             <input
               type="checkbox"
               checked={selectedOrders.length === filteredOrders.length}
@@ -804,7 +988,7 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
             </span>
           </div>
 
-          <div className="space-y-4">
+          <div className="atlas-legacy-order-cards space-y-4">
           {filteredOrders.map((order, index) => {
             const config = STATUS_CONFIG[order.status];
             const isExpanded = expandedOrders.includes(order.id);
@@ -994,6 +1178,44 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
         </div>
         </>
       )}
+
+      <section className="atlas-card atlas-orders-table-card" aria-labelledby="atlas-orders-table-title">
+        <div className="atlas-card-heading">
+          <div><span className="atlas-eyebrow">Operational queue</span><h2 id="atlas-orders-table-title">All orders</h2></div>
+          <span className="atlas-result-count">{filteredOrders.length} of {orders.length}</span>
+        </div>
+        <AtlasDataTable
+          label="Group-buy orders"
+          rows={filteredOrders}
+          columns={orderColumns}
+          rowKey={order => order.id}
+          onRowClick={order => setQuickViewOrder(order)}
+          selected={selectedOrders}
+          onSelect={setSelectedOrders}
+          empty={<AtlasEmptyState title="No orders found" description="Try adjusting your filters." />}
+        />
+      </section>
+
+      </div>
+      </div>
+
+      <AtlasQuickViewDrawer
+        open={Boolean(quickViewOrder)}
+        onClose={() => setQuickViewOrder(null)}
+        eyebrow="Order quick view"
+        title={quickViewOrder?.id ?? "Order"}
+        subtitle={quickViewOrder ? <AtlasPerson name={quickViewOrder.memberName} username={quickViewOrder.memberUsername} compact /> : undefined}
+        footer={quickViewOrder ? <div className="atlas-drawer-actions"><button type="button" className="atlas-secondary-button" onClick={() => { openEditModal(quickViewOrder); setQuickViewOrder(null); }}><Edit2 aria-hidden="true" /> Edit order</button><button type="button" className="atlas-primary-button" onClick={() => { toggleOrderSelection(quickViewOrder.id); setQuickViewOrder(null); }}>Select order</button></div> : undefined}
+      >
+        {quickViewOrder ? (
+          <>
+            <div className="atlas-drawer-summary"><AtlasStatusBadge tone={quickViewOrder.status === "pending" ? "warning" : quickViewOrder.status === "cancelled" ? "danger" : "success"}>{STATUS_CONFIG[quickViewOrder.status].label}</AtlasStatusBadge><strong>{fmtMoney(quickViewOrder.total, "GBP")}</strong><span>{quickViewOrder.paymentMethod} · {quickViewOrder.country}</span></div>
+            <AtlasDrawerSection title="Items"><div className="atlas-order-history">{quickViewOrder.products.map(product => <article key={product.name}><div><strong>{product.name}</strong><small>Quantity {product.quantity}</small></div><strong>{fmtMoney(product.price * product.quantity, "GBP")}</strong></article>)}</div></AtlasDrawerSection>
+            <AtlasDrawerSection title="Delivery"><dl className="atlas-detail-list"><div><dt>Shipping</dt><dd>{quickViewOrder.shippingOption}</dd></div><div><dt>Country</dt><dd>{quickViewOrder.country}</dd></div><div><dt>Tracking</dt><dd>{quickViewOrder.trackingNumber ?? "Not assigned"}</dd></div><div><dt>Created</dt><dd>{new Date(quickViewOrder.createdAt).toLocaleDateString("en-GB")}</dd></div></dl></AtlasDrawerSection>
+            {quickViewOrder.internalNotes || quickViewOrder.flagged ? <AtlasDrawerSection title="Notes"><p className="atlas-drawer-note">{quickViewOrder.flagged?.note ?? quickViewOrder.internalNotes}</p></AtlasDrawerSection> : null}
+          </>
+        ) : null}
+      </AtlasQuickViewDrawer>
 
       {/* Bulk Add Task Modal */}
       {showBulkTaskModal && (
@@ -1479,9 +1701,6 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
           </div>
         </div>
       )}
-      </div> {/* Close main content */}
-    </div> {/* Close flex container */}
-
     {/* Payment Proof Image Modal */}
     {viewingProofImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }} onClick={() => setViewingProofImage(null)}>
@@ -1563,6 +1782,6 @@ export default function OrdersTab({ selectedGbId, highlightId }: { selectedGbId?
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

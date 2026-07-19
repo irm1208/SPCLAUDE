@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GB Organizer V2 — QR Codes concepts</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --navy:#1b3a7a; --deep:#1b3164; --blue:#2d6bcc; --ink:#0f1f38;
+      --text:#374151; --muted:#6b7280; --subtle:#8a9aaa; --line:#d8e1ea;
+      --canvas:#eef2f6; --success:#17966b; --amber:#e9a020; --red:#d94d55;
+    }
+    body { margin:0; color:var(--ink); background:linear-gradient(145deg,#e8edf3,#f4f6f8 52%,#e8eef6); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    .gallery { min-height:100vh; padding:28px clamp(12px,3vw,42px) 54px; }
+    .gallery-intro { display:flex; max-width:1540px; align-items:end; justify-content:space-between; gap:28px; margin:0 auto 18px; }
+    .eyebrow { display:flex; align-items:center; gap:8px; color:#607087; font-size:10px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+    .eyebrow:before { width:22px; height:2px; border-radius:4px; background:var(--blue); content:""; }
+    .gallery-intro h1 { max-width:750px; margin:9px 0 0; font-size:clamp(30px,3.5vw,50px); letter-spacing:-.052em; line-height:1.02; }
+    .gallery-intro p { max-width:570px; margin:0 0 3px; color:#68788b; font-size:13px; line-height:1.65; }
+    .picker-wrap { position:sticky; z-index:40; top:0; max-width:1540px; margin:0 auto 13px; padding:8px; border:1px solid rgba(25,48,79,.12); border-radius:16px; background:rgba(246,248,250,.92); box-shadow:0 8px 24px rgba(21,41,67,.08); backdrop-filter:blur(16px); }
+    .concept-picker { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
+    .concept-tab { position:relative; display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; gap:9px; min-height:54px; border:1px solid transparent; border-radius:11px; padding:7px 9px; color:#657388; background:transparent; text-align:left; transition:.18s ease; }
+    .concept-tab:hover { background:#fff; }
+    .concept-tab.active { border-color:rgba(45,107,204,.25); color:var(--ink); background:#fff; box-shadow:0 5px 15px rgba(20,43,72,.08); }
+    .concept-tab > b { display:grid; width:28px; height:28px; place-items:center; border-radius:8px; color:#6f7e90; background:#e7ecf2; font-size:9px; }
+    .concept-tab.active > b { color:#fff; background:linear-gradient(135deg,var(--blue),var(--deep)); }
+    .concept-tab span { min-width:0; }
+    .concept-tab strong { display:block; overflow:hidden; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+    .concept-tab small { display:block; overflow:hidden; margin-top:2px; color:#8c99a8; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+    .browser { max-width:1540px; overflow:hidden; margin:0 auto; border:1px solid rgba(13,31,56,.18); border-radius:20px; background:#fff; box-shadow:0 28px 78px rgba(20,39,64,.19); }
+    .browser-chrome { display:grid; height:35px; grid-template-columns:1fr auto 1fr; align-items:center; border-bottom:1px solid #dbe2e9; padding:0 13px; color:#7d8b9c; background:#f3f5f8; font-size:8px; }
+    .browser-dots { display:flex; gap:5px; }
+    .browser-dots i { width:7px; height:7px; border-radius:50%; background:#c4ccd5; }
+    .address { width:min(350px,42vw); border-radius:6px; padding:5px 15px; background:#e5eaf0; text-align:center; }
+    .browser-chrome > span:last-child { text-align:right; }
+    .view { display:none; min-height:820px; }
+    .view.active { display:block; animation:reveal .25s ease both; }
+    @keyframes reveal { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    .icon { display:inline-grid; width:16px; height:16px; place-items:center; flex:0 0 16px; font-size:11px; }
+    .avatar { display:grid; width:34px; height:34px; place-items:center; flex:0 0 34px; border-radius:10px; color:#244d82; background:#dceafe; font-size:10px; font-weight:800; }
+    .avatar.green { color:#187455; background:#dcf4eb; }
+    .avatar.amber { color:#936013; background:#fff0cf; }
+    .avatar.rose { color:#a14351; background:#f9e0e4; }
+    .pill { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:5px 8px; font-size:8px; font-weight:800; white-space:nowrap; }
+    .pill:before { width:5px; height:5px; border-radius:50%; background:currentColor; content:""; }
+    .pill.blue { color:#285fbc; background:#e8f0ff; }
+    .pill.green { color:#17825f; background:#e2f6ef; }
+    .pill.amber { color:#ae6e0e; background:#fff0d1; }
+    .pill.gray { color:#738195; background:#edf1f5; }
+    .qr-svg { display:block; width:100%; height:auto; color:#10223f; background:#fff; }
+    .qr-card { background:#fff; }
+    .qr-card svg { border-radius:10px; }
+    .common-button { display:inline-flex; height:35px; align-items:center; justify-content:center; gap:7px; border:1px solid #d6dfe8; border-radius:9px; padding:0 12px; color:#3e5067; background:#fff; font-size:10px; font-weight:750; }
+    .common-button.primary { border-color:var(--navy); color:#fff; background:var(--navy); box-shadow:0 6px 14px rgba(27,58,122,.18); }
+    .common-button.success { border-color:#188a66; color:#fff; background:#188a66; }
+
+    /* Concept 01 — Peps Clear */
+    .clear { padding:26px 28px 32px; background:#f8fafc; }
+    .clear-head { display:flex; align-items:end; gap:18px; }
+    .clear-head h2 { margin:4px 0 0; font-size:26px; letter-spacing:-.035em; }
+    .clear-head p { margin:5px 0 0; color:#788697; font-size:11px; }
+    .clear-head .head-actions { display:flex; gap:7px; margin-left:auto; }
+    .clear-metrics { display:grid; grid-template-columns:1.3fr repeat(3,1fr); gap:9px; margin-top:18px; }
+    .metric { position:relative; min-height:84px; overflow:hidden; border:1px solid #dfe6ee; border-radius:13px; padding:13px 15px; background:#fff; box-shadow:0 4px 12px rgba(26,47,75,.035); }
+    .metric.featured { color:#fff; border-color:transparent; background:linear-gradient(125deg,#1b3164,#2d6bcc); }
+    .metric.featured:after { position:absolute; right:-25px; bottom:-55px; width:120px; height:120px; border:20px solid rgba(255,255,255,.08); border-radius:50%; content:""; }
+    .metric span { color:#8a98a8; font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .metric.featured span { color:rgba(255,255,255,.72); }
+    .metric strong { display:block; margin-top:7px; font-size:22px; letter-spacing:-.04em; }
+    .metric small { color:#8794a4; font-size:8px; }
+    .metric.featured small { color:rgba(255,255,255,.7); }
+    .clear-toolbar { display:flex; align-items:center; gap:8px; margin:12px 0; }
+    .search { display:flex; width:280px; height:36px; align-items:center; gap:8px; border:1px solid #dbe3eb; border-radius:9px; padding:0 11px; color:#99a4b0; background:#fff; font-size:10px; }
+    .filters { display:flex; gap:4px; border:1px solid #dce3ea; border-radius:9px; padding:3px; background:#fff; }
+    .filters span { border-radius:6px; padding:6px 9px; color:#758295; font-size:9px; font-weight:700; }
+    .filters span.on { color:#fff; background:var(--navy); }
+    .clear-toolbar > small { margin-left:auto; color:#8896a6; font-size:9px; }
+    .queue-workspace { display:grid; grid-template-columns:260px minmax(360px,1fr) 285px; min-height:510px; overflow:hidden; border:1px solid #dbe3eb; border-radius:15px; background:#fff; box-shadow:0 7px 22px rgba(20,43,72,.045); }
+    .queue-list { border-right:1px solid #e2e8ef; }
+    .queue-list-head { display:flex; height:47px; align-items:center; justify-content:space-between; border-bottom:1px solid #e7ecf1; padding:0 13px; }
+    .queue-list-head strong { font-size:10px; }
+    .queue-list-head span { color:#7e8b9a; font-size:8px; }
+    .person-row { display:flex; min-height:63px; align-items:center; gap:9px; border:0; border-bottom:1px solid #edf1f4; padding:9px 11px; background:#fff; text-align:left; }
+    .person-row.active { position:relative; background:#eef5ff; }
+    .person-row.active:before { position:absolute; top:0; bottom:0; left:0; width:3px; background:var(--blue); content:""; }
+    .person-copy { min-width:0; flex:1; }
+    .person-copy strong { display:block; font-size:10px; }
+    .person-copy span { display:block; overflow:hidden; margin-top:3px; color:#8a98a8; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+    .person-row time { color:#a0aab5; font-size:7px; }
+    .preview-stage { display:flex; flex-direction:column; min-width:0; background:radial-gradient(circle at 50% 46%,#fff 0,#f6f9fc 42%,#eef3f7 100%); }
+    .stage-top { display:flex; height:47px; align-items:center; justify-content:space-between; border-bottom:1px solid #e4eaf0; padding:0 14px; background:rgba(255,255,255,.75); }
+    .stage-top strong { font-size:10px; }
+    .stage-top div { display:flex; gap:5px; }
+    .stage-top button { display:grid; width:26px; height:26px; place-items:center; border:1px solid #dce4ec; border-radius:7px; color:#64758b; background:#fff; }
+    .qr-focus { display:grid; flex:1; place-items:center; padding:24px; }
+    .qr-focus-inner { width:min(260px,70%); text-align:center; }
+    .qr-focus-inner .qr-card { border:1px solid #dde5ec; border-radius:17px; padding:17px; box-shadow:0 16px 36px rgba(21,42,67,.12); }
+    .qr-focus-inner h3 { margin:14px 0 3px; font-size:13px; }
+    .qr-focus-inner p { margin:0; color:#8290a0; font-size:9px; }
+    .order-detail { border-left:1px solid #e2e8ef; padding:15px; }
+    .order-detail > span { color:#8491a1; font-size:8px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+    .detail-member { display:flex; align-items:center; gap:9px; margin-top:12px; }
+    .detail-member strong { display:block; font-size:11px; }
+    .detail-member small { color:#8390a0; font-size:8px; }
+    .detail-card { margin-top:13px; border:1px solid #e1e7ed; border-radius:10px; padding:10px; background:#f9fbfc; }
+    .detail-line { display:flex; justify-content:space-between; gap:12px; margin:7px 0; font-size:8px; }
+    .detail-line span { color:#8995a3; }
+    .detail-line strong { color:#34465d; }
+    .progress-steps { margin:14px 0; }
+    .progress-step { position:relative; display:flex; gap:9px; min-height:39px; color:#728095; font-size:8px; }
+    .progress-step:before { position:absolute; top:14px; bottom:-2px; left:6px; width:1px; background:#dce3e9; content:""; }
+    .progress-step:last-child:before { display:none; }
+    .progress-step i { position:relative; z-index:1; width:13px; height:13px; flex:0 0 13px; border:3px solid #dfe6ed; border-radius:50%; background:#fff; }
+    .progress-step.done i { border-color:#1c9a70; background:#1c9a70; }
+    .progress-step.active i { border-color:var(--blue); box-shadow:0 0 0 3px #dce9ff; }
+    .order-detail .common-button { width:100%; }
+
+    /* Concept 02 — Flow Board */
+    .flow { min-height:820px; padding:25px 27px 32px; background:linear-gradient(155deg,#f7f9fc,#edf3f8); }
+    .flow-head { display:grid; grid-template-columns:1fr auto; align-items:center; gap:14px; }
+    .flow-title { display:flex; align-items:center; gap:12px; }
+    .flow-mark { display:grid; width:42px; height:42px; place-items:center; border-radius:13px; color:#fff; background:linear-gradient(135deg,#2d6bcc,#1b3164); box-shadow:0 9px 20px rgba(27,58,122,.2); font-size:19px; }
+    .flow-title h2 { margin:0; font-size:23px; letter-spacing:-.04em; }
+    .flow-title p { margin:4px 0 0; color:#7a8899; font-size:10px; }
+    .flow-actions { display:flex; gap:7px; }
+    .flow-summary { display:grid; grid-template-columns:1fr auto; align-items:center; gap:18px; margin-top:18px; border:1px solid #dce5ed; border-radius:14px; padding:13px 15px; background:#fff; }
+    .progress-copy { display:flex; align-items:center; gap:13px; }
+    .progress-copy strong { font-size:23px; letter-spacing:-.04em; }
+    .progress-copy div span { display:block; color:#3d4f66; font-size:10px; font-weight:750; }
+    .progress-copy div small { color:#8b97a6; font-size:8px; }
+    .progress-track { height:7px; overflow:hidden; border-radius:99px; background:#e9eef3; }
+    .progress-track i { display:block; width:61%; height:100%; border-radius:inherit; background:linear-gradient(90deg,#e9a020,#2d6bcc 48%,#17966b); }
+    .progress-counts { display:flex; gap:13px; }
+    .progress-counts span { color:#778598; font-size:8px; }
+    .progress-counts b { color:#263a54; }
+    .board-toolbar { display:flex; gap:8px; margin:12px 0; }
+    .board-toolbar .search { width:320px; }
+    .board-toolbar .common-button:last-child { margin-left:auto; }
+    .kanban { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:11px; }
+    .lane { min-height:548px; border:1px solid #dce4ec; border-radius:15px; padding:10px; background:rgba(255,255,255,.64); }
+    .lane.waiting { box-shadow:inset 0 3px 0 #e9a020; }
+    .lane.ready { box-shadow:inset 0 3px 0 #2d6bcc; }
+    .lane.posted { box-shadow:inset 0 3px 0 #17966b; }
+    .lane-head { display:flex; align-items:center; justify-content:space-between; padding:4px 3px 10px; }
+    .lane-head div { display:flex; align-items:center; gap:7px; }
+    .lane-head i { width:7px; height:7px; border-radius:50%; background:#9aa6b2; }
+    .waiting .lane-head i { background:#e9a020; }
+    .ready .lane-head i { background:#2d6bcc; }
+    .posted .lane-head i { background:#17966b; }
+    .lane-head strong { font-size:10px; }
+    .lane-head span { display:grid; width:20px; height:20px; place-items:center; border-radius:6px; color:#68778a; background:#edf1f5; font-size:8px; font-weight:800; }
+    .order-card { margin-bottom:8px; border:1px solid #dfe6ed; border-radius:11px; padding:10px; background:#fff; box-shadow:0 4px 10px rgba(22,42,68,.035); }
+    .order-card.feature { border-color:#a9c5ef; box-shadow:0 0 0 2px #e2edfc,0 8px 18px rgba(45,107,204,.1); }
+    .order-card-top { display:flex; align-items:center; gap:8px; }
+    .order-card-top .avatar { width:29px; height:29px; flex-basis:29px; border-radius:8px; font-size:8px; }
+    .order-card-top div { min-width:0; flex:1; }
+    .order-card-top strong { display:block; font-size:9px; }
+    .order-card-top small { display:block; margin-top:2px; color:#8996a5; font-size:7px; }
+    .order-card-top > b { color:#99a4b1; font-size:12px; }
+    .order-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
+    .order-meta span { border-radius:5px; padding:4px 6px; color:#637287; background:#f0f4f7; font-size:7px; }
+    .waiting-note { display:flex; align-items:center; gap:6px; margin-top:9px; border-radius:7px; padding:7px; color:#99630f; background:#fff5df; font-size:7px; }
+    .card-qr { display:grid; grid-template-columns:58px 1fr; align-items:center; gap:9px; margin-top:9px; border-top:1px solid #e8edf2; padding-top:9px; }
+    .card-qr svg { border:1px solid #e1e7ec; border-radius:7px; padding:4px; }
+    .card-qr strong { display:block; color:#2a4569; font-size:8px; }
+    .card-qr button { width:100%; height:25px; margin-top:5px; border:0; border-radius:6px; color:#fff; background:var(--blue); font-size:7px; font-weight:800; }
+    .posted-stamp { display:flex; justify-content:space-between; margin-top:9px; border-top:1px solid #e8edf2; padding-top:7px; color:#18835f; font-size:7px; font-weight:750; }
+
+    /* Concept 03 — Batch Ledger */
+    .ledger-view { min-height:820px; color:#23354a; background:#f4f1ea; }
+    .ledger-hero { display:flex; height:102px; align-items:center; gap:18px; padding:0 27px; color:#fff; background:#183c43; }
+    .ledger-hero .monogram { display:grid; width:46px; height:46px; place-items:center; border:1px solid rgba(255,255,255,.2); color:#d9b469; font-family:Georgia,serif; font-size:20px; }
+    .ledger-hero h2 { margin:0; font-family:Georgia,serif; font-size:25px; font-weight:500; letter-spacing:-.025em; }
+    .ledger-hero p { margin:5px 0 0; color:rgba(255,255,255,.62); font-size:9px; }
+    .ledger-hero .hero-stats { display:flex; gap:22px; margin-left:auto; }
+    .hero-stats span { color:rgba(255,255,255,.55); font-size:7px; letter-spacing:.08em; text-transform:uppercase; }
+    .hero-stats strong { display:block; margin-top:3px; color:#fff; font-family:Georgia,serif; font-size:19px; font-weight:500; }
+    .ledger-content { padding:17px 25px 29px; }
+    .batch-bar { display:flex; align-items:center; gap:8px; border:1px solid #d5d2c8; border-radius:4px; padding:9px; background:#fffefa; box-shadow:5px 5px 0 rgba(28,57,61,.055); }
+    .batch-bar .search { width:280px; border-radius:3px; background:#fffefa; }
+    .batch-bar .filters { border-radius:3px; background:#f7f3eb; }
+    .batch-bar .filters span { border-radius:2px; }
+    .batch-bar .filters span.on { background:#1f5558; }
+    .batch-bar > small { margin-left:auto; color:#697976; font-size:8px; }
+    .batch-bar .common-button { border-radius:3px; }
+    .batch-bar .common-button.primary { border-color:#1f5558; background:#1f5558; }
+    .selection-bar { display:flex; height:42px; align-items:center; gap:9px; margin-top:10px; border:1px solid #bbd4cf; border-radius:3px; padding:0 12px; color:#244b4b; background:#eaf4f0; font-size:8px; }
+    .selection-bar strong { font-size:9px; }
+    .selection-bar button { margin-left:auto; border:0; border-bottom:1px solid currentColor; padding:2px 0; color:#1e6862; background:transparent; font-size:8px; font-weight:800; }
+    .ledger-grid { display:grid; grid-template-columns:minmax(0,1fr) 286px; gap:11px; margin-top:10px; }
+    .table-wrap { overflow:hidden; border:1px solid #d3d1c8; border-radius:3px; background:#fffefa; box-shadow:5px 5px 0 rgba(28,57,61,.05); }
+    table { width:100%; border-collapse:collapse; font-size:8px; }
+    th { height:34px; padding:0 8px; color:#76827f; background:#f5f1e9; font-size:7px; font-weight:800; letter-spacing:.08em; text-align:left; text-transform:uppercase; }
+    td { height:52px; border-top:1px solid #e8e4dc; padding:0 8px; }
+    tr.selected { background:#edf5f1; }
+    .check { display:inline-grid; width:13px; height:13px; place-items:center; border:1px solid #aab5b1; border-radius:2px; color:#fff; font-size:8px; }
+    .selected .check { border-color:#1f6662; background:#1f6662; }
+    .user-cell { display:flex; align-items:center; gap:7px; }
+    .user-cell .avatar { width:27px; height:27px; flex-basis:27px; border-radius:3px; color:#345d59; background:#e0ebe7; font-size:7px; }
+    .user-cell strong { display:block; font-size:8px; }
+    .user-cell small { color:#89928f; font-size:7px; }
+    .carrier-mark { border:1px solid #d8d5cc; border-radius:2px; padding:4px 6px; color:#526461; background:#faf7f0; font-size:7px; font-weight:750; }
+    .row-action { border:1px solid #d5d1c8; border-radius:2px; padding:5px 7px; color:#46605d; background:#fffefa; font-size:7px; font-weight:750; }
+    .ledger-preview { border:1px solid #d2cfc5; border-radius:3px; padding:14px; background:#fffefa; box-shadow:5px 5px 0 rgba(28,57,61,.05); }
+    .ledger-preview > small { color:#8a938f; font-size:7px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .ledger-preview h3 { margin:8px 0 2px; font-family:Georgia,serif; font-size:18px; font-weight:500; }
+    .ledger-preview > p { margin:0; color:#7c8986; font-size:8px; }
+    .ledger-preview .qr-card { width:180px; margin:15px auto 12px; border:1px solid #d8d4ca; padding:12px; }
+    .ledger-preview .detail-line { border-bottom:1px dotted #d6d1c7; padding-bottom:7px; }
+    .ledger-preview .common-button { width:100%; margin-top:8px; border-radius:3px; }
+    .ledger-preview .common-button.primary { border-color:#1f5558; background:#1f5558; }
+
+    /* Concept 04 — Night Shift */
+    .night { min-height:820px; color:#edf5ff; background:
+      radial-gradient(circle at 45% 38%,rgba(31,132,147,.14),transparent 28rem),
+      linear-gradient(rgba(92,188,202,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(92,188,202,.035) 1px,transparent 1px),#07111e;
+      background-size:auto,28px 28px,28px 28px,auto; }
+    .night-top { display:flex; height:78px; align-items:center; gap:13px; border-bottom:1px solid #233346; padding:0 24px; background:rgba(8,19,32,.86); }
+    .night-brand { display:grid; width:40px; height:40px; place-items:center; border:1px solid #31516a; border-radius:11px; color:#5fe0ce; background:#102234; box-shadow:0 0 24px rgba(95,224,206,.1); font-size:18px; }
+    .night-top h2 { margin:0; font-size:21px; letter-spacing:-.035em; }
+    .night-top p { margin:4px 0 0; color:#768aa2; font-size:9px; }
+    .live { display:flex; align-items:center; gap:6px; margin-left:auto; border:1px solid #224f4a; border-radius:999px; padding:7px 10px; color:#67d9c7; background:#0d2428; font-size:7px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .live i { width:6px; height:6px; border-radius:50%; background:#62e3ce; box-shadow:0 0 0 4px rgba(98,227,206,.09); }
+    .night-top .common-button { border-color:#2b3d51; color:#a9bbcf; background:#101d2b; }
+    .night-top .common-button.primary { border-color:#57ccb9; color:#061819; background:#59d7c1; box-shadow:0 0 20px rgba(89,215,193,.14); }
+    .night-stats { display:grid; grid-template-columns:repeat(4,1fr); border-bottom:1px solid #223246; background:rgba(10,21,35,.75); }
+    .night-stat { min-height:68px; border-right:1px solid #223246; padding:12px 18px; }
+    .night-stat:last-child { border-right:0; }
+    .night-stat span { color:#657991; font-size:7px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .night-stat strong { display:block; margin-top:5px; color:#f0f6fe; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:18px; }
+    .night-stat small { color:#62758c; font-size:7px; }
+    .night-stat.attn strong { color:#f0ba5d; }
+    .night-workspace { display:grid; grid-template-columns:285px minmax(360px,1fr) 300px; min-height:673px; }
+    .night-queue { border-right:1px solid #223246; background:rgba(8,18,31,.72); }
+    .night-search { display:flex; height:52px; align-items:center; gap:8px; border-bottom:1px solid #223246; padding:0 13px; color:#5e738c; font-size:9px; }
+    .night-search span { flex:1; border:1px solid #26394e; border-radius:8px; padding:8px; background:#0d1928; }
+    .night-row { position:relative; display:flex; min-height:69px; align-items:center; gap:9px; border-bottom:1px solid #1c2b3d; padding:10px 12px; color:#dbe6f2; background:transparent; }
+    .night-row.active { background:linear-gradient(90deg,rgba(86,211,192,.12),rgba(86,211,192,.025)); }
+    .night-row.active:before { position:absolute; inset:0 auto 0 0; width:2px; background:#59d7c1; box-shadow:0 0 12px #59d7c1; content:""; }
+    .night-row .avatar { color:#80ddcf; background:#15333a; }
+    .night-row-copy { min-width:0; flex:1; }
+    .night-row-copy strong { display:block; font-size:9px; }
+    .night-row-copy span { display:block; margin-top:3px; color:#657991; font-size:7px; }
+    .signal { width:6px; height:6px; border-radius:50%; background:#f0b452; }
+    .signal.green { background:#56d3c0; }
+    .night-preview { display:flex; flex-direction:column; border-right:1px solid #223246; }
+    .night-stage-head { display:flex; height:52px; align-items:center; justify-content:space-between; border-bottom:1px solid #223246; padding:0 15px; color:#8ba0b7; font-size:8px; }
+    .night-stage-head b { color:#e5eef8; }
+    .night-qr-focus { display:grid; flex:1; place-items:center; }
+    .night-qr-inner { width:min(290px,67%); text-align:center; }
+    .scanner { position:relative; border:1px solid #2c5062; border-radius:19px; padding:23px; background:rgba(11,27,43,.84); box-shadow:0 0 70px rgba(65,188,180,.10),inset 0 0 50px rgba(49,151,153,.05); }
+    .scanner:before,.scanner:after { position:absolute; width:28px; height:28px; border-color:#59d7c1; content:""; }
+    .scanner:before { top:10px; left:10px; border-top:2px solid; border-left:2px solid; }
+    .scanner:after { right:10px; bottom:10px; border-right:2px solid; border-bottom:2px solid; }
+    .scanner svg { border-radius:10px; }
+    .night-qr-inner h3 { margin:15px 0 3px; font-size:13px; }
+    .night-qr-inner p { margin:0; color:#6c8096; font-size:8px; }
+    .night-detail { padding:16px; background:rgba(8,18,30,.72); }
+    .night-detail > small { color:#5ed2c0; font-size:7px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .night-member { display:flex; align-items:center; gap:9px; margin:12px 0 15px; }
+    .night-member .avatar { color:#89e3d5; background:#15343a; }
+    .night-member strong { display:block; font-size:10px; }
+    .night-member span { color:#647a91; font-size:7px; }
+    .night-panel { border:1px solid #22374b; border-radius:9px; padding:10px; background:#0d1b2a; }
+    .night-panel .detail-line { color:#a9b9ca; }
+    .night-panel .detail-line span { color:#60758c; }
+    .night-timeline { margin:15px 0; border-left:1px solid #294056; padding-left:13px; }
+    .night-event { position:relative; margin:0 0 13px; color:#6d8298; font-size:7px; }
+    .night-event:before { position:absolute; top:1px; left:-17px; width:7px; height:7px; border:2px solid #0a1624; border-radius:50%; background:#426079; content:""; }
+    .night-event.done { color:#9cafc2; }
+    .night-event.done:before { background:#59d7c1; box-shadow:0 0 8px rgba(89,215,193,.5); }
+    .night-detail .common-button { width:100%; border-color:#59d7c1; color:#061819; background:#59d7c1; box-shadow:0 0 24px rgba(89,215,193,.12); }
+
+    /* Concept 05 — Compact Ops */
+    .compact { min-height:820px; color:#182a42; background:#edf1f4; font-family:"Arial Narrow",Roboto,Arial,sans-serif; }
+    .compact-head { display:flex; height:64px; align-items:center; gap:13px; border-bottom:1px solid #cbd5df; padding:0 19px; background:#fff; }
+    .compact-head .compact-mark { display:grid; width:33px; height:33px; place-items:center; border-radius:7px; color:#fff; background:#1b3a7a; font-weight:900; }
+    .compact-head h2 { margin:0; font-size:18px; letter-spacing:-.025em; }
+    .compact-head p { margin:2px 0 0; color:#8190a0; font-size:8px; }
+    .command-search { display:flex; width:310px; height:32px; align-items:center; gap:7px; margin-left:auto; border:1px solid #cfd9e2; border-radius:6px; padding:0 9px; color:#8593a2; background:#f7f9fb; font-size:8px; }
+    kbd { margin-left:auto; border:1px solid #cbd5df; border-bottom-width:2px; border-radius:4px; padding:2px 5px; color:#657587; background:#fff; font-size:7px; }
+    .compact-head .common-button { height:32px; border-radius:6px; font-size:8px; }
+    .compact-body { display:grid; grid-template-columns:168px minmax(0,1fr); min-height:756px; }
+    .compact-rail { border-right:1px solid #cbd5df; padding:12px 9px; background:#f7f9fb; }
+    .compact-rail > small { display:block; margin:4px 7px 8px; color:#8794a3; font-size:7px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .rail-filter { display:flex; width:100%; height:34px; align-items:center; gap:7px; border:0; border-radius:6px; padding:0 8px; color:#5e6e81; background:transparent; font-size:8px; text-align:left; }
+    .rail-filter.on { color:#fff; background:#1b3a7a; }
+    .rail-filter b { display:grid; width:17px; height:17px; place-items:center; margin-left:auto; border-radius:5px; color:#647489; background:#e4eaf0; font-size:7px; }
+    .rail-filter.on b { color:#fff; background:rgba(255,255,255,.18); }
+    .rail-divider { height:1px; margin:10px 5px; background:#dce3e9; }
+    .compact-note { margin:14px 4px 0; border:1px solid #d6dfe7; border-radius:6px; padding:9px; color:#758497; background:#fff; font-size:7px; line-height:1.5; }
+    .compact-note strong { display:block; margin-bottom:3px; color:#2a3e58; font-size:8px; }
+    .compact-main { padding:10px; }
+    .compact-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+    .compact-stat { display:flex; min-height:48px; align-items:center; justify-content:space-between; border:1px solid #ccd6df; border-radius:6px; padding:8px 10px; background:#fff; }
+    .compact-stat span { color:#788697; font-size:7px; font-weight:750; text-transform:uppercase; }
+    .compact-stat strong { display:block; margin-top:2px; color:#213650; font-size:15px; }
+    .compact-stat i { width:6px; height:29px; border-radius:5px; background:#2d6bcc; }
+    .compact-stat:nth-child(3) i { background:#e9a020; }
+    .compact-stat:nth-child(4) i { background:#17966b; }
+    .compact-work { display:grid; grid-template-columns:minmax(410px,1.25fr) minmax(320px,.75fr); min-height:633px; gap:7px; margin-top:7px; }
+    .compact-table { overflow:hidden; border:1px solid #cbd5df; border-radius:6px; background:#fff; }
+    .compact-table-head { display:flex; height:39px; align-items:center; gap:7px; border-bottom:1px solid #d7e0e7; padding:0 9px; }
+    .compact-table-head strong { font-size:9px; }
+    .compact-table-head span { color:#8996a4; font-size:7px; }
+    .compact-table-head .mini-search { margin-left:auto; border:1px solid #d4dde5; border-radius:5px; padding:6px 8px; color:#8b98a5; background:#f8fafb; font-size:7px; }
+    .compact-cols,.compact-row { display:grid; grid-template-columns:25px 1.3fr .8fr .75fr .6fr 22px; align-items:center; }
+    .compact-cols { height:27px; padding:0 8px; color:#8996a4; background:#f3f6f8; font-size:6px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+    .compact-row { min-height:47px; border-top:1px solid #e5eaee; padding:0 8px; font-size:7px; }
+    .compact-row.active { box-shadow:inset 3px 0 #2d6bcc; background:#edf5ff; }
+    .compact-row .avatar { width:25px; height:25px; flex-basis:25px; border-radius:6px; font-size:7px; }
+    .compact-user { display:flex; align-items:center; gap:6px; }
+    .compact-user strong { display:block; font-size:8px; }
+    .compact-user small { color:#8996a4; font-size:6px; }
+    .compact-row .pill { width:max-content; padding:4px 6px; font-size:6px; }
+    .compact-row button { border:0; color:#798898; background:transparent; }
+    .compact-preview { display:flex; flex-direction:column; border:1px solid #cbd5df; border-radius:6px; background:#fff; }
+    .compact-preview-head { display:flex; height:40px; align-items:center; justify-content:space-between; border-bottom:1px solid #d7e0e7; padding:0 10px; }
+    .compact-preview-head strong { font-size:9px; }
+    .compact-preview-head span { color:#8593a2; font-size:7px; }
+    .compact-qr { display:grid; flex:1; place-items:center; padding:13px; background:#f5f8fa; }
+    .compact-qr-inner { display:grid; width:100%; max-width:420px; grid-template-columns:175px 1fr; align-items:center; gap:14px; }
+    .compact-qr-inner .qr-card { border:1px solid #d5dee6; border-radius:8px; padding:10px; box-shadow:0 8px 18px rgba(25,47,74,.1); }
+    .compact-context h3 { margin:0; font-size:13px; }
+    .compact-context > p { margin:3px 0 10px; color:#8190a0; font-size:7px; }
+    .compact-context .detail-line { margin:5px 0; }
+    .compact-actions { display:grid; grid-template-columns:1fr auto; gap:5px; margin-top:10px; }
+    .compact-actions .common-button { height:29px; border-radius:5px; padding:0 8px; font-size:7px; }
+    .shortcut-bar { display:flex; height:32px; align-items:center; gap:12px; border-top:1px solid #d8e0e7; padding:0 10px; color:#7a8999; background:#f7f9fb; font-size:6px; }
+    .shortcut-bar b { color:#354a63; }
+
+    .gallery-note { display:flex; max-width:1540px; align-items:center; gap:10px; margin:13px auto 0; border:1px solid rgba(28,51,80,.13); border-radius:12px; padding:11px 14px; color:#5f6f83; background:rgba(255,255,255,.72); font-size:11px; }
+    .gallery-note b { color:#243952; }
+    @media (max-width:1050px) {
+      .gallery-intro { align-items:start; flex-direction:column; gap:10px; }
+      .concept-picker { grid-template-columns:repeat(5,180px); overflow:auto; }
+      .queue-workspace,.night-workspace { grid-template-columns:235px minmax(340px,1fr); }
+      .order-detail,.night-detail { display:none; }
+      .kanban { grid-template-columns:repeat(3,330px); overflow:auto; }
+      .ledger-grid { grid-template-columns:minmax(700px,1fr) 270px; overflow:auto; }
+      .compact-work { grid-template-columns:minmax(550px,1fr) 340px; overflow:auto; }
+    }
+    @media (max-width:700px) {
+      .gallery { padding:12px 8px 35px; }
+      .gallery-intro h1 { font-size:30px; }
+      .browser { border-radius:12px; }
+      .clear,.flow { padding:18px 12px; }
+      .clear-metrics { grid-template-columns:repeat(2,1fr); }
+      .queue-workspace,.night-workspace { grid-template-columns:1fr; }
+      .queue-list,.night-queue { display:none; }
+      .clear-toolbar { flex-wrap:wrap; }
+      .flow-summary { grid-template-columns:1fr; }
+      .compact-body { grid-template-columns:1fr; }
+      .compact-rail { display:none; }
+    }
+    @media (prefers-reduced-motion:reduce) { * { animation:none!important; transition:none!important; } }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="qr-art" viewBox="0 0 210 210">
+      <rect width="210" height="210" fill="white"/>
+      <g fill="currentColor">
+        <path d="M10 10h58v58H10zM18 18v42h42V18zm10 10h22v22H28zM142 10h58v58h-58zM150 18v42h42V18zm10 10h22v22h-22zM10 142h58v58H10zM18 150v42h42v-42zm10 10h22v22H28z" fill-rule="evenodd"/>
+        <path d="M82 10h12v12H82zM106 10h12v12h-12zM94 22h24v12H94zM82 34h12v24H82zM106 46h12v12h-12zM82 70h12v12H82zM106 70h24v12h-24zM10 82h12v12H10zM34 82h36v12H34zM82 82h12v24H82zM106 94h24v12h-24zM142 82h12v12h-12zM166 82h34v12h-34zM10 106h24v12H10zM46 106h24v12H46zM94 106h12v12H94zM118 106h24v12h-24zM154 106h12v24h-12zM178 106h22v12h-22zM70 118h12v24H70zM94 130h24v12H94zM130 118h12v12h-12zM178 130h22v12h-22zM82 154h12v12H82zM106 142h12v24h-12zM130 142h24v12h-24zM166 154h12v12h-12zM190 154h10v24h-10zM82 178h24v12H82zM118 166h12v24h-12zM142 178h36v12h-36zM178 190h22v10h-22zM142 94h12v12h-12zM34 118h12v12H34z"/>
+      </g>
+    </symbol>
+  </svg>
+
+  <main class="gallery">
+    <header class="gallery-intro">
+      <div><div class="eyebrow">GB Organizer V2 · QR Codes</div><h1>Five real directions for the shipping QR desk.</h1></div>
+      <p>Each concept uses the same realistic orders and core actions. Switch between them to compare workflow, density, visual hierarchy, and how confidently an organiser can move an order from uploaded to posted.</p>
+    </header>
+
+    <div class="picker-wrap">
+      <div class="concept-picker" aria-label="Choose a QR Codes redesign">
+        <button class="concept-tab active" data-choice="01-peps-clear" onclick="showConcept(this,'clear')"><b>01</b><span><strong>Peps Clear</strong><small>Split-view queue studio</small></span></button>
+        <button class="concept-tab" data-choice="02-flow-board" onclick="showConcept(this,'flow')"><b>02</b><span><strong>Flow Board</strong><small>Visual status pipeline</small></span></button>
+        <button class="concept-tab" data-choice="03-batch-ledger" onclick="showConcept(this,'ledger')"><b>03</b><span><strong>Batch Ledger</strong><small>High-volume operations</small></span></button>
+        <button class="concept-tab" data-choice="04-night-shift" onclick="showConcept(this,'night')"><b>04</b><span><strong>Night Shift</strong><small>Dark queue control room</small></span></button>
+        <button class="concept-tab" data-choice="05-compact-ops" onclick="showConcept(this,'compact')"><b>05</b><span><strong>Compact Ops</strong><small>Keyboard-first density</small></span></button>
+      </div>
+    </div>
+
+    <section class="browser">
+      <div class="browser-chrome"><span class="browser-dots"><i></i><i></i><i></i></span><div class="address" id="address">gb-organizer / winter-peptide-run / qr-codes / peps-clear</div><span>⋯</span></div>
+
+      <section class="view clear active" data-view="clear">
+        <header class="clear-head">
+          <div><div class="eyebrow">Fulfilment / QR codes</div><h2>Shipping QR desk</h2><p>Review member labels, resolve missing uploads, and confirm each hand-off.</p></div>
+          <div class="head-actions"><button class="common-button"><span class="icon">↻</span>Refresh</button><button class="common-button primary"><span class="icon">⇩</span>Export queue</button></div>
+        </header>
+        <div class="clear-metrics">
+          <article class="metric featured"><span>Queue completion</span><strong>61%</strong><small>8 of 13 orders ready or posted</small></article>
+          <article class="metric"><span>QR uploaded</span><strong>8</strong><small>2 uploaded today</small></article>
+          <article class="metric"><span>Needs posting</span><strong>3</strong><small>Ready for hand-off</small></article>
+          <article class="metric"><span>Waiting on member</span><strong>5</strong><small>Oldest: 2 days</small></article>
+        </div>
+        <div class="clear-toolbar"><div class="search"><span class="icon">⌕</span>Search member or order code</div><div class="filters"><span class="on">Needs action · 8</span><span>Ready · 3</span><span>Waiting · 5</span><span>Posted · 5</span></div><small>Updated 2 minutes ago</small></div>
+        <div class="queue-workspace">
+          <aside class="queue-list">
+            <div class="queue-list-head"><strong>Needs action</strong><span>Priority order ↕</span></div>
+            <button class="person-row active"><span class="avatar">SM</span><span class="person-copy"><strong>@sarah_m</strong><span>ORD-002 · InPost Locker</span></span><span class="pill blue">Ready</span></button>
+            <button class="person-row"><span class="avatar green">JD</span><span class="person-copy"><strong>@john_doe</strong><span>ORD-001 · Royal Mail</span></span><time>18m</time></button>
+            <button class="person-row"><span class="avatar amber">AP</span><span class="person-copy"><strong>@anna_p</strong><span>ORD-004 · InPost Locker</span></span><span class="pill amber">Waiting</span></button>
+            <button class="person-row"><span class="avatar rose">MF</span><span class="person-copy"><strong>@mike_fitness</strong><span>ORD-003 · Royal Mail</span></span><time>1h</time></button>
+            <button class="person-row"><span class="avatar">KL</span><span class="person-copy"><strong>@kate_london</strong><span>ORD-008 · DPD Pickup</span></span><span class="pill amber">Waiting</span></button>
+            <button class="person-row"><span class="avatar green">TW</span><span class="person-copy"><strong>@tom_w</strong><span>ORD-011 · InPost Locker</span></span><time>1d</time></button>
+          </aside>
+          <section class="preview-stage">
+            <header class="stage-top"><strong>InPost locker QR</strong><div><button title="Download">⇩</button><button title="Zoom">⌗</button><button title="More">•••</button></div></header>
+            <div class="qr-focus"><div class="qr-focus-inner"><div class="qr-card"><svg class="qr-svg" viewBox="0 0 210 210"><use href="#qr-art"/></svg></div><h3>@sarah_m · ORD-002</h3><p>Uploaded today at 09:42 · 1180 × 1180 px</p></div></div>
+          </section>
+          <aside class="order-detail">
+            <span>Selected order</span>
+            <div class="detail-member"><span class="avatar">SM</span><div><strong>Sarah Mitchell</strong><small>@sarah_m · ORD-002</small></div></div>
+            <div class="detail-card"><div class="detail-line"><span>Delivery</span><strong>InPost Locker</strong></div><div class="detail-line"><span>Destination</span><strong>Manchester M1</strong></div><div class="detail-line"><span>Products</span><strong>3 vials</strong></div><div class="detail-line"><span>Payment</span><strong style="color:#17825f">Confirmed</strong></div></div>
+            <div class="progress-steps"><div class="progress-step done"><i></i><div><strong>Order paid</strong><br><span>11 Jul · 09:15</span></div></div><div class="progress-step done"><i></i><div><strong>QR uploaded</strong><br><span>Today · 09:42</span></div></div><div class="progress-step active"><i></i><div><strong>Ready to post</strong><br><span>Awaiting your confirmation</span></div></div><div class="progress-step"><i></i><div><strong>Hand-off complete</strong></div></div></div>
+            <button class="common-button primary"><span class="icon">✓</span>Mark order posted</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view flow" data-view="flow">
+        <header class="flow-head"><div class="flow-title"><span class="flow-mark">▦</span><div><h2>QR fulfilment flow</h2><p>Move every member from upload request to confirmed hand-off.</p></div></div><div class="flow-actions"><button class="common-button">Manage reminders</button><button class="common-button primary">+ Add manual label</button></div></header>
+        <div class="flow-summary"><div class="progress-copy"><strong>61%</strong><div><span>Completion across 13 orders</span><small>Five posted · three ready · five waiting</small></div></div><div><div class="progress-track"><i></i></div><div class="progress-counts"><span><b>5</b> waiting</span><span><b>3</b> ready</span><span><b>5</b> posted</span></div></div></div>
+        <div class="board-toolbar"><div class="search"><span class="icon">⌕</span>Search members or orders</div><button class="common-button">All carriers⌄</button><button class="common-button">Oldest first⌄</button><button class="common-button">↻ Sync uploads</button></div>
+        <div class="kanban">
+          <section class="lane waiting"><header class="lane-head"><div><i></i><strong>Waiting for QR</strong><span>5</span></div><b>•••</b></header>
+            <article class="order-card"><div class="order-card-top"><span class="avatar amber">AP</span><div><strong>@anna_p</strong><small>ORD-004 · 2 days waiting</small></div><b>›</b></div><div class="order-meta"><span>InPost Locker</span><span>Germany</span><span>2 vials</span></div><div class="waiting-note">◷ Reminder due today · Telegram ready</div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar">KL</span><div><strong>@kate_london</strong><small>ORD-008 · 18 hours waiting</small></div><b>›</b></div><div class="order-meta"><span>DPD Pickup</span><span>United Kingdom</span></div><div class="waiting-note">◷ First reminder in 6 hours</div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar rose">RL</span><div><strong>@rachel_lab</strong><small>ORD-009 · 8 hours waiting</small></div><b>›</b></div><div class="order-meta"><span>Royal Mail</span><span>United Kingdom</span></div></article>
+          </section>
+          <section class="lane ready"><header class="lane-head"><div><i></i><strong>Ready to post</strong><span>3</span></div><b>•••</b></header>
+            <article class="order-card feature"><div class="order-card-top"><span class="avatar">SM</span><div><strong>@sarah_m</strong><small>ORD-002 · Uploaded 09:42</small></div><span class="pill blue">New</span></div><div class="order-meta"><span>InPost Locker</span><span>Manchester M1</span></div><div class="card-qr"><svg class="qr-svg" viewBox="0 0 210 210"><use href="#qr-art"/></svg><div><strong>Label checked and legible</strong><button>Mark posted →</button></div></div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar green">JD</span><div><strong>@john_doe</strong><small>ORD-001 · Uploaded yesterday</small></div><b>›</b></div><div class="order-meta"><span>Royal Mail</span><span>London</span><span>4 vials</span></div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar rose">MF</span><div><strong>@mike_fitness</strong><small>ORD-003 · Uploaded yesterday</small></div><b>›</b></div><div class="order-meta"><span>Royal Mail</span><span>Bristol</span></div></article>
+          </section>
+          <section class="lane posted"><header class="lane-head"><div><i></i><strong>Posted</strong><span>5</span></div><b>•••</b></header>
+            <article class="order-card"><div class="order-card-top"><span class="avatar green">TW</span><div><strong>@tom_w</strong><small>ORD-011 · Posted today</small></div><span class="pill green">Done</span></div><div class="order-meta"><span>InPost Locker</span><span>Leeds</span></div><div class="posted-stamp"><span>✓ Hand-off confirmed</span><time>10:18</time></div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar">BC</span><div><strong>@ben_chem</strong><small>ORD-006 · Posted yesterday</small></div><span class="pill green">Done</span></div><div class="order-meta"><span>Royal Mail</span><span>Edinburgh</span></div><div class="posted-stamp"><span>✓ Hand-off confirmed</span><time>16:32</time></div></article>
+            <article class="order-card"><div class="order-card-top"><span class="avatar amber">NV</span><div><strong>@nina_v</strong><small>ORD-007 · Posted 12 Jul</small></div><span class="pill green">Done</span></div><div class="order-meta"><span>DPD Pickup</span><span>Birmingham</span></div><div class="posted-stamp"><span>✓ Hand-off confirmed</span><time>12 Jul</time></div></article>
+          </section>
+        </div>
+      </section>
+
+      <section class="view ledger-view" data-view="ledger">
+        <header class="ledger-hero"><div class="monogram">QR</div><div><h2>Dispatch Label Register</h2><p>Winter Peptide Run 2025 · verified shipping artefacts and posting status</p></div><div class="hero-stats"><div><span>Orders</span><strong>13</strong></div><div><span>Labels held</span><strong>8</strong></div><div><span>Posted</span><strong>5</strong></div><div><span>Exceptions</span><strong>2</strong></div></div></header>
+        <div class="ledger-content">
+          <div class="batch-bar"><div class="search"><span class="icon">⌕</span>Find member, order, or destination</div><div class="filters"><span class="on">Open register</span><span>Waiting</span><span>Ready</span><span>Posted</span></div><small>Last reconciled 10:46</small><button class="common-button">Export CSV</button><button class="common-button primary">Reconcile uploads</button></div>
+          <div class="selection-bar"><span class="check">✓</span><strong>3 records selected</strong><span>All selected labels passed visual review.</span><button>Mark selected as posted →</button></div>
+          <div class="ledger-grid">
+            <div class="table-wrap"><table><thead><tr><th></th><th>Member / order</th><th>Carrier</th><th>Destination</th><th>Label received</th><th>Status</th><th></th></tr></thead><tbody>
+              <tr class="selected"><td><span class="check">✓</span></td><td><div class="user-cell"><span class="avatar">SM</span><div><strong>@sarah_m</strong><small>ORD-002 · 3 vials</small></div></div></td><td><span class="carrier-mark">InPost</span></td><td>Manchester M1</td><td>Today · 09:42</td><td><span class="pill blue">Ready</span></td><td><button class="row-action">View</button></td></tr>
+              <tr class="selected"><td><span class="check">✓</span></td><td><div class="user-cell"><span class="avatar">JD</span><div><strong>@john_doe</strong><small>ORD-001 · 4 vials</small></div></div></td><td><span class="carrier-mark">Royal Mail</span></td><td>London SW4</td><td>Yesterday · 14:08</td><td><span class="pill blue">Ready</span></td><td><button class="row-action">View</button></td></tr>
+              <tr class="selected"><td><span class="check">✓</span></td><td><div class="user-cell"><span class="avatar">MF</span><div><strong>@mike_fitness</strong><small>ORD-003 · 2 vials</small></div></div></td><td><span class="carrier-mark">Royal Mail</span></td><td>Bristol BS3</td><td>Yesterday · 10:21</td><td><span class="pill blue">Ready</span></td><td><button class="row-action">View</button></td></tr>
+              <tr><td><span class="check"></span></td><td><div class="user-cell"><span class="avatar">AP</span><div><strong>@anna_p</strong><small>ORD-004 · 2 vials</small></div></div></td><td><span class="carrier-mark">InPost</span></td><td>Berlin 10115</td><td>—</td><td><span class="pill amber">Waiting</span></td><td><button class="row-action">Remind</button></td></tr>
+              <tr><td><span class="check"></span></td><td><div class="user-cell"><span class="avatar">KL</span><div><strong>@kate_london</strong><small>ORD-008 · 1 vial</small></div></div></td><td><span class="carrier-mark">DPD</span></td><td>London E8</td><td>—</td><td><span class="pill amber">Waiting</span></td><td><button class="row-action">Remind</button></td></tr>
+              <tr><td><span class="check"></span></td><td><div class="user-cell"><span class="avatar">TW</span><div><strong>@tom_w</strong><small>ORD-011 · 5 vials</small></div></div></td><td><span class="carrier-mark">InPost</span></td><td>Leeds LS1</td><td>Today · 08:16</td><td><span class="pill green">Posted</span></td><td><button class="row-action">Audit</button></td></tr>
+            </tbody></table></div>
+            <aside class="ledger-preview"><small>Selected label · 1 of 3</small><h3>@sarah_m</h3><p>ORD-002 · InPost Locker</p><div class="qr-card"><svg class="qr-svg" viewBox="0 0 210 210"><use href="#qr-art"/></svg></div><div class="detail-line"><span>Received</span><strong>18 Jul · 09:42</strong></div><div class="detail-line"><span>Image quality</span><strong style="color:#27715e">Verified</strong></div><div class="detail-line"><span>Destination</span><strong>Manchester M1</strong></div><button class="common-button">Download original</button><button class="common-button primary">Mark selected posted</button></aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="view night" data-view="night">
+        <header class="night-top"><div class="night-brand">⌗</div><div><h2>QR Operations / Night Shift</h2><p>Winter Peptide Run 2025 · live label verification console</p></div><div class="live"><i></i>Live sync</div><button class="common-button">↻ Refresh</button><button class="common-button primary">Complete hand-off</button></header>
+        <div class="night-stats"><div class="night-stat"><span>Queue completion</span><strong>08 / 13</strong><small>61.5 percent cleared</small></div><div class="night-stat"><span>Labels online</span><strong>08</strong><small>2 new since 08:00</small></div><div class="night-stat attn"><span>Attention required</span><strong>05</strong><small>Oldest wait: 48h</small></div><div class="night-stat"><span>Hand-offs today</span><strong>02</strong><small>Last at 10:18 UTC</small></div></div>
+        <div class="night-workspace">
+          <aside class="night-queue"><div class="night-search"><span>⌕ Search queue</span><kbd>⌘ K</kbd></div>
+            <div class="night-row active"><span class="avatar">SM</span><div class="night-row-copy"><strong>@sarah_m</strong><span>ORD-002 · InPost · 09:42</span></div><i class="signal green"></i></div>
+            <div class="night-row"><span class="avatar green">JD</span><div class="night-row-copy"><strong>@john_doe</strong><span>ORD-001 · Royal Mail · 17 Jul</span></div><i class="signal green"></i></div>
+            <div class="night-row"><span class="avatar amber">AP</span><div class="night-row-copy"><strong>@anna_p</strong><span>ORD-004 · Waiting 48h</span></div><i class="signal"></i></div>
+            <div class="night-row"><span class="avatar rose">MF</span><div class="night-row-copy"><strong>@mike_fitness</strong><span>ORD-003 · Royal Mail · 17 Jul</span></div><i class="signal green"></i></div>
+            <div class="night-row"><span class="avatar">KL</span><div class="night-row-copy"><strong>@kate_london</strong><span>ORD-008 · Waiting 18h</span></div><i class="signal"></i></div>
+            <div class="night-row"><span class="avatar green">TW</span><div class="night-row-copy"><strong>@tom_w</strong><span>ORD-011 · Posted 10:18</span></div><i class="signal green"></i></div>
+          </aside>
+          <section class="night-preview"><header class="night-stage-head"><span>ACTIVE ARTEFACT / <b>INPOST LOCKER QR</b></span><span>ORIGINAL · 1180PX ◱</span></header><div class="night-qr-focus"><div class="night-qr-inner"><div class="scanner"><svg class="qr-svg" viewBox="0 0 210 210"><use href="#qr-art"/></svg></div><h3>@sarah_m / ORD-002</h3><p>CRC VERIFIED · CONTRAST PASS · UPLOADED 09:42</p></div></div></section>
+          <aside class="night-detail"><small>Active order context</small><div class="night-member"><span class="avatar">SM</span><div><strong>Sarah Mitchell</strong><span>@sarah_m · ORD-002</span></div></div><div class="night-panel"><div class="detail-line"><span>Carrier</span><strong>InPost Locker</strong></div><div class="detail-line"><span>Destination</span><strong>Manchester M1</strong></div><div class="detail-line"><span>Contents</span><strong>3 vials</strong></div><div class="detail-line"><span>Payment gate</span><strong style="color:#59d7c1">PASSED</strong></div></div><div class="night-timeline"><div class="night-event done">09:15 · payment confirmed</div><div class="night-event done">09:42 · member QR received</div><div class="night-event done">09:43 · image validation passed</div><div class="night-event">Awaiting physical hand-off</div></div><button class="common-button">✓ Mark hand-off complete</button></aside>
+        </div>
+      </section>
+
+      <section class="view compact" data-view="compact">
+        <header class="compact-head"><span class="compact-mark">QR</span><div><h2>QR Operations</h2><p>Winter Peptide Run 2025 / Fulfilment desk</p></div><div class="command-search">⌕ Search member, order, carrier, destination <kbd>⌘ K</kbd></div><button class="common-button">↻ Sync</button><button class="common-button primary">Export</button></header>
+        <div class="compact-body">
+          <aside class="compact-rail"><small>Queue views</small><button class="rail-filter on">◉ Needs action <b>8</b></button><button class="rail-filter">◌ Ready <b>3</b></button><button class="rail-filter">◷ Waiting <b>5</b></button><button class="rail-filter">✓ Posted <b>5</b></button><div class="rail-divider"></div><small>Carriers</small><button class="rail-filter">▦ InPost <b>6</b></button><button class="rail-filter">▤ Royal Mail <b>5</b></button><button class="rail-filter">◇ Other <b>2</b></button><div class="compact-note"><strong>Fast review mode</strong>Use ↑ ↓ to move the queue and P to mark the active order posted.</div></aside>
+          <main class="compact-main">
+            <div class="compact-stats"><article class="compact-stat"><div><span>Total orders</span><strong>13</strong></div><i></i></article><article class="compact-stat"><div><span>QR received</span><strong>8</strong></div><i></i></article><article class="compact-stat"><div><span>Waiting</span><strong>5</strong></div><i></i></article><article class="compact-stat"><div><span>Posted</span><strong>5</strong></div><i></i></article></div>
+            <div class="compact-work">
+              <section class="compact-table"><header class="compact-table-head"><strong>Action queue</strong><span>8 records · priority sorted</span><div class="mini-search">⌕ Filter this list</div></header><div class="compact-cols"><span></span><span>Member / order</span><span>Carrier</span><span>Received</span><span>Status</span><span></span></div>
+                <div class="compact-row active"><span>›</span><div class="compact-user"><span class="avatar">SM</span><div><strong>@sarah_m</strong><small>ORD-002 · Manchester</small></div></div><span>InPost</span><span>Today 09:42</span><span class="pill blue">Ready</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar green">JD</span><div><strong>@john_doe</strong><small>ORD-001 · London</small></div></div><span>Royal Mail</span><span>17 Jul 14:08</span><span class="pill blue">Ready</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar amber">AP</span><div><strong>@anna_p</strong><small>ORD-004 · Berlin</small></div></div><span>InPost</span><span>—</span><span class="pill amber">Waiting</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar rose">MF</span><div><strong>@mike_fitness</strong><small>ORD-003 · Bristol</small></div></div><span>Royal Mail</span><span>17 Jul 10:21</span><span class="pill blue">Ready</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar">KL</span><div><strong>@kate_london</strong><small>ORD-008 · London</small></div></div><span>DPD</span><span>—</span><span class="pill amber">Waiting</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar green">TW</span><div><strong>@tom_w</strong><small>ORD-011 · Leeds</small></div></div><span>InPost</span><span>Today 08:16</span><span class="pill green">Posted</span><button>•••</button></div>
+                <div class="compact-row"><span>›</span><div class="compact-user"><span class="avatar">BC</span><div><strong>@ben_chem</strong><small>ORD-006 · Edinburgh</small></div></div><span>Royal Mail</span><span>16 Jul 15:55</span><span class="pill green">Posted</span><button>•••</button></div>
+              </section>
+              <aside class="compact-preview"><header class="compact-preview-head"><strong>Label preview</strong><span>INPOST · ORIGINAL ◱</span></header><div class="compact-qr"><div class="compact-qr-inner"><div class="qr-card"><svg class="qr-svg" viewBox="0 0 210 210"><use href="#qr-art"/></svg></div><div class="compact-context"><h3>@sarah_m</h3><p>ORD-002 · uploaded 09:42 today</p><div class="detail-line"><span>Destination</span><strong>Manchester M1</strong></div><div class="detail-line"><span>Contents</span><strong>3 vials</strong></div><div class="detail-line"><span>Payment</span><strong style="color:#17825f">Confirmed</strong></div><div class="compact-actions"><button class="common-button primary">✓ Mark posted</button><button class="common-button">⇩</button></div></div></div></div><footer class="shortcut-bar"><span><b>↑↓</b> Move</span><span><b>Space</b> Preview</span><span><b>P</b> Mark posted</span><span><b>R</b> Remind</span><span><b>Esc</b> Close</span></footer></aside>
+            </div>
+          </main>
+        </div>
+      </section>
+    </section>
+    <footer class="gallery-note"><span>✦</span><span><b>These are the actual proposed pages.</b> Switch through all five tabs, then leave the last one you prefer selected and tell me what you’d change.</span></footer>
+  </main>
+  <script>
+    const labels={clear:'peps-clear',flow:'flow-board',ledger:'batch-ledger',night:'night-shift',compact:'compact-ops'};
+    function showConcept(button,id){
+      document.querySelectorAll('.concept-tab').forEach(el=>el.classList.toggle('active',el===button));
+      document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.dataset.view===id));
+      document.getElementById('address').textContent='gb-organizer / winter-peptide-run / qr-codes / '+labels[id];
+      if(window.brainstorm) window.brainstorm.choice(id,{screen:'qr-high-fidelity'});
+    }
+  </script>
+</body>
+</html>

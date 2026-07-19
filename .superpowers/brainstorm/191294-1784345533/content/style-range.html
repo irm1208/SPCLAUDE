@@ -1,0 +1,120 @@
+<style>
+  .parcel-range { --navy:#1B3A7A; --blue:#2D6BCC; --ink:#0F1F38; --muted:#6B7280; }
+  .parcel-range .intro { max-width: 780px; margin-bottom: 26px; }
+  .parcel-range .intro h2 { margin-bottom: 8px; color: var(--ink); letter-spacing: -.035em; }
+  .parcel-range .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+  .parcel-range .card { overflow: hidden; padding: 0; border-radius: 18px; background: #fff; }
+  .parcel-range .card-image { min-height: 310px; padding: 15px; border-bottom: 1px solid #e5eaf0; }
+  .parcel-range .card-body { padding: 17px 18px 19px; }
+  .parcel-range .card-body h3 { margin: 0 0 6px; }
+  .parcel-range .card-body p { margin: 0; font-size: 13px; line-height: 1.55; }
+  .parcel-range .mini-shell { height: 280px; overflow: hidden; border: 1px solid rgba(27,58,122,.13); border-radius: 12px; background: #f8fafc; box-shadow: 0 14px 38px rgba(15,31,56,.09); }
+  .parcel-range .mini-top { display:flex; align-items:center; justify-content:space-between; height:34px; padding:0 10px; border-bottom:1px solid #e6ebf1; background:#fff; font-size:7px; font-weight:800; color:var(--ink); }
+  .parcel-range .mini-top b { letter-spacing:.06em; }
+  .parcel-range .dots { display:flex; gap:3px; }
+  .parcel-range .dots i { width:4px; height:4px; border-radius:50%; background:#cad4df; }
+  .parcel-range .mini-body { display:grid; grid-template-columns:48px 1fr; height:246px; }
+  .parcel-range .mini-side { padding:10px 7px; background:var(--navy); }
+  .parcel-range .mini-side i { display:block; width:24px; height:5px; margin:0 auto 9px; border-radius:5px; background:rgba(255,255,255,.28); }
+  .parcel-range .mini-side i.active { height:22px; background:var(--blue); }
+  .parcel-range .mini-main { padding:12px; }
+  .parcel-range .eyebrow { color:var(--blue); font-size:6px; font-weight:900; letter-spacing:.13em; text-transform:uppercase; }
+  .parcel-range .title { margin-top:4px; color:var(--ink); font-size:15px; font-weight:850; letter-spacing:-.04em; }
+  .parcel-range .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:10px; }
+  .parcel-range .stat { padding:7px; border:1px solid #e0e7ef; border-radius:7px; background:#fff; }
+  .parcel-range .stat strong { display:block; color:var(--ink); font-size:11px; }
+  .parcel-range .stat span { color:#8190a0; font-size:5px; text-transform:uppercase; }
+  .parcel-range .list { margin-top:7px; overflow:hidden; border:1px solid #e0e7ef; border-radius:8px; background:#fff; }
+  .parcel-range .row { display:grid; grid-template-columns:10px 1.25fr .9fr .65fr; align-items:center; gap:6px; min-height:27px; padding:0 7px; border-top:1px solid #edf1f5; font-size:6px; color:#5e6a78; }
+  .parcel-range .row:first-child { border-top:0; background:#f7f9fb; color:#8390a0; font-weight:800; text-transform:uppercase; }
+  .parcel-range .box { width:8px; height:8px; border-radius:2px; background:#eaf0f9; }
+  .parcel-range .pill { justify-self:start; padding:2px 5px; border-radius:8px; color:#17805f; background:#e2f6ef; font-weight:800; }
+  .parcel-range .map .mini-body { grid-template-columns:1fr; }
+  .parcel-range .map .mini-top { color:white; background:linear-gradient(135deg,#2D6BCC,#1B3164); border:0; }
+  .parcel-range .map .mini-main { padding:14px; background:#f5f7fa; }
+  .parcel-range .map-head { display:flex; justify-content:space-between; align-items:flex-end; }
+  .parcel-range .map-head .title { font-family:Georgia,serif; font-size:17px; }
+  .parcel-range .route { position:relative; display:flex; justify-content:space-between; align-items:center; height:56px; margin:13px 1px 10px; }
+  .parcel-range .route:before { position:absolute; left:8px; right:8px; top:27px; height:2px; background:linear-gradient(90deg,#2D6BCC 0 68%,#cad5e1 68%); content:""; }
+  .parcel-range .node { position:relative; z-index:1; display:grid; place-items:center; width:17px; height:17px; border:3px solid #f5f7fa; border-radius:50%; color:#fff; background:#2D6BCC; box-shadow:0 0 0 1px #2D6BCC; font-size:6px; font-weight:900; }
+  .parcel-range .node.pending { color:#8390a0; background:#fff; box-shadow:0 0 0 1px #becbd8; }
+  .parcel-range .route-card { display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:8px; margin-top:6px; padding:9px; border:1px solid #e0e5eb; border-radius:4px; background:#fff; }
+  .parcel-range .route-card .stamp { display:grid; place-items:center; height:30px; border:1px dashed #9baabd; color:#1B3A7A; font-size:6px; font-weight:900; transform:rotate(-2deg); }
+  .parcel-range .route-card strong { display:block; color:#182a43; font-family:Georgia,serif; font-size:8px; }
+  .parcel-range .route-card small { color:#7d8996; font-size:6px; }
+  .parcel-range .command .mini-shell { border-color:#203149; background:#07111f; box-shadow:0 18px 42px rgba(4,10,20,.28); }
+  .parcel-range .command .mini-top { color:#dbe6f5; border-color:#203149; background:#0d1929; }
+  .parcel-range .command .mini-body { grid-template-columns:1fr; height:246px; }
+  .parcel-range .command .mini-main { padding:12px; background:radial-gradient(circle at 90% 0,rgba(45,107,204,.25),transparent 45%),#07111f; }
+  .parcel-range .command .eyebrow { color:#54d7c1; }
+  .parcel-range .command .title { color:#f4f8ff; }
+  .parcel-range .command-grid { display:grid; grid-template-columns:1.35fr .65fr; gap:7px; margin-top:10px; }
+  .parcel-range .radar { position:relative; min-height:112px; overflow:hidden; border:1px solid #223650; border-radius:9px; background:linear-gradient(rgba(74,104,148,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(74,104,148,.07) 1px,transparent 1px),#0c1828; background-size:15px 15px; }
+  .parcel-range .radar:after { position:absolute; inset:21px; border:1px solid rgba(84,215,193,.35); border-radius:50%; content:""; }
+  .parcel-range .pulse { position:absolute; z-index:2; width:7px; height:7px; border-radius:50%; background:#54d7c1; box-shadow:0 0 0 5px rgba(84,215,193,.13),0 0 14px #54d7c1; }
+  .parcel-range .pulse.a { left:28%; top:34%; } .parcel-range .pulse.b { left:66%; top:62%; background:#f3b85b; box-shadow:0 0 0 5px rgba(243,184,91,.13); }
+  .parcel-range .alerts { display:grid; gap:6px; }
+  .parcel-range .alert { padding:8px; border:1px solid #223650; border-radius:8px; background:#0d1a2b; }
+  .parcel-range .alert strong { display:block; color:#edf4ff; font-size:9px; }
+  .parcel-range .alert span { color:#7f91a8; font-size:5px; }
+  .parcel-range .command-strip { display:flex; gap:5px; margin-top:7px; }
+  .parcel-range .command-strip span { flex:1; padding:6px; border:1px solid #223650; border-radius:6px; color:#8193aa; background:#0d1a2b; font-size:5px; }
+  @media (max-width: 900px) { .parcel-range .cards { grid-template-columns:1fr; } }
+</style>
+
+<div class="parcel-range">
+  <div class="intro">
+    <div class="label">Visual range</div>
+    <h2>How far should the five Parcel concepts travel?</h2>
+    <p class="subtitle">All options keep the current workflows and Peps Anonymous core palette. The choice is how broad the visual exploration should be.</p>
+  </div>
+
+  <div class="cards">
+    <div class="card" data-choice="native" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div class="mini-shell">
+          <div class="mini-top"><b>PEPS ANONYMOUS · PARCELS</b><span class="dots"><i></i><i></i><i></i></span></div>
+          <div class="mini-body">
+            <div class="mini-side"><i class="active"></i><i></i><i></i><i></i><i></i></div>
+            <div class="mini-main">
+              <div class="eyebrow">Fulfilment workspace</div><div class="title">Parcels</div>
+              <div class="stats"><div class="stat"><strong>18</strong><span>In transit</span></div><div class="stat"><strong>04</strong><span>Arriving today</span></div><div class="stat"><strong>02</strong><span>Need attention</span></div></div>
+              <div class="list"><div class="row"><span></span><span>Parcel</span><span>Destination</span><span>Status</span></div><div class="row"><span class="box"></span><b>RM · 6789GB</b><span>London hub</span><span class="pill">Moving</span></div><div class="row"><span class="box"></span><b>DHL · 4321</b><span>Manchester</span><span class="pill">Today</span></div><div class="row"><span class="box"></span><b>UPS · 784</b><span>Birmingham</span><span class="pill">Received</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body"><h3>A · Brand-native only</h3><p>Five restrained variations of the current light organiser system. Safest, but the concepts may feel closely related.</p></div>
+    </div>
+
+    <div class="card map" data-choice="spectrum" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div class="mini-shell">
+          <div class="mini-top"><b>PEPS ANONYMOUS</b><span>ROUTE DESK · 18 JUL</span></div>
+          <div class="mini-body"><div class="mini-main">
+            <div class="map-head"><div><div class="eyebrow">Parcel journal · 24 active</div><div class="title">Everything in motion.</div></div><span class="pill">98% on course</span></div>
+            <div class="route"><span class="node">01</span><span class="node">02</span><span class="node">03</span><span class="node pending">04</span></div>
+            <div class="route-card"><span class="stamp">LHR<br>18 JUL</span><div><strong>Royal Mail · RM123456789GB</strong><small>Birmingham depot → John’s Reshipper</small></div><span class="pill">In transit</span></div>
+            <div class="route-card"><span class="stamp">MAN<br>ETA 12:30</span><div><strong>DHL Express · 987654321</strong><small>Final mile → Sarah’s Forwarding</small></div><span class="pill">Today</span></div>
+            <div class="route-card"><span class="stamp">BHX<br>DONE</span><div><strong>UPS · 1Z999AA10</strong><small>Received · stock ready to allocate</small></div><span class="pill">Received</span></div>
+          </div></div>
+        </div>
+      </div>
+      <div class="card-body"><h3>B · Controlled spectrum</h3><p><strong>Recommended.</strong> Three highly usable Peps-native concepts plus one editorial route map and one dark operations view.</p></div>
+    </div>
+
+    <div class="card command" data-choice="radical" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div class="mini-shell">
+          <div class="mini-top"><b>PARCEL SIGNAL</b><span>24 LIVE · 02 ALERTS</span></div>
+          <div class="mini-body"><div class="mini-main">
+            <div class="eyebrow">Live fulfilment network</div><div class="title">Every route. One signal.</div>
+            <div class="command-grid"><div class="radar"><i class="pulse a"></i><i class="pulse b"></i></div><div class="alerts"><div class="alert"><strong>02</strong><span>exceptions</span></div><div class="alert"><strong>04</strong><span>due today</span></div><div class="alert"><strong>18</strong><span>moving</span></div></div></div>
+            <div class="command-strip"><span>RM · Heathrow → Birmingham</span><span>DHL · Manchester final mile</span></div>
+          </div></div>
+        </div>
+      </div>
+      <div class="card-body"><h3>C · Fully experimental</h3><p>Five radically different interfaces with bolder typography, density and themes. Strong inspiration, less immediately production-like.</p></div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>GB Organiser typography directions</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      color: #0f1f38;
+      background: #edf3f8;
+      font-family: Inter, sans-serif;
+    }
+    body { margin: 0; min-width: 320px; }
+    button { font: inherit; }
+    .page {
+      min-height: 100vh;
+      padding: 38px clamp(20px, 4vw, 64px) 56px;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(45,107,204,.12), transparent 27%),
+        linear-gradient(180deg, #f8fbfd 0%, #edf3f8 62%, #e7eef5 100%);
+    }
+    .intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 28px;
+      max-width: 1560px;
+      margin: 0 auto 26px;
+    }
+    .eyebrow {
+      margin: 0 0 9px;
+      color: #2d6bcc;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; font: 700 clamp(28px, 3vw, 42px)/1.08 Manrope, sans-serif; letter-spacing: -.045em; }
+    .intro-copy { max-width: 760px; margin: 11px 0 0; color: #5e6e82; font-size: 14px; line-height: 1.55; }
+    .instruction {
+      flex: 0 0 auto;
+      padding: 10px 14px;
+      border: 1px solid #c9d7e5;
+      border-radius: 999px;
+      background: rgba(255,255,255,.75);
+      color: #516176;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 8px 20px rgba(34,57,84,.06);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(370px, 1fr));
+      gap: 18px;
+      max-width: 1560px;
+      margin: auto;
+      overflow-x: auto;
+      padding: 2px 2px 16px;
+    }
+    .choice {
+      position: relative;
+      min-width: 370px;
+      overflow: hidden;
+      border: 1px solid #cdd9e5;
+      border-radius: 20px;
+      background: rgba(255,255,255,.92);
+      box-shadow: 0 16px 44px rgba(27,49,100,.08);
+      cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+    .choice:hover { transform: translateY(-3px); border-color: #91acd3; box-shadow: 0 22px 54px rgba(27,49,100,.13); }
+    .choice.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.16), 0 22px 54px rgba(27,49,100,.14); }
+    .choice.recommended::after {
+      content: "RECOMMENDED";
+      position: absolute;
+      z-index: 5;
+      top: 16px;
+      right: 16px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #e9f1ff;
+      color: #1b3a7a;
+      font: 700 9px/1 Inter, sans-serif;
+      letter-spacing: .09em;
+    }
+    .choice-head { padding: 19px 20px 15px; border-bottom: 1px solid #e6edf3; }
+    .choice-label { display: flex; align-items: center; gap: 10px; }
+    .letter {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 9px;
+      background: #1b3a7a;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .choice h2 { margin: 0; font-size: 16px; line-height: 1.2; letter-spacing: -.02em; }
+    .choice-desc { margin: 9px 0 12px; color: #6b798a; font-size: 11px; line-height: 1.45; }
+    .tokens { display: flex; flex-wrap: wrap; gap: 5px; }
+    .token { padding: 4px 7px; border-radius: 6px; background: #f0f4f8; color: #5a697b; font-size: 9px; font-weight: 600; }
+    .app-window {
+      margin: 14px;
+      min-height: 436px;
+      overflow: hidden;
+      border: 1px solid #d7e1ea;
+      border-radius: 14px;
+      background: #f7f9fc;
+      color: #12233c;
+      font-family: var(--ui-font);
+    }
+    .app-top {
+      display: flex;
+      align-items: center;
+      height: 42px;
+      padding: 0 13px;
+      border-bottom: 1px solid #dce5ed;
+      background: #fff;
+    }
+    .brand-mark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 7px; background: linear-gradient(135deg,#2d6bcc,#1b3a7a); color:#fff; font-weight:700; font-size:9px; }
+    .crumb { margin-left: 9px; color: #778597; font-size: var(--micro); font-weight: 600; }
+    .top-search { width: 110px; margin-left: auto; padding: 6px 8px; border: 1px solid #dbe4ed; border-radius: 7px; color: #8a98a8; background: #f8fafc; font-size: var(--micro); }
+    .avatar { width: 22px; height: 22px; margin-left: 7px; border-radius: 50%; background: #dfe9f7; border: 2px solid white; box-shadow: 0 0 0 1px #cbd7e4; }
+    .app-body { display: grid; grid-template-columns: 86px 1fr; min-height: 394px; }
+    .side { padding: 12px 8px; border-right: 1px solid #dce5ed; background: #f4f7fa; }
+    .side-label { margin: 0 7px 7px; color: #93a0af; font-size: calc(var(--micro) - 1px); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .nav-item { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; padding: 7px; border-radius: 7px; color: #5e6d7f; font-size: var(--nav); font-weight: 550; }
+    .nav-item::before { content: ""; width: 6px; height: 6px; border: 1.5px solid currentColor; border-radius: 2px; opacity: .8; }
+    .nav-item.active { color: #1b3a7a; background: #e6eef9; font-weight: 700; }
+    .main { padding: 16px 15px 18px; overflow: hidden; }
+    .page-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .page-title { margin: 0; color: #102039; font-size: var(--title); font-weight: var(--title-weight); line-height: 1.08; letter-spacing: var(--title-track); }
+    .page-sub { margin: 5px 0 0; color: #718093; font-size: var(--body); line-height: 1.35; }
+    .primary { padding: 7px 10px; border: 0; border-radius: 7px; background: #1b3a7a; color: white; font-size: var(--button); font-weight: 700; }
+    .metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 13px; }
+    .metric { padding: 9px; border: 1px solid #dce5ed; border-radius: 9px; background: white; }
+    .metric-label { color: #748296; font-size: var(--micro); font-weight: 650; line-height: 1.2; }
+    .metric-value { margin-top: 5px; color: #14253e; font-size: var(--metric); font-weight: 700; line-height: 1; letter-spacing: -.035em; }
+    .metric-note { margin-top: 4px; color: #2a8652; font-size: calc(var(--micro) - 1px); font-weight: 650; }
+    .filters { display: flex; align-items: center; gap: 5px; margin-top: 11px; }
+    .search { flex: 1; padding: 7px 9px; border: 1px solid #d7e1ea; border-radius: 7px; color: #8a98a8; background: white; font-size: var(--body); }
+    .filter { padding: 7px 9px; border: 1px solid #d7e1ea; border-radius: 7px; color: #526174; background: white; font-size: var(--button); font-weight: 600; }
+    .table { margin-top: 9px; overflow: hidden; border: 1px solid #dce5ed; border-radius: 9px; background: #fff; }
+    .row { display: grid; grid-template-columns: .72fr 1.15fr .8fr .72fr; align-items: center; min-height: 36px; padding: 0 9px; border-top: 1px solid #edf1f5; font-size: var(--table); }
+    .row.head { min-height: 30px; border-top: 0; background: #f7f9fb; color: #7d8999; font-size: var(--micro); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+    .order-code { color: #1b3a7a; font-weight: 700; }
+    .member { color: #35465d; font-weight: 600; }
+    .status { width: fit-content; padding: 3px 6px; border-radius: 999px; background: #fff2d8; color: #9a6511; font-size: calc(var(--micro) - 1px); font-weight: 700; }
+    .status.paid { background: #e3f5ea; color: #217847; }
+    .amount { text-align: right; color: #24364e; font-weight: 650; }
+    .choice-footer { padding: 0 20px 18px; color: #667589; font-size: 10px; line-height: 1.45; }
+
+    .manrope { --ui-font: Manrope, sans-serif; --title: 22px; --title-weight: 700; --title-track: -.04em; --body: 10px; --nav: 9px; --micro: 8px; --button: 9px; --metric: 19px; --table: 9px; }
+    .dm { --ui-font: "DM Sans", sans-serif; --title: 20px; --title-weight: 700; --title-track: -.025em; --body: 10px; --nav: 9px; --micro: 8px; --button: 9px; --metric: 18px; --table: 9px; }
+    .inter { --ui-font: Inter, sans-serif; --title: 21px; --title-weight: 650; --title-track: -.035em; --body: 10px; --nav: 9px; --micro: 8px; --button: 9px; --metric: 18px; --table: 9px; }
+
+    @media (max-width: 900px) {
+      .page { padding: 26px 16px 40px; }
+      .intro { align-items: flex-start; flex-direction: column; gap: 15px; }
+      .grid { grid-template-columns: repeat(3, 390px); }
+      .instruction { align-self: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="intro">
+      <div>
+        <p class="eyebrow">GB Organiser · typography study</p>
+        <h1>Same screen. Three clearer voices.</h1>
+        <p class="intro-copy">The current organiser drops important labels to 8–11px. Every direction below restores a professional reading hierarchy while keeping the Peps navy, blue, white and slate palette unchanged.</p>
+      </div>
+      <div class="instruction">Click one design to select it</div>
+    </header>
+
+    <section class="grid">
+      <article class="choice recommended manrope" data-choice="a-manrope-balanced" onclick="toggleSelect(this)">
+        <header class="choice-head">
+          <div class="choice-label"><span class="letter">A</span><h2>Manrope · Balanced precision</h2></div>
+          <p class="choice-desc">Clean, confident and slightly more distinctive than the main dashboard without feeling like a separate product.</p>
+          <div class="tokens"><span class="token">30px page title</span><span class="token">14px body</span><span class="token">13px controls</span><span class="token">600–700 weight</span></div>
+        </header>
+        <div class="app-window">
+          <div class="app-top"><span class="brand-mark">P</span><span class="crumb">Peps Anonymous / GB Organiser</span><span class="top-search">Search orders…</span><span class="avatar"></span></div>
+          <div class="app-body">
+            <aside class="side"><p class="side-label">Workspace</p><div class="nav-item">Overview</div><div class="nav-item active">Orders</div><div class="nav-item">Dispatch</div><div class="nav-item">Members</div><div class="nav-item">Products</div><div class="nav-item">Testing</div></aside>
+            <section class="main">
+              <div class="page-title-row"><div><h3 class="page-title">Orders</h3><p class="page-sub">Track payments, fulfilment and member orders.</p></div><button class="primary">+ Add order</button></div>
+              <div class="metrics"><div class="metric"><div class="metric-label">Total orders</div><div class="metric-value">124</div><div class="metric-note">+12 this week</div></div><div class="metric"><div class="metric-label">Order value</div><div class="metric-value">£18.4k</div><div class="metric-note">84% collected</div></div><div class="metric"><div class="metric-label">Awaiting payment</div><div class="metric-value">17</div><div class="metric-note">£2,640 due</div></div><div class="metric"><div class="metric-label">Ready to dispatch</div><div class="metric-value">8</div><div class="metric-note">3 due today</div></div></div>
+              <div class="filters"><div class="search">Search member or order</div><button class="filter">Status</button><button class="filter">Filters · 2</button></div>
+              <div class="table"><div class="row head"><span>Order</span><span>Member</span><span>Status</span><span class="amount">Total</span></div><div class="row"><span class="order-code">#10482</span><span class="member">@northstar</span><span class="status">Awaiting</span><span class="amount">£186.40</span></div><div class="row"><span class="order-code">#10481</span><span class="member">@samuel_r</span><span class="status paid">Paid</span><span class="amount">£242.00</span></div><div class="row"><span class="order-code">#10480</span><span class="member">@cobalt_uk</span><span class="status paid">Packed</span><span class="amount">£94.60</span></div></div>
+            </section>
+          </div>
+        </div>
+        <footer class="choice-footer"><strong>Best balance:</strong> clear numerals, strong headings and comfortable controls without making the workspace feel oversized.</footer>
+      </article>
+
+      <article class="choice dm" data-choice="b-dm-sans-compact" onclick="toggleSelect(this)">
+        <header class="choice-head">
+          <div class="choice-label"><span class="letter">B</span><h2>DM Sans · Calm compact</h2></div>
+          <p class="choice-desc">Softer letterforms and a tighter scale. Friendly and modern, with more information visible at once.</p>
+          <div class="tokens"><span class="token">28px page title</span><span class="token">13px body</span><span class="token">12px controls</span><span class="token">500–700 weight</span></div>
+        </header>
+        <div class="app-window">
+          <div class="app-top"><span class="brand-mark">P</span><span class="crumb">Peps Anonymous / GB Organiser</span><span class="top-search">Search orders…</span><span class="avatar"></span></div>
+          <div class="app-body">
+            <aside class="side"><p class="side-label">Workspace</p><div class="nav-item">Overview</div><div class="nav-item active">Orders</div><div class="nav-item">Dispatch</div><div class="nav-item">Members</div><div class="nav-item">Products</div><div class="nav-item">Testing</div></aside>
+            <section class="main">
+              <div class="page-title-row"><div><h3 class="page-title">Orders</h3><p class="page-sub">Track payments, fulfilment and member orders.</p></div><button class="primary">+ Add order</button></div>
+              <div class="metrics"><div class="metric"><div class="metric-label">Total orders</div><div class="metric-value">124</div><div class="metric-note">+12 this week</div></div><div class="metric"><div class="metric-label">Order value</div><div class="metric-value">£18.4k</div><div class="metric-note">84% collected</div></div><div class="metric"><div class="metric-label">Awaiting payment</div><div class="metric-value">17</div><div class="metric-note">£2,640 due</div></div><div class="metric"><div class="metric-label">Ready to dispatch</div><div class="metric-value">8</div><div class="metric-note">3 due today</div></div></div>
+              <div class="filters"><div class="search">Search member or order</div><button class="filter">Status</button><button class="filter">Filters · 2</button></div>
+              <div class="table"><div class="row head"><span>Order</span><span>Member</span><span>Status</span><span class="amount">Total</span></div><div class="row"><span class="order-code">#10482</span><span class="member">@northstar</span><span class="status">Awaiting</span><span class="amount">£186.40</span></div><div class="row"><span class="order-code">#10481</span><span class="member">@samuel_r</span><span class="status paid">Paid</span><span class="amount">£242.00</span></div><div class="row"><span class="order-code">#10480</span><span class="member">@cobalt_uk</span><span class="status paid">Packed</span><span class="amount">£94.60</span></div></div>
+            </section>
+          </div>
+        </div>
+        <footer class="choice-footer"><strong>Best for density:</strong> less formal and slightly softer, while still correcting the tiny labels in the current version.</footer>
+      </article>
+
+      <article class="choice inter" data-choice="c-inter-rebalanced" onclick="toggleSelect(this)">
+        <header class="choice-head">
+          <div class="choice-label"><span class="letter">C</span><h2>Inter · Brand rebalanced</h2></div>
+          <p class="choice-desc">Keeps the website font, but replaces the inconsistent 8–11px sizing with a deliberate, readable type ramp.</p>
+          <div class="tokens"><span class="token">29px page title</span><span class="token">14px body</span><span class="token">13px controls</span><span class="token">500–650 weight</span></div>
+        </header>
+        <div class="app-window">
+          <div class="app-top"><span class="brand-mark">P</span><span class="crumb">Peps Anonymous / GB Organiser</span><span class="top-search">Search orders…</span><span class="avatar"></span></div>
+          <div class="app-body">
+            <aside class="side"><p class="side-label">Workspace</p><div class="nav-item">Overview</div><div class="nav-item active">Orders</div><div class="nav-item">Dispatch</div><div class="nav-item">Members</div><div class="nav-item">Products</div><div class="nav-item">Testing</div></aside>
+            <section class="main">
+              <div class="page-title-row"><div><h3 class="page-title">Orders</h3><p class="page-sub">Track payments, fulfilment and member orders.</p></div><button class="primary">+ Add order</button></div>
+              <div class="metrics"><div class="metric"><div class="metric-label">Total orders</div><div class="metric-value">124</div><div class="metric-note">+12 this week</div></div><div class="metric"><div class="metric-label">Order value</div><div class="metric-value">£18.4k</div><div class="metric-note">84% collected</div></div><div class="metric"><div class="metric-label">Awaiting payment</div><div class="metric-value">17</div><div class="metric-note">£2,640 due</div></div><div class="metric"><div class="metric-label">Ready to dispatch</div><div class="metric-value">8</div><div class="metric-note">3 due today</div></div></div>
+              <div class="filters"><div class="search">Search member or order</div><button class="filter">Status</button><button class="filter">Filters · 2</button></div>
+              <div class="table"><div class="row head"><span>Order</span><span>Member</span><span>Status</span><span class="amount">Total</span></div><div class="row"><span class="order-code">#10482</span><span class="member">@northstar</span><span class="status">Awaiting</span><span class="amount">£186.40</span></div><div class="row"><span class="order-code">#10481</span><span class="member">@samuel_r</span><span class="status paid">Paid</span><span class="amount">£242.00</span></div><div class="row"><span class="order-code">#10480</span><span class="member">@cobalt_uk</span><span class="status paid">Packed</span><span class="amount">£94.60</span></div></div>
+            </section>
+          </div>
+        </div>
+        <footer class="choice-footer"><strong>Safest transition:</strong> visually closest to the customer dashboard, with hierarchy fixed through sizing and weight alone.</footer>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

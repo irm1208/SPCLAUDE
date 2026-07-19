@@ -1,7 +1,9 @@
-import { createEventFactory, createPrototypeEventJournal, type EventJournal } from "./events.ts";
+import { createEventFactory, createMemoryEventJournal, createPrototypeEventJournal, type EventJournal } from "./events.ts";
+import { createApiOrderRepository } from "./api-order-repository.ts";
 import { createPrototypeOrderRepository, type OrderRepository } from "./order-repository.ts";
 import { SAMPLE_ORDERS } from "./sample-orders.ts";
 import type { StorageLike } from "../storage.ts";
+import { organiserApi } from "../api/organiser-api.ts";
 
 export interface OrganiserRepositories {
   orders: OrderRepository;
@@ -24,6 +26,24 @@ export function createPrototypeOrganiserRepositories({
       fallback: SAMPLE_ORDERS,
       journal: events,
       createEvent: createEventFactory(),
+    }),
+  };
+}
+
+export function createApiOrganiserRepositories({
+  groupBuyId,
+}: {
+  groupBuyId: string;
+}): OrganiserRepositories {
+  const events = createMemoryEventJournal();
+  return {
+    events,
+    orders: createApiOrderRepository({
+      groupBuyId,
+      client: {
+        listOrders: () => organiserApi.orders(groupBuyId),
+        updateOrder: (orderId, body) => organiserApi.updateOrder(groupBuyId, orderId, body),
+      },
     }),
   };
 }

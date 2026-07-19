@@ -5,6 +5,13 @@ peps_dump_*.sql
 dist/
 artifacts/*/dist/
 .worktrees/
+node_modules/
+__pycache__/
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
 
 # Database dumps & exports
 backup_clean.sql

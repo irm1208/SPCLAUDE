@@ -54,6 +54,8 @@ import { reshipperDispatchRouter, organiserDispatchRouter } from "./dispatch-sco
 import wholesaleSharesRouter from "./wholesale-shares";
 import discordRouter from "./discord";
 import gbEntryFeeRouter from "./gb-entry-fee";
+import organiserTodosRouter from "./organiser-todos";
+import organiserTestingRouter from "./organiser-testing";
 import peppysRouter from "./peppys";
 
 const router: IRouter = Router();
@@ -142,6 +144,8 @@ router.use(organiserDispatchRouter);
 router.use(wholesaleSharesRouter);
 router.use(discordRouter);
 router.use(gbEntryFeeRouter);
+router.use(organiserTodosRouter);
+router.use(organiserTestingRouter);
 router.use(peppysRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────

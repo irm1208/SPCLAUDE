@@ -1,0 +1,166 @@
+<style>
+  .gsp2 { --navy:#1b3164; --blue:#2d6bcc; --ink:#0f1f38; --muted:#6b7280; --line:#d0dae4; color:var(--ink); }
+  .gsp2 .intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:20px; }
+  .gsp2 h2 { margin:6px 0 5px; }
+  .gsp2 .subtitle { max-width:780px; margin:0; }
+  .gsp2 .baseline { display:inline-flex; align-items:center; gap:7px; border:1px solid #bfd4c7; border-radius:999px; padding:7px 10px; color:#256344; background:#edf8f1; font-size:10px; font-weight:800; }
+  .gsp2 .baseline::before { width:7px; height:7px; border-radius:50%; background:#22c55e; content:""; }
+  .gsp2 .pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; max-width:1200px; margin:0 auto; }
+  .gsp2 .concept { overflow:hidden; border:1px solid #cfd9e5; border-radius:18px; background:#fff; box-shadow:0 16px 38px rgba(20,38,66,.10); cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+  .gsp2 .concept:hover { transform:translateY(-3px); border-color:#86a5d3; box-shadow:0 21px 46px rgba(20,38,66,.14); }
+  .gsp2 .concept.selected { border-color:var(--blue); box-shadow:0 0 0 3px rgba(45,107,204,.17),0 21px 46px rgba(20,38,66,.14); }
+  .gsp2 .concept-head { display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:10px; min-height:75px; padding:13px 15px; border-bottom:1px solid #dfe6ee; text-align:left; }
+  .gsp2 .number { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; color:#fff; background:var(--navy); font-size:12px; font-weight:900; }
+  .gsp2 .concept-head strong { display:block; font-size:14px; }
+  .gsp2 .concept-head small { display:block; margin-top:2px; color:var(--muted); font-size:9px; }
+  .gsp2 .tag { border-radius:999px; padding:5px 7px; color:#315a9a; background:#edf4ff; font-size:7px; font-weight:900; letter-spacing:.07em; text-transform:uppercase; }
+  .gsp2 .mini { min-height:585px; text-align:left; }
+  .gsp2 .top { display:grid; grid-template-columns:62px 1fr 27px; align-items:center; height:39px; font-size:7px; }
+  .gsp2 .brand { display:grid; place-items:center; align-self:stretch; font-size:8px; font-weight:900; letter-spacing:.09em; }
+  .gsp2 .crumb { min-width:0; padding:0 9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gsp2 .user { display:grid; place-items:center; width:22px; height:22px; border-radius:7px; font-size:6px; font-weight:900; }
+  .gsp2 .body { display:grid; grid-template-columns:62px 1fr; min-height:546px; }
+  .gsp2 .global { padding:11px 7px; }
+  .gsp2 .global i { display:block; width:100%; height:23px; margin-bottom:5px; border-radius:6px; }
+  .gsp2 .global i:nth-child(2),.gsp2 .global i:nth-child(5) { width:72%; }
+  .gsp2 .workspace { min-width:0; padding:13px; }
+  .gsp2 .page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px; }
+  .gsp2 .eyebrow { margin-bottom:3px; font-size:6px; font-weight:900; letter-spacing:.13em; text-transform:uppercase; }
+  .gsp2 .page-head h3 { margin:0; font-size:16px; letter-spacing:-.04em; }
+  .gsp2 .page-head p { margin:3px 0 0; font-size:7px; }
+  .gsp2 .live { border-radius:99px; padding:5px 7px; font-size:6px; font-weight:900; white-space:nowrap; }
+  .gsp2 .panel { border:1px solid; border-radius:10px; }
+  .gsp2 .settings { display:grid; grid-template-columns:103px 1fr; gap:8px; }
+  .gsp2 .rail { padding:7px; }
+  .gsp2 .rail-label { margin:3px 5px 7px; font-size:5px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+  .gsp2 .rail button { display:grid; grid-template-columns:16px 1fr; align-items:center; gap:5px; width:100%; min-height:31px; margin-bottom:4px; border:0; border-radius:6px; padding:5px; color:inherit; background:transparent; font:inherit; font-size:6px; font-weight:800; text-align:left; }
+  .gsp2 .rail button span { display:grid; place-items:center; width:15px; height:15px; border-radius:5px; font-size:6px; font-weight:900; }
+  .gsp2 .rail button small { display:block; margin-top:1px; font-size:5px; font-weight:500; opacity:.72; }
+  .gsp2 .editor { overflow:hidden; }
+  .gsp2 .editor-head { display:flex; align-items:center; justify-content:space-between; min-height:44px; border-bottom:1px solid; padding:8px 10px; }
+  .gsp2 .editor-head strong { display:block; font-size:9px; }
+  .gsp2 .editor-head small { display:block; margin-top:2px; font-size:6px; }
+  .gsp2 .step-count { font-size:6px; }
+  .gsp2 .form { display:grid; gap:8px; padding:10px; }
+  .gsp2 label { display:block; }
+  .gsp2 label > span { display:block; margin-bottom:3px; font-size:5px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+  .gsp2 .input { min-height:25px; border:1px solid; border-radius:6px; padding:5px 7px; font-size:6px; line-height:1.4; }
+  .gsp2 .input.tall { min-height:43px; }
+  .gsp2 .three { display:grid; grid-template-columns:.65fr 1.15fr .7fr; gap:5px; }
+  .gsp2 .editor-foot { display:flex; align-items:center; justify-content:space-between; min-height:39px; border-top:1px solid; padding:8px 10px; font-size:6px; }
+  .gsp2 .save { display:inline-flex; align-items:center; justify-content:center; min-height:23px; border-radius:6px; padding:0 9px; font-size:6px; font-weight:900; }
+  .gsp2 .caption { min-height:80px; border-top:1px solid #dfe6ee; padding:12px 15px 14px; text-align:left; }
+  .gsp2 .caption strong { display:block; margin-bottom:3px; font-size:11px; }
+  .gsp2 .caption p { margin:0; color:var(--muted); font-size:8px; line-height:1.5; }
+
+  /* Signal Navy */
+  .gsp2 .signal .concept-head { color:#eef5ff; border-color:#263a54; background:#0b1728; }
+  .gsp2 .signal .concept-head small { color:#93a4ba; }
+  .gsp2 .signal .number { color:#081523; background:#58c9bb; box-shadow:0 0 18px rgba(88,201,187,.25); }
+  .gsp2 .signal .tag { color:#a9ddd7; background:#173c40; }
+  .gsp2 .signal .mini { color:#eff5fd; background:#081421; }
+  .gsp2 .signal .top { border-bottom:1px solid #263950; color:#8fa1b8; background:#0d1928; }
+  .gsp2 .signal .brand { color:#081421; background:#58c9bb; }
+  .gsp2 .signal .user { color:#081421; background:#8ea7ff; }
+  .gsp2 .signal .global { background:#0b1726; border-right:1px solid #23354a; }
+  .gsp2 .signal .global i { background:#15263a; }
+  .gsp2 .signal .global i.active { background:#203e55; box-shadow:inset 2px 0 #58c9bb; }
+  .gsp2 .signal .workspace { background:radial-gradient(circle at 100% 0,rgba(45,107,204,.16),transparent 210px),#081421; }
+  .gsp2 .signal .eyebrow { color:#58c9bb; }
+  .gsp2 .signal .page-head p { color:#91a2b8; }
+  .gsp2 .signal .live { color:#73dfd1; background:#163b3e; box-shadow:0 0 0 1px #24575a; }
+  .gsp2 .signal .telemetry { display:grid; grid-template-columns:1.1fr 1fr .8fr; gap:6px; margin-bottom:8px; }
+  .gsp2 .signal .telemetry div { border:1px solid #263b53; border-radius:8px; padding:7px; background:#0e1d2d; }
+  .gsp2 .signal .telemetry small { display:block; color:#73869f; font-size:5px; text-transform:uppercase; letter-spacing:.09em; }
+  .gsp2 .signal .telemetry strong { display:block; margin-top:2px; color:#e9f1fb; font-size:8px; }
+  .gsp2 .signal .telemetry b { color:#58c9bb; font-weight:900; }
+  .gsp2 .signal .panel { border-color:#293d55; background:#0f1d2d; box-shadow:0 10px 26px rgba(0,0,0,.12); }
+  .gsp2 .signal .rail-label,.gsp2 .signal label > span { color:#6f839b; }
+  .gsp2 .signal .rail button { color:#91a3ba; }
+  .gsp2 .signal .rail button span { color:#70849d; background:#17293c; }
+  .gsp2 .signal .rail button.active { color:#eaf4ff; background:#17354a; box-shadow:inset 2px 0 #58c9bb; }
+  .gsp2 .signal .rail button.active span { color:#081421; background:#58c9bb; }
+  .gsp2 .signal .rail button.danger { color:#ff9196; }
+  .gsp2 .signal .editor-head { border-color:#293d55; }
+  .gsp2 .signal .editor-head small,.gsp2 .signal .step-count,.gsp2 .signal .editor-foot { color:#8194aa; }
+  .gsp2 .signal .input { border-color:#30465f; color:#dce8f5; background:#0a1725; }
+  .gsp2 .signal .editor-foot { border-color:#293d55; }
+  .gsp2 .signal .save { color:#081421; background:#58c9bb; }
+  .gsp2 .signal .caption { color:#eff5fd; border-color:#263a54; background:#0b1728; }
+  .gsp2 .signal .caption p { color:#93a4ba; }
+
+  /* Focus Flow */
+  .gsp2 .focus .concept-head { background:#fbfdff; }
+  .gsp2 .focus .number { background:linear-gradient(135deg,#2d6bcc,#1b3a7a); }
+  .gsp2 .focus .tag { color:#69530d; background:#fff3cf; }
+  .gsp2 .focus .mini { color:#0f1f38; background:#f5f8fc; }
+  .gsp2 .focus .top { border-bottom:1px solid #dae3ed; color:#6e7c8f; background:rgba(255,255,255,.95); }
+  .gsp2 .focus .brand { color:#fff; background:#1b3164; }
+  .gsp2 .focus .user { color:#fff; background:#2d6bcc; }
+  .gsp2 .focus .global { background:#1b3164; }
+  .gsp2 .focus .global i { background:rgba(255,255,255,.08); }
+  .gsp2 .focus .global i.active { background:#2d6bcc; box-shadow:inset 2px 0 #fff; }
+  .gsp2 .focus .workspace { background:linear-gradient(140deg,#fbfdff,#f2f6fb); }
+  .gsp2 .focus .eyebrow { color:#2d6bcc; }
+  .gsp2 .focus .page-head p { color:#6b7280; }
+  .gsp2 .focus .live { color:#19734a; background:#e5f6ed; }
+  .gsp2 .focus .readiness { display:flex; align-items:center; gap:8px; margin-bottom:8px; border:1px solid #cddcf0; border-radius:11px; padding:8px; background:linear-gradient(90deg,#edf4ff,#fff); }
+  .gsp2 .focus .progress-ring { position:relative; display:grid; place-items:center; width:34px; height:34px; flex:0 0 auto; border-radius:50%; background:conic-gradient(#2d6bcc 0 82%,#dbe6f4 82% 100%); }
+  .gsp2 .focus .progress-ring::before { position:absolute; width:26px; height:26px; border-radius:50%; background:#fff; content:""; }
+  .gsp2 .focus .progress-ring b { position:relative; z-index:1; color:#1b3a7a; font-size:6px; }
+  .gsp2 .focus .readiness strong { display:block; font-size:8px; }
+  .gsp2 .focus .readiness small { display:block; margin-top:2px; color:#6f7e91; font-size:6px; }
+  .gsp2 .focus .recommend { margin-left:auto; border-radius:99px; padding:4px 6px; color:#795b0c; background:#fff1c9; font-size:5px; font-weight:900; text-transform:uppercase; }
+  .gsp2 .focus .panel { border-color:#d7e1ec; background:#fff; box-shadow:0 5px 16px rgba(27,49,100,.045); }
+  .gsp2 .focus .rail-label,.gsp2 .focus label > span { color:#8997a8; }
+  .gsp2 .focus .rail button { color:#657286; }
+  .gsp2 .focus .rail button span { color:#5e6f86; background:#edf2f7; }
+  .gsp2 .focus .rail button.complete span { color:#19734a; background:#def3e8; }
+  .gsp2 .focus .rail button.active { color:#1b3a7a; background:#eaf1fc; }
+  .gsp2 .focus .rail button.active span { color:#fff; background:#2d6bcc; }
+  .gsp2 .focus .rail button.danger { color:#bd4b4b; }
+  .gsp2 .focus .editor-head { border-color:#e1e7ee; }
+  .gsp2 .focus .editor-head small,.gsp2 .focus .step-count,.gsp2 .focus .editor-foot { color:#7a889a; }
+  .gsp2 .focus .input { border-color:#d3dee9; color:#40516a; background:#fbfdff; }
+  .gsp2 .focus .input:after { content:""; }
+  .gsp2 .focus .editor-foot { border-color:#e1e7ee; }
+  .gsp2 .focus .save { color:#fff; background:#1b3a7a; box-shadow:0 4px 10px rgba(27,58,122,.18); }
+
+  @media (max-width:950px) { .gsp2 .pair { grid-template-columns:1fr; } .gsp2 .concept { max-width:720px; width:100%; margin:0 auto; } }
+  @media (max-width:620px) { .gsp2 .intro { align-items:flex-start; flex-direction:column; } .gsp2 .body { grid-template-columns:46px 1fr; } .gsp2 .settings { grid-template-columns:90px 1fr; } }
+</style>
+
+<div class="gsp2">
+  <div class="intro">
+    <div><div class="label">Section 2B · final two directions</div><h2>Two sharper alternatives to Atlas Clear.</h2><p class="subtitle">Both remain Peps-brand-safe and retain the persistent settings navigator, but each optimises for a different organiser mindset.</p></div>
+    <span class="baseline">Current favorite: Atlas Clear</span>
+  </div>
+
+  <div class="pair" data-multiselect>
+    <article class="concept signal" data-choice="signal" onclick="toggleSelect(this)">
+      <header class="concept-head"><span class="number">04</span><div><strong>Signal Navy</strong><small>High-contrast operations cockpit</small></div><span class="tag">distinctive</span></header>
+      <div class="mini">
+        <div class="top"><span class="brand">PA</span><span class="crumb">GB ORGANIZER / WPR-25 / SETTINGS</span><span class="user">AM</span></div>
+        <div class="body"><aside class="global"><i></i><i></i><i></i><i class="active"></i><i></i><i></i></aside><main class="workspace">
+          <div class="page-head"><div><div class="eyebrow">LIVE CONFIGURATION</div><h3>GB Settings</h3><p>Operating controls and readiness signals for WPR-25.</p></div><span class="live">● SYSTEM LIVE</span></div>
+          <div class="telemetry"><div><small>Member access</small><strong><b>●</b> Invite only</strong></div><div><small>Closes in</small><strong>13d 08h</strong></div><div><small>Capacity</small><strong>70%</strong></div></div>
+          <div class="settings"><nav class="panel rail"><div class="rail-label">CONTROL MODULES</div><button class="active"><span>01</span><div>Identity<small>Member record</small></div></button><button><span>02</span><div>Lifecycle<small>Status & closure</small></div></button><button><span>03</span><div>Access & fee<small>Entry controls</small></div></button><button><span>04</span><div>Member cards<small>Published notices</small></div></button><button class="danger"><span>!</span><div>Danger zone<small>Restricted</small></div></button></nav><section class="panel editor"><div class="editor-head"><div><strong>Identity & timing</strong><small>Member-facing configuration</small></div><span class="step-count">MODULE 01 / 04</span></div><div class="form"><label><span>Group buy name</span><div class="input">Winter Peptide Run 2025</div></label><label><span>Description</span><div class="input tall">Private peptide order coordinated for verified members.</div></label><div class="three"><label><span>Currency</span><div class="input">GBP</div></label><label><span>Close date</span><div class="input">31 Jul · 18:00</div></label><label><span>Capacity</span><div class="input">60</div></label></div></div><footer class="editor-foot"><span>✓ VALIDATION CLEAR · AUTO-SAVED 09:42</span><span class="save">COMMIT</span></footer></section></div>
+        </main></div>
+      </div>
+      <footer class="caption"><strong>Signal Navy</strong><p>A memorable dark-mode control room for power users who want operational status to feel alive and immediate.</p></footer>
+    </article>
+
+    <article class="concept focus" data-choice="focus" onclick="toggleSelect(this)">
+      <header class="concept-head"><span class="number">05</span><div><strong>Focus Flow</strong><small>Guided, spacious, confidence-first</small></div><span class="tag">supportive</span></header>
+      <div class="mini">
+        <div class="top"><span class="brand">PA</span><span class="crumb">GB Organizer / Winter Peptide Run / Settings</span><span class="user">AM</span></div>
+        <div class="body"><aside class="global"><i></i><i></i><i></i><i class="active"></i><i></i><i></i></aside><main class="workspace">
+          <div class="page-head"><div><div class="eyebrow">SETUP HEALTH</div><h3>GB Settings</h3><p>One clear decision at a time, with guidance when it matters.</p></div><span class="live">● Active</span></div>
+          <div class="readiness"><div class="progress-ring"><b>82%</b></div><div><strong>Your group buy is ready to run</strong><small>4 sections complete · changes saved 2 minutes ago</small></div><span class="recommend">1 suggestion</span></div>
+          <div class="settings"><nav class="panel rail"><div class="rail-label">YOUR SETUP</div><button class="active"><span>1</span><div>Identity<small>Editing now</small></div></button><button class="complete"><span>✓</span><div>Lifecycle<small>Active</small></div></button><button class="complete"><span>✓</span><div>Access & fee<small>Invite only</small></div></button><button class="complete"><span>✓</span><div>Member cards<small>2 published</small></div></button><button class="danger"><span>!</span><div>Danger zone<small>Restricted</small></div></button></nav><section class="panel editor"><div class="editor-head"><div><strong>Tell members what this group buy is</strong><small>These details appear anywhere members see the run.</small></div><span class="step-count">Step 1 of 4</span></div><div class="form"><label><span>Group buy name</span><div class="input">Winter Peptide Run 2025</div></label><label><span>Short description</span><div class="input tall">Private peptide order coordinated for verified members.</div></label><div class="three"><label><span>Currency</span><div class="input">GBP</div></label><label><span>When orders close</span><div class="input">31 Jul · 18:00</div></label><label><span>Member limit</span><div class="input">60</div></label></div></div><footer class="editor-foot"><span>Changes only affect this section</span><span class="save">Save & continue</span></footer></section></div>
+        </main></div>
+      </div>
+      <footer class="caption"><strong>Focus Flow</strong><p>A reassuring, low-stress editor for occasional organisers, with completion cues and plain-language guidance.</p></footer>
+    </article>
+  </div>
+</div>

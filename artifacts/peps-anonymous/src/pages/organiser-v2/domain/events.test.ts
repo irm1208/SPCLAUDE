@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createEventFactory, createPrototypeEventJournal } from "./events.ts";
+import { createEventFactory, createMemoryEventJournal, createPrototypeEventJournal } from "./events.ts";
 import { gbKey } from "../storage.ts";
 
 class MemoryStorage {
@@ -33,6 +33,14 @@ test("event factory creates deterministic scoped events", () => {
   assert.equal(event.correlationId, "bulk-1");
   assert.equal(event.causationId, "command-1");
   assert.equal(event.idempotencyKey, "gb-1:bulk-paid:command-1");
+});
+
+test("memory journal keeps live-session events out of browser storage", () => {
+  const journal = createMemoryEventJournal();
+  const createEvent = createEventFactory({ now: () => "2026-07-15T12:00:00.000Z", id: () => "evt-live" });
+  journal.append(createEvent({ groupBuyId: "gb-live", type: "order.updated", entityType: "order", entityIds: ["order-1"], actorId: "organiser", summary: "Updated order" }));
+  assert.deepEqual(journal.list("gb-live").map(event => event.id), ["evt-live"]);
+  assert.deepEqual(journal.list("other"), []);
 });
 
 test("prototype journal is GB scoped and newest first", () => {

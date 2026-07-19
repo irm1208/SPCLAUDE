@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+  <title>GB Organiser mobile directions</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color: #0f1f38; background: #edf3f8; font-family: Inter, sans-serif; }
+    body { margin: 0; min-width: 320px; }
+    button { font: inherit; }
+    .page {
+      min-height: 100vh;
+      padding: 38px clamp(18px, 4vw, 60px) 60px;
+      background:
+        radial-gradient(circle at 88% 0%, rgba(45,107,204,.13), transparent 25%),
+        radial-gradient(circle at 8% 45%, rgba(27,58,122,.07), transparent 28%),
+        linear-gradient(180deg, #f9fbfd, #eaf1f7);
+    }
+    .intro { max-width: 1260px; margin: 0 auto 28px; }
+    .kicker { margin: 0 0 9px; color: #2d6bcc; font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(28px, 3.5vw, 44px); line-height: 1.05; letter-spacing: -.045em; }
+    .intro p:last-child { max-width: 750px; margin: 12px 0 0; color: #647386; font-size: 14px; line-height: 1.55; }
+    .choices {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(350px, 1fr));
+      gap: 20px;
+      max-width: 1260px;
+      margin: auto;
+      overflow-x: auto;
+      padding: 3px 3px 18px;
+    }
+    .choice {
+      position: relative;
+      min-width: 350px;
+      padding: 17px 16px 19px;
+      border: 1px solid #cbd8e4;
+      border-radius: 22px;
+      background: rgba(255,255,255,.82);
+      box-shadow: 0 18px 48px rgba(27,49,100,.09);
+      cursor: pointer;
+      transition: .2s ease;
+    }
+    .choice:hover { transform: translateY(-3px); border-color: #8da8cf; box-shadow: 0 24px 54px rgba(27,49,100,.14); }
+    .choice.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.16), 0 24px 54px rgba(27,49,100,.14); }
+    .choice.recommended::after {
+      content: "RECOMMENDED";
+      position: absolute;
+      top: 20px;
+      right: 18px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #e5effd;
+      color: #1b3a7a;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .08em;
+    }
+    .choice-head { display: flex; align-items: center; gap: 10px; margin: 0 3px 14px; }
+    .letter { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 9px; background: #1b3a7a; color: white; font-size: 12px; font-weight: 700; }
+    .choice h2 { margin: 0; font-size: 15px; line-height: 1.2; letter-spacing: -.02em; }
+    .phone {
+      position: relative;
+      width: 328px;
+      height: 694px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 7px solid #15233a;
+      border-radius: 38px;
+      background: #f7f9fc;
+      box-shadow: 0 18px 36px rgba(15,31,56,.19), inset 0 0 0 1px rgba(255,255,255,.15);
+      font-family: Inter, sans-serif;
+    }
+    .phone::before { content: ""; position: absolute; z-index: 20; top: 7px; left: 50%; width: 83px; height: 20px; transform: translateX(-50%); border-radius: 0 0 13px 13px; background: #15233a; }
+    .statusbar { position: relative; z-index: 10; display: flex; justify-content: space-between; align-items: center; height: 34px; padding: 7px 18px 0; background: #fff; color: #26384f; font-size: 9px; font-weight: 700; }
+    .status-icons { letter-spacing: 2px; }
+    .mobile-top { display: flex; align-items: center; min-height: 56px; padding: 9px 14px; border-bottom: 1px solid #dce5ed; background: #fff; }
+    .icon-btn { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #d9e3ec; border-radius: 11px; background: #fff; color: #30445d; font-size: 17px; }
+    .gb-select { min-width: 0; margin-left: 10px; }
+    .gb-select small { display: block; margin-bottom: 2px; color: #8491a1; font-size: 10px; font-weight: 600; }
+    .gb-select strong { display: block; overflow: hidden; color: #172a43; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .avatar { display: grid; width: 36px; height: 36px; margin-left: auto; place-items: center; border-radius: 12px; background: linear-gradient(135deg,#2d6bcc,#1b3a7a); color: #fff; font-size: 11px; font-weight: 700; }
+    .scroll { height: calc(100% - 146px); overflow: hidden; padding: 16px 14px 90px; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .page-head h3 { margin: 0; color: #102039; font-size: 24px; font-weight: 650; line-height: 1.1; letter-spacing: -.04em; }
+    .page-head p { margin: 5px 0 0; color: #6d7c8e; font-size: 13px; line-height: 1.4; }
+    .add { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 13px; background: #1b3a7a; color: white; font-size: 22px; box-shadow: 0 8px 18px rgba(27,58,122,.22); }
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      margin-top: 16px;
+      overflow: hidden;
+      border: 1px solid #d7e2ec;
+      border-radius: 15px;
+      background: #d7e2ec;
+    }
+    .summary-cell { min-height: 79px; padding: 13px; background: #fff; }
+    .summary-label { color: #788699; font-size: 11px; font-weight: 600; }
+    .summary-value { margin-top: 6px; color: #15273f; font-size: 22px; font-weight: 700; line-height: 1; letter-spacing: -.035em; }
+    .summary-note { margin-top: 5px; color: #278553; font-size: 10px; font-weight: 650; }
+    .attention { color: #9b6510; }
+    .search-row { display: flex; gap: 8px; margin-top: 13px; }
+    .search-box { display: flex; align-items: center; flex: 1; min-height: 44px; padding: 0 12px; border: 1px solid #d5e0e9; border-radius: 12px; background: #fff; color: #8491a2; font-size: 13px; }
+    .filter-btn { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #d5e0e9; border-radius: 12px; background: #fff; color: #344960; font-size: 15px; }
+    .filter-btn.active { position: relative; border-color: #9fb6d7; background: #edf4fd; color: #1b3a7a; }
+    .filter-btn.active::after { content: "2"; position: absolute; top: -4px; right: -4px; display: grid; width: 17px; height: 17px; place-items: center; border: 2px solid #f7f9fc; border-radius: 50%; background: #2d6bcc; color: #fff; font-size: 8px; font-weight: 700; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin: 16px 1px 9px; }
+    .section-title strong { color: #263951; font-size: 13px; font-weight: 650; }
+    .section-title span { color: #7d8a9a; font-size: 11px; font-weight: 550; }
+    .order-card { margin-bottom: 9px; padding: 13px; border: 1px solid #d9e3ec; border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgba(27,49,100,.035); }
+    .order-first { display: flex; align-items: center; }
+    .order-first strong { color: #1b3a7a; font-size: 13px; font-weight: 700; }
+    .order-first .price { margin-left: auto; color: #182b44; font-size: 14px; font-weight: 700; }
+    .member { margin-top: 5px; color: #3e5067; font-size: 13px; font-weight: 550; }
+    .order-meta { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: #788698; font-size: 11px; }
+    .pill { padding: 4px 7px; border-radius: 999px; background: #fff2d8; color: #98630f; font-size: 10px; font-weight: 700; }
+    .pill.green { background: #e3f5ea; color: #24794a; }
+    .chevron { margin-left: auto; color: #93a0af; font-size: 17px; }
+    .bottom-nav { position: absolute; z-index: 10; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5,1fr); height: 70px; padding: 8px 6px 10px; border-top: 1px solid #d8e2eb; background: rgba(255,255,255,.97); box-shadow: 0 -8px 24px rgba(22,42,67,.06); }
+    .nav-tab { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 4px; color: #8290a1; font-size: 9px; font-weight: 600; }
+    .nav-icon { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 7px; font-size: 13px; }
+    .nav-tab.active { color: #1b3a7a; font-weight: 700; }
+    .nav-tab.active .nav-icon { background: #e4edf9; }
+    .homebar { position: absolute; z-index: 30; bottom: 3px; left: 50%; width: 94px; height: 4px; transform: translateX(-50%); border-radius: 99px; background: #26364b; opacity: .82; }
+
+    /* B: dense list */
+    .dense .scroll { padding-left: 12px; padding-right: 12px; }
+    .dense-summary { display: flex; gap: 8px; margin-top: 15px; overflow: hidden; }
+    .dense-stat { min-width: 102px; padding: 11px; border: 1px solid #dbe4ec; border-radius: 13px; background: white; }
+    .dense-stat small { display: block; color: #7a8899; font-size: 10px; font-weight: 600; }
+    .dense-stat strong { display: block; margin-top: 5px; color: #172a43; font-size: 18px; letter-spacing: -.03em; }
+    .segments { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 12px; padding: 3px; border-radius: 11px; background: #e9eef4; }
+    .segment { min-height: 35px; padding: 8px 3px; border-radius: 8px; color: #68778a; text-align: center; font-size: 11px; font-weight: 650; }
+    .segment.active { background: white; color: #1b3a7a; box-shadow: 0 2px 7px rgba(27,49,100,.1); }
+    .list { margin-top: 12px; overflow: hidden; border: 1px solid #d8e2eb; border-radius: 14px; background: white; }
+    .list-head { display: flex; align-items: center; min-height: 34px; padding: 0 12px; background: #f2f5f8; color: #7c8999; font-size: 10px; font-weight: 700; }
+    .list-head span:last-child { margin-left: auto; }
+    .list-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; min-height: 67px; padding: 11px 12px; border-top: 1px solid #e8edf2; }
+    .list-row .identity { color: #24384f; font-size: 12px; font-weight: 650; }
+    .list-row .identity b { margin-right: 5px; color: #1b3a7a; font-weight: 700; }
+    .list-row .total { color: #1b2d45; font-size: 12px; font-weight: 700; text-align: right; }
+    .list-row .sub { color: #7a8797; font-size: 10px; }
+    .list-row .pill { justify-self: end; }
+    .utility-bar { position: absolute; z-index: 11; right: 12px; bottom: 17px; left: 12px; display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 6px; padding: 7px; border: 1px solid #cdd9e5; border-radius: 17px; background: rgba(255,255,255,.97); box-shadow: 0 10px 28px rgba(15,31,56,.18); }
+    .utility-bar span { display: grid; min-height: 42px; place-items: center; border-radius: 11px; color: #617083; font-size: 10px; font-weight: 650; }
+    .utility-bar span:last-child { background: #1b3a7a; color: #fff; }
+
+    /* C: action first */
+    .action-shell .mobile-top { background: linear-gradient(135deg,#2d6bcc,#1b3a7a); border: 0; }
+    .action-shell .icon-btn { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: #fff; }
+    .action-shell .gb-select small { color: rgba(255,255,255,.7); }
+    .action-shell .gb-select strong { color: #fff; }
+    .action-shell .avatar { background: #fff; color: #1b3a7a; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+    .alert-card { margin-top: 15px; padding: 14px; border: 1px solid #f0d59f; border-radius: 15px; background: linear-gradient(135deg,#fff8e9,#fffdf7); }
+    .alert-top { display: flex; align-items: center; gap: 8px; }
+    .alert-top span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 9px; background: #f8dfaa; color: #8d5b0a; font-size: 13px; }
+    .alert-top strong { color: #6e4a12; font-size: 13px; font-weight: 700; }
+    .alert-card p { margin: 7px 0 0 35px; color: #8b672f; font-size: 11px; line-height: 1.45; }
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .action-card { min-height: 88px; padding: 12px; border: 1px solid #d9e3ec; border-radius: 14px; background: white; }
+    .action-card small { color: #758497; font-size: 10px; font-weight: 600; }
+    .action-card strong { display: block; margin-top: 6px; color: #172a43; font-size: 21px; letter-spacing: -.035em; }
+    .action-card em { display: block; margin-top: 6px; color: #2d6bcc; font-size: 10px; font-style: normal; font-weight: 650; }
+    .action-list .order-card { padding: 11px 12px; }
+    .action-tabs { display: flex; gap: 6px; margin-top: 13px; }
+    .action-tabs span { padding: 7px 10px; border-radius: 9px; color: #68778a; background: #ebf0f5; font-size: 10px; font-weight: 650; }
+    .action-tabs span.active { color: #fff; background: #1b3a7a; }
+
+    .choice-foot { margin: 15px 5px 2px; color: #647386; font-size: 11px; line-height: 1.45; }
+    .choice-foot strong { color: #33475f; }
+    @media (max-width: 900px) {
+      .page { padding: 27px 14px 44px; }
+      .choices { grid-template-columns: repeat(3, 365px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="intro">
+      <p class="kicker">Selected type · Inter rebalanced</p>
+      <h1>Now make it feel native on mobile.</h1>
+      <p>All three versions use 24px page titles, 14px body text, 13px controls, 11–12px supporting labels and minimum 44px touch targets. The difference is how the workflow adapts—not how much the desktop UI gets squeezed.</p>
+    </header>
+
+    <section class="choices">
+      <article class="choice recommended" data-choice="mobile-a-native-cards" onclick="toggleSelect(this)">
+        <div class="choice-head"><span class="letter">A</span><h2>Native cards + bottom navigation</h2></div>
+        <div class="phone">
+          <div class="statusbar"><span>9:41</span><span class="status-icons">● ◒ ▰</span></div>
+          <header class="mobile-top"><button class="icon-btn">☰</button><div class="gb-select"><small>Active group buy</small><strong>Summer Peptide Run</strong></div><span class="avatar">AP</span></header>
+          <div class="scroll">
+            <div class="page-head"><div><h3>Orders</h3><p>124 member orders</p></div><button class="add">+</button></div>
+            <div class="summary"><div class="summary-cell"><div class="summary-label">Order value</div><div class="summary-value">£18.4k</div><div class="summary-note">84% collected</div></div><div class="summary-cell"><div class="summary-label">Needs attention</div><div class="summary-value">17</div><div class="summary-note attention">£2,640 outstanding</div></div></div>
+            <div class="search-row"><div class="search-box">⌕&nbsp;&nbsp;Search member or order</div><button class="filter-btn active">≡</button></div>
+            <div class="section-title"><strong>Recent orders</strong><span>Newest first⌄</span></div>
+            <div class="order-card"><div class="order-first"><strong>#10482</strong><span class="price">£186.40</span></div><div class="member">@northstar</div><div class="order-meta"><span class="pill">Awaiting payment</span><span>4 products</span><span class="chevron">›</span></div></div>
+            <div class="order-card"><div class="order-first"><strong>#10481</strong><span class="price">£242.00</span></div><div class="member">@samuel_r</div><div class="order-meta"><span class="pill green">Paid</span><span>6 products</span><span class="chevron">›</span></div></div>
+            <div class="order-card"><div class="order-first"><strong>#10480</strong><span class="price">£94.60</span></div><div class="member">@cobalt_uk</div><div class="order-meta"><span class="pill green">Packed</span><span>2 products</span><span class="chevron">›</span></div></div>
+          </div>
+          <nav class="bottom-nav"><span class="nav-tab"><i class="nav-icon">⌂</i>Overview</span><span class="nav-tab active"><i class="nav-icon">▤</i>Orders</span><span class="nav-tab"><i class="nav-icon">▣</i>Dispatch</span><span class="nav-tab"><i class="nav-icon">◎</i>Members</span><span class="nav-tab"><i class="nav-icon">•••</i>More</span></nav><span class="homebar"></span>
+        </div>
+        <p class="choice-foot"><strong>Best overall:</strong> easy one-handed navigation, readable order cards and familiar mobile patterns. Desktop tables become cards only below the mobile breakpoint.</p>
+      </article>
+
+      <article class="choice" data-choice="mobile-b-dense-list" onclick="toggleSelect(this)">
+        <div class="choice-head"><span class="letter">B</span><h2>Dense list + floating utility bar</h2></div>
+        <div class="phone dense">
+          <div class="statusbar"><span>9:41</span><span class="status-icons">● ◒ ▰</span></div>
+          <header class="mobile-top"><button class="icon-btn">☰</button><div class="gb-select"><small>GB Organiser</small><strong>Summer Peptide Run</strong></div><span class="avatar">AP</span></header>
+          <div class="scroll">
+            <div class="page-head"><div><h3>Orders</h3><p>124 total · £18,420 value</p></div><button class="add">+</button></div>
+            <div class="dense-summary"><div class="dense-stat"><small>Paid</small><strong>92</strong></div><div class="dense-stat"><small>Awaiting</small><strong>17</strong></div><div class="dense-stat"><small>Dispatch</small><strong>8</strong></div></div>
+            <div class="search-row"><div class="search-box">⌕&nbsp;&nbsp;Search 124 orders</div><button class="filter-btn active">≡</button></div>
+            <div class="segments"><span class="segment active">All 124</span><span class="segment">Attention 17</span><span class="segment">Ready 8</span></div>
+            <div class="list"><div class="list-head"><span>Order &amp; member</span><span>Total</span></div><div class="list-row"><span class="identity"><b>#10482</b>@northstar</span><span class="total">£186.40</span><span class="sub">4 products · 14 Jul</span><span class="pill">Awaiting</span></div><div class="list-row"><span class="identity"><b>#10481</b>@samuel_r</span><span class="total">£242.00</span><span class="sub">6 products · 14 Jul</span><span class="pill green">Paid</span></div><div class="list-row"><span class="identity"><b>#10480</b>@cobalt_uk</span><span class="total">£94.60</span><span class="sub">2 products · 13 Jul</span><span class="pill green">Packed</span></div><div class="list-row"><span class="identity"><b>#10479</b>@fieldnote</span><span class="total">£318.20</span><span class="sub">8 products · 13 Jul</span><span class="pill green">Paid</span></div></div>
+          </div>
+          <nav class="utility-bar"><span>☰ Menu</span><span>≡ Filters</span><span>＋ Add order</span></nav><span class="homebar"></span>
+        </div>
+        <p class="choice-foot"><strong>Best for power users:</strong> more orders remain visible and bulk work feels faster, but navigation is less conventional and the screen feels busier.</p>
+      </article>
+
+      <article class="choice" data-choice="mobile-c-action-first" onclick="toggleSelect(this)">
+        <div class="choice-head"><span class="letter">C</span><h2>Action-first mobile workspace</h2></div>
+        <div class="phone action-shell">
+          <div class="statusbar"><span>9:41</span><span class="status-icons">● ◒ ▰</span></div>
+          <header class="mobile-top"><button class="icon-btn">☰</button><div class="gb-select"><small>Active group buy</small><strong>Summer Peptide Run</strong></div><span class="avatar">AP</span></header>
+          <div class="scroll">
+            <div class="page-head"><div><h3>Orders</h3><p>Tuesday, 15 July</p></div><button class="add">+</button></div>
+            <div class="alert-card"><div class="alert-top"><span>!</span><strong>17 orders need attention</strong></div><p>Most are waiting for member payment. Three have been outstanding for over 7 days.</p></div>
+            <div class="action-grid"><div class="action-card"><small>Chase payment</small><strong>17</strong><em>Review orders →</em></div><div class="action-card"><small>Ready to dispatch</small><strong>8</strong><em>Open queue →</em></div></div>
+            <div class="action-tabs"><span class="active">Needs action</span><span>All orders</span><span>Completed</span></div>
+            <div class="section-title"><strong>Priority queue</strong><span>17 orders</span></div>
+            <div class="action-list"><div class="order-card"><div class="order-first"><strong>#10482 · @northstar</strong><span class="price">£186</span></div><div class="order-meta"><span class="pill">7 days overdue</span><span class="chevron">›</span></div></div><div class="order-card"><div class="order-first"><strong>#10476 · @bluewater</strong><span class="price">£128</span></div><div class="order-meta"><span class="pill">Payment due</span><span class="chevron">›</span></div></div><div class="order-card"><div class="order-first"><strong>#10471 · @helix_uk</strong><span class="price">£310</span></div><div class="order-meta"><span class="pill">Address missing</span><span class="chevron">›</span></div></div></div>
+          </div>
+          <nav class="bottom-nav"><span class="nav-tab"><i class="nav-icon">⌂</i>Overview</span><span class="nav-tab active"><i class="nav-icon">▤</i>Orders</span><span class="nav-tab"><i class="nav-icon">▣</i>Dispatch</span><span class="nav-tab"><i class="nav-icon">◎</i>Members</span><span class="nav-tab"><i class="nav-icon">•••</i>More</span></nav><span class="homebar"></span>
+        </div>
+        <p class="choice-foot"><strong>Best for guided operations:</strong> prioritises what the organiser must do next. Strong workflow, but less neutral than a straightforward order browser.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

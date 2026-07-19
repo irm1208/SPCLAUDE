@@ -204,6 +204,75 @@ test("clinical testing pool styles own responsive, focus, target, and motion beh
   assert.match(source, /transition-duration:\s*0\.01ms\s*!important/);
 });
 
+test("organizer testing groups composes the live clinical command center", () => {
+  const source = readSibling("../../pages/organiser-v2/TestingGroupsTab.tsx");
+
+  assert.match(source, /organiserApi\.testingPoolSnapshot/);
+  assert.match(source, /className="clinical-testing clinical-testing--organizer"/);
+  for (const primitive of [
+    "RoundMetricStrip",
+    "ClinicalPoolGauge",
+    "ThresholdStepGrid",
+    "VoteLeaderboard",
+  ]) {
+    assert.ok(source.includes(primitive), `missing organizer primitive ${primitive}`);
+  }
+  assert.match(source, /<ClinicalPanel title="Round controls"/);
+  assert.match(source, /Pending contributions/);
+  assert.doesNotMatch(source, />Verify contribution</);
+});
+
+test("organizer testing groups guards contribution payloads and stale snapshot state", () => {
+  const source = readSibling("../../pages/organiser-v2/TestingGroupsTab.tsx");
+
+  assert.match(source, /const snapshot = snapshotQuery\.isError\s*\?\s*undefined\s*:\s*snapshotQuery\.data/);
+  assert.match(source, /const contributionPayload = anyContribution\s*\?/);
+  assert.match(source, /contributionAmount:\s*normalizedContributionAmount\(contributionAmount\)/);
+  assert.match(source, /setContributionAmount\("15"\)/);
+  assert.match(source, /setAnyContribution\(false\)/);
+  assert.match(source, /setStatus\("active"\)/);
+  assert.match(source, /setFundingNote\(""\)/);
+  assert.match(source, /setSelectedProducts\(\[\]\)/);
+  assert.match(source, /\[selectedGbId,\s*pool\?\.round\]/);
+});
+
+test("member testing pool composes the live clinical command center without dropping workflows", () => {
+  const source = readSibling("../../pages/GbTestingPool.tsx");
+
+  assert.match(source, /className="clinical-testing clinical-testing--member"/);
+  for (const primitive of [
+    "ClinicalPoolGauge",
+    "RoundStatusRail",
+    "ThresholdStepGrid",
+    "VoteLeaderboard",
+  ]) {
+    assert.ok(source.includes(primitive), `missing member primitive ${primitive}`);
+  }
+  assert.match(source, /href="\/account\?s=lab-pool"/);
+  assert.match(
+    source,
+    /round\.fundingNote\s*\|\|\s*"Community-funded independent testing for the winning product batch\."/,
+  );
+  assert.match(source, /window\.setInterval\(\(\) => void load\(\), 30_000\)/);
+  assert.doesNotMatch(source, /function PoolGauge\(/);
+  assert.doesNotMatch(source, /function MilestoneCard\(/);
+
+  for (const workflowIdentifier of [
+    "VoteForm",
+    "ExistingVoteCard",
+    "LateContributionForm",
+    "PendingContributionCard",
+    "resultPdfUrl",
+    "publicVotes",
+    "vialVotes",
+  ]) {
+    assert.ok(
+      source.includes(workflowIdentifier),
+      `missing member workflow identifier ${workflowIdentifier}`,
+    );
+  }
+});
+
 test("SSR markup preserves progress descriptions, bounded labels, and list semantics", async t => {
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");

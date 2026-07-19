@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peps Anonymous — Branded Group Buy Dashboard</title>
+  <style>
+    :root {
+      --brand-navy: #1b3a7a;
+      --brand-blue: #2d6bcc;
+      --brand-deep: #1b3164;
+      --brand-ink: #0f1f38;
+      --brand-muted: #6b7280;
+      --brand-line: #d0dae4;
+      --brand-page: #edf3f8;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 7% 0%, rgba(255,255,255,.9), transparent 27%),
+        var(--brand-page);
+      color: var(--brand-ink);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+
+    .preview-frame {
+      display: block;
+      width: 100%;
+      min-height: 940px;
+      border: 0;
+      background: transparent;
+    }
+
+    .review-panel {
+      width: min(1508px, calc(100% - 38px));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 0 auto 44px;
+      padding: 16px 18px 16px 22px;
+      border: 1px solid rgba(27,58,122,.14);
+      border-radius: 22px;
+      background: rgba(255,255,255,.9);
+      box-shadow: 0 10px 28px rgba(27,49,100,.07);
+    }
+
+    .review-panel b { display: block; font-size: 12px; letter-spacing: -.025em; }
+    .review-panel span { display: block; margin-top: 4px; color: var(--brand-muted); font-size: 9px; }
+    .review-actions { display: flex; gap: 8px; }
+    .review-actions button {
+      min-height: 39px;
+      padding: 0 15px;
+      border: 1px solid var(--brand-line);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--brand-ink);
+      font-size: 9px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .review-actions .primary {
+      border-color: var(--brand-navy);
+      background: linear-gradient(135deg, var(--brand-blue), var(--brand-navy));
+      color: #fff;
+      box-shadow: 0 7px 16px rgba(27,58,122,.18);
+    }
+    .review-actions button.selected { outline: 4px solid rgba(45,107,204,.2); }
+
+    @media (max-width: 720px) {
+      .review-panel { width: calc(100% - 20px); align-items: flex-start; flex-direction: column; }
+      .review-actions { width: 100%; }
+      .review-actions button { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    id="dashboard-preview"
+    class="preview-frame"
+    src="/files/ecomora-group-buy-dashboard.html"
+    title="Peps Anonymous group-buy dashboard branded mockup"
+  ></iframe>
+
+  <section class="review-panel">
+    <div>
+      <b>Peps Anonymous brand palette applied</b>
+      <span>Same 1:1 dashboard composition with Peps navy, blue, amber, green, and branded surface colors.</span>
+    </div>
+    <div class="review-actions">
+      <button data-choice="revise-peps-brand-dashboard" onclick="toggleSelect(this)">Request changes</button>
+      <button class="primary" data-choice="approve-peps-brand-dashboard" onclick="toggleSelect(this)">Approve branded mockup</button>
+    </div>
+  </section>
+
+  <script>
+    const preview = document.getElementById('dashboard-preview');
+
+    function resizePreview() {
+      const doc = preview.contentDocument;
+      if (!doc) return;
+      preview.style.height = `${doc.documentElement.scrollHeight}px`;
+    }
+
+    preview.addEventListener('load', () => {
+      const doc = preview.contentDocument;
+      if (!doc) return;
+
+      const theme = doc.createElement('style');
+      theme.textContent = `
+        :root {
+          --page: #edf3f8;
+          --surface: #ffffff;
+          --card: #f3f7fb;
+          --card-strong: #edf3f8;
+          --ink: #0f1f38;
+          --muted: #6b7280;
+          --line: #d0dae4;
+          --line-dark: #c1cedb;
+          --lime: #2d6bcc;
+          --lime-strong: #2d6bcc;
+          --coral: #ef4444;
+          --orange: #e9a020;
+          --lavender: #afc8ef;
+          --shadow: 0 18px 55px rgba(27,49,100,.09);
+        }
+
+        body {
+          background:
+            radial-gradient(circle at 6% 0%, rgba(255,255,255,.9), transparent 28%),
+            var(--page) !important;
+          color: var(--ink);
+          font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        }
+
+        .topbar {
+          border-color: rgba(27,58,122,.08);
+          box-shadow: 0 10px 32px rgba(27,49,100,.065);
+        }
+
+        .brand-mark .one,
+        .brand-mark .two,
+        .brand-mark .three { background: #1b3164; }
+        .brand-mark .four { background: #2d6bcc; }
+        .brand-copy b { color: #1b3164; }
+        .brand-copy small { color: #6b7280; }
+
+        .primary-nav { background: #f0f4f8; }
+        .nav-item { color: #65748a; }
+        .nav-item.active {
+          background: linear-gradient(135deg, #2d6bcc, #1b3a7a);
+          box-shadow: 0 6px 16px rgba(27,58,122,.22);
+        }
+
+        .icon-btn,
+        .avatar-button,
+        .search,
+        .period,
+        .mini-search { background: #f7f9fc; }
+        .avatar-large { background: linear-gradient(140deg, #2d6bcc, #1b3164); }
+        .notification-dot { background: #ef4444; }
+
+        .dashboard { border-color: rgba(27,58,122,.07); }
+        .title-group h1,
+        .metric-value,
+        .revenue-summary strong,
+        .card-top h2 { color: #0f1f38; }
+
+        .live-pill {
+          background: rgba(34,197,94,.13);
+          color: #166534;
+        }
+        .live-pill::before { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.13); }
+
+        .action.primary {
+          border-color: #1b3a7a;
+          background: linear-gradient(135deg, #2d6bcc, #1b3a7a);
+          box-shadow: 0 7px 16px rgba(27,58,122,.22);
+        }
+
+        .card { border-color: rgba(27,58,122,.08); }
+        .metric-card::after { border-color: rgba(45,107,204,.07); }
+        .sparkline i { background: #9cb3ce; }
+        .sparkline i:last-child { background: #1b3a7a; }
+
+        .delta {
+          background: rgba(34,197,94,.15);
+          color: #166534;
+        }
+        .delta.negative {
+          background: rgba(239,68,68,.13);
+          color: #b91c1c;
+        }
+
+        .outstanding .dot { background: #ef4444; }
+        .bar-current { background: #1b3a7a; box-shadow: 0 5px 10px rgba(27,58,122,.16); }
+        .bar-current.highlight { background: #2d6bcc; }
+        .bar-previous { background: repeating-linear-gradient(135deg, #9cb3ce 0 2px, transparent 2px 5px); }
+        .legend-key i { background: #1b3a7a; }
+        .legend-key.previous i { background: repeating-linear-gradient(135deg, #9cb3ce 0 2px, transparent 2px 4px); }
+
+        .donut {
+          background: conic-gradient(
+            #22c55e 0deg 126deg,
+            var(--card) 126deg 130deg,
+            #1b3a7a 130deg 224deg,
+            var(--card) 224deg 228deg,
+            #e9a020 228deg 305deg,
+            var(--card) 305deg 309deg,
+            #ef4444 309deg 360deg
+          );
+        }
+        .status-item.paid i { background: #22c55e; }
+        .status-item.packing i { background: #1b3a7a; }
+        .status-item.dispatched i { background: #e9a020; }
+        .status-item.due i { background: #ef4444; }
+
+        .member-avatar.sarah { background: #2d6bcc; }
+        .member-avatar.john { background: #1b3a7a; }
+        .member-avatar.anna { background: #e9a020; }
+        .member-avatar.mike { background: #1b3164; }
+
+        .status-pill.paid { background: rgba(34,197,94,.14); color: #166534; }
+        .status-pill.paid::before { background: #22c55e; }
+        .status-pill.packing { background: rgba(45,107,204,.13); color: #1b3a7a; }
+        .status-pill.packing::before { background: #2d6bcc; }
+        .status-pill.dispatched { background: rgba(233,160,32,.16); color: #8a5905; }
+        .status-pill.dispatched::before { background: #e9a020; }
+        .status-pill.due { background: rgba(239,68,68,.13); color: #b91c1c; }
+        .status-pill.due::before { background: #ef4444; }
+
+        .top-product {
+          background: linear-gradient(135deg, #1c2b3d 0%, #1b3164 100%);
+          box-shadow: 0 12px 22px rgba(27,49,100,.16);
+        }
+        .vial-halo { background: #2d6bcc; }
+        .product-metric span { background: #e9a020; color: #4c3208; }
+        .progress i { background: linear-gradient(90deg, #2d6bcc, #1b3a7a); }
+
+        .review-panel { display: none !important; }
+      `;
+      doc.head.appendChild(theme);
+
+      const brandName = doc.querySelector('.brand-copy b');
+      const brandSubtitle = doc.querySelector('.brand-copy small');
+      if (brandName) brandName.textContent = 'Peps Anonymous';
+      if (brandSubtitle) brandSubtitle.textContent = 'GB Organiser';
+
+      requestAnimationFrame(() => {
+        resizePreview();
+        if (doc.fonts?.ready) doc.fonts.ready.then(resizePreview);
+      });
+    });
+
+    window.addEventListener('resize', resizePreview);
+  </script>
+</body>
+</html>

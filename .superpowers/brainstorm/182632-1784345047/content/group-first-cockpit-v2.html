@@ -1,0 +1,96 @@
+<style>
+  .nav-refine {
+    --navy: #1b3a7a;
+    --deep: #1b3164;
+    --blue: #2d6bcc;
+    --ink: #0f1f38;
+    --muted: #6b7280;
+    --line: #d0dae4;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+  .nav-refine h2 { color: var(--ink); letter-spacing: -.035em; }
+  .nav-refine .lede { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; }
+  .nav-refine .version { padding: 7px 10px; border-radius: 999px; color: var(--navy); background: #eaf1fb; font-size: 11px; font-weight: 800; white-space: nowrap; }
+  .nav-refine .canvas { padding: 44px 24px; overflow-x: auto; border: 1px solid #d5dee8; border-radius: 18px; background: linear-gradient(180deg,#eef3f8 0%,#f8fafc 100%); }
+  .nav-refine .browser { min-width: 1100px; overflow: hidden; border: 1px solid rgba(15,31,56,.14); border-radius: 12px; background: #fff; box-shadow: 0 18px 44px rgba(15,31,56,.13); }
+  .nav-refine .context { height: 32px; padding: 0 18px; display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.72); background: linear-gradient(90deg,var(--deep),var(--navy)); font-size: 10.5px; }
+  .nav-refine .context strong { color: #fff; font-size: 11px; }
+  .nav-refine .live { display: flex; align-items: center; gap: 6px; color: #d9fae7; }
+  .nav-refine .live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.14); }
+  .nav-refine .context-right { margin-left: auto; display: flex; gap: 18px; }
+  .nav-refine .bar { min-height: 70px; padding: 0 18px; display: flex; align-items: center; gap: 10px; }
+  .nav-refine button { font: inherit; }
+  .nav-refine .menu { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 13px; background: #eaf1fb; color: var(--navy); box-shadow: inset 0 0 0 1px rgba(27,58,122,.08); }
+  .nav-refine .menu-lines { width: 18px; display: grid; gap: 4px; }
+  .nav-refine .menu-lines i { height: 2px; border-radius: 2px; background: currentColor; }
+  .nav-refine .menu-lines i:nth-child(2) { width: 13px; }
+  .nav-refine .menu-lines i:nth-child(3) { width: 16px; }
+  .nav-refine .page-lockup { width: 184px; display: grid; line-height: 1.17; }
+  .nav-refine .page-lockup strong { color: var(--ink); font-size: 14px; font-weight: 750; }
+  .nav-refine .page-lockup small { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+  .nav-refine .search { height: 46px; min-width: 440px; flex: 1; padding: 0 12px 0 14px; display: flex; align-items: center; gap: 10px; border: 1px solid #becbda; border-radius: 13px; background: #fbfcfe; color: #6e7b8e; font-size: 13px; box-shadow: 0 1px 0 rgba(15,31,56,.025); }
+  .nav-refine .search svg { width: 19px; height: 19px; flex: 0 0 auto; }
+  .nav-refine kbd { margin-left: auto; height: 26px; min-width: 40px; padding: 0 6px; display: grid; place-items: center; border: 1px solid #d5dee8; border-radius: 7px; background: #fff; color: #667085; font-family: inherit; font-size: 11px; font-weight: 750; box-shadow: 0 1px 1px rgba(15,31,56,.04); }
+  .nav-refine .actions { display: flex; align-items: center; gap: 8px; margin-left: 2px; }
+  .nav-refine .action { height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border: 1px solid #c8d3df; border-radius: 12px; background: #fff; color: var(--navy); font-size: 12.5px; font-weight: 750; white-space: nowrap; }
+  .nav-refine .action.primary { padding-inline: 18px; border-color: var(--blue); background: var(--blue); color: #fff; }
+  .nav-refine .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-refine .profile { height: 48px; padding-left: 10px; display: flex; align-items: center; gap: 9px; border-left: 1px solid #e0e6ed; }
+  .nav-refine .avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #dce8ff; color: var(--navy); font-size: 12px; font-weight: 850; }
+  .nav-refine .profile-copy { min-width: 78px; display: grid; line-height: 1.15; }
+  .nav-refine .profile-copy strong { color: var(--ink); font-size: 12px; }
+  .nav-refine .profile-copy small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+  .nav-refine .chev { width: 14px; height: 14px; color: #778397; }
+  .nav-refine .changes { margin-top: 18px; display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+  .nav-refine .change { padding: 13px 14px; border: 1px solid #dbe3eb; border-radius: 12px; background: #fff; }
+  .nav-refine .change b { display: block; margin-bottom: 3px; color: var(--ink); font-size: 12px; }
+  .nav-refine .change span { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+  .nav-refine .approval { margin-top: 18px; padding: 15px 17px; display: flex; align-items: center; gap: 12px; border: 2px solid #c7d6ea; border-radius: 13px; background: #f8fbff; cursor: pointer; transition: .16s ease; }
+  .nav-refine .approval:hover, .nav-refine .approval.selected { border-color: var(--blue); background: #edf5ff; }
+  .nav-refine .check { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; background: var(--navy); color: #fff; font-size: 14px; font-weight: 900; }
+  .nav-refine .approval b { display: block; color: var(--ink); font-size: 13px; }
+  .nav-refine .approval span { color: var(--muted); font-size: 12px; }
+  @media (max-width:800px) { .nav-refine .changes { grid-template-columns: 1fr 1fr; } }
+</style>
+
+<svg aria-hidden="true" width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="r-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="r-folder" viewBox="0 0 24 24"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M16 14h4M18 12v4"/></symbol>
+    <symbol id="r-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  </defs>
+</svg>
+
+<div class="nav-refine">
+  <div class="lede">
+    <div><h2>Group-first cockpit — refined</h2><p class="subtitle">The useful live context stays. The action area is quieter and the search field now gets the visual priority it needs.</p></div>
+    <span class="version">B · revision 2</span>
+  </div>
+
+  <div class="canvas">
+    <div class="browser">
+      <div class="context"><span class="live">Open group buy</span><strong>Winter Peptide Run 2025</strong><span>GBP</span><span class="context-right"><span>Closes in 12 days</span><span>148 members</span></span></div>
+      <div class="bar">
+        <button class="menu" aria-label="Open navigation"><span class="menu-lines"><i></i><i></i><i></i></span></button>
+        <div class="page-lockup"><strong>Overview</strong><small>GB Organiser workspace</small></div>
+        <div class="search"><svg class="ico"><use href="#r-search"/></svg><span>Search orders, members, parcels…</span><kbd>⌘ K</kbd></div>
+        <div class="actions">
+          <button class="action"><svg class="ico"><use href="#r-folder"/></svg>Manage</button>
+          <button class="action primary">Create order</button>
+        </div>
+        <div class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span><svg class="ico chev"><use href="#r-chevron"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="changes">
+    <div class="change"><b>Menu refined</b><span>Soft-blue 44px control with deliberately staggered strokes.</span></div>
+    <div class="change"><b>Search expanded</b><span>440px minimum plus flexible growth across wider screens.</span></div>
+    <div class="change"><b>Share removed</b><span>Sharing can live inside Manage if it is still needed occasionally.</span></div>
+    <div class="change"><b>Bell removed</b><span>No standalone notification icon competing with primary work.</span></div>
+  </div>
+
+  <div class="approval" data-choice="b-refined-approved" onclick="toggleSelect(this)">
+    <span class="check">✓</span><span><b>Use this as the desktop direction</b><span>Click here if the hierarchy now feels right.</span></span>
+  </div>
+</div>

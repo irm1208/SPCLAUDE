@@ -75,7 +75,7 @@ interface OrganiserProfile {
   } | null;
 }
 
-interface OrganiserGB {
+export interface OrganiserGB {
   id: string;
   name: string;
   description: string | null;
@@ -5434,7 +5434,7 @@ const normalizeSize = (raw: string | undefined): string => {
 const matchKey = (name: string, mgSize: string) =>
   `${name.trim().toLowerCase()}|${(mgSize || "").trim().toLowerCase()}`;
 
-function ProductsTab({ gb }: { gb: OrganiserGB }) {
+export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   const [products, setProducts] = useState<OrgProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowedVendors, setAllowedVendors] = useState<string[] | null>(null);
@@ -6085,7 +6085,7 @@ const TROCADOR_COINS = [
   { label: "Zcash (ZEC)",     ticker: "zec",  network: "Mainnet" },
 ] as const;
 
-function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
+export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
   const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; requiresAddress: boolean; requiresQrCode: boolean }[]>(
     (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
   );
@@ -9723,7 +9723,7 @@ function OrgManualStatusEditor({ gbId, parcel, onSave, onCancel }: {
   );
 }
 
-function ParcelsTab({ gb }: { gb: OrganiserGB }) {
+export function ParcelsTab({ gb }: { gb: OrganiserGB }) {
   const [parcels, setParcels] = useState<OrgParcel[]>([]);
   const [loading, setLoading] = useState(true);
   const [catalogProducts, setCatalogProducts] = useState<{ id: string; name: string }[]>([]);
@@ -9918,7 +9918,7 @@ type LabReviewRow = {
   heavyMetalAs: string; heavyMetalCd: string; heavyMetalPb: string; heavyMetalHg: string;
 };
 
-function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
+export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
   const [tests, setTests] = useState<OrgLabTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<"none" | "manual" | "multifile">("none");
@@ -10345,7 +10345,7 @@ function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
 
 // ─── P&L Tab ──────────────────────────────────────────────────────────────────
 
-function PnlTab({ gb }: { gb: OrganiserGB }) {
+export function PnlTab({ gb }: { gb: OrganiserGB }) {
   const [data, setData] = useState<PnlData | null>(null);
   const [loading, setLoading] = useState(true);
   const [costs, setCosts] = useState({ materials: "", lab: "", shipping: "", misc: "", platformFee: "", notes: "" });
@@ -10449,7 +10449,7 @@ function PnlTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Summary Tab ──────────────────────────────────────────────────────────────
 
-function SummaryTab({ gb }: { gb: OrganiserGB }) {
+export function SummaryTab({ gb }: { gb: OrganiserGB }) {
   type GRow = { productId: string; productName: string; totalQty: number; unitPrice: number; totalValue: number; orderCount: number };
   type GBreakdown = { orderId: string; orderCode: string; telegramUsername: string; quantity: number; unitPrice: number; lineTotal: number; orderStatus: string; paymentStatus: string; notes: string | null };
 
@@ -10836,7 +10836,7 @@ function OrgSharedShippingTab({ gb, onUpdate }: { gb: OrganiserGB; onUpdate: (up
 
 // ─── Broadcast Tab ────────────────────────────────────────────────────────────
 
-function BroadcastTab({ gb }: { gb: OrganiserGB }) {
+export function BroadcastTab({ gb }: { gb: OrganiserGB }) {
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ sent: number; skipped: number; total: number } | null>(null);
@@ -10935,12 +10935,13 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
 
   return (
     <div className="space-y-4">
-      <SectionCard>
+      <SectionCard className="organiser-broadcast-composer">
         <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--t-primary)" }}>Send Telegram Message</h2>
         <p className="text-xs mb-4" style={{ color: "var(--t-subtle)" }}>
           Send a message to members of <strong>{gb.name}</strong> who have linked their Telegram account. Choose all members or select specific recipients.
         </p>
 
+        <div className="organiser-broadcast-audience">
         {/* Recipients toggle */}
         <div className="flex gap-2 mb-3">
           {(["all", "selected"] as const).map(mode => (
@@ -11072,7 +11073,9 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
             )}
           </div>
         )}
+        </div>
 
+        <div className="organiser-broadcast-message">
         <div className="space-y-2">
           <textarea
             className="w-full rounded-lg border text-sm p-3 resize-none focus:outline-none focus:ring-2"
@@ -11122,6 +11125,7 @@ function BroadcastTab({ gb }: { gb: OrganiserGB }) {
             {sending ? <Loader2 size={14} className="animate-spin" /> : <SendHorizonal size={14} />}
             {sending ? "Sending…" : targetMode === "all" ? "Send to all members" : `Send to ${selectedUsernames.size} member${selectedUsernames.size !== 1 ? "s" : ""}`}
           </button>
+        </div>
         </div>
       </SectionCard>
     </div>
@@ -11301,7 +11305,7 @@ function AssignmentCard({
   );
 }
 
-function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
+export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
   const [assignments, setAssignments] = useState<OrgReshipper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -11784,7 +11788,7 @@ interface OrgCountryLeg {
   orderCount: number;
 }
 
-function OrganiserCountryLegsTab({ gb }: { gb: OrganiserGB }) {
+export function OrganiserCountryLegsTab({ gb }: { gb: OrganiserGB }) {
   const [legs, setLegs] = useState<OrgCountryLeg[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12388,7 +12392,7 @@ const ORG_RULE_FORMAT_COLORS: Record<OrgRuleFormat, string> = {
   standard: "var(--t-subtle)", info: "#3B82F6", warning: "#F59E0B", important: "#EF4444",
 };
 
-function OrganiserRulesTab({ gb }: { gb: OrganiserGB }) {
+export function OrganiserRulesTab({ gb }: { gb: OrganiserGB }) {
   const [rules, setRules] = useState<OrgRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -12575,7 +12579,7 @@ const TICKET_STATUS_STYLE: Record<string, { text: string; bg: string }> = {
   closed:      { text: "#6B7280", bg: "rgba(107,114,128,0.10)" },
 };
 
-function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
+export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
   const [tickets, setTickets] = useState<OrgTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);

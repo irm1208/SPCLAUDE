@@ -1,0 +1,113 @@
+<style>
+  .workflow-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:24px; }
+  .workflow-card { border:1px solid #d9e2ec; border-radius:18px; overflow:hidden; background:#fff; cursor:pointer; transition:.18s ease; }
+  .workflow-card:hover { transform:translateY(-2px); box-shadow:0 18px 40px rgba(15,31,56,.10); }
+  .workflow-card.selected { border-color:#2d6bcc; box-shadow:0 0 0 3px rgba(45,107,204,.12); }
+  .workflow-preview { min-height:255px; padding:13px; background:#f4f7fb; }
+  .workflow-head { display:flex; height:29px; align-items:center; justify-content:space-between; border-radius:8px 8px 0 0; padding:0 9px; color:#fff; background:#1b3164; font-size:8px; font-weight:700; }
+  .workflow-body { display:grid; min-height:200px; border:1px solid #d7e0ea; border-top:0; border-radius:0 0 9px 9px; overflow:hidden; background:#fff; }
+  .workflow-body.queue { grid-template-columns:.9fr 1.3fr .8fr; }
+  .queue-col { padding:8px; border-right:1px solid #e5ebf1; }
+  .queue-col:last-child { border-right:0; }
+  .mini-label { color:#8291a3; font-size:6px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+  .mini-row { display:flex; align-items:center; gap:5px; margin-top:6px; border:1px solid #e1e7ee; border-radius:6px; padding:6px; }
+  .mini-row.active { border-color:#2d6bcc; background:#eef5ff; }
+  .mini-avatar { width:17px; height:17px; flex:0 0 17px; border-radius:5px; background:#dbe9fc; }
+  .mini-lines { flex:1; }
+  .mini-lines i { display:block; height:3px; margin:2px 0; border-radius:3px; background:#8aa0ba; }
+  .mini-lines i:last-child { width:62%; background:#ced8e3; }
+  .qr-stage { display:grid; place-items:center; background:linear-gradient(145deg,#f8fafc,#eef3f8); }
+  .qr { width:82px; height:82px; border:9px solid #fff; border-radius:8px; background:repeating-conic-gradient(#12223b 0 25%,#fff 0 50%) 0/16px 16px; box-shadow:0 8px 20px rgba(20,40,67,.12); }
+  .detail-block { height:30px; margin-top:7px; border-radius:6px; background:#f0f4f8; }
+  .action { height:22px; margin-top:8px; border-radius:6px; background:#1b3a7a; }
+  .workflow-body.board { grid-template-columns:repeat(3,1fr); gap:7px; padding:9px; background:#eef3f8; }
+  .board-col { border-radius:7px; padding:6px; background:#fff; }
+  .board-col:nth-child(1) { border-top:3px solid #e9a020; }
+  .board-col:nth-child(2) { border-top:3px solid #2d6bcc; }
+  .board-col:nth-child(3) { border-top:3px solid #22a06b; }
+  .ticket { height:38px; margin-top:7px; border:1px solid #e2e8ef; border-radius:6px; background:linear-gradient(90deg,#fff,#f8fafc); }
+  .workflow-body.ledger { display:block; padding:8px; }
+  .ledger-toolbar { display:flex; height:25px; gap:5px; margin-bottom:7px; }
+  .ledger-toolbar span { flex:1; border-radius:5px; background:#edf2f7; }
+  .ledger-toolbar span:last-child { max-width:60px; background:#1b3a7a; }
+  .ledger-row { display:grid; grid-template-columns:14px 1.2fr .8fr .7fr .6fr; gap:5px; align-items:center; height:27px; border-top:1px solid #edf1f5; }
+  .ledger-row i { height:5px; border-radius:4px; background:#b7c3d0; }
+  .ledger-row i:first-child { width:9px; height:9px; border:1px solid #9aabba; background:#fff; }
+  .ledger-row:nth-child(3) i:last-child { background:#e9a020; }
+  .ledger-row:nth-child(4) i:last-child { background:#22a06b; }
+  .workflow-copy { padding:16px; }
+  .workflow-copy small { display:block; margin-bottom:5px; color:#2d6bcc; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+  .workflow-copy h3 { margin:0; font-size:16px; }
+  .workflow-copy p { margin:7px 0 0; color:#697789; font-size:12px; line-height:1.5; }
+  .lineup { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+  .lineup span { border-radius:999px; padding:5px 8px; color:#526174; background:#eef2f6; font-size:9px; font-weight:700; }
+  .decision { margin-top:20px; border-left:3px solid #2d6bcc; border-radius:0 12px 12px 0; padding:14px 16px; background:#eef5ff; color:#34445a; font-size:12px; line-height:1.55; }
+  @media (max-width:900px) { .workflow-grid { grid-template-columns:1fr; } }
+</style>
+
+<div class="label">GB Organizer V2 · QR Codes redesign</div>
+<h2>Five concepts, organised around three workflow models</h2>
+<p class="subtitle">All retain search, status visibility, QR preview, and “mark posted.” Queue Studio is the anchor and receives three visual treatments.</p>
+
+<div class="workflow-grid" data-multiselect>
+  <div class="workflow-card" data-choice="queue-studio" onclick="toggleSelect(this)">
+    <div class="workflow-preview">
+      <div class="workflow-head"><span>QR CODES / QUEUE</span><span>8 ready</span></div>
+      <div class="workflow-body queue">
+        <div class="queue-col">
+          <span class="mini-label">Needs action</span>
+          <div class="mini-row active"><span class="mini-avatar"></span><span class="mini-lines"><i></i><i></i></span></div>
+          <div class="mini-row"><span class="mini-avatar"></span><span class="mini-lines"><i></i><i></i></span></div>
+          <div class="mini-row"><span class="mini-avatar"></span><span class="mini-lines"><i></i><i></i></span></div>
+        </div>
+        <div class="qr-stage"><div class="qr"></div></div>
+        <div class="queue-col"><span class="mini-label">Order context</span><div class="detail-block"></div><div class="detail-block"></div><div class="action"></div></div>
+      </div>
+    </div>
+    <div class="workflow-copy">
+      <small>Anchor workflow · 3 treatments</small>
+      <h3>Queue Studio</h3>
+      <p>Triage members on the left, inspect a large QR in the centre, and act from persistent order context on the right.</p>
+      <div class="lineup"><span>01 Peps Clear</span><span>04 Night Shift</span><span>05 Compact Ops</span></div>
+    </div>
+  </div>
+
+  <div class="workflow-card" data-choice="status-board" onclick="toggleSelect(this)">
+    <div class="workflow-preview">
+      <div class="workflow-head"><span>QR CODES / FLOW</span><span>12 orders</span></div>
+      <div class="workflow-body board">
+        <div class="board-col"><span class="mini-label">Waiting · 3</span><div class="ticket"></div><div class="ticket"></div></div>
+        <div class="board-col"><span class="mini-label">Ready · 5</span><div class="ticket"></div><div class="ticket"></div><div class="ticket"></div></div>
+        <div class="board-col"><span class="mini-label">Posted · 4</span><div class="ticket"></div><div class="ticket"></div></div>
+      </div>
+    </div>
+    <div class="workflow-copy">
+      <small>Workflow alternative</small>
+      <h3>Status Board</h3>
+      <p>A visual Waiting → Ready → Posted pipeline that makes bottlenecks and completion progress obvious at a glance.</p>
+      <div class="lineup"><span>02 Flow Board</span></div>
+    </div>
+  </div>
+
+  <div class="workflow-card" data-choice="batch-ledger" onclick="toggleSelect(this)">
+    <div class="workflow-preview">
+      <div class="workflow-head"><span>QR CODES / BATCH</span><span>3 selected</span></div>
+      <div class="workflow-body ledger">
+        <div class="ledger-toolbar"><span></span><span></span><span></span></div>
+        <div class="ledger-row"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="ledger-row"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="ledger-row"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="ledger-row"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="ledger-row"><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <div class="workflow-copy">
+      <small>Workflow alternative</small>
+      <h3>Batch Ledger</h3>
+      <p>A dense, sortable operations table with selection, a preview drawer, and bulk posting actions for high-volume runs.</p>
+      <div class="lineup"><span>03 Batch Desk</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="decision"><strong>Proposed set:</strong> Queue Studio / Peps Clear, Status Board, Batch Ledger, Queue Studio / Night Shift, and Queue Studio / Compact Ops. Click any card if you want to signal where the most polish should go.</div>

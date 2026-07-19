@@ -12,16 +12,21 @@ export interface OrderChange {
   idempotencyKey?: string;
 }
 
+export type OrderRepositoryLoadState = "idle" | "loading" | "ready" | "error";
+
 export interface OrderRepository {
   getSnapshot(): readonly OrganiserOrder[];
   getReadIssues(): readonly OrderNormalizationIssue[];
+  getLoadState(): OrderRepositoryLoadState;
+  getError(): Error | null;
   subscribe(listener: () => void): () => void;
-  replaceOne(order: OrganiserOrder, change: OrderChange): readonly OrganiserOrder[];
+  load(): Promise<readonly OrganiserOrder[]>;
+  replaceOne(order: OrganiserOrder, change: OrderChange): readonly OrganiserOrder[] | Promise<readonly OrganiserOrder[]>;
   updateMany(
     ids: readonly string[],
     update: (order: OrganiserOrder) => OrganiserOrder,
     change: OrderChange,
-  ): readonly OrganiserOrder[];
+  ): readonly OrganiserOrder[] | Promise<readonly OrganiserOrder[]>;
 }
 
 export function createPrototypeOrderRepository({
@@ -66,6 +71,9 @@ export function createPrototypeOrderRepository({
   return {
     getSnapshot: () => current,
     getReadIssues: () => readIssues,
+    getLoadState: () => "ready",
+    getError: () => null,
+    load: async () => current,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

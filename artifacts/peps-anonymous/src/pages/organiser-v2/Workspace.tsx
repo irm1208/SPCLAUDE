@@ -1,46 +1,69 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { FolderCog } from "lucide-react";
 import { WORKSPACE_PAGE_META, type WorkspaceTabId } from "./nav";
-import { SAMPLE_GBS } from "./data";
-import { loadGb } from "./storage";
+import type { SampleGB } from "./data";
 import OverviewTabV3 from "./OverviewTabV3";
 import OrdersTab from "./OrdersTab";
 import TodoTab from "./TodoTab";
-import BroadcastTab from "./BroadcastTab";
-import ParcelsTab from "./ParcelsTab";
 import DispatchTab from "./DispatchTab";
 import QrCodesTab from "./QrCodesTab";
-import ReshippersTab from "./ReshippersTab";
-import CountryLegsTab from "./CountryLegsTab";
-import ShippingTab from "./ShippingTab";
-import PnLTab from "./PnLTab";
-import VendorCoasTab from "./VendorCoasTab";
 import TestingGroupsTab from "./TestingGroupsTab";
-import TicketsTab from "./TicketsTab";
 import GbSettingsTab from "./GbSettingsTab";
+import MembersTab from "./MembersTab";
 import GbProductsTab from "./GbProductsTab";
-import RulesTab from "./RulesTab";
-import SummaryTab from "./SummaryTab";
+import {
+  BroadcastTab as LiveBroadcastTab,
+  LabTestsTabOrg as LiveLabTestsTabOrg,
+  OrgTicketsTab as LiveOrgTicketsTab,
+  OrganiserCountryLegsTab as LiveOrganiserCountryLegsTab,
+  OrganiserReshippersTab as LiveOrganiserReshippersTab,
+  OrganiserRulesTab as LiveOrganiserRulesTab,
+  ParcelsTab as LiveParcelsTab,
+  PnlTab as LivePnlTab,
+  ShippingPayTab as LiveShippingPayTab,
+  SummaryTab as LiveSummaryTab,
+  type OrganiserGB,
+} from "../GbOrganiser";
 import GlobalSearch from "./GlobalSearch";
 import DashboardSidebar from "./DashboardSidebar";
 import OrganiserShell from "./OrganiserShell";
 import OrganiserTopbar from "./OrganiserTopbar";
-import { createInitialDeskState } from "./dispatch/sample-data";
-import { getReadyCount } from "./dispatch/model";
+import OrganiserMobileNavigation from "./OrganiserMobileNavigation";
 import WorkspaceScreen from "./WorkspaceScreen";
-import { createPrototypeOrganiserRepositories } from "./domain/repositories";
+import { createApiOrganiserRepositories } from "./domain/repositories";
 import { OrganiserRepositoryProvider } from "./domain/repository-context";
-import { countPendingPayments } from "./domain/order-selectors";
+import { mergeMemberDirectory } from "./domain/member";
+import { deriveOrderAttentionSummary } from "./domain/order-selectors";
+import { organiserApi } from "./api/organiser-api";
 
-export default function Workspace({ onModeChange }: { onModeChange?: () => void }) {
+const WORKSPACE_PRIMARY_NAVIGATION: Partial<Record<WorkspaceTabId, { label: string; target: WorkspaceTabId }>> = {
+  overview: { label: "Create order", target: "orders" },
+  orders: { label: "Open dispatch", target: "dispatch" },
+  dispatch: { label: "View QR codes", target: "qrcodes" },
+  members: { label: "View orders", target: "orders" },
+  products: { label: "Open dispatch", target: "dispatch" },
+};
+
+export default function Workspace({
+  groupBuy,
+  apiGroupBuy,
+  organiserName,
+  onGroupBuyUpdated,
+  onModeChange,
+}: {
+  groupBuy: SampleGB;
+  apiGroupBuy: OrganiserGB;
+  organiserName: string;
+  onGroupBuyUpdated: (groupBuy: OrganiserGB) => void;
+  onModeChange?: () => void;
+}) {
   const [active, setActive] = useState<WorkspaceTabId>("overview");
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | undefined>();
-  const [dispatchState, setDispatchState] = useState(createInitialDeskState);
-  const [shareCopied, setShareCopied] = useState(false);
-  const gb = SAMPLE_GBS[0];
+  const gb = groupBuy;
   const repositories = useMemo(
-    () => createPrototypeOrganiserRepositories({ groupBuyId: gb.id }),
+    () => createApiOrganiserRepositories({ groupBuyId: gb.id }),
     [gb.id],
   );
   const repositoryOrders = useSyncExternalStore(
@@ -49,18 +72,54 @@ export default function Workspace({ onModeChange }: { onModeChange?: () => void 
     repositories.orders.getSnapshot,
   );
   const pageMeta = WORKSPACE_PAGE_META[active];
-  const readyDispatchCount = getReadyCount(dispatchState);
+  const breadcrumbLabel = active === "overview" ? "Overview" : pageMeta.title;
 
-  const tickets = loadGb<Array<{ id: string; unreadCount?: number }>>(gb.id, "tickets", [], "v2Tickets");
-  const ticketUnreadCount = tickets.reduce((total, ticket) => total + (ticket.unreadCount ?? 0), 0);
-  const pendingContributions = loadGb<unknown[]>(gb.id, "testingPendingContribs", [], "v2TestingPendingContribs");
-  const pendingPayments = countPendingPayments(repositoryOrders);
+  const orderAttention = deriveOrderAttentionSummary(repositoryOrders);
+  const pendingPayments = orderAttention.paymentCount;
+  const readyDispatchCount = orderAttention.dispatchReadyCount;
+  const orderLoadState = useSyncExternalStore(
+    repositories.orders.subscribe,
+    repositories.orders.getLoadState,
+    repositories.orders.getLoadState,
+  );
+  const membersQuery = useQuery({
+    queryKey: ["organiser", "members", gb.id],
+    queryFn: () => organiserApi.members(gb.id),
+    staleTime: 30_000,
+  });
+  const memberCount = useMemo(
+    () => mergeMemberDirectory(repositoryOrders, membersQuery.data ?? []).length,
+    [membersQuery.data, repositoryOrders],
+  );
+  const ticketsQuery = useQuery({
+    queryKey: ["organiser", "tickets", gb.id],
+    queryFn: () => organiserApi.tickets(gb.id),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+  const testingQuery = useQuery({
+    queryKey: ["organiser", "testing", gb.id],
+    queryFn: () => organiserApi.testingPool(gb.id),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+  const todosQuery = useQuery({
+    queryKey: ["organiser", "todos", gb.id],
+    queryFn: () => organiserApi.todos(gb.id),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
+  useEffect(() => {
+    repositories.orders.load().catch(() => undefined);
+  }, [repositories]);
 
   const badges: Partial<Record<WorkspaceTabId, number>> = {
-    tickets: ticketUnreadCount,
-    testinggroups: pendingContributions.length,
     orders: pendingPayments,
     dispatch: readyDispatchCount,
+    tickets: (ticketsQuery.data ?? []).filter(ticket => ticket.status === "open" || ticket.status === "in_progress").length,
+    testinggroups: testingQuery.data?.contributions.pending ?? 0,
+    todos: (todosQuery.data ?? []).filter(todo => todo.status !== "done" && !todo.archived).length,
   };
 
   useEffect(() => {
@@ -79,15 +138,12 @@ export default function Workspace({ onModeChange }: { onModeChange?: () => void 
     setHighlightId(entityId);
   };
 
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard?.writeText(window.location.href);
-      setShareCopied(true);
-      window.setTimeout(() => setShareCopied(false), 1800);
-    } catch {
-      setShareCopied(false);
-    }
-  };
+  const primaryNavigation = WORKSPACE_PRIMARY_NAVIGATION[active];
+  const primaryAction = primaryNavigation
+    ? { label: primaryNavigation.label, onClick: () => handleNavigate(primaryNavigation.target) }
+    : onModeChange
+      ? { label: "Edit setup", onClick: onModeChange }
+      : undefined;
 
   const activeContent = active === "overview" ? (
     <OverviewTabV3
@@ -97,39 +153,45 @@ export default function Workspace({ onModeChange }: { onModeChange?: () => void 
       onGoto={tab => setActive(tab as WorkspaceTabId)}
     />
   ) : active === "orders" ? (
-    <OrdersTab selectedGbId={gb.id} highlightId={highlightId} />
+    <OrdersTab selectedGbId={gb.id} highlightId={highlightId} onOpenDispatch={() => setActive("dispatch")} />
+  ) : active === "members" ? (
+    <MembersTab selectedGbId={gb.id} onOpenOrders={() => setActive("orders")} />
   ) : active === "todos" ? (
     <TodoTab selectedGbId={gb.id} highlightId={highlightId} />
   ) : active === "broadcast" ? (
-    <BroadcastTab />
+    <LiveBroadcastTab gb={apiGroupBuy} />
   ) : active === "parcels" ? (
-    <ParcelsTab />
+    <LiveParcelsTab gb={apiGroupBuy} />
   ) : active === "dispatch" ? (
-    <DispatchTab state={dispatchState} onStateChange={setDispatchState} />
+    <DispatchTab selectedGbId={gb.id} />
   ) : active === "qrcodes" ? (
     <QrCodesTab selectedGbId={gb.id} />
   ) : active === "reshippers" ? (
-    <ReshippersTab selectedGbId={gb.id} />
+    <LiveOrganiserReshippersTab gb={apiGroupBuy} />
   ) : active === "legs" ? (
-    <CountryLegsTab selectedGbId={gb.id} />
+    <LiveOrganiserCountryLegsTab gb={apiGroupBuy} />
   ) : active === "shipping" ? (
-    <ShippingTab selectedGbId={gb.id} />
+    <LiveShippingPayTab gb={apiGroupBuy} onUpdated={onGroupBuyUpdated} />
   ) : active === "pnl" ? (
-    <PnLTab selectedGbId={gb.id} />
+    <LivePnlTab gb={apiGroupBuy} />
   ) : active === "labtests" ? (
-    <VendorCoasTab selectedGbId={gb.id} />
+    <LiveLabTestsTabOrg gb={apiGroupBuy} />
   ) : active === "testinggroups" ? (
     <TestingGroupsTab selectedGbId={gb.id} />
   ) : active === "tickets" ? (
-    <TicketsTab selectedGbId={gb.id} />
+    <LiveOrgTicketsTab gb={apiGroupBuy} />
   ) : active === "settings" ? (
     <GbSettingsTab selectedGbId={gb.id} />
   ) : active === "products" ? (
-    <GbProductsTab selectedGbId={gb.id} />
+    <GbProductsTab
+      selectedGbId={gb.id}
+      groupBuyName={gb.name}
+      currency={apiGroupBuy.currency}
+    />
   ) : active === "rules" ? (
-    <RulesTab selectedGbId={gb.id} />
+    <LiveOrganiserRulesTab gb={apiGroupBuy} />
   ) : (
-    <SummaryTab selectedGbId={gb.id} />
+    <LiveSummaryTab gb={apiGroupBuy} />
   );
 
   return (
@@ -140,33 +202,53 @@ export default function Workspace({ onModeChange }: { onModeChange?: () => void 
             activeTab={active}
             onTabChange={setActive}
             gbName={gb.name}
-            userName="Organiser"
+            userName={organiserName}
             badges={badges}
             onNavigate={onNavigate}
             onSwitchMode={onModeChange}
+            onExitDashboard={() => window.location.assign("/account")}
             onCollapse={onCollapse}
             collapsed={collapsed}
           />
         )}
-        topbar={onOpenMenu => (
+        topbar={({ onOpenDrawer, onToggleSidebar, sidebarCollapsed }) => (
           <OrganiserTopbar
             groupName={gb.name}
-            pageLabel={pageMeta.title}
-            onOpenMenu={onOpenMenu}
+            groupStatus={gb.status}
+            memberCount={memberCount}
+            orderCount={repositoryOrders.length}
+            pageLabel={breadcrumbLabel}
+            onOpenMenu={onOpenDrawer}
+            onToggleSidebar={onToggleSidebar}
+            sidebarCollapsed={sidebarCollapsed}
             onSearch={() => setSearchOpen(true)}
-            onBack={() => setActive("overview")}
-            onShare={handleShare}
-            secondaryActions={(
+            onProfile={() => window.location.assign("/account")}
+            organiserName={organiserName}
+            organiserRole="Lead organiser"
+            secondaryActions={onModeChange ? (
               <button type="button" className="ov2-secondary-button" onClick={onModeChange}>
-                <FolderCog aria-hidden="true" /> Manage
+                <FolderCog aria-hidden="true" /> <span className="ov2-action-label">Manage</span>
               </button>
-            )}
-            primaryAction={active === "overview" ? { label: "Create order", onClick: () => setActive("orders") } : undefined}
+            ) : undefined}
+            primaryAction={primaryAction}
+          />
+        )}
+        mobileNavigation={onOpenMore => (
+          <OrganiserMobileNavigation
+            activeTab={active}
+            onTabChange={setActive}
+            onOpenMore={onOpenMore}
           />
         )}
       >
         <WorkspaceScreen pageId={active}>
-          {shareCopied ? <div className="ov2-copy-toast" role="status">Workspace link copied</div> : null}
+          {orderLoadState === "loading" ? <div className="ov2-data-notice" role="status">Syncing live order data…</div> : null}
+          {orderLoadState === "error" ? (
+            <div className="ov2-data-notice" data-tone="error" role="alert">
+              <span>{repositories.orders.getError()?.message ?? "Order data could not be loaded."}</span>
+              <button type="button" onClick={() => repositories.orders.load().catch(() => undefined)}>Retry</button>
+            </div>
+          ) : null}
           {activeContent}
         </WorkspaceScreen>
       </OrganiserShell>

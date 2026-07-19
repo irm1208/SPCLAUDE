@@ -118,11 +118,221 @@
   line-height: 1.45;
 }
 
+.clinical-testing--member {
+  display: grid;
+  width: 100%;
+  max-width: 1240px;
+  gap: 18px;
+  margin-inline: auto;
+  padding: 20px 16px 36px;
+  overflow-x: hidden;
+}
+
+.clinical-testing__member-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 3px 0 16px;
+  border-bottom: 1px solid var(--clinical-border, #D0DAE4);
+}
+
+.clinical-testing__member-heading {
+  min-width: 0;
+}
+
+.clinical-testing__member-kicker {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.clinical-testing__member-back {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 4px;
+  color: var(--clinical-blue, #2D6BCC);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.clinical-testing__member-back:hover {
+  color: var(--clinical-navy, #1B3A7A);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.clinical-testing__member-back svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.clinical-testing__member-round {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--clinical-subtle, #64748B);
+  font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinical-testing__member-header h1,
+.clinical-testing__member-header p {
+  margin: 0;
+}
+
+.clinical-testing__member-header h1 {
+  color: var(--clinical-ink, #0F1F38);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.clinical-testing__member-note {
+  max-width: 760px;
+  margin-top: 7px !important;
+  color: var(--clinical-body, #374151);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.clinical-testing__member-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.clinical-testing__member-status {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid rgba(45, 107, 204, 0.24);
+  border-radius: 8px;
+  background: rgba(45, 107, 204, 0.07);
+  color: var(--clinical-navy, #1B3A7A);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.clinical-testing__member-status > span {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--clinical-blue, #2D6BCC);
+}
+
+.clinical-testing__member-status[data-active="true"] {
+  border-color: rgba(22, 163, 74, 0.27);
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--clinical-green-text, #15803D);
+}
+
+.clinical-testing__member-status[data-active="true"] > span {
+  background: var(--clinical-green, #16A34A);
+}
+
+.clinical-testing__member-refresh {
+  display: inline-grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--clinical-border, #D0DAE4);
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: var(--clinical-blue, #2D6BCC);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.clinical-testing__member-refresh:hover {
+  border-color: rgba(45, 107, 204, 0.42);
+  background: var(--clinical-canvas, #F8FAFC);
+  color: var(--clinical-navy, #1B3A7A);
+}
+
+.clinical-testing__member-refresh svg {
+  width: 17px;
+  height: 17px;
+}
+
 .clinical-testing__member-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
   gap: 20px;
   align-items: start;
+}
+
+.clinical-testing__member-primary,
+.clinical-testing__member-aside {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  align-content: start;
+}
+
+.clinical-testing__member-primary .clinical-panel__body {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.clinical-testing__member-aside {
+  position: sticky;
+  top: 16px;
+}
+
+.clinical-testing__member-aside .clinical-testing__leaderboard li {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(76px, auto);
+  row-gap: 8px;
+}
+
+.clinical-testing__member-aside .clinical-testing__vote-bar {
+  grid-column: 2 / -1;
+  grid-row: 2;
+}
+
+.clinical-testing__member-aside .clinical-testing__vote-value {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.clinical-testing__member-empty {
+  min-height: 76px;
+  margin: 0;
+  padding: 24px 12px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.clinical-testing--member .clinical-pool-gauge__progress > svg {
+  width: 100%;
+  max-width: 100%;
 }
 
 .clinical-testing__organizer-grid {
@@ -579,6 +789,425 @@
   white-space: nowrap;
 }
 
+.clinical-testing--organizer {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.clinical-testing__organizer-intro {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0 14px;
+  border-bottom: 1px solid var(--clinical-border, #D0DAE4);
+}
+
+.clinical-testing__organizer-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.clinical-testing__organizer-title > div {
+  min-width: 0;
+}
+
+.clinical-testing__organizer-title h2,
+.clinical-testing__organizer-title p {
+  margin: 0;
+}
+
+.clinical-testing__organizer-title h2 {
+  color: var(--clinical-ink, #0F1F38);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.clinical-testing__organizer-title p {
+  max-width: 680px;
+  margin-top: 3px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.clinical-testing__organizer-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 1px solid rgba(45, 107, 204, 0.18);
+  border-radius: 8px;
+  background: rgba(45, 107, 204, 0.08);
+  color: var(--clinical-blue, #2D6BCC);
+}
+
+.clinical-testing__organizer-mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+.clinical-testing__organizer-intro .ov2-secondary-button,
+.clinical-testing__form-actions .ov2-primary-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.clinical-testing__organizer-intro .ov2-secondary-button svg,
+.clinical-testing__form-actions .ov2-primary-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.clinical-testing__organizer-primary,
+.clinical-testing__organizer-aside {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  align-content: start;
+}
+
+.clinical-testing__organizer-aside {
+  position: sticky;
+  top: 16px;
+}
+
+.clinical-testing__organizer-aside form {
+  min-width: 0;
+  margin: 0;
+}
+
+.clinical-testing__health-stack {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.clinical-testing__product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--clinical-border, #D0DAE4);
+  border-radius: 8px;
+}
+
+.clinical-testing__product-option {
+  display: grid;
+  min-width: 0;
+  min-height: 62px;
+  grid-template-columns: 18px 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #E6EDF4;
+  background: #FFFFFF;
+  color: var(--clinical-ink, #0F1F38);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.clinical-testing__product-option:nth-child(odd) {
+  border-right: 1px solid #E6EDF4;
+}
+
+.clinical-testing__product-option:hover {
+  background: var(--clinical-canvas, #F8FAFC);
+}
+
+.clinical-testing__product-option[data-selected="true"] {
+  background: rgba(45, 107, 204, 0.065);
+  color: var(--clinical-navy, #1B3A7A);
+}
+
+.clinical-testing__product-option input,
+.clinical-testing__switch input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--clinical-blue, #2D6BCC);
+}
+
+.clinical-testing__product-option > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--clinical-blue, #2D6BCC);
+}
+
+.clinical-testing__product-option > span {
+  min-width: 0;
+}
+
+.clinical-testing__product-option strong,
+.clinical-testing__product-option small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.clinical-testing__product-option strong {
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.clinical-testing__product-option small {
+  margin-top: 2px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.clinical-testing__control-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.clinical-testing__control-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.clinical-testing__control-field > span,
+.clinical-testing__switch > span {
+  color: var(--clinical-subtle, #64748B);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.clinical-testing__control-field input,
+.clinical-testing__control-field select,
+.clinical-testing__control-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--clinical-border, #D0DAE4);
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: var(--clinical-ink, #0F1F38);
+  font: inherit;
+  font-size: 13px;
+}
+
+.clinical-testing__control-field input,
+.clinical-testing__control-field select {
+  padding: 0 11px;
+}
+
+.clinical-testing__control-field textarea {
+  min-height: 94px;
+  padding: 10px 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.clinical-testing__control-field input:disabled,
+.clinical-testing__control-field select:disabled {
+  background: #EEF2F6;
+  color: var(--clinical-muted, #6B7280);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.clinical-testing__switch {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  color: var(--clinical-ink, #0F1F38);
+  cursor: pointer;
+}
+
+.clinical-testing__switch > span {
+  color: currentColor;
+}
+
+.clinical-testing__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #E6EDF4;
+}
+
+.clinical-testing__evidence-list {
+  min-width: 0;
+}
+
+.clinical-testing__evidence-list article {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 0;
+  border-bottom: 1px solid #E6EDF4;
+}
+
+.clinical-testing__evidence-list article:first-child {
+  padding-top: 0;
+}
+
+.clinical-testing__evidence-list article:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.clinical-testing__evidence-list article > div {
+  min-width: 0;
+}
+
+.clinical-testing__evidence-list strong,
+.clinical-testing__evidence-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.clinical-testing__evidence-list strong {
+  color: var(--clinical-ink, #0F1F38);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.clinical-testing__evidence-list small {
+  margin-top: 2px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.clinical-testing__evidence-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--clinical-green, #16A34A);
+}
+
+.clinical-testing__evidence-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.clinical-testing__evidence-list .ov2-icon-button {
+  display: inline-flex;
+  width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+.clinical-testing__contribution-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--clinical-border, #D0DAE4);
+  border-radius: 8px;
+}
+
+.clinical-testing__contribution-counts > div {
+  min-width: 0;
+  padding: 12px 10px 10px;
+  border-right: 1px solid #E6EDF4;
+  box-shadow: inset 0 3px 0 var(--clinical-border, #D0DAE4);
+}
+
+.clinical-testing__contribution-counts > div:last-child {
+  border-right: 0;
+}
+
+.clinical-testing__contribution-counts > div[data-tone="warning"] {
+  box-shadow: inset 0 3px 0 var(--clinical-amber, #E9A020);
+}
+
+.clinical-testing__contribution-counts > div[data-tone="success"] {
+  box-shadow: inset 0 3px 0 var(--clinical-green, #16A34A);
+}
+
+.clinical-testing__contribution-counts > div[data-tone="danger"] {
+  box-shadow: inset 0 3px 0 #DC2626;
+}
+
+.clinical-testing__contribution-counts dt {
+  min-height: 28px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.clinical-testing__contribution-counts dd {
+  margin: 5px 0 0;
+  color: var(--clinical-ink, #0F1F38);
+  font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.clinical-testing__empty-copy {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  place-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 16px 10px;
+  color: var(--clinical-muted, #6B7280);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.clinical-testing__empty-copy p {
+  margin: 0;
+}
+
+.clinical-testing__empty-copy svg {
+  width: 19px;
+  height: 19px;
+  color: var(--clinical-subtle, #64748B);
+}
+
+.clinical-testing__product-grid > .clinical-testing__empty-copy {
+  grid-column: 1 / -1;
+}
+
+.clinical-testing__organizer-aside .clinical-testing__leaderboard li {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(76px, auto);
+  row-gap: 8px;
+}
+
+.clinical-testing__organizer-aside .clinical-testing__vote-bar {
+  grid-column: 2 / -1;
+  grid-row: 2;
+}
+
+.clinical-testing__organizer-aside .clinical-testing__vote-value {
+  grid-column: 3;
+  grid-row: 1;
+}
+
 @keyframes clinical-endpoint-pulse {
   50% {
     opacity: 0.35;
@@ -594,6 +1223,12 @@
   .clinical-testing__member-grid,
   .clinical-testing__organizer-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clinical-testing__member-aside,
+  .clinical-testing__organizer-aside {
+    position: static;
+    top: auto;
   }
 
   .clinical-pool-gauge,
@@ -618,6 +1253,86 @@
   .clinical-testing__threshold-grid,
   .clinical-testing__status-rail {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clinical-testing--member {
+    gap: 12px;
+    padding: 16px 12px 32px;
+  }
+
+  .clinical-testing__member-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 13px;
+  }
+
+  .clinical-testing__member-kicker {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .clinical-testing__member-round {
+    max-width: 100%;
+    padding-left: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .clinical-testing__member-header h1 {
+    font-size: 21px;
+  }
+
+  .clinical-testing__member-actions {
+    width: 100%;
+  }
+
+  .clinical-testing__member-status {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .clinical-testing__member-primary,
+  .clinical-testing__member-aside {
+    gap: 12px;
+  }
+
+  .clinical-testing--organizer {
+    gap: 12px;
+  }
+
+  .clinical-testing__organizer-intro {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .clinical-testing__organizer-intro .ov2-secondary-button {
+    width: 100%;
+  }
+
+  .clinical-testing__organizer-primary,
+  .clinical-testing__organizer-aside {
+    gap: 12px;
+  }
+
+  .clinical-testing__product-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clinical-testing__product-option:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .clinical-testing__product-option,
+  .clinical-testing__switch {
+    min-height: 44px;
+  }
+
+  .clinical-testing__product-option input[type="checkbox"],
+  .clinical-testing__switch input[type="checkbox"] {
+    min-height: 18px;
   }
 
   .clinical-testing__metrics article {

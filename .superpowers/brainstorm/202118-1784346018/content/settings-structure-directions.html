@@ -1,0 +1,292 @@
+<style>
+  .gs-preview {
+    --navy: #1b3164;
+    --blue: #2d6bcc;
+    --ink: #0f1f38;
+    --body: #374151;
+    --muted: #6b7280;
+    --subtle: #8a9aaa;
+    --line: #d0dae4;
+    --soft: #f4f6f9;
+    --amber: #e9a020;
+    color: var(--ink);
+  }
+
+  .gs-preview .intro-line {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 22px;
+  }
+
+  .gs-preview h2 { margin-bottom: 6px; }
+  .gs-preview .subtitle { max-width: 720px; margin: 0; }
+  .gs-preview .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    border: 1px solid #c8d5ea;
+    border-radius: 999px;
+    padding: 7px 10px;
+    color: #274c89;
+    background: #edf4ff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .gs-preview .key::before { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); content: ""; }
+
+  .gs-preview .directions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .gs-preview .direction {
+    overflow: hidden;
+    border: 1px solid #cdd7e3;
+    border-radius: 18px;
+    color: inherit;
+    background: #fff;
+    box-shadow: 0 14px 35px rgba(27,49,100,.08);
+    cursor: pointer;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+
+  .gs-preview .direction:hover { transform: translateY(-3px); border-color: #8da9d5; box-shadow: 0 18px 42px rgba(27,49,100,.13); }
+  .gs-preview .direction.selected { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(45,107,204,.17), 0 18px 42px rgba(27,49,100,.13); }
+
+  .gs-preview .concept-head {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 75px;
+    padding: 14px 15px;
+    border-bottom: 1px solid #e0e6ed;
+    text-align: left;
+  }
+  .gs-preview .concept-head .letter {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    color: #fff;
+    background: var(--navy);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .gs-preview .concept-head strong { display: block; font-size: 14px; letter-spacing: -.01em; }
+  .gs-preview .concept-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+  .gs-preview .recommend {
+    border-radius: 999px;
+    padding: 5px 7px;
+    color: #1b5e43;
+    background: #e6f7ef;
+    font-size: 8px;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .gs-preview .mini-shell {
+    min-height: 520px;
+    background: var(--soft);
+    text-align: left;
+  }
+  .gs-preview .mini-top {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    align-items: center;
+    height: 43px;
+    border-bottom: 1px solid #dbe2ea;
+    color: #5c6b7b;
+    background: rgba(255,255,255,.98);
+    font-size: 8px;
+  }
+  .gs-preview .mini-brand { display: grid; place-items: center; align-self: stretch; color: #fff; background: var(--navy); font-weight: 800; letter-spacing: .08em; }
+  .gs-preview .crumb { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gs-preview .avatar { display: grid; place-items: center; width: 25px; height: 25px; margin-right: 9px; border-radius: 8px; color: #fff; background: var(--navy); font-size: 8px; font-weight: 800; }
+  .gs-preview .mini-body { display: grid; grid-template-columns: 64px 1fr; min-height: 477px; }
+  .gs-preview .mini-nav { padding: 12px 7px; color: rgba(255,255,255,.55); background: var(--navy); }
+  .gs-preview .nav-dot { width: 100%; height: 24px; margin-bottom: 5px; border-radius: 6px; background: rgba(255,255,255,.07); }
+  .gs-preview .nav-dot.short { width: 70%; }
+  .gs-preview .nav-dot.active { background: var(--blue); box-shadow: inset 2px 0 #fff; }
+  .gs-preview .content { min-width: 0; padding: 13px; }
+  .gs-preview .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
+  .gs-preview .eyebrow { margin-bottom: 3px; color: var(--blue); font-size: 7px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+  .gs-preview .page-head h3 { margin: 0; color: var(--ink); font-size: 16px; letter-spacing: -.035em; }
+  .gs-preview .page-head p { margin: 3px 0 0; color: var(--muted); font-size: 8px; }
+  .gs-preview .status-pill { flex: 0 0 auto; border-radius: 999px; padding: 5px 7px; color: #16744b; background: #e3f6ec; font-size: 7px; font-weight: 800; }
+  .gs-preview .panel { border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; box-shadow: 0 3px 8px rgba(30,47,70,.03); }
+  .gs-preview .field { height: 26px; border: 1px solid #d5dee8; border-radius: 6px; color: #42516a; background: #fff; padding: 0 7px; font-size: 7px; line-height: 24px; }
+  .gs-preview .field.tall { height: 42px; line-height: 1.4; padding-top: 6px; }
+  .gs-preview .field-label { display: block; margin: 0 0 4px; color: #7d8998; font-size: 6px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .gs-preview .button { display: inline-flex; align-items: center; justify-content: center; height: 25px; border-radius: 6px; padding: 0 9px; color: #fff; background: var(--navy); font-size: 7px; font-weight: 800; }
+
+  /* A — navigator */
+  .gs-preview .navigator { display: grid; grid-template-columns: 92px 1fr; gap: 9px; }
+  .gs-preview .settings-nav { padding: 7px; }
+  .gs-preview .settings-nav > div { display: flex; align-items: center; gap: 5px; min-height: 31px; border-radius: 6px; padding: 5px 6px; color: #637083; font-size: 7px; font-weight: 700; }
+  .gs-preview .settings-nav > div::before { width: 14px; height: 14px; border-radius: 4px; background: #edf2f7; content: ""; }
+  .gs-preview .settings-nav > div.active { color: var(--navy); background: #eaf1fc; }
+  .gs-preview .settings-nav > div.active::before { background: var(--blue); }
+  .gs-preview .settings-nav .danger { color: #bd3d3d; }
+  .gs-preview .settings-editor { overflow: hidden; }
+  .gs-preview .editor-title { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e1e7ee; padding: 10px; }
+  .gs-preview .editor-title strong { font-size: 9px; }
+  .gs-preview .editor-title span { color: #718096; font-size: 7px; }
+  .gs-preview .editor-form { display: grid; gap: 8px; padding: 10px; }
+  .gs-preview .row3 { display: grid; grid-template-columns: .65fr 1.2fr .8fr; gap: 6px; }
+  .gs-preview .editor-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e1e7ee; padding: 8px 10px; color: #768295; font-size: 7px; }
+  .gs-preview .health { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 9px; }
+  .gs-preview .health div { border: 1px solid #dbe3ec; border-radius: 8px; padding: 7px; background: #fff; }
+  .gs-preview .health small { display: block; color: #7e8a99; font-size: 6px; }
+  .gs-preview .health strong { display: block; margin-top: 2px; font-size: 8px; }
+
+  /* B — canvas */
+  .gs-preview .canvas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gs-preview .canvas-card { min-height: 113px; padding: 9px; }
+  .gs-preview .canvas-card.wide { grid-column: 1 / -1; min-height: auto; }
+  .gs-preview .card-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .gs-preview .card-title strong { font-size: 8px; }
+  .gs-preview .card-title span { color: var(--blue); font-size: 7px; font-weight: 800; }
+  .gs-preview .mini-form { display: grid; gap: 6px; }
+  .gs-preview .status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .gs-preview .status-row span { border: 1px solid #d8e0e8; border-radius: 6px; padding: 6px 2px; color: #7a8694; font-size: 6px; font-weight: 800; text-align: center; }
+  .gs-preview .status-row span.active { border-color: #16a34a; color: #fff; background: #16a34a; }
+  .gs-preview .switch-line { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e4e9ef; margin-top: 7px; padding-top: 7px; color: #556275; font-size: 7px; }
+  .gs-preview .switch { position: relative; width: 22px; height: 12px; border-radius: 8px; background: var(--blue); }
+  .gs-preview .switch::after { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: white; content: ""; }
+  .gs-preview .save-strip { position: relative; display: flex; align-items: center; justify-content: space-between; margin-top: 8px; border: 1px solid #cbd8ec; border-radius: 9px; padding: 7px 8px; color: #34517b; background: #eef4fc; font-size: 7px; }
+
+  /* C — journey */
+  .gs-preview .journey-summary { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; padding: 9px; }
+  .gs-preview .ring { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 50%; color: var(--navy); background: conic-gradient(var(--blue) 0 78%, #e5ebf1 78% 100%); font-size: 7px; font-weight: 900; }
+  .gs-preview .ring::before { position: absolute; width: 27px; height: 27px; border-radius: 50%; background: #fff; content: ""; }
+  .gs-preview .ring span { position: relative; z-index: 1; }
+  .gs-preview .journey-summary strong { display: block; font-size: 8px; }
+  .gs-preview .journey-summary small { display: block; margin-top: 2px; color: var(--muted); font-size: 7px; }
+  .gs-preview .steps { display: grid; gap: 7px; }
+  .gs-preview .step { display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 7px; min-height: 48px; padding: 7px; }
+  .gs-preview .step-num { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: #617087; background: #edf1f5; font-size: 7px; font-weight: 900; }
+  .gs-preview .step.done .step-num { color: #137047; background: #dff4e9; }
+  .gs-preview .step.current { border-color: #8faedc; box-shadow: 0 0 0 2px #e6eef9; }
+  .gs-preview .step.current .step-num { color: #fff; background: var(--blue); }
+  .gs-preview .step strong { display: block; font-size: 8px; }
+  .gs-preview .step small { display: block; margin-top: 2px; color: #7a8697; font-size: 6px; }
+  .gs-preview .step em { color: #738196; font-size: 11px; font-style: normal; }
+  .gs-preview .tip { margin-top: 8px; border: 1px solid #f2d9a9; border-radius: 8px; padding: 8px; color: #7b5b1b; background: #fff8e8; font-size: 7px; line-height: 1.45; }
+
+  .gs-preview .concept-foot { min-height: 73px; border-top: 1px solid #e0e6ed; padding: 12px 14px 13px; text-align: left; }
+  .gs-preview .concept-foot strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 11px; }
+  .gs-preview .concept-foot p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+
+  @media (max-width: 1100px) {
+    .gs-preview .directions { grid-template-columns: 1fr; }
+    .gs-preview .direction { max-width: 680px; width: 100%; margin: 0 auto; }
+  }
+  @media (max-width: 620px) {
+    .gs-preview .intro-line { align-items: flex-start; flex-direction: column; }
+    .gs-preview .mini-body { grid-template-columns: 46px 1fr; }
+    .gs-preview .navigator { grid-template-columns: 76px 1fr; }
+  }
+</style>
+
+<div class="gs-preview">
+  <div class="intro-line">
+    <div>
+      <div class="label">GB Organizer v2 · settings redesign</div>
+      <h2>Which structure should anchor the five mockups?</h2>
+      <p class="subtitle">All three keep the approved Peps Anonymous shell and the same live settings: basics, lifecycle, access, entry fee, info cards, archive and delete.</p>
+    </div>
+    <span class="key">Click one to select</span>
+  </div>
+
+  <div class="directions">
+    <article class="direction" data-choice="a" onclick="toggleSelect(this)">
+      <header class="concept-head">
+        <span class="letter">A</span>
+        <div><strong>Control Navigator</strong><small>Persistent settings rail + focused editor</small></div>
+        <em class="recommend">Recommended</em>
+      </header>
+      <div class="mini-shell">
+        <div class="mini-top"><span class="mini-brand">PA</span><span class="crumb">GB Organizer / Winter Peptide Run / Settings</span><span class="avatar">AM</span></div>
+        <div class="mini-body">
+          <aside class="mini-nav"><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot active"></div><div class="nav-dot short"></div></aside>
+          <main class="content">
+            <div class="page-head"><div><div class="eyebrow">Group buy control</div><h3>GB Settings</h3><p>Configure what members see and how this run operates.</p></div><span class="status-pill">● Active</span></div>
+            <div class="health"><div><small>Visibility</small><strong>Invite only</strong></div><div><small>Closes</small><strong>31 Jul</strong></div><div><small>Capacity</small><strong>42 / 60</strong></div></div>
+            <div class="navigator">
+              <nav class="panel settings-nav"><div class="active">Identity</div><div>Lifecycle</div><div>Access & fee</div><div>Member cards</div><div class="danger">Danger zone</div></nav>
+              <section class="panel settings-editor">
+                <div class="editor-title"><div><strong>Identity & timing</strong><span>Member-facing group details</span></div><span>1 of 4</span></div>
+                <div class="editor-form">
+                  <label><span class="field-label">Group buy name</span><div class="field">Winter Peptide Run 2025</div></label>
+                  <label><span class="field-label">Description</span><div class="field tall">Private peptide order coordinated for verified members.</div></label>
+                  <div class="row3"><label><span class="field-label">Currency</span><div class="field">GBP</div></label><label><span class="field-label">Close date</span><div class="field">31 Jul · 18:00</div></label><label><span class="field-label">Capacity</span><div class="field">60</div></label></div>
+                </div>
+                <footer class="editor-foot"><span>All changes are tracked</span><span class="button">Save identity</span></footer>
+              </section>
+            </div>
+          </main>
+        </div>
+      </div>
+      <footer class="concept-foot"><strong>Fastest for frequent organisers</strong><p>One category stays in focus, while the rail makes every setting easy to find without accordion hunting.</p></footer>
+    </article>
+
+    <article class="direction" data-choice="b" onclick="toggleSelect(this)">
+      <header class="concept-head">
+        <span class="letter">B</span>
+        <div><strong>Settings Canvas</strong><small>Scannable two-column control surface</small></div>
+      </header>
+      <div class="mini-shell">
+        <div class="mini-top"><span class="mini-brand">PA</span><span class="crumb">GB Organizer / Winter Peptide Run / Settings</span><span class="avatar">AM</span></div>
+        <div class="mini-body">
+          <aside class="mini-nav"><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot active"></div><div class="nav-dot short"></div></aside>
+          <main class="content">
+            <div class="page-head"><div><div class="eyebrow">Configuration</div><h3>GB Settings</h3><p>Everything important, visible at a glance.</p></div><span class="status-pill">● Active</span></div>
+            <div class="canvas-grid">
+              <section class="panel canvas-card"><div class="card-title"><strong>Identity</strong><span>Edit</span></div><div class="mini-form"><div class="field">Winter Peptide Run 2025</div><div class="field tall">Private peptide order for verified members.</div></div></section>
+              <section class="panel canvas-card"><div class="card-title"><strong>Lifecycle</strong><span>Live</span></div><div class="status-row"><span>Draft</span><span class="active">Active</span><span>Closed</span><span>Archived</span></div><div class="switch-line"><span>Closes 31 Jul · 18:00</span><strong>Change</strong></div></section>
+              <section class="panel canvas-card"><div class="card-title"><strong>Access & entry</strong><span>Edit</span></div><div class="field">Join code &nbsp; WPR-25</div><div class="switch-line"><span>Invite-only</span><span class="switch"></span></div><div class="switch-line"><span>Entry fee</span><strong>£5.00</strong></div></section>
+              <section class="panel canvas-card"><div class="card-title"><strong>Member info cards</strong><span>2 cards</span></div><div class="field">Payment window</div><div class="field" style="margin-top:6px">Shipping timeline</div><div class="switch-line"><span>Shown on member page</span><strong>Manage</strong></div></section>
+              <section class="panel canvas-card wide"><div class="card-title" style="margin:0"><strong>Archive & deletion</strong><span style="color:#c14343">Restricted actions →</span></div></section>
+            </div>
+            <div class="save-strip"><span>2 unsaved changes</span><span class="button">Review & save</span></div>
+          </main>
+        </div>
+      </div>
+      <footer class="concept-foot"><strong>Best for scanning the whole setup</strong><p>Card-based overview exposes every category at once and uses a single review-and-save moment.</p></footer>
+    </article>
+
+    <article class="direction" data-choice="c" onclick="toggleSelect(this)">
+      <header class="concept-head">
+        <span class="letter">C</span>
+        <div><strong>Guided Setup Journey</strong><small>Confidence-first checklist with progress</small></div>
+      </header>
+      <div class="mini-shell">
+        <div class="mini-top"><span class="mini-brand">PA</span><span class="crumb">GB Organizer / Winter Peptide Run / Settings</span><span class="avatar">AM</span></div>
+        <div class="mini-body">
+          <aside class="mini-nav"><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot"></div><div class="nav-dot short"></div><div class="nav-dot active"></div><div class="nav-dot short"></div></aside>
+          <main class="content">
+            <div class="page-head"><div><div class="eyebrow">Setup health</div><h3>GB Settings</h3><p>Walk through each decision with confidence.</p></div><span class="status-pill">● Active</span></div>
+            <section class="panel journey-summary"><div class="ring"><span>78%</span></div><div><strong>Your group buy is ready to run</strong><small>4 sections complete · 1 recommendation</small></div></section>
+            <div class="steps">
+              <section class="panel step done"><span class="step-num">✓</span><div><strong>Name, description & currency</strong><small>Winter Peptide Run 2025 · GBP</small></div><em>›</em></section>
+              <section class="panel step current"><span class="step-num">2</span><div><strong>Timing & capacity</strong><small>Closes 31 Jul · 42 of 60 spaces used</small></div><em>›</em></section>
+              <section class="panel step done"><span class="step-num">✓</span><div><strong>Access & entry fee</strong><small>Invite-only · £5.00 fee · code WPR-25</small></div><em>›</em></section>
+              <section class="panel step done"><span class="step-num">✓</span><div><strong>Member information</strong><small>2 cards published to the member page</small></div><em>›</em></section>
+              <section class="panel step"><span class="step-num">5</span><div><strong>Lifecycle & closure</strong><small>Active · archive and deletion controls</small></div><em>›</em></section>
+            </div>
+            <div class="tip"><strong>Recommendation:</strong> Add a short ordering deadline reminder so members know exactly when edits lock.</div>
+          </main>
+        </div>
+      </div>
+      <footer class="concept-foot"><strong>Best for new or occasional organisers</strong><p>Turns settings into an understandable sequence, with completion cues and proactive setup guidance.</p></footer>
+    </article>
+  </div>
+</div>

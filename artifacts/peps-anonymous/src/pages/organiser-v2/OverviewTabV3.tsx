@@ -123,7 +123,7 @@ export default function OverviewTabV3({
   ] as const;
 
   return (
-    <div className="ov2-overview ov2-command-center">
+    <div className="ov2-overview ov2-command-center approved-command-overview">
       <section className="ov2-command-hero" aria-labelledby="ov2-command-title">
         <div className="ov2-command-hero-copy">
           <span className="ov2-command-eyebrow"><i aria-hidden="true" /> Live group buy operations</span>

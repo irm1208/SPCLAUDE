@@ -44,6 +44,7 @@ import PeptideExplorer from "@/pages/PeptideExplorer";
 import NotFound from "@/pages/not-found";
 import Feedback from "@/pages/Feedback";
 import GbOrganiser from "@/pages/GbOrganiser";
+import GbOrganiserV2 from "@/pages/GbOrganiserV2";
 import GbQrViewer from "@/pages/GbQrViewer";
 import GbLegViewer from "@/pages/GbLegViewer";
 import GbLegKits from "@/pages/GbLegKits";
@@ -144,6 +145,7 @@ function Router() {
       <Route path="/learn/:courseSlug/:lessonSlug" component={LearnLesson} />
       <Route path="/feedback" component={Feedback} />
       <Route path="/gborganiser" component={GbOrganiser} />
+      <Route path="/gborganiser-v2" component={GbOrganiserV2} />
       <Route path="/qr-viewer/:gbId" component={GbQrViewer} />
       <Route path="/leg-view/:gbId" component={GbLegViewer} />
       <Route path="/leg-kits/:gbId/:legId" component={GbLegKits} />

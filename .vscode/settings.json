@@ -1,0 +1,14 @@
+{
+    "git.ignoreLimitWarning": true,
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/.pnpm/**": true,
+        "**/dist/**": true,
+        "**/dist/public/**": true,
+        "**/.vite/**": true,
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/coverage/**": true,
+        "**/*.tsbuildinfo": true
+    }
+}

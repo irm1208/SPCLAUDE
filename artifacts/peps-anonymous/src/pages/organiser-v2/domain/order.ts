@@ -11,9 +11,12 @@ export const ORDER_STATUSES = [
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export interface OrderProduct {
+  id?: string;
+  productId?: string;
   name: string;
   quantity: number;
   price: number;
+  isOos?: boolean;
 }
 
 export interface PaymentProof {
@@ -29,9 +32,12 @@ export interface OrderFlag {
 
 export interface OrganiserOrder {
   id: string;
+  code?: string;
   memberUsername: string;
   memberName: string;
   status: OrderStatus;
+  apiStatus?: string;
+  paymentStatus?: string;
   products: OrderProduct[];
   total: number;
   paymentMethod: string;

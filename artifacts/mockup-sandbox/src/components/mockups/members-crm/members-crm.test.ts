@@ -444,14 +444,65 @@ test("member directory exposes controlled states and responsive CSS contracts", 
   assert.match(styles, /min-height:\s*44px/);
 });
 
-test("member profile and activity timeline expose empty and time semantics", () => {
+test("member profile exposes selected, empty, action, and sheet contracts", () => {
   const profile = source("./MemberCrmProfile.tsx");
+
+  for (const contract of [
+    "SheetContent",
+    "SheetTitle",
+    "SheetDescription",
+    "Choose a member",
+    "Message member",
+    "View orders",
+    "MemberActivityTimeline",
+    "memberSince",
+    "Needs attention",
+    "In good standing",
+    "Total spent",
+    "Orders",
+    "Products",
+    "Open items",
+  ]) {
+    assert.match(profile, new RegExp(contract));
+  }
+
+  assert.match(profile, /function ProfileBody/);
+  assert.match(profile, /<aside/);
+  assert.match(profile, /members-crm__profile--desktop/);
+  assert.match(profile, /side=["']right["']/);
+  assert.match(profile, /members-crm-mobile-sheet/);
+  assert.match(profile, /mobileOpen/);
+  assert.match(profile, /onMobileOpenChange/);
+  assert.match(profile, /Orders, payment, fulfilment, and recent activity/);
+  assert.match(profile, /paymentStatus\s*!==\s*["']confirmed["']/);
+  assert.match(profile, /fulfilmentStatus\s*===\s*["']on-hold["']/);
+  assert.match(profile, /fulfilmentStatus\s*===\s*["']blocked["']/);
+  assert.match(profile, /\[\.\.\.orders\]\.sort/);
+});
+
+test("member activity timeline is semantic, immutable, and empty-aware", () => {
   const timeline = source("./MemberActivityTimeline.tsx");
 
-  assert.match(profile, /SheetContent/);
-  assert.match(profile, /Choose a member/);
   assert.match(timeline, /Activity/);
+  assert.match(timeline, /<ol/);
+  assert.match(timeline, /<li/);
   assert.match(timeline, /dateTime/);
+  assert.match(timeline, /No activity yet/);
+  assert.match(timeline, /\[\.\.\.events\]\.sort/);
+  assert.match(timeline, /aria-hidden=["']true["']/);
+  assert.match(timeline, /timeZone:\s*["']UTC["']/);
+});
+
+test("member profile and activity styles cover desktop, tablet, and mobile", () => {
+  const styles = source("./_group.css");
+
+  assert.match(styles, /\.members-crm__profile/);
+  assert.match(styles, /\.members-crm__activity/);
+  assert.match(styles, /\.members-crm__order/);
+  assert.match(styles, /\.members-crm-mobile-sheet/);
+  assert.match(styles, /@media\s*\(max-width:\s*1199px\)/);
+  assert.match(styles, /@media\s*\(max-width:\s*767px\)/);
+  assert.match(styles, /min-height:\s*44px/);
 });
 
 test("member CRM entry composes the approved workspace regions", () => {

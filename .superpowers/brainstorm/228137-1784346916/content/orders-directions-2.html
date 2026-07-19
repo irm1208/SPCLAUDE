@@ -1,0 +1,126 @@
+<style>
+  .compare-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+  .benchmark { flex: 0 0 auto; padding: 8px 11px; border: 1px solid #c8d6e7; border-radius: 999px; background: #eef4fc; color: #1b3a7a; font-size: 11px; font-weight: 750; }
+  .direction-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+  .direction-card { overflow: hidden; border: 1px solid #d7e0ea; border-radius: 16px; background: #fff; box-shadow: 0 12px 34px rgba(27,49,100,.08); cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+  .direction-card:hover { transform: translateY(-3px); box-shadow: 0 18px 38px rgba(27,49,100,.13); }
+  .direction-card.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.14), 0 18px 38px rgba(27,49,100,.13); }
+  .direction-body { padding: 17px 18px 19px; }
+  .direction-body small { color: #2d6bcc; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .direction-body h3 { margin: 5px 0 6px; color: #0f1f38; font-size: 19px; }
+  .direction-body p { margin: 0; color: #66758a; font-size: 12px; line-height: 1.55; }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+  .tags span { padding: 4px 7px; border-radius: 999px; background: #edf3fb; color: #1b3a7a; font-size: 9px; font-weight: 750; }
+  .mini { min-height: 355px; padding: 13px; background: #f4f7fa; color: #0f1f38; font-family: Inter, sans-serif; }
+  .mini-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+  .mini-title small { display: block; margin-bottom: 2px; color: #768598; font-size: 6px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .mini-title strong { display: block; font-size: 13px; letter-spacing: -.03em; }
+  .actions { display: flex; gap: 4px; }
+  .action { border: 1px solid #cfdae6; border-radius: 6px; padding: 5px 7px; background: #fff; color: #1b3a7a; font-size: 6px; font-weight: 800; }
+  .action.primary { border-color: #1b3a7a; background: #1b3a7a; color: #fff; }
+  .studio-nav { display: grid; grid-template-columns: repeat(4,1fr); overflow: hidden; margin-bottom: 8px; border: 1px solid #d4dee9; border-radius: 8px; background: #fff; }
+  .studio-nav div { padding: 7px; border-right: 1px solid #e5ebf2; }
+  .studio-nav div:last-child { border-right: 0; }
+  .studio-nav b { display: block; font-size: 10px; }
+  .studio-nav span { color: #748296; font-size: 5px; font-weight: 700; text-transform: uppercase; }
+  .studio-nav .active { background: #eaf2ff; box-shadow: inset 0 -2px #2d6bcc; }
+  .studio-layout { display: grid; grid-template-columns: 104px 1fr; gap: 7px; }
+  .batch-list { display: flex; flex-direction: column; gap: 5px; }
+  .batch { padding: 8px; border: 1px solid #d5dfe9; border-radius: 7px; background: #fff; }
+  .batch.active { border-color: #2d6bcc; background: #edf4ff; }
+  .batch-top { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+  .batch b { font-size: 6.5px; }
+  .batch em { padding: 2px 4px; border-radius: 999px; background: #fff1d6; color: #a15e00; font-size: 5px; font-style: normal; font-weight: 800; }
+  .batch p { margin: 3px 0 0; color: #7a8797; font-size: 5px; line-height: 1.35; }
+  .workbench { overflow: hidden; border: 1px solid #d5dfe9; border-radius: 8px; background: #fff; }
+  .workbench-head { display: flex; align-items: center; justify-content: space-between; padding: 8px; border-bottom: 1px solid #e5ebf1; }
+  .workbench-head b { font-size: 7px; }
+  .workbench-head span { color: #718096; font-size: 5.5px; }
+  .work-row { display: grid; grid-template-columns: 12px 1fr .8fr .7fr; align-items: center; min-height: 34px; padding: 0 8px; border-bottom: 1px solid #edf1f5; font-size: 5.8px; }
+  .work-row:last-of-type { border-bottom: 0; }
+  .work-row b { font-size: 6.3px; }
+  .check { width: 9px; height: 9px; border: 1px solid #aeb9c6; border-radius: 2px; }
+  .check.on { border-color: #2d6bcc; background: #2d6bcc; box-shadow: inset 0 0 0 2px #fff; }
+  .pill { width: max-content; padding: 3px 5px; border-radius: 999px; background: #fff1d6; color: #9b5c00; font-size: 5px; font-weight: 800; }
+  .work-actions { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; background: #1b3164; color: #fff; }
+  .work-actions span { font-size: 5.5px; font-weight: 750; }
+  .work-actions button { border: 0; border-radius: 5px; padding: 5px 7px; background: #fff; color: #1b3164; font-size: 5.5px; font-weight: 800; }
+  .dossier-mini { background: #f7f5f1; }
+  .dossier-toolbar { display: grid; grid-template-columns: 1fr auto auto; gap: 5px; margin-bottom: 8px; }
+  .search { padding: 6px 8px; border: 1px solid #d6d5d1; border-radius: 999px; background: #fff; color: #8a8b8d; font-size: 6px; }
+  .dossier-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 7px; }
+  .dossier { overflow: hidden; border: 1px solid #d9d8d4; border-radius: 10px; background: #fff; box-shadow: 0 5px 14px rgba(39,47,58,.05); }
+  .dossier-accent { height: 3px; background: #e9a020; }
+  .dossier-accent.green { background: #2b8b68; }
+  .dossier-main { padding: 9px; }
+  .person { display: flex; align-items: center; gap: 7px; }
+  .avatar { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 50%; background: #e9eff8; color: #1b3a7a; font-size: 6px; font-weight: 800; }
+  .person b { display: block; font-size: 7px; }
+  .person small { display: block; margin-top: 1px; color: #83878c; font-size: 5px; }
+  .dossier-total { margin-left: auto; text-align: right; }
+  .dossier-total b { font-size: 8px; }
+  .dossier-total small { color: #8a8d91; font-size: 5px; }
+  .order-summary { margin: 8px 0; padding: 7px; border-radius: 6px; background: #f6f7f8; }
+  .order-summary b { display: block; font-size: 6px; }
+  .order-summary span { color: #737b86; font-size: 5.3px; }
+  .timeline { display: grid; grid-template-columns: repeat(4,1fr); gap: 2px; }
+  .step { position: relative; padding-top: 8px; color: #8a929d; font-size: 4.7px; text-align: center; }
+  .step::before { content: ''; position: absolute; top: 2px; left: 0; right: 0; height: 2px; background: #dce2e8; }
+  .step:first-child::before { left: 50%; }
+  .step:last-child::before { right: 50%; }
+  .step::after { content: ''; position: absolute; top: 0; left: calc(50% - 3px); width: 6px; height: 6px; border-radius: 50%; background: #ccd4dd; }
+  .step.done { color: #1b3a7a; font-weight: 800; }
+  .step.done::before, .step.done::after { background: #2d6bcc; }
+  .dossier-foot { display: flex; align-items: center; justify-content: space-between; padding: 7px 9px; border-top: 1px solid #ecebe8; color: #6f7884; font-size: 5.5px; }
+  .dossier-foot b { color: #1b3a7a; }
+  .attention { display: flex; align-items: center; gap: 4px; color: #a36100; font-weight: 800; }
+  .callout { margin-top: 20px; padding: 13px 15px; border-left: 3px solid #2d6bcc; border-radius: 0 8px 8px 0; background: #edf4ff; color: #40516a; font-size: 12px; line-height: 1.5; }
+  @media (max-width: 900px) { .compare-head { align-items: flex-start; flex-direction: column; } .direction-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="compare-head">
+  <div><h2>Orders redesign directions · 4–5</h2><p class="subtitle">Two final independent approaches. Click one if it beats Precision Ledger; otherwise keep concept 2 as your favorite.</p></div>
+  <div class="benchmark">Current favorite · 02 Precision Ledger</div>
+</div>
+
+<div class="direction-grid">
+  <article class="direction-card" data-choice="batch-studio" onclick="toggleSelect(this)">
+    <div class="mini">
+      <div class="mini-head"><div class="mini-title"><small>Winter Peptide Run</small><strong>Batch studio</strong></div><div class="actions"><button class="action">Search</button><button class="action primary">New batch</button></div></div>
+      <div class="studio-nav"><div><b>53</b><span>All orders</span></div><div class="active"><b>8</b><span>Review</span></div><div><b>12</b><span>Prepare</span></div><div><b>19</b><span>Dispatched</span></div></div>
+      <div class="studio-layout">
+        <aside class="batch-list">
+          <div class="batch active"><div class="batch-top"><b>Payment review</b><em>4</em></div><p>Proofs received today<br>£1,842 pending</p></div>
+          <div class="batch"><div class="batch-top"><b>Address check</b><em>3</em></div><p>Incomplete or changed<br>UK + EU destinations</p></div>
+          <div class="batch"><div class="batch-top"><b>Ready to pack</b><em>12</em></div><p>Stock allocated<br>Labels not printed</p></div>
+          <div class="batch"><div class="batch-top"><b>Custom view</b></div><p>Build from filters + save</p></div>
+        </aside>
+        <section class="workbench">
+          <div class="workbench-head"><div><b>Payment review</b><br><span>4 orders · £1,842 total</span></div><button class="action">Filter batch</button></div>
+          <div class="work-row"><span class="check on"></span><b>Maya Chen<br>#1048</b><span>USDT · £412</span><span class="pill">New proof</span></div>
+          <div class="work-row"><span class="check on"></span><b>Hugo Bell<br>#1046</b><span>BTC · £598</span><span class="pill">Mismatch</span></div>
+          <div class="work-row"><span class="check on"></span><b>Nina Patel<br>#1043</b><span>Bank · £326</span><span class="pill">New proof</span></div>
+          <div class="work-row"><span class="check"></span><b>Oliver Reid<br>#1041</b><span>USDT · £506</span><span class="pill">Follow up</span></div>
+          <div class="work-actions"><span>3 orders selected · £1,336</span><button>Verify selected →</button></div>
+        </section>
+      </div>
+    </div>
+    <div class="direction-body"><small>Concept 04 · Batch first</small><h3>Batch Studio</h3><p>Orders are grouped into purposeful work batches instead of one long register. Each batch gets a focused workbench and contextual bulk action; mobile becomes a guided batch-by-batch flow.</p><div class="tags"><span>Bulk efficiency</span><span>Task grouping</span><span>Guided work</span></div></div>
+  </article>
+
+  <article class="direction-card" data-choice="order-dossiers" onclick="toggleSelect(this)">
+    <div class="mini dossier-mini">
+      <div class="mini-head"><div class="mini-title"><small>Order library</small><strong>Member dossiers</strong></div><div class="actions"><button class="action">Compact</button><button class="action primary">Add order</button></div></div>
+      <div class="dossier-toolbar"><div class="search">⌕ Search orders or members</div><button class="action">Needs attention 8</button><button class="action">Filters</button></div>
+      <div class="dossier-grid">
+        <section class="dossier"><div class="dossier-accent"></div><div class="dossier-main"><div class="person"><span class="avatar">MC</span><div><b>Maya Chen</b><small>#1048 · United Kingdom</small></div><div class="dossier-total"><b>£412</b><small>3 items</small></div></div><div class="order-summary"><b>Semaglutide × 2 · BPC-157 × 1</b><span>Royal Mail tracked · USDT</span></div><div class="timeline"><span class="step done">Ordered</span><span class="step done">Proof</span><span class="step">Paid</span><span class="step">Sent</span></div></div><div class="dossier-foot"><span class="attention">● Proof needs review</span><b>Open dossier →</b></div></section>
+        <section class="dossier"><div class="dossier-accent"></div><div class="dossier-main"><div class="person"><span class="avatar">OR</span><div><b>Oliver Reid</b><small>#1041 · United Kingdom</small></div><div class="dossier-total"><b>£588</b><small>3 items</small></div></div><div class="order-summary"><b>Tirzepatide × 3</b><span>Special delivery · USDT</span></div><div class="timeline"><span class="step done">Ordered</span><span class="step done">Proof</span><span class="step">Paid</span><span class="step">Sent</span></div></div><div class="dossier-foot"><span class="attention">● Confirm address</span><b>Open dossier →</b></div></section>
+        <section class="dossier"><div class="dossier-accent green"></div><div class="dossier-main"><div class="person"><span class="avatar">SK</span><div><b>Sofia Klein</b><small>#1038 · Germany</small></div><div class="dossier-total"><b>£274</b><small>2 items</small></div></div><div class="order-summary"><b>BPC-157 × 2</b><span>DHL tracked · Bank transfer</span></div><div class="timeline"><span class="step done">Ordered</span><span class="step done">Paid</span><span class="step done">Packed</span><span class="step">Sent</span></div></div><div class="dossier-foot"><span>Ready to dispatch</span><b>Open dossier →</b></div></section>
+        <section class="dossier"><div class="dossier-accent green"></div><div class="dossier-main"><div class="person"><span class="avatar">TM</span><div><b>Theo Martin</b><small>#1032 · France</small></div><div class="dossier-total"><b>£206</b><small>1 item</small></div></div><div class="order-summary"><b>Semaglutide × 1</b><span>La Poste tracked · BTC</span></div><div class="timeline"><span class="step done">Ordered</span><span class="step done">Paid</span><span class="step done">Packed</span><span class="step done">Sent</span></div></div><div class="dossier-foot"><span>Tracking active</span><b>Open dossier →</b></div></section>
+      </div>
+    </div>
+    <div class="direction-body"><small>Concept 05 · People first</small><h3>Order Dossiers</h3><p>Readable cards combine member identity, products, value, issue state, and fulfilment timeline. A compact mode restores density, while mobile naturally keeps the same card language.</p><div class="tags"><span>Human readable</span><span>Card library</span><span>Mobile native</span></div></div>
+  </article>
+</div>
+
+<div class="callout"><strong>All five remain UI-only prototypes.</strong> Each retains the exact current capability checklist, but because you selected independent implementations, controls and interaction patterns may be composed differently in each concept.</div>

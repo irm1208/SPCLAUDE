@@ -65,10 +65,20 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
-    hmr: {
-      clientPort: 443,
-      protocol: "wss",
-    },
+    // Escape hatch for inotify watch exhaustion (fs.inotify.max_user_watches
+    // too low + VS Code consuming the table): VITE_NO_WATCH=1 disables file
+    // watching entirely so the server can run. HMR/auto-reload won't work in
+    // this mode — restart without the flag once the limit is raised.
+    watch: process.env.VITE_NO_WATCH ? null : undefined,
+    // On Replit the dev server is fronted by an HTTPS proxy on :443, so the
+    // HMR client must connect over wss:443. On localhost there is no proxy, so
+    // fall back to Vite's default HMR (ws over the dev-server port). A hardcoded
+    // wss:443 here silently breaks HMR locally, which also swallows runtime
+    // errors reported over the HMR socket (blank screen with no overlay).
+    hmr:
+      process.env.REPL_ID !== undefined
+        ? { clientPort: 443, protocol: "wss" }
+        : true,
     headers: {
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "strict-origin-when-cross-origin",

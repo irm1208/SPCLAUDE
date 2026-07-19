@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peps Anonymous — Refined Compact Analytics Dashboard</title>
+  <style>
+    :root { --navy:#1b3a7a; --blue:#2d6bcc; --ink:#0f1f38; --muted:#6b7280; --line:#d0dae4; --page:#edf3f8; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; min-height:100%; background:radial-gradient(circle at 7% 0%,rgba(255,255,255,.9),transparent 27%),var(--page); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+    .preview-frame { display:block; width:100%; min-height:800px; border:0; background:transparent; }
+    .review-panel { width:min(1508px,calc(100% - 38px)); display:flex; align-items:center; justify-content:space-between; gap:24px; margin:16px auto 44px; padding:16px 18px 16px 22px; border:1px solid rgba(27,58,122,.14); border-radius:22px; background:rgba(255,255,255,.92); box-shadow:0 10px 28px rgba(27,49,100,.07); }
+    .review-panel b { display:block; font-size:12px; letter-spacing:-.025em; }
+    .review-panel span { display:block; margin-top:4px; color:var(--muted); font-size:9px; }
+    .review-actions { display:flex; gap:8px; }
+    .review-actions button { min-height:39px; padding:0 15px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); font-size:9px; font-weight:800; cursor:pointer; }
+    .review-actions .primary { border-color:var(--navy); background:linear-gradient(135deg,var(--blue),var(--navy)); color:#fff; box-shadow:0 7px 16px rgba(27,58,122,.18); }
+    .review-actions button.selected { outline:4px solid rgba(45,107,204,.2); }
+    @media(max-width:720px){.review-panel{width:calc(100% - 20px);align-items:flex-start;flex-direction:column}.review-actions{width:100%}.review-actions button{flex:1}}
+  </style>
+</head>
+<body>
+  <iframe id="revision-preview" class="preview-frame" src="/files/ecomora-peps-compact-analytics-v2.html" title="Peps Anonymous refined compact analytics dashboard"></iframe>
+
+  <section class="review-panel">
+    <div><b>Refined compact analytics</b><span>Cleaner chart spacing, coordinated status categories, and no unnecessary dashboard height.</span></div>
+    <div class="review-actions">
+      <button data-choice="revise-refined-analytics" onclick="toggleSelect(this)">Request changes</button>
+      <button class="primary" data-choice="approve-refined-analytics" onclick="toggleSelect(this)">Approve this revision</button>
+    </div>
+  </section>
+
+  <script>
+    const outerFrame = document.getElementById('revision-preview');
+
+    function ensurePatch(doc, id, css) {
+      if (!doc || doc.getElementById(id)) return;
+      const style = doc.createElement('style');
+      style.id = id;
+      style.textContent = css;
+      doc.head.appendChild(style);
+    }
+
+    function refinePreview() {
+      const levelOneDoc = outerFrame.contentDocument;
+      const levelTwoFrame = levelOneDoc?.getElementById('branded-preview');
+      const levelTwoDoc = levelTwoFrame?.contentDocument;
+      const levelThreeFrame = levelTwoDoc?.getElementById('dashboard-preview');
+      const levelThreeDoc = levelThreeFrame?.contentDocument;
+
+      if (!levelOneDoc || !levelTwoFrame || !levelTwoDoc || !levelThreeFrame || !levelThreeDoc?.head) return false;
+
+      ensurePatch(levelOneDoc, 'refined-outer-patch', '.review-panel{display:none!important}.preview-frame{min-height:0!important}');
+      ensurePatch(levelTwoDoc, 'refined-middle-patch', '.review-panel{display:none!important}.preview-frame{min-height:0!important}');
+      ensurePatch(levelThreeDoc, 'refined-chart-patch', `
+        .trend-legend { top:2px!important; left:44px!important; right:auto!important; }
+        .trend-tooltip { filter:drop-shadow(0 4px 6px rgba(27,49,100,.16)); }
+      `);
+
+      requestAnimationFrame(() => {
+        levelThreeFrame.style.height = `${levelThreeDoc.documentElement.scrollHeight}px`;
+        requestAnimationFrame(() => {
+          levelTwoFrame.style.height = `${levelTwoDoc.documentElement.scrollHeight}px`;
+          requestAnimationFrame(() => {
+            outerFrame.style.height = `${levelOneDoc.documentElement.scrollHeight}px`;
+          });
+        });
+      });
+      return true;
+    }
+
+    function patchWhenReady(attempt = 0) {
+      if (refinePreview() || attempt > 20) return;
+      setTimeout(() => patchWhenReady(attempt + 1), 120);
+    }
+
+    outerFrame.addEventListener('load', () => patchWhenReady());
+    window.addEventListener('resize', () => patchWhenReady());
+  </script>
+</body>
+</html>

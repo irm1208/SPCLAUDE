@@ -22,7 +22,10 @@ test("V2 variables use the approved compact shell", () => {
   assert.equal(V2_VARS["--ov2-canvas" as string], "#F4F6F9");
   assert.equal(V2_VARS["--ov2-primary" as string], "#1B3A7A");
   assert.equal(V2_VARS["--ov2-sidebar-width" as string], "236px");
-  assert.equal(V2_VARS["--ov2-topbar-height" as string], "64px");
+  assert.equal(
+    V2_VARS["--ov2-topbar-height" as string],
+    "var(--ov2-responsive-topbar-height, 108px)",
+  );
 });
 
 test("Peps Native defines every operational page treatment", () => {
@@ -77,7 +80,7 @@ test("Todo list uses the Peps Native typography hierarchy", () => {
 
   assert.match(stylesheet, /--ov2-todo-section-size:\s*14px/);
   assert.match(stylesheet, /--ov2-todo-task-size:\s*13px/);
-  assert.match(stylesheet, /--ov2-todo-meta-size:\s*10px/);
+  assert.match(stylesheet, /--ov2-todo-meta-size:\s*11px/);
   assert.match(stylesheet, /\.ov2-todo-check\s*\{[^}]*min-height:\s*18px\s*!important/s);
   assert.match(
     stylesheet,

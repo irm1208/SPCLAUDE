@@ -62,6 +62,18 @@ export interface EventJournal {
   list(groupBuyId: string): readonly OrganiserEvent[];
 }
 
+export function createMemoryEventJournal(maxEvents = 500): EventJournal {
+  const events = new Map<string, OrganiserEvent[]>();
+  return {
+    append(event) {
+      events.set(event.groupBuyId, [event, ...(events.get(event.groupBuyId) ?? [])].slice(0, maxEvents));
+    },
+    list(groupBuyId) {
+      return events.get(groupBuyId) ?? [];
+    },
+  };
+}
+
 export function createPrototypeEventJournal({
   storage,
   maxEvents = 500,

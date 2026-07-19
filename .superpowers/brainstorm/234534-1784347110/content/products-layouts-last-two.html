@@ -1,0 +1,97 @@
+<style>
+  .pr2-intro { max-width: 920px; margin-bottom: 28px; }
+  .pr2-stack { display:grid; gap:24px; }
+  .pr2-choice { overflow:hidden; border:1px solid #d9e1eb; border-radius:18px; background:#fff; box-shadow:0 14px 36px rgba(15,31,56,.07); cursor:pointer; transition:.18s ease; }
+  .pr2-choice:hover { transform:translateY(-2px); border-color:#2d6bcc; box-shadow:0 18px 42px rgba(15,31,56,.12); }
+  .pr2-choice.selected { border-color:#2d6bcc; box-shadow:0 0 0 3px rgba(45,107,204,.16),0 18px 42px rgba(15,31,56,.1); }
+  .pr2-head { display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:14px; align-items:center; padding:18px 20px; border-bottom:1px solid #e7edf3; }
+  .pr2-letter { display:grid; width:38px; height:38px; place-items:center; border-radius:11px; color:#fff; background:#1b3a7a; font-weight:800; }
+  .pr2-head h3 { margin:0 0 3px; color:#0f1f38; font-size:17px; }
+  .pr2-head p { margin:0; color:#6b7280; font-size:13px; }
+  .pr2-note { border-radius:999px; padding:6px 10px; color:#1b3a7a; background:#edf3fb; font-size:11px; font-weight:800; }
+  .pr2-app { min-height:408px; display:grid; grid-template-columns:138px minmax(0,1fr); color:#0f1f38; background:#f4f6f9; font-family:Inter,Arial,sans-serif; font-size:10px; }
+  .pr2-side { padding:14px 10px; color:rgba(255,255,255,.76); background:linear-gradient(165deg,#1b3164,#1b3a7a); }
+  .pr2-brand { display:flex; align-items:center; gap:7px; margin-bottom:15px; color:#fff; font-size:11px; font-weight:800; }
+  .pr2-logo { width:24px; height:24px; border-radius:7px; background:#2d6bcc; box-shadow:inset -7px -7px 0 rgba(233,160,32,.92); }
+  .pr2-buy { padding:9px; border:1px solid rgba(255,255,255,.14); border-radius:8px; background:rgba(255,255,255,.08); }
+  .pr2-buy small,.pr2-buy span { display:block; } .pr2-buy small { opacity:.65; font-size:8px; text-transform:uppercase; letter-spacing:.08em; } .pr2-buy span { margin-top:3px; color:#fff; font-weight:700; }
+  .pr2-nav-label { margin:14px 7px 5px; opacity:.58; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; }
+  .pr2-nav { display:grid; gap:3px; } .pr2-nav span { padding:7px 8px; border-radius:6px; } .pr2-nav .active { color:#fff; background:rgba(255,255,255,.15); font-weight:800; box-shadow:inset 2px 0 #e9a020; }
+  .pr2-main { min-width:0; }
+  .pr2-top { height:46px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; border-bottom:1px solid #e1e7ee; background:#fff; }
+  .pr2-crumb { color:#6b7280; } .pr2-crumb strong { color:#0f1f38; }
+  .pr2-global-search { width:145px; padding:7px 10px; border:1px solid #d0dae4; border-radius:7px; color:#8a9aaa; background:#f8fafc; }
+  .pr2-body { padding:16px; }
+  .pr2-title { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:12px; }
+  .pr2-title h4 { margin:0; font-size:17px; letter-spacing:-.03em; } .pr2-title p { margin:3px 0 0; color:#6b7280; font-size:9px; }
+  .pr2-actions,.pr2-row-actions { display:flex; gap:6px; }
+  .pr2-btn { display:inline-flex; align-items:center; justify-content:center; padding:7px 9px; border:1px solid #d0dae4; border-radius:7px; color:#374151; background:#fff; font-weight:700; }
+  .pr2-btn.primary { border-color:#1b3a7a; color:#fff; background:#1b3a7a; }
+  .pr2-studio { display:grid; grid-template-columns:minmax(0,1.42fr) minmax(250px,.82fr); gap:10px; }
+  .pr2-panel { overflow:hidden; border:1px solid #dfe6ee; border-radius:10px; background:#fff; }
+  .pr2-panel-head { display:flex; align-items:center; gap:7px; min-height:42px; padding:0 11px; border-bottom:1px solid #e8edf3; }
+  .pr2-panel-head strong { margin-right:auto; font-size:11px; }
+  .pr2-step { display:grid; grid-template-columns:24px minmax(0,1fr); gap:8px; padding:11px; border-bottom:1px solid #edf1f5; }
+  .pr2-step:last-child { border-bottom:0; }
+  .pr2-num { display:grid; width:22px; height:22px; place-items:center; border-radius:7px; color:#fff; background:#2d6bcc; font-size:9px; font-weight:800; }
+  .pr2-step h5 { margin:1px 0 7px; font-size:10px; }
+  .pr2-query { display:flex; flex-wrap:wrap; gap:5px; }
+  .pr2-chip { padding:6px 7px; border:1px solid #dbe4ed; border-radius:6px; color:#526174; background:#f6f8fb; font-weight:700; }
+  .pr2-chip.blue { border-color:#b9cef1; color:#1b3a7a; background:#edf4ff; }
+  .pr2-change { display:grid; grid-template-columns:90px minmax(0,1fr) 22px; gap:6px; align-items:center; margin-top:6px; }
+  .pr2-input { padding:7px 8px; border:1px solid #d0dae4; border-radius:6px; color:#374151; background:#fff; }
+  .pr2-preview-head { display:grid; grid-template-columns:minmax(0,1fr) 64px 64px; padding:7px 10px; color:#8a9aaa; background:#f8fafc; font-size:8px; font-weight:800; text-transform:uppercase; }
+  .pr2-preview-row { display:grid; grid-template-columns:minmax(0,1fr) 64px 64px; align-items:center; min-height:37px; padding:0 10px; border-top:1px solid #edf1f5; }
+  .pr2-preview-row small { display:block; color:#8a9aaa; }
+  .pr2-before { color:#8a9aaa; text-decoration:line-through; } .pr2-after { color:#13795b; font-weight:800; }
+  .pr2-summary { padding:11px; }
+  .pr2-summary h5 { margin:0 0 8px; font-size:12px; }
+  .pr2-metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .pr2-metric { padding:9px; border-radius:8px; background:#f5f8fb; }
+  .pr2-metric b,.pr2-metric span { display:block; } .pr2-metric b { font-size:14px; } .pr2-metric span { margin-top:2px; color:#8a9aaa; font-size:8px; }
+  .pr2-warning { margin:9px 0; padding:8px; border:1px solid #f2d29d; border-radius:7px; color:#8d5710; background:#fff8e9; line-height:1.4; }
+  .pr2-history { margin-top:10px; padding-top:9px; border-top:1px solid #edf1f5; color:#6b7280; }
+  .pr2-history div { display:flex; justify-content:space-between; margin-top:6px; }
+  .pr2-vendor-grid { display:grid; grid-template-columns:158px minmax(0,1fr); gap:10px; }
+  .pr2-vendors { border:1px solid #dfe6ee; border-radius:10px; padding:9px; background:#fff; }
+  .pr2-vendor-label { color:#8a9aaa; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+  .pr2-vendor { display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:center; gap:6px; margin-top:6px; padding:7px; border-radius:7px; color:#59677a; }
+  .pr2-vendor.active { color:#1b3a7a; background:#edf4ff; box-shadow:inset 2px 0 #2d6bcc; }
+  .pr2-vendor i { display:grid; width:25px; height:25px; place-items:center; border-radius:7px; color:#1b3a7a; background:#e6eef9; font-style:normal; font-weight:800; }
+  .pr2-vendor small { display:block; margin-top:1px; color:#8a9aaa; font-size:8px; }
+  .pr2-catalogue { overflow:hidden; border:1px solid #dfe6ee; border-radius:10px; background:#fff; }
+  .pr2-vendor-hero { display:flex; align-items:center; gap:9px; padding:11px; color:#fff; background:linear-gradient(135deg,#2d6bcc,#1b3a7a); }
+  .pr2-vendor-hero i { display:grid; width:31px; height:31px; place-items:center; border-radius:9px; background:rgba(255,255,255,.14); font-style:normal; font-weight:800; }
+  .pr2-vendor-hero strong { display:block; font-size:12px; } .pr2-vendor-hero span { opacity:.72; font-size:8px; }
+  .pr2-vendor-hero .pr2-row-actions { margin-left:auto; }
+  .pr2-vendor-hero .pr2-btn { border-color:rgba(255,255,255,.2); color:#fff; background:rgba(255,255,255,.12); }
+  .pr2-toolbar { display:flex; gap:6px; padding:8px; border-bottom:1px solid #e8edf3; }
+  .pr2-search { min-width:130px; flex:1; padding:7px 8px; border:1px solid #d0dae4; border-radius:6px; color:#8a9aaa; }
+  .pr2-product-head,.pr2-product-row { display:grid; grid-template-columns:22px minmax(0,1fr) 54px 60px 62px 54px; align-items:center; padding:0 9px; }
+  .pr2-product-head { min-height:29px; color:#8a9aaa; background:#f8fafc; font-size:8px; font-weight:800; text-transform:uppercase; }
+  .pr2-product-row { min-height:38px; border-top:1px solid #edf1f5; }
+  .pr2-product-row strong small { display:block; margin-top:2px; color:#8a9aaa; font-weight:500; }
+  .pr2-stock { width:max-content; padding:3px 5px; border-radius:999px; color:#13795b; background:#e7f6ef; font-size:8px; font-weight:800; }
+  .pr2-stock.low { color:#aa5b11; background:#fff1df; }
+  .pr2-sync { display:flex; align-items:center; gap:8px; margin:8px; padding:8px 10px; border:1px solid #bdd2ee; border-radius:8px; color:#1b3a7a; background:#eef5ff; }
+  .pr2-sync strong { margin-right:auto; }
+  @media(max-width:900px){.pr2-app{grid-template-columns:110px minmax(0,1fr)}.pr2-studio{grid-template-columns:1fr}.pr2-summary-panel{display:none}.pr2-product-head,.pr2-product-row{grid-template-columns:18px minmax(0,1fr) 48px 55px}.pr2-product-head>:nth-child(5),.pr2-product-row>:nth-child(5),.pr2-product-head>:nth-child(6),.pr2-product-row>:nth-child(6){display:none}}
+</style>
+
+<div class="pr2-intro">
+  <p class="label">Products redesign · layouts 4–5 of 5</p>
+  <h2>Two more ways to make high-volume catalogue work safer and faster</h2>
+  <p class="subtitle">B remains the benchmark. These final directions explore staged bulk changes and vendor-centred maintenance. Click either concept that deserves a standalone mockup.</p>
+</div>
+
+<div class="pr2-stack" data-multiselect>
+  <article class="pr2-choice" data-choice="batch-studio" onclick="toggleSelect(this)">
+    <header class="pr2-head"><div class="pr2-letter">D</div><div><h3>Batch Studio</h3><p>Build a product set, stage multiple field changes, preview the diff, then apply once.</p></div><span class="pr2-note">Safest bulk editing</span></header>
+    <div class="pr2-app"><aside class="pr2-side"><div class="pr2-brand"><i class="pr2-logo"></i><span>GB Organiser</span></div><div class="pr2-buy"><small>Active group buy</small><span>Winter Peptide Run</span></div><div class="pr2-nav-label">Workspace</div><div class="pr2-nav"><span>Overview</span><span>Orders</span><span>Members</span></div><div class="pr2-nav-label">Catalogue</div><div class="pr2-nav"><span class="active">Products</span><span>Vendor COAs</span><span>Testing</span></div></aside><main class="pr2-main"><div class="pr2-top"><span class="pr2-crumb">Winter Peptide Run / <strong>Products</strong></span><span class="pr2-global-search">⌕ Search workspace</span></div><div class="pr2-body"><div class="pr2-title"><div><h4>Batch edit studio</h4><p>Make large catalogue changes with a reviewable, reversible workflow</p></div><div class="pr2-actions"><span class="pr2-btn">Catalogue view</span><span class="pr2-btn primary">＋ New product</span></div></div><div class="pr2-studio"><section class="pr2-panel"><div class="pr2-panel-head"><strong>Change set · July supplier update</strong><span class="pr2-chip blue">Draft saved</span></div><div class="pr2-step"><i class="pr2-num">1</i><div><h5>Choose products</h5><div class="pr2-query"><span class="pr2-chip blue">Vendor is QSC</span><span class="pr2-chip blue">Category is GLP-1</span><span class="pr2-chip">＋ Add condition</span><span class="pr2-chip">18 matches</span></div></div></div><div class="pr2-step"><i class="pr2-num">2</i><div><h5>Stage changes</h5><div class="pr2-change"><b>Price</b><div class="pr2-input">Increase by 5%</div><span>×</span></div><div class="pr2-change"><b>Stock</b><div class="pr2-input">Set to unlimited</div><span>×</span></div><div class="pr2-change"><b>½ kits</b><div class="pr2-input">Enable</div><span>×</span></div><div style="margin-top:7px"><span class="pr2-btn">＋ Add field change</span></div></div></div><div class="pr2-step" style="padding-bottom:7px"><i class="pr2-num">3</i><div><h5>Review 18 affected products</h5></div></div><div class="pr2-preview-head"><span>Product</span><span>Before</span><span>After</span></div><div class="pr2-preview-row"><div><strong>Semaglutide 5mg</strong><small>QSC · GLP-1</small></div><span class="pr2-before">£35.00</span><span class="pr2-after">£36.75</span></div><div class="pr2-preview-row"><div><strong>Tirzepatide 10mg</strong><small>QSC · GLP-1</small></div><span class="pr2-before">£55.00</span><span class="pr2-after">£57.75</span></div><div class="pr2-preview-row"><div><strong>Retatrutide 10mg</strong><small>QSC · GLP-1</small></div><span class="pr2-before">£62.00</span><span class="pr2-after">£65.10</span></div></section><aside class="pr2-panel pr2-summary-panel"><div class="pr2-summary"><h5>Change summary</h5><div class="pr2-metric-grid"><div class="pr2-metric"><b>18</b><span>Products affected</span></div><div class="pr2-metric"><b>54</b><span>Field updates</span></div><div class="pr2-metric"><b>+£2.31</b><span>Average price</span></div><div class="pr2-metric"><b>0</b><span>Validation errors</span></div></div><div class="pr2-warning"><strong>Heads up</strong><br>2 products currently have active member orders. Existing order totals will not change.</div><span class="pr2-btn primary" style="display:flex;width:100%;box-sizing:border-box">Apply 54 changes</span><div class="pr2-history"><b>Recent change sets</b><div><span>Low-stock limits</span><small>Yesterday</small></div><div><span>QSC June prices</span><small>28 Jun</small></div><div><span>½ kit rollout</span><small>20 Jun</small></div></div></div></aside></div></div></main></div>
+  </article>
+
+  <article class="pr2-choice" data-choice="vendor-matrix" onclick="toggleSelect(this)">
+    <header class="pr2-head"><div class="pr2-letter">E</div><div><h3>Vendor Matrix</h3><p>Organise the catalogue around suppliers, with import, price-sync, and stock maintenance in context.</p></div><span class="pr2-note">Best supplier workflow</span></header>
+    <div class="pr2-app"><aside class="pr2-side"><div class="pr2-brand"><i class="pr2-logo"></i><span>GB Organiser</span></div><div class="pr2-buy"><small>Active group buy</small><span>Winter Peptide Run</span></div><div class="pr2-nav-label">Workspace</div><div class="pr2-nav"><span>Overview</span><span>Orders</span><span>Members</span></div><div class="pr2-nav-label">Catalogue</div><div class="pr2-nav"><span class="active">Products</span><span>Vendor COAs</span><span>Testing</span></div></aside><main class="pr2-main"><div class="pr2-top"><span class="pr2-crumb">Winter Peptide Run / <strong>Products</strong></span><span class="pr2-global-search">⌕ Search workspace</span></div><div class="pr2-body"><div class="pr2-title"><div><h4>Supplier catalogues</h4><p>120 products · 7 approved vendors · 2 catalogues need review</p></div><div class="pr2-actions"><span class="pr2-btn">AI price list</span><span class="pr2-btn">CSV import</span><span class="pr2-btn primary">＋ Add product</span></div></div><div class="pr2-vendor-grid"><aside class="pr2-vendors"><div class="pr2-vendor-label">Vendors</div><div class="pr2-vendor active"><i>Q</i><div><b>QSC</b><small>38 products</small></div><span>›</span></div><div class="pr2-vendor"><i>A</i><div><b>Amino Asylum</b><small>27 products</small></div><span>›</span></div><div class="pr2-vendor"><i>P</i><div><b>Peptide Sci.</b><small>21 products</small></div><span>›</span></div><div class="pr2-vendor"><i>C</i><div><b>Chilton</b><small>14 products</small></div><span>›</span></div><div class="pr2-vendor"><i>＋</i><div><b>Unassigned</b><small>3 products</small></div><span>›</span></div><div class="pr2-vendor-label" style="margin-top:14px">Views</div><div class="pr2-vendor"><i>!</i><div><b>Price changes</b><small>8 products</small></div><span>›</span></div><div class="pr2-vendor"><i>↓</i><div><b>Low stock</b><small>7 products</small></div><span>›</span></div></aside><section class="pr2-catalogue"><div class="pr2-vendor-hero"><i>Q</i><div><strong>QSC catalogue</strong><span>38 products · synced from price list 12 Jul</span></div><div class="pr2-row-actions"><span class="pr2-btn">Import update</span><span class="pr2-btn">Vendor settings</span></div></div><div class="pr2-sync"><span>↕</span><strong>8 supplier prices differ from your live catalogue</strong><span class="pr2-btn primary">Review changes</span></div><div class="pr2-toolbar"><span class="pr2-search">⌕ Search QSC catalogue…</span><span class="pr2-btn">Category ▾</span><span class="pr2-btn">Stock ▾</span><span class="pr2-btn">Columns</span></div><div class="pr2-product-head"><i>□</i><span>Product</span><span>Size</span><span>Live price</span><span>Supplier</span><span>Stock</span></div><div class="pr2-product-row"><i>☑</i><strong>Semaglutide<small>GLP-1 · ½ kit enabled</small></strong><span>5mg</span><b>£35.00</b><span style="color:#b16a12">£36.75 ↑</span><span class="pr2-stock">84</span></div><div class="pr2-product-row"><i>☑</i><strong>Tirzepatide<small>GLP-1 · max 2/customer</small></strong><span>10mg</span><b>£55.00</b><span style="color:#b16a12">£57.75 ↑</span><span class="pr2-stock low">4</span></div><div class="pr2-product-row"><i>□</i><strong>Retatrutide<small>GLP-1 · ½ kit enabled</small></strong><span>10mg</span><b>£62.00</b><span>£62.00</span><span class="pr2-stock">23</span></div><div class="pr2-product-row"><i>□</i><strong>Ipamorelin<small>Growth hormone</small></strong><span>5mg</span><b>£18.00</b><span>£18.00</span><span class="pr2-stock">20</span></div><div class="pr2-product-row"><i>□</i><strong>CJC-1295 no DAC<small>Growth hormone</small></strong><span>5mg</span><b>£24.00</b><span style="color:#13795b">£22.50 ↓</span><span class="pr2-stock">∞</span></div></section></div></div></main></div>
+  </article>
+</div>
