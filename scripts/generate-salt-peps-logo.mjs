@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Resvg } from "@resvg/resvg-js";
 import makerjs from "makerjs";
 import opentype from "opentype.js";
 import { format } from "prettier";
@@ -397,4 +398,28 @@ await Promise.all(
   ),
 );
 
-console.log(`Generated ${assets.length} SALT&PEPS logo assets.`);
+const rasterAssets = [
+  ["salt-peps-icon-small.svg", "salt-peps-icon-16.png", 16],
+  ["salt-peps-icon.svg", "salt-peps-icon-32.png", 32],
+  ["salt-peps-icon.svg", "salt-peps-icon-48.png", 48],
+  ["salt-peps-social.svg", "salt-peps-social-180.png", 180],
+  ["salt-peps-social.svg", "salt-peps-social-512.png", 512],
+  ["salt-peps-logo.svg", "salt-peps-logo-1440.png", 1440],
+];
+
+await Promise.all(
+  rasterAssets.map(async ([sourceName, outputName, width]) => {
+    const source = await readFile(resolve(brandDirectory, sourceName));
+    const png = new Resvg(source, {
+      fitTo: { mode: "width", value: width },
+    })
+      .render()
+      .asPng();
+
+    await writeFile(resolve(brandDirectory, outputName), png);
+  }),
+);
+
+console.log(
+  `Generated ${assets.length} SVG and ${rasterAssets.length} PNG SALT&PEPS assets.`,
+);

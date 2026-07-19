@@ -350,6 +350,12 @@ check(
   /href=["']\/favicon\.svg["']/.test(index),
   `${indexPath}: keep the favicon URL stable`,
 );
+check(
+  /rel=["']apple-touch-icon["'][^>]*href=["']\/brand\/salt-peps-social-180\.png["']/.test(
+    index,
+  ),
+  `${indexPath}: use the generated 180px social tile as the Apple touch icon`,
+);
 
 if (failures.length > 0) {
   console.error(`FAIL (${failures.length} of ${checks} checks failed)`);
