@@ -1,5 +1,6 @@
 - [Multi-chain crypto payment rails](multi-chain-crypto-rails.md) — chain choice stored as paymentCryptoNetwork; CHAIN_WALLET_CONFIGS drives all resolution; getAdminCryptoOptions() exported for auto-verifier; pickedOption={currency,network} replaces pickedCurrency in PaymentPanel.
 - [Organiser V2 placeholder data traps](organiser-v2-placeholder-data.md) — mapApiGroupBuy fills fake fallbacks (maxMembers=1, counts 0); wire V2 tabs from raw API values via props, never SampleGB counts.
+- [Organiser V2 drawer portal CSS scoping](ov2-drawer-portal-scoping.md) — mobile drawer is a portalled Sheet; `.organiser-v2 .ov2-sidebar-drawer` selectors never match it, use compound `.organiser-v2.ov2-sidebar-drawer`.
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
 - [Lab test extract blob preference](lab-test-extract-blob-preference.md) — CoA re-extract (single+batch) must try stored pdfBlob before external url; Cloudflare-blocked sources always fail otherwise even with a local copy.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.

@@ -1362,6 +1362,7 @@
 
 .organiser-v2 .ov2-setup-nav {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 

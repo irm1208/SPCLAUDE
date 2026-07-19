@@ -2040,3 +2040,34 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Mobile navigation drawer (Sheet portal).
+   The drawer element carries both the `organiser-v2` and `ov2-sidebar-drawer`
+   classes and is portalled outside the page root, so it must be targeted with
+   a compound selector — descendant selectors like
+   `.organiser-v2 .ov2-sidebar-drawer` never match it. */
+.organiser-v2.ov2-sidebar-drawer {
+  width: min(86vw, 292px);
+  overflow: hidden;
+  border-right: 0;
+}
+
+.organiser-v2.ov2-sidebar-drawer .ov2-sidebar-collapse {
+  display: none;
+}
+
+.organiser-v2.ov2-sidebar-drawer > button {
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.organiser-v2.ov2-sidebar-drawer > button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.organiser-v2.ov2-sidebar-drawer .ov2-setup-link small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
