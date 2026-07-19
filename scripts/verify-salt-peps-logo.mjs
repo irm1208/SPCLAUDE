@@ -77,6 +77,125 @@ function stripXmlComments(source) {
   return source.replace(/<!--[\s\S]*?-->/g, "");
 }
 
+function findTagEnd(source, start) {
+  let quote = null;
+
+  for (let index = start + 1; index < source.length; index += 1) {
+    const character = source[index];
+
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function scanSvgStructure(source) {
+  const failures = [];
+  const hrefValues = [];
+  const stack = [];
+  let topLevelElementCount = 0;
+  let index = 0;
+
+  const addFailure = (message) => {
+    if (!failures.includes(message)) failures.push(message);
+  };
+
+  while (index < source.length) {
+    if (source[index] !== "<") {
+      const nextTag = source.indexOf("<", index);
+      const textEnd = nextTag === -1 ? source.length : nextTag;
+      if (stack.length === 0 && source.slice(index, textEnd).trim() !== "") {
+        addFailure("contains non-whitespace content outside the root element");
+      }
+      index = textEnd;
+      continue;
+    }
+
+    if (source.startsWith("<![CDATA[", index)) {
+      const cdataEnd = source.indexOf("]]>", index + 9);
+      if (cdataEnd === -1) {
+        addFailure("contains an unterminated CDATA section");
+        break;
+      }
+      if (stack.length === 0) {
+        addFailure("contains CDATA outside the root element");
+      }
+      index = cdataEnd + 3;
+      continue;
+    }
+
+    const tagEnd = findTagEnd(source, index);
+    if (tagEnd === -1) {
+      addFailure("contains an unterminated element tag");
+      break;
+    }
+
+    const tag = source.slice(index, tagEnd + 1);
+    const closingMatch = tag.match(/^<\/([A-Za-z_][\w:.-]*)\s*>$/);
+    const openingMatch = tag.match(/^<([A-Za-z_][\w:.-]*)\b[\s\S]*>$/);
+
+    if (closingMatch) {
+      const elementName = closingMatch[1];
+      const expectedName = stack.at(-1);
+      if (!expectedName) {
+        addFailure(`contains unexpected closing tag </${elementName}>`);
+      } else if (elementName !== expectedName) {
+        addFailure(
+          `closing tag </${elementName}> does not match <${expectedName}>`,
+        );
+      } else {
+        stack.pop();
+      }
+    } else if (openingMatch) {
+      const elementName = openingMatch[1];
+      const selfClosing = /\/\s*>$/.test(tag);
+      const hrefNames = tag.match(/\s(?:href|xlink:href)\b/gi) ?? [];
+      const quotedHrefs = [
+        ...tag.matchAll(/\s(?:href|xlink:href)\s*=\s*(["'])(.*?)\1/gi),
+      ];
+
+      hrefValues.push(...quotedHrefs.map((match) => match[2]));
+      for (
+        let missing = quotedHrefs.length;
+        missing < hrefNames.length;
+        missing += 1
+      ) {
+        hrefValues.push(null);
+      }
+
+      if (stack.length === 0) {
+        topLevelElementCount += 1;
+        if (topLevelElementCount === 1 && elementName !== "svg") {
+          addFailure(`top-level root must be <svg>, found <${elementName}>`);
+        } else if (topLevelElementCount > 1) {
+          addFailure("contains more than one top-level element");
+        }
+      }
+
+      if (!selfClosing) stack.push(elementName);
+    } else {
+      addFailure(`contains malformed markup: ${tag}`);
+    }
+
+    index = tagEnd + 1;
+  }
+
+  if (topLevelElementCount === 0) {
+    addFailure("must contain one top-level <svg> root");
+  }
+  if (stack.length > 0) {
+    addFailure(`contains unclosed element tag <${stack.at(-1)}>`);
+  }
+
+  return { failures, hrefValues };
+}
+
 function collectPaintValues(source) {
   const values = [];
 
@@ -96,15 +215,10 @@ function validateSvg(fileName, expectedViewBox, source) {
   const sourceWithoutComments = stripXmlComments(source);
   const body = documentBody(sourceWithoutComments);
   const rootOpening = body.match(/^<svg\b([^>]*)>/);
-  const svgOpeningCount = (sourceWithoutComments.match(/<svg\b[^>]*>/g) ?? [])
-    .length;
-  const svgClosingCount = (sourceWithoutComments.match(/<\/svg>/g) ?? [])
-    .length;
+  const structure = scanSvgStructure(body);
 
-  if (svgOpeningCount !== 1 || svgClosingCount !== 1) {
-    failures.push(
-      `must contain exactly one <svg> opening and closing tag (found ${svgOpeningCount} opening, ${svgClosingCount} closing)`,
-    );
+  for (const failure of structure.failures) {
+    failures.push(`has invalid SVG structure: ${failure}`);
   }
 
   if (!rootOpening) {
@@ -142,8 +256,14 @@ function validateSvg(fileName, expectedViewBox, source) {
     }
   }
 
-  if (/\s(?:href|xlink:href)\s*=/i.test(sourceWithoutComments)) {
-    failures.push("must not contain href or xlink:href attributes");
+  if (
+    structure.hrefValues.some(
+      (value) => typeof value !== "string" || !/^#[^\s]+$/.test(value),
+    )
+  ) {
+    failures.push(
+      "href and xlink:href values must be internal fragment references beginning with #",
+    );
   }
 
   const externalUrls = [
@@ -162,9 +282,14 @@ function validateSvg(fileName, expectedViewBox, source) {
 
   const colors = [
     ...new Set(
-      (sourceWithoutComments.match(hexColorPattern) ?? []).map((color) =>
-        color.toUpperCase(),
-      ),
+      (
+        sourceWithoutComments
+          .replace(
+            /(\s(?:href|xlink:href)\s*=\s*)(["'])(.*?)\2/gi,
+            (_match, prefix, quote) => `${prefix}${quote}${quote}`,
+          )
+          .match(hexColorPattern) ?? []
+      ).map((color) => color.toUpperCase()),
     ),
   ];
   const unapprovedColors = colors.filter((color) => !allowedColors.has(color));
