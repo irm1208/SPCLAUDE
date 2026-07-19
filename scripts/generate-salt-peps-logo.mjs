@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import makerjs from "makerjs";
+import opentype from "opentype.js";
 import { format } from "prettier";
 import { optimize } from "svgo";
 
@@ -12,6 +13,10 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const brandDirectory = resolve(
   repositoryRoot,
   "artifacts/peps-anonymous/public/brand",
+);
+const wordmarkFontPath = resolve(
+  repositoryRoot,
+  "scripts/logo/inter-latin-800-normal.woff",
 );
 
 const palette = {
@@ -21,6 +26,11 @@ const palette = {
   social: "#1B3164",
   white: "#FFFFFF",
 };
+
+const wordmarkFontSize = 54;
+const wordmarkBaseline = 59;
+const wordmarkOriginX = 88;
+const wordmarkAvailableWidth = 264;
 
 const markPoints = [
   [49, 56],
@@ -108,6 +118,92 @@ function renderMark({ accent, primary, small = false, transform }) {
   </g>`;
 }
 
+function renderWordmark({ accent, primary, transform }) {
+  const transformAttribute = transform ? ` transform="${transform}"` : "";
+
+  return `<g${transformAttribute}>
+    <path d="${wordmarkPathData.salt}" fill="${primary}"/>
+    <path d="${wordmarkPathData.ampersand}" fill="${accent}"/>
+    <path d="${wordmarkPathData.peps}" fill="${primary}"/>
+  </g>`;
+}
+
+function renderLogo({
+  accent,
+  primary,
+  iconAccent = accent,
+  iconPrimary = primary,
+  transform,
+}) {
+  const transformAttribute = transform ? ` transform="${transform}"` : "";
+
+  return `<g${transformAttribute}>
+    ${renderMark({
+      accent: iconAccent,
+      primary: iconPrimary,
+      transform: "translate(8 8)",
+    })}
+    ${renderWordmark({
+      accent,
+      primary,
+      transform: `translate(${wordmarkOriginX} 0) scale(${wordmarkScaleX} 1)`,
+    })}
+  </g>`;
+}
+
+function renderProof() {
+  const sizeSamples = [16, 24, 32, 48, 64];
+  const sampleOrigins = [72, 128, 200, 288, 400];
+  const samples = sizeSamples
+    .map((size, index) =>
+      renderMark({
+        accent: palette.accent,
+        primary: palette.navy,
+        small: size === 16,
+        transform: `translate(${sampleOrigins[index]} 482) scale(${size / 64})`,
+      }),
+    )
+    .join("\n    ");
+
+  return `<path d="M0 0H1200V900H0Z" fill="#F8FAFC"/>
+    <path d="M0 560H1200V900H0Z" fill="${palette.social}"/>
+    <path d="M64 286H1136" fill="none" stroke="#D0DAE4" stroke-width="2"/>
+    <path d="M700 316V452" fill="none" stroke="#D0DAE4" stroke-width="2"/>
+    <path d="M64 462H1136" fill="none" stroke="#D0DAE4" stroke-width="2"/>
+    ${renderLogo({
+      accent: palette.accent,
+      iconPrimary: palette.navy,
+      primary: palette.mono,
+      transform: "translate(64 54) scale(2.5)",
+    })}
+    ${renderLogo({
+      accent: palette.mono,
+      primary: palette.mono,
+      transform: "translate(64 322) scale(1.55)",
+    })}
+    ${renderMark({
+      accent: palette.accent,
+      primary: palette.navy,
+      transform: "translate(760 328) scale(1.65)",
+    })}
+    ${renderMark({
+      accent: palette.mono,
+      primary: palette.mono,
+      transform: "translate(950 328) scale(1.65)",
+    })}
+    ${samples}
+    ${renderLogo({
+      accent: palette.white,
+      primary: palette.white,
+      transform: "translate(64 616) scale(2.25)",
+    })}
+    ${renderMark({
+      accent: palette.white,
+      primary: palette.white,
+      transform: "translate(960 626) scale(2.5)",
+    })}`;
+}
+
 function escapeXml(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -139,6 +235,73 @@ async function serializeSvg(source, path) {
 
   await writeFile(path, formatted, "utf8");
 }
+
+const fontBuffer = await readFile(wordmarkFontPath);
+const fontArrayBuffer = fontBuffer.buffer.slice(
+  fontBuffer.byteOffset,
+  fontBuffer.byteOffset + fontBuffer.byteLength,
+);
+const wordmarkFont = opentype.parse(fontArrayBuffer);
+const opticalSpacing = {
+  saltToAmpersand: -2,
+  ampersandToPeps: -1.5,
+};
+const pathDataOptions = {
+  decimalPlaces: 2,
+  flipY: false,
+  optimize: true,
+};
+
+function outlineGlyphRun(text, originX) {
+  const characters = [...text];
+  const fontScale = wordmarkFontSize / wordmarkFont.unitsPerEm;
+  const pathData = [];
+  let cursorX = originX;
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    pathData.push(
+      wordmarkFont
+        .getPath(character, cursorX, wordmarkBaseline, wordmarkFontSize, {
+          kerning: true,
+        })
+        .toPathData(pathDataOptions),
+    );
+    cursorX += wordmarkFont.getAdvanceWidth(character, wordmarkFontSize, {
+      kerning: true,
+    });
+
+    const nextCharacter = characters[index + 1];
+    if (nextCharacter) {
+      cursorX +=
+        wordmarkFont.getKerningValue(
+          wordmarkFont.charToGlyph(character),
+          wordmarkFont.charToGlyph(nextCharacter),
+        ) * fontScale;
+    }
+  }
+
+  return {
+    advanceWidth: cursorX - originX,
+    pathData: pathData.join(" "),
+  };
+}
+
+const saltRun = outlineGlyphRun("SALT", 0);
+const ampersandOrigin = saltRun.advanceWidth + opticalSpacing.saltToAmpersand;
+const ampersandRun = outlineGlyphRun("&", ampersandOrigin);
+const pepsOrigin =
+  ampersandOrigin + ampersandRun.advanceWidth + opticalSpacing.ampersandToPeps;
+const pepsRun = outlineGlyphRun("PEPS", pepsOrigin);
+const wordmarkNaturalWidth = pepsOrigin + pepsRun.advanceWidth;
+const wordmarkScaleX = Number(
+  Math.min(1, wordmarkAvailableWidth / wordmarkNaturalWidth).toFixed(4),
+);
+const wordmarkPathData = {
+  salt: saltRun.pathData,
+  ampersand: ampersandRun.pathData,
+  peps: pepsRun.pathData,
+};
 
 const assets = [
   {
@@ -189,6 +352,42 @@ const assets = [
     title: "SALT&PEPS social icon",
     viewBox: "0 0 180 180",
   },
+  {
+    body: renderLogo({
+      accent: palette.accent,
+      iconPrimary: palette.navy,
+      primary: palette.mono,
+    }),
+    description:
+      "The SALT and PEPS peptide icon paired with an outlined uppercase wordmark.",
+    fileName: "salt-peps-logo.svg",
+    title: "SALT&PEPS logo",
+    viewBox: "0 0 360 80",
+  },
+  {
+    body: renderLogo({ accent: palette.white, primary: palette.white }),
+    description:
+      "The white SALT and PEPS peptide icon and outlined wordmark for dark backgrounds.",
+    fileName: "salt-peps-logo-reverse.svg",
+    title: "SALT&PEPS reverse logo",
+    viewBox: "0 0 360 80",
+  },
+  {
+    body: renderLogo({ accent: palette.mono, primary: palette.mono }),
+    description:
+      "The single-color SALT and PEPS peptide icon and outlined wordmark.",
+    fileName: "salt-peps-logo-mono.svg",
+    title: "SALT&PEPS monochrome logo",
+    viewBox: "0 0 360 80",
+  },
+  {
+    body: renderProof(),
+    description:
+      "A proof sheet of primary, monochrome, reverse, icon, and responsive SALT and PEPS logo variants.",
+    fileName: "salt-peps-logo-proof.svg",
+    title: "SALT&PEPS logo proof sheet",
+    viewBox: "0 0 1200 900",
+  },
 ];
 
 await mkdir(brandDirectory, { recursive: true });
@@ -198,4 +397,4 @@ await Promise.all(
   ),
 );
 
-console.log(`Generated ${assets.length} SALT&PEPS icon assets.`);
+console.log(`Generated ${assets.length} SALT&PEPS logo assets.`);
