@@ -5,7 +5,9 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm -r --if-present run build",
-    "check": "pnpm run typecheck",
+    "check": "pnpm run logo:verify && pnpm run typecheck",
+    "logo:generate": "node scripts/generate-salt-peps-logo.mjs",
+    "logo:verify": "node scripts/verify-salt-peps-logo.mjs --self-test && node scripts/verify-salt-peps-logo.mjs && node scripts/verify-salt-peps-raster.mjs && node scripts/verify-salt-peps-integration.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"!./artifacts/mockup-sandbox\" --filter \"./scripts\" --if-present run typecheck"
   },
@@ -14,6 +16,7 @@
     "@resvg/resvg-js": "2.6.2",
     "makerjs": "^0.19.2",
     "opentype.js": "^2.0.0",
+    "pngjs": "7.0.0",
     "prettier": "^3.8.1",
     "svgo": "^4.0.2",
     "typescript": "~5.9.2"

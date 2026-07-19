@@ -35,9 +35,24 @@ export function SaltPepsMark({
   detail = "auto",
   title,
   style,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-hidden": ariaHidden,
+  role,
   ...svgProps
 }: SaltPepsMarkProps) {
   const titleId = useId();
+  const hasTitle = Boolean(title?.trim());
+  const normalizedAriaLabel = ariaLabel?.trim();
+  const resolvedAriaLabelledBy =
+    ariaLabelledBy?.trim() ||
+    (!normalizedAriaLabel && hasTitle ? titleId : undefined);
+  const hasAccessibleName = Boolean(
+    normalizedAriaLabel || resolvedAriaLabelledBy,
+  );
+  const resolvedAriaHidden =
+    ariaHidden ?? (hasAccessibleName ? undefined : true);
+  const resolvedRole = role ?? (hasAccessibleName ? "img" : undefined);
   const small =
     detail === "small" ||
     (detail === "auto" && typeof size === "number" && size < 24);
@@ -53,11 +68,12 @@ export function SaltPepsMark({
       viewBox="0 0 64 64"
       fill="none"
       style={{ display: "block", ...style }}
-      role={title ? "img" : undefined}
-      aria-labelledby={title ? titleId : undefined}
-      aria-hidden={title ? undefined : true}
+      role={resolvedRole}
+      aria-label={ariaLabel}
+      aria-labelledby={resolvedAriaLabelledBy}
+      aria-hidden={resolvedAriaHidden}
     >
-      {title ? <title id={titleId}>{title}</title> : null}
+      {hasTitle ? <title id={titleId}>{title}</title> : null}
       <path
         d={AMPERSAND_PATH}
         stroke={colors.line}

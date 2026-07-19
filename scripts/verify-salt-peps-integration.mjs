@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appRoot = "artifacts/peps-anonymous";
@@ -121,18 +121,6 @@ check(
 check(
   /<title\s+id=\{titleId\}>\{title\}<\/title>/.test(component),
   `${componentPath}: bind the optional title to the generated id`,
-);
-check(
-  /role=\{title\s*\?\s*["']img["']\s*:\s*undefined\}/.test(component),
-  `${componentPath}: expose role=img only when titled`,
-);
-check(
-  /aria-labelledby=\{title\s*\?\s*titleId\s*:\s*undefined\}/.test(component),
-  `${componentPath}: label a titled icon by its unique title id`,
-);
-check(
-  /aria-hidden=\{title\s*\?\s*undefined\s*:\s*true\}/.test(component),
-  `${componentPath}: hide untitled icons from assistive technology`,
 );
 check(
   !/<text\b/i.test(component),
@@ -269,6 +257,12 @@ check(
     /background:\s*["']#1B3A7A["']/.test(prototype),
   `${prototypePath}: retain the 28px navy inner tile`,
 );
+check(
+  /<a[\s\S]*?aria-label=["']Salt & Peps home["'][\s\S]*?href=["']\/prototypehome["']/.test(
+    prototype,
+  ),
+  `${prototypePath}: give the logo-only home link an accessible name`,
+);
 
 const receiverPath = `${appRoot}/src/pages/JanoshikReceiver.tsx`;
 const receiver = read(receiverPath);
@@ -291,10 +285,10 @@ const explorerPath = `${appRoot}/public/peptide-explorer/index.html`;
 const explorer = read(explorerPath);
 check(!explorer.includes("🧂"), `${explorerPath}: remove the salt emoji`);
 check(
-  /<img\s+class=["']brand-mark["']\s+src=["']\.\.\/brand\/salt-peps-icon-reverse\.svg["']\s+width=["']18["']\s+height=["']18["']\s+alt=["']["']\s+aria-hidden=["']true["']\s*\/>/.test(
+  /<img\s+class=["']brand-mark["']\s+src=["']\.\.\/brand\/salt-peps-icon-reverse-small\.svg["']\s+width=["']18["']\s+height=["']18["']\s+alt=["']["']\s+aria-hidden=["']true["']\s*\/>/.test(
     explorer,
   ),
-  `${explorerPath}: use the relative 18px reverse icon asset`,
+  `${explorerPath}: use the relative 18px reverse small icon asset`,
 );
 check(
   /Salt<span class=["']amp["']>&amp;<\/span>Peps/.test(explorer),
@@ -351,11 +345,108 @@ check(
   `${indexPath}: keep the favicon URL stable`,
 );
 check(
-  /rel=["']apple-touch-icon["'][^>]*href=["']\/brand\/salt-peps-social-180\.png["']/.test(
+  /rel=["']apple-touch-icon["'][^>]*href=["']\/brand\/salt-peps-apple-touch-180\.png["']/.test(
     index,
   ),
-  `${indexPath}: use the generated 180px social tile as the Apple touch icon`,
+  `${indexPath}: use the generated opaque 180px Apple touch icon`,
 );
+
+const appAbsoluteRoot = resolve(root, appRoot);
+const appNodeModules = resolve(appAbsoluteRoot, "node_modules");
+const [{ createElement }, { renderToStaticMarkup }, { createServer }] =
+  await Promise.all([
+    import(pathToFileURL(resolve(appNodeModules, "react/index.js"))),
+    import(pathToFileURL(resolve(appNodeModules, "react-dom/server.node.js"))),
+    import(pathToFileURL(resolve(appNodeModules, "vite/dist/node/index.js"))),
+  ]);
+const viteServer = await createServer({
+  root: appAbsoluteRoot,
+  configFile: false,
+  esbuild: { jsx: "automatic" },
+  logLevel: "silent",
+  server: { middlewareMode: true },
+  appType: "custom",
+});
+
+try {
+  const { SaltPepsMark } = await viteServer.ssrLoadModule(
+    "/src/components/SaltPepsMark.tsx",
+  );
+  const renderMark = (props) =>
+    renderToStaticMarkup(createElement(SaltPepsMark, props));
+
+  const decorativeMark = renderMark({});
+  check(
+    /aria-hidden="true"/.test(decorativeMark) &&
+      !/\srole=/.test(decorativeMark) &&
+      !/aria-label(?:ledby)?=/.test(decorativeMark),
+    `${componentPath}: hide a nameless mark by default`,
+  );
+
+  const titledMark = renderMark({ title: "Salt & Peps peptide mark" });
+  const titleId = titledMark.match(/<title id="([^"]+)">/)?.[1];
+  check(
+    Boolean(titleId) &&
+      titledMark.includes(`aria-labelledby="${titleId}"`) &&
+      /\srole="img"/.test(titledMark) &&
+      !/aria-hidden=/.test(titledMark),
+    `${componentPath}: expose and reference an optional SVG title`,
+  );
+
+  const ariaLabelMark = renderMark({ "aria-label": "Salt & Peps" });
+  check(
+    /aria-label="Salt &amp; Peps"/.test(ariaLabelMark) &&
+      /\srole="img"/.test(ariaLabelMark) &&
+      !/aria-hidden=/.test(ariaLabelMark),
+    `${componentPath}: respect aria-label as an accessible name`,
+  );
+
+  const ariaLabelWithTitleMark = renderMark({
+    "aria-label": "Caller-provided brand label",
+    title: "Fallback SVG title",
+  });
+  check(
+    /aria-label="Caller-provided brand label"/.test(ariaLabelWithTitleMark) &&
+      !/aria-labelledby=/.test(ariaLabelWithTitleMark),
+    `${componentPath}: let a caller aria-label take precedence over the title fallback`,
+  );
+
+  const labelledByMark = renderMark({ "aria-labelledby": "brand-name" });
+  check(
+    /aria-labelledby="brand-name"/.test(labelledByMark) &&
+      /\srole="img"/.test(labelledByMark) &&
+      !/aria-hidden=/.test(labelledByMark),
+    `${componentPath}: respect a caller-provided aria-labelledby`,
+  );
+
+  const explicitlyVisibleMark = renderMark({ "aria-hidden": false });
+  check(
+    /aria-hidden="false"/.test(explicitlyVisibleMark),
+    `${componentPath}: preserve an explicit aria-hidden=false`,
+  );
+
+  const explicitlyHiddenMark = renderMark({
+    title: "Hidden brand mark",
+    "aria-hidden": true,
+  });
+  check(
+    /aria-hidden="true"/.test(explicitlyHiddenMark),
+    `${componentPath}: preserve an explicit aria-hidden=true`,
+  );
+
+  const callerRoleMark = renderMark({
+    "aria-label": "Salt & Peps",
+    role: "presentation",
+  });
+  check(
+    /\srole="presentation"/.test(callerRoleMark),
+    `${componentPath}: preserve a caller-provided role`,
+  );
+} catch (error) {
+  check(false, `${componentPath}: SSR accessibility checks failed: ${error}`);
+} finally {
+  await viteServer.close();
+}
 
 if (failures.length > 0) {
   console.error(`FAIL (${failures.length} of ${checks} checks failed)`);

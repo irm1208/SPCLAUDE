@@ -10,23 +10,25 @@ The primary wordmark is always `SALT&PEPS` in uppercase with no spaces. Product 
 
 All assets live in `artifacts/peps-anonymous/public/brand/`.
 
-| Asset                        | Use                                                             |
-| ---------------------------- | --------------------------------------------------------------- |
-| `salt-peps-logo.svg`         | Primary horizontal logo on white or light surfaces              |
-| `salt-peps-logo-reverse.svg` | Horizontal logo on deep navy or dark surfaces                   |
-| `salt-peps-logo-mono.svg`    | One-color print, engraving, stamps, and restricted-color output |
-| `salt-peps-icon.svg`         | Primary standalone mark at 24px and larger                      |
-| `salt-peps-icon-small.svg`   | Optically simplified mark below 24px                            |
-| `salt-peps-icon-reverse.svg` | Standalone mark on dark surfaces                                |
-| `salt-peps-icon-mono.svg`    | One-color standalone mark                                       |
-| `salt-peps-social.svg`       | Scalable square avatar with protected clearspace                |
-| `salt-peps-icon-16.png`      | 16px bitmap fallback                                            |
-| `salt-peps-icon-32.png`      | 32px bitmap fallback                                            |
-| `salt-peps-icon-48.png`      | 48px bitmap fallback                                            |
-| `salt-peps-social-180.png`   | Apple touch icon and small profile image                        |
-| `salt-peps-social-512.png`   | High-resolution social/profile image                            |
-| `salt-peps-logo-1440.png`    | Transparent high-resolution horizontal fallback                 |
-| `salt-peps-logo-proof.svg`   | Light, dark, monochrome, and responsive-size proof sheet        |
+| Asset                              | Use                                                             |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `salt-peps-logo.svg`               | Primary horizontal logo on white or light surfaces              |
+| `salt-peps-logo-reverse.svg`       | Horizontal logo on deep navy or dark surfaces                   |
+| `salt-peps-logo-mono.svg`          | One-color print, engraving, stamps, and restricted-color output |
+| `salt-peps-icon.svg`               | Primary standalone mark at 24px and larger                      |
+| `salt-peps-icon-small.svg`         | Optically simplified mark below 24px                            |
+| `salt-peps-icon-reverse.svg`       | Standalone mark on dark surfaces                                |
+| `salt-peps-icon-reverse-small.svg` | Simplified mark below 24px on dark surfaces                     |
+| `salt-peps-icon-mono.svg`          | One-color standalone mark                                       |
+| `salt-peps-social.svg`             | Scalable square avatar with protected clearspace                |
+| `salt-peps-icon-16.png`            | 16px bitmap fallback                                            |
+| `salt-peps-icon-32.png`            | 32px bitmap fallback                                            |
+| `salt-peps-icon-48.png`            | 48px bitmap fallback                                            |
+| `salt-peps-social-180.png`         | Transparent small profile image                                 |
+| `salt-peps-social-512.png`         | High-resolution social/profile image                            |
+| `salt-peps-apple-touch-180.png`    | Opaque Apple touch icon                                         |
+| `salt-peps-logo-1440.png`          | Transparent high-resolution horizontal fallback                 |
+| `salt-peps-logo-proof.svg`         | Light, dark, monochrome, and responsive-size proof sheet        |
 
 Use SVG whenever the destination supports it. PNG files are fallbacks for platforms that require raster uploads.
 
@@ -47,10 +49,11 @@ Do not add gradients, shadows, transparency, outlines, or colors outside the app
 Let `x` equal one oxygen-lozenge diameter, approximately one eighth of the icon height. Keep at least `x` of empty space around every side of the standalone mark or horizontal lockup.
 
 - Minimum full-logo width: 120px digital or 35mm print.
-- Minimum UI icon: 24px. Use `salt-peps-icon.svg`.
-- Minimum favicon icon: 16px. Use `salt-peps-icon-small.svg` or the supplied 16px PNG.
+- Full-detail UI icon: 24px or larger. Use `salt-peps-icon.svg`.
+- Small optical icon: 16-23px when interface space requires it. Use `salt-peps-icon-small.svg`, `salt-peps-icon-reverse-small.svg`, or the supplied 16px PNG for the matching background.
 - Minimum print icon: 10mm.
 - Social avatars must use the supplied social tile rather than placing the bare mark against an arbitrary background.
+- Apple touch icons must use the opaque `salt-peps-apple-touch-180.png`, not the transparent social PNG.
 
 ## Backgrounds
 
@@ -73,8 +76,6 @@ Let `x` equal one oxygen-lozenge diameter, approximately one eighth of the icon 
 The master geometry is original and generated locally with Maker.js, OpenType.js, SVGO, and resvg. Inter 800 is outlined into the final wordmark; its SIL Open Font License is stored at `scripts/logo/OFL.txt`. No generative image API is used, and no third-party scientific artwork is embedded in the mark.
 
 ```bash
-node scripts/generate-salt-peps-logo.mjs
-node scripts/verify-salt-peps-logo.mjs
-node scripts/verify-salt-peps-raster.mjs
-node scripts/verify-salt-peps-integration.mjs
+pnpm logo:generate
+pnpm logo:verify
 ```

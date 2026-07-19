@@ -61,6 +61,7 @@ export default function PrototypeHome() {
         {/* Logo — cosmos-style: circle border, icon inside */}
         <a
           onClick={e => { e.preventDefault(); go("/prototypehome"); }}
+          aria-label="Salt & Peps home"
           href="/prototypehome"
           style={{
             width: 44, height: 44, borderRadius: "50%",

@@ -322,6 +322,18 @@ const assets = [
     viewBox: "0 0 64 64",
   },
   {
+    body: renderMark({
+      primary: palette.white,
+      accent: palette.white,
+      small: true,
+    }),
+    description:
+      "The simplified white SALT and PEPS peptide-bond ampersand for small sizes on dark backgrounds.",
+    fileName: "salt-peps-icon-reverse-small.svg",
+    title: "SALT&PEPS reverse small icon",
+    viewBox: "0 0 64 64",
+  },
+  {
     body: renderMark({ primary: palette.mono, accent: palette.mono }),
     description: "The single-color SALT and PEPS peptide-bond ampersand.",
     fileName: "salt-peps-icon-mono.svg",
@@ -404,14 +416,21 @@ const rasterAssets = [
   ["salt-peps-icon.svg", "salt-peps-icon-48.png", 48],
   ["salt-peps-social.svg", "salt-peps-social-180.png", 180],
   ["salt-peps-social.svg", "salt-peps-social-512.png", 512],
+  [
+    "salt-peps-social.svg",
+    "salt-peps-apple-touch-180.png",
+    180,
+    palette.social,
+  ],
   ["salt-peps-logo.svg", "salt-peps-logo-1440.png", 1440],
 ];
 
 await Promise.all(
-  rasterAssets.map(async ([sourceName, outputName, width]) => {
+  rasterAssets.map(async ([sourceName, outputName, width, background]) => {
     const source = await readFile(resolve(brandDirectory, sourceName));
     const png = new Resvg(source, {
       fitTo: { mode: "width", value: width },
+      ...(background ? { background } : {}),
     })
       .render()
       .asPng();
