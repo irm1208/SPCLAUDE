@@ -95,6 +95,82 @@ function findTagEnd(source, start) {
   return -1;
 }
 
+function parseOpeningTag(tag) {
+  const elementMatch = tag.match(/^<([A-Za-z_][\w:.-]*)/);
+  if (!elementMatch) return { failure: `contains malformed markup: ${tag}` };
+
+  const attributes = [];
+  const attributeNames = new Set();
+  let index = elementMatch[0].length;
+
+  while (index < tag.length) {
+    while (/\s/.test(tag[index])) index += 1;
+
+    if (tag.startsWith("/>", index)) {
+      return {
+        attributes,
+        elementName: elementMatch[1],
+        selfClosing: true,
+      };
+    }
+    if (tag[index] === ">") {
+      return {
+        attributes,
+        elementName: elementMatch[1],
+        selfClosing: false,
+      };
+    }
+
+    const attributeMatch = tag.slice(index).match(/^([A-Za-z_][\w:.-]*)/);
+    if (!attributeMatch) {
+      return { failure: `contains malformed attribute syntax in ${tag}` };
+    }
+
+    const attributeName = attributeMatch[1];
+    if (attributeNames.has(attributeName)) {
+      return { failure: `contains duplicate attribute ${attributeName}` };
+    }
+    attributeNames.add(attributeName);
+    index += attributeName.length;
+
+    while (/\s/.test(tag[index])) index += 1;
+    if (tag[index] !== "=") {
+      return { failure: `attribute ${attributeName} must be followed by =` };
+    }
+    index += 1;
+
+    while (/\s/.test(tag[index])) index += 1;
+    const quote = tag[index];
+    if (quote !== '"' && quote !== "'") {
+      return { failure: `attribute ${attributeName} must have a quoted value` };
+    }
+
+    const valueEnd = tag.indexOf(quote, index + 1);
+    if (valueEnd === -1) {
+      return { failure: `attribute ${attributeName} has no closing quote` };
+    }
+
+    const value = tag.slice(index + 1, valueEnd);
+    if (value.includes("<")) {
+      return { failure: `attribute ${attributeName} contains an invalid <` };
+    }
+    attributes.push({ name: attributeName, value });
+    index = valueEnd + 1;
+
+    if (
+      !/\s/.test(tag[index]) &&
+      tag[index] !== ">" &&
+      !tag.startsWith("/>", index)
+    ) {
+      return {
+        failure: `attribute ${attributeName} must be followed by whitespace or the tag end`,
+      };
+    }
+  }
+
+  return { failure: `contains unterminated opening tag ${tag}` };
+}
+
 function scanSvgStructure(source) {
   const failures = [];
   const hrefValues = [];
@@ -138,7 +214,7 @@ function scanSvgStructure(source) {
 
     const tag = source.slice(index, tagEnd + 1);
     const closingMatch = tag.match(/^<\/([A-Za-z_][\w:.-]*)\s*>$/);
-    const openingMatch = tag.match(/^<([A-Za-z_][\w:.-]*)\b[\s\S]*>$/);
+    const openingTag = closingMatch ? null : parseOpeningTag(tag);
 
     if (closingMatch) {
       const elementName = closingMatch[1];
@@ -152,22 +228,16 @@ function scanSvgStructure(source) {
       } else {
         stack.pop();
       }
-    } else if (openingMatch) {
-      const elementName = openingMatch[1];
-      const selfClosing = /\/\s*>$/.test(tag);
-      const hrefNames = tag.match(/\s(?:href|xlink:href)\b/gi) ?? [];
-      const quotedHrefs = [
-        ...tag.matchAll(/\s(?:href|xlink:href)\s*=\s*(["'])(.*?)\1/gi),
-      ];
-
-      hrefValues.push(...quotedHrefs.map((match) => match[2]));
-      for (
-        let missing = quotedHrefs.length;
-        missing < hrefNames.length;
-        missing += 1
-      ) {
-        hrefValues.push(null);
-      }
+    } else if (!openingTag.failure) {
+      const { attributes, elementName, selfClosing } = openingTag;
+      hrefValues.push(
+        ...attributes
+          .filter(
+            (attribute) =>
+              attribute.name.toLowerCase().split(":").at(-1) === "href",
+          )
+          .map((attribute) => attribute.value),
+      );
 
       if (stack.length === 0) {
         topLevelElementCount += 1;
@@ -180,7 +250,7 @@ function scanSvgStructure(source) {
 
       if (!selfClosing) stack.push(elementName);
     } else {
-      addFailure(`contains malformed markup: ${tag}`);
+      addFailure(openingTag.failure);
     }
 
     index = tagEnd + 1;
@@ -285,7 +355,7 @@ function validateSvg(fileName, expectedViewBox, source) {
       (
         sourceWithoutComments
           .replace(
-            /(\s(?:href|xlink:href)\s*=\s*)(["'])(.*?)\2/gi,
+            /(\s(?:[A-Za-z_][\w.-]*:)?href\s*=\s*)(["'])(.*?)\2/gi,
             (_match, prefix, quote) => `${prefix}${quote}${quote}`,
           )
           .match(hexColorPattern) ?? []
