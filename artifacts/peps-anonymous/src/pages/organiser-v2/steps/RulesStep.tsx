@@ -36,7 +36,7 @@ export default function RulesStep() {
     <div className="space-y-4">
       {/* Description */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-blue)" }}>
           These messages and rules will be shown to members on the group buy page. Use them to explain how ordering works, set expectations, and include any important disclaimers.
         </p>
       </div>
@@ -45,10 +45,10 @@ export default function RulesStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <MessageSquare className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Welcome Message</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Welcome Message</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Shown at the top of the group buy page, right below the title. This is the first thing members see.
         </p>
         <textarea
@@ -56,7 +56,7 @@ export default function RulesStep() {
           value={welcomeMessage}
           onChange={(e) => setWelcomeMessage(e.target.value)}
           rows={4}
-          className="w-full px-3.5 py-2.5 rounded-md text-[13px] resize-none"
+          className="w-full px-3.5 py-2.5 rounded-md text-[14px] resize-none"
           style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
         />
         </div>
@@ -66,10 +66,10 @@ export default function RulesStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <FileText className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Rules & Requirements</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Rules & Requirements</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Displayed in a dedicated "Rules" section on the group buy page, before members can place orders.
         </p>
 
@@ -78,7 +78,7 @@ export default function RulesStep() {
             <div key={rule.id} className="flex gap-2 items-start">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+                  <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
                     Rule {index + 1}
                   </span>
                 </div>
@@ -87,7 +87,7 @@ export default function RulesStep() {
                   placeholder="e.g. Payment must be received within 24 hours"
                   value={rule.text}
                   onChange={(e) => updateRule(rule.id, e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
@@ -106,7 +106,7 @@ export default function RulesStep() {
 
         <button
           onClick={addRule}
-          className="w-full h-9 rounded-md text-[12px] font-semibold transition-colors"
+          className="w-full h-9 rounded-md text-[13px] font-semibold transition-colors"
           style={{ border: `1px dashed ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
         >
           <Plus className="w-4 h-4 inline mr-1" /> Add Another Rule
@@ -118,10 +118,10 @@ export default function RulesStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <AlertCircle className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Disclaimer</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Disclaimer</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Shown at the bottom of the group buy page in a warning box. Members see this before and after ordering.
         </p>
         <textarea
@@ -129,7 +129,7 @@ export default function RulesStep() {
           value={disclaimer}
           onChange={(e) => setDisclaimer(e.target.value)}
           rows={5}
-          className="w-full px-3.5 py-2.5 rounded-md text-[13px] resize-none"
+          className="w-full px-3.5 py-2.5 rounded-md text-[14px] resize-none"
           style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
         />
         </div>
@@ -139,10 +139,10 @@ export default function RulesStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Info className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Additional Information</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Additional Information</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Appears in an expandable "More Info" section on the group buy page. Members can click to read details about testing, delivery, etc.
         </p>
         <textarea
@@ -150,7 +150,7 @@ export default function RulesStep() {
           value={additionalInfo}
           onChange={(e) => setAdditionalInfo(e.target.value)}
           rows={5}
-          className="w-full px-3.5 py-2.5 rounded-md text-[13px] resize-none"
+          className="w-full px-3.5 py-2.5 rounded-md text-[14px] resize-none"
           style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
         />
         </div>
@@ -158,7 +158,7 @@ export default function RulesStep() {
 
       {/* Helper text */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px]" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px]" style={{ color: "var(--t-blue)" }}>
           <strong>Tip:</strong> Be clear and specific. Include payment deadlines, return policies, and customs risks upfront to avoid disputes later.
         </p>
       </div>

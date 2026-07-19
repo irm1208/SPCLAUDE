@@ -115,14 +115,14 @@ const DEFAULT_FORM = {
   heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
 };
 
-const inputCls = "w-full h-10 px-3 rounded-lg text-[13px] outline-none";
+const inputCls = "w-full h-10 px-3 rounded-lg text-[14px] outline-none";
 const inputStyle = { border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" } as const;
-const cellInputCls = "h-8 px-2 rounded-md text-[11px] outline-none";
+const cellInputCls = "h-8 px-2 rounded-md text-[12px] outline-none";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>
+      <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>
         {label}
       </label>
       {children}
@@ -313,7 +313,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to manage lab tests
         </p>
       </div>
@@ -327,7 +327,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
       {/* Header */}
       <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Lab Tests</h2>
-        <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
           Upload and manage lab test results for your products
         </p>
       </div>
@@ -340,7 +340,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           </div>
           <div>
             <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>How Lab Tests Work</h3>
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+            <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
               Upload lab test certificates from Janoshik or other labs. Our AI can extract purity, batch codes, and test dates automatically. Tests are shown to members to prove product quality. New submissions are marked <strong>Pending Review</strong> until approved.
             </p>
           </div>
@@ -350,7 +350,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
       {/* Error banner */}
       {error && (
         <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
-          <p className="text-[12px] font-semibold" style={{ color: "#DC2626" }}>{error}</p>
+          <p className="text-[13px] font-semibold" style={{ color: "#DC2626" }}>{error}</p>
           <button onClick={() => setError("")} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-100">
             <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
           </button>
@@ -371,7 +371,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
               </div>
               <div className="flex-1">
                 <h3 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>AI Bulk Import from URLs</h3>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                   Paste Janoshik URLs, review the extracted data, then submit all at once
                 </p>
               </div>
@@ -390,7 +390,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
               </div>
               <div className="flex-1">
                 <h3 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Add Manually</h3>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                   Upload a PDF/image for AI extraction or fill in details by hand
                 </p>
               </div>
@@ -411,7 +411,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           </div>
 
           <div className="p-3 rounded-lg" style={{ background: "#EFF6FF", border: "1px solid #DBEAFE" }}>
-            <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+            <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
               <strong style={{ color: "var(--t-text)" }}>Paste COA/Janoshik report URLs</strong> — one per line. AI extracts each report's data into a review table. Edit if needed, then confirm to submit all at once.
             </p>
           </div>
@@ -422,14 +422,14 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
             disabled={bulkExtracting}
             placeholder={"https://janoshik.com/results/J-12345\nhttps://janoshik.com/results/J-67890"}
             rows={4}
-            className="w-full px-3 py-2 rounded-lg text-[13px] font-mono outline-none resize-none"
+            className="w-full px-3 py-2 rounded-lg text-[14px] font-mono outline-none resize-none"
             style={{ ...inputStyle, lineHeight: 1.6 }}
           />
 
           <button
             onClick={handleExtractFromLinks}
             disabled={bulkExtracting || !bulkUrls.trim()}
-            className="w-full h-10 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full h-10 rounded-lg text-[14px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
             style={{ background: "var(--t-blue)" }}
           >
             {bulkExtracting ? (
@@ -443,7 +443,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           {reviewRows.length > 0 && (
             <div className="space-y-3">
               <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                <table className="w-full text-[11px]" style={{ minWidth: 1050 }}>
+                <table className="w-full text-[12px]" style={{ minWidth: 1050 }}>
                   <thead>
                     <tr style={{ background: "var(--t-surface2)" }}>
                       {["Link", "Status", "Peptide Name", "Lab", "Purity %", "mg", "Batch", "Test Date", "Sterility", "As", "Cd", "Pb", "Hg", "COA URL", ""].map(h => (
@@ -491,20 +491,20 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
               </div>
 
               {bulkResult && (
-                <div className="flex gap-4 text-[12px]">
+                <div className="flex gap-4 text-[13px]">
                   <span style={{ color: "#16A34A" }}><CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{bulkResult.imported} submitted</span>
                   {bulkResult.failed > 0 && <span style={{ color: "#DC2626" }}><X className="w-3.5 h-3.5 inline mr-1" />{bulkResult.failed} failed</span>}
                 </div>
               )}
 
               <div className="flex gap-2">
-                <button onClick={() => setReviewRows([])} className="h-10 px-4 rounded-lg text-[12px] font-bold hover:bg-black/5" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
+                <button onClick={() => setReviewRows([])} className="h-10 px-4 rounded-lg text-[13px] font-bold hover:bg-black/5" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
                   Clear
                 </button>
                 <button
                   onClick={handleBulkSubmit}
                   disabled={bulkSubmitting || readyCount === 0}
-                  className="flex-1 h-10 rounded-lg text-[12px] font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 h-10 rounded-lg text-[13px] font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "var(--t-blue)" }}
                 >
                   {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -515,7 +515,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           )}
 
           {bulkResult && reviewRows.length === 0 && (
-            <div className="flex gap-4 text-[12px]">
+            <div className="flex gap-4 text-[13px]">
               <span style={{ color: "#16A34A" }}><CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{bulkResult.imported} submitted</span>
             </div>
           )}
@@ -533,7 +533,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           </div>
 
           <div className="p-3 rounded-lg" style={{ background: "#EFF6FF", border: "1px solid #DBEAFE" }}>
-            <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+            <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
               <strong style={{ color: "var(--t-text)" }}>Upload a file:</strong> Our AI will extract data from PDFs or images and pre-fill the form. Or fill in the fields manually below.
             </p>
           </div>
@@ -550,7 +550,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={extractLoading}
-            className="w-full h-10 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-black/5 disabled:opacity-50"
+            className="w-full h-10 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-2 hover:bg-black/5 disabled:opacity-50"
             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
           >
             {extractLoading ? (
@@ -561,7 +561,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           </button>
 
           {extracted && (
-            <div className="p-2.5 rounded-lg text-[12px]" style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.15)", color: "#16A34A" }}>
+            <div className="p-2.5 rounded-lg text-[13px]" style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.15)", color: "#16A34A" }}>
               <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />AI extracted data from your file — review and confirm below.
             </div>
           )}
@@ -642,7 +642,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
             <button
               type="submit"
               disabled={saving}
-              className="w-full h-10 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2"
+              className="w-full h-10 rounded-lg text-[14px] font-bold text-white flex items-center justify-center gap-2"
               style={{ background: saved ? "#16A34A" : "var(--t-blue)" }}
             >
               {saving ? (
@@ -679,17 +679,17 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{test.peptideName}</h4>
                           {test.purityPct && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#D1FADF", color: "#12B76A" }}>
+                            <span className="text-[12px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#D1FADF", color: "#12B76A" }}>
                               {test.purityPct}% purity
                             </span>
                           )}
                           {test.pending ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>Pending Review</span>
+                            <span className="text-[12px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>Pending Review</span>
                           ) : (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.1)", color: "#16A34A" }}>Approved</span>
+                            <span className="text-[12px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(22,163,74,0.1)", color: "#16A34A" }}>Approved</span>
                           )}
                         </div>
-                        <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                        <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                           {test.labName || "Unknown lab"} • {test.batchCode || "No batch"} • {test.testDate || "No date"}
                         </p>
                       </div>
@@ -707,56 +707,56 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                     <div className="grid grid-cols-2 gap-3">
                       {test.supplier && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Supplier</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.supplier}</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Supplier</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.supplier}</p>
                         </div>
                       )}
                       {test.janoshikId && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Janoshik ID</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.janoshikId}</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Janoshik ID</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.janoshikId}</p>
                         </div>
                       )}
                       {test.mgAmount != null && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Amount</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.mgAmount} mg</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Amount</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.mgAmount} mg</p>
                         </div>
                       )}
                       {test.testType && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Test Type</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.testType}</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Test Type</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.testType}</p>
                         </div>
                       )}
                       {test.productCategory && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Category</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.productCategory}</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Category</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.productCategory}</p>
                         </div>
                       )}
                       {test.endotoxinEuMg != null && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Endotoxin</p>
-                          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.endotoxinEuMg} EU/mg</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Endotoxin</p>
+                          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-text)" }}>{test.endotoxinEuMg} EU/mg</p>
                         </div>
                       )}
                       {test.sterilityPass != null && (
                         <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Sterility</p>
-                          <p className="text-[12px] mt-0.5 font-semibold" style={{ color: test.sterilityPass ? "#16A34A" : "#DC2626" }}>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Sterility</p>
+                          <p className="text-[13px] mt-0.5 font-semibold" style={{ color: test.sterilityPass ? "#16A34A" : "#DC2626" }}>
                             {test.sterilityPass ? "Pass" : "Fail"}
                           </p>
                         </div>
                       )}
                       {(test.heavyMetalAs || test.heavyMetalCd || test.heavyMetalPb || test.heavyMetalHg) && (
                         <div className="col-span-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Heavy Metals</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Heavy Metals</p>
                           <div className="flex flex-wrap gap-2 mt-1">
-                            {test.heavyMetalAs && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>As: {test.heavyMetalAs}</span>}
-                            {test.heavyMetalCd && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Cd: {test.heavyMetalCd}</span>}
-                            {test.heavyMetalPb && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Pb: {test.heavyMetalPb}</span>}
-                            {test.heavyMetalHg && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Hg: {test.heavyMetalHg}</span>}
+                            {test.heavyMetalAs && <span className="text-[12px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>As: {test.heavyMetalAs}</span>}
+                            {test.heavyMetalCd && <span className="text-[12px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Cd: {test.heavyMetalCd}</span>}
+                            {test.heavyMetalPb && <span className="text-[12px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Pb: {test.heavyMetalPb}</span>}
+                            {test.heavyMetalHg && <span className="text-[12px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>Hg: {test.heavyMetalHg}</span>}
                           </div>
                         </div>
                       )}
@@ -767,7 +767,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                         href={test.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-[12px] font-semibold hover:underline"
+                        className="flex items-center gap-2 text-[13px] font-semibold hover:underline"
                         style={{ color: "var(--t-blue)" }}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
@@ -778,7 +778,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                     {test.pending && (
                       <button
                         onClick={() => handleDelete(test.id)}
-                        className="w-full h-9 rounded-lg text-[12px] font-semibold hover:bg-red-50 flex items-center justify-center gap-1.5"
+                        className="w-full h-9 rounded-lg text-[13px] font-semibold hover:bg-red-50 flex items-center justify-center gap-1.5"
                         style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "#DC2626" }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -797,7 +797,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
         <div className="rounded-xl p-8 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <FlaskConical className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>No Lab Tests Yet</h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             Add your first lab test to show product quality to members
           </p>
         </div>

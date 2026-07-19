@@ -62,20 +62,20 @@ export default function ActivityFeed({ selectedGbId }: ActivityFeedProps) {
         </div>
         <button
           onClick={handleDismiss}
-          className="text-[11px] font-semibold hover:underline"
+          className="text-[12px] font-semibold hover:underline"
           style={{ color: "var(--t-blue)" }}
         >
           Mark as read
         </button>
       </div>
-      <p className="text-[11px] mb-2" style={{ color: "var(--t-subtle)" }}>{timeLabel}</p>
+      <p className="text-[12px] mb-2" style={{ color: "var(--t-subtle)" }}>{timeLabel}</p>
       <div className="space-y-1.5">
         {items.map((item, i) => {
           const Icon = item.icon;
           return (
             <div key={i} className="flex items-center gap-2">
               <Icon className="w-4 h-4 shrink-0" style={{ color: item.color }} />
-              <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{item.text}</span>
+              <span className="text-[14px]" style={{ color: "var(--t-text)" }}>{item.text}</span>
             </div>
           );
         })}

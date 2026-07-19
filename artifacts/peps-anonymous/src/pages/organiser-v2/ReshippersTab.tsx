@@ -182,7 +182,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to manage reshippers
         </p>
       </div>
@@ -194,7 +194,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
       {/* Header */}
       <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Reshippers</h2>
-        <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
           Manage reshipper assignments and route orders by country
         </p>
       </div>
@@ -209,7 +209,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
               </div>
               <div>
                 <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>How Reshippers Work</h3>
-                <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+                <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
                   Reshippers help you fulfill orders in different countries. They receive bulk shipments from you, then forward individual orders to customers in their region.
                 </p>
               </div>
@@ -226,30 +226,30 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
             <div className="p-3 rounded-lg bg-white/80" style={{ border: `1px solid var(--t-blue-10)` }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>1</div>
-                <p className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>Add Reshippers</p>
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>1</div>
+                <p className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Add Reshippers</p>
               </div>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+              <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
                 Share your invite code with trusted reshippers. They'll join your group buy and specify which country they cover.
               </p>
             </div>
 
             <div className="p-3 rounded-lg bg-white/80" style={{ border: `1px solid var(--t-blue-10)` }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>2</div>
-                <p className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>Route Orders</p>
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>2</div>
+                <p className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Route Orders</p>
               </div>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+              <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
                 Orders are automatically assigned to reshippers based on the customer's country. You can manually reassign orders anytime.
               </p>
             </div>
 
             <div className="p-3 rounded-lg bg-white/80" style={{ border: `1px solid var(--t-blue-10)` }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>3</div>
-                <p className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>Payment Options</p>
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-bold" style={{ background: "var(--t-blue)", color: "#fff" }}>3</div>
+                <p className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Payment Options</p>
               </div>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+              <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
                 Choose if customers pay the reshipper directly, or pay you (admin) who then pays the reshipper.
               </p>
             </div>
@@ -261,13 +261,13 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
       <div className="rounded-xl p-4 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex-1">
-            <div className="text-[12px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>Reshipper Invite Code</div>
-            <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+            <div className="text-[13px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>Reshipper Invite Code</div>
+            <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
               Share this with approved reshippers to join this group buy
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <code className="px-3 py-2 rounded-lg text-[13px] font-mono font-bold" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
+            <code className="px-3 py-2 rounded-lg text-[14px] font-mono font-bold" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}>
               {inviteCode}
             </code>
             <button
@@ -293,7 +293,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                   <div className="flex items-center gap-2">
                     <p className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>@{reshipper.reshipperUsername}</p>
                     <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      className="text-[12px] font-bold px-2 py-0.5 rounded-full"
                       style={{
                         background: reshipper.enabled ? "#D1FADF" : "#F2F4F7",
                         color: reshipper.enabled ? "#12B76A" : "#667085",
@@ -302,7 +302,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                       {reshipper.enabled ? "Active" : "Disabled"}
                     </span>
                   </div>
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                  <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                     <MapPin className="w-3 h-3 inline mr-1" />
                     {reshipper.country}
                   </p>
@@ -321,29 +321,29 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
               <div className="flex items-center gap-4 mb-3 pb-3" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                 <div>
                   <div className="text-[20px] font-bold" style={{ color: "var(--t-text)" }}>{reshipper.orderCount}</div>
-                  <div className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Orders assigned</div>
+                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>Orders assigned</div>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-1 mb-1">
-                    <div className="text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                    <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                       {reshipper.paymentTarget === "reshipper" ? "Direct Payment" : "Via Admin"}
                     </div>
                     <div className="group relative">
                       <HelpCircle className="w-3.5 h-3.5 cursor-help" style={{ color: "var(--t-subtle)" }} />
-                      <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-64 p-2 rounded-lg text-[11px] leading-relaxed z-10 shadow-lg" style={{ background: "var(--t-text)", color: "#fff" }}>
+                      <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-64 p-2 rounded-lg text-[12px] leading-relaxed z-10 shadow-lg" style={{ background: "var(--t-text)", color: "#fff" }}>
                         {reshipper.paymentTarget === "reshipper"
                           ? "Customers pay this reshipper directly using their payment methods."
                           : "Customers pay you (admin), then you pay the reshipper for their services."}
                       </div>
                     </div>
                   </div>
-                  <div className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Payment routing</div>
+                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>Payment routing</div>
                 </div>
               </div>
 
               {/* Payment Methods */}
               <div className="mb-3">
-                <div className="text-[11px] font-semibold mb-2" style={{ color: "var(--t-subtle)" }}>Payment Methods</div>
+                <div className="text-[12px] font-semibold mb-2" style={{ color: "var(--t-subtle)" }}>Payment Methods</div>
                 <div className="flex flex-wrap gap-1.5">
                   {PAYMENT_METHOD_KEYS.map(({ key, label }) => {
                     const enabled = (reshipper.enabledPaymentMethods as Record<string, boolean> | null)?.[key] ?? false;
@@ -351,7 +351,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                     return (
                       <span
                         key={key}
-                        className="text-[10px] font-bold px-2 py-1 rounded-md"
+                        className="text-[12px] font-bold px-2 py-1 rounded-md"
                         style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}
                       >
                         {label}
@@ -365,14 +365,14 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleToggleEnabled(reshipper.reshipperUsername)}
-                  className="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5 transition-colors"
+                  className="flex-1 px-3 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5 transition-colors"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 >
                   {reshipper.enabled ? "Disable" : "Enable"}
                 </button>
                 <button
                   onClick={() => setEditingReshipper(reshipper.reshipperUsername)}
-                  className="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+                  className="flex-1 px-3 py-2 rounded-lg text-[13px] font-semibold text-white"
                   style={{ background: "var(--t-blue)" }}
                 >
                   Edit Settings
@@ -385,7 +385,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
         <div className="rounded-xl p-8 sm:p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <Users className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>No Reshippers</h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             Add your first reshipper to start routing orders by country
           </p>
         </div>
@@ -396,7 +396,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
         <div className="p-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div>
             <h3 className="text-[15px] font-bold" style={{ color: "var(--t-text)" }}>Reassign Orders</h3>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Move orders between reshippers</p>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Move orders between reshippers</p>
           </div>
           <div className="relative w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "var(--t-subtle)" }} />
@@ -405,7 +405,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
               placeholder="Search orders..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-9 pl-9 pr-3 rounded-lg text-[12px] outline-none"
+              className="w-full h-9 pl-9 pr-3 rounded-lg text-[13px] outline-none"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
@@ -418,26 +418,26 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                 <div className="flex items-center justify-between">
                   <div className="flex-1 grid grid-cols-[120px_1fr_140px] gap-4 items-center">
                     <div>
-                      <div className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>{order.orderId}</div>
-                      <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{order.country}</div>
+                      <div className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{order.orderId}</div>
+                      <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{order.country}</div>
                     </div>
                     <div>
-                      <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{order.memberName}</div>
-                      <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{order.memberUsername}</div>
+                      <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{order.memberName}</div>
+                      <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{order.memberUsername}</div>
                     </div>
                     <div>
                       {order.currentReshipper ? (
-                        <div className="text-[12px] font-semibold px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+                        <div className="text-[13px] font-semibold px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
                           @{order.currentReshipper}
                         </div>
                       ) : (
-                        <div className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>No reshipper</div>
+                        <div className="text-[13px] font-semibold" style={{ color: "var(--t-subtle)" }}>No reshipper</div>
                       )}
                     </div>
                   </div>
                   <button
                     onClick={() => handleReassignOrder(order)}
-                    className="ml-4 px-3 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5"
+                    className="ml-4 px-3 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
                   >
                     <ArrowRight className="w-3.5 h-3.5 inline mr-1" /> Reassign
@@ -449,7 +449,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
         ) : (
           <div className="p-8 text-center">
             <Package className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--t-subtle)" }} />
-            <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>No orders found</p>
+            <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>No orders found</p>
           </div>
         )}
       </div>
@@ -461,7 +461,7 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
             <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
               <div>
                 <h3 className="text-[16px] font-bold" style={{ color: "var(--t-text)" }}>Reassign Order</h3>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{selectedOrder.orderId}</p>
+                <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{selectedOrder.orderId}</p>
               </div>
               <button
                 onClick={() => setShowReassignModal(false)}
@@ -474,14 +474,14 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
 
             <div className="p-5 space-y-3">
               <div className="p-3 rounded-lg" style={{ background: "var(--t-surface2)" }}>
-                <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Current Assignment</div>
-                <div className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>
+                <div className="text-[12px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Current Assignment</div>
+                <div className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>
                   {selectedOrder.currentReshipper ? `@${selectedOrder.currentReshipper}` : "No reshipper"}
                 </div>
               </div>
 
               <div>
-                <div className="text-[12px] font-semibold mb-2" style={{ color: "var(--t-text)" }}>Assign to:</div>
+                <div className="text-[13px] font-semibold mb-2" style={{ color: "var(--t-text)" }}>Assign to:</div>
                 <div className="space-y-2">
                   {reshippers.filter(r => r.enabled).map(reshipper => (
                     <button
@@ -491,8 +491,8 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                       className="w-full p-3 rounded-lg text-left hover:bg-black/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ border: `1px solid ${V2_CARD_BORDER}` }}
                     >
-                      <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>@{reshipper.reshipperUsername}</div>
-                      <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{reshipper.country}</div>
+                      <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>@{reshipper.reshipperUsername}</div>
+                      <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{reshipper.country}</div>
                     </button>
                   ))}
                   <button
@@ -500,8 +500,8 @@ export default function ReshippersTab({ selectedGbId }: ReshippersTabProps = {})
                     className="w-full p-3 rounded-lg text-left hover:bg-black/5 transition-colors"
                     style={{ border: `1px solid ${V2_CARD_BORDER}` }}
                   >
-                    <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>Remove reshipper</div>
-                    <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Clear assignment</div>
+                    <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>Remove reshipper</div>
+                    <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>Clear assignment</div>
                   </button>
                 </div>
               </div>

@@ -359,11 +359,11 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
         >
           <CheckCircle done={done} onClick={() => toggleDone(t)} />
           <div className="flex-1 min-w-0">
-            <div className={`ov2-todo-task-title text-[13.5px] sm:text-[14px] truncate ${done ? "line-through" : ""}`} style={{ color: done ? MS_GRAY : MS_TEXT }}>
+            <div className={`ov2-todo-task-title text-[14px] sm:text-[14px] truncate ${done ? "line-through" : ""}`} style={{ color: done ? MS_GRAY : MS_TEXT }}>
               {t.title}
             </div>
             {meta.length > 0 && (
-              <div className="ov2-todo-task-meta flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10.5px] sm:text-[11px] mt-0.5" style={{ color: MS_GRAY }}>
+              <div className="ov2-todo-task-meta flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[12px] sm:text-[12px] mt-0.5" style={{ color: MS_GRAY }}>
                 {meta.map((m, i) => (
                   <span key={i} className="flex items-center gap-2.5">
                     {i > 0 && <span className="w-0.5 h-0.5 rounded-full" style={{ background: "#C8C6C4" }} />}
@@ -400,7 +400,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 >
                   <Check className={`w-2.5 h-2.5 ${s.completed ? "opacity-100" : "opacity-0 group-hover/substep:opacity-60"}`} style={{ color: s.completed ? "#fff" : "#8A8886" }} strokeWidth={3} />
                 </button>
-                <span className={`text-[12px] sm:text-[12.5px] truncate ${s.completed ? "line-through" : ""}`} style={{ color: s.completed ? "#A19F9D" : MS_GRAY }}>
+                <span className={`text-[13px] sm:text-[13.5px] truncate ${s.completed ? "line-through" : ""}`} style={{ color: s.completed ? "#A19F9D" : MS_GRAY }}>
                   {s.text}
                 </span>
               </div>
@@ -424,7 +424,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
             <h2 className="text-[20px] sm:text-[22px] font-semibold" style={{ color: categoryFilter ? catColor(categoryFilter) : MS_TEXT }}>
               {categoryFilter || (view === "timeline" ? "Timeline" : view === "calendar" ? "Calendar" : "Tasks")}
             </h2>
-            <p className="text-[12.5px] mt-0.5" style={{ color: MS_GRAY }}>{todayHeading}</p>
+            <p className="text-[13.5px] mt-0.5" style={{ color: MS_GRAY }}>{todayHeading}</p>
           </div>
           {/* View switcher */}
           <div className="ov2-todo-view-switcher flex rounded-full p-0.5 shrink-0" style={{ background: MS_LIGHT, border: `1px solid ${MS_LINE}` }}>
@@ -436,7 +436,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
               <button
                 key={v.id}
                 onClick={() => setView(v.id)}
-                className="px-2.5 sm:px-3 h-7 rounded-full text-[12px] font-semibold transition-colors whitespace-nowrap"
+                className="px-2.5 sm:px-3 h-7 rounded-full text-[13px] font-semibold transition-colors whitespace-nowrap"
                 style={{
                   background: view === v.id ? "#fff" : "transparent",
                   color: view === v.id ? MS_BLUE : MS_GRAY,
@@ -455,7 +455,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
           <div className="v2-todo-cats flex items-center gap-1.5 w-max">
             <button
               onClick={() => setCategoryFilter(null)}
-              className="px-3 h-7 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors"
+              className="px-3 h-7 rounded-full text-[13px] font-semibold whitespace-nowrap transition-colors"
               style={{
                 background: !categoryFilter ? MS_TEXT : "#fff",
                 color: !categoryFilter ? "#fff" : MS_GRAY,
@@ -472,7 +472,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(isActive ? null : cat)}
-                  className="flex items-center gap-1.5 px-3 h-7 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors"
+                  className="flex items-center gap-1.5 px-3 h-7 rounded-full text-[13px] font-semibold whitespace-nowrap transition-colors"
                   style={{
                     background: isActive ? color : "#fff",
                     color: isActive ? "#fff" : MS_TEXT,
@@ -493,13 +493,13 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 onKeyDown={(e) => { if (e.key === "Enter") addCategory(); if (e.key === "Escape") { setAddingCategory(false); setNewCategoryName(""); } }}
                 onBlur={addCategory}
                 placeholder="Category name"
-                className="px-3 h-7 rounded-full text-[12px] outline-none w-32"
+                className="px-3 h-7 rounded-full text-[13px] outline-none w-32"
                 style={{ border: `1px solid ${MS_BLUE}`, color: MS_TEXT }}
               />
             ) : (
               <button
                 onClick={() => setAddingCategory(true)}
-                className="flex items-center gap-1 px-3 h-7 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors hover:bg-black/5"
+                className="flex items-center gap-1 px-3 h-7 rounded-full text-[13px] font-semibold whitespace-nowrap transition-colors hover:bg-black/5"
                 style={{ color: MS_BLUE, border: `1px dashed ${MS_LINE}` }}
               >
                 <Plus className="w-3 h-3" /> New category
@@ -522,7 +522,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
               style={{ color: MS_TEXT }}
             />
             {quickAdd.trim() && (
-              <button onClick={addTask} className="text-[12px] font-semibold px-2 py-1 rounded hover:bg-black/5" style={{ color: MS_BLUE }}>
+              <button onClick={addTask} className="text-[13px] font-semibold px-2 py-1 rounded hover:bg-black/5" style={{ color: MS_BLUE }}>
                 Add
               </button>
             )}
@@ -535,7 +535,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
             <>
               {/* Group-by toggle */}
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-[11.5px] font-semibold" style={{ color: MS_GRAY }}>Group by</span>
+                <span className="text-[12.5px] font-semibold" style={{ color: MS_GRAY }}>Group by</span>
                 <div className="flex rounded-full p-0.5" style={{ background: MS_LIGHT, border: `1px solid ${MS_LINE}` }}>
                   {([
                     { id: "date", label: "Due date" },
@@ -544,7 +544,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     <button
                       key={g.id}
                       onClick={() => setGroupBy(g.id)}
-                      className="px-2.5 h-6 rounded-full text-[11.5px] font-semibold transition-colors whitespace-nowrap"
+                      className="px-2.5 h-6 rounded-full text-[12.5px] font-semibold transition-colors whitespace-nowrap"
                       style={{
                         background: groupBy === g.id ? "#fff" : "transparent",
                         color: groupBy === g.id ? MS_BLUE : MS_GRAY,
@@ -558,7 +558,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
               </div>
 
               {listGroups.length === 0 && completed.length === 0 && (
-                <p className="text-[13px] py-8 text-center" style={{ color: MS_GRAY }}>You're all caught up.</p>
+                <p className="text-[14px] py-8 text-center" style={{ color: MS_GRAY }}>You're all caught up.</p>
               )}
               {listGroups.length > 0 && (
                 <div className="relative ml-1.5">
@@ -568,8 +568,8 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     <div key={group.key} className="relative pl-6 pb-4">
                       <span className="absolute left-0 top-[7px] w-[11px] h-[11px] rounded-full bg-white" style={{ border: `2.5px solid ${group.color}` }} />
                       <div className="flex items-baseline gap-2 mb-1.5">
-                        <span className="ov2-todo-group-label text-[13px] font-semibold" style={{ color: group.color }}>{group.label}</span>
-                        <span className="text-[11.5px]" style={{ color: MS_GRAY }}>{group.items.length}</span>
+                        <span className="ov2-todo-group-label text-[14px] font-semibold" style={{ color: group.color }}>{group.label}</span>
+                        <span className="text-[12.5px]" style={{ color: MS_GRAY }}>{group.items.length}</span>
                       </div>
                       <div className="ov2-todo-group-card rounded-md overflow-hidden" style={{ border: `1px solid ${MS_LINE}` }}>
                         {group.items.map(t => <TaskRow key={t.id} t={t} />)}
@@ -584,7 +584,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 <div className="mt-2">
                   <button
                     onClick={() => setShowCompleted(v => !v)}
-                    className="flex items-center gap-1.5 px-2 h-8 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5"
+                    className="flex items-center gap-1.5 px-2 h-8 rounded-md text-[14px] font-semibold transition-colors hover:bg-black/5"
                     style={{ color: MS_TEXT }}
                   >
                     {showCompleted ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -705,7 +705,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 className="absolute z-40 rounded-lg bg-white shadow-lg p-2"
                 style={{ border: `1px solid ${MS_LINE}`, width: 200, top: "100%", left: 0 }}
               >
-                <div className="text-[10.5px] font-semibold mb-1.5" style={{ color: MS_GRAY }}>
+                <div className="text-[12px] font-semibold mb-1.5" style={{ color: MS_GRAY }}>
                   {new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}{time ? ` · ${time}` : " · All-day"}
                 </div>
                 <input
@@ -717,12 +717,12 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     if (e.key === "Escape") setWeekAddSlot(null);
                   }}
                   placeholder="Add a task"
-                  className="w-full h-8 px-2 rounded-md text-[12px] outline-none mb-1.5"
+                  className="w-full h-8 px-2 rounded-md text-[13px] outline-none mb-1.5"
                   style={{ border: `1px solid ${MS_BLUE}`, color: MS_TEXT }}
                 />
                 <div className="flex gap-1.5">
-                  <button onClick={() => setWeekAddSlot(null)} className="flex-1 h-7 rounded-md text-[11px] font-semibold hover:bg-black/5" style={{ color: MS_GRAY }}>Cancel</button>
-                  <button onClick={addTaskOnSlot} disabled={!weekAddTitle.trim()} className="flex-1 h-7 rounded-md text-[11px] font-bold text-white disabled:opacity-40" style={{ background: MS_BLUE }}>Add</button>
+                  <button onClick={() => setWeekAddSlot(null)} className="flex-1 h-7 rounded-md text-[12px] font-semibold hover:bg-black/5" style={{ color: MS_GRAY }}>Cancel</button>
+                  <button onClick={addTaskOnSlot} disabled={!weekAddTitle.trim()} className="flex-1 h-7 rounded-md text-[12px] font-bold text-white disabled:opacity-40" style={{ background: MS_BLUE }}>Add</button>
                 </div>
               </div>
             );
@@ -735,9 +735,9 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     <ChevronLeft className="w-4 h-4" style={{ color: MS_GRAY }} />
                   </button>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[12px] sm:text-[13px] font-semibold truncate" style={{ color: MS_TEXT }}>{weekLabel}</span>
+                    <span className="text-[13px] sm:text-[14px] font-semibold truncate" style={{ color: MS_TEXT }}>{weekLabel}</span>
                     {weekOffset !== 0 && (
-                      <button onClick={() => setWeekOffset(0)} className="text-[11px] font-semibold px-2 py-0.5 rounded hover:bg-black/5 shrink-0" style={{ color: MS_BLUE }}>
+                      <button onClick={() => setWeekOffset(0)} className="text-[12px] font-semibold px-2 py-0.5 rounded hover:bg-black/5 shrink-0" style={{ color: MS_BLUE }}>
                         Today
                       </button>
                     )}
@@ -755,7 +755,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     const isToday = d === todayStr();
                     return (
                       <div key={d} className="flex-1 min-w-0 py-1.5 text-center">
-                        <div className="text-[10px] font-semibold uppercase" style={{ color: isToday ? "#D13438" : MS_GRAY }}>
+                        <div className="text-[12px] font-semibold uppercase" style={{ color: isToday ? "#D13438" : MS_GRAY }}>
                           {dt.toLocaleDateString("en-GB", { weekday: "short" })}
                         </div>
                         <span
@@ -772,7 +772,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 {/* All-day row */}
                 <div className="flex shrink-0 bg-white" style={{ borderBottom: `1px solid ${MS_LINE}` }}>
                   <div className="w-10 sm:w-12 shrink-0 flex items-center justify-end pr-1.5">
-                    <span className="text-[8px] sm:text-[9px] uppercase" style={{ color: MS_GRAY }}>all-day</span>
+                    <span className="text-[10px] sm:text-[11px] uppercase" style={{ color: MS_GRAY }}>all-day</span>
                   </div>
                   {days.map(d => {
                     const items = allDay(d);
@@ -789,14 +789,14 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                             key={t.id}
                             onClick={(e) => { e.stopPropagation(); setSelectedId(t.id); }}
                             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setBlockMenu({ id: t.id, x: e.clientX, y: e.clientY }); }}
-                            className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-semibold truncate block text-white"
+                            className="w-full text-left px-1.5 py-0.5 rounded text-[12px] font-semibold truncate block text-white"
                             style={{ background: taskColor(t) }}
                             title={t.title}
                           >
                             {t.title}
                           </button>
                         ))}
-                        {items.length > 2 && <span className="block px-1 text-[9px]" style={{ color: MS_GRAY }}>+{items.length - 2}</span>}
+                        {items.length > 2 && <span className="block px-1 text-[11px]" style={{ color: MS_GRAY }}>+{items.length - 2}</span>}
                         {isAdding && <SlotPopover date={d} time={null} />}
                       </div>
                     );
@@ -809,7 +809,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     {/* Hour labels */}
                     <div className="w-10 sm:w-12 shrink-0 relative">
                       {Array.from({ length: 24 }, (_, h) => (
-                        <span key={h} className="absolute right-1.5 text-[8.5px] sm:text-[9.5px] -translate-y-1/2" style={{ top: h * HOUR_H, color: MS_GRAY }}>
+                        <span key={h} className="absolute right-1.5 text-[10px] sm:text-[11px] -translate-y-1/2" style={{ top: h * HOUR_H, color: MS_GRAY }}>
                           {hourLabel(h)}
                         </span>
                       ))}
@@ -869,9 +869,9 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                 }}
                                 title={t.title}
                               >
-                                <div className="text-[10px] sm:text-[10.5px] font-bold truncate" style={{ color }}>{t.title}</div>
+                                <div className="text-[12px] sm:text-[12px] font-bold truncate" style={{ color }}>{t.title}</div>
                                 {h >= 34 && (
-                                  <div className="text-[8.5px] sm:text-[9px]" style={{ color: MS_GRAY }}>
+                                  <div className="text-[10px] sm:text-[11px]" style={{ color: MS_GRAY }}>
                                     {toTime(startMin)} – {toTime(Math.min(24 * 60, startMin + dur))}
                                   </div>
                                 )}
@@ -891,7 +891,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                           {weekAddSlot?.date === d && weekAddSlot.time !== null && (
                             <div className="absolute left-0.5 right-0.5 z-40" style={{ top: minToY(toMin(weekAddSlot.time)) }} onClick={(e) => e.stopPropagation()}>
                               <div className="rounded-md px-1.5 py-1" style={{ background: "rgba(37,100,207,0.12)", borderLeft: `3px solid ${MS_BLUE}`, height: HOUR_H - 3 }}>
-                                <div className="text-[10px] font-bold" style={{ color: MS_BLUE }}>New task</div>
+                                <div className="text-[12px] font-bold" style={{ color: MS_BLUE }}>New task</div>
                               </div>
                               <SlotPopover date={d} time={weekAddSlot.time} />
                             </div>
@@ -920,20 +920,20 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                         className="fixed z-50 rounded-lg bg-white shadow-xl py-1 w-40"
                         style={{ border: `1px solid ${MS_LINE}`, left: Math.min(blockMenu.x, window.innerWidth - 170), top: Math.min(blockMenu.y, window.innerHeight - 140) }}
                       >
-                        <button onClick={() => { setSelectedId(t.id); setBlockMenu(null); }} className="w-full flex items-center gap-2.5 px-3 h-8 text-[12.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}>
+                        <button onClick={() => { setSelectedId(t.id); setBlockMenu(null); }} className="w-full flex items-center gap-2.5 px-3 h-8 text-[13.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}>
                           <NotebookPen className="w-3.5 h-3.5" style={{ color: MS_GRAY }} /> Open
                         </button>
-                        <button onClick={() => copyTask(t)} className="w-full flex items-center gap-2.5 px-3 h-8 text-[12.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}>
+                        <button onClick={() => copyTask(t)} className="w-full flex items-center gap-2.5 px-3 h-8 text-[13.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}>
                           <Plus className="w-3.5 h-3.5" style={{ color: MS_GRAY }} /> Duplicate
                         </button>
                         <button
                           onClick={() => { update(t.id, { status: "done" }); setBlockMenu(null); }}
-                          className="w-full flex items-center gap-2.5 px-3 h-8 text-[12.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}
+                          className="w-full flex items-center gap-2.5 px-3 h-8 text-[13.5px] text-left hover:bg-black/5" style={{ color: MS_TEXT }}
                         >
                           <Check className="w-3.5 h-3.5" style={{ color: MS_GRAY }} /> Complete
                         </button>
                         <div className="my-1 h-px" style={{ background: MS_LINE }} />
-                        <button onClick={() => { removeTodo(t.id); setBlockMenu(null); }} className="w-full flex items-center gap-2.5 px-3 h-8 text-[12.5px] text-left hover:bg-red-50" style={{ color: MS_RED }}>
+                        <button onClick={() => { removeTodo(t.id); setBlockMenu(null); }} className="w-full flex items-center gap-2.5 px-3 h-8 text-[13.5px] text-left hover:bg-red-50" style={{ color: MS_RED }}>
                           <Trash2 className="w-3.5 h-3.5" /> Delete
                         </button>
                       </div>
@@ -971,7 +971,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                   </button>
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold" style={{ color: MS_TEXT }}>{monthLabel}</span>
-                    <button onClick={() => setCalMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} className="text-[11px] font-semibold px-2 py-0.5 rounded hover:bg-black/5" style={{ color: MS_BLUE }}>
+                    <button onClick={() => setCalMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} className="text-[12px] font-semibold px-2 py-0.5 rounded hover:bg-black/5" style={{ color: MS_BLUE }}>
                       Today
                     </button>
                   </div>
@@ -982,7 +982,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 {/* Weekday headers */}
                 <div className="grid grid-cols-7 mb-1">
                   {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
-                    <div key={d} className="text-[11px] font-semibold text-center py-1" style={{ color: MS_GRAY }}>{d}</div>
+                    <div key={d} className="text-[12px] font-semibold text-center py-1" style={{ color: MS_GRAY }}>{d}</div>
                   ))}
                 </div>
                 {/* Grid */}
@@ -1010,7 +1010,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                         {d && (
                           <>
                             <span
-                              className={`inline-flex items-center justify-center text-[11px] mb-1 ${isToday ? "w-5 h-5 rounded-full font-bold text-white" : ""}`}
+                              className={`inline-flex items-center justify-center text-[12px] mb-1 ${isToday ? "w-5 h-5 rounded-full font-bold text-white" : ""}`}
                               style={{ background: isToday ? MS_BLUE : undefined, color: isToday ? "#fff" : MS_GRAY }}
                             >
                               {parseInt(d.slice(8), 10)}
@@ -1020,7 +1020,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                 <button
                                   key={t.id}
                                   onClick={(e) => { e.stopPropagation(); setSelectedId(t.id); }}
-                                  className="w-full text-left px-1 sm:px-1.5 py-0.5 rounded text-[9.5px] sm:text-[10.5px] font-semibold truncate block transition-opacity hover:opacity-75"
+                                  className="w-full text-left px-1 sm:px-1.5 py-0.5 rounded text-[11px] sm:text-[12px] font-semibold truncate block transition-opacity hover:opacity-75"
                                   style={{
                                     background: isOverdue(t) ? "#FDE7E9" : `${catColor(t.category || "")}1A`,
                                     color: isOverdue(t) ? MS_RED : catColor(t.category || ""),
@@ -1031,7 +1031,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                 </button>
                               ))}
                               {dayTasks.length > 3 && (
-                                <span className="block px-1 text-[9.5px]" style={{ color: MS_GRAY }}>+{dayTasks.length - 3} more</span>
+                                <span className="block px-1 text-[11px]" style={{ color: MS_GRAY }}>+{dayTasks.length - 3} more</span>
                               )}
                             </div>
                             {/* Quick-add popover for this day */}
@@ -1041,7 +1041,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                 className="absolute left-1 right-1 top-full -mt-1 z-30 rounded-lg bg-white shadow-lg p-2"
                                 style={{ border: `1px solid ${MS_LINE}`, minWidth: 180 }}
                               >
-                                <div className="text-[10.5px] font-semibold mb-1.5" style={{ color: MS_GRAY }}>
+                                <div className="text-[12px] font-semibold mb-1.5" style={{ color: MS_GRAY }}>
                                   {new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
                                 </div>
                                 <input
@@ -1053,13 +1053,13 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                     if (e.key === "Escape") setCalAddDate(null);
                                   }}
                                   placeholder="Add a task"
-                                  className="w-full h-8 px-2 rounded-md text-[12px] outline-none mb-1.5"
+                                  className="w-full h-8 px-2 rounded-md text-[13px] outline-none mb-1.5"
                                   style={{ border: `1px solid ${MS_BLUE}`, color: MS_TEXT }}
                                 />
                                 <div className="flex gap-1.5">
                                   <button
                                     onClick={() => setCalAddDate(null)}
-                                    className="flex-1 h-7 rounded-md text-[11px] font-semibold hover:bg-black/5"
+                                    className="flex-1 h-7 rounded-md text-[12px] font-semibold hover:bg-black/5"
                                     style={{ color: MS_GRAY }}
                                   >
                                     Cancel
@@ -1067,7 +1067,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                                   <button
                                     onClick={addTaskOnDate}
                                     disabled={!calAddTitle.trim()}
-                                    className="flex-1 h-7 rounded-md text-[11px] font-bold text-white disabled:opacity-40"
+                                    className="flex-1 h-7 rounded-md text-[12px] font-bold text-white disabled:opacity-40"
                                     style={{ background: MS_BLUE }}
                                   >
                                     Add
@@ -1117,7 +1117,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 {(selected.subtasks || []).map(s => (
                   <div key={s.id} className="flex items-center gap-2.5 group/step">
                     <CheckCircle done={s.completed} onClick={() => toggleStep(s.id)} />
-                    <span className={`flex-1 text-[13px] ${s.completed ? "line-through" : ""}`} style={{ color: s.completed ? MS_GRAY : MS_TEXT }}>{s.text}</span>
+                    <span className={`flex-1 text-[14px] ${s.completed ? "line-through" : ""}`} style={{ color: s.completed ? MS_GRAY : MS_TEXT }}>{s.text}</span>
                     <button onClick={() => removeStep(s.id)} className="opacity-0 group-hover/step:opacity-100 p-0.5">
                       <X className="w-3.5 h-3.5" style={{ color: MS_GRAY }} />
                     </button>
@@ -1130,7 +1130,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     onChange={(e) => setNewStep(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addStep()}
                     placeholder={(selected.subtasks || []).length ? "Next step" : "Add step"}
-                    className="flex-1 text-[13px] outline-none bg-transparent"
+                    className="flex-1 text-[14px] outline-none bg-transparent"
                     style={{ color: MS_TEXT }}
                   />
                 </div>
@@ -1143,7 +1143,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 style={{ border: `1px solid ${MS_LINE}` }}
               >
                 <Sun className="w-[18px] h-[18px]" style={{ color: selected.dueDate === todayStr() ? MS_BLUE : MS_GRAY }} strokeWidth={1.75} />
-                <span className="text-[13px]" style={{ color: selected.dueDate === todayStr() ? MS_BLUE : MS_TEXT }}>
+                <span className="text-[14px]" style={{ color: selected.dueDate === todayStr() ? MS_BLUE : MS_TEXT }}>
                   {selected.dueDate === todayStr() ? "Due today" : "Set due today"}
                 </span>
               </button>
@@ -1156,25 +1156,25 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     type="date"
                     value={selected.dueDate || ""}
                     onChange={(e) => update(selected.id, { dueDate: e.target.value || undefined })}
-                    className="flex-1 text-[13px] outline-none bg-transparent"
+                    className="flex-1 text-[14px] outline-none bg-transparent"
                     style={{ color: MS_TEXT }}
                   />
                   <input
                     type="time"
                     value={selected.dueTime || ""}
                     onChange={(e) => update(selected.id, { dueTime: e.target.value || undefined })}
-                    className="text-[13px] outline-none bg-transparent"
+                    className="text-[14px] outline-none bg-transparent"
                     style={{ color: MS_TEXT }}
                   />
                 </div>
                 {selected.dueTime && (
                   <div className="flex items-center gap-3">
                     <span className="w-[18px]" />
-                    <span className="text-[12px]" style={{ color: MS_GRAY }}>Duration</span>
+                    <span className="text-[13px]" style={{ color: MS_GRAY }}>Duration</span>
                     <select
                       value={selected.durationMin || 60}
                       onChange={(e) => update(selected.id, { durationMin: parseInt(e.target.value, 10) })}
-                      className="flex-1 text-[13px] outline-none bg-transparent"
+                      className="flex-1 text-[14px] outline-none bg-transparent"
                       style={{ color: MS_TEXT }}
                     >
                       {[15, 30, 45, 60, 90, 120, 180, 240].map(m => (
@@ -1196,7 +1196,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                     value={selected.category || ""}
                     onChange={(e) => update(selected.id, { category: e.target.value || undefined })}
                     placeholder="Pick a category"
-                    className="flex-1 text-[13px] outline-none bg-transparent"
+                    className="flex-1 text-[14px] outline-none bg-transparent"
                     style={{ color: MS_TEXT }}
                   />
                   <datalist id="todo-categories">
@@ -1208,7 +1208,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                   <select
                     value={selected.linkedOrderId || ""}
                     onChange={(e) => update(selected.id, { linkedOrderId: e.target.value || undefined })}
-                    className="flex-1 text-[13px] outline-none bg-transparent"
+                    className="flex-1 text-[14px] outline-none bg-transparent"
                     style={{ color: MS_TEXT }}
                   >
                     <option value="">Link an order</option>
@@ -1225,7 +1225,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 onChange={(e) => update(selected.id, { description: e.target.value || undefined })}
                 placeholder="Add note"
                 rows={4}
-                className="w-full rounded-md bg-white p-3 text-[13px] outline-none resize-none"
+                className="w-full rounded-md bg-white p-3 text-[14px] outline-none resize-none"
                 style={{ border: `1px solid ${MS_LINE}`, color: MS_TEXT }}
               />
             </div>
@@ -1235,7 +1235,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
               <button onClick={() => setSelectedId(null)} className="p-1.5 rounded hover:bg-black/5" title="Close">
                 <X className="w-4 h-4" style={{ color: MS_GRAY }} />
               </button>
-              <span className="text-[11.5px]" style={{ color: MS_GRAY }}>
+              <span className="text-[12.5px]" style={{ color: MS_GRAY }}>
                 Created {new Date(selected.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
               </span>
               <button onClick={() => removeTodo(selected.id)} className="p-1.5 rounded hover:bg-red-50" title="Delete task">

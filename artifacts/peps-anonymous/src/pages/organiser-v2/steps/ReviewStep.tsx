@@ -54,8 +54,8 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
         <div className="rounded-lg p-4 flex items-start gap-3" style={{ background: "rgba(22,163,74,0.10)", border: "1px solid rgba(22,163,74,0.3)" }}>
           <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#16A34A" }} />
           <div>
-            <div className="text-[13px] font-bold" style={{ color: "#16A34A" }}>Ready to Launch</div>
-            <p className="text-[12px] mt-0.5" style={{ color: "#16A34A" }}>
+            <div className="text-[14px] font-bold" style={{ color: "#16A34A" }}>Ready to Launch</div>
+            <p className="text-[13px] mt-0.5" style={{ color: "#16A34A" }}>
               All required sections are complete. Review your settings below, then click "Launch GB" to make it live.
             </p>
           </div>
@@ -64,8 +64,8 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
         <div className="rounded-lg p-4 flex items-start gap-3" style={{ background: "rgba(217,119,6,0.10)", border: "1px solid rgba(217,119,6,0.3)" }}>
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#D97706" }} />
           <div>
-            <div className="text-[13px] font-bold" style={{ color: "#D97706" }}>Incomplete Setup</div>
-            <p className="text-[12px] mt-0.5" style={{ color: "#D97706" }}>
+            <div className="text-[14px] font-bold" style={{ color: "#D97706" }}>Incomplete Setup</div>
+            <p className="text-[13px] mt-0.5" style={{ color: "#D97706" }}>
               Some sections need attention before you can launch. Go back and complete the highlighted steps.
             </p>
           </div>
@@ -83,13 +83,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Basics</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Basics</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(0)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(0)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px] space-y-1" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px] space-y-1" style={{ color: "var(--t-muted)" }}>
             <div><span style={{ color: "var(--t-subtle)" }}>Name:</span> {summary.basics.name}</div>
             <div><span style={{ color: "var(--t-subtle)" }}>Currency:</span> {summary.basics.currency}</div>
             <div><span style={{ color: "var(--t-subtle)" }}>Close Date:</span> {summary.basics.closeDate ? new Date(summary.basics.closeDate).toLocaleDateString() : "No deadline"}</div>
@@ -105,13 +105,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Products</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Products</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(1)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(1)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>
             {summary.products.count} product{summary.products.count !== 1 ? 's' : ''} added
           </div>
         </div>
@@ -125,13 +125,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Shipping</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Shipping</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(2)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(2)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>
             {summary.shipping.count} shipping option{summary.shipping.count !== 1 ? 's' : ''} configured
           </div>
         </div>
@@ -145,13 +145,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Accepting Payments</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Accepting Payments</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(3)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(3)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>
             {summary.payments.methods.join(", ") || "No payment method enabled"}
           </div>
         </div>
@@ -165,13 +165,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Access</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Access</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(4)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(4)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px] space-y-0.5" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px] space-y-0.5" style={{ color: "var(--t-muted)" }}>
             {summary.access.pin && <div>• PIN protection enabled</div>}
             {summary.access.entryFee && <div>• Entry fee required</div>}
             {!summary.access.pin && !summary.access.entryFee && <div>Public access</div>}
@@ -187,13 +187,13 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
               ) : (
                 <AlertCircle className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
-              <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Rules & Info</span>
+              <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Rules & Info</span>
             </div>
-            <button type="button" onClick={() => onEdit?.(5)} className="text-[11px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
+            <button type="button" onClick={() => onEdit?.(5)} className="text-[12px] font-semibold flex items-center gap-0.5" style={{ color: "var(--t-blue)" }}>
               Edit <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[12px] space-y-0.5" style={{ color: "var(--t-muted)" }}>
+          <div className="text-[13px] space-y-0.5" style={{ color: "var(--t-muted)" }}>
             {summary.rules.hasWelcome && <div>• Welcome message added</div>}
             {summary.rules.hasRules && <div>• Rules configured</div>}
             {!summary.rules.hasWelcome && !summary.rules.hasRules && <div>No messages configured</div>}
@@ -203,8 +203,8 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
 
       {/* What happens next */}
       <div className="rounded-lg p-4" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <div className="text-[13px] font-bold mb-2" style={{ color: "var(--t-blue)" }}>What happens when you launch?</div>
-        <ul className="text-[12px] space-y-1.5" style={{ color: "var(--t-blue)" }}>
+        <div className="text-[14px] font-bold mb-2" style={{ color: "var(--t-blue)" }}>What happens when you launch?</div>
+        <ul className="text-[13px] space-y-1.5" style={{ color: "var(--t-blue)" }}>
           <li>• Your group buy will be submitted for admin approval</li>
           <li>• Once approved, your GB will go live and will only be visible based upon your settings</li>
           <li>• Members can start joining and placing orders after approval</li>

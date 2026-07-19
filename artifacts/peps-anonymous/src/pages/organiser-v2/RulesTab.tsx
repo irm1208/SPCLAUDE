@@ -96,7 +96,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to edit its rules and member messages
         </p>
       </div>
@@ -110,7 +110,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
       {/* Header */}
       <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Rules &amp; Info</h2>
-        <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
           Edit the rules and messages members see on this group buy
         </p>
       </div>
@@ -123,7 +123,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
           </div>
           <div>
             <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>Why Rules Matter</h3>
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+            <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
               Your <strong style={{ color: "var(--t-text)" }}>rules</strong> are shown to members when they join and again before they place an order — they set expectations up front. The <strong style={{ color: "var(--t-text)" }}>welcome message</strong> greets new joiners, and the <strong style={{ color: "var(--t-text)" }}>confirmation note</strong> is appended to every order confirmation. Keep them clear and specific so disputes are easy to resolve later.
             </p>
           </div>
@@ -134,19 +134,19 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
       <div className="rounded-xl bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-3" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <ScrollText className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-          <span className="text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Rules</span>
-          <span className="text-[10px] font-normal" style={{ color: "var(--t-subtle)" }}>— shown in order, exactly as numbered here</span>
+          <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Rules</span>
+          <span className="text-[12px] font-normal" style={{ color: "var(--t-subtle)" }}>— shown in order, exactly as numbered here</span>
         </div>
         <div className="p-4 space-y-2">
           {rules.length === 0 && (
-            <p className="text-[13px] text-center py-4" style={{ color: "var(--t-subtle)" }}>
+            <p className="text-[14px] text-center py-4" style={{ color: "var(--t-subtle)" }}>
               No rules yet. Add your first one below.
             </p>
           )}
           {rules.map((rule, i) => (
             <div key={rule.id} className="flex items-center gap-2">
               <span
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0"
                 style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}
               >
                 {i + 1}
@@ -156,7 +156,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
                 value={rule.text}
                 onChange={e => updateRule(rule.id, e.target.value)}
                 placeholder="Rule text…"
-                className="flex-1 h-9 px-3 rounded-lg text-[13px] outline-none"
+                className="flex-1 h-9 px-3 rounded-lg text-[14px] outline-none"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
               />
               <div className="flex items-center gap-0.5 shrink-0">
@@ -194,13 +194,13 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
               onChange={e => setNewRule(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") addRule(); }}
               placeholder="e.g. Payments within 48h of order confirmation"
-              className="flex-1 h-9 px-3 rounded-lg text-[13px] outline-none"
+              className="flex-1 h-9 px-3 rounded-lg text-[14px] outline-none"
               style={{ border: `1px dashed ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "var(--t-surface2)" }}
             />
             <button
               onClick={addRule}
               disabled={!newRule.trim()}
-              className="h-9 px-3.5 rounded-lg text-[12px] font-bold text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+              className="h-9 px-3.5 rounded-lg text-[13px] font-bold text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
               style={{ background: "var(--t-blue)" }}
             >
               <Plus className="w-3.5 h-3.5" /> Add Rule
@@ -213,8 +213,8 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
       <div className="rounded-xl bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-3" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <MessageSquare className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-          <span className="text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Welcome Message</span>
-          <span className="text-[10px] font-normal" style={{ color: "var(--t-subtle)" }}>— shown to members when they join</span>
+          <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Welcome Message</span>
+          <span className="text-[12px] font-normal" style={{ color: "var(--t-subtle)" }}>— shown to members when they join</span>
         </div>
         <div className="p-4">
           <textarea
@@ -222,7 +222,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
             onChange={e => setWelcomeMessage(e.target.value)}
             rows={3}
             placeholder="e.g. Welcome to the group buy! Read the rules before ordering…"
-            className="w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-y"
+            className="w-full px-3 py-2 rounded-lg text-[14px] outline-none resize-y"
             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
           />
         </div>
@@ -232,8 +232,8 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
       <div className="rounded-xl bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-3" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <ClipboardCheck className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-          <span className="text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Order Confirmation Note</span>
-          <span className="text-[10px] font-normal" style={{ color: "var(--t-subtle)" }}>— appended to every order confirmation</span>
+          <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Order Confirmation Note</span>
+          <span className="text-[12px] font-normal" style={{ color: "var(--t-subtle)" }}>— appended to every order confirmation</span>
         </div>
         <div className="p-4">
           <textarea
@@ -241,7 +241,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
             onChange={e => setOrderNote(e.target.value)}
             rows={3}
             placeholder="e.g. Your order is locked in once payment clears…"
-            className="w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-y"
+            className="w-full px-3 py-2 rounded-lg text-[14px] outline-none resize-y"
             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
           />
         </div>
@@ -249,18 +249,18 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
 
       {/* Member preview */}
       <div className="rounded-lg p-4 space-y-3" style={{ border: `1px dashed ${V2_CARD_BORDER}`, background: "var(--t-surface2)" }}>
-        <p className="text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
           <Eye className="w-3.5 h-3.5" /> Member preview
         </p>
         {welcomeMessage.trim() && (
-          <p className="text-[13px] whitespace-pre-wrap" style={{ color: "var(--t-text)" }}>{welcomeMessage}</p>
+          <p className="text-[14px] whitespace-pre-wrap" style={{ color: "var(--t-text)" }}>{welcomeMessage}</p>
         )}
         {visibleRules.length > 0 ? (
           <div className="space-y-1.5 pt-1" style={{ borderTop: welcomeMessage.trim() ? `1px solid ${V2_CARD_BORDER}` : "none" }}>
-            <p className="text-[11px] font-semibold uppercase tracking-wide pt-1" style={{ color: "var(--t-subtle)" }}>Group Buy Rules</p>
+            <p className="text-[12px] font-semibold uppercase tracking-wide pt-1" style={{ color: "var(--t-subtle)" }}>Group Buy Rules</p>
             <ol className="space-y-1">
               {visibleRules.map((rule, i) => (
-                <li key={rule.id} className="text-[13px] flex gap-2" style={{ color: "var(--t-text)" }}>
+                <li key={rule.id} className="text-[14px] flex gap-2" style={{ color: "var(--t-text)" }}>
                   <span className="font-bold shrink-0" style={{ color: "var(--t-blue)" }}>{i + 1}.</span>
                   <span>{rule.text}</span>
                 </li>
@@ -268,7 +268,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
             </ol>
           </div>
         ) : (
-          <p className="text-[12px] italic" style={{ color: "var(--t-subtle)" }}>No rules to preview yet.</p>
+          <p className="text-[13px] italic" style={{ color: "var(--t-subtle)" }}>No rules to preview yet.</p>
         )}
       </div>
 
@@ -276,7 +276,7 @@ export default function RulesTab({ selectedGbId }: { selectedGbId?: string } = {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="h-10 px-5 rounded-lg text-[13px] font-bold text-white flex items-center gap-2 disabled:opacity-50"
+        className="h-10 px-5 rounded-lg text-[14px] font-bold text-white flex items-center gap-2 disabled:opacity-50"
         style={{ background: saved ? "#16A34A" : "var(--t-blue)" }}
       >
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}

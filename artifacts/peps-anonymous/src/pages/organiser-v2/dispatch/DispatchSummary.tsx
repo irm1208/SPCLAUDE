@@ -21,10 +21,10 @@ export default function DispatchSummary({ parcelCount, availableUnits, readyCoun
           className="border-b px-4 py-4 even:border-l sm:px-5 lg:border-b-0 lg:border-l lg:first:border-l-0"
           style={{ borderColor: "var(--dispatch-rule)" }}
         >
-          <p className="text-[9px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-muted)" }}>{item.label}</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-muted)" }}>{item.label}</p>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-[22px] font-bold leading-none tabular-nums" style={{ color: "var(--dispatch-ink)" }}>{item.value}</span>
-            <span className="text-[10px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{item.suffix}</span>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{item.suffix}</span>
           </div>
         </div>
       ))}

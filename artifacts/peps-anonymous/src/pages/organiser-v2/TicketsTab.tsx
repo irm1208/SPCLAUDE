@@ -291,7 +291,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to view support tickets
         </p>
       </div>
@@ -314,7 +314,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
         <div className="p-3 space-y-2" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center justify-between px-1">
             <h2 className="text-[15px] font-bold" style={{ color: "var(--t-text)" }}>Tickets</h2>
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {openCount} open
             </span>
           </div>
@@ -324,7 +324,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search"
-              className="flex-1 bg-transparent text-[13px] outline-none"
+              className="flex-1 bg-transparent text-[14px] outline-none"
               style={{ color: "var(--t-text)" }}
             />
             {search && (
@@ -345,7 +345,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors"
+                  className="px-2.5 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors"
                   style={{
                     background: isActive ? "var(--t-blue)" : "var(--t-surface2)",
                     color: isActive ? "#fff" : "var(--t-subtle)",
@@ -361,7 +361,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
           <select
             value={categoryFilter}
             onChange={e => setCategoryFilter(e.target.value)}
-            className="w-full h-8 px-2 rounded-lg text-[12px] outline-none"
+            className="w-full h-8 px-2 rounded-lg text-[13px] outline-none"
             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
           >
             <option value="">All Categories</option>
@@ -378,7 +378,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
           {sortedTickets.length === 0 && (
             <div className="text-center py-12 px-4">
               <MessageSquare className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--t-subtle)", opacity: 0.4 }} />
-              <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+              <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
                 {search ? "No tickets match your search" : "No tickets yet for this group buy"}
               </p>
             </div>
@@ -411,7 +411,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                     <span className="text-[14px] font-semibold truncate" style={{ color: isActive ? "#fff" : "var(--t-text)" }}>
                       {t.accountUsername}
                     </span>
-                    <span className="text-[11px] shrink-0 flex items-center gap-1" style={{ color: isActive ? "rgba(255,255,255,0.8)" : "var(--t-subtle)" }}>
+                    <span className="text-[12px] shrink-0 flex items-center gap-1" style={{ color: isActive ? "rgba(255,255,255,0.8)" : "var(--t-subtle)" }}>
                       {last?.authorRole === "organiser" && (
                         t.customerUnread
                           ? <Check className="w-3.5 h-3.5" style={{ color: isActive ? "rgba(255,255,255,0.8)" : TICK }} />
@@ -421,7 +421,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <span className="text-[12.5px] truncate" style={{ color: isActive ? "rgba(255,255,255,0.85)" : "var(--t-subtle)" }}>
+                    <span className="text-[13.5px] truncate" style={{ color: isActive ? "rgba(255,255,255,0.85)" : "var(--t-subtle)" }}>
                       {last ? (
                         <>
                           {last.authorRole === "organiser" && <span style={{ color: isActive ? "#fff" : "var(--t-text)" }}>You: </span>}
@@ -437,7 +437,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                       />
                       {t.unreadCount > 0 && (
                         <span
-                          className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center"
+                          className="min-w-[20px] h-5 px-1.5 rounded-full text-[12px] font-bold flex items-center justify-center"
                           style={isActive ? { background: "#fff", color: "var(--t-blue)" } : { background: "var(--t-blue)", color: "#fff" }}
                         >
                           {t.unreadCount}
@@ -456,7 +456,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
       <div className={`${activeId ? "flex" : "hidden md:flex"} flex-col flex-1 min-w-0`}>
         {!activeTicket ? (
           <div className="flex-1 flex items-center justify-center" style={{ background: CHAT_BG }}>
-            <span className="px-3 py-1.5 rounded-full text-[13px]" style={{ background: "rgba(0,0,0,0.2)", color: "#fff" }}>
+            <span className="px-3 py-1.5 rounded-full text-[14px]" style={{ background: "rgba(0,0,0,0.2)", color: "#fff" }}>
               Select a ticket to start messaging
             </span>
           </div>
@@ -471,7 +471,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                 <ArrowLeft className="w-4.5 h-4.5" style={{ color: "var(--t-muted)" }} />
               </button>
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-white"
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-[14px] font-bold text-white"
                 style={{ background: avatarGradient(activeTicket.accountUsername) }}
               >
                 {initials(activeTicket.accountUsername)}
@@ -480,7 +480,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                 <p className="text-[14px] font-bold truncate" style={{ color: "var(--t-text)" }}>
                   {activeTicket.accountUsername}
                 </p>
-                <p className="text-[12px] truncate" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[13px] truncate" style={{ color: "var(--t-subtle)" }}>
                   {activeTicket.subject}
                 </p>
               </div>
@@ -488,7 +488,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
               <div className="relative shrink-0">
                 <button
                   onClick={() => setStatusMenuOpen(o => !o)}
-                  className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                  className="flex items-center gap-1 text-[12px] font-bold px-2.5 py-1 rounded-full"
                   style={{ color: STATUS_META[activeTicket.status].color, background: STATUS_META[activeTicket.status].bg }}
                 >
                   {STATUS_META[activeTicket.status].label}
@@ -503,7 +503,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                       <button
                         key={s}
                         onClick={() => setStatus(s)}
-                        className="w-full text-left px-3 py-1.5 text-[12px] font-semibold flex items-center gap-2 hover:bg-black/[0.04]"
+                        className="w-full text-left px-3 py-1.5 text-[13px] font-semibold flex items-center gap-2 hover:bg-black/[0.04]"
                         style={{ color: "var(--t-text)" }}
                       >
                         <CircleDot className="w-3 h-3" style={{ color: STATUS_META[s].color }} />
@@ -528,14 +528,14 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                     <div key={m.id}>
                       {newDay && (
                         <div className="flex justify-center my-2">
-                          <span className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold" style={{ background: "rgba(0,0,0,0.2)", color: "#fff" }}>
+                          <span className="px-2.5 py-0.5 rounded-full text-[13px] font-semibold" style={{ background: "rgba(0,0,0,0.2)", color: "#fff" }}>
                             {fmtDatePill(m.createdAt)}
                           </span>
                         </div>
                       )}
                       <div className={`flex ${isOut ? "justify-end" : "justify-start"} ${samePrevAuthor ? "mt-0.5" : "mt-1.5"}`}>
                         <div
-                          className="relative max-w-[85%] sm:max-w-[70%] px-3 py-1.5 text-[13.5px] shadow-sm"
+                          className="relative max-w-[85%] sm:max-w-[70%] px-3 py-1.5 text-[14px] shadow-sm"
                           style={{
                             background: isOut ? BUBBLE_OUT : BUBBLE_IN,
                             color: "#000",
@@ -547,7 +547,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                           <span style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, wordBreak: "break-word" }}>{m.body}</span>
                           {/* time + ticks, telegram-style bottom-right inline */}
                           <span className="inline-flex items-center gap-0.5 ml-1.5 align-bottom translate-y-[3px] float-right relative top-[5px]">
-                            <span className="text-[11px]" style={{ color: isOut ? "#5DA854" : "#9AA3AB" }}>
+                            <span className="text-[12px]" style={{ color: isOut ? "#5DA854" : "#9AA3AB" }}>
                               {fmtTime(m.createdAt)}
                             </span>
                             {isOut && (
@@ -568,7 +568,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
             {/* Composer */}
             {activeTicket.status === "closed" ? (
               <div className="px-4 py-3 bg-white text-center" style={{ borderTop: `1px solid ${V2_CARD_BORDER}` }}>
-                <p className="text-[12.5px]" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[13.5px]" style={{ color: "var(--t-subtle)" }}>
                   This ticket is closed. Change its status above to reply.
                 </p>
               </div>
@@ -586,7 +586,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                   }}
                   placeholder="Message"
                   rows={Math.min(4, Math.max(1, draft.split("\n").length))}
-                  className="flex-1 px-3 py-2 rounded-2xl text-[13.5px] outline-none resize-none"
+                  className="flex-1 px-3 py-2 rounded-2xl text-[14px] outline-none resize-none"
                   style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}
                 />
                 <button

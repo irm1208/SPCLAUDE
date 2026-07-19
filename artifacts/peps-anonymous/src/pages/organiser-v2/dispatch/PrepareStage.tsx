@@ -17,7 +17,7 @@ function QrLabel({ order }: { order: DispatchOrder }) {
   } as const;
   const config = labels[order.qrState];
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-[0.08em]" style={{ background: config.bg, color: config.fg }}>
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em]" style={{ background: config.bg, color: config.fg }}>
       <QrCode className="h-2.5 w-2.5" /> {config.text}
     </span>
   );
@@ -34,22 +34,22 @@ function OrderRow({ row, selected, selectable, onToggle }: { row: FulfilmentRow;
       )}
       <span className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[112px_minmax(130px,1fr)_minmax(150px,1.2fr)_auto] sm:items-center">
         <span>
-          <span className="block font-mono text-[11px] font-extrabold" style={{ color: "var(--dispatch-ink)" }}>#{order.code}</span>
-          <span className="block truncate text-[9px]" style={{ color: "var(--dispatch-muted)" }}>@{order.telegramUsername}</span>
+          <span className="block font-mono text-[12px] font-extrabold" style={{ color: "var(--dispatch-ink)" }}>#{order.code}</span>
+          <span className="block truncate text-[11px]" style={{ color: "var(--dispatch-muted)" }}>@{order.telegramUsername}</span>
         </span>
         <span>
-          <span className="block truncate text-[11px] font-bold" style={{ color: "var(--dispatch-ink)" }}>{order.memberName}</span>
-          <span className="block text-[9px]" style={{ color: "var(--dispatch-muted)" }}>{order.shippingCountry}</span>
+          <span className="block truncate text-[12px] font-bold" style={{ color: "var(--dispatch-ink)" }}>{order.memberName}</span>
+          <span className="block text-[11px]" style={{ color: "var(--dispatch-muted)" }}>{order.shippingCountry}</span>
         </span>
-        <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>
+        <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>
           {order.items.map(item => <span key={item.productId}>{item.quantity}× {item.name}</span>)}
         </span>
         <span className="flex items-center gap-2 sm:flex-col sm:items-end">
-          <span className="text-[9px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{order.deliveryMethod}</span>
+          <span className="text-[11px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{order.deliveryMethod}</span>
           <QrLabel order={order} />
         </span>
         {row.missingItems.length > 0 && (
-          <span className="col-span-full mt-1 flex flex-wrap gap-2 border-t pt-2 text-[9px] font-bold" style={{ borderColor: "rgba(184,107,23,.2)", color: "var(--dispatch-amber)" }}>
+          <span className="col-span-full mt-1 flex flex-wrap gap-2 border-t pt-2 text-[11px] font-bold" style={{ borderColor: "rgba(184,107,23,.2)", color: "var(--dispatch-amber)" }}>
             {row.missingItems.map(item => <span key={item.productId}>Need {item.quantity} {item.name} · {item.available} available</span>)}
           </span>
         )}
@@ -91,7 +91,7 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
   return (
     <section className="grid min-h-[520px] lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="border-b p-4 sm:p-5 lg:border-b-0 lg:border-r" style={{ borderColor: "var(--dispatch-rule)", background: "rgba(255,255,255,.32)" }}>
-        <p className="text-[10px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-green)" }}>Source batch</p>
+        <p className="text-[12px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-green)" }}>Source batch</p>
         <h3 className="mt-1 text-[17px] font-extrabold tracking-[-0.02em]" style={{ color: "var(--dispatch-ink)" }}>Stock selected</h3>
         <div className="mt-4 border-y" style={{ borderColor: "var(--dispatch-rule)" }}>
           {selectedParcels.map(parcel => {
@@ -100,15 +100,15 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
               <div key={parcel.id} className="flex items-start gap-2 border-b py-3 last:border-b-0" style={{ borderColor: "var(--dispatch-rule)" }}>
                 <PackageCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--dispatch-green)" }} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-bold" style={{ color: "var(--dispatch-ink)" }}>{parcel.label}</p>
-                  <p className="mt-0.5 truncate font-mono text-[8px]" style={{ color: "var(--dispatch-muted)" }}>{parcel.trackingNumber}</p>
+                  <p className="truncate text-[12px] font-bold" style={{ color: "var(--dispatch-ink)" }}>{parcel.label}</p>
+                  <p className="mt-0.5 truncate font-mono text-[10px]" style={{ color: "var(--dispatch-muted)" }}>{parcel.trackingNumber}</p>
                 </div>
-                <span className="font-mono text-[10px] font-bold" style={{ color: "var(--dispatch-green)" }}>{units}u</span>
+                <span className="font-mono text-[12px] font-bold" style={{ color: "var(--dispatch-green)" }}>{units}u</span>
               </div>
             );
           })}
         </div>
-        <button type="button" onClick={onBack} className="mt-4 flex min-h-9 items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.08em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dispatch-green)]" style={{ color: "var(--dispatch-green)" }}>
+        <button type="button" onClick={onBack} className="mt-4 flex min-h-9 items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.08em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dispatch-green)]" style={{ color: "var(--dispatch-green)" }}>
           <ArrowLeft className="h-3.5 w-3.5" /> Change parcels
         </button>
       </aside>
@@ -116,11 +116,11 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
       <div className="min-w-0 p-4 sm:p-5">
         <div className="mb-4 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between" style={{ borderColor: "var(--dispatch-rule)" }}>
           <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-green)" }}>Step 02</p>
+            <p className="text-[12px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--dispatch-green)" }}>Step 02</p>
             <h3 className="mt-1 text-[18px] font-extrabold tracking-[-0.02em]" style={{ color: "var(--dispatch-ink)" }}>Build the packing run</h3>
-            <p className="mt-1 text-[11px]" style={{ color: "var(--dispatch-muted)" }}>Ready orders are selected automatically. Adjust the batch before printing.</p>
+            <p className="mt-1 text-[12px]" style={{ color: "var(--dispatch-muted)" }}>Ready orders are selected automatically. Adjust the batch before printing.</p>
           </div>
-          <div className="flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.08em]">
+          <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.08em]">
             <button type="button" onClick={() => onSelectedOrderIdsChange(ready.map(row => row.order.id))} style={{ color: "var(--dispatch-green)" }}>Select all ready</button>
             <span className="h-3 w-px" style={{ background: "var(--dispatch-rule)" }} />
             <button type="button" onClick={() => onSelectedOrderIdsChange([])} style={{ color: "var(--dispatch-muted)" }}>Clear</button>
@@ -130,18 +130,18 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
         <div className="space-y-4">
           <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--dispatch-rule)" }}>
             <div className="flex items-center justify-between border-b px-3 py-2.5" style={{ borderColor: "var(--dispatch-rule)", background: "rgba(30,122,92,.07)" }}>
-              <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-green)" }}><Check className="h-3.5 w-3.5" /> Ready to pack</span>
-              <span className="font-mono text-[10px] font-bold" style={{ color: "var(--dispatch-green)" }}>{selected.size}/{ready.length} selected</span>
+              <span className="flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-green)" }}><Check className="h-3.5 w-3.5" /> Ready to pack</span>
+              <span className="font-mono text-[12px] font-bold" style={{ color: "var(--dispatch-green)" }}>{selected.size}/{ready.length} selected</span>
             </div>
             {ready.map(row => <OrderRow key={row.order.id} row={row} selected={selected.has(row.order.id)} selectable onToggle={() => toggleOrder(row.order.id)} />)}
-            {ready.length === 0 && <p className="px-3 py-6 text-center text-[11px]" style={{ color: "var(--dispatch-muted)" }}>No orders can be packed from this stock.</p>}
+            {ready.length === 0 && <p className="px-3 py-6 text-center text-[12px]" style={{ color: "var(--dispatch-muted)" }}>No orders can be packed from this stock.</p>}
           </div>
 
           {missing.length > 0 && (
             <div className="overflow-hidden rounded-lg border" style={{ borderColor: "rgba(184,107,23,.32)" }}>
               <div className="flex items-center justify-between border-b px-3 py-2.5" style={{ borderColor: "rgba(184,107,23,.25)", background: "rgba(184,107,23,.075)" }}>
-                <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-amber)" }}><AlertTriangle className="h-3.5 w-3.5" /> Missing stock</span>
-                <span className="font-mono text-[10px] font-bold" style={{ color: "var(--dispatch-amber)" }}>{missing.length}</span>
+                <span className="flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-amber)" }}><AlertTriangle className="h-3.5 w-3.5" /> Missing stock</span>
+                <span className="font-mono text-[12px] font-bold" style={{ color: "var(--dispatch-amber)" }}>{missing.length}</span>
               </div>
               {missing.map(row => <OrderRow key={row.order.id} row={row} />)}
             </div>
@@ -150,7 +150,7 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
           {waiting.length > 0 && (
             <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--dispatch-rule)" }}>
               <button type="button" onClick={() => setWaitingOpen(value => !value)} className="flex w-full items-center justify-between px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dispatch-green)]" style={{ background: "rgba(102,115,107,.045)" }}>
-                <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-muted)" }}><CircleDashed className="h-3.5 w-3.5" /> Waiting for stock · {waiting.length}</span>
+                <span className="flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--dispatch-muted)" }}><CircleDashed className="h-3.5 w-3.5" /> Waiting for stock · {waiting.length}</span>
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${waitingOpen ? "rotate-180" : ""}`} style={{ color: "var(--dispatch-muted)" }} />
               </button>
               {waitingOpen && waiting.map(row => <OrderRow key={row.order.id} row={row} />)}
@@ -159,8 +159,8 @@ export default function PrepareStage({ state, onSelectedOrderIdsChange, onBack, 
         </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--dispatch-rule)" }}>
-          <p className="text-[10px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{selected.size} order{selected.size === 1 ? "" : "s"} in this dispatch batch</p>
-          <button type="button" onClick={onContinue} disabled={selected.size === 0} className="flex min-h-10 items-center justify-center gap-2 px-5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-white disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--dispatch-green)]" style={{ background: "var(--dispatch-green-deep)" }}>
+          <p className="text-[12px] font-semibold" style={{ color: "var(--dispatch-muted)" }}>{selected.size} order{selected.size === 1 ? "" : "s"} in this dispatch batch</p>
+          <button type="button" onClick={onContinue} disabled={selected.size === 0} className="flex min-h-10 items-center justify-center gap-2 px-5 text-[12px] font-extrabold uppercase tracking-[0.08em] text-white disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--dispatch-green)]" style={{ background: "var(--dispatch-green-deep)" }}>
             Prepare dispatch batch <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

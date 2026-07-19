@@ -127,7 +127,7 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to manage country legs
         </p>
       </div>
@@ -141,12 +141,12 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Country Legs</h2>
-            <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+            <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
               Split your group buy into separate regions with unique settings for each country
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>Country Legs</span>
+            <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>Country Legs</span>
             <button
               onClick={() => setLegsEnabled(!legsEnabled)}
               className="w-11 h-6 rounded-full transition-all relative"
@@ -171,7 +171,7 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
               </div>
               <div>
                 <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>What are Country Legs?</h3>
-                <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+                <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
                   Country Legs let you run your group buy as separate mini-GBs for different countries. Each leg can have its own invite code, reshipper, custom messages, and open/close status.
                 </p>
               </div>
@@ -188,10 +188,10 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
             <div className="p-3 rounded-lg bg-white/80" style={{ border: "1px solid #D1FAE5" }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#10B981", color: "#fff" }}>✓</div>
-                <p className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>When to use Country Legs</p>
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-bold" style={{ background: "#10B981", color: "#fff" }}>✓</div>
+                <p className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>When to use Country Legs</p>
               </div>
-              <ul className="text-[11px] leading-relaxed space-y-1" style={{ color: "var(--t-muted)" }}>
+              <ul className="text-[12px] leading-relaxed space-y-1" style={{ color: "var(--t-muted)" }}>
                 <li>• You have different reshippers for each country</li>
                 <li>• Different countries have different pricing or shipping rules</li>
                 <li>• You want to open/close signups per country independently</li>
@@ -201,10 +201,10 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
 
             <div className="p-3 rounded-lg bg-white/80" style={{ border: "1px solid #D1FAE5" }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#F59E0B", color: "#fff" }}>!</div>
-                <p className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>How it works</p>
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-bold" style={{ background: "#F59E0B", color: "#fff" }}>!</div>
+                <p className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>How it works</p>
               </div>
-              <ul className="text-[11px] leading-relaxed space-y-1" style={{ color: "var(--t-muted)" }}>
+              <ul className="text-[12px] leading-relaxed space-y-1" style={{ color: "var(--t-muted)" }}>
                 <li>• Each country gets its own invite code</li>
                 <li>• Members join a specific country leg</li>
                 <li>• Orders are automatically grouped by country</li>
@@ -220,14 +220,14 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
         <div className="rounded-xl p-8 sm:p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>Country Legs Disabled</h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             Toggle the switch above to enable country legs for this group buy
           </p>
         </div>
       ) : loading ? (
         <div className="rounded-xl p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" style={{ color: "var(--t-blue)" }} />
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>Loading country legs...</p>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Loading country legs...</p>
         </div>
       ) : legs.length > 0 ? (
         <div className="rounded-xl p-4 bg-white space-y-3" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
@@ -249,7 +249,7 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                         <div className="flex items-center gap-2">
                           <h3 className="text-[14px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>{leg.countryName}</h3>
                           <span
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            className="text-[12px] font-bold px-2 py-0.5 rounded-full"
                             style={{
                               background: isOpen ? "#D1FADF" : "#F2F4F7",
                               color: isOpen ? "#12B76A" : "#667085",
@@ -258,7 +258,7 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                             {isOpen ? "Open" : "Closed"}
                           </span>
                         </div>
-                        <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                        <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                           {leg.orderCount} order{leg.orderCount !== 1 ? "s" : ""} • {leg.reshipper ? `@${leg.reshipper.reshipperUsername}` : "No reshipper"}
                         </p>
                       </div>
@@ -277,8 +277,8 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                 {leg.inviteCode && (
                   <div className="flex items-center gap-2 p-4">
                     <div className="flex-1">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Invite Code</div>
-                      <code className="text-[13px] font-mono font-bold" style={{ color: "var(--t-text)" }}>{leg.inviteCode}</code>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Invite Code</div>
+                      <code className="text-[14px] font-mono font-bold" style={{ color: "var(--t-text)" }}>{leg.inviteCode}</code>
                     </div>
                     <button
                       onClick={() => handleCopyInviteCode(leg.inviteCode!, leg.id)}
@@ -297,19 +297,19 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                     {/* Reshipper Info */}
                     {leg.reshipper ? (
                       <div className="rounded-lg bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
+                        <div className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                           Assigned Reshipper
                         </div>
                         <div className="p-3">
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>{leg.reshipper.telegramUsername}</div>
-                              <div className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>
+                              <div className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{leg.reshipper.telegramUsername}</div>
+                              <div className="text-[12px] mt-1" style={{ color: "var(--t-muted)" }}>
                                 {leg.reshipper.paymentTarget === "reshipper" ? "Direct Payment" : "Via Admin"}
                               </div>
                             </div>
                             <button
-                              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold hover:bg-black/5"
+                              className="px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-black/5"
                               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
                             >
                               Change
@@ -319,13 +319,13 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                       </div>
                     ) : (
                       <div className="rounded-lg bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
+                        <div className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                           Assigned Reshipper
                         </div>
                         <div className="p-3 text-center">
-                          <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>No reshipper assigned</p>
+                          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>No reshipper assigned</p>
                           <button
-                            className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold hover:bg-black/5"
+                            className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-black/5"
                             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
                           >
                             Assign Reshipper
@@ -336,28 +336,28 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
 
                     {/* Message */}
                     <div className="rounded-lg bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                      <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
+                      <div className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                         Message
                       </div>
                       <div className="p-3">
                         {leg.message ? (
-                          <p className="text-[12px]" style={{ color: "var(--t-text)" }}>{leg.message}</p>
+                          <p className="text-[13px]" style={{ color: "var(--t-text)" }}>{leg.message}</p>
                         ) : (
-                          <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>No message set</p>
+                          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>No message set</p>
                         )}
                       </div>
                     </div>
 
                     {/* Country Note */}
                     <div className="rounded-lg bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                      <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
+                      <div className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide" style={{ background: "var(--t-surface2)", color: "var(--t-subtle)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                         Country Note
                       </div>
                       <div className="p-3">
                         {leg.countryNote ? (
-                          <p className="text-[12px]" style={{ color: "var(--t-text)" }}>{leg.countryNote}</p>
+                          <p className="text-[13px]" style={{ color: "var(--t-text)" }}>{leg.countryNote}</p>
                         ) : (
-                          <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>No note set</p>
+                          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>No note set</p>
                         )}
                       </div>
                     </div>
@@ -366,13 +366,13 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() => handleToggleStatus(leg.id)}
-                        className="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5"
+                        className="flex-1 px-3 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5"
                         style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
                       >
                         {isOpen ? "Close Leg" : "Open Leg"}
                       </button>
                       <button
-                        className="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold text-white"
+                        className="flex-1 px-3 py-2 rounded-lg text-[13px] font-semibold text-white"
                         style={{ background: "var(--t-blue)" }}
                       >
                         Edit Settings
@@ -390,18 +390,18 @@ export default function CountryLegsTab({ selectedGbId }: CountryLegsTabProps = {
             style={{ border: `2px dashed ${V2_CARD_BORDER}` }}
           >
             <Plus className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-semibold" style={{ color: "var(--t-blue)" }}>Add Country Leg</span>
+            <span className="text-[14px] font-semibold" style={{ color: "var(--t-blue)" }}>Add Country Leg</span>
           </button>
         </div>
       ) : (
         <div className="rounded-xl p-8 sm:p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <Globe className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>No Country Legs</h3>
-          <p className="text-[13px] mb-4" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px] mb-4" style={{ color: "var(--t-subtle)" }}>
             Add your first country leg to start organizing orders by region
           </p>
           <button
-            className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white"
+            className="px-4 py-2 rounded-lg text-[14px] font-semibold text-white"
             style={{ background: "var(--t-blue)" }}
           >
             <Plus className="w-4 h-4 inline mr-1.5" /> Add Country Leg

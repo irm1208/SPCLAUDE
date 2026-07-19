@@ -105,7 +105,7 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
         <div className="max-h-96 overflow-y-auto">
           {Object.keys(groupedActions).length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+              <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
                 No commands found
               </p>
             </div>
@@ -113,7 +113,7 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
             Object.entries(groupedActions).map(([category, categoryActions]) => (
               <div key={category}>
                 <div
-                  className="px-4 py-2 text-[11px] font-bold uppercase tracking-wider"
+                  className="px-4 py-2 text-[12px] font-bold uppercase tracking-wider"
                   style={{ color: "var(--t-subtle)", background: "#F9FAFB" }}
                 >
                   {category}
@@ -137,18 +137,18 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
                       }}
                     >
                       <div className="flex-1">
-                        <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
+                        <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>
                           {action.label}
                         </div>
                         {action.description && (
-                          <div className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                          <div className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                             {action.description}
                           </div>
                         )}
                       </div>
                       {action.shortcut && (
                         <kbd
-                          className="px-2 py-1 rounded text-[11px] font-mono"
+                          className="px-2 py-1 rounded text-[12px] font-mono"
                           style={{ background: "#E5E7EB", color: "#374151" }}
                         >
                           {action.shortcut}
@@ -164,7 +164,7 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
 
         {/* Footer hint */}
         <div
-          className="flex items-center justify-between px-4 py-2 text-[11px] border-t"
+          className="flex items-center justify-between px-4 py-2 text-[12px] border-t"
           style={{ color: "var(--t-subtle)", background: "#F9FAFB", borderColor: V2_CARD_BORDER }}
         >
           <span>↑↓ Navigate • Enter Select • Esc Close</span>
@@ -212,7 +212,7 @@ export function ShortcutsModal({ isOpen, onClose, shortcuts }: ShortcutsModalPro
 
         {Object.entries(grouped).map(([category, categoryShortcuts]) => (
           <div key={category}>
-            <h3 className="text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>
+            <h3 className="text-[14px] font-bold mb-2" style={{ color: "var(--t-text)" }}>
               {category}
             </h3>
             <div className="space-y-2">
@@ -222,11 +222,11 @@ export function ShortcutsModal({ isOpen, onClose, shortcuts }: ShortcutsModalPro
                   className="flex items-center justify-between py-2 px-3 rounded-lg"
                   style={{ background: "#F9FAFB" }}
                 >
-                  <span className="text-[13px]" style={{ color: "var(--t-text)" }}>
+                  <span className="text-[14px]" style={{ color: "var(--t-text)" }}>
                     {shortcut.description}
                   </span>
                   <kbd
-                    className="px-2 py-1 rounded text-[12px] font-mono font-semibold"
+                    className="px-2 py-1 rounded text-[13px] font-mono font-semibold"
                     style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "#374151" }}
                   >
                     {shortcut.key}

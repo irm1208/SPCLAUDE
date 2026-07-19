@@ -34,7 +34,7 @@ export default function WelcomeModal({ onStart, onDismiss }: WelcomeModalProps) 
               <h2 className="text-[20px] sm:text-[22px] font-bold" style={{ color: "var(--t-text)" }}>
                 Welcome to GB Organizer!
               </h2>
-              <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+              <p className="text-[14px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                 Your control center for running group buys
               </p>
             </div>
@@ -82,10 +82,10 @@ export default function WelcomeModal({ onStart, onDismiss }: WelcomeModalProps) 
           <h3 className="text-[14px] font-bold" style={{ color: "#0369A1" }}>
             ✨ Getting Started
           </h3>
-          <p className="text-[13px]" style={{ color: "#075985" }}>
+          <p className="text-[14px]" style={{ color: "#075985" }}>
             We'll walk you through 7 quick steps to set up your first group buy. It takes about <strong>5 minutes</strong> and you can save your progress at any time.
           </p>
-          <div className="flex flex-wrap gap-2 text-[12px] font-medium" style={{ color: "#0369A1" }}>
+          <div className="flex flex-wrap gap-2 text-[13px] font-medium" style={{ color: "#0369A1" }}>
             <span className="px-2 py-1 rounded-md" style={{ background: "#fff" }}>1. Basic Info</span>
             <span className="px-2 py-1 rounded-md" style={{ background: "#fff" }}>2. Products</span>
             <span className="px-2 py-1 rounded-md" style={{ background: "#fff" }}>3. Shipping</span>
@@ -131,9 +131,9 @@ function FeatureCard({ icon: Icon, title, description, color }: {
         <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}15` }}>
           <Icon className="w-4 h-4" style={{ color }} />
         </div>
-        <h4 className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>{title}</h4>
+        <h4 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{title}</h4>
       </div>
-      <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-subtle)" }}>
+      <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-subtle)" }}>
         {description}
       </p>
     </div>

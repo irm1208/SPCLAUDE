@@ -222,7 +222,7 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to view its summary
         </p>
       </div>
@@ -238,7 +238,7 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Summary</h2>
-            <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+            <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
               Order rollup for this group buy, computed from your order list
             </p>
           </div>
@@ -271,7 +271,7 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
           </div>
           <div>
             <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>One-Glance Rollup</h3>
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+            <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
               Everything below is derived live from your orders — totals, per-product quantities, statuses, and delivery countries. Use the export buttons to share the rollup with your reshipper or keep it for your records.
             </p>
           </div>
@@ -289,19 +289,19 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
       {/* Per-product rollup */}
       <div className="rounded-xl bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="px-4 py-3" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
-          <h3 className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Product Rollup</h3>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Cancelled orders excluded · sorted by revenue</p>
+          <h3 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Product Rollup</h3>
+          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Cancelled orders excluded · sorted by revenue</p>
         </div>
         {productRows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-[12px]" style={{ color: "var(--t-muted)" }}>No orders yet.</p>
+          <p className="px-4 py-8 text-center text-[13px]" style={{ color: "var(--t-muted)" }}>No orders yet.</p>
         ) : (
-          <table className="w-full text-[12px]">
+          <table className="w-full text-[13px]">
             <thead>
               <tr style={{ background: "var(--t-surface2)" }}>
-                <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider" style={thStyle}>Product</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider" style={thStyle}>Qty</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider" style={thStyle}>Orders</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider" style={thStyle}>Revenue</th>
+                <th className="px-4 py-2.5 text-left text-[12px] font-bold uppercase tracking-wider" style={thStyle}>Product</th>
+                <th className="px-4 py-2.5 text-right text-[12px] font-bold uppercase tracking-wider" style={thStyle}>Qty</th>
+                <th className="px-4 py-2.5 text-right text-[12px] font-bold uppercase tracking-wider" style={thStyle}>Orders</th>
+                <th className="px-4 py-2.5 text-right text-[12px] font-bold uppercase tracking-wider" style={thStyle}>Revenue</th>
               </tr>
             </thead>
             <tbody>
@@ -327,9 +327,9 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
       {/* Per-status breakdown + per-country rollup */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl bg-white p-4" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-          <h3 className="text-[13px] font-bold mb-3" style={{ color: "var(--t-text)" }}>By Status</h3>
+          <h3 className="text-[14px] font-bold mb-3" style={{ color: "var(--t-text)" }}>By Status</h3>
           {totalOrders === 0 ? (
-            <p className="text-[12px]" style={{ color: "var(--t-muted)" }}>No orders yet.</p>
+            <p className="text-[13px]" style={{ color: "var(--t-muted)" }}>No orders yet.</p>
           ) : (
             <div className="space-y-2">
               {STATUS_ORDER.filter(s => (statusCounts.get(s) ?? 0) > 0).map(s => {
@@ -337,10 +337,10 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
                 const count = statusCounts.get(s) ?? 0;
                 return (
                   <div key={s} className="flex items-center justify-between gap-3">
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
+                    <span className="px-2 py-0.5 rounded-full text-[12px] font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
                       {cfg.label}
                     </span>
-                    <span className="text-[12px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
+                    <span className="text-[13px] font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
                       {count} <span className="font-normal" style={{ color: "var(--t-subtle)" }}>({((count / totalOrders) * 100).toFixed(0)}%)</span>
                     </span>
                   </div>
@@ -353,14 +353,14 @@ export default function SummaryTab({ selectedGbId }: { selectedGbId?: string } =
         <div className="rounded-xl bg-white p-4" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-1.5 mb-3">
             <Globe className="w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-            <h3 className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>By Delivery Country</h3>
+            <h3 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>By Delivery Country</h3>
           </div>
           {countryRows.length === 0 ? (
-            <p className="text-[12px]" style={{ color: "var(--t-muted)" }}>No delivery data yet.</p>
+            <p className="text-[13px]" style={{ color: "var(--t-muted)" }}>No delivery data yet.</p>
           ) : (
             <div className="space-y-2">
               {countryRows.map(c => (
-                <div key={c.country} className="flex items-center justify-between gap-3 text-[12px]">
+                <div key={c.country} className="flex items-center justify-between gap-3 text-[13px]">
                   <span className="font-semibold" style={{ color: "var(--t-text)" }}>{c.country}</span>
                   <span className="tabular-nums" style={{ color: "var(--t-muted)" }}>
                     {c.orders} {c.orders === 1 ? "order" : "orders"} · <span className="font-bold" style={{ color: "var(--t-text)" }}>{CURRENCY} {c.revenue.toFixed(2)}</span>
@@ -386,7 +386,7 @@ function StatTile({ icon: Icon, tile, value, label }: {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xl sm:text-2xl font-bold leading-none truncate" style={{ color: "var(--t-text)" }}>{value}</div>
-          <div className="text-[11.5px] sm:text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>{label}</div>
+          <div className="text-[12.5px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>{label}</div>
         </div>
       </div>
     </div>

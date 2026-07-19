@@ -175,13 +175,13 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
           <h2 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>
             Vendor COAs
           </h2>
-          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
             Certificates of Analysis from your suppliers
           </p>
         </div>
         <button
           onClick={() => setMode(mode === "upload" ? "none" : "upload")}
-          className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-80"
+          className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-80"
           style={{ background: "var(--t-blue)", color: "#fff" }}
         >
           <Upload className="w-4 h-4" />
@@ -230,7 +230,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
               style={{ border: `1px solid ${V2_CARD_BORDER}` }}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[12px] font-medium" style={{ color: "var(--t-subtle)" }}>
+                <span className="text-[13px] font-medium" style={{ color: "var(--t-subtle)" }}>
                   {stat.label}
                 </span>
                 <div
@@ -265,58 +265,58 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Vendor Name *
               </label>
               <input
                 type="text"
                 value={newCoa.vendorName || ""}
                 onChange={(e) => setNewCoa({ ...newCoa, vendorName: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 placeholder="e.g. QSC Labs"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Product Name *
               </label>
               <input
                 type="text"
                 value={newCoa.productName || ""}
                 onChange={(e) => setNewCoa({ ...newCoa, productName: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 placeholder="e.g. Semaglutide"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Batch Number
               </label>
               <input
                 type="text"
                 value={newCoa.batchNumber || ""}
                 onChange={(e) => setNewCoa({ ...newCoa, batchNumber: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 placeholder="e.g. BATCH-2024-001"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Test Date
               </label>
               <input
                 type="date"
                 value={newCoa.testDate || ""}
                 onChange={(e) => setNewCoa({ ...newCoa, testDate: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Purity (%)
               </label>
               <input
@@ -326,19 +326,19 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
                 step="0.1"
                 value={newCoa.purityPercent || ""}
                 onChange={(e) => setNewCoa({ ...newCoa, purityPercent: parseFloat(e.target.value) || 0 })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 placeholder="99.5"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
                 Status
               </label>
               <select
                 value={newCoa.status || "pending"}
                 onChange={(e) => setNewCoa({ ...newCoa, status: e.target.value as any })}
-                className="w-full h-9 px-3 rounded-lg text-[13px]"
+                className="w-full h-9 px-3 rounded-lg text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               >
                 <option value="pending">Pending Review</option>
@@ -349,27 +349,27 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
           </div>
 
           <div>
-            <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+            <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
               COA URL *
             </label>
             <input
               type="url"
               value={newCoa.coaUrl || ""}
               onChange={(e) => setNewCoa({ ...newCoa, coaUrl: e.target.value })}
-              className="w-full h-9 px-3 rounded-lg text-[13px]"
+              className="w-full h-9 px-3 rounded-lg text-[14px]"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               placeholder="https://example.com/coa.pdf"
             />
           </div>
 
           <div>
-            <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
+            <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--t-text)" }}>
               Notes (Optional)
             </label>
             <textarea
               value={newCoa.notes || ""}
               onChange={(e) => setNewCoa({ ...newCoa, notes: e.target.value })}
-              className="w-full h-20 px-3 py-2 rounded-lg text-[13px] resize-none"
+              className="w-full h-20 px-3 py-2 rounded-lg text-[14px] resize-none"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               placeholder="Additional notes about this COA..."
             />
@@ -379,7 +379,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
             <button
               onClick={handleUpload}
               disabled={uploading}
-              className="flex-1 h-9 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 h-9 rounded-lg text-[14px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
               style={{ background: "var(--t-blue)" }}
             >
               {uploading ? (
@@ -396,7 +396,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
             </button>
             <button
               onClick={() => setMode("none")}
-              className="flex-1 h-9 rounded-lg text-[13px] font-bold"
+              className="flex-1 h-9 rounded-lg text-[14px] font-bold"
               style={{ background: "rgba(0,0,0,0.05)", color: "var(--t-text)" }}
             >
               Cancel
@@ -415,7 +415,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by vendor, product, or batch..."
-              className="w-full h-10 pl-10 pr-3 rounded-lg text-[13px]"
+              className="w-full h-10 pl-10 pr-3 rounded-lg text-[14px]"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
@@ -424,7 +424,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
               <button
                 key={status}
                 onClick={() => setFilterStatus(status as any)}
-                className="h-10 px-4 rounded-lg text-[13px] font-medium transition-all"
+                className="h-10 px-4 rounded-lg text-[14px] font-medium transition-all"
                 style={{
                   background: filterStatus === status ? "var(--t-blue)" : "#fff",
                   color: filterStatus === status ? "#fff" : "var(--t-text)",
@@ -445,25 +445,25 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
             <table className="w-full">
               <thead>
                 <tr className="border-b" style={{ borderColor: V2_CARD_BORDER }}>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Vendor
                   </th>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Product
                   </th>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Batch
                   </th>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Purity
                   </th>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Test Date
                   </th>
-                  <th className="text-left px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-left px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Status
                   </th>
-                  <th className="text-right px-4 py-3 text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+                  <th className="text-right px-4 py-3 text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
                     Actions
                   </th>
                 </tr>
@@ -484,20 +484,20 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
                         >
                           <Building2 className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
                         </div>
-                        <span className="text-[13px] font-medium" style={{ color: "var(--t-text)" }}>
+                        <span className="text-[14px] font-medium" style={{ color: "var(--t-text)" }}>
                           {coa.vendorName}
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[13px]" style={{ color: "var(--t-text)" }}>
+                    <td className="px-4 py-3 text-[14px]" style={{ color: "var(--t-text)" }}>
                       {coa.productName}
                     </td>
-                    <td className="px-4 py-3 text-[13px] font-mono" style={{ color: "var(--t-subtle)" }}>
+                    <td className="px-4 py-3 text-[14px] font-mono" style={{ color: "var(--t-subtle)" }}>
                       {coa.batchNumber}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[12px] font-semibold"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[13px] font-semibold"
                         style={{
                           background: coa.purityPercent >= 99 ? "#F0FDF4" : "#FEF3C7",
                           color: coa.purityPercent >= 99 ? "#16A34A" : "#F59E0B",
@@ -507,7 +507,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
                         {coa.purityPercent}%
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[13px]" style={{ color: "var(--t-subtle)" }}>
+                    <td className="px-4 py-3 text-[14px]" style={{ color: "var(--t-subtle)" }}>
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
                         {coa.testDate}
@@ -517,7 +517,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
                       <select
                         value={coa.status}
                         onChange={(e) => updateStatus(coa.id, e.target.value as any)}
-                        className="px-2 py-1 rounded text-[12px] font-semibold"
+                        className="px-2 py-1 rounded text-[13px] font-semibold"
                         style={{
                           background:
                             coa.status === "approved"
@@ -574,7 +574,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
             No COAs Yet
           </h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             Upload your first Certificate of Analysis from a vendor
           </p>
         </div>
@@ -587,7 +587,7 @@ export default function VendorCoasTab({ selectedGbId }: Props) {
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
             No Results Found
           </h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             Try adjusting your search or filters
           </p>
         </div>

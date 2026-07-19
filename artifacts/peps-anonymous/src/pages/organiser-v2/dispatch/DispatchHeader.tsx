@@ -12,14 +12,14 @@ export default function DispatchHeader({ view, lastRefreshed, onViewChange, onRe
   return (
     <header className="flex flex-col gap-4 rounded-xl border bg-white p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between" style={{ borderColor: "var(--dispatch-rule)" }}>
       <div className="min-w-0">
-        <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em]" style={{ color: "var(--dispatch-green)" }}>
+        <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em]" style={{ color: "var(--dispatch-green)" }}>
           <Radio className="h-3.5 w-3.5" aria-hidden="true" />
           Fulfilment operations
         </div>
         <h2 className="text-lg font-bold tracking-tight sm:text-xl" style={{ color: "var(--dispatch-ink)" }}>
           Dispatch control desk
         </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" style={{ color: "var(--dispatch-muted)" }}>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]" style={{ color: "var(--dispatch-muted)" }}>
           <span className="font-semibold" style={{ color: "var(--dispatch-ink)" }}>Winter Peptide Run 2025</span>
           <span className="hidden h-3 w-px sm:block" style={{ background: "var(--dispatch-rule)" }} />
           <span className="flex items-center gap-1.5">
@@ -49,7 +49,7 @@ export default function DispatchHeader({ view, lastRefreshed, onViewChange, onRe
               type="button"
               key={item.id}
               onClick={() => onViewChange(item.id)}
-              className="dispatch-segment flex min-h-9 flex-1 items-center justify-center gap-2 px-3 text-[12px] font-bold transition-colors first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dispatch-green)] sm:flex-none"
+              className="dispatch-segment flex min-h-9 flex-1 items-center justify-center gap-2 px-3 text-[13px] font-bold transition-colors first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dispatch-green)] sm:flex-none"
               style={{
                 background: active ? "var(--dispatch-green)" : "transparent",
                 color: active ? "#fff" : "var(--dispatch-muted)",

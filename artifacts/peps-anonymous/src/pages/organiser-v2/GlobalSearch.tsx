@@ -199,7 +199,7 @@ export default function GlobalSearch({ selectedGbId, onNavigate, open, onClose }
           ) : (
             groups.map((g) => (
               <div key={g.label} className="mb-1">
-                <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                <div className="px-4 pt-2 pb-1 text-[12px] font-semibold uppercase tracking-wider text-gray-400">
                   {g.label}
                 </div>
                 {g.results.map((r) => {
@@ -232,7 +232,7 @@ export default function GlobalSearch({ selectedGbId, onNavigate, open, onClose }
         </div>
 
         <div
-          className="px-4 py-2 text-[11px] text-gray-400"
+          className="px-4 py-2 text-[12px] text-gray-400"
           style={{ borderTop: `1px solid ${V2_CARD_BORDER}` }}
         >
           ↑↓ navigate · ↵ open · esc close

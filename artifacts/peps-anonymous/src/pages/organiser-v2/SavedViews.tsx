@@ -45,7 +45,7 @@ export function SavedViewsSidebar({
     <>
       <div className="rounded-xl bg-white p-3 space-y-2" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-2">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>
+          <h3 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>
             Saved Views
           </h3>
           <button
@@ -67,7 +67,7 @@ export function SavedViewsSidebar({
               color: activeViewId === null ? "#fff" : "var(--t-text)",
             }}
           >
-            <span className="text-[13px] font-semibold">All Items</span>
+            <span className="text-[14px] font-semibold">All Items</span>
           </button>
 
           {/* Saved views */}
@@ -86,10 +86,10 @@ export function SavedViewsSidebar({
                   color: activeViewId === view.id ? "#fff" : "var(--t-text)",
                 }}
               >
-                <span className="text-[13px] font-semibold">{view.name}</span>
+                <span className="text-[14px] font-semibold">{view.name}</span>
                 {view.badge !== undefined && view.badge > 0 && (
                   <span
-                    className="min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                    className="min-w-[18px] h-[18px] px-1.5 rounded-full text-[12px] font-bold flex items-center justify-center"
                     style={{
                       background: activeViewId === view.id ? "rgba(255,255,255,0.25)" : "var(--t-blue)",
                       color: "#fff",
@@ -137,7 +137,7 @@ export function SavedViewsSidebar({
             </div>
 
             <div>
-              <label className="block text-[12px] font-semibold mb-2" style={{ color: "var(--t-subtle)" }}>
+              <label className="block text-[13px] font-semibold mb-2" style={{ color: "var(--t-subtle)" }}>
                 View Name
               </label>
               <input
@@ -146,18 +146,18 @@ export function SavedViewsSidebar({
                 onChange={(e) => setNewViewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreateView()}
                 placeholder="e.g., Awaiting Payment"
-                className="w-full h-10 px-3 rounded-lg text-[13px] outline-none"
+                className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 autoFocus
               />
             </div>
 
             <div className="rounded-lg p-3 space-y-1" style={{ background: "#F3F4F6" }}>
-              <p className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+              <p className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
                 Current Filters:
               </p>
               {Object.keys(currentFilters).length > 0 ? (
-                <div className="text-[12px]" style={{ color: "var(--t-text)" }}>
+                <div className="text-[13px]" style={{ color: "var(--t-text)" }}>
                   {Object.entries(currentFilters).map(([key, value]) => (
                     <div key={key}>
                       <strong>{key}:</strong> {String(value)}
@@ -165,7 +165,7 @@ export function SavedViewsSidebar({
                   ))}
                 </div>
               ) : (
-                <p className="text-[12px] italic" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[13px] italic" style={{ color: "var(--t-subtle)" }}>
                   No filters applied
                 </p>
               )}
@@ -174,7 +174,7 @@ export function SavedViewsSidebar({
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="flex-1 h-10 rounded-lg text-[13px] font-semibold transition-colors"
+                className="flex-1 h-10 rounded-lg text-[14px] font-semibold transition-colors"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
               >
                 Cancel
@@ -182,7 +182,7 @@ export function SavedViewsSidebar({
               <button
                 onClick={handleCreateView}
                 disabled={!newViewName.trim()}
-                className="flex-1 h-10 rounded-lg text-[13px] font-bold text-white disabled:opacity-50"
+                className="flex-1 h-10 rounded-lg text-[14px] font-bold text-white disabled:opacity-50"
                 style={{ background: "var(--t-blue)" }}
               >
                 Save View

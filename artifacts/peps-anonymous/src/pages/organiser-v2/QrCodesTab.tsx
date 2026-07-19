@@ -17,7 +17,7 @@ export default function QrCodesTab({ selectedGbId }: QrCodesTabProps = {}) {
         <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
           No Group Buy Selected
         </h3>
-        <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
           Select a group buy to view QR codes for orders
         </p>
       </div>
@@ -31,7 +31,7 @@ export default function QrCodesTab({ selectedGbId }: QrCodesTabProps = {}) {
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>
           QR Codes
         </h2>
-        <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
           View delivery QR codes for InPost, Royal Mail, and custom shipping options
         </p>
       </div>

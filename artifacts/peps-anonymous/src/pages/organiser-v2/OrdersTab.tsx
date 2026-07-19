@@ -662,7 +662,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>Orders</h2>
-          <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
             {filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''}
             {selectedOrders.length > 0 && <span> • {selectedOrders.length} selected</span>}
           </p>
@@ -672,35 +672,35 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             <>
               <button
                 onClick={bulkMarkAsPaid}
-                className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5"
+                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
                 style={{ background: "#16A34A", color: "#fff" }}
               >
                 <CheckCircle2 className="w-4 h-4" /> Mark as Paid
               </button>
               <button
                 onClick={bulkMarkAsDispatched}
-                className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5"
+                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
                 style={{ background: "#0078D4", color: "#fff" }}
               >
                 <Truck className="w-4 h-4" /> Mark as Dispatched
               </button>
               <button
                 onClick={bulkExportCSV}
-                className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5"
+                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
                 style={{ background: "#6B7280", color: "#fff" }}
               >
                 <Download className="w-4 h-4" /> Export CSV
               </button>
               <button
                 onClick={() => setShowBulkAddProduct(true)}
-                className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5"
+                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
                 style={{ background: "var(--t-blue)", color: "#fff" }}
               >
                 <Plus className="w-4 h-4" /> Add Product
               </button>
               <button
                 onClick={() => setShowBulkTaskModal(true)}
-                className="h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center gap-1.5"
+                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
                 style={{ background: "#D97706", color: "#fff" }}
               >
                 <Flag className="w-4 h-4" /> Add Task
@@ -709,12 +709,12 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
           )}
           <button
             onClick={() => setShowCsvImportModal(true)}
-            className="w-full sm:w-auto h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-1.5"
+            className="w-full sm:w-auto h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-1.5"
             style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}
           >
             <Upload className="w-4 h-4" /> Import CSV
           </button>
-          <button className="w-full sm:w-auto h-10 px-4 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-1.5" style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
+          <button className="w-full sm:w-auto h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-1.5" style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
             <Download className="w-4 h-4" /> Export CSV
           </button>
         </div>
@@ -969,8 +969,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
       {filteredOrders.length === 0 ? (
         <div className="atlas-legacy-order-empty rounded-xl p-12 text-center bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
           <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
-          <p className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>No orders found</p>
-          <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Try adjusting your filters</p>
+          <p className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>No orders found</p>
+          <p className="text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>Try adjusting your filters</p>
         </div>
       ) : (
         <>
@@ -983,7 +983,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               className="w-4 h-4 rounded"
               style={{ accentColor: "var(--t-blue)" }}
             />
-            <span className="text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>
+            <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
               Select All ({filteredOrders.length})
             </span>
           </div>
@@ -1020,12 +1020,12 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                         <h3 className="text-[16px] sm:text-[18px] font-bold truncate" style={{ color: "var(--t-text)" }}>
                           {order.memberName}
                         </h3>
-                        <span className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-[12px] font-bold shrink-0" style={{ color: config.color, border: `1.5px solid ${config.color}` }}>
+                        <span className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[12px] sm:text-[13px] font-bold shrink-0" style={{ color: config.color, border: `1.5px solid ${config.color}` }}>
                           <span className="w-1.5 h-1.5 rounded-full" style={{ background: config.color }} />
                           {config.label}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-muted)" }}>
+                      <div className="flex items-center gap-1.5 text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-muted)" }}>
                         <Truck className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--t-blue)" }} />
                         <span className="truncate">{order.shippingOption}</span>
                         <span style={{ color: "var(--t-subtle)" }}>•</span>
@@ -1037,7 +1037,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   <div className="border-t border-dashed my-3" style={{ borderColor: V2_CARD_BORDER }} />
 
                   {/* Meta row: order id + payment */}
-                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-[12px]">
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-[13px]">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="uppercase tracking-wide shrink-0" style={{ color: "var(--t-subtle)" }}>Order :</span>
                       <span className="font-bold" style={{ color: "var(--t-text)" }}>{order.id}</span>
@@ -1051,11 +1051,11 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
                   {/* TXID / proof row */}
                   {order.paymentProof && (
-                    <div className="flex items-center gap-1.5 text-[12px] mt-1.5">
+                    <div className="flex items-center gap-1.5 text-[13px] mt-1.5">
                       {order.paymentProof.type === "txid" ? (
                         <>
                           <span className="uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>TXID :</span>
-                          <span className="font-mono text-[11px]" style={{ color: "var(--t-muted)" }}>{order.paymentProof.value.slice(0, 10)}...{order.paymentProof.value.slice(-6)}</span>
+                          <span className="font-mono text-[12px]" style={{ color: "var(--t-muted)" }}>{order.paymentProof.value.slice(0, 10)}...{order.paymentProof.value.slice(-6)}</span>
                           <button
                             onClick={() => copyToClipboard(order.paymentProof!.value)}
                             className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition-colors"
@@ -1085,11 +1085,11 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   <div className="space-y-2.5">
                     {order.products.map((product, i) => (
                       <div key={i} className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                        <span className="w-6 h-6 rounded-md flex items-center justify-center text-[13px] font-bold shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
                           {product.quantity}
                         </span>
-                        <span className="flex-1 text-[13px] sm:text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{product.name}</span>
-                        <span className="text-[13px] sm:text-[14px] shrink-0" style={{ color: "var(--t-muted)" }}>{fmtMoney(product.price * product.quantity, "GBP")}</span>
+                        <span className="flex-1 text-[14px] sm:text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{product.name}</span>
+                        <span className="text-[14px] sm:text-[14px] shrink-0" style={{ color: "var(--t-muted)" }}>{fmtMoney(product.price * product.quantity, "GBP")}</span>
                       </div>
                     ))}
                   </div>
@@ -1100,13 +1100,13 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                       {order.flagged && (
                         <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(217,119,6,0.08)" }}>
                           <Flag className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#D97706" }} />
-                          <span className="text-[11px]" style={{ color: "#D97706" }}>{order.flagged.note}</span>
+                          <span className="text-[12px]" style={{ color: "#D97706" }}>{order.flagged.note}</span>
                         </div>
                       )}
                       {order.internalNotes && (
                         <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.15)" }}>
-                          <span className="text-[10px] font-bold uppercase mt-0.5 shrink-0" style={{ color: "#D97706" }}>Note</span>
-                          <span className="text-[11px]" style={{ color: "#D97706" }}>{order.internalNotes}</span>
+                          <span className="text-[12px] font-bold uppercase mt-0.5 shrink-0" style={{ color: "#D97706" }}>Note</span>
+                          <span className="text-[12px]" style={{ color: "#D97706" }}>{order.internalNotes}</span>
                         </div>
                       )}
                     </div>
@@ -1118,21 +1118,21 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   <div className="mx-4 mt-3 pt-3 border-t border-dashed space-y-3" style={{ borderColor: V2_CARD_BORDER }}>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Shipping</div>
-                        <div className="text-[12px]" style={{ color: "var(--t-text)" }}>{order.shippingOption}</div>
-                        <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>{order.country}</div>
+                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Shipping</div>
+                        <div className="text-[13px]" style={{ color: "var(--t-text)" }}>{order.shippingOption}</div>
+                        <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>{order.country}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Payment</div>
-                        <div className="text-[12px]" style={{ color: "var(--t-text)" }}>{order.paymentMethod}</div>
-                        {order.paidAt && <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>Paid {new Date(order.paidAt).toLocaleDateString()}</div>}
+                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Payment</div>
+                        <div className="text-[13px]" style={{ color: "var(--t-text)" }}>{order.paymentMethod}</div>
+                        {order.paidAt && <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>Paid {new Date(order.paidAt).toLocaleDateString()}</div>}
                       </div>
                     </div>
                     {order.trackingNumber && (
                       <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Tracking</div>
+                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Tracking</div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[12px] font-mono px-2 py-0.5 rounded" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }}>{order.trackingNumber}</span>
+                          <span className="text-[13px] font-mono px-2 py-0.5 rounded" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }}>{order.trackingNumber}</span>
                           <button
                             onClick={() => copyToClipboard(order.trackingNumber!)}
                             className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition-colors"
@@ -1143,7 +1143,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                         </div>
                       </div>
                     )}
-                    <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+                    <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
                       Created {new Date(order.createdAt).toLocaleString()}
                     </div>
                   </div>
@@ -1152,20 +1152,20 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                 {/* Footer: neutral reference action band */}
                 <div className="px-4 pt-3 pb-4 mt-2" style={{ background: "linear-gradient(to top, #F5F5F7 0%, rgba(245,245,247,0.58) 58%, rgba(245,245,247,0) 100%)" }}>
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-[12px] uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Total :</span>
+                    <span className="text-[13px] uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Total :</span>
                     <span className="text-[22px] sm:text-[24px] font-extrabold" style={{ color: "var(--t-text)" }}>{fmtMoney(order.total, "GBP")}</span>
                   </div>
                   <div className="flex gap-2.5">
                     <button
                       onClick={() => openEditModal(order)}
-                      className="flex-1 h-9 rounded-lg text-[13px] font-bold transition-opacity hover:opacity-80"
+                      className="flex-1 h-9 rounded-lg text-[14px] font-bold transition-opacity hover:opacity-80"
                       style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(0,0,0,0.10)", color: "var(--t-text)" }}
                     >
                       Edit Order
                     </button>
                     <button
                       onClick={() => toggleOrderExpand(order.id)}
-                      className="flex-1 h-9 rounded-lg text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                      className="flex-1 h-9 rounded-lg text-[14px] font-bold text-white transition-opacity hover:opacity-90"
                       style={{ background: "#17181A" }}
                     >
                       {isExpanded ? "Hide Details" : "View Details"}
@@ -1236,46 +1236,46 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Task / Note</label>
+                <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Task / Note</label>
                 <textarea
                   value={bulkTaskNote}
                   onChange={(e) => setBulkTaskNote(e.target.value)}
                   placeholder="e.g. Follow up on delivery status, check if payment received, etc."
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg text-[13px] resize-none"
+                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Due Date</label>
+                  <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Due Date</label>
                   <input
                     type="date"
                     value={bulkTaskDueDate}
                     onChange={(e) => setBulkTaskDueDate(e.target.value)}
-                    className="w-full h-10 px-3 rounded-lg text-[12px]"
+                    className="w-full h-10 px-3 rounded-lg text-[13px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Due Time</label>
+                  <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Due Time</label>
                   <input
                     type="time"
                     value={bulkTaskDueTime}
                     onChange={(e) => setBulkTaskDueTime(e.target.value)}
-                    className="w-full h-10 px-3 rounded-lg text-[12px]"
+                    className="w-full h-10 px-3 rounded-lg text-[13px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
               </div>
 
               <div className="p-3 rounded-lg" style={{ background: "rgba(217,119,6,0.05)", border: "1px solid rgba(217,119,6,0.2)" }}>
-                <div className="text-[11px] font-semibold mb-1" style={{ color: "#D97706" }}>
+                <div className="text-[12px] font-semibold mb-1" style={{ color: "#D97706" }}>
                   <Flag className="w-3 h-3 inline mr-1" />
                   What will happen:
                 </div>
-                <ul className="text-[11px] space-y-0.5" style={{ color: "#D97706" }}>
+                <ul className="text-[12px] space-y-0.5" style={{ color: "#D97706" }}>
                   <li>• Selected orders will be flagged and highlighted</li>
                   <li>• A task will be added to your Todo List</li>
                   <li>• You'll be notified when the due date/time arrives</li>
@@ -1286,7 +1286,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             <div className="p-4 border-t flex gap-2" style={{ borderColor: V2_CARD_BORDER }}>
               <button
                 onClick={() => setShowBulkTaskModal(false)}
-                className="flex-1 h-10 rounded-lg text-[13px] font-semibold"
+                className="flex-1 h-10 rounded-lg text-[14px] font-semibold"
                 style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}
               >
                 Cancel
@@ -1294,7 +1294,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               <button
                 onClick={bulkAddTask}
                 disabled={!bulkTaskNote}
-                className="flex-1 h-10 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40"
+                className="flex-1 h-10 rounded-lg text-[14px] font-semibold text-white disabled:opacity-40"
                 style={{ background: "#D97706" }}
               >
                 Add Task
@@ -1322,38 +1322,38 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Product Name</label>
+                <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Product Name</label>
                 <input
                   type="text"
                   value={bulkProductName}
                   onChange={(e) => setBulkProductName(e.target.value)}
                   placeholder="e.g. Semaglutide 5mg"
-                  className="w-full h-10 px-3 rounded-lg text-[13px]"
+                  className="w-full h-10 px-3 rounded-lg text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Quantity</label>
+                  <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Quantity</label>
                   <input
                     type="number"
                     value={bulkProductQuantity}
                     onChange={(e) => setBulkProductQuantity(e.target.value)}
                     min="1"
-                    className="w-full h-10 px-3 rounded-lg text-[13px]"
+                    className="w-full h-10 px-3 rounded-lg text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Price (each)</label>
+                  <label className="block text-[13px] font-bold mb-2" style={{ color: "var(--t-text)" }}>Price (each)</label>
                   <input
                     type="number"
                     value={bulkProductPrice}
                     onChange={(e) => setBulkProductPrice(e.target.value)}
                     placeholder="0.00"
                     step="0.01"
-                    className="w-full h-10 px-3 rounded-lg text-[13px]"
+                    className="w-full h-10 px-3 rounded-lg text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
@@ -1363,7 +1363,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             <div className="p-4 border-t flex gap-2" style={{ borderColor: V2_CARD_BORDER }}>
               <button
                 onClick={() => setShowBulkAddProduct(false)}
-                className="flex-1 h-10 rounded-lg text-[13px] font-semibold"
+                className="flex-1 h-10 rounded-lg text-[14px] font-semibold"
                 style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}
               >
                 Cancel
@@ -1371,7 +1371,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               <button
                 onClick={bulkAddProductToOrders}
                 disabled={!bulkProductName || !bulkProductPrice}
-                className="flex-1 h-10 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40"
+                className="flex-1 h-10 rounded-lg text-[14px] font-semibold text-white disabled:opacity-40"
                 style={{ background: "var(--t-blue)" }}
               >
                 Add to Orders
@@ -1393,7 +1393,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-[16px] font-bold truncate" style={{ color: "var(--t-text)" }}>{editingOrder.memberName}</h3>
-                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
+                  <div className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
                     Editing <span className="font-bold" style={{ color: "var(--t-text)" }}>{editingOrder.id}</span> · @{editingOrder.memberUsername}
                   </div>
                 </div>
@@ -1410,16 +1410,16 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             <div className="px-4 pb-4 space-y-4">
               {/* Items — same qty-badge rows as the card */}
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Items</div>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Items</div>
                 <div className="space-y-2 mb-3">
                   {editProducts.map((product, index) => (
                     <div key={index} className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-md flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                      <span className="w-6 h-6 rounded-md flex items-center justify-center text-[13px] font-bold shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
                         {product.quantity}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{product.name}</div>
-                        <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{fmtMoney(product.price, "GBP")} each</div>
+                        <div className="text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{product.name}</div>
+                        <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{fmtMoney(product.price, "GBP")} each</div>
                       </div>
                       <div className="flex items-center rounded-lg overflow-hidden shrink-0" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
                         <button
@@ -1428,7 +1428,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                         >
                           <Minus className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
                         </button>
-                        <span className="w-7 text-center text-[12px] font-bold border-x" style={{ color: "var(--t-text)", borderColor: V2_CARD_BORDER }}>{product.quantity}</span>
+                        <span className="w-7 text-center text-[13px] font-bold border-x" style={{ color: "var(--t-text)", borderColor: V2_CARD_BORDER }}>{product.quantity}</span>
                         <button
                           onClick={() => updateProductQuantity(index, 1)}
                           className="w-7 h-7 flex items-center justify-center transition-colors hover:bg-gray-100"
@@ -1451,7 +1451,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   <div className="flex rounded-full p-0.5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
                     <button
                       onClick={() => setNewProductMode("existing")}
-                      className="flex-1 h-7 rounded-full text-[12px] font-bold transition-colors"
+                      className="flex-1 h-7 rounded-full text-[13px] font-bold transition-colors"
                       style={{
                         background: newProductMode === "existing" ? "#17181A" : "transparent",
                         color: newProductMode === "existing" ? "#fff" : "var(--t-subtle)"
@@ -1461,7 +1461,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                     </button>
                     <button
                       onClick={() => setNewProductMode("custom")}
-                      className="flex-1 h-7 rounded-full text-[12px] font-bold transition-colors"
+                      className="flex-1 h-7 rounded-full text-[13px] font-bold transition-colors"
                       style={{
                         background: newProductMode === "custom" ? "#17181A" : "transparent",
                         color: newProductMode === "custom" ? "#fff" : "var(--t-subtle)"
@@ -1479,7 +1479,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                         setNewProductName(e.target.value);
                         if (selected) setNewProductPrice(selected.price.toString());
                       }}
-                      className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
+                      className="w-full h-9 px-3 rounded-lg text-[14px] bg-white"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                     >
                       <option value="">Select a product...</option>
@@ -1495,7 +1495,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                       value={newProductName}
                       onChange={(e) => setNewProductName(e.target.value)}
                       placeholder="Custom product name"
-                      className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
+                      className="w-full h-9 px-3 rounded-lg text-[14px] bg-white"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                     />
                   )}
@@ -1507,7 +1507,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                       onChange={(e) => setNewProductQuantity(e.target.value)}
                       placeholder="Qty"
                       min="1"
-                      className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
+                      className="w-full h-9 px-3 rounded-lg text-[14px] bg-white"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                     />
                     <input
@@ -1516,7 +1516,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                       onChange={(e) => setNewProductPrice(e.target.value)}
                       placeholder="Price"
                       step="0.01"
-                      className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
+                      className="w-full h-9 px-3 rounded-lg text-[14px] bg-white"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                       disabled={newProductMode === "existing" && newProductName !== ""}
                     />
@@ -1524,7 +1524,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   <button
                     onClick={addNewProduct}
                     disabled={!newProductName || !newProductPrice}
-                    className="w-full h-9 rounded-lg text-[13px] font-bold flex items-center justify-center gap-1 disabled:opacity-40 bg-white"
+                    className="w-full h-9 rounded-lg text-[14px] font-bold flex items-center justify-center gap-1 disabled:opacity-40 bg-white"
                     style={{ border: `1px dashed rgba(0,0,0,0.2)`, color: "var(--t-text)" }}
                   >
                     <Plus className="w-4 h-4" /> Add Product
@@ -1537,11 +1537,11 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               {/* Status + Tracking side by side */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Status</div>
+                  <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Status</div>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
-                    className="w-full h-10 px-3 rounded-lg text-[13px]"
+                    className="w-full h-10 px-3 rounded-lg text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   >
                     <option value="pending">Pending Payment</option>
@@ -1554,13 +1554,13 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   </select>
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
+                  <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
                   <input
                     type="text"
                     value={editTrackingNumber}
                     onChange={(e) => setEditTrackingNumber(e.target.value)}
                     placeholder="Enter tracking number"
-                    className="w-full h-10 px-3 rounded-lg text-[13px]"
+                    className="w-full h-10 px-3 rounded-lg text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
@@ -1568,14 +1568,14 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
               {/* TXID */}
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Transaction ID (TXID)</div>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Transaction ID (TXID)</div>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={editTxid}
                     onChange={(e) => setEditTxid(e.target.value)}
                     placeholder="0x..."
-                    className="flex-1 h-10 px-3 rounded-lg text-[12px] font-mono"
+                    className="flex-1 h-10 px-3 rounded-lg text-[13px] font-mono"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                   {editTxid && (
@@ -1593,20 +1593,20 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
               {/* Internal Notes + QR upload */}
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Internal Notes</div>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Internal Notes</div>
                 <textarea
                   value={editInternalNotes}
                   onChange={(e) => setEditInternalNotes(e.target.value)}
                   placeholder="Add notes visible only to organisers..."
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg text-[13px] resize-none"
+                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
 
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>QR Code / Postage Label</div>
-                <button className="w-full h-10 rounded-lg text-[13px] font-bold flex items-center justify-center gap-2" style={{ border: `1px dashed rgba(0,0,0,0.2)`, color: "var(--t-muted)" }}>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>QR Code / Postage Label</div>
+                <button className="w-full h-10 rounded-lg text-[14px] font-bold flex items-center justify-center gap-2" style={{ border: `1px dashed rgba(0,0,0,0.2)`, color: "var(--t-muted)" }}>
                   Upload File
                 </button>
               </div>
@@ -1615,20 +1615,20 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
               {/* Telegram message */}
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Message @{editingOrder.memberUsername}</div>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Message @{editingOrder.memberUsername}</div>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={telegramMessage}
                     onChange={(e) => setTelegramMessage(e.target.value)}
                     placeholder="Type your message..."
-                    className="flex-1 h-10 px-3 rounded-lg text-[13px]"
+                    className="flex-1 h-10 px-3 rounded-lg text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                   <button
                     onClick={sendTelegramMessage}
                     disabled={!telegramMessage.trim()}
-                    className="h-10 px-4 rounded-lg text-[13px] font-bold text-white flex items-center gap-2 disabled:opacity-40 shrink-0"
+                    className="h-10 px-4 rounded-lg text-[14px] font-bold text-white flex items-center gap-2 disabled:opacity-40 shrink-0"
                     style={{ background: "#17181A" }}
                   >
                     <Send className="w-4 h-4" /> Send
@@ -1638,7 +1638,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
               {/* Flag Order */}
               <div className="rounded-xl p-3" style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.2)" }}>
-                <div className="text-[11px] font-bold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: "#D97706" }}>
+                <div className="text-[12px] font-bold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: "#D97706" }}>
                   <Flag className="w-3.5 h-3.5" /> Flag for Follow-up
                 </div>
                 <textarea
@@ -1646,7 +1646,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   onChange={(e) => setFlagNote(e.target.value)}
                   placeholder="e.g. Check on this order tomorrow, customer asked about delivery time"
                   rows={2}
-                  className="w-full px-3 py-2 rounded-lg text-[13px] resize-none mb-2 bg-white"
+                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none mb-2 bg-white"
                   style={{ border: "1px solid rgba(217,119,6,0.25)", color: "var(--t-text)" }}
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -1654,19 +1654,19 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                     type="date"
                     value={flagDueDate}
                     onChange={(e) => setFlagDueDate(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg text-[12px] bg-white"
+                    className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
                     style={{ border: "1px solid rgba(217,119,6,0.25)", color: "var(--t-text)" }}
                   />
                   <input
                     type="time"
                     value={flagDueTime}
                     onChange={(e) => setFlagDueTime(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg text-[12px] bg-white"
+                    className="w-full h-9 px-3 rounded-lg text-[13px] bg-white"
                     style={{ border: "1px solid rgba(217,119,6,0.25)", color: "var(--t-text)" }}
                   />
                 </div>
                 {flagNote && (
-                  <div className="mt-2 text-[11px] flex items-center gap-1" style={{ color: "#D97706" }}>
+                  <div className="mt-2 text-[12px] flex items-center gap-1" style={{ color: "#D97706" }}>
                     <Flag className="w-3 h-3" /> This order will be added to your Todo List
                   </div>
                 )}
@@ -1676,7 +1676,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             {/* Footer: neutral reference action band, matching order cards */}
             <div className="sticky bottom-0 px-4 pt-3 pb-4" style={{ background: "linear-gradient(to top, #F5F5F7 0%, rgba(245,245,247,0.72) 55%, #fff 100%)" }}>
               <div className="flex items-baseline justify-between mb-3">
-                <span className="text-[12px] uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Total :</span>
+                <span className="text-[13px] uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Total :</span>
                 <span className="text-[20px] font-extrabold" style={{ color: "var(--t-text)" }}>
                   {fmtMoney(editProducts.reduce((sum, p) => sum + p.price * p.quantity, 0), "GBP")}
                 </span>
@@ -1684,14 +1684,14 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               <div className="flex gap-2.5">
                 <button
                   onClick={closeEditModal}
-                  className="flex-1 h-9 rounded-lg text-[13px] font-bold transition-opacity hover:opacity-80"
+                  className="flex-1 h-9 rounded-lg text-[14px] font-bold transition-opacity hover:opacity-80"
                   style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(0,0,0,0.10)", color: "var(--t-text)" }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveOrderChanges}
-                  className="flex-1 h-9 rounded-lg text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                  className="flex-1 h-9 rounded-lg text-[14px] font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: "#17181A" }}
                 >
                   Save Changes
@@ -1734,13 +1734,13 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             </div>
 
             <div className="space-y-2">
-              <p className="text-[13px]" style={{ color: "var(--t-text)" }}>
+              <p className="text-[14px]" style={{ color: "var(--t-text)" }}>
                 Upload a CSV file with two columns: <strong>Order ID, Tracking Number</strong>
               </p>
-              <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
+              <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
                 First row can be a header (will be skipped automatically). Orders will be marked as "dispatched".
               </p>
-              <div className="rounded-lg p-3 text-[11px] font-mono" style={{ background: "#F3F4F6", color: "#374151" }}>
+              <div className="rounded-lg p-3 text-[12px] font-mono" style={{ background: "#F3F4F6", color: "#374151" }}>
                 Order ID,Tracking Number<br/>
                 ORD-001,1Z999AA10123456784<br/>
                 ORD-002,1Z999AA10234567895
@@ -1757,7 +1757,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               />
               <button
                 onClick={() => csvInputRef.current?.click()}
-                className="w-full h-10 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-2 transition-colors"
+                className="w-full h-10 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-2 transition-colors"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, background: "#fff", color: "var(--t-text)" }}
               >
                 <Upload className="w-4 h-4" />
@@ -1769,7 +1769,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
               <button
                 onClick={handleCsvImport}
                 disabled={csvImporting}
-                className="w-full h-10 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full h-10 rounded-lg text-[14px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
                 style={{ background: "var(--t-blue)" }}
               >
                 {csvImporting ? (

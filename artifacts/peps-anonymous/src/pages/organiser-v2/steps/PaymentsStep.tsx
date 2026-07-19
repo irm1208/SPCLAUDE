@@ -54,10 +54,10 @@ export default function PaymentsStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Cryptocurrency (Direct)</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Cryptocurrency (Direct)</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {cryptoEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -70,7 +70,7 @@ export default function PaymentsStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             Members send directly to your wallet addresses
           </div>
 
@@ -80,13 +80,13 @@ export default function PaymentsStep() {
               <div key={wallet.id} className="rounded-md p-3 space-y-3" style={{ background: "var(--t-surface2)" }}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                    <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                       Currency
                     </label>
                     <select
                       value={wallet.currency}
                       onChange={(e) => updateCryptoWallet(wallet.id, "currency", e.target.value)}
-                      className="w-full h-9 px-3 rounded-md text-[13px]"
+                      className="w-full h-9 px-3 rounded-md text-[14px]"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
                     >
                       <option value="USDT">USDT</option>
@@ -97,13 +97,13 @@ export default function PaymentsStep() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                    <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                       Network
                     </label>
                     <select
                       value={wallet.network}
                       onChange={(e) => updateCryptoWallet(wallet.id, "network", e.target.value)}
-                      className="w-full h-9 px-3 rounded-md text-[13px]"
+                      className="w-full h-9 px-3 rounded-md text-[14px]"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
                     >
                       <option value="ERC20">ERC20 (Ethereum)</option>
@@ -115,7 +115,7 @@ export default function PaymentsStep() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                     Wallet Address
                   </label>
                   <div className="flex gap-2">
@@ -124,7 +124,7 @@ export default function PaymentsStep() {
                       placeholder="0x... or T..."
                       value={wallet.address}
                       onChange={(e) => updateCryptoWallet(wallet.id, "address", e.target.value)}
-                      className="flex-1 h-9 px-3 rounded-md text-[13px] font-mono"
+                      className="flex-1 h-9 px-3 rounded-md text-[14px] font-mono"
                       style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
                     />
                     {cryptoWallets.length > 1 && (
@@ -142,7 +142,7 @@ export default function PaymentsStep() {
             ))}
             <button
               onClick={addCryptoWallet}
-              className="w-full h-9 rounded-md text-[12px] font-semibold transition-colors"
+              className="w-full h-9 rounded-md text-[13px] font-semibold transition-colors"
               style={{ border: `1px dashed ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
             >
               + Add Another Currency
@@ -157,10 +157,10 @@ export default function PaymentsStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>AnonPay</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>AnonPay</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {anonpayEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -173,24 +173,24 @@ export default function PaymentsStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             No-KYC crypto exchange — members pay with any coin
           </div>
 
         {anonpayEnabled && (
           <div className="pt-2 space-y-3 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-            <div className="rounded-md p-3 text-[11.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
+            <div className="rounded-md p-3 text-[12.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
               <strong>How AnonPay works:</strong> Members can pay with any cryptocurrency (BTC, ETH, LTC, etc.). AnonPay instantly converts it to your chosen currency and sends it to your wallet. No KYC required for either party.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                   You Receive (currency AnonPay converts to)
                 </label>
                 <select
                   value={anonpayCurrency}
                   onChange={(e) => setAnonpayCurrency(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 >
                   <option value="USDT">USDT</option>
@@ -200,13 +200,13 @@ export default function PaymentsStep() {
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                   Network
                 </label>
                 <select
                   value={anonpayNetwork}
                   onChange={(e) => setAnonpayNetwork(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 >
                   <option value="TRC20">TRC20 (Tron)</option>
@@ -216,7 +216,7 @@ export default function PaymentsStep() {
               </div>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+              <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                 Your Wallet Address (where AnonPay sends funds)
               </label>
               <input
@@ -224,7 +224,7 @@ export default function PaymentsStep() {
                 placeholder="0x... or T..."
                 value={anonpayWallet}
                 onChange={(e) => setAnonpayWallet(e.target.value)}
-                className="w-full h-9 px-3 rounded-md text-[13px] font-mono"
+                className="w-full h-9 px-3 rounded-md text-[14px] font-mono"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
             </div>
@@ -238,10 +238,10 @@ export default function PaymentsStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Revolut</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Revolut</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {revolutEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -254,13 +254,13 @@ export default function PaymentsStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             Bank transfer via Revolut handle
           </div>
 
         {revolutEnabled && (
           <div className="pt-2 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-            <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+            <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
               Revolut Handle
             </label>
             <input
@@ -268,7 +268,7 @@ export default function PaymentsStep() {
               placeholder="@username"
               value={revolutHandle}
               onChange={(e) => setRevolutHandle(e.target.value)}
-              className="w-full h-9 px-3 rounded-md text-[13px]"
+              className="w-full h-9 px-3 rounded-md text-[14px]"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
@@ -281,10 +281,10 @@ export default function PaymentsStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>PayPal</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>PayPal</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {paypalEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -297,13 +297,13 @@ export default function PaymentsStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             PayPal.Me link or email
           </div>
 
         {paypalEnabled && (
           <div className="pt-2 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-            <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+            <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
               PayPal Handle or Email
             </label>
             <input
@@ -311,7 +311,7 @@ export default function PaymentsStep() {
               placeholder="paypal.me/username or email@example.com"
               value={paypalHandle}
               onChange={(e) => setPaypalHandle(e.target.value)}
-              className="w-full h-9 px-3 rounded-md text-[13px]"
+              className="w-full h-9 px-3 rounded-md text-[14px]"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
@@ -321,7 +321,7 @@ export default function PaymentsStep() {
 
       {/* Helper text */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px]" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px]" style={{ color: "var(--t-blue)" }}>
           <strong>Tip:</strong> Enable at least one payment method so members can pay you. You can enable multiple methods and let members choose.
         </p>
       </div>

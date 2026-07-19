@@ -54,10 +54,10 @@ export default function AccessStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Paid GB Entry Fee</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Paid GB Entry Fee</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {entryFeeEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -70,18 +70,18 @@ export default function AccessStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             Charge a one-time fee for people to join the group buy
           </div>
 
         {entryFeeEnabled && (
           <div className="pt-2 space-y-3 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-            <div className="rounded-md p-3 text-[11.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
+            <div className="rounded-md p-3 text-[12.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
               <strong>How it works:</strong> Members pay this fee (via crypto) when they join. Use it to cover testing costs, deposits, or to filter serious buyers only.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                   Fee Amount (in GB currency)
                 </label>
                 <input
@@ -89,12 +89,12 @@ export default function AccessStep() {
                   placeholder="0.00"
                   value={entryFeeAmount}
                   onChange={(e) => setEntryFeeAmount(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                   Label (optional)
                 </label>
                 <input
@@ -102,7 +102,7 @@ export default function AccessStep() {
                   placeholder="Entry Fee"
                   value={entryFeeLabel}
                   onChange={(e) => setEntryFeeLabel(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
@@ -116,10 +116,10 @@ export default function AccessStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Globe className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Country Restrictions</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Country Restrictions</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Control which countries can join. Useful for limiting shipping regions or complying with local regulations.
         </p>
         <div className="space-y-2">
@@ -131,7 +131,7 @@ export default function AccessStep() {
               className="w-4 h-4"
               style={{ accentColor: "var(--t-blue)" }}
             />
-            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>Allow all countries</span>
+            <span className="text-[14px]" style={{ color: "var(--t-text)" }}>Allow all countries</span>
           </label>
           <label className="flex items-center gap-2.5 cursor-pointer">
             <input
@@ -141,7 +141,7 @@ export default function AccessStep() {
               className="w-4 h-4"
               style={{ accentColor: "var(--t-blue)" }}
             />
-            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>Only allow specific countries</span>
+            <span className="text-[14px]" style={{ color: "var(--t-text)" }}>Only allow specific countries</span>
           </label>
           <label className="flex items-center gap-2.5 cursor-pointer">
             <input
@@ -151,7 +151,7 @@ export default function AccessStep() {
               className="w-4 h-4"
               style={{ accentColor: "var(--t-blue)" }}
             />
-            <span className="text-[13px]" style={{ color: "var(--t-text)" }}>Block specific countries</span>
+            <span className="text-[14px]" style={{ color: "var(--t-text)" }}>Block specific countries</span>
           </label>
         </div>
 
@@ -164,12 +164,12 @@ export default function AccessStep() {
                 value={countryInput}
                 onChange={(e) => setCountryInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && addCountry()}
-                className="flex-1 h-9 px-3 rounded-md text-[13px]"
+                className="flex-1 h-9 px-3 rounded-md text-[14px]"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
               <button
                 onClick={addCountry}
-                className="h-9 px-4 rounded-md text-[13px] font-semibold text-white"
+                className="h-9 px-4 rounded-md text-[14px] font-semibold text-white"
                 style={{ background: "var(--t-blue)" }}
               >
                 Add
@@ -180,7 +180,7 @@ export default function AccessStep() {
                 {countries.map((country) => (
                   <span
                     key={country}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[13px] font-medium"
                     style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}
                   >
                     {country}
@@ -204,10 +204,10 @@ export default function AccessStep() {
       <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-          <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Blocked Accounts</span>
+          <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Blocked Accounts</span>
         </div>
         <div className="p-4 space-y-3">
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+        <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
           Block specific Telegram usernames from joining or placing orders. Use this to prevent problem users or scammers from accessing your group buy.
         </p>
         <div className="flex gap-2">
@@ -217,12 +217,12 @@ export default function AccessStep() {
             value={blockInput}
             onChange={(e) => setBlockInput(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && addBlockedAccount()}
-            className="flex-1 h-9 px-3 rounded-md text-[13px]"
+            className="flex-1 h-9 px-3 rounded-md text-[14px]"
             style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
           />
           <button
             onClick={addBlockedAccount}
-            className="h-9 px-4 rounded-md text-[13px] font-semibold text-white"
+            className="h-9 px-4 rounded-md text-[14px] font-semibold text-white"
             style={{ background: "var(--t-blue)" }}
           >
             Add
@@ -233,7 +233,7 @@ export default function AccessStep() {
             {blockedAccounts.map((username) => (
               <span
                 key={username}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[13px] font-medium"
                 style={{ background: "var(--t-surface2)", color: "var(--t-text)" }}
               >
                 @{username}
@@ -256,10 +256,10 @@ export default function AccessStep() {
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>Invite PIN (Password)</span>
+            <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Invite PIN (Password)</span>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>
               {pinEnabled ? "Enabled" : "Disabled"}
             </span>
             <input
@@ -272,17 +272,17 @@ export default function AccessStep() {
           </label>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+          <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
             Require a password to join this group buy
           </div>
 
         {pinEnabled && (
           <div className="pt-2 space-y-3 border-t" style={{ borderColor: V2_CARD_BORDER }}>
-            <div className="rounded-md p-3 text-[11.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
+            <div className="rounded-md p-3 text-[12.5px] leading-relaxed" style={{ background: "var(--t-blue-05)", color: "var(--t-blue)" }}>
               <strong>How it works:</strong> Members will need to enter this 4-digit password to access and join your group buy. Share it privately with trusted members only.
             </div>
             <div>
-              <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+              <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                 4-Digit Password
               </label>
               <input
@@ -291,7 +291,7 @@ export default function AccessStep() {
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 maxLength={4}
-                className="w-full sm:w-32 h-9 px-3 rounded-md text-[13px] text-center font-mono tracking-wider"
+                className="w-full sm:w-32 h-9 px-3 rounded-md text-[14px] text-center font-mono tracking-wider"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
             </div>
@@ -302,7 +302,7 @@ export default function AccessStep() {
 
       {/* Helper text */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px]" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px]" style={{ color: "var(--t-blue)" }}>
           <strong>Tip:</strong> These settings help you control who can access your group buy. Most organisers use the Invite PIN for private group buys and country restrictions to match their shipping options.
         </p>
       </div>

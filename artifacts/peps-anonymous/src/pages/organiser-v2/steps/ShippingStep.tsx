@@ -40,7 +40,7 @@ export default function ShippingStep() {
     <div className="space-y-4">
       {/* Description */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px] leading-relaxed" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px] leading-relaxed" style={{ color: "var(--t-blue)" }}>
           Set up shipping options for different regions. Members will choose one when ordering. You can offer multiple options (e.g. tracked, express, locker pickup) at different prices.
         </p>
       </div>
@@ -54,11 +54,11 @@ export default function ShippingStep() {
               <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                 <div className="flex items-center gap-2">
                   <Truck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
-                  <span className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>
+                  <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>
                     {opt.label || `Shipping Option ${index + 1}`}
                   </span>
                   {opt.region && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+                    <span className="text-[12px] px-2 py-0.5 rounded-full" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
                       {opt.region}
                     </span>
                   )}
@@ -69,7 +69,7 @@ export default function ShippingStep() {
                   style={{ color: "#EF4444" }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-semibold">Remove</span>
+                  <span className="text-[12px] font-semibold">Remove</span>
                 </button>
               </div>
 
@@ -78,7 +78,7 @@ export default function ShippingStep() {
               {/* Label, Region & Price */}
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_100px] gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                     Shipping Option Name
                   </label>
                   <input
@@ -86,18 +86,18 @@ export default function ShippingStep() {
                     placeholder="e.g. Standard Shipping"
                     value={opt.label}
                     onChange={(e) => updateOption(opt.id, "label", e.target.value)}
-                    className="w-full h-9 px-3 rounded-md text-[13px]"
+                    className="w-full h-9 px-3 rounded-md text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                     Region / Country
                   </label>
                   <select
                     value={opt.region}
                     onChange={(e) => updateOption(opt.id, "region", e.target.value)}
-                    className="w-full h-9 px-3 rounded-md text-[13px]"
+                    className="w-full h-9 px-3 rounded-md text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   >
                     <option value="UK">UK</option>
@@ -111,7 +111,7 @@ export default function ShippingStep() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                     Price
                   </label>
                   <input
@@ -119,7 +119,7 @@ export default function ShippingStep() {
                     placeholder="0.00"
                     value={opt.price}
                     onChange={(e) => updateOption(opt.id, "price", e.target.value)}
-                    className="w-full h-9 px-3 rounded-md text-[13px]"
+                    className="w-full h-9 px-3 rounded-md text-[14px]"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                 </div>
@@ -127,7 +127,7 @@ export default function ShippingStep() {
 
               {/* Description */}
               <div>
-                <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
+                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>
                   Description (optional)
                 </label>
                 <input
@@ -135,7 +135,7 @@ export default function ShippingStep() {
                   placeholder="e.g. Delivery in 5-7 days"
                   value={opt.description}
                   onChange={(e) => updateOption(opt.id, "description", e.target.value)}
-                  className="w-full h-9 px-3 rounded-md text-[13px]"
+                  className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
@@ -151,7 +151,7 @@ export default function ShippingStep() {
                     style={{ accentColor: "var(--t-blue)" }}
                   />
                   <MapPin className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                  <span className="text-[12px] font-medium" style={{ color: "var(--t-text)" }}>
+                  <span className="text-[13px] font-medium" style={{ color: "var(--t-text)" }}>
                     Requires shipping address
                   </span>
                 </label>
@@ -164,7 +164,7 @@ export default function ShippingStep() {
                     style={{ accentColor: "var(--t-blue)" }}
                   />
                   <QrCodeIcon className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                  <span className="text-[12px] font-medium" style={{ color: "var(--t-text)" }}>
+                  <span className="text-[13px] font-medium" style={{ color: "var(--t-text)" }}>
                     Requires postage label or QR code upload
                   </span>
                 </label>
@@ -178,15 +178,15 @@ export default function ShippingStep() {
           <div className="w-12 h-12 rounded-lg mx-auto mb-3 flex items-center justify-center" style={{ background: "var(--t-surface2)" }}>
             <Truck className="w-6 h-6" style={{ color: "var(--t-subtle)" }} />
           </div>
-          <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>No shipping options yet</p>
-          <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>Add your first shipping method</p>
+          <p className="text-[14px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>No shipping options yet</p>
+          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>Add your first shipping method</p>
         </div>
       )}
 
       {/* Add option button */}
       <button
         onClick={addOption}
-        className="w-full h-10 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+        className="w-full h-10 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
         style={{ border: `2px dashed ${V2_CARD_BORDER}`, color: "var(--t-blue)" }}
       >
         <Plus className="w-4 h-4" /> Add Shipping Option
@@ -194,7 +194,7 @@ export default function ShippingStep() {
 
       {/* Helper text */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
-        <p className="text-[12px]" style={{ color: "var(--t-blue)" }}>
+        <p className="text-[13px]" style={{ color: "var(--t-blue)" }}>
           <strong>Tip:</strong> Match shipping options to your regions. For example, InPost lockers in Poland might require a QR code, while UK Royal Mail needs a full address.
         </p>
       </div>

@@ -11,7 +11,7 @@
   --approved-navy: #1B3A7A;
   --approved-blue: #2D6BCC;
   --approved-ink: #0F1F38;
-  --approved-type-label: 11px;
+  --approved-type-label: 12px;
   --approved-type-micro: var(--approved-type-label);
   --approved-type-meta: 12px;
   --approved-type-body: 14px;
@@ -105,7 +105,7 @@
   box-shadow: 0 6px 15px rgba(15, 31, 56, 0.22);
   color: #FFFFFF;
   font-family: 'DM Serif Display', Georgia, serif;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: -0.02em;
 }
 
@@ -219,7 +219,7 @@
   align-items: center;
   gap: 4px;
   color: rgba(255, 255, 255, 0.72);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.1;
 }
@@ -250,8 +250,8 @@
   font-size: var(--approved-type-micro);
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-nav-group-toggle:hover {
@@ -344,12 +344,12 @@
 }
 
 .organiser-v2 .ov2-setup-link strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .organiser-v2 .ov2-setup-link small {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
 }
 
@@ -369,7 +369,7 @@
   border-color: rgba(255, 255, 255, 0.24);
   color: #FFFFFF;
   background: rgba(255, 255, 255, 0.08);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -402,7 +402,7 @@
   min-height: 32px;
   color: rgba(255, 255, 255, 0.74);
   background: transparent;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -540,8 +540,8 @@
   color: #8A9AAA;
   font-size: var(--approved-type-label);
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-topbar-context-metrics {
@@ -982,7 +982,7 @@
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-pipeline-heading p {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.45;
 }
@@ -1015,7 +1015,7 @@
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card > p {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
 }
@@ -1039,7 +1039,7 @@
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card footer strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1322,7 +1322,7 @@
 }
 
 .organiser-v2 .ov2-route-state > span {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .organiser-v2 .ov2-route-state > button {
@@ -1332,7 +1332,7 @@
   padding: 0 14px;
   color: #FFFFFF;
   background: #2D6BCC;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1348,7 +1348,7 @@
   padding: 8px 11px;
   color: #1B3A7A;
   background: #EEF5FF;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 

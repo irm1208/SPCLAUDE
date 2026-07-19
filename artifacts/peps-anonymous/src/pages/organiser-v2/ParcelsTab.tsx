@@ -223,19 +223,19 @@ export default function ParcelsTab() {
       <div className="rounded-xl p-4 sm:p-5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div>
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Parcels (Masked Shipping)</h2>
-          <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
             Track parcels shipped to reshippers for member forwarding
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAddParcel(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[12px] font-semibold text-white self-start sm:self-auto"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white self-start sm:self-auto"
             style={{ background: "var(--t-blue)" }}
           >
             <Package className="w-3.5 h-3.5" /> Add Parcel
           </button>
-          <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5 self-start sm:self-auto" style={{ color: "var(--t-blue)", border: `1px solid ${V2_CARD_BORDER}` }}>
+          <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5 self-start sm:self-auto" style={{ color: "var(--t-blue)", border: `1px solid ${V2_CARD_BORDER}` }}>
             <Download className="w-3.5 h-3.5" /> Export
           </button>
         </div>
@@ -252,7 +252,7 @@ export default function ParcelsTab() {
               placeholder="Search by order, member, or tracking number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-3 rounded-lg text-[13px] outline-none"
+              className="w-full h-10 pl-10 pr-3 rounded-lg text-[14px] outline-none"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
@@ -264,7 +264,7 @@ export default function ParcelsTab() {
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
-                className="px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors"
+                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-colors"
                 style={{
                   background: statusFilter === status ? "var(--t-blue-10)" : "transparent",
                   color: statusFilter === status ? "var(--t-blue)" : "var(--t-muted)",
@@ -301,27 +301,27 @@ export default function ParcelsTab() {
                   <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[140px_1fr_140px_120px] gap-2 sm:gap-4">
                     {/* Order ID */}
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Order</div>
-                      <div className="text-[13px] font-bold" style={{ color: "var(--t-text)" }}>{parcel.orderId}</div>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Order</div>
+                      <div className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{parcel.orderId}</div>
                     </div>
 
                     {/* Member */}
                     <div className="min-w-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Member</div>
-                      <div className="text-[13px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{parcel.memberName}</div>
-                      <div className="text-[11px] truncate" style={{ color: "var(--t-subtle)" }}>{parcel.memberUsername}</div>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Member</div>
+                      <div className="text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{parcel.memberName}</div>
+                      <div className="text-[12px] truncate" style={{ color: "var(--t-subtle)" }}>{parcel.memberUsername}</div>
                     </div>
 
                     {/* Carrier */}
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Carrier</div>
-                      <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.carrier}</div>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Carrier</div>
+                      <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.carrier}</div>
                     </div>
 
                     {/* Status */}
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Status</div>
-                      <span className="inline-block text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: statusConfig.bg, color: statusConfig.color }}>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Status</div>
+                      <span className="inline-block text-[12px] font-bold px-2 py-1 rounded-full" style={{ background: statusConfig.bg, color: statusConfig.color }}>
                         {statusConfig.label}
                       </span>
                     </div>
@@ -334,12 +334,12 @@ export default function ParcelsTab() {
                     {/* Tracking info */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-mono font-semibold" style={{ color: "var(--t-text)" }}>{parcel.trackingNumber}</span>
+                          <span className="text-[14px] font-mono font-semibold" style={{ color: "var(--t-text)" }}>{parcel.trackingNumber}</span>
                           <button
                             onClick={() => window.open(`https://track.example.com/${parcel.trackingNumber}`, "_blank")}
-                            className="text-[11px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/50"
+                            className="text-[12px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/50"
                             style={{ color: "var(--t-blue)" }}
                           >
                             Track <ExternalLink className="w-3 h-3" />
@@ -347,28 +347,28 @@ export default function ParcelsTab() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Reshipper</div>
-                        <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.reshipperName}</div>
-                        <div className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{parcel.reshipperAddress}</div>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Reshipper</div>
+                        <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.reshipperName}</div>
+                        <div className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{parcel.reshipperAddress}</div>
                       </div>
                     </div>
 
                     {/* Dates */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Shipped</div>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Shipped</div>
                         <div className="flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[13px]" style={{ color: "var(--t-text)" }}>
+                          <span className="text-[14px]" style={{ color: "var(--t-text)" }}>
                             {new Date(parcel.shippedDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                           </span>
                         </div>
                       </div>
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Est. Delivery</div>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Est. Delivery</div>
                         <div className="flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[13px]" style={{ color: "var(--t-text)" }}>
+                          <span className="text-[14px]" style={{ color: "var(--t-text)" }}>
                             {new Date(parcel.estimatedDelivery).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                           </span>
                         </div>
@@ -377,10 +377,10 @@ export default function ParcelsTab() {
 
                     {/* Products */}
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Products</div>
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Products</div>
                       <div className="flex flex-wrap gap-1.5">
                         {parcel.products.map((product, i) => (
-                          <span key={i} className="text-[11px] px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+                          <span key={i} className="text-[12px] px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
                             {product}
                           </span>
                         ))}
@@ -398,7 +398,7 @@ export default function ParcelsTab() {
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
             {searchQuery || statusFilter !== "all" ? "No parcels found" : "No parcels yet"}
           </h3>
-          <p className="text-[13px]" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
             {searchQuery || statusFilter !== "all" ? "Try adjusting your filters" : "Shipped orders will appear here"}
           </p>
         </div>
@@ -412,7 +412,7 @@ export default function ParcelsTab() {
             <div className="sticky top-0 bg-white px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
               <div>
                 <h3 className="text-[16px] font-bold" style={{ color: "var(--t-text)" }}>Add Parcel</h3>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Create a new tracked parcel shipment</p>
+                <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Create a new tracked parcel shipment</p>
               </div>
               <button onClick={() => setShowAddParcel(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5" style={{ color: "var(--t-subtle)" }}>
                 <X className="w-5 h-5" />
@@ -423,7 +423,7 @@ export default function ParcelsTab() {
             <div className="p-5 space-y-4">
               {/* Label */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Label <span style={{ color: "#EF4444" }}>*</span>
                 </label>
                 <input
@@ -431,15 +431,15 @@ export default function ParcelsTab() {
                   placeholder="e.g. Batch 5 to UK Reshipper"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[13px] outline-none"
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
-                <p className="text-[11px] mt-1" style={{ color: "var(--t-subtle)" }}>Internal name to identify this parcel</p>
+                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Internal name to identify this parcel</p>
               </div>
 
               {/* Tracking Number */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Tracking Number <span style={{ color: "#EF4444" }}>*</span>
                 </label>
                 <input
@@ -447,20 +447,20 @@ export default function ParcelsTab() {
                   placeholder="e.g. 1Z999AA10123456784"
                   value={trackingNumber}
                   onChange={(e) => setTrackingNumber(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[13px] font-mono outline-none"
+                  className="w-full h-10 px-3 rounded-lg text-[14px] font-mono outline-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
 
               {/* Carrier */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Carrier (17track API) <span style={{ color: "#EF4444" }}>*</span>
                 </label>
                 <select
                   value={carrier}
                   onChange={(e) => setCarrier(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[13px] outline-none"
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 >
                   <option value="">Select carrier...</option>
@@ -468,12 +468,12 @@ export default function ParcelsTab() {
                     <option key={c.code} value={c.code}>{c.name}</option>
                   ))}
                 </select>
-                <p className="text-[11px] mt-1" style={{ color: "var(--t-subtle)" }}>Connected to 17track API for automatic tracking updates</p>
+                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Connected to 17track API for automatic tracking updates</p>
               </div>
 
               {/* Custom Tracking URL */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Custom Tracking URL (optional)
                 </label>
                 <input
@@ -481,29 +481,29 @@ export default function ParcelsTab() {
                   placeholder="https://track.carrier.com/..."
                   value={customTrackingUrl}
                   onChange={(e) => setCustomTrackingUrl(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[13px] outline-none"
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
-                <p className="text-[11px] mt-1" style={{ color: "var(--t-subtle)" }}>Override the default carrier tracking URL</p>
+                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Override the default carrier tracking URL</p>
               </div>
 
               {/* Items in Parcel */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Items in Parcel
                 </label>
 
                 {/* Product suggestions */}
                 {availableProducts.length > 0 && (
                   <div className="mb-2">
-                    <div className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>Quick Add from Products:</div>
+                    <div className="text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>Quick Add from Products:</div>
                     <div className="flex flex-wrap gap-1.5">
                       {availableProducts.map((product) => (
                         <button
                           key={product}
                           onClick={() => addItem(product)}
                           disabled={items.includes(product)}
-                          className="text-[11px] px-2 py-1 rounded-md transition-opacity disabled:opacity-40"
+                          className="text-[12px] px-2 py-1 rounded-md transition-opacity disabled:opacity-40"
                           style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}
                         >
                           <Plus className="w-3 h-3 inline mr-0.5" /> {product}
@@ -522,18 +522,18 @@ export default function ParcelsTab() {
                     onChange={(e) => handleItemInputChange(e.target.value)}
                     onPaste={handleItemPaste}
                     onKeyPress={(e) => e.key === "Enter" && addItem(itemInput)}
-                    className="flex-1 h-10 px-3 rounded-lg text-[13px] outline-none"
+                    className="flex-1 h-10 px-3 rounded-lg text-[14px] outline-none"
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   />
                   <button
                     onClick={() => addItem(itemInput)}
-                    className="px-3 h-10 rounded-lg text-[12px] font-semibold"
+                    className="px-3 h-10 rounded-lg text-[13px] font-semibold"
                     style={{ background: "var(--t-blue)", color: "#fff" }}
                   >
                     Add
                   </button>
                 </div>
-                <p className="text-[10px] mt-1" style={{ color: "var(--t-subtle)" }}>
+                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>
                   Paste multiple items separated by commas, newlines, or semicolons
                 </p>
 
@@ -542,7 +542,7 @@ export default function ParcelsTab() {
                   <div className="mt-2 space-y-1.5">
                     {items.map((item, i) => (
                       <div key={i} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "var(--t-surface2)" }}>
-                        <span className="text-[12px]" style={{ color: "var(--t-text)" }}>{item}</span>
+                        <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{item}</span>
                         <button onClick={() => removeItem(item)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-50" style={{ color: "#EF4444" }}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -554,7 +554,7 @@ export default function ParcelsTab() {
 
               {/* Notes */}
               <div>
-                <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
                   Notes (optional)
                 </label>
                 <textarea
@@ -562,7 +562,7 @@ export default function ParcelsTab() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg text-[13px] resize-none outline-none"
+                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none outline-none"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                 />
               </div>
@@ -572,14 +572,14 @@ export default function ParcelsTab() {
             <div className="sticky bottom-0 bg-white px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${V2_CARD_BORDER}` }}>
               <button
                 onClick={() => setShowAddParcel(false)}
-                className="px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5"
+                className="px-4 py-2 rounded-lg text-[14px] font-semibold hover:bg-black/5"
                 style={{ color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white"
+                className="px-4 py-2 rounded-lg text-[14px] font-semibold text-white"
                 style={{ background: "var(--t-blue)" }}
               >
                 Add Parcel

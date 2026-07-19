@@ -72,13 +72,13 @@
 
 .organiser-v2 .ov2-brand-copy strong {
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 
 .organiser-v2 .ov2-brand-copy span {
   color: rgba(255, 255, 255, 0.58);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .ov2-sidebar-collapse {
@@ -107,10 +107,10 @@
 .organiser-v2 .ov2-sidebar-kicker {
   padding: 7px 9px 5px;
   color: rgba(255, 255, 255, 0.46);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-nav-group-items.is-nested {
@@ -130,7 +130,7 @@
   padding: 6px 9px;
   color: rgba(255, 255, 255, 0.74);
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 520;
 }
 
@@ -198,12 +198,12 @@
 
 .organiser-v2 .ov2-profile-block strong {
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-profile-block small {
   color: rgba(255, 255, 255, 0.5);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-profile-block > svg {
@@ -251,7 +251,7 @@
 .organiser-v2 .ov2-breadcrumbs {
   gap: 6px;
   color: #78869a;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-brand-crumb {
@@ -273,7 +273,7 @@
   border-radius: 10px;
   color: #8a9aaa;
   background: #f8fafc;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-search-trigger:hover {
@@ -297,7 +297,7 @@
   min-height: 36px;
   border-radius: 10px;
   padding-inline: 12px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -412,7 +412,7 @@
   max-width: 720px;
   margin-top: 6px;
   color: #6b7280;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -425,7 +425,7 @@
   padding: 4px 8px;
   color: #17743d;
   background: rgba(34, 197, 94, 0.13);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -446,7 +446,7 @@
 
 .organiser-v2 .ov2-card-title {
   color: #0f1f38;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 720;
 }
 
@@ -492,7 +492,7 @@
   min-height: 30px;
   border-radius: 8px;
   color: #6b7280;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -543,7 +543,7 @@
 .organiser-v2 .ov2-status-values span {
   margin-top: 5px;
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .ov2-segmented-bar {
@@ -570,7 +570,7 @@
 .organiser-v2 .ov2-card-range {
   margin-top: 8px;
   color: #8a9aaa;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-metric-card {
@@ -593,7 +593,7 @@
   padding: 3px 6px;
   color: #17743d;
   background: rgba(34, 197, 94, 0.13);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 750;
 }
 
@@ -664,7 +664,7 @@
   padding: 0 10px;
   color: #1b3a7a;
   background: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -701,7 +701,7 @@
 
 .organiser-v2 .ov2-board-column > header h2 {
   color: #0f1f38;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -713,7 +713,7 @@
   border-radius: 7px;
   color: #56657a;
   background: #fff;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-column-orders {
@@ -781,9 +781,9 @@
 .organiser-v2 .ov2-overview-table th {
   color: #7c899a;
   background: #f8fafc;
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 /* Table and board page treatments ----------------------------------------- */
@@ -799,10 +799,10 @@
 .organiser-v2 [data-treatment="table"] :where(th) {
   border-color: #dbe3ec !important;
   color: #7b899b !important;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 [data-treatment="table"] :where(td) {
@@ -842,8 +842,8 @@
 
 .organiser-v2 [data-page="todos"] {
   --ov2-todo-section-size: 14px;
-  --ov2-todo-task-size: 13px;
-  --ov2-todo-meta-size: 11px;
+  --ov2-todo-task-size: 14px;
+  --ov2-todo-meta-size: 12px;
 }
 
 .organiser-v2 .ov2-workspace-screen[data-page="todos"] > .ov2-page-header + .ov2-todo-workspace {
@@ -871,7 +871,7 @@
 .organiser-v2 [data-page="todos"] .ov2-todo-header p {
   margin-top: 3px !important;
   color: #8a9aaa !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 500;
 }
 
@@ -889,7 +889,7 @@
   border-radius: 8px !important;
   padding-inline: 10px !important;
   color: #6b7280 !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 650 !important;
 }
 
@@ -908,7 +908,7 @@
   min-height: 27px;
   border-radius: 999px !important;
   padding-inline: 10px !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 650 !important;
 }
 
@@ -927,7 +927,7 @@
 
 .organiser-v2 [data-page="todos"] .ov2-todo-quick-add input {
   color: #0f1f38 !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 500;
 }
 
@@ -942,21 +942,21 @@
 
 .organiser-v2 [data-page="todos"] .ov2-todo-content > div:first-child > span:first-child {
   color: #8a9aaa !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 750 !important;
-  letter-spacing: 0.065em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-content > div:first-child button {
-  font-size: 10px !important;
+  font-size: 12px !important;
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-group-label {
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 750 !important;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-group-card {
@@ -1023,7 +1023,7 @@
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-detail :where(input, select, textarea, span) {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-detail :where(.rounded-md.bg-white) {
@@ -1106,9 +1106,9 @@
 
 .organiser-v2 [data-treatment="logistics"] :where(.uppercase) {
   color: #7b899b !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 750 !important;
-  letter-spacing: 0.07em !important;
+  letter-spacing: 0.01em !important;
 }
 
 .organiser-v2 [data-treatment="logistics"] :where(table) {
@@ -1120,10 +1120,10 @@
   border-color: #dbe3ec !important;
   color: #7b899b !important;
   background: #f8fafc !important;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 [data-treatment="logistics"] :where(td) {
@@ -1208,10 +1208,10 @@
 .organiser-v2 [data-treatment="insight"] :where(th) {
   color: #7b899b !important;
   background: #f8fafc !important;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 [data-treatment="insight"] :where(th, td) {
@@ -1253,7 +1253,7 @@
 .organiser-v2 [data-treatment="composer"] :where(.rounded-xl.bg-white > h3) {
   margin-bottom: 14px;
   color: #0f1f38 !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   font-weight: 720 !important;
 }
 
@@ -1327,9 +1327,9 @@
 
 .organiser-v2 [data-treatment="configuration"] :where(label.uppercase, .uppercase) {
   color: #7b899b !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 750 !important;
-  letter-spacing: 0.07em !important;
+  letter-spacing: 0.01em !important;
 }
 
 .organiser-v2 [data-treatment="configuration"] :where(input, select) {
@@ -1395,7 +1395,7 @@
   border-color: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.08);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .ov2-setup-link.is-active .ov2-step-number {
@@ -1411,13 +1411,13 @@
 }
 
 .organiser-v2 .ov2-setup-link strong {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .organiser-v2 .ov2-setup-link small {
   color: rgba(255, 255, 255, 0.47);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-setup-link.is-active small {
@@ -1441,9 +1441,9 @@
 
 .organiser-v2 .ov2-setup-stat > span {
   color: #7b899b;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.01em;
 }
 
 .organiser-v2 .ov2-setup-stat strong {
@@ -1716,10 +1716,10 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-command-eyebrow {
@@ -1753,7 +1753,7 @@
   max-width: 680px;
   margin-top: 11px;
   color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
@@ -1769,7 +1769,7 @@
   align-items: center;
   gap: 6px;
   color: rgba(255, 255, 255, 0.76);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -1803,10 +1803,10 @@
 .organiser-v2 .ov2-command-capacity span,
 .organiser-v2 .ov2-command-collaborators > span {
   color: rgba(255, 255, 255, 0.6);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-command-capacity strong {
@@ -1817,13 +1817,13 @@
 
 .organiser-v2 .ov2-command-capacity strong small {
   color: rgba(255, 255, 255, 0.47);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .organiser-v2 .ov2-command-capacity b {
   color: #b9d4ff;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-command-progress {
@@ -1869,7 +1869,7 @@
   border-radius: 10px;
   color: #fff;
   background: rgba(255, 255, 255, 0.07);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
 }
 
@@ -1948,10 +1948,10 @@
 
 .organiser-v2 .ov2-command-metric > div > span {
   color: #7b899b;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 750;
-  letter-spacing: 0.065em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-command-metric strong {
@@ -1967,7 +1967,7 @@
 
 .organiser-v2 .ov2-command-metric small {
   color: #8a9aaa;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -2033,7 +2033,7 @@
   border: 0;
   color: #2d6bcc;
   background: transparent;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
 }
 
@@ -2105,13 +2105,13 @@
 
 .organiser-v2 .ov2-attention-row strong {
   color: #243651;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 720;
 }
 
 .organiser-v2 .ov2-attention-row small {
   color: #7b899b;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-attention-row em {
@@ -2119,7 +2119,7 @@
   align-items: center;
   gap: 4px;
   color: #2d6bcc;
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 750;
   white-space: nowrap;
@@ -2133,7 +2133,7 @@
 
 .organiser-v2 .ov2-pulse-panel > header > strong small {
   color: #8a9aaa;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 650;
   letter-spacing: 0;
 }
@@ -2154,7 +2154,7 @@
 .organiser-v2 .ov2-pulse-stage span,
 .organiser-v2 .ov2-pulse-stage strong {
   color: #66758a;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -2194,7 +2194,7 @@
   align-items: center;
   gap: 5px;
   color: #8a9aaa;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 650;
 }
 
@@ -2217,7 +2217,7 @@
 .organiser-v2 .ov2-pipeline-heading p {
   margin-top: 4px;
   color: #7b899b;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .ov2-pipeline-heading .ov2-board-toolbar {
@@ -2365,7 +2365,7 @@
   background: var(--atlas-canvas);
   color: var(--atlas-body);
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .organiser-v2 .ov2-shell,
@@ -2418,7 +2418,7 @@
 
 .organiser-v2 .ov2-brand-copy strong {
   color: var(--atlas-ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 760;
   letter-spacing: -0.015em;
 }
@@ -2427,7 +2427,7 @@
   max-width: 136px;
   overflow: hidden;
   color: var(--atlas-subtle);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2459,9 +2459,9 @@
   min-height: 27px;
   padding: 7px 10px 5px;
   color: #8b98a9;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 760;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.01em;
 }
 
 .organiser-v2 .ov2-nav-group-toggle svg {
@@ -2475,7 +2475,7 @@
   border-radius: 8px;
   padding: 7px 10px;
   color: #526176;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 590;
 }
 
@@ -2522,7 +2522,7 @@
   border-radius: 6px;
   color: #526176;
   background: #edf1f6;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .ov2-nav-link.is-active em {
@@ -2549,7 +2549,7 @@
   padding: 7px 10px;
   color: #526176;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   text-align: left;
 }
@@ -2589,12 +2589,12 @@
 
 .organiser-v2 .ov2-profile-block strong {
   color: var(--atlas-ink);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-profile-block small {
   color: var(--atlas-subtle);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .ov2-profile-block > svg {
@@ -2627,7 +2627,7 @@
 
 .organiser-v2 .ov2-breadcrumbs {
   color: #78869a;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-search-trigger {
@@ -2635,7 +2635,7 @@
   border-color: #d6e0ea;
   border-radius: 8px;
   background: #f8fafc;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-topbar-link,
@@ -2645,7 +2645,7 @@
   min-height: 34px;
   border-radius: 8px;
   padding: 0 12px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 710;
 }
 
@@ -2706,10 +2706,10 @@
   display: block;
   margin-bottom: 5px;
   color: var(--atlas-blue);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 780;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .atlas-page-title-row {
@@ -2731,7 +2731,7 @@
   max-width: 720px;
   margin: 6px 0 0;
   color: var(--atlas-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -2782,13 +2782,13 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--atlas-subtle);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
 }
 
 .organiser-v2 .atlas-metric-topline > span:first-child {
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .atlas-metric-icon {
@@ -2845,7 +2845,7 @@
   padding: 3px 8px;
   color: #5e6b7c;
   background: #f5f7fa;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 720;
   text-transform: capitalize;
 }
@@ -2917,7 +2917,7 @@
   padding: 0 11px;
   color: #69778a;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -2951,7 +2951,7 @@
   padding: 0 5px;
   color: #6c7888;
   background: #edf1f5;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .organiser-v2 .atlas-filter-bar {
@@ -2996,7 +2996,7 @@
   color: var(--atlas-ink);
   background: transparent !important;
   box-shadow: none !important;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .atlas-search-field button {
@@ -3030,7 +3030,7 @@
   align-items: center;
   gap: 7px;
   color: #7a8798;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -3041,7 +3041,7 @@
   padding: 0 27px 0 9px;
   color: var(--atlas-body);
   background: #fff !important;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -3054,7 +3054,7 @@
   padding: 7px 14px;
   color: var(--atlas-navy);
   background: #eef5fd;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .atlas-bulk-bar > span {
@@ -3066,7 +3066,7 @@
   border: 0;
   color: #526b8c;
   background: transparent;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -3087,11 +3087,11 @@
   padding: 0 12px;
   color: #8290a2;
   background: #fff;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 760;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.01em;
   text-align: left;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -3100,7 +3100,7 @@
   border-bottom: 1px solid #e7ecf2;
   padding: 8px 12px;
   color: var(--atlas-body);
-  font-size: 10px;
+  font-size: 12px;
   vertical-align: middle;
 }
 
@@ -3145,19 +3145,19 @@
 
 .organiser-v2 .atlas-table-primary strong {
   color: var(--atlas-ink);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 690;
 }
 
 .organiser-v2 .atlas-table-primary small,
 .organiser-v2 .atlas-table-secondary {
   color: #7e8b9b;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .atlas-table-amount {
   color: var(--atlas-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3170,7 +3170,7 @@
   padding: 0 14px;
   color: #8794a4;
   background: #fbfcfe;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -3191,7 +3191,7 @@
   border-radius: 9px;
   color: #285fae;
   background: #eaf2fd;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 760;
 }
 
@@ -3204,7 +3204,7 @@
 .organiser-v2 .atlas-person strong {
   overflow: hidden;
   color: var(--atlas-ink);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3212,7 +3212,7 @@
 
 .organiser-v2 .atlas-person small {
   color: #7e8b9b;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 /* Quick-view drawers */
@@ -3271,7 +3271,7 @@
 .organiser-v2 .atlas-quick-view-subtitle {
   margin-top: 4px;
   color: var(--atlas-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .organiser-v2 .atlas-quick-view-header > button {
@@ -3327,7 +3327,7 @@
 
 .organiser-v2 .atlas-drawer-metrics small {
   color: #8390a0;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 650;
 }
 
@@ -3354,7 +3354,7 @@
 .organiser-v2 .atlas-drawer-section-heading h3 {
   margin: 0;
   color: var(--atlas-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 730;
 }
 
@@ -3362,7 +3362,7 @@
   border: 0;
   color: var(--atlas-blue);
   background: transparent;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -3383,7 +3383,7 @@
   gap: 14px;
   padding: 8px 10px;
   background: #fff;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .organiser-v2 .atlas-detail-list span { color: #7e8b9b; }
@@ -3409,8 +3409,8 @@
   gap: 2px;
 }
 
-.organiser-v2 .atlas-drawer-order-list article strong { color: var(--atlas-ink); font-size: 9px; }
-.organiser-v2 .atlas-drawer-order-list article span { color: #8591a0; font-size: 8px; }
+.organiser-v2 .atlas-drawer-order-list article strong { color: var(--atlas-ink); font-size: 11px; }
+.organiser-v2 .atlas-drawer-order-list article span { color: #8591a0; font-size: 10px; }
 
 .organiser-v2 .atlas-mini-timeline {
   display: grid;
@@ -3449,8 +3449,8 @@
 }
 
 .organiser-v2 .atlas-mini-timeline div { display: grid; gap: 2px; }
-.organiser-v2 .atlas-mini-timeline strong { color: var(--atlas-body); font-size: 9px; }
-.organiser-v2 .atlas-mini-timeline small { color: #8793a2; font-size: 8px; }
+.organiser-v2 .atlas-mini-timeline strong { color: var(--atlas-body); font-size: 11px; }
+.organiser-v2 .atlas-mini-timeline small { color: #8793a2; font-size: 10px; }
 
 .organiser-v2 .atlas-empty-state {
   display: grid;
@@ -3472,8 +3472,8 @@
 }
 
 .organiser-v2 .atlas-empty-state svg { width: 19px; height: 19px; }
-.organiser-v2 .atlas-empty-state h3 { margin: 12px 0 4px; color: var(--atlas-ink); font-size: 13px; }
-.organiser-v2 .atlas-empty-state p { max-width: 320px; margin: 0; color: var(--atlas-muted); font-size: 10px; }
+.organiser-v2 .atlas-empty-state h3 { margin: 12px 0 4px; color: var(--atlas-ink); font-size: 14px; }
+.organiser-v2 .atlas-empty-state p { max-width: 320px; margin: 0; color: var(--atlas-muted); font-size: 12px; }
 
 /* Existing route unification. These selectors keep feature-specific layouts,
    while making every card, toolbar, table, form, and status feel related. */
@@ -3493,7 +3493,7 @@
 .organiser-v2 .ov2-workspace-screen[data-treatment] :where(input, select, textarea) {
   border-color: var(--atlas-border-strong) !important;
   color: var(--atlas-ink);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment] :where(button) {
@@ -3521,16 +3521,16 @@
 .organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(th) {
   color: #8390a0;
   background: #f8fafc !important;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 740;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(td) {
   border-color: #e6ebf1 !important;
   color: var(--atlas-body);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] {
@@ -3561,8 +3561,8 @@
 /* Todo inherits Atlas scale while retaining its board/calendar interactions. */
 .organiser-v2 [data-page="todos"] {
   --ov2-todo-section-size: 14px;
-  --ov2-todo-task-size: 13px;
-  --ov2-todo-meta-size: 11px;
+  --ov2-todo-task-size: 14px;
+  --ov2-todo-meta-size: 12px;
 }
 
 .organiser-v2 [data-page="todos"] .ov2-todo-workspace {
@@ -3607,7 +3607,7 @@
   border-radius: 8px !important;
   color: var(--atlas-ink);
   background: #fff !important;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .organiser-v2 .ov2-form-content :where(input, select, textarea):focus {
@@ -3793,14 +3793,14 @@
 .organiser-v2 .atlas-section-kicker {
   display: block;
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 .organiser-v2 .atlas-page-title-row { display: flex; align-items: center; gap: 10px; }
 .organiser-v2 .atlas-page-header h1 { margin: 4px 0 0; color: #0f1f38; font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -.045em; }
-.organiser-v2 .atlas-page-header p { max-width: 680px; margin: 6px 0 0; color: #6b7280; font-size: 12px; line-height: 1.55; }
+.organiser-v2 .atlas-page-header p { max-width: 680px; margin: 6px 0 0; color: #6b7280; font-size: 13px; line-height: 1.55; }
 .organiser-v2 .atlas-page-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .organiser-v2 .atlas-primary-button,
 .organiser-v2 .atlas-secondary-button,
@@ -3815,7 +3815,7 @@
   padding: 0 12px;
   color: #1b3a7a;
   background: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 .organiser-v2 .atlas-primary-button { border-color: #1b3a7a; color: #fff; background: #1b3a7a; }
@@ -3823,7 +3823,7 @@
 .organiser-v2 .atlas-primary-button svg,
 .organiser-v2 .atlas-secondary-button svg,
 .organiser-v2 .atlas-filter-button svg { width: 14px; height: 14px; }
-.organiser-v2 .atlas-status-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; border-radius: 999px; padding: 4px 8px; color: #475569; background: #eef2f7; font-size: 9px; font-weight: 750; white-space: nowrap; }
+.organiser-v2 .atlas-status-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; border-radius: 999px; padding: 4px 8px; color: #475569; background: #eef2f7; font-size: 11px; font-weight: 750; white-space: nowrap; }
 .organiser-v2 .atlas-status-badge::before { width: 5px; height: 5px; border-radius: 50%; background: currentColor; content: ""; }
 .organiser-v2 .atlas-status-badge[data-tone="success"] { color: #17743d; background: #e9f8ee; }
 .organiser-v2 .atlas-status-badge[data-tone="info"] { color: #245fae; background: #e9f2ff; }
@@ -3835,7 +3835,7 @@
 .organiser-v2 .atlas-metric-surface { min-height: 108px; border: 1px solid #dbe3ec; border-radius: 13px; padding: 14px; background: #fff; box-shadow: 0 4px 14px rgba(27,49,100,.035); }
 .organiser-v2 .atlas-metric-surface[data-tone="primary"] { color: #fff; border-color: #1b3a7a; background: #1b3a7a; }
 .organiser-v2 .atlas-metric-surface[data-tone="dark"] { color: #fff; border-color: #1b3164; background: #1b3164; }
-.organiser-v2 .atlas-metric-topline, .organiser-v2 .atlas-metric-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #6b7280; font-size: 10px; }
+.organiser-v2 .atlas-metric-topline, .organiser-v2 .atlas-metric-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #6b7280; font-size: 12px; }
 .organiser-v2 .atlas-metric-surface[data-tone="primary"] .atlas-metric-topline,
 .organiser-v2 .atlas-metric-surface[data-tone="dark"] .atlas-metric-topline,
 .organiser-v2 .atlas-metric-surface[data-tone="primary"] .atlas-metric-footer,
@@ -3844,44 +3844,44 @@
 .organiser-v2 .atlas-metric-icon svg { width: 14px; height: 14px; }
 .organiser-v2 .atlas-metric-surface > strong { display: block; margin: 12px 0 7px; color: #0f1f38; font-size: 24px; letter-spacing: -.04em; }
 .organiser-v2 .atlas-metric-surface[data-tone="primary"] > strong, .organiser-v2 .atlas-metric-surface[data-tone="dark"] > strong { color: #fff; }
-.organiser-v2 .atlas-metric-footer { justify-content: flex-start; font-size: 9px; }
+.organiser-v2 .atlas-metric-footer { justify-content: flex-start; font-size: 11px; }
 .organiser-v2 .atlas-metric-trend { color: #17743d; font-weight: 750; }
 .organiser-v2 .atlas-card { border: 1px solid #dbe3ec; border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgba(27,49,100,.035); }
 .organiser-v2 .atlas-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 17px 18px 13px; }
 .organiser-v2 .atlas-card-heading h2 { margin: 3px 0 0; color: #0f1f38; font-size: 15px; letter-spacing: -.025em; }
-.organiser-v2 .atlas-result-count, .organiser-v2 .atlas-muted-cell { color: #6b7280; font-size: 10px; }
+.organiser-v2 .atlas-result-count, .organiser-v2 .atlas-muted-cell { color: #6b7280; font-size: 12px; }
 .organiser-v2 .atlas-filter-bar { display: flex; align-items: center; gap: 8px; padding: 0 18px 13px; }
 .organiser-v2 .atlas-search-field { display: flex; align-items: center; flex: 1 1 260px; min-height: 34px; gap: 7px; border: 1px solid #d0dae4; border-radius: 9px; padding: 0 9px; color: #8a9aaa; background: #f8fafc; }
 .organiser-v2 .atlas-search-field > svg { width: 14px; height: 14px; }
-.organiser-v2 .atlas-search-field input { min-width: 0; flex: 1; border: 0 !important; outline: 0; background: transparent !important; box-shadow: none !important; font-size: 10px; }
+.organiser-v2 .atlas-search-field input { min-width: 0; flex: 1; border: 0 !important; outline: 0; background: transparent !important; box-shadow: none !important; font-size: 12px; }
 .organiser-v2 .atlas-search-field button { display: inline-flex; border: 0; color: #6b7280; background: transparent; }
 .organiser-v2 .atlas-search-field button svg { width: 13px; height: 13px; }
 .organiser-v2 .atlas-filter-controls, .organiser-v2 .atlas-filter-trailing { display: flex; gap: 8px; align-items: center; }
-.organiser-v2 .atlas-select-control { display: flex; align-items: center; gap: 6px; color: #6b7280; font-size: 9px; white-space: nowrap; }
-.organiser-v2 .atlas-select-control select { min-height: 34px; padding: 0 8px; font-size: 10px; }
+.organiser-v2 .atlas-select-control { display: flex; align-items: center; gap: 6px; color: #6b7280; font-size: 11px; white-space: nowrap; }
+.organiser-v2 .atlas-select-control select { min-height: 34px; padding: 0 8px; font-size: 12px; }
 .organiser-v2 .atlas-data-table-shell { overflow: hidden; border-top: 1px solid #eef2f6; }
 .organiser-v2 .atlas-data-table-scroll { overflow-x: auto; }
 .organiser-v2 .atlas-data-table { width: 100%; border-collapse: collapse; min-width: 720px; }
-.organiser-v2 .atlas-data-table th { padding: 10px 14px; border-bottom: 1px solid #dbe3ec; color: #7b8797; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; }
-.organiser-v2 .atlas-data-table td { padding: 12px 14px; border-bottom: 1px solid #eef2f6; color: #374151; font-size: 11px; vertical-align: middle; }
+.organiser-v2 .atlas-data-table th { padding: 10px 14px; border-bottom: 1px solid #dbe3ec; color: #7b8797; font-size: 11px; font-weight: 800; letter-spacing: 0.01em; text-align: left; text-transform: none; white-space: nowrap; }
+.organiser-v2 .atlas-data-table td { padding: 12px 14px; border-bottom: 1px solid #eef2f6; color: #374151; font-size: 12px; vertical-align: middle; }
 .organiser-v2 .atlas-data-table th[data-align="right"], .organiser-v2 .atlas-data-table td[data-align="right"] { text-align: right; }
 .organiser-v2 .atlas-data-table th[data-align="center"], .organiser-v2 .atlas-data-table td[data-align="center"] { text-align: center; }
 .organiser-v2 .atlas-data-table tbody tr { cursor: pointer; transition: background .14s ease; }
 .organiser-v2 .atlas-data-table tbody tr:hover, .organiser-v2 .atlas-data-table tbody tr[data-selected="true"] { background: #f8fafc; }
 .organiser-v2 .atlas-person { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
-.organiser-v2 .atlas-person-avatar { display: inline-grid; flex: 0 0 30px; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: #1b3a7a; background: #e8eef9; font-size: 9px; font-weight: 800; }
+.organiser-v2 .atlas-person-avatar { display: inline-grid; flex: 0 0 30px; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: #1b3a7a; background: #e8eef9; font-size: 11px; font-weight: 800; }
 .organiser-v2 .atlas-person > span:last-child { display: grid; min-width: 0; }
-.organiser-v2 .atlas-person strong { overflow: hidden; color: #0f1f38; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.organiser-v2 .atlas-person small { overflow: hidden; color: #8a9aaa; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.organiser-v2 .atlas-person strong { overflow: hidden; color: #0f1f38; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.organiser-v2 .atlas-person small { overflow: hidden; color: #8a9aaa; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .organiser-v2 .atlas-person[data-compact="true"] .atlas-person-avatar { width: 24px; height: 24px; flex-basis: 24px; border-radius: 7px; }
-.organiser-v2 .atlas-sort-cell { display: inline-flex; align-items: center; gap: 5px; border: 0; color: #0f1f38; background: transparent; font-size: 11px; }
+.organiser-v2 .atlas-sort-cell { display: inline-flex; align-items: center; gap: 5px; border: 0; color: #0f1f38; background: transparent; font-size: 12px; }
 .organiser-v2 .atlas-sort-cell svg { width: 11px; height: 11px; color: #8a9aaa; }
 .organiser-v2 .atlas-row-chevron { width: 15px; height: 15px; color: #8a9aaa; }
 .organiser-v2 .atlas-empty-state { display: grid; place-items: center; gap: 5px; padding: 38px 18px; color: #6b7280; text-align: center; }
 .organiser-v2 .atlas-empty-state > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: #1b3a7a; background: #e8eef9; }
 .organiser-v2 .atlas-empty-state svg { width: 18px; height: 18px; }
-.organiser-v2 .atlas-empty-state h3 { margin: 4px 0 0; color: #0f1f38; font-size: 13px; }
-.organiser-v2 .atlas-empty-state p { margin: 0; font-size: 10px; }
+.organiser-v2 .atlas-empty-state h3 { margin: 4px 0 0; color: #0f1f38; font-size: 14px; }
+.organiser-v2 .atlas-empty-state p { margin: 0; font-size: 12px; }
 .organiser-v2 .atlas-quick-view-layer { position: fixed; z-index: 60; inset: 0; display: flex; justify-content: flex-end; }
 .organiser-v2 .atlas-quick-view-scrim { position: absolute; inset: 0; border: 0; background: rgba(15,31,56,.45); }
 .organiser-v2 .atlas-quick-view { position: relative; display: flex; flex-direction: column; width: min(460px, 100vw); height: 100%; border-left: 1px solid #dbe3ec; outline: 0; background: #fff; box-shadow: -18px 0 50px rgba(15,31,56,.18); }
@@ -3894,18 +3894,18 @@
 .organiser-v2 .atlas-quick-view-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 22px; border-top: 1px solid #eef2f6; }
 .organiser-v2 .atlas-drawer-section { padding: 16px 0; border-bottom: 1px solid #eef2f6; }
 .organiser-v2 .atlas-drawer-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
-.organiser-v2 .atlas-drawer-section h3 { margin: 0; color: #0f1f38; font-size: 11px; }
+.organiser-v2 .atlas-drawer-section h3 { margin: 0; color: #0f1f38; font-size: 12px; }
 .organiser-v2 .atlas-drawer-summary { display: grid; gap: 3px; padding: 14px; border: 1px solid #dbe3ec; border-radius: 11px; background: #f8fafc; }
 .organiser-v2 .atlas-drawer-summary > strong { margin-top: 7px; color: #0f1f38; font-size: 24px; letter-spacing: -.04em; }
-.organiser-v2 .atlas-drawer-summary > span { color: #6b7280; font-size: 9px; }
+.organiser-v2 .atlas-drawer-summary > span { color: #6b7280; font-size: 11px; }
 .organiser-v2 .atlas-detail-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin: 0; }
 .organiser-v2 .atlas-detail-list div { display: grid; gap: 3px; }
-.organiser-v2 .atlas-detail-list dt { color: #8a9aaa; font-size: 9px; }
-.organiser-v2 .atlas-detail-list dd { margin: 0; color: #0f1f38; font-size: 11px; font-weight: 700; }
+.organiser-v2 .atlas-detail-list dt { color: #8a9aaa; font-size: 11px; }
+.organiser-v2 .atlas-detail-list dd { margin: 0; color: #0f1f38; font-size: 12px; font-weight: 700; }
 .organiser-v2 .atlas-order-history { display: grid; gap: 8px; }
 .organiser-v2 .atlas-order-history article { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid #eef2f6; border-radius: 9px; }
 .organiser-v2 .atlas-order-history article > div:first-child { display: grid; min-width: 0; gap: 3px; }
-.organiser-v2 .atlas-order-history article small { overflow: hidden; color: #6b7280; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.organiser-v2 .atlas-order-history article small { overflow: hidden; color: #6b7280; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .organiser-v2 .atlas-order-history article > div:last-child { display: grid; justify-items: end; gap: 5px; }
 .organiser-v2 .atlas-drawer-actions { display: flex; gap: 8px; }
 
@@ -3929,4 +3929,11 @@
   .organiser-v2 .atlas-metric-grid { grid-template-columns: 1fr; }
   .organiser-v2 .atlas-card-heading { padding-inline: 12px; }
   .organiser-v2 .atlas-quick-view-header, .organiser-v2 .atlas-quick-view-body, .organiser-v2 .atlas-quick-view-footer { padding-inline: 16px; }
+}
+
+/* Dashboard typography match — neutralise Tailwind uppercase utilities inside
+   the organiser workspace so labels render regular-case like the dashboard. */
+.organiser-v2 .uppercase {
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
 }

@@ -152,21 +152,21 @@ export default function BroadcastTab() {
       <div className="rounded-xl p-4 sm:p-5 bg-white flex items-center justify-between gap-3" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div>
           <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Broadcast</h2>
-          <p className="text-[12px] sm:text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>
+          <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
             Send messages to your members
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTemplates(!showTemplates)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5"
             style={{ color: "var(--t-blue)", border: `1px solid ${V2_CARD_BORDER}` }}
           >
             <Sparkles className="w-3.5 h-3.5" /> Templates
           </button>
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold hover:bg-black/5"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5"
             style={{ color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}
           >
             <Clock className="w-3.5 h-3.5" /> History
@@ -186,8 +186,8 @@ export default function BroadcastTab() {
                 className="p-3 rounded-lg text-left hover:bg-black/[0.02] transition-colors"
                 style={{ border: `1px solid ${V2_CARD_BORDER}` }}
               >
-                <div className="text-[13px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>{t.label}</div>
-                <div className="text-[11px] line-clamp-2" style={{ color: "var(--t-subtle)" }}>{t.body}</div>
+                <div className="text-[14px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>{t.label}</div>
+                <div className="text-[12px] line-clamp-2" style={{ color: "var(--t-subtle)" }}>{t.body}</div>
               </button>
             ))}
           </div>
@@ -203,16 +203,16 @@ export default function BroadcastTab() {
               <div key={msg.id} className="p-3 rounded-lg" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{msg.subject}</div>
-                    <div className="text-[11px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
+                    <div className="text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{msg.subject}</div>
+                    <div className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
                       {new Date(msg.sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full shrink-0" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+                  <span className="text-[12px] px-2 py-0.5 rounded-full shrink-0" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
                     {Array.isArray(msg.recipients) && msg.recipients[0] === "All members" ? "All" : `${msg.recipients.length} members`}
                   </span>
                 </div>
-                <div className="text-[12px] line-clamp-2" style={{ color: "var(--t-muted)" }}>{msg.body}</div>
+                <div className="text-[13px] line-clamp-2" style={{ color: "var(--t-muted)" }}>{msg.body}</div>
               </div>
             ))}
           </div>
@@ -226,27 +226,27 @@ export default function BroadcastTab() {
           <h3 className="text-[14px] font-bold mb-3" style={{ color: "var(--t-text)" }}>Message</h3>
           <div className="space-y-3">
             <div>
-              <label className="text-[12px] font-semibold mb-1.5 block" style={{ color: "var(--t-text)" }}>Subject</label>
+              <label className="text-[13px] font-semibold mb-1.5 block" style={{ color: "var(--t-text)" }}>Subject</label>
               <input
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="Enter message subject"
-                className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
+                className="w-full px-3 py-2 rounded-lg text-[14px] outline-none"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
             </div>
             <div>
-              <label className="text-[12px] font-semibold mb-1.5 block" style={{ color: "var(--t-text)" }}>Message</label>
+              <label className="text-[13px] font-semibold mb-1.5 block" style={{ color: "var(--t-text)" }}>Message</label>
               <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Type your message here..."
                 rows={12}
-                className="w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-none"
+                className="w-full px-3 py-2 rounded-lg text-[14px] outline-none resize-none"
                 style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
               />
-              <div className="text-[11px] mt-1.5" style={{ color: "var(--t-subtle)" }}>
+              <div className="text-[12px] mt-1.5" style={{ color: "var(--t-subtle)" }}>
                 Use variables: {"{"}{"{"} name {"}"}{"}"}, {"{"}{"{"} orderId {"}"}{"}"}, {"{"}{"{"} amount {"}"}{"}"}, {"{"}{"{"} tracking {"}"}{"}"}, {"{"}{"{"} carrier {"}"}{"}"}, {"{"}{"{"} eta {"}"}{"}"}, {"{"}{"{"} batch {"}"}{"}"}
               </div>
             </div>
@@ -266,8 +266,8 @@ export default function BroadcastTab() {
               >
                 {recipientMode === "all" ? <CheckSquare className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} /> : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
                 <div className="flex-1">
-                  <div className="text-[12.5px] font-semibold" style={{ color: recipientMode === "all" ? "var(--t-blue)" : "var(--t-text)" }}>All members</div>
-                  <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{allMembers.length} member{allMembers.length !== 1 ? "s" : ""}</div>
+                  <div className="text-[13.5px] font-semibold" style={{ color: recipientMode === "all" ? "var(--t-blue)" : "var(--t-text)" }}>All members</div>
+                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{allMembers.length} member{allMembers.length !== 1 ? "s" : ""}</div>
                 </div>
               </button>
 
@@ -278,7 +278,7 @@ export default function BroadcastTab() {
               >
                 {recipientMode === "status" ? <CheckSquare className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} /> : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
                 <div className="flex-1">
-                  <div className="text-[12.5px] font-semibold" style={{ color: recipientMode === "status" ? "var(--t-blue)" : "var(--t-text)" }}>By payment status</div>
+                  <div className="text-[13.5px] font-semibold" style={{ color: recipientMode === "status" ? "var(--t-blue)" : "var(--t-text)" }}>By payment status</div>
                 </div>
               </button>
 
@@ -289,16 +289,16 @@ export default function BroadcastTab() {
                     className="w-full flex items-center justify-between p-2 rounded-md text-left hover:bg-black/[0.02]"
                     style={{ background: statusFilter === "pending" ? "var(--t-surface2)" : "transparent" }}
                   >
-                    <span className="text-[12px] font-semibold" style={{ color: statusFilter === "pending" ? "var(--t-text)" : "var(--t-muted)" }}>Unpaid</span>
-                    <span className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{pendingMembers.length}</span>
+                    <span className="text-[13px] font-semibold" style={{ color: statusFilter === "pending" ? "var(--t-text)" : "var(--t-muted)" }}>Unpaid</span>
+                    <span className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{pendingMembers.length}</span>
                   </button>
                   <button
                     onClick={() => setStatusFilter("paid")}
                     className="w-full flex items-center justify-between p-2 rounded-md text-left hover:bg-black/[0.02]"
                     style={{ background: statusFilter === "paid" ? "var(--t-surface2)" : "transparent" }}
                   >
-                    <span className="text-[12px] font-semibold" style={{ color: statusFilter === "paid" ? "var(--t-text)" : "var(--t-muted)" }}>Paid</span>
-                    <span className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{paidMembers.length}</span>
+                    <span className="text-[13px] font-semibold" style={{ color: statusFilter === "paid" ? "var(--t-text)" : "var(--t-muted)" }}>Paid</span>
+                    <span className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{paidMembers.length}</span>
                   </button>
                 </div>
               )}
@@ -310,8 +310,8 @@ export default function BroadcastTab() {
               >
                 {recipientMode === "product" ? <CheckSquare className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} /> : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
                 <div className="flex-1">
-                  <div className="text-[12.5px] font-semibold" style={{ color: recipientMode === "product" ? "var(--t-blue)" : "var(--t-text)" }}>By product ordered</div>
-                  <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{productFilter ? `${productMembers.length} member${productMembers.length !== 1 ? 's' : ''}` : 'Select a product'}</div>
+                  <div className="text-[13.5px] font-semibold" style={{ color: recipientMode === "product" ? "var(--t-blue)" : "var(--t-text)" }}>By product ordered</div>
+                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{productFilter ? `${productMembers.length} member${productMembers.length !== 1 ? 's' : ''}` : 'Select a product'}</div>
                 </div>
               </button>
 
@@ -327,13 +327,13 @@ export default function BroadcastTab() {
                           className="w-full flex items-center justify-between p-2 rounded-md text-left hover:bg-black/[0.02]"
                           style={{ background: productFilter === product ? "var(--t-surface2)" : "transparent" }}
                         >
-                          <span className="text-[12px] font-semibold truncate" style={{ color: productFilter === product ? "var(--t-text)" : "var(--t-muted)" }}>{product}</span>
-                          <span className="text-[11px] shrink-0 ml-2" style={{ color: "var(--t-subtle)" }}>{count}</span>
+                          <span className="text-[13px] font-semibold truncate" style={{ color: productFilter === product ? "var(--t-text)" : "var(--t-muted)" }}>{product}</span>
+                          <span className="text-[12px] shrink-0 ml-2" style={{ color: "var(--t-subtle)" }}>{count}</span>
                         </button>
                       );
                     })
                   ) : (
-                    <div className="p-2 text-[11px]" style={{ color: "var(--t-subtle)" }}>No products available</div>
+                    <div className="p-2 text-[12px]" style={{ color: "var(--t-subtle)" }}>No products available</div>
                   )}
                 </div>
               )}
@@ -345,8 +345,8 @@ export default function BroadcastTab() {
               >
                 {recipientMode === "custom" ? <CheckSquare className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} /> : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
                 <div className="flex-1">
-                  <div className="text-[12.5px] font-semibold" style={{ color: recipientMode === "custom" ? "var(--t-blue)" : "var(--t-text)" }}>Select members</div>
-                  <div className="text-[11px]" style={{ color: "var(--t-subtle)" }}>{selectedMembers.length} selected</div>
+                  <div className="text-[13.5px] font-semibold" style={{ color: recipientMode === "custom" ? "var(--t-blue)" : "var(--t-text)" }}>Select members</div>
+                  <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{selectedMembers.length} selected</div>
                 </div>
               </button>
             </div>
@@ -362,7 +362,7 @@ export default function BroadcastTab() {
                     style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}
                   >
                     {selectedMembers.includes(username) ? <CheckSquare className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} /> : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
-                    <span className="text-[12px] font-semibold" style={{ color: "var(--t-text)" }}>{username}</span>
+                    <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{username}</span>
                   </button>
                 ))}
               </div>
@@ -372,7 +372,7 @@ export default function BroadcastTab() {
             <button
               onClick={handleSend}
               disabled={recipientCount === 0 || !subject.trim() || !body.trim()}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-bold text-white transition-opacity disabled:opacity-40"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[14px] font-bold text-white transition-opacity disabled:opacity-40"
               style={{ background: "var(--t-blue)" }}
             >
               <Send className="w-4 h-4" />
@@ -382,7 +382,7 @@ export default function BroadcastTab() {
             {recipientCount === 0 && recipientMode !== "all" && (
               <div className="flex gap-2 p-2.5 rounded-lg" style={{ background: "#FFFAEB", border: "1px solid #FEF0C7" }}>
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#F79009" }} />
-                <div className="text-[11px]" style={{ color: "#B54708" }}>No members match your selection</div>
+                <div className="text-[12px]" style={{ color: "#B54708" }}>No members match your selection</div>
               </div>
             )}
           </div>

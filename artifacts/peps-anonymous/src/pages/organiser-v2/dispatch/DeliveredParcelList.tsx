@@ -22,9 +22,9 @@ export default function DeliveredParcelList({ parcels, selectedParcelIds, onSele
       <div className="flex items-end justify-between gap-3">
         <div>
           <h3 className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Delivered parcels</h3>
-          <p className="mt-0.5 text-[11px]" style={{ color: "var(--t-subtle)" }}>Select the packages you have received and opened.</p>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--t-subtle)" }}>Select the packages you have received and opened.</p>
         </div>
-        <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>{selected.size} selected</span>
+        <span className="text-[12px] font-semibold" style={{ color: "var(--t-subtle)" }}>{selected.size} selected</span>
       </div>
 
       {parcels.map(parcel => {
@@ -60,12 +60,12 @@ export default function DeliveredParcelList({ parcels, selectedParcelIds, onSele
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <span className="text-[16px] font-bold sm:text-[17px]" style={{ color: "var(--t-text)" }}>{parcel.label}</span>
                   {parcel.reshipper && (
-                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-600">
+                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[12px] font-semibold text-purple-600">
                       {parcel.reshipper}
                     </span>
                   )}
-                  <span className="rounded-md bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-700">delivered</span>
-                  <span className="break-all font-mono text-[11px] sm:text-[12px]" style={{ color: "var(--t-muted)" }}>{parcel.trackingNumber}</span>
+                  <span className="rounded-md bg-green-100 px-2.5 py-1 text-[12px] font-semibold text-green-700">delivered</span>
+                  <span className="break-all font-mono text-[12px] sm:text-[13px]" style={{ color: "var(--t-muted)" }}>{parcel.trackingNumber}</span>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -75,7 +75,7 @@ export default function DeliveredParcelList({ parcels, selectedParcelIds, onSele
                     return (
                       <span
                         key={`${parcel.id}-${item.productId}`}
-                        className="inline-flex max-w-full flex-wrap items-baseline gap-1 rounded-lg border px-2.5 py-1 text-[12px] sm:text-[13px]"
+                        className="inline-flex max-w-full flex-wrap items-baseline gap-1 rounded-lg border px-2.5 py-1 text-[13px] sm:text-[14px]"
                         style={{
                           borderColor: exhausted ? "#FCA5A5" : "#DCE3EC",
                           background: exhausted ? "#FFF7F7" : "#F8FAFC",
@@ -89,7 +89,7 @@ export default function DeliveredParcelList({ parcels, selectedParcelIds, onSele
                   })}
                 </div>
 
-                <p className="mt-3 text-[11px] sm:text-[12px]" style={{ color: "var(--t-muted)" }}>
+                <p className="mt-3 text-[12px] sm:text-[13px]" style={{ color: "var(--t-muted)" }}>
                   {dispatched} already dispatched · {remaining} remaining
                 </p>
               </div>
