@@ -66,7 +66,7 @@ export default function DashboardSidebar({
     <div className="ov2-sidebar">
       <div className="ov2-brand-block">
         <div className="ov2-brand-mark" aria-hidden="true">
-          S&amp;P
+          <img src="/favicon.svg" alt="" />
         </div>
         <div className="ov2-brand-copy">
           <strong>Salt &amp; Peps</strong>

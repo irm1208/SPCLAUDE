@@ -81,45 +81,21 @@
 }
 
 .organiser-v2 .ov2-brand-mark {
-  position: relative;
-  display: grid;
+  display: flex;
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  border: 1px solid #e6e1ee;
   border-radius: 13px;
-  background: linear-gradient(145deg, #f5effb 0%, #fff 62%);
-  box-shadow: 0 7px 16px rgba(78, 55, 119, 0.08);
 }
 
-.organiser-v2 .ov2-brand-mark::before {
-  width: 27px;
-  height: 17px;
-  border: 1.5px solid #1b3a7a;
-  border-radius: 50%;
-  content: "";
-  transform: rotate(-12deg);
-}
-
-.organiser-v2 .ov2-brand-mark span {
-  position: absolute;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: #f1a8c0;
-}
-
-.organiser-v2 .ov2-brand-mark span:first-child {
-  top: 9px;
-  left: 8px;
-}
-
-.organiser-v2 .ov2-brand-mark span:last-child {
-  right: 7px;
-  bottom: 8px;
-  background: #edb454;
+.organiser-v2 .ov2-brand-mark img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 13px;
 }
 
 .organiser-v2 .ov2-brand-copy {
