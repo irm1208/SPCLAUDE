@@ -78,10 +78,24 @@ function toDraft(product: ProductRecord | null): ProductDraft {
   };
 }
 
+// Units left = stock cap minus units sold (orders never decrement the stock
+// number itself, so remaining must be derived). null = unlimited stock.
+function remainingStock(product: ProductRecord): number | null {
+  if (product.stock === null || product.stock === undefined) return null;
+  return product.stock - (product.sold ?? 0);
+}
+
+function soldSummary(product: ProductRecord): string {
+  const sold = product.sold ?? 0;
+  if (product.stock === null || product.stock === undefined) return `${sold} sold / Unlimited`;
+  return `${sold}/${product.stock} sold`;
+}
+
 function productStatus(product: ProductRecord): "live" | "hidden" | "low" | "out" {
   if (product.active === false) return "hidden";
-  if (product.stock === 0) return "out";
-  if (product.stock !== null && product.stock !== undefined && product.stock <= 5) return "low";
+  const remaining = remainingStock(product);
+  if (remaining !== null && remaining <= 0) return "out";
+  if (remaining !== null && remaining <= 5) return "low";
   return "live";
 }
 
@@ -195,9 +209,10 @@ export default function GbProductsTab({
         .some(value => String(value ?? "").toLowerCase().includes(needle))) return false;
       if (vendor !== "all" && product.vendor !== vendor) return false;
       if (category !== "all" && product.category !== category) return false;
-      if (stock === "available" && product.stock != null && product.stock <= 0) return false;
-      if (stock === "low" && !(product.stock !== null && product.stock !== undefined && product.stock > 0 && product.stock <= 5)) return false;
-      if (stock === "out" && product.stock !== 0) return false;
+      const remaining = remainingStock(product);
+      if (stock === "available" && remaining != null && remaining <= 0) return false;
+      if (stock === "low" && !(remaining !== null && remaining > 0 && remaining <= 5)) return false;
+      if (stock === "out" && !(remaining !== null && remaining <= 0)) return false;
       if (stock === "unlimited" && product.stock != null) return false;
       return true;
     });
@@ -491,7 +506,7 @@ export default function GbProductsTab({
                   <label className="products-split__select"><span className="sr-only">Select {product.name}</span><input type="checkbox" checked={selectedIds.has(product.id)} onChange={() => toggleSelection(product.id)} /></label>
                   <button type="button" onClick={() => chooseProduct(product.id)} aria-current={!adding && product.id === selectedId ? "true" : undefined}>
                     <span className="products-split__row-main"><strong>{product.name}</strong><small>{product.vendor || "Unassigned"} / {product.category || "Uncategorised"}</small></span>
-                    <span className="products-split__row-metrics"><strong>{currency} {Number(product.price ?? 0).toFixed(2)}</strong><small>{product.stock == null ? "Unlimited" : `${product.stock} stock`}</small><em data-status={productStatus(product)}>{statusLabel(product)}</em></span>
+                    <span className="products-split__row-metrics"><strong>{currency} {Number(product.price ?? 0).toFixed(2)}</strong><small>{soldSummary(product)}</small><em data-status={productStatus(product)}>{statusLabel(product)}</em></span>
                     <ChevronRight aria-hidden="true" />
                   </button>
                 </article>

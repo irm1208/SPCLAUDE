@@ -957,11 +957,28 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
     .where(eq(groupBuyProductsTable.groupBuyId, id))
     .orderBy(asc(groupBuyProductsTable.sortOrder));
 
+  // Units sold per product within THIS group buy (cancelled/draft orders excluded),
+  // so organisers can see "x/stock sold" and know when to raise stock.
+  const soldRows = await db.execute(sql`
+    SELECT oli.product_id AS product_id, COALESCE(SUM(oli.quantity::numeric), 0) AS sold
+    FROM   order_line_items oli
+    JOIN   orders o ON o.id = oli.order_id
+    WHERE  o.group_buy_id = ${id}
+      AND  o.status NOT IN ('Cancelled', 'Draft')
+      AND  oli.product_id IS NOT NULL
+    GROUP  BY oli.product_id
+  `);
+  const soldByProduct = new Map<string, number>(
+    (soldRows.rows as Array<{ product_id: string; sold: string }>)
+      .map(r => [String(r.product_id), Math.round(parseFloat(String(r.sold)) || 0)])
+  );
+
   res.json(rows.map(r => ({
     ...r,
     id: r.productId,
     price: parseFloat(String(r.price)),
     priceOverride: r.priceOverride != null ? parseFloat(String(r.priceOverride)) : null,
+    sold: soldByProduct.get(r.productId) ?? 0,
   })));
 });
 
