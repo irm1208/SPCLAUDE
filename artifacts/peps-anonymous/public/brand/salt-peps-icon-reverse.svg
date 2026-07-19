@@ -1,11 +1,11 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  aria-labelledby="title description"
+  aria-labelledby="salt-peps-icon-reverse-title salt-peps-icon-reverse-description"
   role="img"
   viewBox="0 0 64 64"
 >
-  <title id="title">SALT and PEPS reverse icon</title>
-  <desc id="description">
+  <title id="salt-peps-icon-reverse-title">SALT and PEPS reverse icon</title>
+  <desc id="salt-peps-icon-reverse-description">
     The white SALT and PEPS peptide-bond ampersand for dark backgrounds.
   </desc>
   <g>

@@ -1,11 +1,11 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  aria-labelledby="title description"
+  aria-labelledby="salt-peps-icon-mono-title salt-peps-icon-mono-description"
   role="img"
   viewBox="0 0 64 64"
 >
-  <title id="title">SALT and PEPS monochrome icon</title>
-  <desc id="description">
+  <title id="salt-peps-icon-mono-title">SALT and PEPS monochrome icon</title>
+  <desc id="salt-peps-icon-mono-description">
     The single-color SALT and PEPS peptide-bond ampersand.
   </desc>
   <g>

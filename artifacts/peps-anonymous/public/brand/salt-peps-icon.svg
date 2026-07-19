@@ -1,11 +1,11 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  aria-labelledby="title description"
+  aria-labelledby="salt-peps-icon-title salt-peps-icon-description"
   role="img"
   viewBox="0 0 64 64"
 >
-  <title id="title">SALT and PEPS icon</title>
-  <desc id="description">
+  <title id="salt-peps-icon-title">SALT and PEPS icon</title>
+  <desc id="salt-peps-icon-description">
     A peptide-bond ampersand with two blue carbonyl groups for SALT and PEPS.
   </desc>
   <g>

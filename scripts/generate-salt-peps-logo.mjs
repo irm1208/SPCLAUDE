@@ -108,10 +108,14 @@ function renderMark({ accent, primary, small = false, transform }) {
   </g>`;
 }
 
-function svgDocument({ body, description, title, viewBox }) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" role="img" aria-labelledby="title description">
-  <title id="title">${title}</title>
-  <desc id="description">${description}</desc>
+function svgDocument({ body, description, fileName, title, viewBox }) {
+  const metadataId = fileName.replace(/\.svg$/, "");
+  const titleId = `${metadataId}-title`;
+  const descriptionId = `${metadataId}-description`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" role="img" aria-labelledby="${titleId} ${descriptionId}">
+  <title id="${titleId}">${title}</title>
+  <desc id="${descriptionId}">${description}</desc>
   ${body}
 </svg>`;
 }
@@ -181,8 +185,8 @@ const assets = [
 
 await mkdir(brandDirectory, { recursive: true });
 await Promise.all(
-  assets.map(({ fileName, ...asset }) =>
-    serializeSvg(svgDocument(asset), resolve(brandDirectory, fileName)),
+  assets.map((asset) =>
+    serializeSvg(svgDocument(asset), resolve(brandDirectory, asset.fileName)),
   ),
 );
 
