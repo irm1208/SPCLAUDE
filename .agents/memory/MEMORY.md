@@ -85,3 +85,5 @@
 - [Lab test title resolution sites](lab-test-title-resolution-sites.md) — 3 duplicate title builders (LabTests.tsx, PrototypeLabTests.tsx, LabTestsPopup.tsx) must stay in sync; popup had zero batch-code resolution before.
 - [Sage/Claude proxy silently drops PDF document blocks](sage-proxy-pdf-document-blocks.md) — rasterize PDFs to an image (pdftoppm) before sending to Claude via the Sage proxy; native "document" content blocks are ignored, not errored.
 - [Lab test field multilayer drop](lab-test-field-multilayer-drop.md) — "field missing" bugs can hide independently in prompt/mapping/payload/backend-insert; trace field name through all 4 layers + backfill existing rows.
+- [Order preview draft isolation](order-preview-draft-isolation.md) — preview/read-only order-form modes must guard EVERY persisted-draft write or they wipe the user's real in-progress draft; hide member-only action prompts too.
+- [Dev JWT auth-endpoint testing](dev-jwt-testing-auth-endpoints.md) — no dev-login route, but account_session routes are curl-testable: sign JWT with the dev fallback secret; DB lookups via executeSql (pg not requirable).

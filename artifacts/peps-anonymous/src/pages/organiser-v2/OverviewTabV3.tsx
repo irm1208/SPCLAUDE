@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  Eye as EyeIcon,
   Filter,
   Flag,
   FlaskConical,
@@ -170,6 +171,13 @@ export default function OverviewTabV3({
           <div className="ov2-command-actions">
             <button type="button" onClick={() => onGoto("orders")}>Review orders <ArrowRight aria-hidden="true" /></button>
             <button type="button" onClick={() => onGoto("dispatch")}>Open dispatch</button>
+            <button
+              type="button"
+              style={{ gridColumn: "1 / -1" }}
+              onClick={() => window.open(`/order?gbId=${encodeURIComponent(selectedGbId)}&preview=1`, "_blank", "noopener")}
+            >
+              <EyeIcon aria-hidden="true" /> Preview as buyer
+            </button>
           </div>
         </div>
       </section>
