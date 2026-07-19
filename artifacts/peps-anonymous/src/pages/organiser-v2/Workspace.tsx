@@ -45,6 +45,20 @@ const WORKSPACE_PRIMARY_NAVIGATION: Partial<Record<WorkspaceTabId, { label: stri
   products: { label: "Open dispatch", target: "dispatch" },
 };
 
+const WORKSPACE_TAB_IDS = Object.keys(WORKSPACE_PAGE_META) as WorkspaceTabId[];
+
+function readTabFromUrl(): WorkspaceTabId {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return tab && (WORKSPACE_TAB_IDS as string[]).includes(tab) ? (tab as WorkspaceTabId) : "overview";
+}
+
+function writeTabToUrl(tab: WorkspaceTabId): void {
+  const url = new URL(window.location.href);
+  if (tab === "overview") url.searchParams.delete("tab");
+  else url.searchParams.set("tab", tab);
+  window.history.replaceState(window.history.state, "", url);
+}
+
 export default function Workspace({
   groupBuy,
   apiGroupBuy,
@@ -58,7 +72,11 @@ export default function Workspace({
   onGroupBuyUpdated: (groupBuy: OrganiserGB) => void;
   onModeChange?: () => void;
 }) {
-  const [active, setActive] = useState<WorkspaceTabId>("overview");
+  const [active, setActiveState] = useState<WorkspaceTabId>(readTabFromUrl);
+  const setActive = (tab: WorkspaceTabId) => {
+    setActiveState(tab);
+    writeTabToUrl(tab);
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | undefined>();
   const gb = groupBuy;
@@ -149,6 +167,8 @@ export default function Workspace({
     <OverviewTabV3
       selectedGbId={gb.id}
       gb={gb}
+      memberCount={memberCount}
+      memberLimit={typeof apiGroupBuy.memberLimit === "number" && apiGroupBuy.memberLimit > 0 ? apiGroupBuy.memberLimit : null}
       dispatchReadyCount={readyDispatchCount}
       onGoto={tab => setActive(tab as WorkspaceTabId)}
     />
@@ -202,6 +222,8 @@ export default function Workspace({
             activeTab={active}
             onTabChange={setActive}
             gbName={gb.name}
+            gbStatus={gb.status}
+            gbCloseDate={gb.closeDate}
             userName={organiserName}
             badges={badges}
             onNavigate={onNavigate}

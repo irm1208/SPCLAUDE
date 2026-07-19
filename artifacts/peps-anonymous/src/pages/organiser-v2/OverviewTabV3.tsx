@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { fmtMoney, type SampleGB } from "./data";
 import { buildOverviewSnapshot } from "./overview-model";
-import { AvatarStack, ViewSwitcher } from "./OrganiserUi";
+import { ViewSwitcher } from "./OrganiserUi";
 import { useOrders } from "./domain/repository-context";
 import { toOverviewOrders } from "./domain/order-selectors";
 
@@ -40,26 +40,41 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
 }
 
+const STATUS_HERO: Record<SampleGB["status"], { eyebrow: string; live: boolean }> = {
+  active: { eyebrow: "Live group buy operations", live: true },
+  draft: { eyebrow: "Draft — not yet live", live: false },
+  closed: { eyebrow: "Closed group buy", live: false },
+  archived: { eyebrow: "Archived group buy", live: false },
+};
+
 export default function OverviewTabV3({
   selectedGbId,
   gb,
+  memberCount,
+  memberLimit,
   dispatchReadyCount,
   onGoto,
 }: {
   selectedGbId: string;
   gb: SampleGB;
+  memberCount: number;
+  memberLimit: number | null;
   dispatchReadyCount: number;
   onGoto: (tab: string) => void;
 }) {
   const [activeView, setActiveView] = useState<(typeof VIEW_OPTIONS)[number]>("Board");
   const storedOrders = useOrders();
   const overviewOrders = toOverviewOrders(storedOrders);
-  const snapshot = buildOverviewSnapshot(overviewOrders, gb.members, gb.currency);
+  const snapshot = buildOverviewSnapshot(overviewOrders, memberCount, gb.currency);
   const totalOrders = snapshot.board.reduce((total, column) => total + column.orders.length, 0);
   const pendingPayments = storedOrders.filter(order => order.status === "pending").length;
   const confirmedPayments = storedOrders.filter(order => order.status !== "pending" && order.status !== "cancelled").length;
-  const capacityPercentage = Math.min(100, Math.round((gb.members / Math.max(1, gb.maxMembers)) * 100));
-  const closeLabel = gb.closeDate ? formatDate(gb.closeDate) : "No close date";
+  const capacityPercentage = memberLimit
+    ? Math.min(100, Math.round((memberCount / Math.max(1, memberLimit)) * 100))
+    : 0;
+  const statusHero = STATUS_HERO[gb.status];
+  const closesVerb = gb.status === "closed" || gb.status === "archived" ? "Closed" : "Closes";
+  const closeLabel = gb.closeDate ? `${closesVerb} ${formatDate(gb.closeDate)}` : "No close date";
 
   const metrics = [
     {
@@ -113,10 +128,10 @@ export default function OverviewTabV3({
     },
     {
       id: "quality",
-      severity: gb.pendingLabs ? "attention" : "clear",
+      severity: "clear",
       icon: FlaskConical,
-      title: gb.pendingLabs ? `${gb.pendingLabs} quality document${gb.pendingLabs === 1 ? "" : "s"} pending` : "Quality checks are complete",
-      detail: gb.pendingLabs ? "COA or testing records still need review." : "No unresolved quality checks remain.",
+      title: "Quality documents",
+      detail: "Review COAs and testing records for this group buy.",
       action: "Review quality",
       tab: "labtests",
     },
@@ -126,25 +141,32 @@ export default function OverviewTabV3({
     <div className="ov2-overview ov2-command-center approved-command-overview">
       <section className="ov2-command-hero" aria-labelledby="ov2-command-title">
         <div className="ov2-command-hero-copy">
-          <span className="ov2-command-eyebrow"><i aria-hidden="true" /> Live group buy operations</span>
+          <span className="ov2-command-eyebrow">{statusHero.live ? <i aria-hidden="true" /> : null} {statusHero.eyebrow}</span>
           <h1 id="ov2-command-title">{gb.name}</h1>
           <p>One operational view for payments, fulfilment, member demand, and the work that needs attention next.</p>
           <div className="ov2-command-meta">
-            <span><CalendarClock aria-hidden="true" /> Closes {closeLabel}</span>
-            <span><Users aria-hidden="true" /> {gb.members} active members</span>
+            <span><CalendarClock aria-hidden="true" /> {closeLabel}</span>
+            <span><Users aria-hidden="true" /> {memberCount} member{memberCount === 1 ? "" : "s"}</span>
             <span><CheckCircle2 aria-hidden="true" /> {gb.status}</span>
           </div>
         </div>
 
         <div className="ov2-command-hero-side">
-          <div className="ov2-command-capacity">
-            <div><span>Member capacity</span><strong>{gb.members}<small> / {gb.maxMembers}</small></strong></div>
-            <b>{capacityPercentage}%</b>
-          </div>
-          <div className="ov2-command-progress" role="progressbar" aria-label="Member capacity" aria-valuemin={0} aria-valuemax={100} aria-valuenow={capacityPercentage}>
-            <span style={{ width: `${capacityPercentage}%` }} />
-          </div>
-          <div className="ov2-command-collaborators"><AvatarStack count={3} /><span>Organiser team online</span></div>
+          {memberLimit ? (
+            <>
+              <div className="ov2-command-capacity">
+                <div><span>Member capacity</span><strong>{memberCount}<small> / {memberLimit}</small></strong></div>
+                <b>{capacityPercentage}%</b>
+              </div>
+              <div className="ov2-command-progress" role="progressbar" aria-label="Member capacity" aria-valuemin={0} aria-valuemax={100} aria-valuenow={capacityPercentage}>
+                <span style={{ width: `${capacityPercentage}%` }} />
+              </div>
+            </>
+          ) : (
+            <div className="ov2-command-capacity">
+              <div><span>Members</span><strong>{memberCount}<small> · no limit</small></strong></div>
+            </div>
+          )}
           <div className="ov2-command-actions">
             <button type="button" onClick={() => onGoto("orders")}>Review orders <ArrowRight aria-hidden="true" /></button>
             <button type="button" onClick={() => onGoto("dispatch")}>Open dispatch</button>

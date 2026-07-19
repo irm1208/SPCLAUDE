@@ -104,7 +104,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
   primaryAction?: string;
 }> = {
   overview: {
-    title: "Winter Peptide Run 2025",
+    title: "Overview",
     description: "Monitor orders, payments, fulfillment, and member activity.",
     primaryAction: "Create order",
   },

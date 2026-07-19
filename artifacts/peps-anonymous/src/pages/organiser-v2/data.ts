@@ -66,5 +66,6 @@ export const SAMPLE_GBS: SampleGB[] = [
 // Currency formatter matching the app's conventions.
 export function fmtMoney(amount: number, currency: string): string {
   const symbol = currency === "GBP" ? "£" : currency === "EUR" ? "€" : currency === "USD" ? "$" : "";
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const digits = Number.isInteger(amount) ? 0 : 2;
+  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }

@@ -12,6 +12,8 @@ interface Props {
   activeTab?: WorkspaceTabId;
   onTabChange?: (tab: WorkspaceTabId) => void;
   gbName?: string;
+  gbStatus?: "draft" | "active" | "closed" | "archived";
+  gbCloseDate?: string | null;
   userName?: string;
   badges?: Partial<Record<WorkspaceTabId, number>>;
   mode?: "workspace" | "setup";
@@ -24,11 +26,25 @@ interface Props {
   collapsed?: boolean;
 }
 
+function initialsOf(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "GB";
+  return parts.slice(0, 2).map(part => part[0]!.toUpperCase()).join("");
+}
+
+function formatShortDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
 export default function DashboardSidebar({
   activeTab = "overview",
   onTabChange,
-  gbName = "Winter Peptide Run 2025",
-  userName = "Alex Morgan",
+  gbName = "Group buy",
+  gbStatus,
+  gbCloseDate,
+  userName = "Organiser",
   badges = {},
   mode = "workspace",
   currentStep = 0,
@@ -80,22 +96,37 @@ export default function DashboardSidebar({
         </button>
       </div>
 
-      {mode === "workspace" ? (
-        <button
-          type="button"
-          className="ov2-active-gb-card"
-          onClick={() => selectTab("overview")}
-          aria-label={`Active group buy: ${gbName}. Open for orders. Closes 18 July.`}
-        >
-          <span className="ov2-active-gb-mark" aria-hidden="true">W25</span>
-          <span className="ov2-active-gb-copy">
-            <span>Active group buy</span>
-            <strong>{gbName}</strong>
-            <small><i className="ov2-live-dot" aria-hidden="true" /> Open · Closes 18 July</small>
-          </span>
-          <ChevronDown aria-hidden="true" />
-        </button>
-      ) : null}
+      {mode === "workspace" ? (() => {
+        const closeDateLabel = gbCloseDate ? formatShortDate(gbCloseDate) : "";
+        const statusLine = gbStatus === "active"
+          ? (closeDateLabel ? `Open · Closes ${closeDateLabel}` : "Open for orders")
+          : gbStatus === "draft"
+            ? "Draft · Not yet live"
+            : gbStatus === "closed"
+              ? (closeDateLabel ? `Closed ${closeDateLabel}` : "Closed")
+              : gbStatus === "archived"
+                ? "Archived"
+                : "";
+        const cardKicker = gbStatus === "active" ? "Active group buy" : "Current group buy";
+        return (
+          <button
+            type="button"
+            className="ov2-active-gb-card"
+            onClick={() => selectTab("overview")}
+            aria-label={`${cardKicker}: ${gbName}.${statusLine ? ` ${statusLine}.` : ""}`}
+          >
+            <span className="ov2-active-gb-mark" aria-hidden="true">{initialsOf(gbName)}</span>
+            <span className="ov2-active-gb-copy">
+              <span>{cardKicker}</span>
+              <strong>{gbName}</strong>
+              {statusLine ? (
+                <small>{gbStatus === "active" ? <i className="ov2-live-dot" aria-hidden="true" /> : null} {statusLine}</small>
+              ) : null}
+            </span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+        );
+      })() : null}
 
       <div className="ov2-sidebar-scroll">
         {mode === "setup" ? (
@@ -185,7 +216,7 @@ export default function DashboardSidebar({
       </div>
 
       <div className="ov2-profile-block">
-        <span className="ov2-profile-avatar" aria-hidden="true">OA</span>
+        <span className="ov2-profile-avatar" aria-hidden="true">{initialsOf(userName)}</span>
         <span><strong>{userName}</strong><small>Organiser</small></span>
         <ChevronDown aria-hidden="true" />
       </div>

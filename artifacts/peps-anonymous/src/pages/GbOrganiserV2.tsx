@@ -32,7 +32,10 @@ export default function GbOrganiserV2() {
   const { account, isLoading: accountLoading } = useAccount();
   const queryClient = useQueryClient();
   const [mode, setModeState] = useState<Mode>(() => localStorage.getItem("v2:organiserMode") === "setup" ? "setup" : "workspace");
-  const [selectedGroupBuyId, setSelectedGroupBuyId] = useState(() => localStorage.getItem("v2:selectedGroupBuyId") ?? "");
+  const [selectedGroupBuyId, setSelectedGroupBuyId] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("gb");
+    return fromUrl ?? localStorage.getItem("v2:selectedGroupBuyId") ?? "";
+  });
   const [showWelcome, setShowWelcome] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
