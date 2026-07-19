@@ -66,13 +66,10 @@ export default function DashboardSidebar({
     <div className="ov2-sidebar">
       <div className="ov2-brand-block">
         <div className="ov2-brand-mark" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
+          S&amp;P
         </div>
         <div className="ov2-brand-copy">
-          <strong>Peps Anonymous</strong>
+          <strong>Salt &amp; Peps</strong>
           <span>GB Organiser</span>
         </div>
         <button type="button" className="ov2-sidebar-collapse" onClick={onCollapse} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
@@ -186,7 +183,7 @@ export default function DashboardSidebar({
 
       <div className="ov2-profile-block">
         <span className="ov2-profile-avatar" aria-hidden="true">OA</span>
-        <span><strong>{userName}</strong><small>organiser@peps.local</small></span>
+        <span><strong>{userName}</strong><small>Organiser</small></span>
         <ChevronDown aria-hidden="true" />
       </div>
     </div>

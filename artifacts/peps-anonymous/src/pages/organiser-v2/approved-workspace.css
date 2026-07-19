@@ -94,16 +94,19 @@
 
 .organiser-v2 .ov2-brand-mark {
   display: grid;
+  place-items: center;
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 3px;
   border: 0;
   border-radius: 10px;
-  padding: 8px;
+  padding: 0;
   background: var(--approved-blue);
   box-shadow: 0 6px 15px rgba(15, 31, 56, 0.22);
+  color: #FFFFFF;
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 11px;
+  letter-spacing: -0.02em;
 }
 
 .organiser-v2 .ov2-brand-mark::before {
@@ -113,15 +116,7 @@
 .organiser-v2 .ov2-brand-mark span,
 .organiser-v2 .ov2-brand-mark span:first-child,
 .organiser-v2 .ov2-brand-mark span:last-child {
-  position: static;
-  width: auto;
-  height: auto;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.96);
-}
-
-.organiser-v2 .ov2-brand-mark span:last-child {
-  background: #E9A020;
+  display: none;
 }
 
 .organiser-v2 .ov2-brand-copy strong,
@@ -130,17 +125,19 @@
 }
 
 .organiser-v2 .ov2-brand-copy strong {
-  font-size: var(--approved-type-meta);
-  font-weight: 600;
-  letter-spacing: 0;
-  opacity: 0.76;
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  opacity: 1;
 }
 
 .organiser-v2 .ov2-brand-copy span {
   margin-top: 0;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--approved-type-meta);
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.76;
 }
 
 .organiser-v2 .ov2-sidebar-collapse {

@@ -6,9 +6,11 @@ import {
 } from "lucide-react";
 
 // ─── Workspace navigation ────────────────────────────────────────────────────
-// The old 19 flat tabs, regrouped by what the organiser is actually doing.
-// Setup/Access live in the guided wizard, so the day-to-day workspace only needs
-// the running-a-GB areas.
+// The old 19 flat tabs, regrouped people-first: daily essentials pinned at the
+// top (no header), then everything member-facing together, money with orders,
+// the shipping pipeline intact, and quality/setup at the rear. Setup/Access
+// live in the guided wizard, so the day-to-day workspace only needs the
+// running-a-GB areas.
 
 export type WorkspaceTabId =
   | "overview"
@@ -40,58 +42,58 @@ export const MOBILE_WORKSPACE_TABS = [
 
 export const WORKSPACE_GROUPS: WorkspaceGroup[] = [
   {
-    id: "workspace",
-    label: "Workspace",
+    id: "pinned",
+    label: "", // no header — daily essentials pinned at the top
     tabs: [
       { id: "overview", label: "Overview", icon: LayoutDashboard, description: "Dashboard with stats and recent activity" },
-      { id: "todos", label: "Todo List", icon: ListTodo, description: "Your personal task list" },
-      { id: "members", label: "Members", icon: UserRound, description: "Member orders, payments, and fulfilment" },
+      { id: "todos", label: "Tasks", icon: ListTodo, description: "Your personal task list" },
     ],
   },
   {
-    id: "orders",
-    label: "Orders",
+    id: "people",
+    label: "People",
+    tabs: [
+      { id: "members", label: "Members", icon: UserRound, description: "Member orders, payments, and fulfilment" },
+      { id: "tickets", label: "Tickets", icon: MessageSquare, description: "Member support conversations" },
+      { id: "broadcast", label: "Announcements", icon: SendHorizonal, description: "Send updates to all members" },
+    ],
+  },
+  {
+    id: "orders-money",
+    label: "Orders & money",
     tabs: [
       { id: "orders", label: "Orders", icon: ShoppingBag, description: "View and manage member orders" },
-      { id: "broadcast", label: "Broadcast", icon: SendHorizonal, description: "Send updates to all members" },
-    ],
-  },
-  {
-    id: "fulfillment",
-    label: "Fulfillment",
-    tabs: [
-      { id: "parcels", label: "Parcels", icon: Truck, description: "Track packages from supplier" },
-      { id: "dispatch", label: "Dispatch", icon: FileText, description: "Assign products to orders and print labels" },
-      { id: "qrcodes", label: "QR Codes", icon: QrCode, description: "Parcel tracking codes" },
-      { id: "reshippers", label: "Package Forwarders", icon: Users, description: "People who forward parcels to other countries" },
-      { id: "legs", label: "International Forwarding", icon: Globe, description: "Multi-hop shipping routes for international delivery" },
-      { id: "shipping", label: "Shipping Rates", icon: Globe, description: "Delivery costs by country" },
-    ],
-  },
-  {
-    id: "insights",
-    label: "Insights",
-    tabs: [
+      { id: "summary", label: "Supplier Summary", icon: ClipboardList, description: "Export order rollup for suppliers" },
       { id: "pnl", label: "Profit & Loss", icon: BarChart3, description: "Revenue and costs breakdown" },
+    ],
+  },
+  {
+    id: "shipping",
+    label: "Shipping",
+    tabs: [
+      { id: "parcels", label: "Incoming Parcels", icon: Truck, description: "Track packages from supplier" },
+      { id: "dispatch", label: "Dispatch", icon: FileText, description: "Assign products to orders and print labels" },
+      { id: "qrcodes", label: "Shipping Labels", icon: QrCode, description: "Member shipping labels and QR status" },
+      { id: "reshippers", label: "Package Forwarders", icon: Users, description: "People who forward parcels to other countries" },
+      { id: "legs", label: "International Routes", icon: Globe, description: "Multi-hop shipping routes for international delivery" },
+      { id: "shipping", label: "Shipping Rates", icon: ClipboardList, description: "Delivery costs by country" },
+    ],
+  },
+  {
+    id: "quality",
+    label: "Quality",
+    tabs: [
       { id: "labtests", label: "Vendor COAs", icon: FileCheck, description: "Certificates of Analysis from vendors" },
       { id: "testinggroups", label: "Lab Testing Pool", icon: Users, description: "Coordinate member contributions for lab testing" },
-      { id: "summary", label: "Summary", icon: ClipboardList, description: "Export order rollup for suppliers" },
     ],
   },
   {
-    id: "support",
-    label: "Support",
+    id: "setup",
+    label: "Setup",
     tabs: [
-      { id: "tickets", label: "Tickets", icon: MessageSquare, description: "Member support conversations" },
-    ],
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    tabs: [
-      { id: "settings", label: "GB Settings", icon: Settings, description: "Edit group buy details and dates" },
+      { id: "settings", label: "Settings", icon: Settings, description: "Edit group buy details and dates" },
       { id: "products", label: "Products", icon: Package, description: "Manage product catalogue" },
-      { id: "rules", label: "Rules", icon: Shield, description: "Messages and rules shown to members" },
+      { id: "rules", label: "Rules & Info", icon: Shield, description: "Messages and rules shown to members" },
     ],
   },
 ];
@@ -107,7 +109,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     primaryAction: "Create order",
   },
   todos: {
-    title: "Todo list",
+    title: "Tasks",
     description: "Track organiser work and operational follow-ups.",
     primaryAction: "Create task",
   },
@@ -122,12 +124,12 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     primaryAction: "Create order",
   },
   broadcast: {
-    title: "Broadcast",
+    title: "Announcements",
     description: "Send group-buy updates and review message delivery.",
-    primaryAction: "New broadcast",
+    primaryAction: "New announcement",
   },
   parcels: {
-    title: "Parcels",
+    title: "Incoming parcels",
     description: "Track inbound supplier parcels and their contents.",
     primaryAction: "Add parcel",
   },
@@ -136,7 +138,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     description: "Select received parcels and dispatch fulfillable orders.",
   },
   qrcodes: {
-    title: "QR codes",
+    title: "Shipping labels",
     description: "Manage member shipping labels and QR status.",
   },
   reshippers: {
@@ -145,7 +147,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     primaryAction: "Add forwarder",
   },
   legs: {
-    title: "International forwarding",
+    title: "International routes",
     description: "Coordinate country legs and parcel hand-offs.",
     primaryAction: "Add leg",
   },
@@ -167,7 +169,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     description: "Coordinate samples, contributions, and results.",
   },
   summary: {
-    title: "Summary",
+    title: "Supplier summary",
     description: "Review and export the supplier order rollup.",
   },
   tickets: {
@@ -175,7 +177,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     description: "Resolve member questions and operational issues.",
   },
   settings: {
-    title: "GB settings",
+    title: "Settings",
     description: "Manage the active group buy configuration.",
   },
   products: {
@@ -184,7 +186,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     primaryAction: "Add product",
   },
   rules: {
-    title: "Rules",
+    title: "Rules & info",
     description: "Edit member-facing information and participation rules.",
   },
 };
