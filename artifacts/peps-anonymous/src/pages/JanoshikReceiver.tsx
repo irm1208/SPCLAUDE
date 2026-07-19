@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SaltPepsMark } from "@/components/SaltPepsMark";
 
 // ── Janoshik browser-helper receiver ─────────────────────────────────────────
 // Opened in a new tab by the admin bookmarklet running on a Janoshik report
@@ -508,7 +509,12 @@ function Shell({ children, subtitle, wide }: { children: React.ReactNode; subtit
     <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-6">
       <div className={`w-full ${wide ? "max-w-xl" : "max-w-md"} rounded-2xl border border-slate-800 bg-slate-900 p-7 shadow-xl`}>
         <div className="flex items-center gap-2 mb-5">
-          <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center font-black">S</div>
+          <div
+            className="rounded-lg flex items-center justify-center shrink-0"
+            style={{ width: 32, height: 32, background: "#1B3A7A" }}
+          >
+            <SaltPepsMark size={26} variant="reverse" />
+          </div>
           <div>
             <p className="text-sm font-bold leading-tight">Salt&amp;Peps</p>
             <p className="text-[11px] text-slate-400 leading-tight">{subtitle}</p>

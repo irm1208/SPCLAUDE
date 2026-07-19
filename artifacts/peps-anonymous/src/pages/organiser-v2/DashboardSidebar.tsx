@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   Settings,
 } from "lucide-react";
+import { SaltPepsMark } from "@/components/SaltPepsMark";
 import { WORKSPACE_GROUPS, WIZARD_STEPS, type WorkspaceTabId } from "./nav";
 
 interface Props {
@@ -82,10 +83,7 @@ export default function DashboardSidebar({
     <div className="ov2-sidebar">
       <div className="ov2-brand-block">
         <div className="ov2-brand-mark" aria-hidden="true">
-          <svg width="42" height="42" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="180" height="180" rx="26" fill="#1B3A7A"/>
-            <text x="90" y="122" textAnchor="middle" fontFamily="Georgia, 'Times New Roman', serif" fontSize="76" fontWeight="400" letterSpacing="-1.5" fill="white">S&amp;P</text>
-          </svg>
+          <SaltPepsMark size={28} variant="reverse" />
         </div>
         <div className="ov2-brand-copy">
           <strong>Salt &amp; Peps</strong>

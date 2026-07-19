@@ -45,6 +45,7 @@ import { useVialCart } from "@/hooks/use-vial-cart";
 import { CartDrawer } from "@/components/CartDrawer";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
+import { SaltPepsMark } from "@/components/SaltPepsMark";
 
 interface NavItem {
   id: string;
@@ -221,7 +222,6 @@ const PORTAL_SETTINGS_ITEMS: { section: string; label: string; Icon: React.Eleme
 
 function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
   const dim = size === "sm" ? 28 : 36;
-  const fontSize = size === "sm" ? "9px" : "10.5px";
   return (
     <div
       className="flex items-center justify-center shrink-0 select-none"
@@ -230,14 +230,13 @@ function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
         height: dim,
         borderRadius: "8px",
         background: BRAND_NAVY,
-        fontFamily: "var(--font-display)",
-        fontSize,
-        fontWeight: 400,
-        color: "white",
-        letterSpacing: "-0.02em",
       }}
     >
-      S&P
+      <SaltPepsMark
+        size={size === "sm" ? 23 : 30}
+        variant="reverse"
+        detail={size === "sm" ? "small" : "full"}
+      />
     </div>
   );
 }

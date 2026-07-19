@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { SaltPepsMark } from "@/components/SaltPepsMark";
 
 // ─── Design tokens (extracted from cosmos.so source HTML) ─────────────────────
 const T = {
@@ -70,19 +71,13 @@ export default function PrototypeHome() {
             cursor: "pointer", marginRight: "4px", textDecoration: "none",
           }}
         >
-          {/* S&P logo mark — navy rounded square inside the circle */}
+          {/* Peptide logo mark inside the existing navigation tile. */}
           <div style={{
             width: 28, height: 28, borderRadius: "6px",
             background: "#1B3A7A",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <svg width="28" height="28" viewBox="0 0 180 180" fill="none">
-              <text x="90" y="126"
-                textAnchor="middle"
-                fontFamily="'DM Serif Display', Georgia, serif"
-                fontSize="82" fontWeight="400" letterSpacing="-2"
-                fill="white">S&amp;P</text>
-            </svg>
+            <SaltPepsMark size={22} variant="reverse" detail="small" />
           </div>
         </a>
 
