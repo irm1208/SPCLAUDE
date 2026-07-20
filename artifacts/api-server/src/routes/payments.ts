@@ -325,11 +325,15 @@ export async function resolveOrderCrypto(
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
-  // Wholesale orders: prefer the dedicated wholesale USDT wallet
+  // Wholesale orders: prefer the dedicated wholesale USDT wallet, then USDC ERC-20 wallet
   if (order.orderType === "wholesale") {
     const wsWallet = await getConfig("wholesale_usdt_wallet");
     if (wsWallet) {
       return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
+    }
+    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet");
+    if (wsUsdcWallet) {
+      return { walletAddress: wsUsdcWallet, currency: "USDC", network: defaultNetwork };
     }
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
@@ -466,6 +470,18 @@ export async function resolveEffectiveOrderCrypto(
         o.network.toLowerCase() === order.paymentCryptoNetwork!.toLowerCase()
       );
       if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+    }
+  }
+  // Wholesale orders: if the customer chose USDC ERC-20, verify against the dedicated USDC wallet
+  // (the USDC wallet may be a different address than the USDT wallet, so we cannot fall through
+  // to resolveOrderCrypto which only knows the USDT address).
+  if (order.orderType === "wholesale" && order.paymentCryptoCurrency?.toUpperCase() === "USDC") {
+    const net = (order.paymentCryptoNetwork ?? "ERC-20").toLowerCase();
+    if (/erc.?20|ethereum/.test(net)) {
+      const wsUsdcErc20Wallet = await getConfig("wholesale_usdc_erc20_wallet");
+      if (wsUsdcErc20Wallet) {
+        return { walletAddress: wsUsdcErc20Wallet, currency: "USDC", network: "ERC-20" };
+      }
     }
   }
   const base = await resolveOrderCrypto(order);
