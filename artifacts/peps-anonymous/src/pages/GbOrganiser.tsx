@@ -6523,13 +6523,13 @@ function exportOrdersCsv(orders: OrgOrder[], currency: string, gbName: string) {
       if (!seenProducts.includes(li.productName)) seenProducts.push(li.productName);
     }
   }
-  const header = ["Code", "Username", "Status", "Payment", `Total (${currency})`, "Delivery", "Tracking", "Shipping Name", "Shipping Address", "Country", "Date", ...seenProducts];
+  const header = ["Code", "Username", "Status", "Payment", `Total (${currency})`, "Delivery", "Tracking", "Shipping Name", "Shipping Address", "Country", "Date", "Customer Notes", "Internal Notes", ...seenProducts];
   const rows = orders.map(o => {
     const qtyMap: Record<string, number> = {};
     for (const li of o.lineItems) qtyMap[li.productName] = (qtyMap[li.productName] ?? 0) + li.quantity;
     const country = o.shippingCountry ?? o.accountCountry ?? "";
     const productCells = seenProducts.map(name => qtyMap[name] ?? "");
-    return [o.code, `@${o.telegramUsername}`, o.status, o.paymentStatus, o.grandTotal.toFixed(2), o.deliveryMethod ?? "", o.trackingNumber ?? "", o.shippingName ?? "", o.shippingAddress ?? "", country, new Date(o.createdAt).toLocaleDateString("en-GB"), ...productCells];
+    return [o.code, `@${o.telegramUsername}`, o.status, o.paymentStatus, o.grandTotal.toFixed(2), o.deliveryMethod ?? "", o.trackingNumber ?? "", o.shippingName ?? "", o.shippingAddress ?? "", country, new Date(o.createdAt).toLocaleDateString("en-GB"), o.notes ?? "", o.adminNotes ?? "", ...productCells];
   });
   const csv = [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
