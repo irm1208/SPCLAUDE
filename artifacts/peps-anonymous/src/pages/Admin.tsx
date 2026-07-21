@@ -12169,6 +12169,7 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [kpi, setKpi] = useState<AccountsKpi | null>(null);
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
+  const [guestsFilter, setGuestsFilter] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid" | "pending">("all");
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
   const [membersPage, setMembersPage] = useState(0);
@@ -12198,6 +12199,7 @@ function UsernamesTab({ secret }: { secret: string }) {
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
+      if (guestsFilter) params.set("guests", "true");
       params.set("limit", "2000");
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
@@ -12205,7 +12207,7 @@ function UsernamesTab({ secret }: { secret: string }) {
       setRows(Array.isArray(data) ? data : (data.customers ?? []));
     } catch { /* ignore */ }
     setLoading(false);
-  }, [secret, searchQuery, gbFilter, wholesaleFilter]);
+  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter]);
 
   useEffect(() => { fetch$(); }, [fetch$]);
 
@@ -12345,7 +12347,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   // Reset to page 0 when any filter/sort/search changes
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
 
   return (
     <div className="space-y-4">
@@ -12446,6 +12448,17 @@ function UsernamesTab({ secret }: { secret: string }) {
           <option value="all">All order types</option>
           <option value="wholesale">Wholesale only</option>
         </select>
+        <button
+          onClick={() => { setGuestsFilter(v => !v); setWholesaleFilter(false); setGbFilter(""); }}
+          className={cn(
+            "h-9 px-3 rounded-lg border text-xs font-semibold transition-colors shrink-0",
+            guestsFilter
+              ? "border-orange-400 bg-orange-50 text-orange-700 hover:bg-orange-100"
+              : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          {guestsFilter ? "No Account ✕" : "No Account"}
+        </button>
       </div>
 
       {/* Status filter + tag filter + sort */}
@@ -12510,7 +12523,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {displayed.length} member{displayed.length !== 1 ? "s" : ""}
+          {displayed.length} {guestsFilter ? "guest orderer" : "member"}{displayed.length !== 1 ? "s" : ""}
           {totalMembersPages > 1 && <span className="ml-1 text-muted-foreground/60">· page {safePage + 1}/{totalMembersPages}</span>}
           {selected.size > 0 && <span className="ml-1 font-semibold text-violet-600">· {selected.size} selected</span>}
         </p>
@@ -12598,7 +12611,7 @@ function UsernamesTab({ secret }: { secret: string }) {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : displayed.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">No customers found.</div>
+        <div className="text-center py-12 text-muted-foreground text-sm">{guestsFilter ? "No guest orderers found." : "No customers found."}</div>
       ) : (
         <div className="space-y-1.5">
           {displayedPage.map(row => {
@@ -12637,11 +12650,14 @@ function UsernamesTab({ secret }: { secret: string }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-foreground truncate">{row.telegramUsername}</p>
                         {row.country && <span className="text-[11px] text-muted-foreground font-medium">{row.country}</span>}
-                        <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", acctStatus === "active" ? "bg-green-100 text-green-700" : acctStatus === "suspended" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{acctStatus}</span>
-                        {row.telegramConnected
+                        {(row as any).isGuest
+                          ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">No Account</span>
+                          : <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", acctStatus === "active" ? "bg-green-100 text-green-700" : acctStatus === "suspended" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{acctStatus}</span>
+                        }
+                        {!(row as any).isGuest && (row.telegramConnected
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">Connected</span>
                           : <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Disconnected</span>
-                        }
+                        )}
                         {(row.tags ?? []).includes("seller") && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Seller</span>}
                         {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesaler</span>}
                         {(row.organiserStatus === "approved" || (row.tags ?? []).includes("group_buy_organiser")) && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700">Organiser</span>}

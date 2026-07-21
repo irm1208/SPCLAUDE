@@ -4909,6 +4909,7 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   const offset = page * limit;
   const gbIdFilter = typeof req.query.gbId === "string" ? req.query.gbId.trim() : null;
   const wholesaleOnly = req.query.wholesale === "true";
+  const guestsOnly = req.query.guests === "true";
 
   try {
     // If filtering by group buy, resolve the set of member accountIds first
@@ -4951,6 +4952,57 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
 
     // Fetch accounts
     const accounts = await db.select().from(accountsTable).orderBy(desc(accountsTable.createdAt));
+
+    // ── Guest-orderer view: users with orders but no registered account ──
+    if (guestsOnly) {
+      const accountNorm = new Set<string>();
+      for (const a of accounts) {
+        const raw = (a.telegramUsername ?? "").toLowerCase();
+        accountNorm.add(raw);
+        accountNorm.add(raw.startsWith("@") ? raw.slice(1) : `@${raw}`);
+      }
+      const seen = new Set<string>();
+      const guestRows: Array<{
+        telegramUsername: string; email: null; accountStatus: null; createdAt: string | null;
+        country: null; lastLoginIp: null; tags: string[]; telegramConnected: false;
+        organiserStatus: null; poolLeaderStatus: null; reshipperStatus: null;
+        credits: number; isWholesale: false; isGuest: true;
+        orderCount: number; totalSpent: number; lastOrderAt: string | null;
+        draftCount: number; submittedCount: number; processingCount: number;
+        shippedCount: number; completedCount: number; cancelledCount: number;
+        pendingPaymentCount: number; paidCount: number; unpaidCount: number;
+      }> = [];
+      for (const s of orderStats) {
+        const raw = s.telegramUsername ?? "";
+        const lower = raw.toLowerCase();
+        if (accountNorm.has(lower)) continue;
+        const canonical = lower.startsWith("@") ? lower : `@${lower}`;
+        if (seen.has(canonical)) continue;
+        seen.add(canonical);
+        const display = lower.startsWith("@") ? raw : `@${raw}`;
+        guestRows.push({
+          telegramUsername: display,
+          email: null, accountStatus: null,
+          createdAt: s.lastOrderAt ?? null,
+          country: null, lastLoginIp: null, tags: [],
+          telegramConnected: false, organiserStatus: null,
+          poolLeaderStatus: null, reshipperStatus: null,
+          credits: 0, isWholesale: false, isGuest: true,
+          orderCount: s.orderCount, totalSpent: s.totalSpent, lastOrderAt: s.lastOrderAt ?? null,
+          draftCount: s.draftCount, submittedCount: s.submittedCount,
+          processingCount: s.processingCount, shippedCount: s.shippedCount,
+          completedCount: s.completedCount, cancelledCount: s.cancelledCount,
+          pendingPaymentCount: s.pendingPaymentCount, paidCount: s.paidCount,
+          unpaidCount: s.unpaidCount,
+        });
+      }
+      const filteredGuests = guestRows
+        .filter(g => !q || g.telegramUsername.toLowerCase().includes(q))
+        .sort((a, b) => new Date(b.lastOrderAt ?? 0).getTime() - new Date(a.lastOrderAt ?? 0).getTime());
+      const total = filteredGuests.length;
+      const page_data = filteredGuests.slice(offset, offset + limit);
+      return res.json({ customers: page_data, total, page, limit });
+    }
 
     // Merge and filter
     const zeroStats = { orderCount: 0, totalSpent: 0, lastOrderAt: null, draftCount: 0, submittedCount: 0, processingCount: 0, shippedCount: 0, completedCount: 0, cancelledCount: 0, pendingPaymentCount: 0, paidCount: 0, unpaidCount: 0 };
