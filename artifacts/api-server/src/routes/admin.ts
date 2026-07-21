@@ -9269,17 +9269,23 @@ router.post("/admin/impersonate", async (req: any, res: any): Promise<void> => {
     res.status(400).json({ error: "telegramUsername is required" }); return;
   }
   const bare = telegramUsername.replace(/^@+/, "").toLowerCase().trim();
-  // Verify the account exists
+  const withAt = "@" + bare;
+  // Verify the account exists (case-insensitive, with or without @ prefix)
   const [account] = await db.select({ telegramUsername: accountsTable.telegramUsername })
     .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, bare))
+    .where(or(
+      eq(sql`lower(${accountsTable.telegramUsername})`, bare),
+      eq(sql`lower(${accountsTable.telegramUsername})`, withAt),
+    ))
     .limit(1);
   if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  // Use the exact stored username so the session lookup works correctly
+  const storedUsername = account.telegramUsername;
   // Clean stale tokens
   const now = Date.now();
   for (const [k, v] of impersonateTokens) { if (v.expiresAt < now) impersonateTokens.delete(k); }
   const token = randomUUID();
-  impersonateTokens.set(token, { telegramUsername: bare, expiresAt: now + 300_000 });
+  impersonateTokens.set(token, { telegramUsername: storedUsername, expiresAt: now + 300_000 });
   res.json({ token });
 });
 
