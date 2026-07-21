@@ -9270,7 +9270,11 @@ router.post("/admin/impersonate", async (req: any, res: any): Promise<void> => {
   }
   const bare = telegramUsername.replace(/^@+/, "").toLowerCase().trim();
   const withAt = "@" + bare;
-  // Verify the account exists (case-insensitive, with or without @ prefix)
+  // Prefer the registered account so the session is scoped to the canonical username.
+  // Fall back to the orders table for users who placed orders without creating an account
+  // — /api/account/me handles a missing accounts row gracefully (nulls for profile fields)
+  // and all order/history routes look up by telegram_username from the JWT.
+  let storedUsername: string | null = null;
   const [account] = await db.select({ telegramUsername: accountsTable.telegramUsername })
     .from(accountsTable)
     .where(or(
@@ -9278,9 +9282,20 @@ router.post("/admin/impersonate", async (req: any, res: any): Promise<void> => {
       eq(sql`lower(${accountsTable.telegramUsername})`, withAt),
     ))
     .limit(1);
-  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
-  // Use the exact stored username so the session lookup works correctly
-  const storedUsername = account.telegramUsername;
+  if (account) {
+    storedUsername = account.telegramUsername;
+  } else {
+    // No registered account — look for any order with this telegram username
+    const [orderRow] = await db.select({ telegramUsername: ordersTable.telegramUsername })
+      .from(ordersTable)
+      .where(or(
+        eq(sql`lower(${ordersTable.telegramUsername})`, bare),
+        eq(sql`lower(${ordersTable.telegramUsername})`, withAt),
+      ))
+      .limit(1);
+    if (orderRow) storedUsername = orderRow.telegramUsername;
+  }
+  if (!storedUsername) { res.status(404).json({ error: "No account or orders found for this username" }); return; }
   // Clean stale tokens
   const now = Date.now();
   for (const [k, v] of impersonateTokens) { if (v.expiresAt < now) impersonateTokens.delete(k); }
