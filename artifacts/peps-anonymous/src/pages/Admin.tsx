@@ -9,7 +9,7 @@ import {
   Bell, CalendarDays, Calendar, ToggleLeft, ToggleRight, MessageSquarePlus, MessageSquare, TestTube, PackageCheck, Globe, FlaskConical, Info,
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
-  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu,
+  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus,
 } from "lucide-react";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -12170,6 +12170,8 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
   const [guestsFilter, setGuestsFilter] = useState(false);
+  const [registeringAll, setRegisteringAll] = useState(false);
+  const [registerResult, setRegisterResult] = useState<{ created: number; total: number } | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid" | "pending">("all");
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
   const [membersPage, setMembersPage] = useState(0);
@@ -12520,6 +12522,43 @@ function UsernamesTab({ secret }: { secret: string }) {
           <option value="az">Username A–Z</option>
         </select>
       </div>
+
+      {guestsFilter && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-orange-800">Guest orderers — no registered account</p>
+            <p className="text-xs text-orange-600 mt-0.5">These users placed orders without signing up. Register them as accounts so they can log in and set a password on their next visit.</p>
+            {registerResult && (
+              <p className="text-xs font-semibold text-green-700 mt-1">✓ {registerResult.created} account{registerResult.created !== 1 ? "s" : ""} created ({registerResult.total} processed)</p>
+            )}
+          </div>
+          <button
+            onClick={async () => {
+              if (!window.confirm(`Register all ${displayed.length} guest orderers as accounts? They'll be prompted to set a password on their next login.`)) return;
+              setRegisteringAll(true);
+              setRegisterResult(null);
+              try {
+                const r = await fetch(apiUrl("/admin/bulk-register-guests"), {
+                  method: "POST",
+                  headers: { "x-admin-secret": secret },
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || "Failed");
+                setRegisterResult({ created: d.created, total: d.total });
+                fetch$();
+              } catch (e) {
+                alert(e instanceof Error ? e.message : "Registration failed");
+              }
+              setRegisteringAll(false);
+            }}
+            disabled={registeringAll || displayed.length === 0}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 transition-colors"
+          >
+            {registeringAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+            Register All
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">

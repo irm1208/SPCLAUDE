@@ -5061,6 +5061,69 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   }
 });
 
+// ─── POST /api/admin/bulk-register-guests ─────────────────────
+// Create stub accounts (passwordHash = null) for every unique order username
+// that has no existing account. Returns { created, skipped }.
+router.post("/admin/bulk-register-guests", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const normalizeTgLocal = (raw: string) => {
+      const t = raw.trim().toLowerCase();
+      return t.startsWith("@") ? t : `@${t}`;
+    };
+
+    const [orderUsernames, existingAccounts] = await Promise.all([
+      db.select({ telegramUsername: ordersTable.telegramUsername })
+        .from(ordersTable)
+        .where(isNull(ordersTable.deletedAt))
+        .groupBy(ordersTable.telegramUsername),
+      db.select({ telegramUsername: accountsTable.telegramUsername })
+        .from(accountsTable),
+    ]);
+
+    const knownSet = new Set<string>();
+    for (const a of existingAccounts) {
+      const raw = (a.telegramUsername ?? "").toLowerCase();
+      knownSet.add(raw);
+      knownSet.add(raw.startsWith("@") ? raw.slice(1) : `@${raw}`);
+    }
+
+    const toCreate: string[] = [];
+    const seen = new Set<string>();
+    for (const { telegramUsername } of orderUsernames) {
+      const raw = (telegramUsername ?? "").trim();
+      if (!raw) continue;
+      const normalized = normalizeTgLocal(raw);
+      if (normalized.length < 2 || normalized.length > 64) continue;
+      if (knownSet.has(normalized.toLowerCase())) continue;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      toCreate.push(normalized);
+    }
+
+    let created = 0;
+    const BATCH = 100;
+    for (let i = 0; i < toCreate.length; i += BATCH) {
+      const batch = toCreate.slice(i, i + BATCH);
+      const result = await db.insert(accountsTable)
+        .values(batch.map(tg => ({ telegramUsername: tg, accountStatus: "active" as const })))
+        .onConflictDoNothing();
+      created += batch.length;
+    }
+
+    const skipped = toCreate.length - created;
+    await writeLog("change", "info", "admin_bulk_register_guests",
+      `Admin bulk-registered ${created} guest orderer(s) as stub accounts`,
+      { created, skipped, total: toCreate.length },
+    ).catch(() => {});
+
+    res.json({ ok: true, created, skipped, total: toCreate.length });
+  } catch (err) {
+    console.error("[admin/bulk-register-guests]", err);
+    res.status(500).json({ error: "Failed to register guests" });
+  }
+});
+
 // ─── GET /api/admin/usernames ─────────────────────────────────
 router.get("/admin/usernames", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
