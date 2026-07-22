@@ -921,6 +921,8 @@ async function runStartupMigrations(): Promise<void> {
       )
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_peppys_imported ON peppys_articles (imported_at)`);
+    // vial_vendors — notify_vendor added after initial table creation
+    await db.execute(sql`ALTER TABLE vial_vendors ADD COLUMN IF NOT EXISTS notify_vendor boolean NOT NULL DEFAULT true`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
