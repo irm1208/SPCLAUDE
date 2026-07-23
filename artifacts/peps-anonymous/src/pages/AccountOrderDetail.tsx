@@ -2757,7 +2757,8 @@ export default function AccountOrderDetail() {
                       <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         This is a shared wholesale order. Items and shipping are managed from the shared order page.
                       </div>
-                    ) : EDITABLE_STATUSES.includes(order.status) ? (
+                    ) : isPaidOrder && order.orderType === "wholesale" ? null
+                    : EDITABLE_STATUSES.includes(order.status) ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}
