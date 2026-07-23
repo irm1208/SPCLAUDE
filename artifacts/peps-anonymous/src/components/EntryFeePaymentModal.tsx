@@ -158,8 +158,8 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                   <div className="flex gap-2 items-start p-2.5 bg-amber-50 rounded-lg border border-amber-100">
                     <Loader2 className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0 animate-spin" />
                     <p className="text-xs text-amber-700">
-                      Verifying your transaction — this can take a few minutes. This screen will update automatically once confirmed.
-                      {" "}If it's still pending after a while, the organiser reviews and confirms these manually too, so it will go through — no need to resend unless you made a mistake.
+                      Transaction received — checking on-chain now. This screen updates automatically once confirmed.
+                      {" "}If it doesn't confirm shortly, the organiser can also manually approve from the GB panel.
                     </p>
                   </div>
                 )}
@@ -232,7 +232,7 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                   )}
                   <Button className="w-full" onClick={handleSubmitTx} disabled={submitTx.isPending || !txHash.trim()}>
                     {submitTx.isPending
-                      ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Submitting…</>
+                      ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Verifying on-chain…</>
                       : fee.hasTxHash
                         ? <><RefreshCw className="w-4 h-4 mr-2" />Resubmit</>
                         : <><Send className="w-4 h-4 mr-2" />Submit Transaction</>
