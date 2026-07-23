@@ -7678,9 +7678,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       "Address:",
       o.shippingName?.trim() || o.telegramUsername,
       ...addrLines,
-      o.shippingCountry?.trim() || "",
+      o.shippingCountry?.trim() || null,
       `Phone: ${o.shippingPhone?.trim() || "no phone"}`,
-    ].filter(l => l !== null && l !== "");
+    ].filter(l => l !== null);
 
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -7864,9 +7864,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         "Address:",
         anchor.shippingName?.trim() || anchor.telegramUsername,
         ...addrLines,
-        anchor.shippingCountry?.trim() || "",
+        anchor.shippingCountry?.trim() || null,
         `Phone: ${anchor.shippingPhone?.trim() || "no phone"}`,
-      ].filter((l: string) => l !== "").join("\n");
+      ].filter((l: string | null) => l !== null).join("\n");
       return { text, grandTotal, isShared: !!anchor.sharedOrderId };
     };
 
