@@ -106,14 +106,18 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
         onClick={onClose}
       />
       <motion.div
-        initial={{ scale: 0.96, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.96, opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
         transition={{ type: "spring", damping: 32, stiffness: 380 }}
-        className="fixed inset-0 z-[61] flex items-center justify-center p-5 pointer-events-none"
+        className="fixed inset-x-0 bottom-0 z-[61] flex justify-center pb-[88px] sm:inset-0 sm:items-center sm:pb-0 sm:p-5 pointer-events-none"
       >
-        <div className="w-full max-w-sm rounded-3xl overflow-hidden pointer-events-auto bg-white shadow-2xl max-h-[90vh] flex flex-col">
-          <div className="px-5 pt-4 pb-3 flex items-center gap-3 shrink-0">
+        <div className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl overflow-hidden pointer-events-auto bg-white shadow-2xl max-h-[calc(100dvh-130px)] sm:max-h-[88vh] flex flex-col">
+          {/* Drag handle — mobile only */}
+          <div className="flex justify-center pt-3 pb-1 shrink-0 sm:hidden">
+            <div className="w-10 h-1 rounded-full bg-slate-200" />
+          </div>
+          <div className="px-5 pt-2 sm:pt-4 pb-3 flex items-center gap-3 shrink-0">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#F3EEFF" }}>
               <Wallet className="w-5 h-5" style={{ color: "#7C3AED" }} />
             </div>
