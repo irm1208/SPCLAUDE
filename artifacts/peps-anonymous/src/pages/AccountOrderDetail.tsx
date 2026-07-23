@@ -1903,12 +1903,23 @@ export default function AccountOrderDetail() {
       for (const li of order.lineItems) {
         if (li.productId) quantities[li.productId] = li.quantity;
       }
+      // The stored shippingAddress is a comma-joined string built from
+      // [addrLine1, addrLine2?, addrCity, addrPostcode]. Parse it back so each
+      // field lands in the correct input on the wholesale form.
+      const parts = (order.shippingAddress ?? "").split(",").map(s => s.trim()).filter(Boolean);
+      const addrLine1 = parts[0] ?? "";
+      const addrPostcode = parts.length >= 3 ? (parts[parts.length - 1] ?? "") : "";
+      const addrCity = parts.length >= 3 ? (parts[parts.length - 2] ?? "") : (parts[1] ?? "");
+      const addrLine2 = parts.length >= 4 ? parts.slice(1, parts.length - 2).join(", ") : "";
       sessionStorage.setItem("peps:edit-wholesale", JSON.stringify({
         quantities,
         fullName: order.shippingName ?? "",
         phone: order.shippingPhone ?? "",
         email: order.shippingEmail ?? "",
-        shippingAddress: order.shippingAddress ?? "",
+        addrLine1,
+        addrLine2,
+        addrCity,
+        addrPostcode,
         shippingCountry: order.shippingCountry ?? "",
         notes: (order.notes ?? "").split("\n").filter(l => !l.startsWith("Shipping region:")).join("\n").trim(),
         tip: order.tip ?? 0,
