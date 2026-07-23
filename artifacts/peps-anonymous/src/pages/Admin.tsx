@@ -7663,6 +7663,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const grandTotal = productTotal + packageTotal;
 
     const orderRef = o.code ? `Order no. ${o.code} (${o.telegramUsername})` : `Order (${o.telegramUsername})`;
+    const addrLines = (o.shippingAddress ?? "").split(",").map(p => p.trim()).filter(Boolean);
     const lines = [
       orderRef,
       "New Order:",
@@ -7676,10 +7677,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       "",
       "Address:",
       o.shippingName?.trim() || o.telegramUsername,
-      o.shippingAddress?.trim() || "",
+      ...addrLines,
       o.shippingCountry?.trim() || "",
-      `Mobile - ${o.shippingPhone?.trim() || "no mobile"}`,
-    ].filter(l => l !== null);
+      `Phone: ${o.shippingPhone?.trim() || "no phone"}`,
+    ].filter(l => l !== null && l !== "");
 
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -7848,6 +7849,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       const grandTotal = productTotal + packageTotal;
       const qtyDisplay = totalKits % 1 === 0 ? String(Math.round(totalKits)) : totalKits.toFixed(1);
       const orderRef = anchor.code ? `Order no. ${anchor.code} (${anchor.telegramUsername})` : `Order (${anchor.telegramUsername})`;
+      const addrLines = (anchor.shippingAddress ?? "").split(",").map((p: string) => p.trim()).filter(Boolean);
       const text = [
         orderRef,
         `New Order ${idx}:`,
@@ -7861,10 +7863,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         "",
         "Address:",
         anchor.shippingName?.trim() || anchor.telegramUsername,
-        anchor.shippingAddress?.trim() || "",
+        ...addrLines,
         anchor.shippingCountry?.trim() || "",
-        `Mobile - ${anchor.shippingPhone?.trim() || "no mobile"}`,
-      ].join("\n");
+        `Phone: ${anchor.shippingPhone?.trim() || "no phone"}`,
+      ].filter((l: string) => l !== "").join("\n");
       return { text, grandTotal, isShared: !!anchor.sharedOrderId };
     };
 
