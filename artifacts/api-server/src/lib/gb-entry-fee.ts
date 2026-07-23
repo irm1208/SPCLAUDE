@@ -108,7 +108,12 @@ export async function getOrCreateEntryFeePayment(gb: EntryFeeGb, accountId: stri
   }
 
   const amount = parseFloat(String(gb.entryFeeAmount ?? "0"));
-  const amountUsd = await convertEntryFeeToUsd(amount, gb.currency);
+  // Add a random 1–99 cent suffix so every customer sees a unique amount (e.g. 10.54 vs 10.23).
+  // This lets us match an on-chain transaction to a specific customer without relying solely on
+  // the TXID, and makes it impossible to recycle someone else's txid.
+  const randomCents = Math.floor(Math.random() * 99) + 1;
+  const randomizedAmount = Math.round((amount + randomCents * 0.01) * 100) / 100;
+  const amountUsd = await convertEntryFeeToUsd(randomizedAmount, gb.currency);
   const crypto = await resolveEntryFeeCrypto(gb);
 
   const [created] = await db
@@ -120,6 +125,7 @@ export async function getOrCreateEntryFeePayment(gb: EntryFeeGb, accountId: stri
       status: "pending",
       amount: amount.toFixed(2),
       currency: gb.currency,
+      randomizedAmount: randomizedAmount.toFixed(2),
       amountUsd: amountUsd.toFixed(2),
       paymentMethod: "crypto",
       paymentCryptoCurrency: crypto.currency,
@@ -222,11 +228,16 @@ export async function rejectEntryFeePayment(paymentId: string, reason: string | 
 /** Shape a payment row + GB for a customer-facing API response. */
 export async function shapeEntryFeePayment(payment: GbEntryFeePayment, gb: EntryFeeGb) {
   const cryptoOptions = await getEntryFeeCryptoOptions(gb);
+  // Use the randomized amount (unique per customer) for display and verification.
+  // Falls back to the base amount for rows created before the feature was added.
+  const displayAmount = payment.randomizedAmount != null
+    ? parseFloat(String(payment.randomizedAmount))
+    : parseFloat(String(payment.amount));
   return {
     id: payment.id,
     groupBuyId: payment.groupBuyId,
     status: payment.status,
-    amount: parseFloat(String(payment.amount)),
+    amount: displayAmount,
     currency: payment.currency,
     label: gb.entryFeeLabel ?? null,
     hasTxHash: !!payment.paymentTxHash,
@@ -237,7 +248,7 @@ export async function shapeEntryFeePayment(payment: GbEntryFeePayment, gb: Entry
       walletAddress: cryptoOptions.walletAddress,
       currency: payment.paymentCryptoCurrency ?? cryptoOptions.currency,
       network: payment.paymentCryptoNetwork ?? cryptoOptions.network,
-      amount: parseFloat(String(payment.amount)),
+      amount: displayAmount,
       amountUsd: payment.amountUsd != null ? parseFloat(String(payment.amountUsd)) : null,
       availableCryptoOptions: cryptoOptions.options,
     },

@@ -418,6 +418,7 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
 }
 
 function JoinModal({ onClose }: { onClose: () => void }) {
+  const [, setLocation] = useLocation();
   const [selectedGbId, setSelectedGbId] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [pin, setPin] = useState("");
@@ -936,6 +937,7 @@ function JoinModal({ onClose }: { onClose: () => void }) {
           onConfirmed={async () => {
             try {
               await entryFeeModal.retry();
+              setLocation(`/order?gbId=${entryFeeModal.groupBuyId}`);
             } finally {
               setEntryFeeModal(null);
             }

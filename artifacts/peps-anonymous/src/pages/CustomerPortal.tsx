@@ -2195,6 +2195,7 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
 // ─── Join Group Buy Modal ──────────────────────────────────────────────────────
 
 function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: string }) {
+  const [, setLocation] = useLocation();
   const [gbId, setGbId] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -2746,6 +2747,7 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
           onConfirmed={async () => {
             try {
               await entryFeeModal.retry();
+              setLocation(`/order?gbId=${entryFeeModal.groupBuyId}`);
             } finally {
               setEntryFeeModal(null);
             }
