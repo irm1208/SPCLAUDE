@@ -6614,6 +6614,7 @@ interface EntryFeePayment {
   accountId: string;
   status: "pending" | "submitted" | "confirmed" | "rejected";
   amount: number;
+  randomizedAmount: number | null;
   currency: string;
   amountUsd: string | null;
   paymentTxHash: string | null;
@@ -6787,10 +6788,25 @@ function PendingConfirmationsPanel({ gb, onResolved }: { gb: OrganiserGB; onReso
   );
 }
 
+function explorerTxUrl(network: string | null, txHash: string): string | null {
+  if (!txHash) return null;
+  const n = (network ?? "").toUpperCase();
+  if (n === "ETH" || n === "ERC20" || n === "ETHEREUM") return `https://etherscan.io/tx/${txHash}`;
+  if (n === "BSC" || n === "BEP20") return `https://bscscan.com/tx/${txHash}`;
+  if (n === "TRX" || n === "TRON" || n === "TRC20") return `https://tronscan.org/#/transaction/${txHash}`;
+  if (n === "SOL" || n === "SOLANA") return `https://solscan.io/tx/${txHash}`;
+  if (n === "POL" || n === "MATIC" || n === "POLYGON") return `https://polygonscan.com/tx/${txHash}`;
+  if (n === "AVAX" || n === "AVALANCHE") return `https://snowtrace.io/tx/${txHash}`;
+  return null;
+}
+
 function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
   const [payments, setPayments] = useState<EntryFeePayment[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [rejectOpen, setRejectOpen] = useState<Set<string>>(new Set());
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -6800,28 +6816,47 @@ function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
     } finally { setLoading(false); }
   }, [gb.id]);
 
+  useEffect(() => { void load(); }, [load]);
+
+  const copyTx = (hash: string) => {
+    navigator.clipboard.writeText(hash).catch(() => {});
+    setCopiedId(hash);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
+
   const setStatus = async (paymentId: string, status: "confirmed" | "rejected") => {
     setActingId(paymentId);
     try {
-      const rejectionReason = status === "rejected" ? window.prompt("Rejection reason (optional):") ?? undefined : undefined;
+      const reason = status === "rejected" ? (rejectReason[paymentId] ?? "") : undefined;
       const res = await fetch(`/api/organiser/group-buys/${gb.id}/entry-fee-payments/${paymentId}/status`, {
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, rejectionReason }),
+        body: JSON.stringify({ status, rejectionReason: reason || undefined }),
       });
       if (res.ok) {
         const updated = await res.json();
         setPayments(prev => prev ? prev.map(p => p.id === paymentId ? updated : p) : prev);
+        setRejectOpen(prev => { const s = new Set(prev); s.delete(paymentId); return s; });
+        setRejectReason(prev => { const r = { ...prev }; delete r[paymentId]; return r; });
       }
     } finally { setActingId(null); }
   };
 
   if (!gb.entryFeeEnabled) return null;
 
+  const pendingCount = payments?.filter(p => p.status === "submitted" || p.status === "pending").length ?? 0;
+
   return (
     <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold" style={{ color: "var(--t-muted)" }}>Entry Fee Payments</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold" style={{ color: "var(--t-muted)" }}>Entry Fee Payments</p>
+          {pendingCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+              {pendingCount} pending
+            </span>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => void load()}
@@ -6830,56 +6865,156 @@ function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
           style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}
         >
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-          {payments === null ? "Load" : "Refresh"}
+          Refresh
         </button>
       </div>
+
+      {loading && payments === null && (
+        <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Loading…</p>
+      )}
+
       {payments !== null && (
         payments.length === 0 ? (
           <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No entry fee payments yet.</p>
         ) : (
           <div className="space-y-2">
-            {payments.map(p => (
-              <div key={p.id} className="rounded-xl border p-2.5 text-xs space-y-1.5" style={{ borderColor: "var(--t-border)" }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{p.accountId}</span>
-                  <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0",
-                    p.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
-                    p.status === "rejected" ? "bg-red-100 text-red-700" :
-                    p.status === "submitted" ? "bg-amber-100 text-amber-700" :
-                    "bg-slate-100 text-slate-500"
-                  )}>{p.status}</span>
-                </div>
-                <div style={{ color: "var(--t-subtle)" }}>
-                  {gb.currency}{p.amount.toFixed(2)}
-                  {p.paymentTxHash && <> · tx: <span className="font-mono">{p.paymentTxHash.slice(0, 10)}…</span></>}
-                  {p.paymentCryptoCurrency && <> ({p.paymentCryptoCurrency}{p.paymentCryptoNetwork ? ` / ${p.paymentCryptoNetwork}` : ""})</>}
-                </div>
-                {p.rejectionReason && <div className="text-red-600">Reason: {p.rejectionReason}</div>}
-                {(p.status === "submitted" || p.status === "pending") && (
-                  <div className="flex gap-1.5 pt-1">
-                    <button
-                      onClick={() => void setStatus(p.id, "confirmed")}
-                      disabled={actingId === p.id}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-60"
-                      style={{ background: "#16a34a" }}
-                    >
-                      {actingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                      Confirm
-                    </button>
-                    <button
-                      onClick={() => void setStatus(p.id, "rejected")}
-                      disabled={actingId === p.id}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold disabled:opacity-60"
-                      style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", color: "#dc2626" }}
-                    >
-                      <X className="w-3 h-3" />
-                      Reject
-                    </button>
+            {payments.map(p => {
+              const displayAmount = p.randomizedAmount ?? p.amount;
+              const explorerUrl = p.paymentTxHash ? explorerTxUrl(p.paymentCryptoNetwork, p.paymentTxHash) : null;
+              const needsAction = p.status === "submitted" || p.status === "pending";
+              const isRejectOpen = rejectOpen.has(p.id);
+
+              return (
+                <div key={p.id} className={cn(
+                  "rounded-xl border p-2.5 text-xs space-y-2",
+                  needsAction ? "border-amber-200 bg-amber-50/40" : ""
+                )} style={needsAction ? {} : { borderColor: "var(--t-border)" }}>
+
+                  {/* Header row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold" style={{ color: "var(--t-text)" }}>@{p.accountId}</span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0",
+                      p.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
+                      p.status === "rejected" ? "bg-red-100 text-red-700" :
+                      p.status === "submitted" ? "bg-amber-100 text-amber-700" :
+                      "bg-slate-100 text-slate-500"
+                    )}>{p.status}</span>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Amount to verify */}
+                  <div className="rounded-lg px-2.5 py-2 space-y-0.5" style={{ background: "var(--t-surface2)" }}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>
+                      Exact amount to verify on-chain
+                    </p>
+                    <p className="font-bold text-sm" style={{ color: "var(--t-text)" }}>
+                      {displayAmount.toFixed(2)} {p.paymentCryptoCurrency ?? gb.currency}
+                      {p.paymentCryptoNetwork && <span className="ml-1 text-[10px] font-normal" style={{ color: "var(--t-muted)" }}>({p.paymentCryptoNetwork})</span>}
+                    </p>
+                    {p.amountUsd && (
+                      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>≈ ${parseFloat(p.amountUsd).toFixed(2)} USD</p>
+                    )}
+                  </div>
+
+                  {/* TX hash */}
+                  {p.paymentTxHash && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Transaction ID</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] break-all flex-1" style={{ color: "var(--t-subtle)" }}>{p.paymentTxHash}</span>
+                        <button
+                          type="button"
+                          onClick={() => copyTx(p.paymentTxHash!)}
+                          className="shrink-0 p-1 rounded hover:bg-black/5"
+                          title="Copy TX hash"
+                        >
+                          {copiedId === p.paymentTxHash
+                            ? <Check className="w-3 h-3 text-emerald-600" />
+                            : <Copy className="w-3 h-3" style={{ color: "var(--t-muted)" }} />}
+                        </button>
+                        {explorerUrl && (
+                          <a
+                            href={explorerUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="shrink-0 p-1 rounded hover:bg-black/5"
+                            title="View on blockchain explorer"
+                          >
+                            <ExternalLink className="w-3 h-3" style={{ color: "var(--t-blue)" }} />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rejection reason */}
+                  {p.rejectionReason && (
+                    <div className="text-red-600 text-[10px]">Rejection reason: {p.rejectionReason}</div>
+                  )}
+
+                  {/* Confirmed by */}
+                  {p.status === "confirmed" && p.confirmedBy && (
+                    <div className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Confirmed by @{p.confirmedBy}</div>
+                  )}
+
+                  {/* Action buttons */}
+                  {needsAction && !isRejectOpen && (
+                    <div className="flex gap-1.5 pt-0.5">
+                      <button
+                        onClick={() => void setStatus(p.id, "confirmed")}
+                        disabled={actingId === p.id}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-60"
+                        style={{ background: "#16a34a" }}
+                      >
+                        {actingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                        Manually confirm
+                      </button>
+                      <button
+                        onClick={() => setRejectOpen(prev => { const s = new Set(prev); s.add(p.id); return s; })}
+                        disabled={actingId === p.id}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-60"
+                        style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", color: "#dc2626" }}
+                      >
+                        <X className="w-3 h-3" />
+                        Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Inline reject form */}
+                  {needsAction && isRejectOpen && (
+                    <div className="space-y-1.5 pt-0.5">
+                      <input
+                        type="text"
+                        placeholder="Rejection reason (optional)"
+                        value={rejectReason[p.id] ?? ""}
+                        onChange={e => setRejectReason(prev => ({ ...prev, [p.id]: e.target.value }))}
+                        className="w-full rounded-lg border px-2 py-1 text-xs"
+                        style={{ borderColor: "rgba(220,38,38,0.4)", color: "var(--t-text)", background: "var(--t-surface)" }}
+                      />
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => void setStatus(p.id, "rejected")}
+                          disabled={actingId === p.id}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-60"
+                          style={{ background: "#dc2626" }}
+                        >
+                          {actingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                          Confirm rejection
+                        </button>
+                        <button
+                          onClick={() => setRejectOpen(prev => { const s = new Set(prev); s.delete(p.id); return s; })}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border"
+                          style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )
       )}

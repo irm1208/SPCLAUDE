@@ -545,6 +545,7 @@ router.get("/organiser/group-buys/:id/entry-fee-payments", requireOrganiser, asy
   res.json(rows.map(r => ({
     ...r,
     amount: parseFloat(r.amount as unknown as string),
+    randomizedAmount: r.randomizedAmount != null ? parseFloat(r.randomizedAmount as unknown as string) : null,
     amountUsd: r.amountUsd != null ? parseFloat(r.amountUsd as unknown as string) : null,
     paymentCryptoRate: r.paymentCryptoRate != null ? parseFloat(r.paymentCryptoRate as unknown as string) : null,
   })));
@@ -583,10 +584,12 @@ router.patch("/organiser/group-buys/:id/entry-fee-payments/:paymentId/status", r
     { paymentId, groupBuyId: id, accountId: payment.accountId, status, organiser: organiserUsername },
   ).catch(() => {});
 
+  const u = updated as typeof payment;
   res.json({
-    ...updated,
-    amount: parseFloat((updated as typeof payment).amount as unknown as string),
-    amountUsd: (updated as typeof payment).amountUsd != null ? parseFloat((updated as typeof payment).amountUsd as unknown as string) : null,
+    ...u,
+    amount: parseFloat(u.amount as unknown as string),
+    randomizedAmount: u.randomizedAmount != null ? parseFloat(u.randomizedAmount as unknown as string) : null,
+    amountUsd: u.amountUsd != null ? parseFloat(u.amountUsd as unknown as string) : null,
   });
 });
 
