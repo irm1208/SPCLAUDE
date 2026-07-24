@@ -34,16 +34,30 @@ async function checkPayment(payment: {
     })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, payment.groupBuyId));
-  if (!gb) return;
+  if (!gb) {
+    console.warn(`[gb-entry-fee-auto-verify] GB not found for payment ${payment.id} (${payment.groupBuyId})`);
+    return;
+  }
 
   const crypto = await resolveEffectiveEntryFeeCrypto(gb as EntryFeeGb, payment.paymentCryptoCurrency);
-  if (!crypto.walletAddress) return;
+  if (!crypto.walletAddress) {
+    console.warn(`[gb-entry-fee-auto-verify] No wallet for payment ${payment.id} (GB ${payment.groupBuyId}, currency=${payment.paymentCryptoCurrency})`);
+    return;
+  }
 
   const amountUsd = parseFloat(String(payment.amountUsd ?? "0"));
-  if (!amountUsd) return;
+  if (!amountUsd) {
+    console.warn(`[gb-entry-fee-auto-verify] Zero/null amountUsd for payment ${payment.id}`);
+    return;
+  }
 
+  console.log(`[gb-entry-fee-auto-verify] Checking payment ${payment.id} — ${amountUsd} ${crypto.currency} on ${crypto.network} tx=${txHash.slice(0, 12)}…`);
   const result = await verifyTransaction(txHash, crypto.walletAddress, amountUsd, crypto.currency, crypto.network, 0.01);
-  if (!result.verified) return;
+  if (!result.verified) {
+    const r = result as { verified: false; reason: string; pending?: boolean };
+    console.log(`[gb-entry-fee-auto-verify] Not verified — payment ${payment.id}: ${r.reason}${r.pending ? " (pending)" : ""}`);
+    return;
+  }
 
   await confirmEntryFeePayment(payment.id, "auto-verify");
   console.log(`[gb-entry-fee-auto-verify] Confirmed — payment ${payment.id} (GB ${payment.groupBuyId}, $${amountUsd})`);

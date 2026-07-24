@@ -74,9 +74,27 @@ export async function getEntryFeeCryptoOptions(gb: EntryFeeGb): Promise<{ wallet
   return { ...base, options: [{ currency: base.currency, network: base.network }] };
 }
 
-/** Resolve the wallet/currency to VERIFY against, honouring the customer's persisted stablecoin choice. */
+/** Resolve the wallet/currency to VERIFY against, honouring the customer's persisted stablecoin choice.
+ *
+ * We trust the stored paymentCryptoCurrency for ERC-20 stablecoins directly — it was already
+ * server-validated at submit time (via getEntryFeeCryptoOptions).  effectiveStableCurrency's
+ * isEthErc20StableRail guard (which requires base.currency === "USDT") is intentionally bypassed
+ * here so that a USDC choice is honoured even when the global wallet or organiser wallet config
+ * causes isEthErc20StableRail to return false.
+ */
 export async function resolveEffectiveEntryFeeCrypto(gb: EntryFeeGb, paymentCryptoCurrency: string | null): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const base = await resolveEntryFeeCrypto(gb);
+  const stored = (paymentCryptoCurrency ?? "").toUpperCase().trim();
+  // If the stored currency is a known ERC-20 stablecoin and the rail is ERC-20 with a valid ETH
+  // wallet, use it directly rather than re-deriving through effectiveStableCurrency.
+  if (
+    stored &&
+    (ERC20_STABLE_CURRENCIES as readonly string[]).includes(stored) &&
+    /erc.?20|ethereum/i.test(base.network) &&
+    base.walletAddress && isValidEthAddress(base.walletAddress)
+  ) {
+    return { walletAddress: base.walletAddress, currency: stored, network: base.network };
+  }
   const currency = effectiveStableCurrency(base.currency, base.network, base.walletAddress, paymentCryptoCurrency);
   return { walletAddress: base.walletAddress, currency, network: base.network };
 }
