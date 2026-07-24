@@ -879,6 +879,8 @@ async function runStartupMigrations(): Promise<void> {
           FOREIGN KEY (group_buy_id) REFERENCES group_buys(id) ON DELETE CASCADE
       )
     `);
+    // gb_entry_fee_payments — randomized unique amount for on-chain fingerprinting
+    await db.execute(sql`ALTER TABLE gb_entry_fee_payments ADD COLUMN IF NOT EXISTS randomized_amount numeric(10,2)`);
     // accounts — multi-chain crypto wallet list for pool leaders
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS pool_leader_crypto_options jsonb`);
     // wholesale_shares — lead's peer-to-peer payment collection fields
