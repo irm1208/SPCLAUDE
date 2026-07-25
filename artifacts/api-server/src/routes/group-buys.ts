@@ -455,6 +455,62 @@ router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise
   res.json(result);
 });
 
+// GET /api/group-buys/:id/preview-prices — public pricing preview (auth required, no membership check)
+// Lets any logged-in user preview a GB's product prices before joining.
+// Respects the admin hide_prices / hide_prices_when_closed flags.
+router.get("/group-buys/:id/preview-prices", requireAccount, async (req, res): Promise<void> => {
+  const id = String(req.params["id"]);
+
+  const [gb] = await db
+    .select({
+      status: groupBuysTable.status,
+      hidePrices: groupBuysTable.hidePrices,
+      hidePricesWhenClosed: groupBuysTable.hidePricesWhenClosed,
+    })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+
+  if (!gb || gb.status === "archived") {
+    res.status(404).json({ error: "Group buy not found" });
+    return;
+  }
+
+  const pricesHidden =
+    gb.hidePrices ||
+    (gb.hidePricesWhenClosed && gb.status !== "active" && gb.status !== "draft");
+
+  if (pricesHidden) {
+    res.json({ hidden: true, products: [] });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      productId: groupBuyProductsTable.productId,
+      priceOverride: groupBuyProductsTable.priceOverride,
+      sortOrder: groupBuyProductsTable.sortOrder,
+      name: productsTable.name,
+      price: productsTable.price,
+      productSortOrder: productsTable.sortOrder,
+    })
+    .from(groupBuyProductsTable)
+    .innerJoin(productsTable, eq(groupBuyProductsTable.productId, productsTable.id))
+    .where(and(
+      eq(groupBuyProductsTable.groupBuyId, id),
+      eq(groupBuyProductsTable.active, true),
+    ))
+    .orderBy(asc(groupBuyProductsTable.sortOrder), asc(productsTable.sortOrder), asc(productsTable.name));
+
+  res.json({
+    hidden: false,
+    products: rows.map(r => ({
+      id: r.productId,
+      name: r.name,
+      price: r.priceOverride != null ? parseFloat(r.priceOverride) : parseFloat(r.price),
+    })),
+  });
+});
+
 // GET /api/group-buys/:id/delivery-methods — delivery methods for a GB (member only)
 router.get("/group-buys/:id/delivery-methods", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
