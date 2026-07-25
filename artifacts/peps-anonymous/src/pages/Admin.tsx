@@ -9,7 +9,7 @@ import {
   Bell, CalendarDays, Calendar, ToggleLeft, ToggleRight, MessageSquarePlus, MessageSquare, TestTube, PackageCheck, Globe, FlaskConical, Info,
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
-  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus,
+  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus, TrendingUp,
 } from "lucide-react";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -6886,13 +6886,15 @@ interface PersonalItem { productName: string; qty: number; unitCost: number; }
 interface PnlOrder {
   id: string; createdAt: string; grandTotal: number; productSubtotal: number;
   deliveryRevenue: number; vendorShipping: number; tips: number;
+  orderType: string | null; groupBuyId: string | null;
   lineItems: { productName: string; quantity: number; lineTotal: number }[];
 }
 interface PnlBucket {
   key: string; label: string; revenue: number;
   cost: number; profit: number | null; margin: number | null; orderCount: number;
 }
-type PnlPeriod = "day" | "week" | "month" | "quarter" | "year";
+type PnlPeriod = "day" | "week" | "month" | "quarter" | "halfyear" | "year";
+type PnlOrderType = "all" | "wholesale" | "direct" | "groupbuy";
 
 function pnlPeriodKey(date: Date, period: PnlPeriod): string {
   const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
@@ -6907,6 +6909,7 @@ function pnlPeriodKey(date: Date, period: PnlPeriod): string {
   }
   if (period === "month") return `${y}-${String(m + 1).padStart(2, "0")}`;
   if (period === "quarter") return `${y}-Q${Math.ceil((m + 1) / 3)}`;
+  if (period === "halfyear") return `${y}-H${m < 6 ? 1 : 2}`;
   return String(y);
 }
 function pnlPeriodLabel(key: string, period: PnlPeriod): string {
@@ -6920,6 +6923,7 @@ function pnlPeriodLabel(key: string, period: PnlPeriod): string {
     return new Date(y, mo - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
   }
   if (period === "quarter") return key.replace("-", " ");
+  if (period === "halfyear") { const [y, h] = key.split("-"); return `${h} '${String(y).slice(2)}`; }
   return key;
 }
 
@@ -8160,10 +8164,6 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
             onClick={() => { setShowPriceEditor(v => !v); setPriceSearch(""); }}>
             <Pencil className="w-3.5 h-3.5" />{showPriceEditor ? "Hide Prices" : "My Prices"}
           </Button>
-          <Button variant="outline" size="sm" className={`gap-1.5 text-xs ${showPnl ? "bg-violet-50 border-violet-300 text-violet-700" : ""}`}
-            onClick={() => { setShowPnl(v => !v); if (!pnlOrders.length && !pnlLoading) fetchPnl(); }}>
-            <BarChart3 className="w-3.5 h-3.5" />{showPnl ? "Hide P&L" : "P&L"}
-          </Button>
           <Button variant="outline" size="icon" onClick={fetchData}><RefreshCw className="w-4 h-4" /></Button>
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={onLock}>
             <Lock className="w-3.5 h-3.5" />Lock
@@ -9238,6 +9238,295 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
             );
           })()}
         </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── P&L Tab (standalone, FS3-password gated) ─────────────────
+
+function PnlTab({ secret }: { secret: string }) {
+  const [authed, setAuthed] = useState(false);
+  const [pass, setPass] = useState("");
+  const [passErr, setPassErr] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pass.trim()) return;
+    setChecking(true);
+    try {
+      const res = await fetch(apiUrl("/admin/fs3-verify"), {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pass }),
+        credentials: "omit",
+      });
+      if (res.ok) { setAuthed(true); setPassErr(""); }
+      else { const d = await res.json().catch(() => ({})); setPassErr(d.error || "Incorrect password"); }
+    } catch { setPassErr("Network error"); }
+    setChecking(false);
+  };
+
+  if (!authed) return (
+    <div className="max-w-sm mx-auto mt-16">
+      <form onSubmit={handleAuth} className="space-y-4 p-6 border border-border rounded-2xl bg-card shadow-sm">
+        <div className="text-center space-y-1">
+          <TrendingUp className="w-7 h-7 mx-auto text-violet-500" />
+          <h2 className="font-bold text-base">P&amp;L Access</h2>
+          <p className="text-xs text-muted-foreground">Enter your FS3 password to continue</p>
+        </div>
+        <Input type="password" placeholder="FS3 password" value={pass} onChange={e => setPass(e.target.value)} autoFocus />
+        {passErr && <p className="text-xs text-red-600 font-medium">{passErr}</p>}
+        <Button type="submit" className="w-full" disabled={checking || !pass.trim()}>
+          {checking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          Unlock
+        </Button>
+      </form>
+    </div>
+  );
+
+  return <PnlContent secret={secret} onLock={() => setAuthed(false)} />;
+}
+
+function PnlContent({ secret, onLock }: { secret: string; onLock: () => void }) {
+  const [orders, setOrders] = useState<PnlOrder[]>([]);
+  const [costs, setCosts] = useState<Fs3CostEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PnlPeriod>("month");
+  const [orderType, setOrderType] = useState<PnlOrderType>("all");
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pnlRes, costsRes] = await Promise.all([
+        fetch(apiUrl("/admin/fs3-pnl"), { headers: { "x-admin-secret": secret }, credentials: "omit" }),
+        fetch(apiUrl("/admin/fs3-costs"), { headers: { "x-admin-secret": secret }, credentials: "omit" }),
+      ]);
+      if (pnlRes.ok) { const d = await pnlRes.json(); setOrders(Array.isArray(d.orders) ? d.orders : []); }
+      if (costsRes.ok) setCosts(await costsRes.json());
+    } catch { /* non-fatal */ }
+    setLoading(false);
+  }, [secret]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const getCost = useMemo(() => makeCostLookup(costs), [costs]);
+
+  const filteredOrders = useMemo(() => {
+    if (orderType === "all") return orders;
+    if (orderType === "wholesale") return orders.filter(o => o.orderType === "wholesale" || o.orderType === "wholesale_shared");
+    if (orderType === "groupbuy") return orders.filter(o => !!o.groupBuyId);
+    return orders.filter(o => !o.groupBuyId && o.orderType !== "wholesale" && o.orderType !== "wholesale_shared");
+  }, [orders, orderType]);
+
+  const buckets = useMemo((): PnlBucket[] => {
+    if (!filteredOrders.length) return [];
+    const map = new Map<string, { revenue: number; knownRevenue: number; cost: number; orderCount: number }>();
+    for (const order of filteredOrders) {
+      const key = pnlPeriodKey(new Date(order.createdAt), period);
+      if (!map.has(key)) map.set(key, { revenue: 0, knownRevenue: 0, cost: 0, orderCount: 0 });
+      const b = map.get(key)!;
+      b.revenue += order.grandTotal;
+      b.orderCount++;
+      for (const li of order.lineItems) {
+        const uc = getCost(li.productName);
+        if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, b]) => ({
+      key,
+      label: pnlPeriodLabel(key, period),
+      revenue: b.revenue,
+      cost: b.cost,
+      profit: b.knownRevenue > 0 ? b.knownRevenue - b.cost : null,
+      margin: b.knownRevenue > 0 ? ((b.knownRevenue - b.cost) / b.knownRevenue) * 100 : null,
+      orderCount: b.orderCount,
+    }));
+  }, [filteredOrders, period, getCost]);
+
+  const PERIODS: { value: PnlPeriod; label: string }[] = [
+    { value: "day",      label: "Daily"       },
+    { value: "week",     label: "Weekly"      },
+    { value: "month",    label: "Monthly"     },
+    { value: "quarter",  label: "Quarterly"   },
+    { value: "halfyear", label: "Bi-annually" },
+    { value: "year",     label: "Annually"    },
+  ];
+  const TYPE_FILTERS: { value: PnlOrderType; label: string }[] = [
+    { value: "all",       label: "All"        },
+    { value: "wholesale", label: "Wholesale"  },
+    { value: "direct",    label: "Direct"     },
+    { value: "groupbuy",  label: "Group Buys" },
+  ];
+
+  const totalRev    = buckets.reduce((s, b) => s + b.revenue, 0);
+  const totalCost   = buckets.reduce((s, b) => s + b.cost, 0);
+  const totalProfit = buckets.reduce((s, b) => s + (b.profit ?? 0), 0);
+  const hasCosts    = buckets.some(b => b.cost > 0);
+  const bestBucket  = buckets.reduce<PnlBucket | null>((best, b) => b.profit !== null && (best === null || b.profit > (best.profit ?? 0)) ? b : best, null);
+  const chartData   = buckets.map(b => ({
+    label: b.label, orderCount: b.orderCount,
+    Revenue: parseFloat(b.revenue.toFixed(2)),
+    Cost:    hasCosts ? parseFloat(b.cost.toFixed(2)) : undefined,
+    Profit:  b.profit !== null ? parseFloat(b.profit.toFixed(2)) : undefined,
+  }));
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-violet-600" />
+            P&amp;L Tracker
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {filteredOrders.length} order{filteredOrders.length !== 1 ? "s" : ""} · profit uses known-cost products only
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={fetchData} disabled={loading}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={onLock}>
+            <Lock className="w-3.5 h-3.5" />Lock
+          </Button>
+        </div>
+      </div>
+
+      {/* Order type filter */}
+      <div className="flex flex-wrap gap-2">
+        {TYPE_FILTERS.map(f => (
+          <button key={f.value} onClick={() => setOrderType(f.value)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+              orderType === f.value
+                ? "bg-violet-600 text-white border-violet-600"
+                : "bg-white text-slate-600 border-slate-200 hover:border-violet-300 hover:text-violet-700"
+            }`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Period selector */}
+      <div className="flex flex-wrap gap-1.5">
+        {PERIODS.map(p => (
+          <button key={p.value} onClick={() => setPeriod(p.value)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+              period === p.value ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {loading && !buckets.length ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : buckets.length === 0 ? (
+        <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">
+          {orders.length === 0 ? "No order data yet" : "No orders match this filter"}
+        </div>
+      ) : (
+        <>
+          {/* Summary stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Total Revenue", value: `$${fmtUsd(totalRev)}`,    color: "text-foreground" },
+              { label: "Known Cost",    value: `$${fmtUsd(totalCost)}`,   color: "text-red-600",   show: hasCosts },
+              { label: "Known Profit",  value: `$${fmtUsd(totalProfit)}`, color: totalProfit >= 0 ? "text-green-600" : "text-red-600", show: hasCosts },
+              { label: "Best Period",   value: bestBucket ? bestBucket.label : "—", sub: bestBucket?.profit != null ? `$${fmtUsd(bestBucket.profit)}` : undefined, color: "text-violet-600", show: hasCosts },
+            ].filter(c => c.show !== false).map(c => (
+              <Card key={c.label} className="p-3 text-center">
+                <p className={`text-base font-bold ${c.color}`}>{c.value}</p>
+                {c.sub && <p className="text-[10px] font-mono text-muted-foreground">{c.sub}</p>}
+                <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">{c.label}</p>
+              </Card>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <Card className="p-4">
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false}
+                    tickFormatter={v => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`} width={52} />
+                  <RechartsTooltip
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
+                    formatter={(val: number, name: string) => [`$${fmtUsd(val)}`, name]}
+                    labelFormatter={(label, payload) => {
+                      const cnt = payload?.[0]?.payload?.orderCount ?? 0;
+                      return `${label} · ${cnt} order${cnt !== 1 ? "s" : ""}`;
+                    }}
+                  />
+                  <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Revenue" fill="#818cf8" radius={[3,3,0,0]} maxBarSize={40} />
+                  {hasCosts && <Bar dataKey="Cost" fill="#fca5a5" radius={[3,3,0,0]} maxBarSize={40} />}
+                  {hasCosts && <Line dataKey="Profit" type="monotone" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: "#22c55e" }} />}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          {/* Breakdown table */}
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-border text-left text-muted-foreground">
+                  <th className="px-3 py-2.5 font-semibold">Period</th>
+                  <th className="px-3 py-2.5 font-semibold text-right">Orders</th>
+                  <th className="px-3 py-2.5 font-semibold text-right">Revenue</th>
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right text-red-600">Cost</th>}
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right text-green-600">Profit</th>}
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right">Margin</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {[...buckets].reverse().map((b, i) => (
+                  <tr key={b.key} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{b.label}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{b.orderCount}</td>
+                    <td className="px-3 py-2 text-right font-mono">${fmtUsd(b.revenue)}</td>
+                    {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">{b.cost > 0 ? `$${fmtUsd(b.cost)}` : "—"}</td>}
+                    {hasCosts && (
+                      <td className={`px-3 py-2 text-right font-mono font-semibold ${b.profit === null ? "text-muted-foreground" : b.profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {b.profit === null ? "—" : `$${fmtUsd(b.profit)}`}
+                      </td>
+                    )}
+                    {hasCosts && (
+                      <td className={`px-3 py-2 text-right ${b.margin === null ? "text-muted-foreground" : b.margin >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {b.margin === null ? "—" : `${b.margin.toFixed(1)}%`}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-bold border-t-2 border-border">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{buckets.reduce((s, b) => s + b.orderCount, 0)}</td>
+                  <td className="px-3 py-2 text-right font-mono">${fmtUsd(totalRev)}</td>
+                  {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">${fmtUsd(totalCost)}</td>}
+                  {hasCosts && <td className={`px-3 py-2 text-right font-mono ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>${fmtUsd(totalProfit)}</td>}
+                  {hasCosts && <td className={`px-3 py-2 text-right ${totalRev > 0 ? (totalProfit / totalRev >= 0 ? "text-green-600" : "text-red-600") : ""}`}>{totalRev > 0 ? `${((totalProfit / totalRev) * 100).toFixed(1)}%` : "—"}</td>}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {!hasCosts && (
+            <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+              💡 Add product costs in the FS3 tab → "My Prices" to see cost and profit columns.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -14758,6 +15047,7 @@ const ALL_TABS_META = [
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
+  { id: "pnl", label: "P&L", icon: TrendingUp },
   { id: "notifications", label: "Notifs", icon: Bell },
   { id: "announcements", label: "Announcements", icon: MessageSquarePlus },
   { id: "tg-templates", label: "Tg Templates", icon: MessageSquare },
@@ -22153,7 +22443,8 @@ const SIDEBAR_SECTIONS = [
     label: "System",
     items: [
       { id: "shipping",      label: "Delivery Methods", icon: Truck,           keywords: ["delivery options", "shipping methods", "couriers", "postal services", "rates", "zones", "global shipping rate", "equal split", "weighted split", "origin postcode", "origin country", "live shipping rates", "vendor shipping warning"] },
-      { id: "fs3",           label: "FS3",              icon: ShieldCheck,     keywords: ["fs3", "revenue breakdown", "profit", "product profit", "financials", "group buy revenue", "cogs", "cost of goods", "fee inputs", "p&l", "pnl"] },
+      { id: "fs3",           label: "FS3",              icon: ShieldCheck,     keywords: ["fs3", "revenue breakdown", "product profit", "financials", "group buy revenue", "cogs", "cost of goods", "fee inputs", "my prices", "wholesale costs"] },
+      { id: "pnl",           label: "P&L",              icon: TrendingUp,      keywords: ["p&l", "pnl", "profit and loss", "profit", "margin", "revenue chart", "cost chart", "wholesale pnl", "direct pnl", "group buy pnl", "bi-annual", "quarterly revenue", "monthly revenue", "financial tracker"] },
       { id: "config",        label: "Site Settings",    icon: Settings2,       keywords: ["site settings", "configuration", "telegram bot", "webhook", "general settings", "site name", "registration links", "registration codes", "homepage sections", "search section", "lab tests section", "faq section", "portal section", "stats section", "public navigation", "portal nav order", "admin tab order", "drag drop", "maintenance mode", "discuss limit", "post limit"] },
       { id: "siteconfig",    label: "Raw Config Keys",  icon: Settings2,       keywords: ["raw config", "site config", "key value", "all keys", "feature flags", "secrets", "tokens", "api keys", "advanced", "low level", "ad hoc key", "scheduler intervals"] },
       { id: "schedulers",    label: "Schedulers",       icon: Clock,           keywords: ["jobs", "cron", "background", "schedulers", "interval", "auto refresh", "auto close", "tracking refresh", "qiyunle sync", "pool verify", "run now", "gb auto close", "pool payment", "enable scheduler", "disable scheduler", "next run", "last run"] },
@@ -25291,6 +25582,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
           {activeTab === "fs3"          && <Fs3Tab secret={secret} />}
+          {activeTab === "pnl"          && <PnlTab secret={secret} />}
           {activeTab === "notifications" && <NotificationsTab secret={secret} />}
           {activeTab === "tg-templates"  && <AdminTelegramTemplates secret={secret} />}
           {activeTab === "announcements" && <ScheduledAnnouncementsTab secret={secret} />}

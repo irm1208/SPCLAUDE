@@ -3978,6 +3978,8 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
       deliveryPrice: ordersTable.deliveryPrice,
       vendorShipping: ordersTable.vendorShipping,
       tip: ordersTable.tip,
+      orderType: ordersTable.orderType,
+      groupBuyId: ordersTable.groupBuyId,
     })
     .from(ordersTable)
     .where(and(
@@ -4012,6 +4014,8 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
     deliveryRevenue: parseFloat(String(o.deliveryPrice ?? "0")),
     vendorShipping: parseFloat(String(o.vendorShipping ?? "0")),
     tips: parseFloat(String(o.tip ?? "0")),
+    orderType: o.orderType ?? null,
+    groupBuyId: o.groupBuyId ?? null,
     lineItems: (liByOrder.get(o.id) ?? []).map(li => ({
       productName: String(li.productName),
       quantity: parseFloat(String(li.quantity)),
