@@ -325,7 +325,7 @@ export function DashboardShell({
     { id: "calculator",  label: "Calculator",    Icon: CalcIcon,      active: activeSection === "calculator",  go: () => navigate("/calculator") },
   ];
   const moreItems: SideLink[] = [
-    { id: "lab-pool", label: "Pool Leaders", Icon: TestTube, active: activeSection === "lab-pool", go: () => onSection("lab-pool") },
+    { id: "lab-pool", label: "Testing Pools", Icon: TestTube, active: activeSection === "lab-pool", go: () => onSection("lab-pool") },
     { id: "support",  label: "Tickets",      Icon: LifeBuoy, active: activeSection === "support",  go: () => onSection("support") },
   ];
 
