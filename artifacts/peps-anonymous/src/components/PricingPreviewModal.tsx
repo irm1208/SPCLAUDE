@@ -1,40 +1,68 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { DollarSign, Lock, Loader2, X } from "lucide-react";
+import { DollarSign, Lock, Loader2, X, Search } from "lucide-react";
 
 interface PreviewProduct { id: string; name: string; price: number; }
 
-export function PriceCanvas({ price, username }: { price: string; username: string }) {
+// Full-width price reveal panel rendered on canvas — watermark tiles across the entire surface
+export function PriceRevealCanvas({ price, username }: { price: string; username: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = 110 * dpr;
-    canvas.height = 28 * dpr;
-    canvas.style.width = "110px";
-    canvas.style.height = "28px";
+    const W = canvas.offsetWidth || 280;
+    const H = 44;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.height = `${H}px`;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, 110, 28);
-    // Diagonal watermark with the account handle baked into every price tile
+
+    // Background
+    ctx.fillStyle = "rgba(22,163,74,0.04)";
+    ctx.fillRect(0, 0, W, H);
+
+    // Tiled diagonal watermarks across the full panel
     ctx.save();
-    ctx.globalAlpha = 0.07;
-    ctx.font = "8.5px system-ui, sans-serif";
-    ctx.fillStyle = "#334155";
-    ctx.translate(55, 14);
-    ctx.rotate(-10 * Math.PI / 180);
+    ctx.globalAlpha = 0.18;
+    ctx.font = "bold 10px system-ui, sans-serif";
+    ctx.fillStyle = "#15803d";
+    ctx.rotate(-18 * Math.PI / 180);
     const wm = `@${username}`;
-    ctx.fillText(wm, -ctx.measureText(wm).width / 2, 3);
+    const wmW = ctx.measureText(wm).width;
+    const colStep = wmW + 28;
+    const rowStep = 22;
+    // extend range to cover rotated overflow
+    for (let y = -H; y < W + H * 2; y += rowStep) {
+      for (let x = -W; x < W * 2; x += colStep) {
+        ctx.fillText(wm, x, y);
+      }
+    }
     ctx.restore();
-    // Price text
-    ctx.font = "bold 15px system-ui, sans-serif";
-    ctx.fillStyle = "#0f172a";
+
+    // "Member price" label on left
+    ctx.font = "600 11px system-ui, sans-serif";
+    ctx.fillStyle = "#94a3b8";
     ctx.textBaseline = "middle";
-    ctx.fillText(price, 2, 14);
+    ctx.fillText("Member price", 14, H / 2);
+
+    // Price text on right — right-aligned
+    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.fillStyle = "#0f172a";
+    const priceW = ctx.measureText(price).width;
+    ctx.fillText(price, W - priceW - 14, H / 2);
   }, [price, username]);
-  return <canvas ref={ref} />;
+
+  return (
+    <canvas
+      ref={ref}
+      style={{ width: "100%", display: "block", borderRadius: "0 0 10px 10px" }}
+    />
+  );
 }
 
 export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
@@ -48,6 +76,7 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
   const [hidden, setHidden] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [currency, setCurrency] = useState("GBP");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -69,6 +98,10 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
       return `${currency} ${amount.toFixed(2)}`;
     }
   };
+
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <>
@@ -109,12 +142,33 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
                style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.18)" }}>
             <Lock className="w-3 h-3 shrink-0" style={{ color: "#16A34A" }} />
             <p className="text-[11px]" style={{ color: "#15803d" }}>
-              Member-only pricing · one product visible at a time
+              Member-only pricing · watermarked with your handle
             </p>
           </div>
 
+          {/* Search */}
+          {!loading && !hidden && products.length > 4 && (
+            <div className="mx-4 mb-3 flex items-center gap-2 rounded-xl px-3 py-2"
+                 style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0" }}>
+              <Search className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search products…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                style={{ userSelect: "text", WebkitUserSelect: "text" } as React.CSSProperties}
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="shrink-0">
+                  <X className="w-3 h-3 text-slate-400" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Product accordion */}
-          <div className="px-4 pb-4 space-y-1.5 overflow-y-auto" style={{ maxHeight: "20rem" }}>
+          <div className="px-4 pb-4 space-y-1.5 overflow-y-auto" style={{ maxHeight: "22rem" }}>
             {loading ? (
               <div className="flex justify-center py-6">
                 <Loader2 className="w-4 h-4 animate-spin text-slate-300" />
@@ -123,9 +177,11 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
               <p className="text-center text-slate-400 text-sm py-6">
                 Pricing not available for this group buy.
               </p>
-            ) : products.length === 0 ? (
-              <p className="text-center text-slate-400 text-sm py-6">No products listed yet.</p>
-            ) : products.map(p => {
+            ) : filtered.length === 0 ? (
+              <p className="text-center text-slate-400 text-sm py-6">
+                {search ? `No products matching "${search}"` : "No products listed yet."}
+              </p>
+            ) : filtered.map(p => {
               const isOpen = openId === p.id;
               return (
                 <div key={p.id}>
@@ -136,6 +192,8 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
                     style={{
                       background: isOpen ? "rgba(22,163,74,0.08)" : "#F8FAFC",
                       border: `1.5px solid ${isOpen ? "rgba(22,163,74,0.28)" : "#E2E8F0"}`,
+                      borderBottomLeftRadius: isOpen ? 0 : undefined,
+                      borderBottomRightRadius: isOpen ? 0 : undefined,
                     }}
                   >
                     <span className="text-sm font-medium text-slate-700 leading-snug pr-2 min-w-0 truncate">{p.name}</span>
@@ -155,21 +213,14 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ type: "spring", damping: 32, stiffness: 320 }}
                         className="overflow-hidden"
+                        style={{
+                          borderLeft: "1.5px solid rgba(22,163,74,0.22)",
+                          borderRight: "1.5px solid rgba(22,163,74,0.22)",
+                          borderBottom: "1.5px solid rgba(22,163,74,0.22)",
+                          borderRadius: "0 0 10px 10px",
+                        }}
                       >
-                        <div
-                          className="px-3.5 py-2.5 flex items-center gap-2"
-                          style={{
-                            background: "rgba(22,163,74,0.04)",
-                            borderLeft: "1.5px solid rgba(22,163,74,0.22)",
-                            borderRight: "1.5px solid rgba(22,163,74,0.22)",
-                            borderBottom: "1.5px solid rgba(22,163,74,0.22)",
-                            borderRadius: "0 0 10px 10px",
-                          }}
-                        >
-                          <span className="text-[11px] text-slate-400 font-medium">Member price</span>
-                          <div className="flex-1" />
-                          <PriceCanvas price={formatPrice(Number(p.price))} username={username} />
-                        </div>
+                        <PriceRevealCanvas price={formatPrice(Number(p.price))} username={username} />
                       </motion.div>
                     )}
                   </AnimatePresence>
