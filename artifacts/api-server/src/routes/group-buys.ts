@@ -466,6 +466,7 @@ router.get("/group-buys/:id/preview-prices", requireAccount, async (req, res): P
       status: groupBuysTable.status,
       hidePrices: groupBuysTable.hidePrices,
       hidePricesWhenClosed: groupBuysTable.hidePricesWhenClosed,
+      currency: groupBuysTable.currency,
     })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, id));
@@ -503,6 +504,7 @@ router.get("/group-buys/:id/preview-prices", requireAccount, async (req, res): P
 
   res.json({
     hidden: false,
+    currency: gb.currency ?? "GBP",
     products: rows.map(r => ({
       id: r.productId,
       name: r.name,

@@ -47,6 +47,7 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("GBP");
 
   useEffect(() => {
     setLoading(true);
@@ -55,10 +56,19 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
       .then(d => {
         setHidden(!!d.hidden);
         setProducts(Array.isArray(d.products) ? d.products : []);
+        if (d.currency) setCurrency(d.currency);
       })
       .catch(() => setHidden(true))
       .finally(() => setLoading(false));
   }, [gbId]);
+
+  const formatPrice = (amount: number) => {
+    try {
+      return new Intl.NumberFormat("en-GB", { style: "currency", currency, minimumFractionDigits: 2 }).format(amount);
+    } catch {
+      return `${currency} ${amount.toFixed(2)}`;
+    }
+  };
 
   return (
     <>
@@ -158,7 +168,7 @@ export function PricingPreviewModal({ gbId, gbName, username, onClose }: {
                         >
                           <span className="text-[11px] text-slate-400 font-medium">Member price</span>
                           <div className="flex-1" />
-                          <PriceCanvas price={`£${Number(p.price).toFixed(2)}`} username={username} />
+                          <PriceCanvas price={formatPrice(Number(p.price))} username={username} />
                         </div>
                       </motion.div>
                     )}
