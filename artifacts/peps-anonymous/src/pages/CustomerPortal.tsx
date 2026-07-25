@@ -22,7 +22,7 @@ import {
   Navigation, MapPin, Box, UsersRound, Eye, EyeOff, QrCode,
   LayoutList, LayoutGrid, Store, Star, RefreshCcw, Hash, Wallet, Boxes, Pencil,
   Download, Maximize2, Archive, ArchiveRestore, MoreHorizontal,
-  Percent, Target,
+  Percent, Target, DollarSign,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -71,6 +71,7 @@ import { Glp1ShotForm } from "@/components/Glp1ShotForm";
 import { T } from "@/lib/theme";
 import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
+import { PricingPreviewModal } from "@/components/PricingPreviewModal";
 import { DashboardHome } from "@/components/DashboardHome";
 import { DashboardShell, StatCard, palette, ACCENT, ACCENT_SOFT, SecIcon, HERO_GRAD } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -2216,6 +2217,7 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<(() => void) | null>(null);
   const [entryFeeModal, setEntryFeeModal] = useState<{ groupBuyId: string; fee: EntryFeePaymentInfo; retry: () => Promise<void> } | null>(null);
+  const [pricingPreviewOpen, setPricingPreviewOpen] = useState(false);
   const join = useJoinGroupBuy();
   const { account } = useAccount();
   const { data: activeGbs = [], isLoading: gbsLoading } = useActiveGroupBuys();
@@ -2549,6 +2551,19 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
             </div>
           </div>
 
+          {/* Pricing preview trigger */}
+          {gbId && (
+            <button
+              type="button"
+              onClick={() => setPricingPreviewOpen(true)}
+              className="w-full rounded-2xl px-4 flex items-center justify-center gap-1.5 text-sm font-semibold transition-colors"
+              style={{ background: "rgba(22,163,74,0.07)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.2)", height: 44 }}
+            >
+              <DollarSign className="w-4 h-4" />
+              Preview Pricing
+            </button>
+          )}
+
           {/* Country picker (only when GB has country legs) */}
           {hasCountryLegs && (
             <div>
@@ -2754,6 +2769,17 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
           }}
         />
       )}
+
+      <AnimatePresence>
+        {pricingPreviewOpen && selected && (
+          <PricingPreviewModal
+            gbId={selected.id}
+            gbName={selected.name}
+            username={account?.telegramUsername ?? "user"}
+            onClose={() => setPricingPreviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
