@@ -7726,6 +7726,7 @@ export default function CustomerPortal() {
           draft: organiserGbs.filter(g => g.status === "draft").length,
           total: organiserGbs.filter(g => g.status !== "archived").length,
         }}
+        gbPools={gbPools.filter(p => p.isOptedIn)}
       />
     );
   }
