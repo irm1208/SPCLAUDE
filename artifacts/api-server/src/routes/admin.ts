@@ -3964,6 +3964,64 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   });
 });
 
+// ─── GET /api/admin/fs3-pnl ──────────────────────────────────────────────────
+// Returns all non-cancelled orders with per-order totals + line items so the
+// client can bucket by any time period and compute revenue / cost / profit.
+router.get("/admin/fs3-pnl", async (req: any, res: any) => {
+  if (!requireAdmin(req, res)) return;
+  const allOrders = await db
+    .select({
+      id: ordersTable.id,
+      createdAt: ordersTable.createdAt,
+      grandTotal: ordersTable.grandTotal,
+      productSubtotal: ordersTable.productSubtotal,
+      deliveryPrice: ordersTable.deliveryPrice,
+      vendorShipping: ordersTable.vendorShipping,
+      tip: ordersTable.tip,
+    })
+    .from(ordersTable)
+    .where(and(
+      inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]),
+      isNull(ordersTable.deletedAt)
+    ));
+
+  const orderIds = allOrders.map(o => o.id);
+  const allLineItems = orderIds.length > 0
+    ? await db
+        .select({
+          orderId: orderLineItemsTable.orderId,
+          productName: orderLineItemsTable.productName,
+          quantity: orderLineItemsTable.quantity,
+          lineTotal: orderLineItemsTable.lineTotal,
+        })
+        .from(orderLineItemsTable)
+        .where(inArray(orderLineItemsTable.orderId, orderIds))
+    : [];
+
+  const liByOrder = new Map<string, typeof allLineItems>();
+  for (const li of allLineItems) {
+    if (!liByOrder.has(li.orderId)) liByOrder.set(li.orderId, []);
+    liByOrder.get(li.orderId)!.push(li);
+  }
+
+  const orders = allOrders.map(o => ({
+    id: o.id,
+    createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+    grandTotal: parseFloat(String(o.grandTotal ?? "0")),
+    productSubtotal: parseFloat(String(o.productSubtotal ?? "0")),
+    deliveryRevenue: parseFloat(String(o.deliveryPrice ?? "0")),
+    vendorShipping: parseFloat(String(o.vendorShipping ?? "0")),
+    tips: parseFloat(String(o.tip ?? "0")),
+    lineItems: (liByOrder.get(o.id) ?? []).map(li => ({
+      productName: String(li.productName),
+      quantity: parseFloat(String(li.quantity)),
+      lineTotal: parseFloat(String(li.lineTotal ?? "0")),
+    })),
+  }));
+
+  res.json({ orders });
+});
+
 // ─── POST /api/admin/fs3-ping-address ────────────────────────────────────────
 // Finds orders in a GB that are missing a delivery address, applies optional
 // exclusion / courier filters, and sends each holder a Telegram nudge with

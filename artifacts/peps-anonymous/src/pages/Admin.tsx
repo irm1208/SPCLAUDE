@@ -31,6 +31,10 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+} from "recharts";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -6879,6 +6883,45 @@ interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: strin
 interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
+interface PnlOrder {
+  id: string; createdAt: string; grandTotal: number; productSubtotal: number;
+  deliveryRevenue: number; vendorShipping: number; tips: number;
+  lineItems: { productName: string; quantity: number; lineTotal: number }[];
+}
+interface PnlBucket {
+  key: string; label: string; revenue: number;
+  cost: number; profit: number | null; margin: number | null; orderCount: number;
+}
+type PnlPeriod = "day" | "week" | "month" | "quarter" | "year";
+
+function pnlPeriodKey(date: Date, period: PnlPeriod): string {
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  if (period === "day") return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (period === "week") {
+    const dt = new Date(Date.UTC(y, m, d));
+    const day = dt.getUTCDay() || 7;
+    dt.setUTCDate(dt.getUTCDate() + 4 - day);
+    const ys = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+    const wk = Math.ceil(((dt.getTime() - ys.getTime()) / 86400000 + 1) / 7);
+    return `${dt.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
+  }
+  if (period === "month") return `${y}-${String(m + 1).padStart(2, "0")}`;
+  if (period === "quarter") return `${y}-Q${Math.ceil((m + 1) / 3)}`;
+  return String(y);
+}
+function pnlPeriodLabel(key: string, period: PnlPeriod): string {
+  if (period === "day") {
+    const [yy, mm, dd] = key.split("-").map(Number);
+    return new Date(yy, mm - 1, dd).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  }
+  if (period === "week") { const [y, w] = key.split("-"); return `${w} '${String(y).slice(2)}`; }
+  if (period === "month") {
+    const [y, mo] = key.split("-").map(Number);
+    return new Date(y, mo - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+  }
+  if (period === "quarter") return key.replace("-", " ");
+  return key;
+}
 
 // ── Uther wholesale tiered package shipping (mirrors server wholesale-shipping) ──
 // A vendor defines tier columns (e.g. "1–5", "6–10", …) with an upper kit bound
@@ -7161,6 +7204,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [editPersonalCost, setEditPersonalCost] = useState("");
   const [editPersonalAuto, setEditPersonalAuto] = useState(false);
 
+  // P&L tracker state
+  const [pnlOrders, setPnlOrders] = useState<PnlOrder[]>([]);
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>("month");
+  const [showPnl, setShowPnl] = useState(false);
+
   const fetchCosts = useCallback(async () => {
     try {
       const res = await fetch(apiUrl("/admin/fs3-costs"), {
@@ -7169,6 +7218,15 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       });
       if (res.ok) setCosts(await res.json());
     } catch { /* non-fatal */ }
+  }, [secret]);
+
+  const fetchPnl = useCallback(async () => {
+    setPnlLoading(true);
+    try {
+      const res = await fetch(apiUrl("/admin/fs3-pnl"), { headers: { "x-admin-secret": secret }, credentials: "omit" });
+      if (res.ok) { const d = await res.json(); setPnlOrders(Array.isArray(d.orders) ? d.orders : []); }
+    } catch { /* non-fatal */ }
+    setPnlLoading(false);
   }, [secret]);
 
   const fetchData = useCallback(async () => {
@@ -7205,11 +7263,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   useEffect(() => {
     fetchData();
     fetchCosts();
+    fetchPnl();
     fetch(apiUrl("/admin/order-countries"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.ok ? r.json() : [])
       .then(setAvailableCountries)
       .catch(() => {});
-  }, [fetchData, fetchCosts]);
+  }, [fetchData, fetchCosts, fetchPnl]);
 
   // Fetch members + orders + parcels whenever the selected GB changes; also reset ping panel + batch builder
   useEffect(() => {
@@ -7912,6 +7971,32 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     return { ...r, cost, totalCost, profit, margin, unitPrice, unitProfit, unitMargin };
   }), [filteredRows, getCost]);
 
+  // ── P&L time-series buckets ──
+  const pnlBuckets = useMemo((): PnlBucket[] => {
+    if (!pnlOrders.length) return [];
+    const map = new Map<string, { revenue: number; knownRevenue: number; cost: number; orderCount: number }>();
+    for (const order of pnlOrders) {
+      const key = pnlPeriodKey(new Date(order.createdAt), pnlPeriod);
+      if (!map.has(key)) map.set(key, { revenue: 0, knownRevenue: 0, cost: 0, orderCount: 0 });
+      const b = map.get(key)!;
+      b.revenue += order.grandTotal;
+      b.orderCount++;
+      for (const li of order.lineItems) {
+        const uc = getCost(li.productName);
+        if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, b]) => ({
+      key,
+      label: pnlPeriodLabel(key, pnlPeriod),
+      revenue: b.revenue,
+      cost: b.cost,
+      profit: b.knownRevenue > 0 ? b.knownRevenue - b.cost : null,
+      margin: b.knownRevenue > 0 ? ((b.knownRevenue - b.cost) / b.knownRevenue) * 100 : null,
+      orderCount: b.orderCount,
+    }));
+  }, [pnlOrders, pnlPeriod, getCost]);
+
   const knownRows = useMemo(() => enrichedRows.filter(r => r.totalCost !== null), [enrichedRows]);
   const unknownRows = useMemo(() => enrichedRows.filter(r => r.totalCost === null), [enrichedRows]);
   const totalKnownCost = knownRows.reduce((s, r) => s + (r.totalCost ?? 0), 0);
@@ -8074,6 +8159,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           <Button variant="outline" size="sm" className="gap-1.5 text-xs"
             onClick={() => { setShowPriceEditor(v => !v); setPriceSearch(""); }}>
             <Pencil className="w-3.5 h-3.5" />{showPriceEditor ? "Hide Prices" : "My Prices"}
+          </Button>
+          <Button variant="outline" size="sm" className={`gap-1.5 text-xs ${showPnl ? "bg-violet-50 border-violet-300 text-violet-700" : ""}`}
+            onClick={() => { setShowPnl(v => !v); if (!pnlOrders.length && !pnlLoading) fetchPnl(); }}>
+            <BarChart3 className="w-3.5 h-3.5" />{showPnl ? "Hide P&L" : "P&L"}
           </Button>
           <Button variant="outline" size="icon" onClick={fetchData}><RefreshCw className="w-4 h-4" /></Button>
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={onLock}>
@@ -9009,6 +9098,145 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               </div>
             </div>
           </div>
+        </Card>
+      )}
+
+      {/* ── P&L Tracker ── */}
+      {showPnl && (
+        <Card className="p-4 space-y-4 border-2 border-violet-200">
+          {/* Header row */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">P&amp;L Tracker</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {pnlOrders.length} orders · profit uses known-cost products only
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(["day","week","month","quarter","year"] as PnlPeriod[]).map(p => (
+                <button key={p} onClick={() => setPnlPeriod(p)}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${pnlPeriod === p ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+              <button onClick={fetchPnl} disabled={pnlLoading}
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                {pnlLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {pnlLoading && !pnlBuckets.length ? (
+            <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+          ) : pnlBuckets.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">No order data yet</div>
+          ) : (() => {
+            const totalRev = pnlBuckets.reduce((s, b) => s + b.revenue, 0);
+            const totalCost = pnlBuckets.reduce((s, b) => s + b.cost, 0);
+            const totalProfit = pnlBuckets.reduce((s, b) => s + (b.profit ?? 0), 0);
+            const hasCosts = pnlBuckets.some(b => b.cost > 0);
+            const bestBucket = pnlBuckets.reduce<PnlBucket | null>((best, b) => b.profit !== null && (best === null || b.profit > (best.profit ?? 0)) ? b : best, null);
+            const chartData = pnlBuckets.map(b => ({
+              label: b.label, orderCount: b.orderCount,
+              Revenue: parseFloat(b.revenue.toFixed(2)),
+              Cost: hasCosts ? parseFloat(b.cost.toFixed(2)) : undefined,
+              Profit: b.profit !== null ? parseFloat(b.profit.toFixed(2)) : undefined,
+            }));
+            return (
+              <>
+                {/* Summary stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Total Revenue", value: `$${fmtUsd(totalRev)}`, color: "text-foreground" },
+                    { label: "Known Cost", value: `$${fmtUsd(totalCost)}`, color: "text-red-600", show: hasCosts },
+                    { label: "Known Profit", value: `$${fmtUsd(totalProfit)}`, color: totalProfit >= 0 ? "text-green-600" : "text-red-600", show: hasCosts },
+                    { label: "Best Period", value: bestBucket ? bestBucket.label : "—", sub: bestBucket?.profit != null ? `$${fmtUsd(bestBucket.profit)}` : undefined, color: "text-violet-600", show: hasCosts },
+                  ].filter(c => c.show !== false).map(c => (
+                    <Card key={c.label} className="p-3 text-center bg-slate-50/60">
+                      <p className={`text-base font-bold ${c.color}`}>{c.value}</p>
+                      {c.sub && <p className="text-[10px] font-mono text-muted-foreground">{c.sub}</p>}
+                      <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">{c.label}</p>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Chart */}
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`} width={48} />
+                      <RechartsTooltip
+                        contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
+                        formatter={(val: number, name: string) => [`$${fmtUsd(val)}`, name]}
+                        labelFormatter={(label, payload) => {
+                          const orders = payload?.[0]?.payload?.orderCount ?? 0;
+                          return `${label} · ${orders} order${orders !== 1 ? "s" : ""}`;
+                        }}
+                      />
+                      <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="Revenue" fill="#818cf8" radius={[3,3,0,0]} maxBarSize={40} />
+                      {hasCosts && <Bar dataKey="Cost" fill="#fca5a5" radius={[3,3,0,0]} maxBarSize={40} />}
+                      {hasCosts && <Line dataKey="Profit" type="monotone" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: "#22c55e" }} />}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-border text-left text-muted-foreground">
+                        <th className="px-3 py-2 font-semibold">Period</th>
+                        <th className="px-3 py-2 font-semibold text-right">Orders</th>
+                        <th className="px-3 py-2 font-semibold text-right">Revenue</th>
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right text-red-600">Cost</th>}
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right text-green-600">Profit</th>}
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right">Margin</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...pnlBuckets].reverse().map((b, i) => (
+                        <tr key={b.key} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">{b.label}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{b.orderCount}</td>
+                          <td className="px-3 py-2 text-right font-mono">${fmtUsd(b.revenue)}</td>
+                          {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">{b.cost > 0 ? `$${fmtUsd(b.cost)}` : "—"}</td>}
+                          {hasCosts && (
+                            <td className={`px-3 py-2 text-right font-mono font-semibold ${b.profit === null ? "text-muted-foreground" : b.profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              {b.profit === null ? "—" : `$${fmtUsd(b.profit)}`}
+                            </td>
+                          )}
+                          {hasCosts && (
+                            <td className={`px-3 py-2 text-right ${b.margin === null ? "text-muted-foreground" : b.margin >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              {b.margin === null ? "—" : `${b.margin.toFixed(1)}%`}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-bold border-t-2 border-border">
+                        <td className="px-3 py-2">Total</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{pnlBuckets.reduce((s,b)=>s+b.orderCount,0)}</td>
+                        <td className="px-3 py-2 text-right font-mono">${fmtUsd(totalRev)}</td>
+                        {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">${fmtUsd(totalCost)}</td>}
+                        {hasCosts && <td className={`px-3 py-2 text-right font-mono ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>${fmtUsd(totalProfit)}</td>}
+                        {hasCosts && <td className={`px-3 py-2 text-right ${totalRev > 0 ? (totalProfit/totalRev >= 0 ? "text-green-600":"text-red-600") : ""}`}>{totalRev > 0 ? `${((totalProfit/totalRev)*100).toFixed(1)}%` : "—"}</td>}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {!hasCosts && (
+                  <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+                    💡 Add product costs in "My Prices" to see cost and profit columns.
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </Card>
       )}
     </div>
