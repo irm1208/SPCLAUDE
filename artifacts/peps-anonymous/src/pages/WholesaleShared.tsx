@@ -1328,7 +1328,10 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  const sectionWhatYouOwe = (stage === "paying" || stage === "done") && myMember ? (
+  // Hidden for the organiser when they have their own wallet — their personal order
+  // is bundled into the platform payment they forward to admin (shown in
+  // sectionOrganiserPayment), so no separate per-order Pay step is needed.
+  const sectionWhatYouOwe = (stage === "paying" || stage === "done") && myMember && !share.organiserPayment ? (
     <div id={GUIDE_ANCHORS.owe} style={flashStyle(GUIDE_ANCHORS.owe)}>
       <WhatYouOwe
         share={share}
@@ -1400,10 +1403,11 @@ export default function WholesaleShared() {
   })() : null;
 
   // ── Organiser → platform payment section ─────────────────────────────────────
-  // Shows after all members have paid (share status = "submitted"). The organiser
-  // sends the combined product subtotal + vendor shipping to the platform admin.
-  // Tips (organiser keeps) and organiser peer-to-peer fees are excluded.
-  const sectionOrganiserPayment = (organiserDone && share.organiserPayment) ? (() => {
+  // Shown whenever the organiser has their own wallet set (share.organiserPayment
+  // is non-null). Members pay the organiser directly; the organiser then forwards
+  // the combined total (products + vendor shipping) to admin. Visible immediately —
+  // not gated on everyone having paid — so the organiser can pay admin in parallel.
+  const sectionOrganiserPayment = (share.isCreator && share.organiserPayment) ? (() => {
     const op = share.organiserPayment!;
     const opts = op.cryptoOptions;
     const pickedOpt = orgPayPickedIdx !== null ? opts[orgPayPickedIdx] ?? null : null;
