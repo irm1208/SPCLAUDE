@@ -458,9 +458,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     memberCount: members.length,
     allPaid,
     // Organiser → platform payment block (organiser-only). null for other members.
-    // Also null when the organiser has configured their own wallet address for
-    // collecting member payments — in that case members pay the organiser's wallet
-    // directly and there is no separate forwarding step to the platform.
+    // Shown only when the organiser has set their own wallet: members pay the organiser
+    // directly, so the organiser then needs to forward (products + vendor shipping) to
+    // the admin wallet. When no organiser wallet is set, members already pay the admin
+    // directly and no forwarding step is needed.
     // Amount = sum of all members' product subtotals + total vendor shipping.
     // Tips and organiser peer-to-peer fees are excluded (organiser keeps them).
     organiserPayment: await (async () => {
@@ -477,7 +478,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
         amountDue: Number(
           (combinedSubtotal + (share.totalVendorShipping != null ? Number(share.totalVendorShipping) : 0)).toFixed(2)
         ),
-        cryptoOptions: share.status === "submitted" ? await getAdminCryptoOptions() : [],
+        // Always include admin wallet options so the organiser can pay as soon as
+        // all members have paid into their own wallet (not gated on "submitted").
+        cryptoOptions: await getAdminCryptoOptions(),
       };
     })(),
     // Masked main-parcel (vendor → recipient) tracking for every participant.
