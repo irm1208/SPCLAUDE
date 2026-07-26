@@ -1,5 +1,5 @@
 import { db } from "@workspace/db";
-import { ordersTable, wholesaleSharesTable } from "@workspace/db";
+import { ordersTable, wholesaleSharesTable, wholesaleShareMembersTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { sendAdminMessage } from "./telegram";
 import { writeLog } from "./audit-log";
@@ -40,7 +40,26 @@ export async function maybeSubmitSharedOrder(orderId: string): Promise<void> {
       .where(eq(ordersTable.sharedOrderId, shareId));
 
     if (siblings.length === 0) return;
-    const allPaid = siblings.every(s => s.paymentStatus === "confirmed");
+
+    // When the organiser has configured their own wallet, members pay them directly.
+    // Their personal order is bundled into the platform payment they forward to admin,
+    // so don't require it to be individually confirmed before auto-submitting.
+    const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
+    let creatorOrderId: string | null = null;
+    if (hasOwnWallet) {
+      const [creatorMember] = await db
+        .select({ orderId: wholesaleShareMembersTable.orderId })
+        .from(wholesaleShareMembersTable)
+        .where(and(
+          eq(wholesaleShareMembersTable.shareId, shareId),
+          eq(wholesaleShareMembersTable.isCreator, true),
+        ));
+      creatorOrderId = creatorMember?.orderId ?? null;
+    }
+
+    const allPaid = siblings.every(s =>
+      s.paymentStatus === "confirmed" || (hasOwnWallet && creatorOrderId != null && s.id === creatorOrderId)
+    );
     if (!allPaid) return;
 
     // Exactly-once flip: only the call that wins the WHERE status='locked' race

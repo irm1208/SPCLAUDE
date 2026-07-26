@@ -241,6 +241,11 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   // stale fee on the new recipient.
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
   const currentLower = currentUsername.toLowerCase();
+  // When the organiser has configured their own wallet, members pay them directly.
+  // Their personal order is bundled into the platform payment they forward to admin,
+  // so treat their member slot as implicitly paid (no Pay button, counts as confirmed
+  // for everyonePaid / allPaid tracking).
+  const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
 
   const memberPayloads = members.map((m, idx) => {
     const items = m.items ?? [];
@@ -281,7 +286,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderId: m.orderId ?? null,
       orderCode: order?.code ?? null,
       orderStatus: order?.status ?? null,
-      paymentStatus: order?.paymentStatus ?? null,
+      // When the organiser uses their own wallet, their personal order is bundled
+      // into the platform payment they forward to admin — treat it as confirmed so
+      // no separate Pay step is shown and everyonePaid fires correctly.
+      paymentStatus: (m.isCreator && hasOwnWallet) ? "confirmed" : (order?.paymentStatus ?? null),
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
       // The organiser may remove any non-creator member while the order is open.
       canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
