@@ -132,6 +132,20 @@ export interface WholesaleMainTracking {
   lastChecked: string | null;
 }
 
+// Platform payment that the organiser sends after all members have paid.
+// Only populated for the organiser (isCreator). null for all other participants.
+export interface WholesaleOrganiserPayment {
+  status: "unpaid" | "pending" | "confirmed";
+  txHash: string | null;
+  currency: string | null;
+  network: string | null;
+  confirmedAt: string | null;
+  // Sum of all members' item subtotals + total vendor shipping (no tips, no organiser fees).
+  amountDue: number;
+  // Platform wallet addresses the organiser can send to (same options as regular orders).
+  cryptoOptions: Array<{ currency: string; network: string; walletAddress: string }>;
+}
+
 export interface WholesaleShareDetail {
   id: string;
   status: WholesaleShareStatus;
@@ -163,6 +177,8 @@ export interface WholesaleShareDetail {
   members: WholesaleShareMember[];
   memberCount: number;
   allPaid: boolean;
+  // Platform payment the organiser must send after all members pay. Null for non-organisers.
+  organiserPayment: WholesaleOrganiserPayment | null;
   // Organiser-set rules + whether a set deadline has already passed.
   settings: WholesaleShareSettings;
   // Public group listing status (organiser-managed).
@@ -465,6 +481,18 @@ export function cancelWholesaleShare(id: string) {
 // again. Blocked once any member has paid (the server returns 409 in that case).
 export function unlockWholesaleShare(id: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/unlock`, { method: "POST" });
+}
+
+// Organiser submits their platform payment tx hash after all members have paid.
+// status: unpaid → pending; admin confirms → confirmed.
+export function submitOrganiserPayment(
+  id: string,
+  payload: { txHash: string; currency: string; network: string },
+) {
+  return request<{ ok: boolean }>(`/api/wholesale-shares/${id}/organiser-payment`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function useInvalidateWholesaleShare() {
