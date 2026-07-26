@@ -463,9 +463,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     // directly and there is no separate forwarding step to the platform.
     // Amount = sum of all members' product subtotals + total vendor shipping.
     // Tips and organiser peer-to-peer fees are excluded (organiser keeps them).
-    organiserPayment: (() => {
+    organiserPayment: await (async () => {
       const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && share.leadCryptoOptions.length > 0;
-      if (!isCreatorViewer || hasOwnWallet) return null;
+      if (!isCreatorViewer || !hasOwnWallet) return null;
       return {
         status: (share.organiserPaymentStatus ?? "unpaid") as "unpaid" | "pending" | "confirmed",
         txHash: share.organiserPaymentTxHash ?? null,
