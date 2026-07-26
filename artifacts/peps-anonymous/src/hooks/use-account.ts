@@ -305,6 +305,7 @@ export interface EntryFeePaymentInfo {
   rejectionReason: string | null;
   submittedAt: string | null;
   confirmedAt: string | null;
+  organiserContact: string | null;
   payment: {
     walletAddress: string | null;
     currency: string;

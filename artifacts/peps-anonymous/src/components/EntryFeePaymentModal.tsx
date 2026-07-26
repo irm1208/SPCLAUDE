@@ -148,13 +148,31 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
             ) : (
               <>
                 {fee.status === "rejected" && (
-                  <div className="flex gap-2 items-start p-2.5 bg-red-50 rounded-lg border border-red-100">
-                    <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
-                    <div className="text-xs text-red-600">
-                      <p className="font-semibold">Your previous submission was rejected</p>
-                      {fee.rejectionReason && <p className="mt-0.5">{fee.rejectionReason}</p>}
-                      <p className="mt-1 text-red-500/80">Please submit a new transaction hash below.</p>
+                  <div className="space-y-2">
+                    <div className="flex gap-2 items-start p-2.5 bg-red-50 rounded-lg border border-red-100">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
+                      <div className="text-xs text-red-600">
+                        <p className="font-semibold">Your previous submission was not recognised</p>
+                        {fee.rejectionReason && <p className="mt-0.5">{fee.rejectionReason}</p>}
+                        <p className="mt-1 text-red-500/80">Please submit a new transaction hash below.</p>
+                      </div>
                     </div>
+                    {fee.organiserContact && (
+                      <div className="flex gap-2 items-start p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <Send className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                        <div className="text-xs text-slate-600">
+                          <p className="font-medium">Need help? Contact the organiser directly:</p>
+                          <a
+                            href={`https://t.me/${fee.organiserContact}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold text-violet-600 hover:underline mt-0.5 inline-block"
+                          >
+                            @{fee.organiserContact} on Telegram
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

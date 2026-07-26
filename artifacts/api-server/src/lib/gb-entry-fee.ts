@@ -33,6 +33,7 @@ export type EntryFeeGb = {
   entryFeeAmount: string | number | null;
   entryFeeLabel?: string | null;
   organiserPayments?: unknown;
+  organiserId?: string | null;
 };
 
 async function getConfig(key: string): Promise<string | null> {
@@ -262,6 +263,7 @@ export async function shapeEntryFeePayment(payment: GbEntryFeePayment, gb: Entry
     rejectionReason: payment.rejectionReason ?? null,
     submittedAt: payment.submittedAt,
     confirmedAt: payment.confirmedAt,
+    organiserContact: gb.organiserId ?? null,
     payment: {
       walletAddress: cryptoOptions.walletAddress,
       currency: payment.paymentCryptoCurrency ?? cryptoOptions.currency,

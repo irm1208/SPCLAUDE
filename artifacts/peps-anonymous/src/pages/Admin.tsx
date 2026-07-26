@@ -19316,6 +19316,14 @@ type AdminShareMember = {
   orderId: string | null; orderCode: string | null; orderStatus: string | null;
   paymentStatus: string | null; hasDeliveryAddress: boolean;
 };
+type AdminShareOrganiserPayment = {
+  status: "unpaid" | "pending" | "confirmed";
+  txHash: string | null;
+  currency: string | null;
+  network: string | null;
+  confirmedAt: string | null;
+  amountDue: number;
+};
 type AdminShareDetail = {
   id: string; status: string; creatorUsername: string;
   delivery: { username: string | null; name: string | null; phone: string | null; email: string | null; address: string | null; country: string | null };
@@ -19323,6 +19331,7 @@ type AdminShareDetail = {
   combinedKits: number; combinedSubtotal: number;
   totalVendorShipping: number | null; totalKits: number | null; allPaid: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
+  organiserPayment: AdminShareOrganiserPayment | null;
 };
 
 function ShareStatusBadge({ status }: { status: string }) {
@@ -19566,6 +19575,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detailById, setDetailById] = useState<Record<string, AdminShareDetail>>({});
   const [detailLoading, setDetailLoading] = useState(false);
+  const [confirmingOrgPay, setConfirmingOrgPay] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19588,6 +19598,23 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
         if (r.ok) { const d = await r.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [id]: d })); }
       } catch { /* ignore */ }
       setDetailLoading(false);
+    }
+  };
+
+  const confirmOrgPayment = async (shareId: string) => {
+    if (!window.confirm("Confirm this organiser payment? This cannot be undone.")) return;
+    setConfirmingOrgPay(shareId);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); alert((d as any).error ?? "Failed to confirm payment"); return; }
+      // Refresh detail
+      const r2 = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
+      if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
+    } finally {
+      setConfirmingOrgPay(null);
     }
   };
 
@@ -19653,6 +19680,12 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           {row.paidCount}/{row.memberCount} paid
                         </span>
                       )}
+                      {(() => {
+                        const op = detailById[row.id]?.organiserPayment;
+                        if (!op || op.status === "unpaid") return null;
+                        if (op.status === "confirmed") return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Org paid ✓</span>;
+                        return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Org pay pending</span>;
+                      })()}
                     </div>
                     <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
                       Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
@@ -19736,6 +19769,65 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           <span>Subtotal {money(detail.combinedSubtotal)}</span>
                           {detail.totalVendorShipping != null && <span>Vendor shipping {money(detail.totalVendorShipping)}</span>}
                         </div>
+
+                        {/* Organiser → platform payment */}
+                        {detail.organiserPayment && (() => {
+                          const op = detail.organiserPayment!;
+                          const isPending   = op.status === "pending";
+                          const isConfirmed = op.status === "confirmed";
+                          const isUnpaid    = op.status === "unpaid";
+                          return (
+                            <div className="rounded-lg p-3 text-xs space-y-2"
+                              style={isConfirmed
+                                ? { background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.35)" }
+                                : isPending
+                                  ? { background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.40)" }
+                                  : { background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
+                              {/* Header row */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Organiser → Platform Payment</span>
+                                {isConfirmed && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Confirmed</span>}
+                                {isPending   && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Pending confirmation</span>}
+                                {isUnpaid    && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>Not yet submitted</span>}
+                              </div>
+
+                              {/* Amount due */}
+                              <div style={{ color: "var(--adm-muted)" }}>
+                                Amount due: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{money(op.amountDue)}</span>
+                                <span className="ml-1" style={{ color: "var(--adm-muted)" }}>
+                                  ({money(detail.combinedSubtotal)} products + {money(detail.totalVendorShipping ?? 0)} shipping)
+                                </span>
+                              </div>
+
+                              {/* Submitted tx details (pending or confirmed) */}
+                              {(isPending || isConfirmed) && op.txHash && (
+                                <div className="space-y-1" style={{ color: "var(--adm-muted)" }}>
+                                  <div>
+                                    Currency: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{op.currency} ({op.network})</span>
+                                  </div>
+                                  <div>
+                                    Tx hash: <span className="font-mono break-all" style={{ color: "var(--adm-text)" }}>{op.txHash}</span>
+                                  </div>
+                                  {isConfirmed && op.confirmedAt && (
+                                    <div>Confirmed: <span style={{ color: "var(--adm-text)" }}>{new Date(op.confirmedAt).toLocaleString()}</span></div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Confirm button (only when pending) */}
+                              {isPending && (
+                                <button
+                                  onClick={() => confirmOrgPayment(row.id)}
+                                  disabled={confirmingOrgPay === row.id}
+                                  className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity"
+                                  style={{ background: "#16a34a" }}
+                                >
+                                  {confirmingOrgPay === row.id ? "Confirming…" : "✓ Confirm Payment"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

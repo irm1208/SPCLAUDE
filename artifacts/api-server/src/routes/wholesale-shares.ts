@@ -458,21 +458,28 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     memberCount: members.length,
     allPaid,
     // Organiser → platform payment block (organiser-only). null for other members.
+    // Also null when the organiser has configured their own wallet address for
+    // collecting member payments — in that case members pay the organiser's wallet
+    // directly and there is no separate forwarding step to the platform.
     // Amount = sum of all members' product subtotals + total vendor shipping.
     // Tips and organiser peer-to-peer fees are excluded (organiser keeps them).
-    organiserPayment: isCreatorViewer ? {
-      status: (share.organiserPaymentStatus ?? "unpaid") as "unpaid" | "pending" | "confirmed",
-      txHash: share.organiserPaymentTxHash ?? null,
-      currency: share.organiserPaymentCurrency ?? null,
-      network: share.organiserPaymentNetwork ?? null,
-      confirmedAt: share.organiserPaymentConfirmedAt
-        ? (share.organiserPaymentConfirmedAt as Date).toISOString()
-        : null,
-      amountDue: Number(
-        (combinedSubtotal + (share.totalVendorShipping != null ? Number(share.totalVendorShipping) : 0)).toFixed(2)
-      ),
-      cryptoOptions: share.status === "submitted" ? await getAdminCryptoOptions() : [],
-    } : null,
+    organiserPayment: (() => {
+      const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && share.leadCryptoOptions.length > 0;
+      if (!isCreatorViewer || hasOwnWallet) return null;
+      return {
+        status: (share.organiserPaymentStatus ?? "unpaid") as "unpaid" | "pending" | "confirmed",
+        txHash: share.organiserPaymentTxHash ?? null,
+        currency: share.organiserPaymentCurrency ?? null,
+        network: share.organiserPaymentNetwork ?? null,
+        confirmedAt: share.organiserPaymentConfirmedAt
+          ? (share.organiserPaymentConfirmedAt as Date).toISOString()
+          : null,
+        amountDue: Number(
+          (combinedSubtotal + (share.totalVendorShipping != null ? Number(share.totalVendorShipping) : 0)).toFixed(2)
+        ),
+        cryptoOptions: share.status === "submitted" ? await getAdminCryptoOptions() : [],
+      };
+    })(),
     // Masked main-parcel (vendor → recipient) tracking for every participant.
     mainTracking,
     createdAt: (share.createdAt as Date).toISOString(),
