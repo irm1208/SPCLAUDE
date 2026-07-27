@@ -2280,7 +2280,7 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
 // Organiser submits their platform payment tx hash after all members have paid.
 // Flips organiserPaymentStatus from "unpaid" → "pending" and notifies admin.
 router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (req, res): Promise<void> => {
-  const me = (req.session as { telegramUsername?: string })?.telegramUsername ?? "";
+  const me = req.wholesale!.telegramUsername;
   const share = await loadShare(req.params.id);
   if (!share) { res.status(404).json({ error: "Shared order not found." }); return; }
 
