@@ -11,7 +11,7 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { sendAdminMessage } from "./telegram";
-import { GoogleGenAI } from "./google-genai";
+import { callSageAI } from "./sage-ai";
 import { randomUUID } from "crypto";
 import { registerScheduler } from "./scheduler-registry";
 
@@ -406,12 +406,6 @@ interface AutoMapResult {
 async function autoMapHighConfidence(unmapped: QiyunleItem[]): Promise<AutoMapResult[]> {
   if (!unmapped.length) return [];
 
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("[qiyunle-automap] No Gemini API key — skipping auto-map");
-    return [];
-  }
-
   const productsResult = await db.execute(sql`
     SELECT id, name, mg_size, category, vendor FROM products
     WHERE active = true AND source_group_buy_id IS NULL
@@ -426,7 +420,7 @@ async function autoMapHighConfidence(unmapped: QiyunleItem[]): Promise<AutoMapRe
     name: i.goodsinfo?.name ?? "",
   })).filter(i => i.code);
 
-  const prompt = `You are matching Qiyunle ERP inventory batch codes to peptide products in a group-buy store.
+  const systemPrompt = `You are matching Qiyunle ERP inventory batch codes to peptide products in a group-buy store.
 
 BATCH CODE SCHEME:
 - BP = BPC-157 | TB4 = TB-500 | TE = Tesamorelin | ZE = Tirzepatide
@@ -448,9 +442,6 @@ DOSE RULE:
 Numbers after the abbreviation = mg dose (e.g. BP10 = BPC-157 10mg, ZE60 = Tirzepatide 60mg).
 For combos: T/B1010 = BPC-157 10mg / TB-500 10mg.
 
-QIYUNLE ITEMS TO MATCH (unmapped):
-${items.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name}"`).join("\n")}
-
 PEPS PRODUCTS AVAILABLE:
 ${products.map(p => `  id="${p.id}" name="${p.name}"${p.mg_size ? ` mg="${p.mg_size}"` : ""}${p.vendor ? ` vendor="${p.vendor}"` : ""}`).join("\n")}
 
@@ -470,19 +461,17 @@ OUTPUT FORMAT:
   ]
 }`;
 
+  const userMessage = `QIYUNLE ITEMS TO MATCH (unmapped):\n${items.map(i => `  code="${i.code}" goodsId=${i.goodsId ?? "?"} name="${i.name}"`).join("\n")}`;
+
   try {
-    const gemini = new GoogleGenAI({
-      apiKey,
-      httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
+    const raw = await callSageAI({
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      maxTokens: 4096,
+      enableWebSearch: false,
+      temperature: 0,
     });
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } },
-    });
-
-    const raw = response.text ?? "";
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as { suggestions: AutoMapResult[] };
     const highConfidence = (parsed.suggestions ?? []).filter(s => s.confidence === "high");
