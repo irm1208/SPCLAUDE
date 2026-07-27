@@ -7893,9 +7893,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     // or every member of a shared order combined into one).
     const buildOrderBlock = (orders: Fs3GbOrder[], idx: number): { text: string; grandTotal: number; isShared: boolean } => {
       const items = orders.flatMap(o => o.lineItems ?? []);
-      const itemLines = items.map(li => {
-        const qty = li.quantity % 1 === 0 ? String(Math.round(li.quantity)) : li.quantity.toFixed(1);
-        return `${li.productName} x${qty} = ${fmt(itemPrice(li))}`;
+      // Group same products so "BPC-157 10mg x2" and "BPC-157 10mg x3" from different
+      // members collapse into "BPC-157 10mg x5 = $..." instead of appearing twice.
+      const productMap = new Map<string, { qty: number; cost: number }>();
+      for (const li of items) {
+        const key = li.productName.trim();
+        const cost = itemPrice(li);
+        const existing = productMap.get(key);
+        if (existing) { existing.qty += li.quantity; existing.cost += cost; }
+        else { productMap.set(key, { qty: li.quantity, cost }); }
+      }
+      const itemLines = [...productMap.entries()].map(([name, { qty, cost }]) => {
+        const qtyStr = qty % 1 === 0 ? String(Math.round(qty)) : qty.toFixed(1);
+        return `${name} x${qtyStr} = ${fmt(cost)}`;
       });
       const totalKits = items.reduce((s, li) => s + li.quantity, 0);
       const productTotal = items.reduce((s, li) => s + itemPrice(li), 0);
