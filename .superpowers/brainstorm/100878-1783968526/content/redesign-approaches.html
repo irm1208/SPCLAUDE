@@ -1,0 +1,95 @@
+<style>
+  .approach-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:24px; }
+  .approach { border:1px solid #dedee3; border-radius:14px; overflow:hidden; background:#fff; cursor:pointer; transition:.18s ease; }
+  .approach:hover { transform:translateY(-2px); box-shadow:0 14px 30px rgba(30,32,40,.1); }
+  .approach.selected { border-color:#252528; box-shadow:0 0 0 2px #252528; }
+  .mini { height:270px; display:grid; grid-template-columns:74px 1fr; color:#18181b; font-family:Inter,ui-sans-serif,sans-serif; background:#fbfbfc; }
+  .mini-side { border-right:1px solid #ececf0; padding:13px 8px; background:#faf9fb; }
+  .mini-brand { height:14px; width:47px; border-radius:6px; background:#29292c; margin-bottom:17px; }
+  .mini-nav { height:9px; border-radius:4px; background:#d8d8de; margin:8px 0; }
+  .mini-nav.active { height:19px; background:#e9e8ec; border:1px solid #dddddf; }
+  .mini-body { padding:12px; }
+  .mini-top { height:24px; border-bottom:1px solid #ebebee; display:flex; justify-content:flex-end; gap:6px; }
+  .mini-search { width:78px; height:13px; border-radius:4px; background:#f0f0f3; }
+  .mini-btn { width:37px; height:13px; border-radius:4px; background:#262629; }
+  .mini-title { width:78px; height:12px; border-radius:4px; background:#202024; margin:15px 0 5px; }
+  .mini-copy { width:135px; height:6px; border-radius:3px; background:#c7c7cd; margin-bottom:13px; }
+  .mini-stats { display:grid; grid-template-columns:1.1fr .75fr; gap:7px; }
+  .mini-card { border:1px solid #e3e3e6; border-radius:6px; background:white; padding:7px; min-height:55px; }
+  .mini-chart { height:29px; margin-top:7px; background:linear-gradient(180deg,transparent 35%,#f0ecfa 36%,#f0ecfa 67%,transparent 68%); border-bottom:1px solid #7664d9; }
+  .mini-board { margin-top:8px; display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .mini-col { height:80px; border-top:1px solid #e2e2e5; padding-top:6px; }
+  .mini-ticket { height:25px; margin-bottom:5px; border:1px solid #e6e6e8; border-radius:5px; background:#fff; }
+  .surface .mini { grid-template-columns:1fr; }
+  .surface .mini-side { display:none; }
+  .surface .mini-body { padding:18px; }
+  .surface .mini-stats { grid-template-columns:repeat(3,1fr); }
+  .surface .mini-card { border-radius:12px; box-shadow:0 5px 12px rgba(0,0,0,.05); }
+  .remap .mini-stats { grid-template-columns:1fr; }
+  .remap .mini-board { grid-template-columns:repeat(4,1fr); }
+  .remap .mini-card:nth-child(2) { display:none; }
+  .approach-copy { padding:16px; border-top:1px solid #ececf0; min-height:150px; }
+  .approach-copy h3 { margin:0 0 7px; font-size:15px; }
+  .approach-copy p { margin:0; color:#707077; font-size:13px; line-height:1.55; }
+  .tag { display:inline-flex; margin-top:12px; padding:4px 8px; border-radius:99px; background:#efeff1; color:#3f3f44; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .recommended { background:#252528; color:white; }
+  @media(max-width:900px){.approach-grid{grid-template-columns:1fr}.mini{height:230px}.approach-copy{min-height:0}}
+</style>
+
+<h2>How literally should the reference reshape gborganiser-v2?</h2>
+<p class="subtitle">All three retain your group-buy data and workflows. The difference is how deeply the screenshot controls the page composition.</p>
+
+<div class="approach-grid">
+  <div class="approach" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mini">
+      <div class="mini-side">
+        <div class="mini-brand"></div><div class="mini-nav"></div><div class="mini-nav"></div><div class="mini-nav active"></div><div class="mini-nav"></div><div class="mini-nav"></div><div class="mini-nav"></div>
+      </div>
+      <div class="mini-body">
+        <div class="mini-top"><div class="mini-search"></div><div class="mini-btn"></div></div>
+        <div class="mini-title"></div><div class="mini-copy"></div>
+        <div class="mini-stats"><div class="mini-card"><div class="mini-chart"></div></div><div class="mini-card"><div class="mini-chart"></div></div></div>
+        <div class="mini-board"><div class="mini-col"><div class="mini-ticket"></div><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div><div class="mini-ticket"></div></div></div>
+      </div>
+    </div>
+    <div class="approach-copy">
+      <h3>A — Faithful shell, adapted content</h3>
+      <p>Rebuild the sidebar, top utility bar, typography, borders, cards, density, and responsive behavior from the reference. Each existing group-buy screen keeps its purpose and data.</p>
+      <span class="tag recommended">Recommended</span>
+    </div>
+  </div>
+
+  <div class="approach remap" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mini">
+      <div class="mini-side"><div class="mini-brand"></div><div class="mini-nav"></div><div class="mini-nav active"></div><div class="mini-nav"></div><div class="mini-nav"></div></div>
+      <div class="mini-body">
+        <div class="mini-top"><div class="mini-search"></div><div class="mini-btn"></div></div>
+        <div class="mini-title"></div><div class="mini-copy"></div>
+        <div class="mini-stats"><div class="mini-card"><div class="mini-chart"></div></div><div class="mini-card"></div></div>
+        <div class="mini-board"><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div></div>
+      </div>
+    </div>
+    <div class="approach-copy">
+      <h3>B — Full structural remap</h3>
+      <p>Force every screen into the reference’s analytics-and-board composition. Visually closest page-for-page, but operational screens such as shipping and settings become less natural.</p>
+      <span class="tag">Highest disruption</span>
+    </div>
+  </div>
+
+  <div class="approach surface" data-choice="c" onclick="toggleSelect(this)">
+    <div class="mini">
+      <div class="mini-side"></div>
+      <div class="mini-body">
+        <div class="mini-top"><div class="mini-search"></div><div class="mini-btn"></div></div>
+        <div class="mini-title"></div><div class="mini-copy"></div>
+        <div class="mini-stats"><div class="mini-card"><div class="mini-chart"></div></div><div class="mini-card"><div class="mini-chart"></div></div><div class="mini-card"><div class="mini-chart"></div></div></div>
+        <div class="mini-board"><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div><div class="mini-col"><div class="mini-ticket"></div></div></div>
+      </div>
+    </div>
+    <div class="approach-copy">
+      <h3>C — Surface restyle only</h3>
+      <p>Keep current layout and update tokens, fonts, radii, and colors. Fastest, but it will not reproduce the reference’s sidebar proportions, density, hierarchy, or spatial rhythm.</p>
+      <span class="tag">Lowest disruption</span>
+    </div>
+  </div>
+</div>

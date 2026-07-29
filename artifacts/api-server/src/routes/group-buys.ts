@@ -90,6 +90,23 @@ async function isMember(telegramUsername: string, groupBuyId: string): Promise<b
   return rows.length > 0;
 }
 
+// Helper: check if the account is the organiser of a GB (organiserId is a plain-text username)
+async function isOrganiserOf(telegramUsername: string, groupBuyId: string): Promise<boolean> {
+  const [gb] = await db
+    .select({ organiserId: groupBuysTable.organiserId })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, groupBuyId));
+  if (!gb?.organiserId) return false;
+  const norm = (v: string) => v.trim().toLowerCase().replace(/^@/, "");
+  return norm(gb.organiserId) === norm(telegramUsername);
+}
+
+// Helper: buyer-view read access — members, or the GB's organiser previewing as a buyer
+async function canViewAsBuyer(telegramUsername: string, groupBuyId: string): Promise<boolean> {
+  if (await isMember(telegramUsername, groupBuyId)) return true;
+  return isOrganiserOf(telegramUsername, groupBuyId);
+}
+
 // Helper: check if a GB is visible to a given account (country + blocked account checks)
 function gbVisibleToAccount(
   gb: { allowedCountries?: string[] | null; excludedCountries?: string[] | null; blockedAccounts?: string[] | null },
@@ -392,13 +409,57 @@ router.post("/group-buys/:id/unarchive", requireAccount, async (req, res): Promi
   res.json({ ok: true, archived: false });
 });
 
+// GET /api/group-buys/:id/buyer-preview — full GB summary (same shape as a GET /group-buys
+// list entry) for the GB's organiser, so they can preview the order form as a buyer would
+// see it without being a member. Organiser only; archived GBs are blocked.
+router.get("/group-buys/:id/buyer-preview", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const id = String(req.params["id"]);
+  if (!id || id.length > 200) {
+    res.status(400).json({ error: "Invalid group buy id" });
+    return;
+  }
+
+  const [gb] = await db
+    .select(GB_SELECT_COLS)
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+
+  if (!gb || gb.status === "archived") {
+    res.status(404).json({ error: "Group buy not found" });
+    return;
+  }
+
+  const organiserId = gb.organiserId;
+  const norm = (v: string) => v.trim().toLowerCase().replace(/^@/, "");
+  if (!organiserId || norm(organiserId) !== norm(tg)) {
+    res.status(403).json({ error: "Only the organiser can preview this group buy" });
+    return;
+  }
+
+  const [productCount, kitsOrderedTotal] = await Promise.all([
+    getProductCount(gb.id),
+    gb.maxKitsTotal != null ? getTotalKitCount(gb.id) : Promise.resolve(0),
+  ]);
+
+  res.json({
+    ...shapeGb(gb as Record<string, unknown>, productCount),
+    maxKitsPerCustomer: gb.maxKitsPerCustomer ?? null,
+    maxKitsTotal: gb.maxKitsTotal ?? null,
+    kitsOrderedByUser: 0,
+    kitsOrderedTotal,
+    countryLegId: null,
+    archived: false,
+  });
+});
+
 // GET /api/group-buys/:id/products — products for a GB (member only)
 router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
   const id = String(req.params["id"]);
 
-  const member = await isMember(tg, id);
-  if (!member) {
+  const canView = await canViewAsBuyer(tg, id);
+  if (!canView) {
     res.status(403).json({ error: "Not a member of this group buy" });
     return;
   }
@@ -518,8 +579,8 @@ router.get("/group-buys/:id/delivery-methods", requireAccount, async (req, res):
   const tg = req.account!.telegramUsername;
   const id = String(req.params["id"]);
 
-  const member = await isMember(tg, id);
-  if (!member) {
+  const canView = await canViewAsBuyer(tg, id);
+  if (!canView) {
     res.status(403).json({ error: "Not a member of this group buy" });
     return;
   }
@@ -554,8 +615,8 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
   const tg = req.account!.telegramUsername;
   const id = String(req.params["id"]);
 
-  const member = await isMember(tg, id);
-  if (!member) {
+  const canView = await canViewAsBuyer(tg, id);
+  if (!canView) {
     res.status(403).json({ error: "Not a member of this group buy" });
     return;
   }

@@ -1,0 +1,1386 @@
+/* Approved GB Organiser command shell.
+   This final, scoped layer restores the signed-off shell after Atlas. */
+
+.organiser-v2 {
+  --ov2-sidebar-width: 236px;
+  --ov2-responsive-topbar-height: 108px;
+  --ov2-context-rail-height: 38px;
+  --ov2-workbar-height: 70px;
+  --approved-canvas: #F4F6F9;
+  --approved-deep-navy: #1B3164;
+  --approved-navy: #1B3A7A;
+  --approved-blue: #2D6BCC;
+  --approved-ink: #0F1F38;
+  --approved-type-label: 12px;
+  --approved-type-micro: var(--approved-type-label);
+  --approved-type-meta: 12px;
+  --approved-type-body: 14px;
+  --approved-type-control: 13px;
+  --approved-type-row-title: 14px;
+  --approved-type-section: 16px;
+  --approved-type-card-title: var(--approved-type-section);
+  --approved-type-page-title: 29px;
+  --approved-type-mobile-page-title: 24px;
+  --approved-type-metric: 24px;
+  --approved-type-mobile-metric: 21px;
+  --approved-leading-label: 15px;
+  --approved-leading-meta: 17px;
+  --approved-leading-body: 21px;
+  --approved-leading-control: 18px;
+  --approved-leading-row-title: 20px;
+  --approved-leading-section: 22px;
+  --approved-leading-page: 34px;
+  --approved-leading-mobile-page: 29px;
+  --approved-leading-metric: 28px;
+  --approved-leading-mobile-metric: 25px;
+  --atlas-canvas: #F4F6F9;
+  color: var(--approved-ink);
+  background: var(--approved-canvas);
+  font-family: 'Inter', 'Salesforce Sans', 'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--approved-type-body);
+}
+
+.organiser-v2 :focus-visible {
+  outline: 3px solid var(--approved-blue);
+  outline-offset: 2px;
+}
+
+.organiser-v2 .ov2-shell {
+  grid-template-columns: var(--ov2-sidebar-width) minmax(0, 1fr);
+  background: var(--approved-canvas);
+}
+
+.organiser-v2 .ov2-shell.is-sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.organiser-v2 .ov2-main {
+  min-width: 0;
+  overflow-x: clip;
+  background: var(--approved-canvas);
+}
+
+.organiser-v2 .ov2-sidebar-desktop,
+.organiser-v2 .ov2-sidebar,
+.organiser-v2 .ov2-sidebar-drawer {
+  border-color: rgba(255, 255, 255, 0.11);
+  color: #FFFFFF;
+  background:
+    radial-gradient(circle at 0 0, rgba(79, 134, 220, 0.34), transparent 270px),
+    linear-gradient(165deg, var(--approved-deep-navy) 0%, var(--approved-navy) 100%);
+}
+
+.organiser-v2 .ov2-sidebar-desktop {
+  box-shadow: 4px 0 20px rgba(15, 31, 56, 0.08);
+}
+
+.organiser-v2 .ov2-sidebar {
+  overflow-x: hidden;
+}
+
+.organiser-v2 .ov2-sidebar :focus-visible {
+  outline-color: #FFFFFF;
+  box-shadow: 0 0 0 5px rgba(45, 107, 204, 0.55);
+}
+
+.organiser-v2 .ov2-brand-block {
+  min-height: var(--ov2-topbar-height);
+  height: var(--ov2-topbar-height);
+  gap: 10px;
+  border-color: rgba(255, 255, 255, 0.11);
+  padding: 0 14px;
+  background: transparent;
+}
+
+.organiser-v2 .ov2-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  background: var(--approved-blue);
+  box-shadow: 0 6px 15px rgba(15, 31, 56, 0.22);
+  color: #FFFFFF;
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
+
+.organiser-v2 .ov2-brand-mark::before {
+  display: none;
+}
+
+.organiser-v2 .ov2-brand-mark span,
+.organiser-v2 .ov2-brand-mark span:first-child,
+.organiser-v2 .ov2-brand-mark span:last-child {
+  display: none;
+}
+
+.organiser-v2 .ov2-brand-copy strong,
+.organiser-v2 .ov2-brand-copy span {
+  color: #FFFFFF;
+}
+
+.organiser-v2 .ov2-brand-copy strong {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  opacity: 1;
+}
+
+.organiser-v2 .ov2-brand-copy span {
+  margin-top: 0;
+  font-size: var(--approved-type-meta);
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.76;
+}
+
+.organiser-v2 .ov2-sidebar-collapse {
+  width: 30px;
+  height: 30px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.organiser-v2 .ov2-sidebar-collapse:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.organiser-v2 .ov2-active-gb-card {
+  display: grid;
+  width: calc(100% - 28px);
+  min-height: 72px;
+  grid-template-columns: 36px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 14px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 11px;
+  padding: 9px;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+  text-align: left;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.organiser-v2 .ov2-active-gb-card:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.organiser-v2 .ov2-active-gb-card > svg {
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.organiser-v2 .ov2-active-gb-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 9px;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.13);
+  font-size: var(--approved-type-meta);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-active-gb-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.organiser-v2 .ov2-active-gb-copy > span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--approved-type-micro);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.organiser-v2 .ov2-active-gb-copy strong {
+  overflow-wrap: anywhere;
+  color: #FFFFFF;
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.organiser-v2 .ov2-active-gb-copy small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.organiser-v2 .ov2-live-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+}
+
+.organiser-v2 .ov2-sidebar-scroll {
+  padding: 6px 11px 10px;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+
+.organiser-v2 .ov2-nav-group + .ov2-nav-group {
+  margin-top: 4px;
+}
+
+.organiser-v2 .ov2-nav-group-toggle,
+.organiser-v2 .ov2-sidebar-kicker {
+  min-height: 26px;
+  padding: 6px 9px 4px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: var(--approved-type-micro);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.organiser-v2 .ov2-nav-group-toggle:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.organiser-v2 .ov2-nav-group-toggle svg {
+  color: currentColor;
+}
+
+.organiser-v2 .ov2-nav-group-items.is-nested {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.organiser-v2 .ov2-nav-group-items.is-nested::before {
+  display: none;
+}
+
+.organiser-v2 .ov2-nav-link {
+  position: relative;
+  min-height: 32px;
+  gap: 9px;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+  font-size: var(--approved-type-body);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-nav-link::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: -11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  content: "";
+}
+
+.organiser-v2 .ov2-nav-link:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.organiser-v2 .ov2-nav-link.is-active {
+  color: var(--approved-navy);
+  background: #FFFFFF;
+  box-shadow: 0 7px 16px rgba(5, 18, 47, 0.18);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-nav-link.is-active::before {
+  background: var(--approved-blue);
+}
+
+.organiser-v2 .ov2-nav-link svg,
+.organiser-v2 .ov2-nav-link.is-active svg {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+}
+
+.organiser-v2 .ov2-nav-link em,
+.organiser-v2 .ov2-nav-link.is-active em {
+  min-width: 20px;
+  height: 19px;
+  border-radius: 999px;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.13);
+  font-size: var(--approved-type-micro);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-nav-link.is-active em {
+  color: var(--approved-navy);
+  background: #E4EDFB;
+}
+
+.organiser-v2 .ov2-setup-link {
+  min-height: 38px;
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.76);
+  background: transparent;
+}
+
+.organiser-v2 .ov2-setup-link strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-setup-link small {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.organiser-v2 .ov2-setup-link:hover {
+  border-color: transparent;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.organiser-v2 .ov2-setup-link.is-active {
+  border-color: #FFFFFF;
+  color: var(--approved-navy);
+  background: #FFFFFF;
+}
+
+.organiser-v2 .ov2-step-number {
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-setup-link.is-active .ov2-step-number {
+  border-color: var(--approved-navy);
+  color: #FFFFFF;
+  background: var(--approved-navy);
+}
+
+.organiser-v2 .ov2-setup-link small {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.organiser-v2 .ov2-setup-link.is-active small {
+  color: #6B7280;
+}
+
+.organiser-v2 .ov2-sidebar-utilities,
+.organiser-v2 .ov2-profile-block {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.organiser-v2 .ov2-sidebar-utilities {
+  gap: 4px;
+  padding: 8px 11px;
+}
+
+.organiser-v2 .ov2-dashboard-exit,
+.organiser-v2 .ov2-setup-switch {
+  min-height: 32px;
+  color: rgba(255, 255, 255, 0.74);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-dashboard-exit:hover,
+.organiser-v2 .ov2-setup-switch:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.organiser-v2 .ov2-setup-switch {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.organiser-v2 .ov2-dashboard-exit svg,
+.organiser-v2 .ov2-setup-switch svg {
+  width: 14px;
+  height: 14px;
+}
+
+.organiser-v2 .ov2-profile-block {
+  min-height: 58px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.organiser-v2 .ov2-profile-avatar {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  color: var(--approved-navy);
+  background: #DDEAFF;
+  font-size: var(--approved-type-meta);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-profile-block strong {
+  color: #FFFFFF;
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-profile-block small,
+.organiser-v2 .ov2-profile-block > svg {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.organiser-v2 .ov2-profile-block small {
+  font-size: var(--approved-type-meta);
+  font-weight: 500;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-brand-block {
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-brand-mark {
+  display: grid;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-sidebar-collapse {
+  position: absolute;
+  right: -12px;
+  border: 2px solid var(--approved-canvas);
+  color: var(--approved-navy);
+  background: #FFFFFF;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-active-gb-card {
+  width: 52px;
+  min-height: 52px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  margin: 12px;
+  padding: 7px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-active-gb-copy,
+.organiser-v2 .is-sidebar-collapsed .ov2-active-gb-card > svg,
+.organiser-v2 .is-sidebar-collapsed .ov2-dashboard-exit span,
+.organiser-v2 .is-sidebar-collapsed .ov2-setup-switch span {
+  display: none;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-sidebar-scroll {
+  padding-inline: 9px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-nav-link {
+  min-height: 40px;
+  justify-content: center;
+  padding-inline: 8px;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-sidebar-utilities {
+  padding-inline: 9px;
+}
+
+.organiser-v2 .ov2-topbar {
+  display: grid;
+  height: var(--ov2-topbar-height);
+  min-height: var(--ov2-topbar-height);
+  grid-template-rows: var(--ov2-context-rail-height) var(--ov2-workbar-height);
+  gap: 0;
+  border-color: #E1E7EF;
+  margin: 0;
+  padding: 0 !important;
+  color: var(--approved-ink);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 2px 10px rgba(27, 49, 100, 0.03);
+  backdrop-filter: blur(14px);
+}
+
+.organiser-v2 .ov2-topbar-context-rail {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  min-height: 100%;
+  align-items: center;
+  align-self: stretch;
+  gap: 24px;
+  border-bottom: 1px solid #DCE4EC;
+  margin: 0;
+  padding: 0 18px;
+  color: var(--approved-ink);
+  background: #F8FAFC;
+  font-size: var(--approved-type-label);
+  line-height: var(--approved-leading-label);
+}
+
+.organiser-v2 .ov2-topbar-context-kicker {
+  flex: 0 0 auto;
+  color: #8A9AAA;
+  font-size: var(--approved-type-label);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.organiser-v2 .ov2-topbar-context-metrics {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  margin: 0;
+}
+
+.organiser-v2 .ov2-topbar-context-metric {
+  display: flex;
+  min-width: 124px;
+  align-items: center;
+  gap: 7px;
+}
+
+.organiser-v2 .ov2-topbar-context-metric + .ov2-topbar-context-metric {
+  margin-left: 18px;
+  border-left: 1px solid #DCE4EC;
+  padding-left: 18px;
+}
+
+.organiser-v2 .ov2-topbar-context-metric dt {
+  color: #6B7280;
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-topbar-context-metric dd {
+  margin: 0;
+  color: var(--approved-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.organiser-v2 .ov2-topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #7A4B00;
+  background: #FFF2D6;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-topbar-status[data-tone="active"] {
+  color: #17743D;
+  background: #E1F7E8;
+}
+
+.organiser-v2 .ov2-topbar-status[data-tone="active"]::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+  content: "";
+}
+
+.organiser-v2 .ov2-topbar-workbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+}
+
+.organiser-v2 .ov2-menu-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  flex: 0 0 44px;
+  border: 0;
+  border-radius: 13px;
+  color: var(--approved-navy);
+  background: #EAF1FB;
+  box-shadow: inset 0 0 0 1px rgba(27, 58, 122, 0.08);
+}
+
+.organiser-v2 .ov2-menu-button:hover {
+  border-color: transparent;
+  color: var(--approved-deep-navy);
+  background: #DDE9F8;
+}
+
+.organiser-v2 .ov2-menu-button-desktop { display: inline-flex; }
+.organiser-v2 .ov2-menu-button-drawer { display: none; }
+
+.organiser-v2 .ov2-menu-glyph {
+  display: grid;
+  width: 18px;
+  gap: 4px;
+}
+
+.organiser-v2 .ov2-menu-glyph span {
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.organiser-v2 .ov2-menu-glyph span:nth-child(2) { width: 13px; }
+.organiser-v2 .ov2-menu-glyph span:nth-child(3) { width: 16px; }
+
+.organiser-v2 .ov2-page-context {
+  display: grid;
+  width: 184px;
+  min-width: 130px;
+  flex: 0 1 184px;
+  gap: 3px;
+  line-height: 1.2;
+}
+
+.organiser-v2 .ov2-page-context strong,
+.organiser-v2 .ov2-page-context small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organiser-v2 .ov2-page-context strong {
+  color: var(--approved-ink);
+  font-size: var(--approved-type-body);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-page-context small {
+  color: #667085;
+  font-size: var(--approved-type-label);
+  font-weight: 500;
+}
+
+.organiser-v2 .ov2-search-trigger {
+  width: auto;
+  min-width: 440px;
+  min-height: 46px;
+  flex: 1 1 440px;
+  gap: 10px;
+  margin-left: 0;
+  border: 1px solid #BECADA;
+  border-radius: 13px;
+  padding: 0 12px 0 14px;
+  color: #667085;
+  background: #FBFCFE;
+  font-size: var(--approved-type-control);
+  font-weight: 400;
+}
+
+.organiser-v2 .ov2-search-trigger:hover {
+  border-color: #8FA6C0;
+  background: #FFFFFF;
+}
+
+.organiser-v2 .ov2-search-trigger kbd {
+  border-color: #D5DDE8;
+  border-radius: 7px;
+  color: #667085;
+  background: #FFFFFF;
+  font-size: var(--approved-type-label);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-topbar-actions {
+  min-width: 0;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.organiser-v2 .ov2-topbar-link,
+.organiser-v2 .ov2-primary-button,
+.organiser-v2 .ov2-secondary-button {
+  min-height: 44px;
+  border-radius: 12px;
+  padding-inline: 14px;
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.organiser-v2 .ov2-topbar-link,
+.organiser-v2 .ov2-secondary-button {
+  border: 1px solid #C8D3DF;
+  color: var(--approved-navy);
+  background: #FFFFFF;
+}
+
+.organiser-v2 .ov2-primary-button {
+  border-color: var(--approved-blue);
+  color: #FFFFFF;
+  background: var(--approved-blue);
+}
+
+.organiser-v2 .ov2-primary-button:hover {
+  border-color: var(--approved-navy);
+  background: var(--approved-navy);
+}
+
+.organiser-v2 .ov2-topbar-profile {
+  position: relative;
+  display: inline-flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-left: 1px solid #E0E6ED;
+  border-radius: 0;
+  padding: 0 8px 0 12px;
+  color: #667085;
+  background: transparent;
+  text-align: left;
+}
+
+.organiser-v2 .ov2-topbar-profile:hover {
+  color: var(--approved-navy);
+  background: #F8FAFC;
+}
+
+.organiser-v2 .ov2-topbar-profile > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.organiser-v2 .ov2-topbar-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--approved-navy);
+  background: #DDEAFF;
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-topbar-profile-copy {
+  display: grid;
+  min-width: 0;
+  max-width: 128px;
+}
+
+.organiser-v2 .ov2-topbar-profile-copy strong,
+.organiser-v2 .ov2-topbar-profile-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organiser-v2 .ov2-topbar-profile-copy strong {
+  color: var(--approved-ink);
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.organiser-v2 .ov2-topbar-profile-copy small {
+  color: #667085;
+  font-size: var(--approved-type-label);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.organiser-v2 .ov2-topbar :where(button) {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.organiser-v2 .ov2-topbar :where(button):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.organiser-v2 .ov2-topbar :where(button):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.organiser-v2 .ov2-mobile-group-context,
+.organiser-v2 .ov2-mobile-bottom-nav {
+  display: none;
+}
+
+/* One readable type system across the legacy tab content while each approved
+   picture is migrated. Later approved tab styles load after this shared layer. */
+.organiser-v2 .ov2-workspace-screen :where(p, li, dd, td) {
+  font-size: var(--approved-type-body);
+  font-weight: 400;
+  line-height: var(--approved-leading-body);
+}
+
+.organiser-v2 .ov2-workspace-screen :where(button, input, select, textarea) {
+  font-size: var(--approved-type-control);
+  line-height: var(--approved-leading-control);
+}
+
+.organiser-v2 .ov2-workspace-screen :where(small, dt, th, label) {
+  font-size: var(--approved-type-meta);
+  line-height: var(--approved-leading-meta);
+}
+
+.organiser-v2 .ov2-workspace-screen :where(h1) {
+  font-size: var(--approved-type-page-title);
+  font-weight: 600;
+  line-height: var(--approved-leading-page);
+  letter-spacing: -0.035em;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(h2) {
+  font-size: var(--approved-type-section);
+  font-weight: 600;
+  line-height: var(--approved-leading-section);
+  letter-spacing: -0.02em;
+}
+
+.organiser-v2 .ov2-workspace-screen :where(h3) {
+  font-size: var(--approved-type-row-title);
+  font-weight: 600;
+  line-height: var(--approved-leading-row-title);
+}
+
+.organiser-v2 .ov2-command-eyebrow,
+.organiser-v2 .ov2-section-kicker,
+.organiser-v2 .atlas-eyebrow,
+.organiser-v2 .atlas-section-kicker {
+  font-size: var(--approved-type-micro);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-command-hero h1 {
+  font-size: var(--approved-type-page-title);
+  font-weight: 700;
+  line-height: 1.12;
+}
+
+.organiser-v2 .atlas-page-header h1 {
+  font-size: var(--approved-type-page-title);
+  font-weight: 700;
+  line-height: 1.12;
+}
+
+.organiser-v2 .ov2-command-hero-copy > p,
+.organiser-v2 .atlas-page-header p,
+.organiser-v2 .ov2-pipeline-heading p {
+  font-size: var(--approved-type-body);
+  line-height: 1.5;
+}
+
+.organiser-v2 .ov2-command-meta span,
+.organiser-v2 .ov2-command-capacity span,
+.organiser-v2 .ov2-command-collaborators > span,
+.organiser-v2 .ov2-command-capacity b {
+  font-size: var(--approved-type-meta);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-command-capacity strong {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-command-actions button,
+.organiser-v2 .ov2-attention-panel > header > button,
+.organiser-v2 .atlas-primary-button,
+.organiser-v2 .atlas-secondary-button,
+.organiser-v2 .atlas-filter-button {
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-command-metric > div > span,
+.organiser-v2 .atlas-status-badge,
+.organiser-v2 .atlas-data-table th {
+  font-size: var(--approved-type-micro);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-command-metric strong,
+.organiser-v2 .ov2-pulse-panel > header > strong,
+.organiser-v2 .atlas-metric-surface > strong {
+  font-size: var(--approved-type-metric);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-command-metric small,
+.organiser-v2 .ov2-pulse-panel > header > strong small,
+.organiser-v2 .atlas-metric-topline,
+.organiser-v2 .atlas-metric-footer,
+.organiser-v2 .atlas-result-count,
+.organiser-v2 .atlas-muted-cell {
+  font-size: var(--approved-type-meta);
+}
+
+.organiser-v2 .ov2-attention-panel h2,
+.organiser-v2 .ov2-pulse-panel h2,
+.organiser-v2 .ov2-pipeline-heading h2,
+.organiser-v2 .atlas-card-heading h2 {
+  font-size: var(--approved-type-card-title);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-attention-row strong {
+  font-size: var(--approved-type-body);
+  font-weight: 600;
+}
+
+.organiser-v2 .atlas-data-table td {
+  font-size: var(--approved-type-body);
+  font-weight: 600;
+}
+
+.organiser-v2 .atlas-person strong {
+  font-size: var(--approved-type-body);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-attention-row small,
+.organiser-v2 .ov2-attention-row em,
+.organiser-v2 .ov2-pulse-stage span,
+.organiser-v2 .ov2-pulse-stage strong,
+.organiser-v2 .ov2-pulse-panel > footer span,
+.organiser-v2 .atlas-person small,
+.organiser-v2 .atlas-select-control {
+  font-size: var(--approved-type-meta);
+}
+
+.organiser-v2 .atlas-search-field input,
+.organiser-v2 .atlas-select-control select {
+  font-size: var(--approved-type-control);
+}
+
+/* Keep the overview pipeline compact without collapsing its supporting copy. */
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-pipeline-heading h2 {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-pipeline-heading p {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-view-switcher button {
+  font-size: var(--approved-type-meta);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-toolbar-action {
+  font-size: var(--approved-type-meta);
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-board-column > header h2 {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-board-column > header span {
+  font-size: var(--approved-type-label);
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card h3 {
+  font-size: var(--approved-type-control);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card > p {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-meta {
+  font-size: var(--approved-type-label);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-due {
+  font-size: var(--approved-type-label);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card footer {
+  font-size: var(--approved-type-label);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment] .ov2-order-card footer strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 1399px) {
+  .organiser-v2 .ov2-page-context {
+    width: 150px;
+    flex-basis: 150px;
+  }
+
+  .organiser-v2 .ov2-search-trigger {
+    min-width: 260px;
+    flex-basis: 320px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .organiser-v2 .ov2-page-context {
+    width: 130px;
+    flex-basis: 130px;
+  }
+
+  .organiser-v2 .ov2-search-trigger {
+    min-width: 220px;
+    flex-basis: 260px;
+  }
+
+  .organiser-v2 .ov2-topbar-profile-copy,
+  .organiser-v2 .ov2-topbar-profile > svg {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-topbar-profile {
+    width: 40px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .organiser-v2 .ov2-shell,
+  .organiser-v2 .ov2-shell.is-sidebar-collapsed {
+    display: block;
+  }
+
+  .organiser-v2 .ov2-sidebar-desktop {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-menu-button-desktop { display: none; }
+  .organiser-v2 .ov2-menu-button-drawer { display: inline-flex; }
+
+  .organiser-v2 .ov2-back-button {
+    display: inline-flex;
+  }
+
+  .organiser-v2 .ov2-sidebar-drawer {
+    width: min(88vw, 268px);
+    box-shadow: 18px 0 50px rgba(15, 31, 56, 0.28);
+  }
+
+  .organiser-v2 .ov2-drawer-scrim {
+    background: rgba(15, 31, 56, 0.58);
+  }
+
+  .organiser-v2 .ov2-drawer-close {
+    top: 14px;
+    right: 10px;
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .organiser-v2 .ov2-sidebar-drawer .ov2-nav-link,
+  .organiser-v2 .ov2-sidebar-drawer .ov2-setup-link {
+    min-height: 40px;
+  }
+
+  .organiser-v2 .ov2-topbar-workbar {
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 900px) {
+  .organiser-v2 .ov2-topbar-workbar {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .organiser-v2 .ov2-page-context {
+    width: 80px;
+    min-width: 80px;
+    flex-basis: 80px;
+  }
+
+  .organiser-v2 .ov2-search-trigger {
+    min-width: 200px;
+    flex-basis: 220px;
+  }
+}
+
+@media (max-width: 767px) {
+  .organiser-v2 {
+    --ov2-responsive-topbar-height: 64px;
+    --approved-type-page-title: var(--approved-type-mobile-page-title);
+    --approved-leading-page: var(--approved-leading-mobile-page);
+    --approved-type-metric: var(--approved-type-mobile-metric);
+    --approved-leading-metric: var(--approved-leading-mobile-metric);
+  }
+
+  .organiser-v2 .ov2-topbar {
+    display: block;
+    height: var(--ov2-topbar-height);
+    min-height: var(--ov2-topbar-height);
+    overflow-x: clip;
+    padding: 0;
+  }
+
+  .organiser-v2 .ov2-topbar-context-rail {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-topbar-workbar {
+    height: var(--ov2-topbar-height);
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .organiser-v2 .ov2-copy-toast {
+    top: calc(var(--ov2-topbar-height) + 48px);
+  }
+
+  .organiser-v2 .ov2-mobile-group-context {
+    display: grid;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 1px;
+  }
+
+  .organiser-v2 .ov2-mobile-group-context small {
+    color: #8A9AAA;
+    font-size: var(--approved-type-label);
+    font-weight: 500;
+    line-height: var(--approved-leading-label);
+  }
+
+  .organiser-v2 .ov2-mobile-group-context strong {
+    overflow: hidden;
+    color: var(--approved-ink);
+    font-size: var(--approved-type-control);
+    font-weight: 700;
+    line-height: var(--approved-leading-control);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .organiser-v2 .ov2-search-trigger,
+  .organiser-v2 .ov2-page-context,
+  .organiser-v2 .ov2-topbar-actions > .ov2-secondary-button,
+  .organiser-v2 .ov2-topbar-actions > .ov2-topbar-link {
+    display: none;
+  }
+
+  .organiser-v2 .ov2-topbar-actions {
+    order: initial;
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .organiser-v2 .ov2-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .organiser-v2 .ov2-primary-button {
+    max-width: 104px;
+    min-height: 44px;
+    overflow: hidden;
+    padding-inline: 9px;
+  }
+
+  .organiser-v2 .ov2-primary-button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .organiser-v2 .ov2-topbar-profile,
+  .organiser-v2 .ov2-menu-button,
+  .organiser-v2 .ov2-back-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    flex-basis: 44px;
+  }
+
+  .organiser-v2 .ov2-topbar-avatar {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .organiser-v2 #ov2-main-content {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .organiser-v2 .ov2-mobile-bottom-nav {
+    position: fixed;
+    z-index: 40;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-top: 1px solid #D0DAE4;
+    padding: 5px 6px env(safe-area-inset-bottom);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 -8px 24px rgba(15, 31, 56, 0.08);
+  }
+
+  .organiser-v2 .ov2-mobile-bottom-nav button {
+    display: grid;
+    min-width: 0;
+    min-height: 52px;
+    place-items: center;
+    align-content: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 8px;
+    color: #6B7280;
+    background: transparent;
+    font-size: var(--approved-type-label);
+    font-weight: 600;
+  }
+
+  .organiser-v2 .ov2-mobile-bottom-nav svg {
+    width: 20px;
+    height: 20px;
+    padding: 2px;
+    border-radius: 7px;
+  }
+
+  .organiser-v2 .ov2-mobile-bottom-nav button.is-active,
+  .organiser-v2 .ov2-mobile-bottom-nav button.is-context-active {
+    color: var(--approved-navy);
+  }
+
+  .organiser-v2 .ov2-mobile-bottom-nav button.is-active svg,
+  .organiser-v2 .ov2-mobile-bottom-nav button.is-context-active svg {
+    background: #E4EDFB;
+  }
+}
+
+.organiser-v2 .ov2-route-state {
+  width: min(460px, calc(100% - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #6B7280;
+  text-align: center;
+}
+
+.organiser-v2 .ov2-route-state > svg {
+  width: 28px;
+  height: 28px;
+  color: #2D6BCC;
+}
+
+.organiser-v2 .ov2-route-state > strong {
+  color: #0F1F38;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-route-state > span {
+  font-size: 13px;
+}
+
+.organiser-v2 .ov2-route-state > button {
+  min-height: 38px;
+  margin-top: 4px;
+  border-radius: 9px;
+  padding: 0 14px;
+  color: #FFFFFF;
+  background: #2D6BCC;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.organiser-v2 .ov2-data-notice {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  border: 1px solid #C7D9F5;
+  border-radius: 9px;
+  padding: 8px 11px;
+  color: #1B3A7A;
+  background: #EEF5FF;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.organiser-v2 .ov2-data-notice[data-tone="error"] {
+  border-color: #F0C4C1;
+  color: #9F2D25;
+  background: #FFF3F2;
+}
+
+.organiser-v2 .ov2-data-notice button {
+  min-height: 28px;
+  border-radius: 7px;
+  padding: 0 9px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: var(--approved-type-label);
+  font-weight: 700;
+}
+
+@media (max-width: 420px) {
+  .organiser-v2 .ov2-primary-button {
+    max-width: 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organiser-v2 *,
+  .organiser-v2 *::before,
+  .organiser-v2 *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

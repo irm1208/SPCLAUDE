@@ -28,6 +28,37 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function runStartupMigrations(): Promise<void> {
   try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS hidden_orders (
+        id text PRIMARY KEY,
+        telegram_username text NOT NULL REFERENCES accounts(telegram_username) ON DELETE CASCADE ON UPDATE CASCADE,
+        order_id text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        hidden_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT hidden_orders_username_order_uniq UNIQUE (telegram_username, order_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS organiser_todos (
+        id text PRIMARY KEY,
+        group_buy_id text NOT NULL REFERENCES group_buys(id) ON DELETE CASCADE,
+        organiser_id text NOT NULL,
+        title text NOT NULL,
+        description text,
+        status text NOT NULL DEFAULT 'todo',
+        priority text,
+        due_date text,
+        due_time text,
+        duration_min integer,
+        linked_order_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        category text,
+        subtasks jsonb NOT NULL DEFAULT '[]'::jsonb,
+        archived boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS organiser_todos_group_buy_idx ON organiser_todos(group_buy_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS organiser_todos_due_date_idx ON organiser_todos(due_date)`);
     await db.execute(sql`ALTER TABLE lab_tests ADD COLUMN IF NOT EXISTS nominal_dose text`);
     await db.execute(sql`ALTER TABLE lab_tests ADD COLUMN IF NOT EXISTS mass_unit text DEFAULT 'mg'`);
     await db.execute(sql`ALTER TABLE lab_tests ADD COLUMN IF NOT EXISTS heavy_metal_as text`);

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlas 2.0 — Premium refinement</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Manrope:wght@500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    :root {
+      --navy: #111d36;
+      --navy-2: #182743;
+      --blue: #3867f4;
+      --blue-2: #2755df;
+      --ink: #17233a;
+      --muted: #778399;
+      --line: #e4e9f1;
+      --canvas: #f4f6fa;
+      --mint: #27ad86;
+      --amber: #eba643;
+      --coral: #e56c66;
+      --violet: #7b6fe7;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(56, 103, 244, .09), transparent 31rem),
+        radial-gradient(circle at 96% 85%, rgba(39, 173, 134, .07), transparent 30rem),
+        #eef1f6;
+      font-family: "DM Sans", sans-serif;
+    }
+    button, input { font: inherit; }
+    svg { display: block; }
+    .page { width: min(1520px, calc(100% - 36px)); margin: 0 auto; padding: 44px 0 80px; }
+    .stage-head { display: flex; align-items: end; gap: 30px; margin: 0 auto 23px; }
+    .stage-kicker { display: flex; align-items: center; gap: 9px; color: #50637d; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .stage-kicker i { width: 24px; height: 2px; background: var(--blue); border-radius: 2px; }
+    .stage-head h1 { margin: 9px 0 0; color: #121e34; font: 700 clamp(31px, 4vw, 50px)/1 Manrope, sans-serif; letter-spacing: -.055em; }
+    .stage-head p { max-width: 670px; margin: 13px 0 0; color: #6e7b8f; font-size: 14px; line-height: 1.65; }
+    .revision-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-left: auto; }
+    .revision-list span { padding: 8px 10px; color: #57667b; background: rgba(255,255,255,.78); border: 1px solid #dde3ec; border-radius: 999px; box-shadow: 0 5px 15px rgba(24,38,62,.04); font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .choice {
+      padding: 10px;
+      background: rgba(255,255,255,.7);
+      border: 1px solid rgba(28,43,67,.12);
+      border-radius: 27px;
+      box-shadow: 0 26px 70px rgba(22,35,57,.13);
+      cursor: pointer;
+      transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    }
+    .choice:hover { transform: translateY(-2px); box-shadow: 0 32px 80px rgba(22,35,57,.16); }
+    .choice.selected { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(56,103,244,.14), 0 32px 80px rgba(22,35,57,.16); }
+    .choice-bar { display: flex; align-items: center; min-height: 52px; padding: 0 10px 0 13px; }
+    .version { display: grid; width: 32px; height: 32px; margin-right: 10px; place-items: center; color: #fff; background: var(--blue); border-radius: 10px; font-size: 10px; font-weight: 800; box-shadow: 0 7px 18px rgba(56,103,244,.25); }
+    .choice-bar strong { color: #24334c; font: 700 14px Manrope, sans-serif; }
+    .choice-bar small { margin-left: 9px; color: #7a8799; font-size: 11px; }
+    .approve { margin-left: auto; padding: 9px 12px; color: #34445d; background: #fff; border: 1px solid #dae1eb; border-radius: 9px; font-size: 10px; font-weight: 700; }
+    .choice.selected .approve { color: #fff; background: var(--blue); border-color: var(--blue); }
+    .browser { overflow: hidden; background: #fff; border: 1px solid rgba(20,35,59,.14); border-radius: 18px; box-shadow: 0 13px 35px rgba(22,35,58,.12); }
+    .browser-top { height: 34px; display: flex; align-items: center; padding: 0 13px; background: #fafbfc; border-bottom: 1px solid #e4e8ee; }
+    .browser-dots { display: flex; gap: 5px; }
+    .browser-dots i { width: 7px; height: 7px; background: #d7dce4; border-radius: 50%; }
+    .browser-url { display: grid; width: 290px; height: 19px; margin: 0 auto; place-items: center; color: #99a2b0; background: #f0f2f5; border-radius: 6px; font-size: 7px; }
+    .browser-menu { color: #9ba4b1; font-size: 10px; letter-spacing: .12em; }
+
+    .app { display: grid; grid-template-columns: 222px minmax(0, 1fr); min-width: 1120px; min-height: 745px; background: var(--canvas); }
+    .sidebar { position: relative; display: flex; flex-direction: column; min-height: 745px; padding: 19px 13px 14px; color: #91a0bb; background: linear-gradient(180deg, #111d36 0%, #111b31 100%); }
+    .sidebar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 190px; pointer-events: none; background: radial-gradient(circle at 0 100%, rgba(56,103,244,.17), transparent 72%); }
+    .brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 0 8px 18px; color: #fff; font: 700 13px Manrope, sans-serif; letter-spacing: -.025em; }
+    .brand-mark { position: relative; width: 29px; height: 29px; overflow: hidden; background: var(--blue); border-radius: 9px 9px 9px 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 7px 16px rgba(39,85,223,.28); }
+    .brand-mark::before { content: ""; position: absolute; width: 17px; height: 17px; left: 6px; top: 6px; border: 4px solid #fff; border-top-color: transparent; border-radius: 50%; transform: rotate(30deg); }
+    .brand-mark::after { content: ""; position: absolute; width: 5px; height: 5px; left: 12px; top: 12px; background: #fff; border-radius: 50%; }
+    .workspace-switch { position: relative; z-index: 1; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; padding: 9px; margin-bottom: 19px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.085); border-radius: 11px; }
+    .workspace-avatar { display: grid; width: 30px; height: 30px; place-items: center; color: #dbe5ff; background: #263a61; border-radius: 8px; font-size: 8px; font-weight: 800; }
+    .workspace-switch small { display: block; color: #7184a5; font-size: 6.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .workspace-switch strong { display: block; overflow: hidden; margin-top: 3px; color: #eff4ff; font-size: 8px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .workspace-switch b { color: #6f81a0; font-size: 10px; }
+    .nav-section { position: relative; z-index: 1; margin-bottom: 14px; }
+    .nav-title { padding: 0 10px; margin-bottom: 6px; color: #536681; font-size: 6.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .nav-item { display: flex; align-items: center; gap: 10px; min-height: 33px; padding: 0 10px; margin: 2px 0; color: #8999b4; border-radius: 8px; font-size: 8px; font-weight: 600; }
+    .nav-item svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    .nav-item.active { color: #fff; background: linear-gradient(90deg, rgba(56,103,244,.96), rgba(65,112,246,.84)); box-shadow: 0 8px 20px rgba(39,85,223,.22); }
+    .nav-count { display: grid; min-width: 18px; height: 18px; padding: 0 5px; margin-left: auto; place-items: center; color: #a9b7cd; background: rgba(255,255,255,.07); border-radius: 6px; font-size: 6.5px; font-weight: 700; }
+    .nav-item.active .nav-count { color: #fff; background: rgba(255,255,255,.16); }
+    .sidebar-foot { position: relative; z-index: 1; margin-top: auto; }
+    .capacity { padding: 11px; margin-bottom: 10px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.075); border-radius: 10px; }
+    .capacity-head { display: flex; color: #7f91ad; font-size: 6.5px; }
+    .capacity-head b { margin-left: auto; color: #c8d4e7; }
+    .capacity-bar { height: 4px; margin-top: 8px; overflow: hidden; background: rgba(255,255,255,.09); border-radius: 5px; }
+    .capacity-bar i { display: block; width: 70%; height: 100%; background: linear-gradient(90deg, #4c7bf7, #6f93fa); border-radius: inherit; }
+    .user { display: flex; align-items: center; gap: 8px; padding: 9px 7px 0; border-top: 1px solid rgba(255,255,255,.075); }
+    .avatar { display: grid; place-items: center; border-radius: 50%; font-weight: 800; }
+    .user .avatar { width: 28px; height: 28px; color: #16345f; background: #b7d7ff; font-size: 7px; }
+    .user strong { display: block; color: #e9f0fb; font-size: 7px; }
+    .user span { display: block; margin-top: 2px; color: #647894; font-size: 6px; }
+    .user-more { margin-left: auto; color: #61738e; font-size: 10px; letter-spacing: .08em; }
+
+    .shell { min-width: 0; }
+    .topbar { display: flex; align-items: center; height: 56px; padding: 0 22px; background: rgba(255,255,255,.92); border-bottom: 1px solid var(--line); backdrop-filter: blur(10px); }
+    .breadcrumb { display: flex; align-items: center; gap: 7px; color: #8b96a8; font-size: 7.5px; }
+    .breadcrumb strong { color: #435069; font-weight: 600; }
+    .separator { color: #bdc5d0; }
+    .search { display: flex; align-items: center; gap: 7px; width: 194px; height: 30px; padding: 0 9px; margin-left: auto; color: #8c97a8; background: #f4f6f9; border: 1px solid #e2e7ee; border-radius: 8px; font-size: 7px; }
+    .search svg, .icon-button svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .search kbd { margin-left: auto; padding: 2px 4px; color: #909aaa; background: #fff; border: 1px solid #dbe1e8; border-radius: 4px; font-size: 5.7px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+    .icon-button { position: relative; display: grid; width: 30px; height: 30px; margin-left: 7px; place-items: center; color: #66748a; background: #fff; border: 1px solid #e1e6ed; border-radius: 8px; }
+    .icon-button .dot { position: absolute; width: 5px; height: 5px; right: 6px; top: 5px; background: #e86d68; border: 1px solid #fff; border-radius: 50%; }
+    .top-avatar { width: 30px; height: 30px; margin-left: 8px; color: #fff; background: #253654; font-size: 7px; }
+
+    .content { padding: 20px 22px 25px; }
+    .page-heading { display: flex; align-items: center; margin-bottom: 16px; }
+    .page-heading h2 { margin: 0; color: #17243b; font: 700 19px/1.1 Manrope, sans-serif; letter-spacing: -.04em; }
+    .page-heading p { margin: 5px 0 0; color: #8590a2; font-size: 7.3px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; margin-left: 9px; color: #1c7c61; background: #e6f5ef; border: 1px solid #d5eee5; border-radius: 7px; font-size: 6px; font-weight: 700; }
+    .status-pill i { width: 5px; height: 5px; background: #2aad84; border-radius: 50%; box-shadow: 0 0 0 3px rgba(42,173,132,.1); }
+    .page-actions { display: flex; gap: 6px; margin-left: auto; }
+    .button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; color: #536078; background: #fff; border: 1px solid #dfe4eb; border-radius: 8px; font-size: 7px; font-weight: 700; }
+    .button svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .button.primary { color: #fff; background: var(--blue); border-color: var(--blue); box-shadow: 0 7px 15px rgba(56,103,244,.22); }
+
+    .top-grid { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(250px, .78fr); gap: 10px; }
+    .hero-card { position: relative; min-height: 157px; overflow: hidden; padding: 17px; color: #fff; background: linear-gradient(120deg, #16294e 0%, #1d3d78 58%, #285ddb 130%); border-radius: 14px; box-shadow: 0 10px 25px rgba(22,41,78,.16); }
+    .hero-card::before { content: ""; position: absolute; width: 260px; height: 260px; right: -80px; top: -126px; border: 40px solid rgba(255,255,255,.045); border-radius: 50%; }
+    .hero-card::after { content: ""; position: absolute; width: 135px; height: 135px; right: 64px; bottom: -105px; border: 26px solid rgba(69,124,250,.18); border-radius: 50%; }
+    .hero-title { position: relative; z-index: 1; display: flex; align-items: center; color: #b7c6e0; font-size: 6.7px; font-weight: 600; }
+    .hero-title span { margin-left: auto; color: #87a2cc; font-size: 6px; }
+    .hero-main { position: relative; z-index: 1; display: flex; align-items: end; margin-top: 16px; }
+    .hero-value { color: #fff; font: 700 29px/.9 Manrope, sans-serif; letter-spacing: -.06em; }
+    .hero-growth { display: inline-flex; align-items: center; gap: 3px; padding: 4px 6px; margin-left: 8px; color: #aff0d3; background: rgba(83,210,157,.13); border: 1px solid rgba(144,229,194,.16); border-radius: 6px; font-size: 6px; font-weight: 700; }
+    .hero-note { position: relative; z-index: 1; margin-top: 8px; color: #93a8ca; font-size: 6.3px; }
+    .hero-stats { position: absolute; z-index: 1; right: 17px; bottom: 16px; display: grid; grid-template-columns: repeat(3, 72px); gap: 6px; }
+    .hero-stat { padding: 9px; background: rgba(255,255,255,.085); border: 1px solid rgba(255,255,255,.09); border-radius: 9px; backdrop-filter: blur(8px); }
+    .hero-stat span { display: block; color: #91a6c8; font-size: 5.8px; }
+    .hero-stat b { display: block; margin-top: 6px; color: #fff; font-size: 13px; letter-spacing: -.03em; }
+    .hero-stat small { color: #9db0cf; font-size: 5.3px; }
+
+    .attention { min-height: 157px; padding: 14px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 14px rgba(28,43,67,.035); }
+    .card-head { display: flex; align-items: center; }
+    .card-head h3 { margin: 0; color: #2d3a51; font-size: 8.5px; font-weight: 700; }
+    .card-head p { margin: 3px 0 0; color: #9aa3b2; font-size: 5.8px; }
+    .card-link { margin-left: auto; color: #66758d; font-size: 6px; font-weight: 700; }
+    .attention-list { display: grid; gap: 5px; margin-top: 11px; }
+    .attention-row { display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 8px; padding: 7px 8px; background: #f8f9fb; border: 1px solid #edf0f4; border-radius: 9px; }
+    .attention-icon { display: grid; width: 25px; height: 25px; place-items: center; color: var(--tone); background: var(--tint); border-radius: 7px; }
+    .attention-icon svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .attention-row strong { display: block; color: #46536a; font-size: 6.5px; }
+    .attention-row small { display: block; margin-top: 2px; color: #9aa3b1; font-size: 5.4px; }
+    .attention-row time { padding: 4px 5px; color: var(--tone); background: var(--tint); border-radius: 5px; font-size: 5px; font-weight: 700; }
+
+    .middle-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .75fr); gap: 10px; margin-top: 10px; }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 14px rgba(28,43,67,.03); }
+    .chart-panel { min-height: 258px; padding: 14px; }
+    .segment { display: flex; gap: 2px; padding: 3px; margin-left: auto; background: #f3f5f8; border-radius: 7px; }
+    .segment span { padding: 5px 7px; color: #929cac; border-radius: 5px; font-size: 5.6px; font-weight: 700; }
+    .segment span.active { color: #42516a; background: #fff; box-shadow: 0 2px 6px rgba(33,48,71,.08); }
+    .chart-summary { display: flex; align-items: end; gap: 8px; margin-top: 14px; }
+    .chart-summary b { color: #1d2c43; font: 700 20px/.9 Manrope, sans-serif; letter-spacing: -.05em; }
+    .chart-summary span { color: #28a37e; font-size: 6px; font-weight: 700; }
+    .legend { display: flex; gap: 10px; margin-left: auto; color: #8390a2; font-size: 5.6px; }
+    .legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 2px; }
+    .chart { display: grid; grid-template-columns: 20px 1fr; height: 156px; margin-top: 9px; }
+    .y-axis { display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 19px; color: #a1aab7; font-size: 5.2px; }
+    .plot { position: relative; background: repeating-linear-gradient(to bottom, #edf1f5 0, #edf1f5 1px, transparent 1px, transparent 34px); }
+    .plot svg { position: absolute; inset: 3px 0 19px; width: 100%; height: calc(100% - 22px); overflow: visible; }
+    .x-axis { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; color: #a2abb8; font-size: 5.2px; }
+    .tooltip { position: absolute; top: 9px; right: 22%; padding: 6px 7px; color: #fff; background: #182844; border-radius: 6px; box-shadow: 0 6px 14px rgba(24,40,68,.2); font-size: 5.3px; }
+    .tooltip strong { display: block; margin-bottom: 2px; font-size: 6px; }
+    .tooltip::after { content: ""; position: absolute; left: 50%; bottom: -3px; width: 6px; height: 6px; background: #182844; transform: rotate(45deg); }
+
+    .journey { min-height: 258px; padding: 14px; }
+    .journey-total { display: flex; align-items: baseline; gap: 5px; margin-top: 11px; }
+    .journey-total b { color: #1e2d44; font: 700 21px Manrope, sans-serif; letter-spacing: -.05em; }
+    .journey-total span { color: #8a95a5; font-size: 6px; }
+    .pipeline-bar { display: flex; gap: 3px; height: 7px; margin-top: 9px; overflow: hidden; border-radius: 7px; }
+    .pipeline-bar i { height: 100%; background: var(--tone); width: var(--width); }
+    .journey-list { display: grid; margin-top: 10px; }
+    .journey-row { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 7px; padding: 7px 0; border-bottom: 1px solid #edf0f4; }
+    .journey-row:last-child { border-bottom: 0; }
+    .journey-row i { width: 8px; height: 8px; background: var(--tone); border-radius: 3px; box-shadow: 0 0 0 3px var(--tint); }
+    .journey-row strong { display: block; color: #526078; font-size: 6.4px; }
+    .journey-row small { display: block; margin-top: 2px; color: #9ba4b1; font-size: 5.2px; }
+    .journey-row b { color: #334159; font-size: 7px; }
+    .dispatch-cta { display: flex; align-items: center; padding: 9px; margin-top: 8px; color: #245f50; background: #ecf8f4; border: 1px solid #dcefe9; border-radius: 9px; }
+    .dispatch-cta svg { width: 12px; height: 12px; margin-right: 7px; stroke: #249372; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .dispatch-cta strong { display: block; font-size: 6.2px; }
+    .dispatch-cta span { display: block; margin-top: 2px; color: #6e9a8d; font-size: 5.2px; }
+    .dispatch-cta b { margin-left: auto; color: #269473; font-size: 8px; }
+
+    .bottom-grid { display: grid; grid-template-columns: 1.15fr .85fr .8fr; gap: 10px; margin-top: 10px; }
+    .small-panel { min-height: 145px; padding: 13px; }
+    .todo-list { margin-top: 8px; }
+    .todo { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 7px; padding: 8px 0; border-top: 1px solid #edf0f4; }
+    .check { width: 14px; height: 14px; border: 1.4px solid #c9d1dc; border-radius: 5px; }
+    .todo strong { display: block; color: #515f75; font-size: 6.2px; }
+    .todo small { display: block; margin-top: 2px; color: #99a3b1; font-size: 5.2px; }
+    .todo time { padding: 4px 5px; color: #c3665d; background: #fff0ee; border-radius: 5px; font-size: 5px; font-weight: 700; }
+    .activity-list { margin-top: 8px; }
+    .activity { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 7px; padding: 7px 0; border-top: 1px solid #edf0f4; }
+    .activity .avatar { width: 23px; height: 23px; color: #334c66; background: var(--ava); font-size: 5.5px; }
+    .activity strong { display: block; color: #515f75; font-size: 5.9px; }
+    .activity small { display: block; margin-top: 2px; color: #99a3b1; font-size: 5px; }
+    .activity time { color: #a2aab7; font-size: 5px; }
+    .readiness { position: relative; overflow: hidden; color: #fff; background: #172743; border-color: #172743; }
+    .readiness::after { content: ""; position: absolute; width: 120px; height: 120px; right: -52px; bottom: -63px; border: 20px solid rgba(79,121,242,.15); border-radius: 50%; }
+    .readiness .card-head h3 { color: #dce5f4; }
+    .readiness .card-head p { color: #7386a6; }
+    .readiness-number { position: relative; z-index: 1; display: flex; align-items: end; gap: 5px; margin-top: 13px; }
+    .readiness-number b { font: 700 25px/.9 Manrope, sans-serif; letter-spacing: -.06em; }
+    .readiness-number span { color: #86a0c7; font-size: 5.7px; }
+    .readiness-bar { position: relative; z-index: 1; height: 6px; margin-top: 11px; overflow: hidden; background: rgba(255,255,255,.09); border-radius: 6px; }
+    .readiness-bar i { display: block; width: 74%; height: 100%; background: linear-gradient(90deg, #3d73f5, #61d4ad); border-radius: inherit; }
+    .readiness-meta { position: relative; z-index: 1; display: flex; margin-top: 9px; color: #8094b4; font-size: 5.2px; }
+    .readiness-meta b { margin-left: auto; color: #a6b8d3; font-weight: 600; }
+
+    .stage-note { margin: 23px auto 0; text-align: center; color: #68778b; font-size: 12px; line-height: 1.6; }
+    .stage-note strong { color: #2f4059; }
+
+    @media (max-width: 1000px) {
+      .page { width: calc(100% - 18px); padding-top: 28px; }
+      .stage-head { display: block; }
+      .revision-list { justify-content: flex-start; margin: 16px 0 0; }
+      .browser { overflow-x: auto; }
+      .choice-bar small { display: none; }
+    }
+    @media (max-width: 620px) {
+      .stage-head h1 { font-size: 34px; }
+      .stage-head p { font-size: 12px; }
+      .choice { padding: 7px; border-radius: 20px; }
+      .browser { border-radius: 13px; }
+      .approve { display: none; }
+      .app { min-width: 1060px; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+    <symbol id="i-orders" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12l8.73-5.04M12 22V12"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M10 17h4V5H2v12h3"/><path d="M14 8h4l4 4v5h-3"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 0 0 6v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a3 3 0 0 0 0-6V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M13 5v2M13 11v2M13 17v2"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1v.1a2 2 0 0 1-4 0V21a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4h-.1a2 2 0 0 1 0-4H3a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1v-.1a2 2 0 0 1 4 0V3A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.36.34.7.6 1 .27.28.63.43 1 .4h.1a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6.6z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 9V3h4v6l5 9a2 2 0 0 1-2 3H7a2 2 0 0 1-2-3z"/><path d="M8 15h8"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></symbol>
+  </svg>
+
+  <main class="page">
+    <header class="stage-head">
+      <div>
+        <div class="stage-kicker"><i></i> Atlas refinement</div>
+        <h1>Atlas 2.0 — more polished, less generic.</h1>
+        <p>I kept the clarity you liked, then made the hierarchy more deliberate: one strong revenue surface, a real attention queue, cleaner typography and fewer repetitive cards.</p>
+      </div>
+      <div class="revision-list"><span>Stronger hierarchy</span><span>Readable density</span><span>Premium navy + cobalt</span><span>Operational focus</span></div>
+    </header>
+
+    <section class="choice" data-choice="approve-atlas-2-premium" onclick="toggleSelect(this)">
+      <div class="choice-bar"><span class="version">2.0</span><strong>Recommended refinement</strong><small>Dashboard / overview screen</small><span class="approve">Click to approve Atlas 2.0</span></div>
+      <div class="browser">
+        <div class="browser-top"><span class="browser-dots"><i></i><i></i><i></i></span><div class="browser-url">app.gborganiser.com / winter-peptide-run / overview</div><span class="browser-menu">•••</span></div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><span class="brand-mark"></span> gb.organiser</div>
+            <div class="workspace-switch"><span class="workspace-avatar">W25</span><div><small>Active group buy</small><strong>Winter Peptide Run 2025</strong></div><b>⌄</b></div>
+            <div class="nav-section"><div class="nav-title">Workspace</div>
+              <div class="nav-item active"><svg><use href="#i-grid"/></svg>Overview</div>
+              <div class="nav-item"><svg><use href="#i-check"/></svg>Todo list<span class="nav-count">4</span></div>
+              <div class="nav-item"><svg><use href="#i-orders"/></svg>Orders<span class="nav-count">7</span></div>
+              <div class="nav-item"><svg><use href="#i-users"/></svg>Members<span class="nav-count">42</span></div>
+            </div>
+            <div class="nav-section"><div class="nav-title">Operations</div>
+              <div class="nav-item"><svg><use href="#i-box"/></svg>Products</div>
+              <div class="nav-item"><svg><use href="#i-truck"/></svg>Dispatch<span class="nav-count">2</span></div>
+              <div class="nav-item"><svg><use href="#i-shield"/></svg>Lab &amp; COAs<span class="nav-count">2</span></div>
+              <div class="nav-item"><svg><use href="#i-ticket"/></svg>Tickets<span class="nav-count">3</span></div>
+              <div class="nav-item"><svg><use href="#i-send"/></svg>Broadcast</div>
+            </div>
+            <div class="nav-section"><div class="nav-title">Manage</div>
+              <div class="nav-item"><svg><use href="#i-settings"/></svg>Group buy settings</div>
+              <div class="nav-item"><svg><use href="#i-help"/></svg>Help centre</div>
+            </div>
+            <div class="sidebar-foot">
+              <div class="capacity"><div class="capacity-head"><span>Member capacity</span><b>42 / 60</b></div><div class="capacity-bar"><i></i></div></div>
+              <div class="user"><div class="avatar">AM</div><div><strong>Alex Morgan</strong><span>Lead organiser</span></div><div class="user-more">•••</div></div>
+            </div>
+          </aside>
+
+          <div class="shell">
+            <header class="topbar">
+              <div class="breadcrumb"><span>Group buys</span><span class="separator">/</span><strong>Winter Peptide Run 2025</strong></div>
+              <div class="search"><svg><use href="#i-search"/></svg>Search orders, members, tasks <kbd>⌘K</kbd></div>
+              <span class="icon-button"><svg><use href="#i-help"/></svg></span>
+              <span class="icon-button"><svg><use href="#i-bell"/></svg><i class="dot"></i></span>
+              <div class="avatar top-avatar">AM</div>
+            </header>
+
+            <main class="content">
+              <div class="page-heading">
+                <div><h2>Good morning, Alex</h2><p>Tuesday, 14 July · Here’s what needs your attention today.</p></div>
+                <span class="status-pill"><i></i> Buy active · 4 days left</span>
+                <div class="page-actions"><button class="button"><svg><use href="#i-export"/></svg>Export</button><button class="button primary"><svg><use href="#i-plus"/></svg>Add order</button></div>
+              </div>
+
+              <div class="top-grid">
+                <section class="hero-card">
+                  <div class="hero-title">Collected revenue <span>Winter Peptide Run 2025</span></div>
+                  <div class="hero-main"><b class="hero-value">£925</b><span class="hero-growth">↗ 12.4%</span></div>
+                  <div class="hero-note">£145 received today · next target £1,250</div>
+                  <div class="hero-stats">
+                    <div class="hero-stat"><span>Members</span><b>42</b><small>70% capacity</small></div>
+                    <div class="hero-stat"><span>Active orders</span><b>7</b><small>4 stages</small></div>
+                    <div class="hero-stat"><span>Avg. order</span><b>£132</b><small>across this buy</small></div>
+                  </div>
+                </section>
+
+                <section class="attention">
+                  <div class="card-head"><div><h3>Needs your attention</h3><p>Four actions are holding up progress</p></div><span class="card-link">View todo →</span></div>
+                  <div class="attention-list">
+                    <div class="attention-row" style="--tone:#c25f57;--tint:#fff0ee"><span class="attention-icon"><svg><use href="#i-flask"/></svg></span><div><strong>Verify vendor COA</strong><small>Batch WPR-04 · Quality</small></div><time>Today</time></div>
+                    <div class="attention-row" style="--tone:#bd791c;--tint:#fff5e7"><span class="attention-icon"><svg><use href="#i-card"/></svg></span><div><strong>Chase pending payment</strong><small>Order #1049 · Jordan R.</small></div><time>2h</time></div>
+                    <div class="attention-row" style="--tone:#2b7895;--tint:#eaf6fa"><span class="attention-icon"><svg><use href="#i-truck"/></svg></span><div><strong>Print two packing slips</strong><small>Orders cleared for dispatch</small></div><time>Ready</time></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="middle-grid">
+                <section class="panel chart-panel">
+                  <div class="card-head"><div><h3>Order momentum</h3><p>Payment and fulfilment activity for this group buy</p></div><div class="segment"><span>7 days</span><span class="active">30 days</span><span>All time</span></div></div>
+                  <div class="chart-summary"><b>18 orders</b><span>↗ 4 this week</span><div class="legend"><span><i style="background:#3867f4"></i>Paid</span><span><i style="background:#27ad86"></i>Fulfilled</span></div></div>
+                  <div class="chart"><div class="y-axis"><span>16</span><span>12</span><span>8</span><span>4</span><span>0</span></div><div class="plot">
+                    <svg viewBox="0 0 650 135" preserveAspectRatio="none"><defs><linearGradient id="paidFill2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3867f4" stop-opacity=".23"/><stop offset="1" stop-color="#3867f4" stop-opacity="0"/></linearGradient></defs><path d="M0 117 C41 106 66 112 105 92 S164 101 205 73 S269 85 311 55 S371 71 418 38 S485 56 526 27 S593 41 650 9 L650 135 L0 135Z" fill="url(#paidFill2)"/><path d="M0 117 C41 106 66 112 105 92 S164 101 205 73 S269 85 311 55 S371 71 418 38 S485 56 526 27 S593 41 650 9" stroke="#3867f4" stroke-width="3" fill="none"/><path d="M0 128 C48 121 76 126 122 112 S183 119 230 98 S292 108 338 82 S402 96 449 66 S514 81 560 52 S614 64 650 37" stroke="#27ad86" stroke-width="2.5" stroke-dasharray="6 6" fill="none"/><circle cx="526" cy="27" r="4" fill="#fff" stroke="#3867f4" stroke-width="3"/></svg>
+                    <div class="tooltip"><strong>9 July</strong>4 paid · 2 fulfilled</div>
+                    <div class="x-axis"><span>15 Jun</span><span>21 Jun</span><span>27 Jun</span><span>3 Jul</span><span>9 Jul</span><span>14 Jul</span></div>
+                  </div></div>
+                </section>
+
+                <section class="panel journey">
+                  <div class="card-head"><div><h3>Order journey</h3><p>Seven active orders across four stages</p></div><span class="card-link">View orders →</span></div>
+                  <div class="journey-total"><b>7</b><span>orders in motion</span></div>
+                  <div class="pipeline-bar"><i style="--tone:#e56c66;--width:14.2%"></i><i style="--tone:#eba643;--width:28.6%"></i><i style="--tone:#4d83ed;--width:28.6%"></i><i style="--tone:#27ad86;--width:28.6%"></i></div>
+                  <div class="journey-list">
+                    <div class="journey-row" style="--tone:#e56c66;--tint:#fff0ee"><i></i><div><strong>Awaiting payment</strong><small>Reminder sent 36 min ago</small></div><b>1</b></div>
+                    <div class="journey-row" style="--tone:#eba643;--tint:#fff5e8"><i></i><div><strong>Paid</strong><small>Ready to prepare</small></div><b>2</b></div>
+                    <div class="journey-row" style="--tone:#4d83ed;--tint:#edf3ff"><i></i><div><strong>Packing</strong><small>Slips waiting to print</small></div><b>2</b></div>
+                    <div class="journey-row" style="--tone:#27ad86;--tint:#eaf8f3"><i></i><div><strong>Dispatched</strong><small>Tracking shared</small></div><b>2</b></div>
+                  </div>
+                  <div class="dispatch-cta"><svg><use href="#i-truck"/></svg><div><strong>Two orders ready to dispatch</strong><span>Addresses and payment verified</span></div><b>→</b></div>
+                </section>
+              </div>
+
+              <div class="bottom-grid">
+                <section class="panel small-panel">
+                  <div class="card-head"><div><h3>Next best actions</h3><p>Prioritised for today</p></div><span class="card-link">Open todo list →</span></div>
+                  <div class="todo-list"><div class="todo"><i class="check"></i><div><strong>Verify vendor COA batch WPR-04</strong><small>Lab &amp; compliance · High priority</small></div><time>Today</time></div><div class="todo"><i class="check"></i><div><strong>Send payment reminder to Jordan R.</strong><small>Order #1049 · Awaiting payment</small></div><time>2h</time></div></div>
+                </section>
+                <section class="panel small-panel">
+                  <div class="card-head"><div><h3>Member activity</h3><p>Latest workspace events</p></div><span class="card-link">See all →</span></div>
+                  <div class="activity-list"><div class="activity" style="--ava:#d9eaff"><div class="avatar">JD</div><div><strong>Jamie D. paid £145</strong><small>Order #1048</small></div><time>8m</time></div><div class="activity" style="--ava:#d9f0df"><div class="avatar">SK</div><div><strong>Sam K. joined the buy</strong><small>Member #42</small></div><time>36m</time></div></div>
+                </section>
+                <section class="panel small-panel readiness">
+                  <div class="card-head"><div><h3>Dispatch readiness</h3><p>Based on paid orders</p></div></div>
+                  <div class="readiness-number"><b>74%</b><span>ready</span></div>
+                  <div class="readiness-bar"><i></i></div>
+                  <div class="readiness-meta"><span>2 orders cleared</span><b>Open desk →</b></div>
+                </section>
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+    </section>
+    <p class="stage-note"><strong>Click the mockup to approve it</strong>, or tell me what still feels wrong—colour, spacing, navigation, card style or overall personality.</p>
+  </main>
+</body>
+</html>

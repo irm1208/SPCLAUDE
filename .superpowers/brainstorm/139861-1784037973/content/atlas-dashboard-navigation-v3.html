@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlas 2.1 — Dashboard navigation and unified typography</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    :root {
+      --rail: #032d60;
+      --brand-navy: #1b3a7a;
+      --brand-blue: #2d6bcc;
+      --deep-navy: #1b3164;
+      --heading: #0f1f38;
+      --body: #374151;
+      --muted: #6b7280;
+      --subtle: #8a9aaa;
+      --canvas: #f8fafc;
+      --card: #ffffff;
+      --border: #dfe6ee;
+      --blue-soft: rgba(45,107,204,.09);
+      --green: #179b6b;
+      --amber: #e9a020;
+      --red: #dc615e;
+      --cyan: #2c83a1;
+      --label: 10px;
+      --meta: 11px;
+      --body-size: 13px;
+      --card-title: 14px;
+      --page-title: 26px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--heading);
+      background:
+        radial-gradient(circle at 3% -10%, rgba(45,107,204,.10), transparent 28rem),
+        radial-gradient(circle at 98% 90%, rgba(23,155,107,.06), transparent 25rem),
+        #eef2f6;
+      font-family: Inter, sans-serif;
+    }
+    button, input { font: inherit; }
+    svg { display: block; }
+    .page { width: min(1580px, calc(100% - 36px)); margin: 0 auto; padding: 40px 0 80px; }
+    .intro { display: flex; align-items: end; gap: 26px; margin-bottom: 22px; }
+    .kicker { display: flex; align-items: center; gap: 8px; color: #52657d; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .kicker::before { content: ""; width: 24px; height: 2px; background: var(--brand-blue); border-radius: 2px; }
+    .intro h1 { margin: 8px 0 0; color: #102039; font-size: clamp(31px, 4vw, 48px); line-height: 1; letter-spacing: -.05em; }
+    .intro p { max-width: 710px; margin: 12px 0 0; color: #6d7a8d; font-size: 14px; line-height: 1.65; }
+    .scale { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+    .scale span { padding: 7px 9px; color: #5e6d81; background: rgba(255,255,255,.82); border: 1px solid #dce3eb; border-radius: 8px; font-size: 10px; font-weight: 700; box-shadow: 0 4px 12px rgba(26,42,66,.04); }
+    .choice { padding: 10px; background: rgba(255,255,255,.74); border: 1px solid rgba(22,39,63,.12); border-radius: 27px; box-shadow: 0 26px 70px rgba(21,37,61,.13); cursor: pointer; transition: .2s ease; }
+    .choice:hover { transform: translateY(-2px); box-shadow: 0 32px 78px rgba(21,37,61,.16); }
+    .choice.selected { border-color: var(--brand-blue); box-shadow: 0 0 0 4px rgba(45,107,204,.14), 0 32px 78px rgba(21,37,61,.16); }
+    .choice-head { display: flex; align-items: center; min-height: 50px; padding: 0 10px 0 12px; }
+    .version { display: grid; width: 34px; height: 34px; margin-right: 10px; place-items: center; color: #fff; background: linear-gradient(135deg, var(--brand-blue), var(--brand-navy)); border-radius: 10px; font-size: 10px; font-weight: 800; box-shadow: 0 7px 17px rgba(45,107,204,.25); }
+    .choice-head strong { font-size: 14px; }
+    .choice-head small { margin-left: 8px; color: #7e8999; font-size: 11px; }
+    .approve { margin-left: auto; padding: 9px 12px; color: #44546c; background: #fff; border: 1px solid #d9e1ea; border-radius: 9px; font-size: 10px; font-weight: 700; }
+    .choice.selected .approve { color: #fff; background: var(--brand-blue); border-color: var(--brand-blue); }
+    .browser { overflow: hidden; background: #fff; border: 1px solid rgba(16,32,56,.14); border-radius: 18px; box-shadow: 0 14px 36px rgba(22,38,61,.12); }
+    .browser-bar { display: flex; align-items: center; height: 34px; padding: 0 13px; background: #fafbfc; border-bottom: 1px solid #e2e7ed; }
+    .browser-dots { display: flex; gap: 5px; }
+    .browser-dots i { width: 7px; height: 7px; background: #d6dce4; border-radius: 50%; }
+    .browser-url { display: grid; width: 310px; height: 19px; margin: auto; place-items: center; color: #9aa4b2; background: #eef1f4; border-radius: 6px; font-size: 8px; }
+    .browser-menu { color: #9aa4b2; font-size: 10px; letter-spacing: .1em; }
+
+    .app { display: grid; grid-template-columns: 56px 218px minmax(0, 1fr); min-width: 1260px; min-height: 790px; background: var(--canvas); font-size: var(--body-size); }
+    .rail { display: flex; flex-direction: column; align-items: center; min-height: 790px; padding: 17px 0 14px; color: rgba(255,255,255,.62); background: var(--rail); }
+    .rail-logo { display: grid; width: 38px; height: 38px; place-items: center; color: #fff; background: var(--brand-blue); border-radius: 8px; font-size: 13px; font-weight: 800; box-shadow: inset 0 0 0 1px rgba(255,255,255,.13); }
+    .rail-nav { display: grid; gap: 5px; margin-top: 21px; }
+    .rail-divider { width: 28px; height: 1px; margin: 10px 0 5px; background: rgba(255,255,255,.14); }
+    .rail-button { position: relative; display: grid; width: 40px; height: 40px; place-items: center; color: rgba(255,255,255,.62); border-radius: 7px; }
+    .rail-button.active { color: #fff; background: rgba(255,255,255,.16); }
+    .rail-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .rail-button.active svg { stroke-width: 2.4; }
+    .rail-button .notice { position: absolute; right: 7px; top: 6px; width: 6px; height: 6px; background: #f3b04d; border: 1px solid var(--rail); border-radius: 50%; }
+    .rail-bottom { display: grid; gap: 5px; padding-top: 10px; margin-top: auto; border-top: 1px solid rgba(255,255,255,.14); }
+    .rail-avatar { display: grid; width: 34px; height: 34px; margin: 7px auto 0; place-items: center; color: #17376d; background: #c4dcff; border: 2px solid rgba(255,255,255,.2); border-radius: 50%; font-size: 10px; font-weight: 800; }
+
+    .side-panel { min-height: 790px; background: #fff; border-right: 1px solid var(--border); }
+    .side-brand { display: flex; align-items: center; height: 70px; padding: 0 17px; border-bottom: 1px solid #edf1f5; }
+    .side-brand strong { color: var(--heading); font-size: 18px; font-weight: 800; letter-spacing: -.03em; }
+    .side-brand svg { width: 17px; height: 17px; margin-left: auto; color: #93a0b0; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .side-scroll { padding: 13px 12px 16px; }
+    .workspace { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 9px; padding: 9px 10px; margin-bottom: 18px; background: #f7f9fc; border: 1px solid #e5ebf2; border-radius: 10px; }
+    .workspace-mark { display: grid; width: 34px; height: 34px; place-items: center; color: #fff; background: linear-gradient(135deg, var(--brand-blue), var(--brand-navy)); border-radius: 9px; font-size: 9px; font-weight: 800; }
+    .workspace label { display: block; color: var(--subtle); font-size: var(--label); font-weight: 700; line-height: 1; }
+    .workspace strong { display: block; overflow: hidden; margin-top: 5px; color: var(--body); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .workspace b { color: #96a1af; font-size: 12px; }
+    .nav-group { margin-top: 20px; }
+    .nav-group:first-of-type { margin-top: 0; }
+    .nav-label { padding: 0 12px; margin-bottom: 7px; color: var(--subtle); font-size: 12px; font-weight: 600; letter-spacing: .01em; }
+    .nav-items { display: grid; gap: 2px; }
+    .nav-item { position: relative; display: flex; align-items: center; gap: 11px; height: 40px; padding: 0 12px; color: #5c6675; border-radius: 7px; font-size: 13.5px; font-weight: 600; }
+    .nav-item svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .nav-item.active { color: var(--brand-blue); background: var(--blue-soft); font-weight: 700; }
+    .nav-item.active::before { content: ""; position: absolute; left: -12px; top: 11px; bottom: 11px; width: 3px; background: var(--brand-blue); border-radius: 0 4px 4px 0; }
+    .nav-count { display: grid; min-width: 21px; height: 21px; padding: 0 6px; margin-left: auto; place-items: center; color: #657186; background: #edf1f5; border-radius: 7px; font-size: 10px; font-weight: 700; }
+    .nav-item.active .nav-count { color: var(--brand-blue); background: rgba(45,107,204,.10); }
+    .side-footer { padding: 13px 12px; margin-top: 19px; border-top: 1px solid #edf1f5; }
+    .side-footer .nav-item { height: 38px; }
+
+    .main { min-width: 0; background: var(--canvas); }
+    .topbar { display: flex; align-items: center; height: 64px; padding: 0 24px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border); }
+    .breadcrumb { display: flex; align-items: center; gap: 8px; color: var(--subtle); font-size: var(--meta); }
+    .breadcrumb strong { color: var(--body); font-weight: 600; }
+    .search { display: flex; align-items: center; gap: 8px; width: 260px; height: 36px; padding: 0 11px; margin-left: auto; color: var(--subtle); background: #f7f9fb; border: 1px solid #e1e7ed; border-radius: 8px; font-size: var(--meta); }
+    .search svg, .top-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .search kbd { margin-left: auto; padding: 3px 5px; color: #8d98a8; background: #fff; border: 1px solid #d9e0e8; border-radius: 5px; font-size: 9px; }
+    .top-icon { position: relative; display: grid; width: 36px; height: 36px; margin-left: 8px; place-items: center; color: #657286; background: #fff; border: 1px solid #e0e6ed; border-radius: 8px; }
+    .top-icon i { position: absolute; width: 6px; height: 6px; right: 7px; top: 6px; background: var(--red); border: 1px solid #fff; border-radius: 50%; }
+    .profile { display: flex; align-items: center; gap: 8px; margin-left: 10px; }
+    .avatar { display: grid; place-items: center; border-radius: 50%; font-weight: 800; }
+    .profile .avatar { width: 34px; height: 34px; color: #fff; background: var(--deep-navy); font-size: 10px; }
+    .profile strong { display: block; color: var(--body); font-size: 12px; }
+    .profile span { display: block; margin-top: 2px; color: var(--subtle); font-size: 10px; }
+
+    .content { padding: 23px 24px 26px; }
+    .page-head { display: flex; align-items: center; margin-bottom: 18px; }
+    .page-head h2 { margin: 0; color: var(--heading); font-size: var(--page-title); line-height: 1.05; letter-spacing: -.04em; }
+    .page-head p { margin: 7px 0 0; color: var(--muted); font-size: var(--body-size); }
+    .live-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; margin-left: 11px; color: #19795a; background: #eaf7f2; border: 1px solid #d6efe5; border-radius: 8px; font-size: var(--label); font-weight: 700; }
+    .live-pill i { width: 6px; height: 6px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 3px rgba(23,155,107,.10); }
+    .actions { display: flex; gap: 7px; margin-left: auto; }
+    .button { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px; color: #536176; background: #fff; border: 1px solid #dbe2ea; border-radius: 9px; font-size: 12px; font-weight: 700; }
+    .button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+    .button.primary { color: #fff; background: var(--brand-navy); border-color: var(--brand-navy); box-shadow: 0 7px 15px rgba(27,58,122,.18); }
+
+    .summary-grid { display: grid; grid-template-columns: 1.35fr repeat(3, .72fr); gap: 11px; }
+    .revenue { position: relative; min-height: 134px; overflow: hidden; padding: 18px; color: #fff; background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-navy) 100%); border-radius: 14px; box-shadow: 0 9px 22px rgba(27,58,122,.16); }
+    .revenue::after { content: ""; position: absolute; width: 170px; height: 170px; right: -62px; top: -82px; border: 30px solid rgba(255,255,255,.075); border-radius: 50%; }
+    .revenue label { position: relative; z-index: 1; color: rgba(255,255,255,.75); font-size: var(--label); font-weight: 700; letter-spacing: .04em; }
+    .revenue b { position: relative; z-index: 1; display: block; margin-top: 17px; font-size: 36px; line-height: .9; letter-spacing: -.06em; }
+    .revenue p { position: relative; z-index: 1; margin: 11px 0 0; color: rgba(255,255,255,.72); font-size: var(--meta); }
+    .revenue p strong { color: #c9f4e2; }
+    .stat { min-height: 134px; padding: 17px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 4px 13px rgba(24,40,63,.035); }
+    .stat-head { display: flex; align-items: center; color: var(--muted); font-size: var(--meta); font-weight: 600; }
+    .stat-icon { display: grid; width: 30px; height: 30px; margin-right: 9px; place-items: center; color: var(--tone); background: var(--tint); border-radius: 8px; }
+    .stat-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .stat b { display: block; margin-top: 17px; color: var(--heading); font-size: 28px; line-height: .9; letter-spacing: -.05em; }
+    .stat small { display: block; margin-top: 10px; color: var(--subtle); font-size: var(--meta); }
+
+    .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 11px; margin-top: 11px; }
+    .panel { background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 4px 13px rgba(24,40,63,.03); }
+    .chart-panel { min-height: 286px; padding: 17px; }
+    .panel-head { display: flex; align-items: center; }
+    .panel-head h3 { margin: 0; color: var(--heading); font-size: var(--card-title); font-weight: 700; }
+    .panel-head p { margin: 5px 0 0; color: var(--subtle); font-size: var(--meta); }
+    .tabs { display: flex; gap: 3px; padding: 3px; margin-left: auto; background: #f2f5f8; border-radius: 8px; }
+    .tabs span { padding: 6px 9px; color: #8b96a5; border-radius: 6px; font-size: var(--label); font-weight: 700; }
+    .tabs span.active { color: var(--body); background: #fff; box-shadow: 0 2px 6px rgba(23,40,64,.08); }
+    .chart-summary { display: flex; align-items: baseline; gap: 8px; margin-top: 17px; }
+    .chart-summary b { color: var(--heading); font-size: 22px; letter-spacing: -.04em; }
+    .chart-summary span { color: var(--green); font-size: var(--meta); font-weight: 700; }
+    .legend { display: flex; gap: 13px; margin-left: auto; color: var(--muted); font-size: var(--label); }
+    .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; }
+    .chart { display: grid; grid-template-columns: 26px 1fr; height: 177px; margin-top: 11px; }
+    .y-axis { display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 21px; color: var(--subtle); font-size: 9px; }
+    .plot { position: relative; background: repeating-linear-gradient(to bottom, #edf1f5 0, #edf1f5 1px, transparent 1px, transparent 38px); }
+    .plot svg { position: absolute; inset: 4px 0 21px; width: 100%; height: calc(100% - 25px); overflow: visible; }
+    .x-axis { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; color: var(--subtle); font-size: 9px; }
+    .tooltip { position: absolute; top: 8px; right: 20%; padding: 7px 9px; color: #fff; background: var(--deep-navy); border-radius: 7px; box-shadow: 0 7px 16px rgba(27,49,100,.22); font-size: 9px; }
+    .tooltip strong { display: block; margin-bottom: 3px; font-size: 10px; }
+
+    .attention { min-height: 286px; padding: 17px; }
+    .panel-link { margin-left: auto; color: var(--brand-blue); font-size: var(--meta); font-weight: 700; }
+    .attention-summary { display: flex; align-items: baseline; gap: 6px; margin-top: 17px; }
+    .attention-summary b { color: var(--heading); font-size: 25px; letter-spacing: -.05em; }
+    .attention-summary span { color: var(--muted); font-size: var(--meta); }
+    .attention-list { display: grid; gap: 7px; margin-top: 12px; }
+    .attention-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; padding: 9px 10px; background: #f8fafc; border: 1px solid #e8edf3; border-radius: 10px; }
+    .attention-icon { display: grid; width: 34px; height: 34px; place-items: center; color: var(--tone); background: var(--tint); border-radius: 9px; }
+    .attention-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .attention-row strong { display: block; color: var(--body); font-size: var(--body-size); font-weight: 600; }
+    .attention-row small { display: block; margin-top: 4px; color: var(--subtle); font-size: var(--meta); }
+    .attention-row time { padding: 5px 7px; color: var(--tone); background: var(--tint); border-radius: 6px; font-size: var(--label); font-weight: 700; }
+    .dispatch-callout { display: flex; align-items: center; padding: 11px; margin-top: 9px; color: #236a57; background: #ebf8f3; border: 1px solid #d7efe6; border-radius: 10px; }
+    .dispatch-callout svg { width: 18px; height: 18px; margin-right: 9px; fill: none; stroke: var(--green); stroke-width: 2; }
+    .dispatch-callout strong { display: block; font-size: var(--body-size); }
+    .dispatch-callout span { display: block; margin-top: 3px; color: #6b988b; font-size: var(--meta); }
+    .dispatch-callout b { margin-left: auto; color: var(--green); font-size: 15px; }
+
+    .bottom-grid { display: grid; grid-template-columns: 1.1fr .9fr .72fr; gap: 11px; margin-top: 11px; }
+    .small-panel { min-height: 170px; padding: 16px; }
+    .todo, .activity { display: grid; align-items: center; gap: 9px; padding: 11px 0; border-top: 1px solid #edf1f5; }
+    .todo { grid-template-columns: 18px 1fr auto; }
+    .todo:first-child, .activity:first-child { margin-top: 10px; }
+    .check { width: 17px; height: 17px; border: 1.5px solid #c8d1dc; border-radius: 5px; }
+    .todo strong, .activity strong { display: block; color: var(--body); font-size: var(--body-size); font-weight: 600; }
+    .todo small, .activity small { display: block; margin-top: 4px; color: var(--subtle); font-size: var(--meta); }
+    .todo time { padding: 5px 7px; color: #bd5d56; background: #fff0ee; border-radius: 6px; font-size: var(--label); font-weight: 700; }
+    .activity { grid-template-columns: 30px 1fr auto; }
+    .activity .avatar { width: 30px; height: 30px; color: #2b4e70; background: var(--ava); font-size: 9px; }
+    .activity time { color: var(--subtle); font-size: var(--label); }
+    .readiness { position: relative; overflow: hidden; color: #fff; background: var(--deep-navy); border-color: var(--deep-navy); }
+    .readiness::after { content: ""; position: absolute; width: 130px; height: 130px; right: -62px; bottom: -70px; border: 22px solid rgba(67,113,214,.16); border-radius: 50%; }
+    .readiness .panel-head h3 { color: #fff; }
+    .readiness .panel-head p { color: rgba(255,255,255,.58); }
+    .readiness b.score { position: relative; z-index: 1; display: block; margin-top: 20px; font-size: 32px; line-height: .9; letter-spacing: -.06em; }
+    .ready-bar { position: relative; z-index: 1; height: 7px; margin-top: 16px; overflow: hidden; background: rgba(255,255,255,.10); border-radius: 7px; }
+    .ready-bar i { display: block; width: 74%; height: 100%; background: linear-gradient(90deg, #4d80ef, #5bd1a9); border-radius: inherit; }
+    .ready-meta { position: relative; z-index: 1; display: flex; margin-top: 11px; color: rgba(255,255,255,.58); font-size: var(--meta); }
+    .ready-meta strong { margin-left: auto; color: #b8c9ea; }
+    .note { margin: 22px 0 0; color: #6e7c8f; text-align: center; font-size: 12px; }
+    .note strong { color: #31425a; }
+
+    @media (max-width: 1050px) {
+      .page { width: calc(100% - 18px); padding-top: 28px; }
+      .intro { display: block; }
+      .scale { justify-content: flex-start; margin: 16px 0 0; }
+      .browser { overflow-x: auto; }
+    }
+    @media (max-width: 620px) {
+      .intro h1 { font-size: 34px; }
+      .intro p { font-size: 12px; }
+      .choice { padding: 7px; border-radius: 20px; }
+      .choice-head small, .approve { display: none; }
+      .browser { border-radius: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="orders" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+    <symbol id="box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73z"/><path d="M3.27 6.96L12 12l8.73-5.04M12 22V12"/></symbol>
+    <symbol id="truck" viewBox="0 0 24 24"><path d="M10 17h4V5H2v12h3"/><path d="M14 8h4l4 4v5h-3"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></symbol>
+    <symbol id="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="ticket" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 0 0 6v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a3 3 0 0 0 0-6V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M13 5v2M13 11v2M13 17v2"/></symbol>
+    <symbol id="send" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></symbol>
+    <symbol id="settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1v.1a2 2 0 0 1-4 0V21a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4h-.1a2 2 0 0 1 0-4H3a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1v-.1a2 2 0 0 1 4 0V3A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.36.34.7.6 1 .27.28.63.43 1 .4h.1a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6.6z"/></symbol>
+    <symbol id="help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/></symbol>
+    <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+    <symbol id="bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></symbol>
+    <symbol id="flask" viewBox="0 0 24 24"><path d="M9 3h6M10 9V3h4v6l5 9a2 2 0 0 1-2 3H7a2 2 0 0 1-2-3z"/><path d="M8 15h8"/></symbol>
+  </svg>
+
+  <main class="page">
+    <header class="intro">
+      <div><div class="kicker">Atlas refinement · navigation + typography</div><h1>Atlas 2.1 now speaks the same language as your dashboard.</h1><p>The organiser keeps its SaaS workspace layout, but the navigation now uses the dashboard’s navy icon rail and white labelled panel. Every screen element follows one consistent type scale.</p></div>
+      <div class="scale"><span>Labels 10px</span><span>Metadata 11px</span><span>Body 13px</span><span>Card titles 14px</span><span>Page title 26px</span></div>
+    </header>
+
+    <section class="choice" data-choice="approve-atlas-2-1-dashboard-nav" onclick="toggleSelect(this)">
+      <div class="choice-head"><span class="version">2.1</span><strong>Dashboard-connected Atlas</strong><small>Unified navigation and text sizing</small><span class="approve">Click to approve Atlas 2.1</span></div>
+      <div class="browser">
+        <div class="browser-bar"><span class="browser-dots"><i></i><i></i><i></i></span><div class="browser-url">pepsanonymous.com / gborganiser-v2 / overview</div><span class="browser-menu">•••</span></div>
+        <div class="app">
+          <aside class="rail">
+            <div class="rail-logo">P</div>
+            <nav class="rail-nav">
+              <span class="rail-button active"><svg><use href="#grid"/></svg></span>
+              <span class="rail-button"><svg><use href="#orders"/></svg></span>
+              <span class="rail-button"><svg><use href="#users"/></svg></span>
+              <span class="rail-divider"></span>
+              <span class="rail-button"><svg><use href="#truck"/></svg><i class="notice"></i></span>
+              <span class="rail-button"><svg><use href="#shield"/></svg></span>
+              <span class="rail-button"><svg><use href="#ticket"/></svg></span>
+            </nav>
+            <div class="rail-bottom"><span class="rail-button"><svg><use href="#help"/></svg></span><span class="rail-button"><svg><use href="#settings"/></svg></span><span class="rail-button"><svg><use href="#panel"/></svg></span><span class="rail-avatar">AM</span></div>
+          </aside>
+
+          <aside class="side-panel">
+            <div class="side-brand"><strong>Peps Anonymous</strong><svg><use href="#panel"/></svg></div>
+            <div class="side-scroll">
+              <div class="workspace"><span class="workspace-mark">W25</span><div><label>ACTIVE GROUP BUY</label><strong>Winter Peptide Run 2025</strong></div><b>⌄</b></div>
+              <nav class="nav-group"><div class="nav-label">Workspace</div><div class="nav-items">
+                <span class="nav-item active"><svg><use href="#grid"/></svg>Overview</span>
+                <span class="nav-item"><svg><use href="#check"/></svg>Todo list <b class="nav-count">4</b></span>
+                <span class="nav-item"><svg><use href="#orders"/></svg>Orders <b class="nav-count">7</b></span>
+                <span class="nav-item"><svg><use href="#users"/></svg>Members <b class="nav-count">42</b></span>
+              </div></nav>
+              <nav class="nav-group"><div class="nav-label">Operations</div><div class="nav-items">
+                <span class="nav-item"><svg><use href="#box"/></svg>Products</span>
+                <span class="nav-item"><svg><use href="#truck"/></svg>Dispatch <b class="nav-count">2</b></span>
+                <span class="nav-item"><svg><use href="#shield"/></svg>Lab &amp; COAs <b class="nav-count">2</b></span>
+                <span class="nav-item"><svg><use href="#ticket"/></svg>Tickets <b class="nav-count">3</b></span>
+                <span class="nav-item"><svg><use href="#send"/></svg>Broadcast</span>
+              </div></nav>
+              <nav class="nav-group"><div class="nav-label">Manage</div><div class="nav-items"><span class="nav-item"><svg><use href="#settings"/></svg>Group buy settings</span></div></nav>
+              <div class="side-footer"><span class="nav-item"><svg><use href="#help"/></svg>Help centre</span><span class="nav-item"><svg><use href="#users"/></svg>Invite team</span></div>
+            </div>
+          </aside>
+
+          <div class="main">
+            <header class="topbar">
+              <div class="breadcrumb"><span>Group Buys</span><span>/</span><strong>Winter Peptide Run 2025</strong></div>
+              <div class="search"><svg><use href="#search"/></svg>Search orders, members, tasks <kbd>⌘K</kbd></div>
+              <span class="top-icon"><svg><use href="#help"/></svg></span><span class="top-icon"><svg><use href="#bell"/></svg><i></i></span>
+              <div class="profile"><div class="avatar">AM</div><div><strong>Alex Morgan</strong><span>Lead organiser</span></div></div>
+            </header>
+
+            <main class="content">
+              <div class="page-head"><div><h2>Good morning, Alex</h2><p>Here’s what needs your attention across Winter Peptide Run 2025.</p></div><span class="live-pill"><i></i> Active · 4 days left</span><div class="actions"><button class="button"><svg><use href="#download"/></svg>Export</button><button class="button primary"><svg><use href="#plus"/></svg>Add order</button></div></div>
+
+              <div class="summary-grid">
+                <section class="revenue"><label>COLLECTED REVENUE</label><b>£925</b><p><strong>↑ 12.4%</strong> from last week · £145 received today</p></section>
+                <section class="stat" style="--tone:#2d6bcc;--tint:rgba(45,107,204,.10)"><div class="stat-head"><span class="stat-icon"><svg><use href="#users"/></svg></span>Members</div><b>42</b><small>70% of capacity</small></section>
+                <section class="stat" style="--tone:#e9a020;--tint:rgba(233,160,32,.12)"><div class="stat-head"><span class="stat-icon"><svg><use href="#orders"/></svg></span>Active orders</div><b>7</b><small>Across four stages</small></section>
+                <section class="stat" style="--tone:#179b6b;--tint:rgba(23,155,107,.11)"><div class="stat-head"><span class="stat-icon"><svg><use href="#truck"/></svg></span>Ready to send</div><b>2</b><small>Payment verified</small></section>
+              </div>
+
+              <div class="workspace-grid">
+                <section class="panel chart-panel">
+                  <div class="panel-head"><div><h3>Order momentum</h3><p>Payment and fulfilment activity for this group buy</p></div><div class="tabs"><span>7 days</span><span class="active">30 days</span><span>All time</span></div></div>
+                  <div class="chart-summary"><b>18 orders</b><span>↑ 4 this week</span><div class="legend"><span><i style="background:#2d6bcc"></i>Paid</span><span><i style="background:#179b6b"></i>Fulfilled</span></div></div>
+                  <div class="chart"><div class="y-axis"><span>16</span><span>12</span><span>8</span><span>4</span><span>0</span></div><div class="plot"><svg viewBox="0 0 650 140" preserveAspectRatio="none"><defs><linearGradient id="fill-v3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2d6bcc" stop-opacity=".22"/><stop offset="1" stop-color="#2d6bcc" stop-opacity="0"/></linearGradient></defs><path d="M0 121 C44 110 67 116 108 96 S168 104 209 76 S275 87 319 57 S379 73 427 40 S492 58 535 28 S598 43 650 10 L650 140 L0 140Z" fill="url(#fill-v3)"/><path d="M0 121 C44 110 67 116 108 96 S168 104 209 76 S275 87 319 57 S379 73 427 40 S492 58 535 28 S598 43 650 10" stroke="#2d6bcc" stroke-width="3" fill="none"/><path d="M0 132 C52 125 79 130 126 115 S188 123 235 101 S297 111 344 85 S408 98 455 69 S521 83 566 54 S617 67 650 40" stroke="#179b6b" stroke-width="2.5" stroke-dasharray="6 6" fill="none"/><circle cx="535" cy="28" r="4" fill="#fff" stroke="#2d6bcc" stroke-width="3"/></svg><div class="tooltip"><strong>9 July</strong>4 paid · 2 fulfilled</div><div class="x-axis"><span>15 Jun</span><span>21 Jun</span><span>27 Jun</span><span>3 Jul</span><span>9 Jul</span><span>14 Jul</span></div></div></div>
+                </section>
+
+                <section class="panel attention">
+                  <div class="panel-head"><div><h3>Needs your attention</h3><p>Prioritised by impact</p></div><span class="panel-link">View todo →</span></div>
+                  <div class="attention-summary"><b>4</b><span>open actions</span></div>
+                  <div class="attention-list">
+                    <div class="attention-row" style="--tone:#bd5d56;--tint:#fff0ee"><span class="attention-icon"><svg><use href="#flask"/></svg></span><div><strong>Verify vendor COA</strong><small>Batch WPR-04 · Quality</small></div><time>Today</time></div>
+                    <div class="attention-row" style="--tone:#b77916;--tint:#fff5e6"><span class="attention-icon"><svg><use href="#orders"/></svg></span><div><strong>Chase pending payment</strong><small>Order #1049 · Jordan R.</small></div><time>2h</time></div>
+                  </div>
+                  <div class="dispatch-callout"><svg><use href="#truck"/></svg><div><strong>Two orders ready to dispatch</strong><span>Addresses and payment verified</span></div><b>→</b></div>
+                </section>
+              </div>
+
+              <div class="bottom-grid">
+                <section class="panel small-panel"><div class="panel-head"><div><h3>Next best actions</h3><p>Prioritised for today</p></div><span class="panel-link">Open list →</span></div><div><div class="todo"><i class="check"></i><div><strong>Verify vendor COA batch WPR-04</strong><small>Lab &amp; compliance · High priority</small></div><time>Today</time></div><div class="todo"><i class="check"></i><div><strong>Print two packing slips</strong><small>Dispatch · Orders are cleared</small></div><time>Ready</time></div></div></section>
+                <section class="panel small-panel"><div class="panel-head"><div><h3>Member activity</h3><p>Latest workspace events</p></div><span class="panel-link">See all →</span></div><div><div class="activity" style="--ava:#d8eaff"><div class="avatar">JD</div><div><strong>Jamie D. paid £145</strong><small>Order #1048</small></div><time>8m</time></div><div class="activity" style="--ava:#d8f0df"><div class="avatar">SK</div><div><strong>Sam K. joined the buy</strong><small>Member #42</small></div><time>36m</time></div></div></section>
+                <section class="panel small-panel readiness"><div class="panel-head"><div><h3>Dispatch readiness</h3><p>Based on paid orders</p></div></div><b class="score">74%</b><div class="ready-bar"><i></i></div><div class="ready-meta"><span>2 orders cleared</span><strong>Open desk →</strong></div></section>
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+    </section>
+    <p class="note"><strong>Click the mockup to approve it</strong>, or tell me which part still needs adjusting.</p>
+  </main>
+</body>
+</html>

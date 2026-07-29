@@ -1,0 +1,424 @@
+import type { SampleGB } from "../data.ts";
+import type { OrganiserOrder, OrderStatus } from "../domain/order.ts";
+
+export interface OrganiserProfile {
+  telegramUsername: string;
+  email: string | null;
+  organiserStatus: string | null;
+  organiserApprovedAt?: string | null;
+  organiserPaymentMethods?: Record<string, unknown> | null;
+}
+
+export interface ApiGroupBuy {
+  id: string;
+  name: string;
+  status?: string | null;
+  currency?: string | null;
+  closeDate?: string | null;
+  memberLimit?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ApiOrderLineItem {
+  id?: string;
+  productId?: string;
+  productName?: string;
+  name?: string;
+  quantity?: number | string;
+  unitPrice?: number | string;
+  price?: number | string;
+  lineTotal?: number | string;
+  isOos?: boolean;
+}
+
+export interface ApiOrganiserOrder {
+  id: string;
+  code?: string | null;
+  telegramUsername?: string | null;
+  status?: string | null;
+  paymentStatus?: string | null;
+  grandTotal?: number | string | null;
+  deliveryMethod?: string | null;
+  shippingName?: string | null;
+  shippingCountry?: string | null;
+  accountCountry?: string | null;
+  trackingNumber?: string | null;
+  adminNotes?: string | null;
+  paymentTxHash?: string | null;
+  paymentMethod?: string | null;
+  createdAt?: string | null;
+  paymentConfirmedAt?: string | null;
+  hasPaymentScreenshot?: boolean;
+  lineItems?: ApiOrderLineItem[];
+  [key: string]: unknown;
+}
+
+export interface ApiTodoSubtask {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface ApiTodo {
+  id: string;
+  title: string;
+  description?: string;
+  status: "todo" | "in-progress" | "done";
+  priority?: "high" | "medium" | "low";
+  dueDate?: string;
+  dueTime?: string;
+  durationMin?: number;
+  linkedOrderId?: string;
+  linkedOrderIds?: string[];
+  category?: string;
+  subtasks?: ApiTodoSubtask[];
+  archived?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ApiMember {
+  telegramUsername: string;
+  hasTelegram: boolean;
+}
+
+export interface ApiTicket {
+  id: string;
+  accountUsername: string;
+  subject: string;
+  status: string;
+  groupBuyId?: string | null;
+  customerUnread?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiProduct {
+  id: string;
+  name: string;
+  vendor?: string | null;
+  category?: string | null;
+  mgSize?: string | null;
+  price?: number | string | null;
+  stock?: number | null;
+  active?: boolean;
+  maxPerCustomer?: number | null;
+  halfKitEnabled?: boolean;
+}
+
+export interface ApiLabTest {
+  id: number;
+  peptideName: string;
+  purityPct?: number | string | null;
+  labName?: string | null;
+  batchCode?: string | null;
+  url?: string | null;
+  groupBuyId?: string | null;
+  pending?: boolean;
+}
+
+export interface ApiTestingRound {
+  id: string;
+  groupBuyId?: string;
+  status: string;
+  contributionAmount: number | string;
+  anyContribution?: boolean;
+  fundingNote?: string | null;
+  resultNotes?: string | null;
+  resultPdfUrl?: string | null;
+  voteOptions?: string[] | null;
+  testOptions?: string[] | null;
+  createdAt?: string;
+}
+
+export interface ApiTestingContributionSummary {
+  pending: number;
+  confirmed: number;
+  rejected: number;
+  total: number;
+}
+
+export interface ApiTestingPool {
+  round: ApiTestingRound | null;
+  products: ApiProduct[];
+  labTests: ApiLabTest[];
+  contributions: ApiTestingContributionSummary;
+}
+
+export interface ApiTestingMilestone {
+  label: string;
+  amount: number;
+  type: "test" | "vial";
+  vialNum?: number;
+}
+
+export interface ApiTestingVoteSummary {
+  peptideName: string;
+  totalVotes: number;
+  vials: Record<string, number>;
+}
+
+export interface ApiTestingPoolSnapshot {
+  round: ApiTestingRound | null;
+  poolTotal: number;
+  contributorCount: number;
+  totalVotes: number;
+  milestones: ApiTestingMilestone[];
+  votes: ApiTestingVoteSummary[];
+  testVotes: Record<string, number>;
+  peptideBatches?: Record<string, string>;
+}
+
+export interface OrganiserRequestOptions extends Omit<RequestInit, "body"> {
+  body?: unknown;
+}
+
+export class OrganiserApiError extends Error {
+  readonly status: number;
+  readonly data: unknown;
+
+  constructor(status: number, message: string, data: unknown) {
+    super(message);
+    this.name = "OrganiserApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
+function readErrorMessage(data: unknown, fallback: string): string {
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    for (const key of ["error", "message", "detail", "title"]) {
+      if (typeof record[key] === "string" && record[key].trim()) return record[key].trim();
+    }
+  }
+  if (typeof data === "string" && data.trim()) return data.trim();
+  return fallback;
+}
+
+export async function organiserRequest<T>(
+  path: string,
+  options: OrganiserRequestOptions = {},
+  fetcher: typeof fetch = fetch,
+): Promise<T> {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const headers = new Headers(options.headers);
+  const hasBody = options.body !== undefined;
+  if (hasBody && !headers.has("content-type")) headers.set("content-type", "application/json");
+
+  const response = await fetcher(`/api${normalizedPath}`, {
+    ...options,
+    credentials: "include",
+    headers,
+    body: hasBody ? JSON.stringify(options.body) : undefined,
+  });
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const data = response.status === 204
+    ? null
+    : contentType.includes("json")
+      ? await response.json().catch(() => null)
+      : await response.text().catch(() => "");
+
+  if (!response.ok) {
+    throw new OrganiserApiError(
+      response.status,
+      readErrorMessage(data, `Request failed with status ${response.status}`),
+      data,
+    );
+  }
+
+  return data as T;
+}
+
+function numberValue(value: unknown, fallback = 0): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function displayName(username: string): string {
+  return username
+    .replace(/^@/, "")
+    .split(/[_.-]+/)
+    .filter(Boolean)
+    .map(part => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ") || "Member";
+}
+
+function mapOrderStatus(status: unknown, paymentStatus: unknown): OrderStatus {
+  const normalizedStatus = String(status ?? "").toLowerCase();
+  const normalizedPayment = String(paymentStatus ?? "").toLowerCase();
+  if (normalizedStatus === "cancelled") return "cancelled";
+  if (normalizedStatus === "completed") return "delivered";
+  if (normalizedStatus === "shipped") return "shipped";
+  if (normalizedStatus === "processing") {
+    return normalizedPayment === "confirmed" ? "processing" : "pending";
+  }
+  if (["confirmed", "test_confirmed"].includes(normalizedPayment)) return "paid";
+  return "pending";
+}
+
+function paymentMethodLabel(value: unknown): string {
+  const method = String(value ?? "manual").trim().toLowerCase();
+  if (method === "revolut") return "Revolut";
+  if (method === "paypal") return "PayPal";
+  if (method === "anonpay") return "AnonPay";
+  if (method === "crypto") return "Crypto";
+  if (method === "credits") return "Store Credits";
+  return method && method !== "manual" ? `${method.charAt(0).toUpperCase()}${method.slice(1)}` : "Manual";
+}
+
+export function mapApiOrder(value: ApiOrganiserOrder): OrganiserOrder {
+  const username = String(value.telegramUsername ?? "unknown").replace(/^@/, "");
+  const txHash = typeof value.paymentTxHash === "string" && value.paymentTxHash.trim()
+    ? value.paymentTxHash.trim()
+    : undefined;
+
+  return {
+    id: value.id,
+    code: typeof value.code === "string" ? value.code : undefined,
+    memberUsername: username,
+    memberName: typeof value.shippingName === "string" && value.shippingName.trim()
+      ? value.shippingName.trim()
+      : displayName(username),
+    status: mapOrderStatus(value.status, value.paymentStatus),
+    apiStatus: typeof value.status === "string" ? value.status : undefined,
+    paymentStatus: typeof value.paymentStatus === "string" ? value.paymentStatus : undefined,
+    products: (value.lineItems ?? []).map(item => ({
+      id: item.id,
+      productId: item.productId,
+      name: String(item.productName ?? item.name ?? "Product"),
+      quantity: numberValue(item.quantity),
+      price: numberValue(item.unitPrice ?? item.price),
+      isOos: Boolean(item.isOos),
+    })),
+    total: numberValue(value.grandTotal),
+    paymentMethod: paymentMethodLabel(value.paymentMethod),
+    country: String(value.shippingCountry ?? value.accountCountry ?? "Unknown"),
+    createdAt: String(value.createdAt ?? new Date(0).toISOString()),
+    paidAt: typeof value.paymentConfirmedAt === "string" ? value.paymentConfirmedAt : undefined,
+    shippingOption: String(value.deliveryMethod ?? "Not selected"),
+    paymentProof: txHash ? { type: "txid", value: txHash } : undefined,
+    trackingNumber: typeof value.trackingNumber === "string" && value.trackingNumber.trim()
+      ? value.trackingNumber.trim()
+      : undefined,
+    internalNotes: typeof value.adminNotes === "string" && value.adminNotes.trim()
+      ? value.adminNotes.trim()
+      : undefined,
+  };
+}
+
+export function mapApiGroupBuy(value: ApiGroupBuy): SampleGB {
+  const status = value.status === "active" || value.status === "closed" || value.status === "archived"
+    ? value.status
+    : "draft";
+  const memberLimit = numberValue(value.memberLimit, 0);
+  return {
+    id: value.id,
+    name: value.name,
+    status,
+    currency: typeof value.currency === "string" && value.currency ? value.currency : "GBP",
+    closeDate: typeof value.closeDate === "string" ? value.closeDate : null,
+    members: 0,
+    maxMembers: memberLimit > 0 ? memberLimit : 1,
+    activeOrders: 0,
+    revenue: 0,
+    pendingPayments: 0,
+    pendingLabs: 0,
+    openTickets: 0,
+  };
+}
+
+export function createOrganiserApi(fetcher: typeof fetch = fetch) {
+  const request = <T>(path: string, options?: OrganiserRequestOptions) => organiserRequest<T>(path, options, fetcher);
+
+  return {
+  profile: () => request<OrganiserProfile>("/organiser/me"),
+  groupBuys: () => request<ApiGroupBuy[]>("/organiser/group-buys"),
+  groupBuy: (groupBuyId: string) => request<ApiGroupBuy>(`/organiser/group-buys/${encodeURIComponent(groupBuyId)}`),
+  createGroupBuy: (body: Record<string, unknown>) => request<ApiGroupBuy>(
+    "/organiser/group-buys",
+    { method: "POST", body },
+  ),
+  updateGroupBuy: (groupBuyId: string, body: Record<string, unknown>) => request<ApiGroupBuy>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}`,
+    { method: "PATCH", body },
+  ),
+  requestPublic: (groupBuyId: string) => request<ApiGroupBuy>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/request-public`,
+    { method: "PATCH" },
+  ),
+  archiveGroupBuy: (groupBuyId: string) => request<{ ok: boolean; id: string }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}`,
+    { method: "DELETE" },
+  ),
+  members: (groupBuyId: string) => request<ApiMember[]>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/members`,
+  ),
+  tickets: async (groupBuyId: string) => {
+    const response = await request<{ tickets: ApiTicket[] }>(
+      `/organiser/tickets?groupBuyId=${encodeURIComponent(groupBuyId)}`,
+    );
+    return response.tickets;
+  },
+  testingPool: (groupBuyId: string) => request<ApiTestingPool>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/testing`,
+  ),
+  testingPoolSnapshot: (groupBuyId: string) => request<ApiTestingPoolSnapshot>(
+    `/group-buys/${encodeURIComponent(groupBuyId)}/testing`,
+  ),
+  createTestingPool: (groupBuyId: string, body: Record<string, unknown>) => request<ApiTestingPool>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/testing`,
+    { method: "POST", body },
+  ),
+  updateTestingPool: (groupBuyId: string, body: Record<string, unknown>) => request<ApiTestingPool>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/testing`,
+    { method: "PATCH", body },
+  ),
+  products: (groupBuyId: string) => request<ApiProduct[]>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/products`,
+  ),
+  createProduct: (groupBuyId: string, body: Record<string, unknown>) => request<ApiProduct>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/products`,
+    { method: "POST", body },
+  ),
+  updateProduct: (groupBuyId: string, productId: string, body: Record<string, unknown>) => request<{ ok: boolean }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/products/${encodeURIComponent(productId)}`,
+    { method: "PATCH", body },
+  ),
+  updateOwnedProduct: (productId: string, body: Record<string, unknown>) => request<ApiProduct>(
+    `/organiser/products/${encodeURIComponent(productId)}`,
+    { method: "PUT", body },
+  ),
+  labTests: () => request<ApiLabTest[]>("/organiser/lab-tests"),
+  updateRules: (groupBuyId: string, rules: Array<Record<string, unknown>>) => request<{ rules: unknown[] }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/rules`,
+    { method: "PATCH", body: { rules } },
+  ),
+  orders: async (groupBuyId: string) => {
+    const rows = await request<ApiOrganiserOrder[]>(`/organiser/group-buys/${encodeURIComponent(groupBuyId)}/orders`);
+    return rows.map(mapApiOrder);
+  },
+  updateOrder: (groupBuyId: string, orderId: string, body: Record<string, unknown>) => request(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/orders/${encodeURIComponent(orderId)}`,
+    { method: "PATCH", body },
+  ),
+  todos: (groupBuyId: string) => request<ApiTodo[]>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/todos`,
+  ),
+  createTodo: (groupBuyId: string, todo: ApiTodo) => request<ApiTodo>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/todos`,
+    { method: "POST", body: todo },
+  ),
+  updateTodo: (groupBuyId: string, todoId: string, todo: ApiTodo) => request<ApiTodo>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/todos/${encodeURIComponent(todoId)}`,
+    { method: "PATCH", body: todo },
+  ),
+  deleteTodo: (groupBuyId: string, todoId: string) => request<{ ok: boolean; id: string }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/todos/${encodeURIComponent(todoId)}`,
+    { method: "DELETE" },
+  ),
+  };
+}
+
+export const organiserApi = createOrganiserApi();

@@ -1,0 +1,110 @@
+<style>
+  .prd-intro { max-width: 900px; margin-bottom: 28px; }
+  .prd-intro h2 { margin-bottom: 8px; }
+  .prd-stack { display: grid; gap: 24px; }
+  .prd-choice { overflow: hidden; border: 1px solid #d9e1eb; border-radius: 18px; background: #fff; box-shadow: 0 14px 36px rgba(15,31,56,.07); cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+  .prd-choice:hover { transform: translateY(-2px); border-color: #2d6bcc; box-shadow: 0 18px 42px rgba(15,31,56,.12); }
+  .prd-choice.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.16), 0 18px 42px rgba(15,31,56,.1); }
+  .prd-choice-head { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 18px 20px; border-bottom: 1px solid #e7edf3; }
+  .prd-letter { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #1b3a7a; color: #fff; font-weight: 800; }
+  .prd-choice-head h3 { margin: 0 0 3px; color: #0f1f38; font-size: 17px; }
+  .prd-choice-head p { margin: 0; color: #6b7280; font-size: 13px; }
+  .prd-note { border-radius: 999px; padding: 6px 10px; color: #1b3a7a; background: #edf3fb; font-size: 11px; font-weight: 800; }
+  .prd-app { min-height: 390px; display: grid; grid-template-columns: 138px minmax(0,1fr); color: #0f1f38; background: #f4f6f9; font-family: Inter, Arial, sans-serif; font-size: 10px; }
+  .prd-side { padding: 14px 10px; color: rgba(255,255,255,.76); background: linear-gradient(165deg,#1b3164,#1b3a7a); }
+  .prd-brand { display: flex; align-items: center; gap: 7px; margin-bottom: 15px; color: white; font-size: 11px; font-weight: 800; }
+  .prd-logo { width: 24px; height: 24px; border-radius: 7px; background: #2d6bcc; box-shadow: inset -7px -7px 0 rgba(233,160,32,.92); }
+  .prd-buy { padding: 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: rgba(255,255,255,.08); }
+  .prd-buy small, .prd-buy span { display:block; }
+  .prd-buy small { opacity:.65; font-size:8px; text-transform:uppercase; letter-spacing:.08em; }
+  .prd-buy span { margin-top:3px; color:#fff; font-weight:700; line-height:1.25; }
+  .prd-nav-label { margin: 14px 7px 5px; opacity:.58; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; }
+  .prd-nav { display:grid; gap:3px; }
+  .prd-nav span { padding: 7px 8px; border-radius:6px; }
+  .prd-nav .active { color:#fff; background:rgba(255,255,255,.15); font-weight:800; box-shadow: inset 2px 0 #e9a020; }
+  .prd-main { min-width:0; }
+  .prd-top { height: 46px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; border-bottom:1px solid #e1e7ee; background:#fff; }
+  .prd-crumb { color:#6b7280; } .prd-crumb strong { color:#0f1f38; }
+  .prd-search { width:145px; padding:7px 10px; border:1px solid #d0dae4; border-radius:7px; color:#8a9aaa; background:#f8fafc; }
+  .prd-body { padding: 16px; }
+  .prd-title { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:12px; }
+  .prd-title h4 { margin:0; font-size:17px; letter-spacing:-.03em; }
+  .prd-title p { margin:3px 0 0; color:#6b7280; font-size:9px; }
+  .prd-actions { display:flex; gap:6px; }
+  .prd-btn { padding:7px 9px; border:1px solid #d0dae4; border-radius:7px; color:#374151; background:#fff; font-weight:700; }
+  .prd-btn.primary { border-color:#1b3a7a; color:#fff; background:#1b3a7a; }
+  .prd-toolbar { display:flex; align-items:center; gap:6px; margin-bottom:8px; padding:8px; border:1px solid #dfe6ee; border-radius:9px; background:#fff; }
+  .prd-tool-search { min-width:150px; flex:1; padding:7px 9px; border:1px solid #d0dae4; border-radius:6px; color:#8a9aaa; }
+  .prd-chip { padding:6px 8px; border-radius:6px; color:#566274; background:#f3f6f9; font-weight:700; }
+  .prd-count { margin-left:auto; color:#8a9aaa; }
+  .prd-table { overflow:hidden; border:1px solid #dfe6ee; border-radius:9px; background:#fff; }
+  .prd-row { display:grid; grid-template-columns: 22px minmax(128px,1.5fr) 72px 66px 70px 65px 52px 52px 34px; align-items:center; min-height:36px; border-top:1px solid #edf1f5; padding:0 7px; }
+  .prd-row.head { min-height:31px; border-top:0; color:#718096; background:#f7f9fb; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+  .prd-row strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .prd-cell-edit { margin:3px; padding:5px 6px; border:1px solid #cbd8e5; border-radius:5px; background:#fff; }
+  .prd-badge { width:max-content; padding:3px 5px; border-radius:999px; color:#13795b; background:#e7f6ef; font-size:8px; font-weight:800; }
+  .prd-badge.low { color:#aa5b11; background:#fff1df; }
+  .prd-bulk { position:relative; z-index:2; display:flex; gap:7px; align-items:center; margin:-1px 10px 8px; padding:8px 10px; border-radius:8px; color:white; background:#1b3164; box-shadow:0 8px 16px rgba(27,49,100,.18); }
+  .prd-bulk span { margin-right:auto; font-weight:800; }
+  .prd-split { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(230px,.8fr); gap:10px; }
+  .prd-list { overflow:hidden; border:1px solid #dfe6ee; border-radius:9px; background:#fff; }
+  .prd-list-row { display:grid; grid-template-columns:20px minmax(0,1fr) 62px 54px; align-items:center; min-height:42px; padding:0 9px; border-top:1px solid #edf1f5; }
+  .prd-list-row:first-child { border-top:0; }
+  .prd-list-row.active { background:#edf4ff; box-shadow:inset 3px 0 #2d6bcc; }
+  .prd-list-row small { display:block; margin-top:2px; color:#8a9aaa; }
+  .prd-inspector { border:1px solid #d7e0e9; border-radius:9px; background:#fff; box-shadow:0 10px 24px rgba(15,31,56,.06); }
+  .prd-inspector-head { padding:11px; color:#fff; background:linear-gradient(135deg,#2d6bcc,#1b3a7a); border-radius:8px 8px 0 0; }
+  .prd-inspector-head h5 { margin:0 0 3px; font-size:13px; }
+  .prd-inspector-head span { opacity:.75; }
+  .prd-form { display:grid; grid-template-columns:1fr 1fr; gap:7px; padding:10px; }
+  .prd-field { min-width:0; }
+  .prd-field.full { grid-column:1/-1; }
+  .prd-field label { display:block; margin-bottom:3px; color:#8a9aaa; font-size:8px; font-weight:800; text-transform:uppercase; }
+  .prd-input { padding:7px; border:1px solid #d0dae4; border-radius:6px; color:#374151; background:#fff; }
+  .prd-form-foot { grid-column:1/-1; display:flex; justify-content:space-between; margin-top:4px; padding-top:8px; border-top:1px solid #edf1f5; }
+  .prd-taxonomy { display:grid; grid-template-columns:145px minmax(0,1fr); gap:10px; }
+  .prd-tree, .prd-groups { border:1px solid #dfe6ee; border-radius:9px; background:#fff; }
+  .prd-tree { padding:10px; }
+  .prd-tree-title { color:#8a9aaa; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+  .prd-tree-item { display:flex; justify-content:space-between; margin-top:4px; padding:7px; border-radius:6px; color:#5b6677; }
+  .prd-tree-item.active { color:#1b3a7a; background:#edf4ff; font-weight:800; }
+  .prd-group { border-top:1px solid #e9eef4; }
+  .prd-group:first-child { border-top:0; }
+  .prd-group-head { display:flex; align-items:center; gap:7px; padding:9px 11px; background:#f8fafc; }
+  .prd-group-head strong { margin-right:auto; font-size:11px; }
+  .prd-group-head span { color:#8a9aaa; }
+  .prd-group-row { display:grid; grid-template-columns:minmax(0,1fr) 60px 56px 56px 60px; align-items:center; min-height:34px; padding:0 11px; border-top:1px solid #f0f3f6; }
+  @media (max-width: 900px) { .prd-app { grid-template-columns:110px minmax(0,1fr); } .prd-side {padding:10px 7px;} .prd-row {grid-template-columns:18px minmax(110px,1fr) 58px 52px 52px 45px 32px;} .prd-row > :nth-child(5),.prd-row > :nth-child(8){display:none;} }
+</style>
+
+<div class="prd-intro">
+  <p class="label">Products redesign · layouts 1–3 of 5</p>
+  <h2>Which structures feel strongest for a 100+ item catalogue?</h2>
+  <p class="subtitle">All three keep the approved GB Organiser shell and the full workflow contract. Click any direction you want to endorse, then tell me what you would change.</p>
+</div>
+
+<div class="prd-stack" data-multiselect>
+  <article class="prd-choice" data-choice="command-grid" onclick="toggleSelect(this)">
+    <header class="prd-choice-head"><div class="prd-letter">A</div><div><h3>Command Grid</h3><p>Spreadsheet speed with inline cells, persistent filters, and a sticky bulk-action bar.</p></div><span class="prd-note">Fastest at scale</span></header>
+    <div class="prd-app">
+      <aside class="prd-side"><div class="prd-brand"><i class="prd-logo"></i><span>GB Organiser</span></div><div class="prd-buy"><small>Active group buy</small><span>Winter Peptide Run</span></div><div class="prd-nav-label">Workspace</div><div class="prd-nav"><span>Overview</span><span>Orders</span><span>Members</span></div><div class="prd-nav-label">Catalogue</div><div class="prd-nav"><span class="active">Products</span><span>Vendor COAs</span><span>Testing</span></div></aside>
+      <main class="prd-main"><div class="prd-top"><span class="prd-crumb">Winter Peptide Run / <strong>Products</strong></span><span class="prd-search">⌕ Search workspace</span></div><div class="prd-body"><div class="prd-title"><div><h4>Products</h4><p>120 products · 7 vendors · last edited 4m ago</p></div><div class="prd-actions"><span class="prd-btn">AI import</span><span class="prd-btn">CSV</span><span class="prd-btn primary">＋ Add product</span></div></div><div class="prd-toolbar"><span class="prd-tool-search">⌕ Search name, vendor, category…</span><span class="prd-chip">Vendor ▾</span><span class="prd-chip">Category ▾</span><span class="prd-chip">Stock ▾</span><span class="prd-chip">Columns</span><span class="prd-count">120 results</span></div><div class="prd-bulk"><span>✓ 4 products selected</span><b>Set price</b><b>Set stock</b><b>Change vendor</b><b>More ▾</b></div><div class="prd-table"><div class="prd-row head"><i>□</i><span>Product</span><span>Vendor</span><span>Size</span><span>Category</span><span>Price</span><span>Stock</span><span>Limit</span><span></span></div><div class="prd-row"><i>☑</i><strong>Semaglutide</strong><span>QSC</span><span>5mg</span><span>GLP-1</span><span class="prd-cell-edit">£35.00</span><span class="prd-badge">84</span><span>2</span><b>•••</b></div><div class="prd-row"><i>☑</i><strong>Tirzepatide</strong><span>QSC</span><span>10mg</span><span>GLP-1</span><span class="prd-cell-edit">£55.00</span><span class="prd-badge low">4</span><span>2</span><b>•••</b></div><div class="prd-row"><i>□</i><strong>BPC-157</strong><span>Amino</span><span>5mg</span><span>Healing</span><span class="prd-cell-edit">£22.00</span><span class="prd-badge">∞</span><span>∞</span><b>•••</b></div><div class="prd-row"><i>□</i><strong>TB-500</strong><span>Amino</span><span>10mg</span><span>Healing</span><span class="prd-cell-edit">£30.00</span><span class="prd-badge low">0</span><span>∞</span><b>•••</b></div><div class="prd-row"><i>□</i><strong>Ipamorelin</strong><span>QSC</span><span>5mg</span><span>GH</span><span class="prd-cell-edit">£18.00</span><span class="prd-badge">20</span><span>∞</span><b>•••</b></div></div></div></main>
+    </div>
+  </article>
+
+  <article class="prd-choice" data-choice="split-inspector" onclick="toggleSelect(this)">
+    <header class="prd-choice-head"><div class="prd-letter">B</div><div><h3>Split Inspector</h3><p>A compact catalogue list stays visible while the selected product opens in a persistent editor.</p></div><span class="prd-note">Best focused editing</span></header>
+    <div class="prd-app">
+      <aside class="prd-side"><div class="prd-brand"><i class="prd-logo"></i><span>GB Organiser</span></div><div class="prd-buy"><small>Active group buy</small><span>Winter Peptide Run</span></div><div class="prd-nav-label">Workspace</div><div class="prd-nav"><span>Overview</span><span>Orders</span><span>Members</span></div><div class="prd-nav-label">Catalogue</div><div class="prd-nav"><span class="active">Products</span><span>Vendor COAs</span><span>Testing</span></div></aside>
+      <main class="prd-main"><div class="prd-top"><span class="prd-crumb">Winter Peptide Run / <strong>Products</strong></span><span class="prd-search">⌕ Search workspace</span></div><div class="prd-body"><div class="prd-title"><div><h4>Products</h4><p>Use ↑ ↓ to move · Enter to edit · ⌘S to save</p></div><div class="prd-actions"><span class="prd-btn">Import ▾</span><span class="prd-btn primary">＋ Add product</span></div></div><div class="prd-toolbar"><span class="prd-tool-search">⌕ Search 120 products…</span><span class="prd-chip">All categories ▾</span><span class="prd-chip">Sort: recently edited</span></div><div class="prd-split"><section class="prd-list"><div class="prd-list-row"><i>□</i><div><strong>Semaglutide 5mg</strong><small>QSC · GLP-1 · 84 in stock</small></div><b>£35.00</b><span class="prd-badge">Live</span></div><div class="prd-list-row active"><i>☑</i><div><strong>Tirzepatide 10mg</strong><small>QSC · GLP-1 · low stock</small></div><b>£55.00</b><span class="prd-badge low">4 left</span></div><div class="prd-list-row"><i>□</i><div><strong>BPC-157 5mg</strong><small>Amino · Healing · unlimited</small></div><b>£22.00</b><span class="prd-badge">Live</span></div><div class="prd-list-row"><i>□</i><div><strong>TB-500 10mg</strong><small>Amino · Healing · out of stock</small></div><b>£30.00</b><span class="prd-badge low">Paused</span></div><div class="prd-list-row"><i>□</i><div><strong>Ipamorelin 5mg</strong><small>QSC · GH · 20 in stock</small></div><b>£18.00</b><span class="prd-badge">Live</span></div></section><aside class="prd-inspector"><div class="prd-inspector-head"><h5>Tirzepatide 10mg</h5><span>Unsaved changes · edited by you</span></div><div class="prd-form"><div class="prd-field full"><label>Product name</label><div class="prd-input">Tirzepatide</div></div><div class="prd-field"><label>Price</label><div class="prd-input">£55.00</div></div><div class="prd-field"><label>Size</label><div class="prd-input">10mg</div></div><div class="prd-field"><label>Stock</label><div class="prd-input">4</div></div><div class="prd-field"><label>Max / customer</label><div class="prd-input">2</div></div><div class="prd-field full"><label>Vendor</label><div class="prd-input">QSC</div></div><div class="prd-field full"><label>Availability</label><div class="prd-input">✓ Live on order form · ½ kits on</div></div><div class="prd-form-foot"><span style="color:#c2413b">Delete</span><span class="prd-btn primary">Save changes</span></div></div></aside></div></div></main>
+    </div>
+  </article>
+
+  <article class="prd-choice" data-choice="category-workbench" onclick="toggleSelect(this)">
+    <header class="prd-choice-head"><div class="prd-letter">C</div><div><h3>Category Workbench</h3><p>A taxonomy rail and collapsible product groups make range-wide changes easy to reason about.</p></div><span class="prd-note">Best organisation</span></header>
+    <div class="prd-app">
+      <aside class="prd-side"><div class="prd-brand"><i class="prd-logo"></i><span>GB Organiser</span></div><div class="prd-buy"><small>Active group buy</small><span>Winter Peptide Run</span></div><div class="prd-nav-label">Workspace</div><div class="prd-nav"><span>Overview</span><span>Orders</span><span>Members</span></div><div class="prd-nav-label">Catalogue</div><div class="prd-nav"><span class="active">Products</span><span>Vendor COAs</span><span>Testing</span></div></aside>
+      <main class="prd-main"><div class="prd-top"><span class="prd-crumb">Winter Peptide Run / <strong>Products</strong></span><span class="prd-search">⌕ Search workspace</span></div><div class="prd-body"><div class="prd-title"><div><h4>Product workbench</h4><p>120 products across 8 categories · drag groups to reorder the member catalogue</p></div><div class="prd-actions"><span class="prd-btn">Import catalogue</span><span class="prd-btn primary">＋ Add product</span></div></div><div class="prd-toolbar"><span class="prd-tool-search">⌕ Search products…</span><span class="prd-chip">Group by: Category ▾</span><span class="prd-chip">Vendor: All ▾</span><span class="prd-chip">Expand all</span></div><div class="prd-taxonomy"><aside class="prd-tree"><div class="prd-tree-title">Catalogue map</div><div class="prd-tree-item active"><span>All products</span><b>120</b></div><div class="prd-tree-item"><span>GLP-1</span><b>18</b></div><div class="prd-tree-item"><span>Healing</span><b>24</b></div><div class="prd-tree-item"><span>Growth hormone</span><b>16</b></div><div class="prd-tree-item"><span>Nootropics</span><b>21</b></div><div class="prd-tree-item"><span>Other</span><b>41</b></div><div class="prd-tree-title" style="margin-top:14px">Saved views</div><div class="prd-tree-item"><span>Low stock</span><b>7</b></div><div class="prd-tree-item"><span>Missing vendor</span><b>3</b></div></aside><section class="prd-groups"><div class="prd-group"><div class="prd-group-head"><span>⋮⋮</span><strong>⌄ GLP-1</strong><span>18 products · £39.40 avg</span><span class="prd-btn">Edit group</span></div><div class="prd-group-row"><strong>Semaglutide 5mg</strong><span>QSC</span><b>£35</b><span class="prd-badge">84</span><span>½ on</span></div><div class="prd-group-row"><strong>Tirzepatide 10mg</strong><span>QSC</span><b>£55</b><span class="prd-badge low">4</span><span>½ on</span></div></div><div class="prd-group"><div class="prd-group-head"><span>⋮⋮</span><strong>⌄ Healing</strong><span>24 products · £26.10 avg</span><span class="prd-btn">Edit group</span></div><div class="prd-group-row"><strong>BPC-157 5mg</strong><span>Amino</span><b>£22</b><span class="prd-badge">∞</span><span>½ off</span></div><div class="prd-group-row"><strong>TB-500 10mg</strong><span>Amino</span><b>£30</b><span class="prd-badge low">0</span><span>½ off</span></div></div><div class="prd-group"><div class="prd-group-head"><span>⋮⋮</span><strong>› Growth hormone</strong><span>16 products · 2 alerts</span><span class="prd-btn">Open</span></div></div></section></div></div></main>
+    </div>
+  </article>
+</div>

@@ -1,0 +1,141 @@
+<style>
+  .direction-note { margin: 0 0 22px; color: #66758a; font-size: 14px; }
+  .direction-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .direction-card { overflow: hidden; border: 1px solid #d7e0ea; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgba(27,49,100,.07); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .direction-card:hover { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(27,49,100,.12); }
+  .direction-card.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.14), 0 16px 36px rgba(27,49,100,.12); }
+  .direction-card__body { padding: 16px 17px 18px; }
+  .direction-card__eyebrow { color: #2d6bcc; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .direction-card h3 { margin: 5px 0 6px; color: #0f1f38; font-size: 18px; }
+  .direction-card p { margin: 0; color: #66758a; font-size: 12px; line-height: 1.55; }
+  .direction-card__tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+  .direction-card__tags span { padding: 4px 7px; border-radius: 999px; background: #edf3fb; color: #1b3a7a; font-size: 9px; font-weight: 750; }
+  .mini { min-height: 305px; padding: 12px; background: #f5f7fa; color: #0f1f38; font-family: Inter, sans-serif; }
+  .mini button { font: inherit; }
+  .mini-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .mini-title small { display: block; margin-bottom: 2px; color: #718096; font-size: 6px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .mini-title strong { font-size: 13px; letter-spacing: -.03em; }
+  .mini-actions { display: flex; gap: 4px; }
+  .mini-action { border: 1px solid #cfdae6; border-radius: 6px; padding: 4px 7px; background: #fff; color: #1b3a7a; font-size: 6px; font-weight: 800; }
+  .mini-action.primary { border-color: #1b3a7a; background: #1b3a7a; color: #fff; }
+  .metric-strip { display: grid; grid-template-columns: repeat(4,1fr); overflow: hidden; margin-bottom: 8px; border: 1px solid #d7e0ea; border-radius: 8px; background: #fff; }
+  .metric { padding: 7px; border-right: 1px solid #e5ebf1; }
+  .metric:last-child { border-right: 0; }
+  .metric b { display: block; font-size: 11px; }
+  .metric span { color: #7c8998; font-size: 5.5px; font-weight: 700; text-transform: uppercase; }
+  .signal-layout { display: grid; grid-template-columns: 1.45fr .8fr; gap: 8px; }
+  .panel { border: 1px solid #d7e0ea; border-radius: 9px; background: #fff; }
+  .panel-h { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; border-bottom: 1px solid #e5ebf1; font-size: 7px; font-weight: 800; }
+  .queue-item { display: grid; grid-template-columns: 12px 1fr auto; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid #edf1f5; }
+  .queue-item:last-child { border-bottom: 0; }
+  .priority { width: 12px; height: 12px; border-radius: 4px; background: #fff0d5; color: #b66c00; text-align: center; font-size: 7px; line-height: 12px; }
+  .queue-item b { display: block; font-size: 7px; }
+  .queue-item small { display: block; margin-top: 1px; color: #7c8998; font-size: 5.5px; }
+  .status { padding: 3px 5px; border-radius: 999px; background: #fff2d9; color: #a36000; font-size: 5.5px; font-weight: 800; }
+  .status.green { background: #e6f7ef; color: #147352; }
+  .inspector-hero { padding: 10px 9px; background: linear-gradient(145deg,#2d6bcc,#1b3164); color: #fff; }
+  .inspector-hero small { font-size: 5.5px; opacity: .7; }
+  .inspector-hero b { display: block; margin-top: 2px; font-size: 10px; }
+  .inspector-line { display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #edf1f5; font-size: 6px; }
+  .inspector-line span { color: #7c8998; }
+  .ledger { background: #fbfbfa; }
+  .ledger-toolbar { display: grid; grid-template-columns: 1fr auto auto; gap: 5px; margin-bottom: 8px; }
+  .search { padding: 6px 8px; border: 1px solid #cfd8e2; border-radius: 5px; background: #fff; color: #8a96a5; font-size: 6px; }
+  .ledger-layout { display: grid; grid-template-columns: 78px 1fr; gap: 7px; }
+  .saved { padding: 7px; border: 1px solid #d9e0e7; border-radius: 6px; background: #fff; }
+  .saved-title { margin-bottom: 6px; color: #7b8795; font-size: 5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .saved-item { margin-bottom: 3px; padding: 5px 5px; border-radius: 4px; color: #657286; font-size: 6px; }
+  .saved-item.active { background: #e8f1ff; color: #1b3a7a; font-weight: 800; }
+  .ledger-table { overflow: hidden; border: 1px solid #d9e0e7; border-radius: 6px; background: #fff; }
+  .ledger-row { display: grid; grid-template-columns: 12px 1.15fr .9fr .8fr .65fr; align-items: center; min-height: 31px; padding: 0 7px; border-bottom: 1px solid #e8edf2; font-size: 5.8px; }
+  .ledger-row.head { min-height: 24px; background: #f0f3f6; color: #6e7a89; font-size: 5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-row b { font-size: 6.3px; }
+  .check { width: 8px; height: 8px; border: 1px solid #aeb9c6; border-radius: 2px; }
+  .board { background: #eef3f8; }
+  .flow-ribbon { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-bottom: 8px; }
+  .flow-step { padding: 6px; border-radius: 6px; background: #fff; box-shadow: inset 0 2px #cdd7e3; }
+  .flow-step.hot { box-shadow: inset 0 2px #e9a020; }
+  .flow-step b { display: block; font-size: 9px; }
+  .flow-step span { color: #738195; font-size: 5px; }
+  .board-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+  .lane { min-height: 194px; padding: 6px; border-radius: 8px; background: rgba(255,255,255,.62); }
+  .lane-head { display: flex; justify-content: space-between; padding: 2px 2px 6px; color: #526276; font-size: 6px; font-weight: 800; }
+  .order-card { margin-bottom: 5px; padding: 7px; border: 1px solid #d8e1ea; border-radius: 6px; background: #fff; box-shadow: 0 3px 8px rgba(27,49,100,.05); }
+  .order-card b { display: block; font-size: 6.5px; }
+  .order-card p { margin: 3px 0 6px; color: #7b8796; font-size: 5px; line-height: 1.35; }
+  .order-card-foot { display: flex; align-items: center; justify-content: space-between; color: #1b3a7a; font-size: 5px; font-weight: 800; }
+  .concept-footer { margin-top: 22px; padding: 14px 16px; border-left: 3px solid #2d6bcc; border-radius: 0 8px 8px 0; background: #edf4ff; color: #394a62; font-size: 12px; line-height: 1.5; }
+  @media (max-width: 980px) { .direction-grid { grid-template-columns: 1fr; } .mini { min-height: 270px; } }
+</style>
+
+<h2>Orders redesign directions · 1–3</h2>
+<p class="subtitle">Three independent responsive concepts for the same GB Organiser v2 capabilities. Click the direction that feels strongest, or simply review all three.</p>
+
+<div class="direction-grid">
+  <article class="direction-card" data-choice="signal-desk" onclick="toggleSelect(this)">
+    <div class="mini">
+      <div class="mini-head">
+        <div class="mini-title"><small>Winter Peptide Run</small><strong>Orders signal desk</strong></div>
+        <div class="mini-actions"><button class="mini-action">Import</button><button class="mini-action primary">New order</button></div>
+      </div>
+      <div class="metric-strip">
+        <div class="metric"><b>53</b><span>Total orders</span></div><div class="metric"><b>8</b><span>Need action</span></div><div class="metric"><b>31</b><span>Ready</span></div><div class="metric"><b>£18.4k</b><span>Verified</span></div>
+      </div>
+      <div class="signal-layout">
+        <section class="panel">
+          <div class="panel-h"><span>Priority queue</span><span>Search · Filter</span></div>
+          <div class="queue-item"><span class="priority">!</span><div><b>GB-1048 · Maya Chen</b><small>Payment proof needs review</small></div><span class="status">Review</span></div>
+          <div class="queue-item"><span class="priority">!</span><div><b>GB-1041 · Oliver Reid</b><small>Address needs confirmation</small></div><span class="status">Blocked</span></div>
+          <div class="queue-item"><span class="priority">✓</span><div><b>GB-1038 · Sofia Klein</b><small>3 items · Germany</small></div><span class="status green">Ready</span></div>
+          <div class="queue-item"><span class="priority">✓</span><div><b>GB-1032 · Theo Martin</b><small>2 items · France</small></div><span class="status green">Paid</span></div>
+        </section>
+        <aside class="panel">
+          <div class="inspector-hero"><small>Selected order</small><b>GB-1048</b><small>Maya Chen · United Kingdom</small></div>
+          <div class="inspector-line"><span>Payment</span><b>Review proof</b></div><div class="inspector-line"><span>Value</span><b>£412.00</b></div><div class="inspector-line"><span>Products</span><b>3 items</b></div><div class="inspector-line"><span>Delivery</span><b>Royal Mail</b></div>
+        </aside>
+      </div>
+    </div>
+    <div class="direction-card__body"><span class="direction-card__eyebrow">Concept 01 · Action first</span><h3>Signal Desk</h3><p>A priority queue and persistent order inspector put urgent decisions ahead of browsing. On mobile, the queue becomes cards and the inspector opens as a bottom sheet.</p><div class="direction-card__tags"><span>Fast triage</span><span>Split workspace</span><span>Operational</span></div></div>
+  </article>
+
+  <article class="direction-card" data-choice="precision-ledger" onclick="toggleSelect(this)">
+    <div class="mini ledger">
+      <div class="mini-head">
+        <div class="mini-title"><small>Order register</small><strong>53 orders · £18,420 verified</strong></div>
+        <div class="mini-actions"><button class="mini-action">Export</button><button class="mini-action primary">Add order</button></div>
+      </div>
+      <div class="ledger-toolbar"><div class="search">⌕ Search member, ID or TXID</div><button class="mini-action">Filters 3</button><button class="mini-action">Newest ↓</button></div>
+      <div class="ledger-layout">
+        <aside class="saved"><div class="saved-title">Saved views</div><div class="saved-item active">All orders · 53</div><div class="saved-item">Unpaid · 7</div><div class="saved-item">Needs review · 4</div><div class="saved-item">Ready · 12</div><div class="saved-item">Dispatched · 19</div></aside>
+        <section class="ledger-table">
+          <div class="ledger-row head"><span></span><span>Member / ID</span><span>Items</span><span>Status</span><span>Total</span></div>
+          <div class="ledger-row"><span class="check"></span><b>Maya Chen<br>#1048</b><span>SEMA × 2</span><span class="status">Review</span><b>£412</b></div>
+          <div class="ledger-row"><span class="check"></span><b>Oliver Reid<br>#1041</b><span>TIRZ × 3</span><span class="status">Pending</span><b>£588</b></div>
+          <div class="ledger-row"><span class="check"></span><b>Sofia Klein<br>#1038</b><span>BPC × 2</span><span class="status green">Ready</span><b>£274</b></div>
+          <div class="ledger-row"><span class="check"></span><b>Theo Martin<br>#1032</b><span>SEMA × 1</span><span class="status green">Paid</span><b>£206</b></div>
+          <div class="ledger-row"><span class="check"></span><b>Hana Novak<br>#1029</b><span>TIRZ × 2</span><span class="status green">Sent</span><b>£392</b></div>
+        </section>
+      </div>
+    </div>
+    <div class="direction-card__body"><span class="direction-card__eyebrow">Concept 02 · Data first</span><h3>Precision Ledger</h3><p>A calm, finance-grade register maximises scan speed and bulk work. Saved views stay visible, density is adjustable, and mobile switches to compact ledger cards.</p><div class="direction-card__tags"><span>High density</span><span>Table first</span><span>Familiar</span></div></div>
+  </article>
+
+  <article class="direction-card" data-choice="fulfilment-flow" onclick="toggleSelect(this)">
+    <div class="mini board">
+      <div class="mini-head">
+        <div class="mini-title"><small>Fulfilment view</small><strong>Orders in motion</strong></div>
+        <div class="mini-actions"><button class="mini-action">List</button><button class="mini-action primary">Board</button></div>
+      </div>
+      <div class="flow-ribbon"><div class="flow-step hot"><b>7</b><span>Awaiting payment</span></div><div class="flow-step"><b>15</b><span>Paid</span></div><div class="flow-step"><b>12</b><span>Preparing</span></div><div class="flow-step"><b>19</b><span>Dispatched</span></div></div>
+      <div class="board-grid">
+        <section class="lane"><div class="lane-head"><span>NEEDS ATTENTION</span><span>4</span></div><div class="order-card"><b>#1048 · Maya Chen</b><p>Payment proof waiting<br>SEMA × 2 · UK</p><div class="order-card-foot"><span>£412</span><span>Review →</span></div></div><div class="order-card"><b>#1041 · Oliver Reid</b><p>Address incomplete<br>TIRZ × 3 · UK</p><div class="order-card-foot"><span>£588</span><span>Open →</span></div></div></section>
+        <section class="lane"><div class="lane-head"><span>READY</span><span>12</span></div><div class="order-card"><b>#1038 · Sofia Klein</b><p>Stock allocated<br>BPC × 2 · DE</p><div class="order-card-foot"><span>£274</span><span>Pack →</span></div></div><div class="order-card"><b>#1032 · Theo Martin</b><p>Payment verified<br>SEMA × 1 · FR</p><div class="order-card-foot"><span>£206</span><span>Pack →</span></div></div></section>
+        <section class="lane"><div class="lane-head"><span>DISPATCHED</span><span>19</span></div><div class="order-card"><b>#1029 · Hana Novak</b><p>Tracking added<br>TIRZ × 2 · CZ</p><div class="order-card-foot"><span>£392</span><span>Track →</span></div></div></section>
+      </div>
+    </div>
+    <div class="direction-card__body"><span class="direction-card__eyebrow">Concept 03 · Journey first</span><h3>Fulfilment Flow</h3><p>A stage-based board makes order progress visible at a glance while retaining a full list mode for filtering and bulk work. Mobile uses stage tabs and stacked cards.</p><div class="direction-card__tags"><span>Visual workflow</span><span>Board + list</span><span>Progressive</span></div></div>
+  </article>
+</div>
+
+<div class="concept-footer"><strong>Shared boundaries:</strong> the GB Organiser shell remains unchanged; each concept keeps search, advanced filters, saved views, selection, bulk actions, import/export, order editing, payment proof review, flags, detail views, empty states, and responsive behavior.</div>

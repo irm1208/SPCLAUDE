@@ -8,6 +8,7 @@ import { randomBytes } from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
+import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
 
 const app: Express = express();
 
@@ -15,28 +16,6 @@ const app: Express = express();
 // Explicitly whitelist known origins instead of reflecting any origin.
 // Allows localhost (dev) and Replit workspace / deployed app domains.
 // Use ALLOWED_ORIGINS env var (comma-separated) to add custom domains.
-
-function buildAllowedOrigins(): string[] {
-  const origins: string[] = [
-    "http://localhost:5000",
-    "http://localhost:8080",
-    // Custom production domains — always allowed regardless of env vars
-    "https://saltandpeps.co.uk",
-    "https://www.saltandpeps.co.uk",
-  ];
-  // Replit dev domain (e.g. abc123.replit.dev)
-  if (process.env["REPLIT_DEV_DOMAIN"]) {
-    origins.push(`https://${process.env["REPLIT_DEV_DOMAIN"]}`);
-  }
-  // Additional custom domains from env (optional, for future use)
-  if (process.env["ALLOWED_ORIGINS"]) {
-    process.env["ALLOWED_ORIGINS"].split(",").forEach(o => {
-      const trimmed = o.trim();
-      if (trimmed) origins.push(trimmed);
-    });
-  }
-  return origins;
-}
 
 const _allowedOrigins = buildAllowedOrigins();
 
@@ -46,10 +25,7 @@ app.use(
       // Requests with no Origin (same-origin, server-to-server, mobile apps) — allow
       if (!origin) { callback(null, true); return; }
       // Exact match against whitelist
-      if (_allowedOrigins.includes(origin)) { callback(null, true); return; }
-      // Allow any *.replit.dev or *.replit.app subdomain (covers all workspace and deploy URLs)
-      // Also allow origins with an explicit port (e.g. https://xxx.replit.dev:8080)
-      if (/^https:\/\/[\w-]+(?:\.[\w-]+)*\.replit\.(dev|app)(:\d+)?$/.test(origin)) { callback(null, true); return; }
+      if (isAllowedOrigin(origin, _allowedOrigins)) { callback(null, true); return; }
       callback(new Error(`CORS: origin '${origin}' not allowed`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

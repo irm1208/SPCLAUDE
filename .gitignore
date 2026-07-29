@@ -4,6 +4,14 @@ peps_dump_*.sql
 # Build output
 dist/
 artifacts/*/dist/
+.worktrees/
+node_modules/
+__pycache__/
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
 
 # Database dumps & exports
 backup_clean.sql

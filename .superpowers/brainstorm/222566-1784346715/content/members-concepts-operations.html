@@ -1,0 +1,100 @@
+<style>
+  .concept-intro { max-width: 860px; }
+  .concept-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:24px; }
+  .concept-card { border:1px solid #cbd7e7; border-radius:18px; overflow:hidden; background:#fff; cursor:pointer; transition:.2s ease; box-shadow:0 10px 26px rgba(27,58,122,.08); }
+  .concept-card:hover { transform:translateY(-3px); border-color:#2D6BCC; }
+  .concept-card.selected { outline:3px solid rgba(45,107,204,.24); border-color:#2D6BCC; }
+  .mini-shell { display:grid; grid-template-columns:42px 1fr; height:250px; background:#f8fafc; }
+  .mini-side { background:#17346f; padding:11px 7px; display:flex; flex-direction:column; gap:8px; }
+  .mini-logo { width:20px; height:20px; border-radius:6px; background:linear-gradient(135deg,#fff 0 47%,#e9a020 48% 100%); margin:0 auto 8px; }
+  .nav-dot { width:22px; height:5px; border-radius:10px; background:rgba(255,255,255,.25); margin:0 auto; }
+  .nav-dot.active { height:20px; background:#fff; opacity:.95; }
+  .mini-main { padding:12px; overflow:hidden; }
+  .mini-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .mini-title { width:72px; height:10px; border-radius:8px; background:#0f1f38; }
+  .mini-action { width:48px; height:14px; border-radius:6px; background:#1b3a7a; }
+  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:8px; }
+  .metric { height:30px; border:1px solid #d0dae4; background:#fff; border-radius:7px; position:relative; }
+  .metric:before { content:''; position:absolute; left:6px; top:6px; width:35%; height:4px; border-radius:4px; background:#9aa9ba; }
+  .metric:after { content:''; position:absolute; left:6px; bottom:6px; width:45%; height:8px; border-radius:4px; background:#1b3a7a; }
+  .toolbar { height:22px; border:1px solid #d0dae4; border-radius:7px; background:#fff; margin-bottom:7px; }
+  .table { border:1px solid #d0dae4; border-radius:8px; background:#fff; overflow:hidden; }
+  .row { height:22px; border-bottom:1px solid #e6ebf1; display:grid; grid-template-columns:1.5fr .7fr .7fr .9fr; gap:5px; padding:5px; }
+  .row:last-child { border:0; }
+  .line { height:4px; border-radius:4px; background:#bcc7d3; }
+  .line.dark { background:#374151; }
+  .alert-rail { display:grid; grid-template-columns:1fr 62px; gap:7px; }
+  .rail { border-radius:8px; background:#1c2b3d; padding:7px; }
+  .rail-pill { height:22px; border-radius:6px; background:rgba(233,160,32,.18); border:1px solid rgba(233,160,32,.45); margin-bottom:5px; }
+  .split-pane { display:grid; grid-template-columns:1.35fr .85fr; gap:7px; }
+  .profile { border-radius:9px; background:#fff; border:1px solid #d0dae4; padding:9px; }
+  .avatar { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#2d6bcc,#1b3a7a); margin-bottom:8px; }
+  .profile-line { height:5px; border-radius:5px; background:#c5cfda; margin-bottom:6px; }
+  .profile-line.strong { width:58%; background:#0f1f38; height:7px; }
+  .signal-grid { display:grid; grid-template-columns:1.2fr .8fr .8fr; grid-template-rows:38px 38px; gap:6px; margin-bottom:8px; }
+  .signal { border-radius:8px; background:#fff; border:1px solid #d0dae4; }
+  .signal.primary { grid-row:1 / 3; background:linear-gradient(135deg,#2d6bcc,#1b3a7a); border:0; }
+  .segment { display:flex; gap:4px; margin-bottom:7px; }
+  .segment span { height:14px; flex:1; border-radius:5px; background:#e4eaf1; }
+  .segment span:first-child { background:#1b3a7a; }
+  .card-copy { padding:14px 15px 16px; border-top:1px solid #e2e8f0; }
+  .card-copy .kicker { color:#2d6bcc; font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+  .card-copy h3 { margin:4px 0 5px; font-size:17px; color:#0f1f38; }
+  .card-copy p { margin:0; color:#64748b; font-size:12px; line-height:1.5; }
+  .preserved { margin-top:20px; padding:13px 16px; background:#eef5ff; border-left:4px solid #2d6bcc; border-radius:8px; color:#334155; font-size:13px; }
+  @media(max-width:900px){ .concept-grid{grid-template-columns:1fr;} }
+</style>
+
+<div class="concept-intro">
+  <div class="label">Design section 1 of 2 · Operational directions</div>
+  <h2>Three distinct ways to run the member directory</h2>
+  <p class="subtitle">All three sit inside the unchanged GB Organiser V2 shell and preserve the same metrics, filters, sorting, row actions, and member details. Click any direction you especially want me to emphasize; you are not choosing a winner yet.</p>
+</div>
+
+<div class="concept-grid" data-multiselect>
+  <div class="concept-card" data-choice="command-ledger" onclick="toggleSelect(this)">
+    <div class="mini-shell">
+      <div class="mini-side"><div class="mini-logo"></div><div class="nav-dot"></div><div class="nav-dot"></div><div class="nav-dot active"></div><div class="nav-dot"></div><div class="nav-dot"></div></div>
+      <div class="mini-main">
+        <div class="mini-top"><div class="mini-title"></div><div class="mini-action"></div></div>
+        <div class="metrics"><div class="metric"></div><div class="metric"></div><div class="metric"></div><div class="metric"></div></div>
+        <div class="alert-rail">
+          <div><div class="toolbar"></div><div class="table"><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div></div></div>
+          <div class="rail"><div class="rail-pill"></div><div class="rail-pill"></div><div class="rail-pill"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-copy"><span class="kicker">01 · Fastest follow-up</span><h3>Command Ledger</h3><p>A dense, confident directory with a pinned attention rail for unpaid, stalled, or unresolved members.</p></div>
+  </div>
+
+  <div class="concept-card" data-choice="member-crm" onclick="toggleSelect(this)">
+    <div class="mini-shell">
+      <div class="mini-side"><div class="mini-logo"></div><div class="nav-dot"></div><div class="nav-dot"></div><div class="nav-dot active"></div><div class="nav-dot"></div><div class="nav-dot"></div></div>
+      <div class="mini-main">
+        <div class="mini-top"><div class="mini-title"></div><div class="mini-action"></div></div>
+        <div class="metrics"><div class="metric"></div><div class="metric"></div><div class="metric"></div><div class="metric"></div></div>
+        <div class="toolbar"></div>
+        <div class="split-pane">
+          <div class="table"><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div></div>
+          <div class="profile"><div class="avatar"></div><div class="profile-line strong"></div><div class="profile-line"></div><div class="profile-line"></div><div class="profile-line"></div><div class="profile-line"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-copy"><span class="kicker">02 · Richest context</span><h3>Member CRM</h3><p>A master–detail workspace where the selected member’s status, orders, notes, and history stay visible beside the directory.</p></div>
+  </div>
+
+  <div class="concept-card" data-choice="signal-board" onclick="toggleSelect(this)">
+    <div class="mini-shell">
+      <div class="mini-side"><div class="mini-logo"></div><div class="nav-dot"></div><div class="nav-dot"></div><div class="nav-dot active"></div><div class="nav-dot"></div><div class="nav-dot"></div></div>
+      <div class="mini-main">
+        <div class="mini-top"><div class="mini-title"></div><div class="mini-action"></div></div>
+        <div class="signal-grid"><div class="signal primary"></div><div class="signal"></div><div class="signal"></div><div class="signal"></div><div class="signal"></div></div>
+        <div class="segment"><span></span><span></span><span></span><span></span></div>
+        <div class="table"><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div><div class="row"><i class="line dark"></i><i class="line"></i><i class="line"></i><i class="line"></i></div></div>
+      </div>
+    </div>
+    <div class="card-copy"><span class="kicker">03 · Best overview</span><h3>Signal Board</h3><p>A cohort-first dashboard that turns payment, fulfilment, geography, and participation into scan-friendly signals above the directory.</p></div>
+  </div>
+</div>
+
+<div class="preserved"><strong>Shared contract:</strong> identical member records, responsive behaviour, accessible controls, live-feeling search and filters, sortable columns, and an actionable detail view.</div>

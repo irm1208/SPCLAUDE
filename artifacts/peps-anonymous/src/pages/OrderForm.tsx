@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart } from "lucide-react";
+import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart, Eye } from "lucide-react";
 import { findProtocol, type Protocol } from "@/data/protocols";
 import { COUNTRIES } from "@/data/countries";
 import { LabReportPopup } from "@/components/LabTestsPopup";
@@ -16,7 +16,7 @@ import { useGetProducts, useGetDeliveryMethods, useGetSiteConfig } from "@worksp
 import { useQuery } from "@tanstack/react-query";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout } from "@/hooks/use-account";
+import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, type GroupBuySummary } from "@/hooks/use-account";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
@@ -431,7 +431,10 @@ function OrderFormShell({ children }: { children: React.ReactNode }) {
 export default function OrderForm() {
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const gbId = new URLSearchParams(search).get("gbId") ?? null;
+  const searchParams = new URLSearchParams(search);
+  const gbId = searchParams.get("gbId") ?? null;
+  // Organiser "preview as buyer" mode — read-only view of the order form; ordering disabled
+  const isPreview = !!gbId && searchParams.get("preview") === "1";
 
   // When in GB mode, fetch GB-specific products/delivery methods
   const { data: globalProducts = [], isLoading: isLoadingGlobalProducts } = useGetProducts();
@@ -580,8 +583,21 @@ export default function OrderForm() {
   const [gbOrderPageMessage, setGbOrderPageMessage] = React.useState<string | null>(null);
   const [gbCurrency, setGbCurrency] = React.useState<string | null>(null);
 
+  // Organiser buyer-preview: fetch the GB summary directly — the organiser isn't
+  // necessarily a member, so the GB won't appear in their /api/group-buys list.
+  const { data: previewGb } = useQuery<GroupBuySummary | null>({
+    queryKey: ["gb-buyer-preview", gbId],
+    queryFn: async () => {
+      const res = await fetch(`/api/group-buys/${gbId}/buyer-preview`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!gbId && isPreview,
+    retry: false,
+  });
+
   // Resolve the user's country leg for the current GB (if the GB has country legs enabled)
-  const myGb = gbId ? (myGroupBuys?.find(g => g.id === gbId) ?? null) : null;
+  const myGb = gbId ? (isPreview ? (previewGb ?? null) : (myGroupBuys?.find(g => g.id === gbId) ?? null)) : null;
   const gbClosed = myGb?.status === "closed";
   const hideOrderFormPrices = gbClosed && (myGb?.hidePricesOnOrderForm ?? false);
   const hideOrderTotal = gbClosed && (myGb?.hideOrderTotalOnOrderForm ?? false);
@@ -607,6 +623,7 @@ export default function OrderForm() {
 
   // Auto-assign country leg from account's stored country code — silent, no picker needed
   React.useEffect(() => {
+    if (isPreview) return; // never mutate leg assignments from organiser preview
     if (!gbHasCountryLegs || myCountryLegId || !account?.country || countryLegs.length === 0) return;
     if (assignLeg.isPending) return;
     // Only ever fire once per GB — prevents an infinite loop when the post-mutation
@@ -628,7 +645,7 @@ export default function OrderForm() {
 
   // Resolve currency: use async-fetched state, fall back to cached group buy data so the
   // symbol is correct immediately on remount (before the fetch resolves).
-  const effectiveCurrency = gbCurrency ?? (gbId ? (myGroupBuys?.find(g => g.id === gbId)?.currency ?? null) : null);
+  const effectiveCurrency = gbCurrency ?? (myGb?.currency ?? null);
 
   // Format price using the group buy's currency
   const formatPrice = React.useCallback(
@@ -677,20 +694,26 @@ export default function OrderForm() {
       return;
     }
     setIsLoadingGbInfo(true);
-    fetch("/api/group-buys", { credentials: "include" })
-      .then(r => r.ok ? r.json() : [])
-      .then((gbs: Array<{
-        id: string; name: string; testingEnabled?: boolean; labTestSupplier?: string | null;
-        shippingOptions?: Array<{ id: string; label: string; price: number; requiresAddress?: boolean }>;
-        maxKitsPerCustomer?: number | null;
-        maxKitsTotal?: number | null;
-        kitsOrderedByUser?: number;
-        kitsOrderedTotal?: number;
-        allowHalfKits?: boolean;
-        orderPageMessage?: string | null;
-        currency?: string | null;
-      }>) => {
-        const gb = gbs.find(g => g.id === gbId);
+    type GbInfo = {
+      id: string; name: string; testingEnabled?: boolean; labTestSupplier?: string | null;
+      shippingOptions?: Array<{ id: string; label: string; price: number; requiresAddress?: boolean }>;
+      maxKitsPerCustomer?: number | null;
+      maxKitsTotal?: number | null;
+      kitsOrderedByUser?: number;
+      kitsOrderedTotal?: number;
+      allowHalfKits?: boolean;
+      orderPageMessage?: string | null;
+      currency?: string | null;
+    };
+    // In organiser buyer-preview the GB isn't in the member list — fetch it directly.
+    const fetchGbInfo: Promise<GbInfo | undefined> = isPreview
+      ? fetch(`/api/group-buys/${gbId}/buyer-preview`, { credentials: "include" })
+          .then(r => r.ok ? (r.json() as Promise<GbInfo>) : undefined)
+      : fetch("/api/group-buys", { credentials: "include" })
+          .then(r => r.ok ? (r.json() as Promise<GbInfo[]>) : [])
+          .then(gbs => gbs.find(g => g.id === gbId));
+    fetchGbInfo
+      .then((gb: GbInfo | undefined) => {
         setPageTitle(gb?.name ?? null);
         setGbTestingEnabled(gb?.testingEnabled ?? false);
         setGbLabTestSupplier(gb?.labTestSupplier ?? null);
@@ -714,7 +737,7 @@ export default function OrderForm() {
         setIsLoadingGbInfo(false);
       });
     return () => { setPageTitle(null); };
-  }, [gbId]);
+  }, [gbId, isPreview]);
 
   const [infoOpenId, setInfoOpenId] = React.useState<string | null>(null);
   const [showAllDsRegions, setShowAllDsRegions] = React.useState(false);
@@ -759,9 +782,12 @@ export default function OrderForm() {
   }, [siteConfig?.vendorShipping]);
 
   // Sync groupBuyId into draft when navigating to this page with ?gbId=
+  // In organiser buyer-preview mode, never touch the persisted draft — switching
+  // the draft's GB would wipe the organiser's own in-progress order.
   useEffect(() => {
+    if (isPreview) return;
     draft.setGroupBuyId(gbId);
-  }, [gbId]);
+  }, [gbId, isPreview]);
 
   // OrderForm is the non-wholesale order flow — clear any stale orderType from the draft
   useEffect(() => {
@@ -950,6 +976,11 @@ export default function OrderForm() {
   }, [gbId]);
 
   const handleReview = () => {
+    if (isPreview) {
+      setError("You're previewing this group buy as a buyer — orders can't be placed in preview mode.");
+      return;
+    }
+
     const filledItems = draft.lineItems.filter(item => item.productId);
 
     if (filledItems.length === 0) {
@@ -994,6 +1025,16 @@ export default function OrderForm() {
       <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
         <SiteAnnouncements />
       </div>
+      {isPreview && (
+        <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
+          <div className="flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[13px]" style={{ background: "#FFF7E6", border: "1px solid #F5D48F", color: "#7A5A0E" }}>
+            <Eye className="w-4 h-4 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-bold">Buyer preview.</span> You're seeing this group buy the way members do. Orders can't be placed from preview — close this tab to return to your workspace.
+            </div>
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {error && (
           <FloatingError message={error} onClose={() => setError("")} />
@@ -1130,7 +1171,7 @@ export default function OrderForm() {
             )}
 
             {/* Country leg assignment — auto-detected from account country; manual picker as fallback */}
-            {gbHasCountryLegs && !myCountryLegId && (() => {
+            {gbHasCountryLegs && !myCountryLegId && !isPreview && (() => {
               const activeLegs = countryLegs.filter(l => l.status === "active");
               const autoMatch = account?.country ? activeLegs.find(l => matchesCountryLeg(account.country!, l)) : null;
               // Auto-assigning in progress — show subtle loading state
@@ -2093,10 +2134,11 @@ export default function OrderForm() {
         <div className="pt-2 pb-4">
           <button
             onClick={handleReview}
-            className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10"
+            disabled={isPreview}
+            className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
             style={{ background: "var(--t-blue-deep)" }}
           >
-            Review Order <ArrowRight className="w-4 h-4" />
+            {isPreview ? (<>Ordering disabled in preview <Eye className="w-4 h-4" /></>) : (<>Review Order <ArrowRight className="w-4 h-4" /></>)}
           </button>
         </div>
 

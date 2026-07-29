@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GB Organiser navigation context options</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: #eef3f8;
+        color: #0f1f38;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(45, 107, 204, 0.09), transparent 34rem),
+          #eef3f8;
+      }
+
+      button,
+      article {
+        font: inherit;
+      }
+
+      .page-shell {
+        width: min(1480px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 42px 0 88px;
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: #2d6bcc;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: #0f1f38;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.05;
+        letter-spacing: -0.045em;
+      }
+
+      .intro {
+        max-width: 760px;
+        margin: 12px 0 0;
+        color: #5f6f82;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .recommendation {
+        flex: 0 0 auto;
+        padding: 9px 13px;
+        border: 1px solid #c8d8ed;
+        border-radius: 999px;
+        color: #1b3a7a;
+        background: #eaf1fb;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .concepts {
+        display: grid;
+        gap: 22px;
+      }
+
+      .concept {
+        overflow: hidden;
+        padding: 0;
+        border: 1px solid #c7d3e0;
+        border-radius: 18px;
+        outline: none;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(15, 31, 56, 0.06);
+        cursor: pointer;
+        transition: border-color 160ms ease, box-shadow 160ms ease,
+          transform 160ms ease;
+      }
+
+      .concept:hover,
+      .concept:focus-visible {
+        border-color: #6f8fc0;
+        box-shadow: 0 15px 36px rgba(15, 31, 56, 0.11);
+        transform: translateY(-1px);
+      }
+
+      .concept.selected {
+        border: 2px solid #2d6bcc;
+        box-shadow: 0 0 0 5px rgba(45, 107, 204, 0.13),
+          0 15px 36px rgba(15, 31, 56, 0.11);
+      }
+
+      .stage {
+        overflow-x: auto;
+        padding: 22px;
+        background: linear-gradient(180deg, #edf3f9, #f8fafc);
+      }
+
+      .browser {
+        min-width: 1100px;
+        overflow: hidden;
+        border: 1px solid rgba(15, 31, 56, 0.14);
+        border-radius: 11px;
+        background: #ffffff;
+        box-shadow: 0 12px 30px rgba(15, 31, 56, 0.11);
+      }
+
+      .workbar {
+        min-height: 70px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 18px;
+        background: #ffffff;
+      }
+
+      .menu {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 13px;
+        color: #1b3a7a;
+        background: #eaf1fb;
+      }
+
+      .lines {
+        width: 18px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .lines i {
+        height: 2px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .lines i:nth-child(2) {
+        width: 13px;
+      }
+
+      .lines i:nth-child(3) {
+        width: 16px;
+      }
+
+      .page-name {
+        width: 184px;
+        display: grid;
+        line-height: 1.15;
+      }
+
+      .page-name strong {
+        color: #0f1f38;
+        font-size: 14px;
+      }
+
+      .page-name small {
+        margin-top: 4px;
+        color: #6b7280;
+        font-size: 11px;
+      }
+
+      .search {
+        height: 46px;
+        min-width: 360px;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px 0 14px;
+        border: 1px solid #becada;
+        border-radius: 13px;
+        color: #667085;
+        background: #fbfcfe;
+        font-size: 13px;
+      }
+
+      .ico {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      kbd {
+        margin-left: auto;
+        padding: 4px 7px;
+        border: 1px solid #d5dde8;
+        border-radius: 7px;
+        color: #667085;
+        background: #ffffff;
+        font: inherit;
+        font-size: 11px;
+      }
+
+      .action {
+        height: 44px;
+        padding: 0 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #c8d3df;
+        border-radius: 12px;
+        color: #1b3a7a;
+        background: #ffffff;
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .action.primary {
+        padding-inline: 18px;
+        border-color: #2d6bcc;
+        color: #ffffff;
+        background: #2d6bcc;
+      }
+
+      .profile {
+        height: 48px;
+        padding-left: 12px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border-left: 1px solid #e0e6ed;
+      }
+
+      .avatar {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: #1b3a7a;
+        background: #ddeaff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .profile-copy {
+        display: grid;
+        line-height: 1.15;
+      }
+
+      .profile-copy strong {
+        color: #0f1f38;
+        font-size: 12px;
+      }
+
+      .profile-copy small {
+        margin-top: 4px;
+        color: #6b7280;
+        font-size: 11px;
+      }
+
+      .metric-row {
+        height: 38px;
+        display: flex;
+        align-items: center;
+        padding: 0 18px;
+      }
+
+      .metric {
+        min-width: 124px;
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+      }
+
+      .metric + .metric {
+        margin-left: 18px;
+        padding-left: 18px;
+        border-left: 1px solid #dce4ec;
+      }
+
+      .metric span {
+        color: #6b7280;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .metric strong {
+        color: #0f1f38;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .metric .status {
+        padding: 3px 8px;
+        border-radius: 999px;
+        color: #7a4b00;
+        background: #fff2d6;
+      }
+
+      .quiet-row {
+        border-bottom: 1px solid #dce4ec;
+        background: #f8fafc;
+      }
+
+      .quiet-row::before {
+        content: "Group buy";
+        margin-right: 24px;
+        color: #8a9aaa;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .inline .workbar {
+        min-height: 78px;
+      }
+
+      .inline-metrics {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-right: 2px;
+      }
+
+      .chip {
+        height: 30px;
+        padding: 0 9px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid #d8e1eb;
+        border-radius: 9px;
+        color: #526173;
+        background: #f8fafc;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .chip b {
+        color: #0f1f38;
+      }
+
+      .chip.is-status {
+        border-color: #efd79e;
+        color: #7a4b00;
+        background: #fff8e8;
+        font-weight: 700;
+      }
+
+      .inline .search {
+        min-width: 300px;
+      }
+
+      .lower .workbar {
+        border-bottom: 1px solid #dce4ec;
+      }
+
+      .lower-row {
+        justify-content: flex-end;
+        gap: 0;
+        background: #ffffff;
+        box-shadow: inset 0 -3px 0 #edf3fb;
+      }
+
+      .lower-row .metric {
+        min-width: auto;
+      }
+
+      .lower-row .metric:first-child {
+        margin-right: auto;
+      }
+
+      .copy {
+        display: grid;
+        grid-template-columns: 40px minmax(180px, 0.75fr) 1.4fr;
+        align-items: center;
+        gap: 14px;
+        padding: 15px 18px 16px;
+        border-top: 1px solid #dde5ed;
+      }
+
+      .letter {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        color: #ffffff;
+        background: #1b3a7a;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .copy h2 {
+        margin: 0;
+        color: #0f1f38;
+        font-size: 15px;
+      }
+
+      .copy p {
+        margin: 0;
+        color: #6b7280;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .selection {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 10;
+        max-width: calc(100% - 36px);
+        padding: 12px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 12px;
+        color: #ffffff;
+        background: #172d5d;
+        box-shadow: 0 12px 30px rgba(15, 31, 56, 0.22);
+        font-size: 13px;
+        font-weight: 700;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(8px);
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+
+      .selection.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 760px) {
+        .page-shell {
+          width: min(100% - 20px, 1480px);
+          padding-top: 26px;
+        }
+
+        .page-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .copy {
+          grid-template-columns: 36px 1fr;
+        }
+
+        .copy p {
+          grid-column: 2;
+        }
+
+        .stage {
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg aria-hidden="true" width="0" height="0" style="position: absolute">
+      <defs>
+        <symbol id="search-icon" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-4-4"></path>
+        </symbol>
+        <symbol id="folder-icon" viewBox="0 0 24 24">
+          <path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path>
+          <path d="M16 14h4M18 12v4"></path>
+        </symbol>
+      </defs>
+    </svg>
+
+    <main class="page-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">GB Organiser v2 · Navigation correction</p>
+          <h1>Corrected group-buy context</h1>
+          <p class="intro">
+            Each option shows only the requested information: group-buy status,
+            member count, and total order count. The incorrect dark full-width strip
+            has been removed. Click a design, then send its letter in chat.
+          </p>
+        </div>
+        <span class="recommendation">A recommended</span>
+      </header>
+
+      <section class="concepts" aria-label="Navigation context design options">
+        <article
+          class="concept"
+          data-choice="A"
+          role="button"
+          tabindex="0"
+          aria-pressed="false"
+        >
+          <div class="stage">
+            <div class="browser">
+              <div class="metric-row quiet-row">
+                <div class="metric"><span>Status</span><strong class="status">Draft</strong></div>
+                <div class="metric"><span>Members</span><strong>0</strong></div>
+                <div class="metric"><span>Orders</span><strong>0</strong></div>
+              </div>
+              <div class="workbar">
+                <span class="menu" aria-hidden="true"><span class="lines"><i></i><i></i><i></i></span></span>
+                <span class="page-name"><strong>Overview</strong><small>GB Organiser workspace</small></span>
+                <span class="search"><svg class="ico"><use href="#search-icon"></use></svg>Search orders, members, parcels…<kbd>⌘ K</kbd></span>
+                <span class="action"><svg class="ico"><use href="#folder-icon"></use></svg>Manage</span>
+                <span class="action primary">Create order</span>
+                <span class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="copy">
+            <span class="letter">A</span>
+            <h2>Quiet summary rail</h2>
+            <p>A pale utility row keeps operational context scannable without turning it into a dominant banner. Search keeps its full width.</p>
+          </div>
+        </article>
+
+        <article
+          class="concept inline"
+          data-choice="B"
+          role="button"
+          tabindex="0"
+          aria-pressed="false"
+        >
+          <div class="stage">
+            <div class="browser">
+              <div class="workbar">
+                <span class="menu" aria-hidden="true"><span class="lines"><i></i><i></i><i></i></span></span>
+                <span class="page-name"><strong>Overview</strong><small>GB Organiser workspace</small></span>
+                <span class="inline-metrics"><span class="chip is-status">Draft</span><span class="chip">Members <b>0</b></span><span class="chip">Orders <b>0</b></span></span>
+                <span class="search"><svg class="ico"><use href="#search-icon"></use></svg>Search workspace<kbd>⌘ K</kbd></span>
+                <span class="action"><svg class="ico"><use href="#folder-icon"></use></svg>Manage</span>
+                <span class="action primary">Create order</span>
+                <span class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="copy">
+            <span class="letter">B</span>
+            <h2>Inline metric chips</h2>
+            <p>Removes the second row entirely. It is compact, but the metrics compete directly with search on narrower desktop widths.</p>
+          </div>
+        </article>
+
+        <article
+          class="concept lower"
+          data-choice="C"
+          role="button"
+          tabindex="0"
+          aria-pressed="false"
+        >
+          <div class="stage">
+            <div class="browser">
+              <div class="workbar">
+                <span class="menu" aria-hidden="true"><span class="lines"><i></i><i></i><i></i></span></span>
+                <span class="page-name"><strong>Overview</strong><small>GB Organiser workspace</small></span>
+                <span class="search"><svg class="ico"><use href="#search-icon"></use></svg>Search orders, members, parcels…<kbd>⌘ K</kbd></span>
+                <span class="action"><svg class="ico"><use href="#folder-icon"></use></svg>Manage</span>
+                <span class="action primary">Create order</span>
+                <span class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span></span>
+              </div>
+              <div class="metric-row lower-row">
+                <div class="metric"><span>Group-buy status</span><strong class="status">Draft</strong></div>
+                <div class="metric"><span>Members</span><strong>0</strong></div>
+                <div class="metric"><span>Orders</span><strong>0</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="copy">
+            <span class="letter">C</span>
+            <h2>Lower status edge</h2>
+            <p>Keeps the work bar visually primary and puts metrics beneath it. Clear, though it makes the context feel less immediate.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div class="selection" role="status" aria-live="polite"></div>
+
+    <script>
+      const concepts = [...document.querySelectorAll(".concept")];
+      const selection = document.querySelector(".selection");
+
+      function selectConcept(concept) {
+        const choice = concept.dataset.choice;
+
+        concepts.forEach((item) => {
+          const selected = item === concept;
+          item.classList.toggle("selected", selected);
+          item.setAttribute("aria-pressed", String(selected));
+        });
+
+        selection.textContent = `Option ${choice} selected — send ${choice} in chat`;
+        selection.classList.add("visible");
+      }
+
+      concepts.forEach((concept) => {
+        concept.addEventListener("click", () => selectConcept(concept));
+        concept.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectConcept(concept);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

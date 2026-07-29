@@ -1,0 +1,244 @@
+<style>
+  .nav-lab {
+    --navy: #1b3a7a;
+    --deep: #1b3164;
+    --blue: #2d6bcc;
+    --ink: #0f1f38;
+    --body: #374151;
+    --muted: #6b7280;
+    --line: #d0dae4;
+    --wash: #f8fafc;
+    --pale: #edf4ff;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+  .nav-lab .intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+  .nav-lab .intro h2 { color: var(--ink); letter-spacing: -.035em; }
+  .nav-lab .intro p { margin: 0; max-width: 720px; }
+  .nav-lab .hint { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: #eaf1fb; color: var(--navy); font-size: 12px; font-weight: 700; }
+  .nav-lab .concepts { display: grid; gap: 22px; }
+  .nav-lab .concept { background: #fff; border: 1px solid #cbd6e3; border-radius: 18px; overflow: hidden; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+  .nav-lab .concept:hover { border-color: #7695c6; box-shadow: 0 12px 30px rgba(15,31,56,.10); transform: translateY(-1px); }
+  .nav-lab .concept.selected { border: 2px solid var(--blue); box-shadow: 0 0 0 4px rgba(45,107,204,.12); }
+  .nav-lab .concept-copy { display: grid; grid-template-columns: 42px minmax(180px, .8fr) 1.6fr; align-items: center; gap: 14px; padding: 15px 18px 16px; border-top: 1px solid #dde5ed; }
+  .nav-lab .concept-copy .letter { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--navy); font-size: 13px; font-weight: 800; }
+  .nav-lab .concept-copy h3 { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.25; }
+  .nav-lab .concept-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .nav-lab .stage { overflow-x: auto; background: #f1f5f9; padding: 22px; }
+  .nav-lab .browser { min-width: 1040px; border: 1px solid rgba(15,31,56,.13); border-radius: 10px; overflow: hidden; box-shadow: 0 9px 24px rgba(15,31,56,.10); }
+  .nav-lab .bar { min-height: 76px; display: flex; align-items: center; gap: 10px; padding: 0 18px; color: var(--ink); background: #fff; }
+  .nav-lab .ico { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-lab button { font: inherit; }
+  .nav-lab .icon-btn { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: #516079; display: grid; place-items: center; position: relative; }
+  .nav-lab .icon-btn.soft { border-color: transparent; background: #f8fafc; }
+  .nav-lab .red-dot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; box-sizing: content-box; }
+  .nav-lab .crumb { min-width: 220px; display: flex; align-items: center; gap: 9px; padding-right: 12px; }
+  .nav-lab .crumb span { color: var(--muted); font-size: 13px; font-weight: 600; }
+  .nav-lab .crumb strong { color: var(--ink); font-size: 14px; font-weight: 750; }
+  .nav-lab .crumb .slash { color: #9aa7b7; font-size: 17px; font-weight: 400; }
+  .nav-lab .search { height: 44px; min-width: 280px; flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; color: #6e7b8e; font-size: 13px; }
+  .nav-lab .search kbd { margin-left: auto; min-width: 36px; height: 25px; display: grid; place-items: center; border: 1px solid #d8e0e8; border-radius: 7px; background: #fff; color: #667085; font-size: 11px; font-weight: 700; box-shadow: 0 1px 1px rgba(15,31,56,.04); }
+  .nav-lab .actions { display: flex; align-items: center; gap: 8px; margin-left: 4px; }
+  .nav-lab .nav-btn { height: 42px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--navy); display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 750; white-space: nowrap; }
+  .nav-lab .nav-btn.primary { border-color: var(--navy); background: var(--navy); color: #fff; padding-inline: 17px; }
+  .nav-lab .profile { height: 48px; display: flex; align-items: center; gap: 9px; padding-left: 6px; color: var(--ink); }
+  .nav-lab .avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #dce8ff; color: var(--navy); font-size: 13px; font-weight: 800; }
+  .nav-lab .profile-copy { min-width: 92px; display: grid; line-height: 1.15; }
+  .nav-lab .profile-copy strong { font-size: 12.5px; }
+  .nav-lab .profile-copy small { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+  .nav-lab .chev { width: 14px; height: 14px; color: #6e7b8e; }
+
+  /* A — quiet command bar */
+  .nav-lab .quiet .bar { border-top: 3px solid var(--navy); }
+  .nav-lab .quiet .icon-btn:first-child { border-radius: 50%; }
+  .nav-lab .quiet .nav-btn:not(.primary) { border-color: transparent; background: transparent; }
+  .nav-lab .quiet .nav-btn:not(.primary):hover { background: #f3f6fa; }
+  .nav-lab .quiet .profile { margin-left: 2px; padding-left: 10px; border-left: 1px solid #e1e7ee; }
+
+  /* B — group-first cockpit */
+  .nav-lab .cockpit { background: #fff; }
+  .nav-lab .context-strip { height: 31px; padding: 0 18px; display: flex; align-items: center; gap: 10px; background: var(--deep); color: rgba(255,255,255,.76); font-size: 10.5px; letter-spacing: .01em; }
+  .nav-lab .context-strip strong { color: #fff; font-size: 11px; }
+  .nav-lab .context-strip .live { display: flex; align-items: center; gap: 5px; color: #d8fbe7; }
+  .nav-lab .context-strip .live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+  .nav-lab .context-strip .context-right { margin-left: auto; display: flex; gap: 16px; }
+  .nav-lab .cockpit .bar { min-height: 65px; }
+  .nav-lab .cockpit .brand-lockup { min-width: 227px; display: flex; align-items: center; gap: 10px; }
+  .nav-lab .cockpit .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--navy); color: #fff; font-weight: 900; font-size: 11px; }
+  .nav-lab .cockpit .brand-lockup strong { font-size: 14px; }
+  .nav-lab .cockpit .brand-lockup small { display: block; margin-top: 1px; color: var(--muted); font-size: 10.5px; }
+  .nav-lab .cockpit .nav-btn.primary { background: var(--blue); border-color: var(--blue); }
+
+  /* C — split identity rail */
+  .nav-lab .split-rail .bar { padding: 0; background: #fff; }
+  .nav-lab .split-rail .identity { align-self: stretch; width: 285px; padding: 0 18px; display: flex; align-items: center; gap: 13px; color: #fff; background: linear-gradient(125deg, var(--deep), var(--navy)); }
+  .nav-lab .split-rail .identity .icon-btn { border-color: rgba(255,255,255,.18); color: #fff; background: rgba(255,255,255,.08); }
+  .nav-lab .split-rail .identity-copy { min-width: 0; display: grid; line-height: 1.2; }
+  .nav-lab .split-rail .identity-copy small { color: rgba(255,255,255,.68); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 750; }
+  .nav-lab .split-rail .identity-copy strong { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .nav-lab .split-rail .page-chip { height: 31px; padding: 0 10px; display: flex; align-items: center; border-radius: 8px; background: #edf4ff; color: var(--navy); font-size: 11px; font-weight: 800; }
+  .nav-lab .split-rail .search { margin-left: 16px; }
+  .nav-lab .split-rail .profile { margin-right: 16px; }
+  .nav-lab .split-rail .profile-copy { display: none; }
+  .nav-lab .split-rail .nav-btn { padding-inline: 11px; }
+
+  /* D — floating workspace island */
+  .nav-lab .island .stage { background: linear-gradient(180deg, #edf3fa 0%, #f8fafc 100%); padding: 28px 22px; }
+  .nav-lab .island .browser { border: none; border-radius: 18px; box-shadow: 0 14px 35px rgba(24,49,91,.14), 0 1px 0 rgba(255,255,255,.8) inset; }
+  .nav-lab .island .bar { min-height: 70px; padding: 0 12px; gap: 8px; }
+  .nav-lab .island .icon-btn { border: 0; background: #f2f6fb; }
+  .nav-lab .island .group-pill { min-width: 250px; height: 48px; padding: 0 13px; display: flex; align-items: center; gap: 10px; border-radius: 13px; background: #f4f7fb; }
+  .nav-lab .island .mini-logo { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 9px; background: #e0eaff; color: var(--navy); font-size: 10px; font-weight: 900; }
+  .nav-lab .island .group-pill span { display: grid; line-height: 1.15; }
+  .nav-lab .island .group-pill strong { font-size: 12px; }
+  .nav-lab .island .group-pill small { margin-top: 3px; color: var(--muted); font-size: 9.5px; }
+  .nav-lab .island .search { border: none; background: #f4f7fb; }
+  .nav-lab .island .nav-btn { border-color: transparent; background: #f4f7fb; }
+  .nav-lab .island .nav-btn.primary { background: var(--navy); }
+  .nav-lab .island .profile-copy { display: none; }
+
+  /* E — navy command deck */
+  .nav-lab .command-deck .bar { min-height: 78px; color: #fff; background: linear-gradient(112deg, #172d59 0%, #1b3a7a 58%, #244b98 100%); }
+  .nav-lab .command-deck .icon-btn { border-color: rgba(255,255,255,.17); color: #fff; background: rgba(255,255,255,.08); }
+  .nav-lab .command-deck .crumb span, .nav-lab .command-deck .crumb .slash { color: rgba(255,255,255,.58); }
+  .nav-lab .command-deck .crumb strong { color: #fff; }
+  .nav-lab .command-deck .search { border-color: rgba(255,255,255,.14); background: rgba(7,22,51,.24); color: rgba(255,255,255,.72); }
+  .nav-lab .command-deck .search kbd { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.09); color: rgba(255,255,255,.84); box-shadow: none; }
+  .nav-lab .command-deck .nav-btn { border-color: rgba(255,255,255,.17); background: transparent; color: #fff; }
+  .nav-lab .command-deck .nav-btn.primary { border-color: #fff; background: #fff; color: var(--navy); }
+  .nav-lab .command-deck .profile { padding-left: 10px; border-left: 1px solid rgba(255,255,255,.17); color: #fff; }
+  .nav-lab .command-deck .avatar { background: #e7efff; color: var(--deep); }
+  .nav-lab .command-deck .profile-copy small, .nav-lab .command-deck .chev { color: rgba(255,255,255,.65); }
+  .nav-lab .command-deck .red-dot { border-color: #1e3f81; }
+
+  @media (max-width: 760px) {
+    .nav-lab .intro { align-items: flex-start; flex-direction: column; }
+    .nav-lab .concept-copy { grid-template-columns: 34px 1fr; }
+    .nav-lab .concept-copy p { grid-column: 2; }
+    .nav-lab .stage { padding: 14px; }
+  }
+</style>
+
+<svg aria-hidden="true" width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="n-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="n-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="n-folder" viewBox="0 0 24 24"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M16 14h4M18 12v4"/></symbol>
+    <symbol id="n-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.5-4.4M8.2 13.2l7.5 4.4"/></symbol>
+    <symbol id="n-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="n-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+    <symbol id="n-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+  </defs>
+</svg>
+
+<div class="nav-lab">
+  <div class="intro">
+    <div>
+      <h2>Five directions for the GB Organiser top nav</h2>
+      <p class="subtitle">Same core jobs, five different hierarchies. Compare how quickly you can identify the active workspace, search, and create an order.</p>
+    </div>
+    <span class="hint">Click your strongest direction</span>
+  </div>
+
+  <div class="concepts">
+    <div class="concept quiet" data-choice="a-quiet-command-bar" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="browser">
+          <div class="bar">
+            <button class="icon-btn" aria-label="Open navigation"><svg class="ico"><use href="#n-menu"/></svg></button>
+            <div class="crumb"><span>GB Organiser</span><b class="slash">/</b><strong>Overview</strong></div>
+            <div class="search"><svg class="ico"><use href="#n-search"/></svg><span>Search this group buy</span><kbd>⌘ K</kbd></div>
+            <div class="actions">
+              <button class="nav-btn"><svg class="ico"><use href="#n-folder"/></svg>Manage</button>
+              <button class="nav-btn"><svg class="ico"><use href="#n-share"/></svg>Share</button>
+              <button class="nav-btn primary">Create order</button>
+            </div>
+            <button class="icon-btn soft" aria-label="Notifications"><svg class="ico"><use href="#n-bell"/></svg><i class="red-dot"></i></button>
+            <div class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span><svg class="ico chev"><use href="#n-chevron"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-copy"><span class="letter">A</span><h3>Quiet command bar</h3><p>Refines the current structure: softer secondary actions, clearer grouping, and less “outlined button” noise. Lowest-risk evolution.</p></div>
+    </div>
+
+    <div class="concept cockpit" data-choice="b-group-first-cockpit" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="browser">
+          <div class="context-strip"><span class="live">Open group buy</span><strong>Winter Peptide Run 2025</strong><span>GBP</span><span class="context-right"><span>Closes in 12 days</span><span>148 members</span></span></div>
+          <div class="bar">
+            <button class="icon-btn" aria-label="Open navigation"><svg class="ico"><use href="#n-menu"/></svg></button>
+            <div class="brand-lockup"><span class="brand-mark">GB</span><span><strong>Overview</strong><small>GB Organiser workspace</small></span></div>
+            <div class="search"><svg class="ico"><use href="#n-search"/></svg><span>Search orders, members, parcels…</span><kbd>⌘ K</kbd></div>
+            <div class="actions">
+              <button class="nav-btn"><svg class="ico"><use href="#n-folder"/></svg>Manage</button>
+              <button class="nav-btn"><svg class="ico"><use href="#n-share"/></svg>Share</button>
+              <button class="nav-btn primary">Create order</button>
+            </div>
+            <button class="icon-btn soft" aria-label="Notifications"><svg class="ico"><use href="#n-bell"/></svg><i class="red-dot"></i></button>
+            <div class="profile"><span class="avatar">IA</span><svg class="ico chev"><use href="#n-chevron"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-copy"><span class="letter">B</span><h3>Group-first cockpit</h3><p>Adds a slim live context rail, making the active GB, lifecycle, currency, and close date unmistakable without crowding the work bar.</p></div>
+    </div>
+
+    <div class="concept split-rail" data-choice="c-split-identity-rail" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="browser">
+          <div class="bar">
+            <div class="identity"><button class="icon-btn" aria-label="Open navigation"><svg class="ico"><use href="#n-menu"/></svg></button><span class="identity-copy"><small>GB Organiser</small><strong>Winter Peptide Run 2025</strong></span></div>
+            <span class="page-chip">Overview</span>
+            <div class="search"><svg class="ico"><use href="#n-search"/></svg><span>Search this group buy</span><kbd>⌘ K</kbd></div>
+            <div class="actions">
+              <button class="nav-btn"><svg class="ico"><use href="#n-folder"/></svg>Manage</button>
+              <button class="nav-btn"><svg class="ico"><use href="#n-share"/></svg>Share</button>
+              <button class="nav-btn primary">Create order</button>
+            </div>
+            <button class="icon-btn soft" aria-label="Notifications"><svg class="ico"><use href="#n-bell"/></svg><i class="red-dot"></i></button>
+            <div class="profile"><span class="avatar">IA</span><svg class="ico chev"><use href="#n-chevron"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-copy"><span class="letter">C</span><h3>Split identity rail</h3><p>A permanent navy anchor separates “where I am” from “what I can do.” Strongest continuity with the organiser sidebar and brand.</p></div>
+    </div>
+
+    <div class="concept island" data-choice="d-floating-workspace-island" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="browser">
+          <div class="bar">
+            <button class="icon-btn" aria-label="Open navigation"><svg class="ico"><use href="#n-menu"/></svg></button>
+            <div class="group-pill"><span class="mini-logo">GB</span><span><strong>Winter Peptide Run 2025</strong><small>Overview · Open</small></span><svg class="ico chev" style="margin-left:auto"><use href="#n-chevron"/></svg></div>
+            <div class="search"><svg class="ico"><use href="#n-search"/></svg><span>Search workspace</span><kbd>⌘ K</kbd></div>
+            <div class="actions">
+              <button class="nav-btn"><svg class="ico"><use href="#n-folder"/></svg>Manage</button>
+              <button class="nav-btn"><svg class="ico"><use href="#n-share"/></svg>Share</button>
+              <button class="nav-btn primary">Create order</button>
+            </div>
+            <button class="icon-btn" aria-label="Notifications"><svg class="ico"><use href="#n-bell"/></svg><i class="red-dot"></i></button>
+            <div class="profile"><span class="avatar">IA</span><svg class="ico chev"><use href="#n-chevron"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-copy"><span class="letter">D</span><h3>Floating workspace island</h3><p>A contained, rounded command surface with an explicit group switcher. Friendlier and more contemporary, with generous visual breathing room.</p></div>
+    </div>
+
+    <div class="concept command-deck" data-choice="e-navy-command-deck" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="browser">
+          <div class="bar">
+            <button class="icon-btn" aria-label="Open navigation"><svg class="ico"><use href="#n-menu"/></svg></button>
+            <div class="crumb"><span>GB Organiser</span><b class="slash">/</b><strong>Overview</strong></div>
+            <div class="search"><svg class="ico"><use href="#n-search"/></svg><span>Search this group buy</span><kbd>⌘ K</kbd></div>
+            <div class="actions">
+              <button class="nav-btn"><svg class="ico"><use href="#n-folder"/></svg>Manage</button>
+              <button class="nav-btn"><svg class="ico"><use href="#n-share"/></svg>Share</button>
+              <button class="nav-btn primary">Create order</button>
+            </div>
+            <button class="icon-btn" aria-label="Notifications"><svg class="ico"><use href="#n-bell"/></svg><i class="red-dot"></i></button>
+            <div class="profile"><span class="avatar">IA</span><span class="profile-copy"><strong>iam0121</strong><small>Lead organiser</small></span><svg class="ico chev"><use href="#n-chevron"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-copy"><span class="letter">E</span><h3>Navy command deck</h3><p>Turns the top nav into a confident branded landmark. Maximum contrast and focus, with an inverse primary action that stays visually dominant.</p></div>
+    </div>
+  </div>
+</div>

@@ -6,6 +6,10 @@ packages:
   - lib/google-genai-shim
   - scripts
 
+allowBuilds:
+  core-js: true
+  esbuild: true
+
 autoInstallPeers: false
 
 catalog:

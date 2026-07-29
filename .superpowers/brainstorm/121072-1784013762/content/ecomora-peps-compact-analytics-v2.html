@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peps Anonymous — Compact Analytics Dashboard</title>
+  <style>
+    :root { --navy:#1b3a7a; --blue:#2d6bcc; --ink:#0f1f38; --muted:#6b7280; --line:#d0dae4; --page:#edf3f8; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; min-height:100%; background:radial-gradient(circle at 7% 0%,rgba(255,255,255,.9),transparent 27%),var(--page); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+    .preview-frame { display:block; width:100%; min-height:870px; border:0; background:transparent; }
+    .review-panel { width:min(1508px,calc(100% - 38px)); display:flex; align-items:center; justify-content:space-between; gap:24px; margin:0 auto 44px; padding:16px 18px 16px 22px; border:1px solid rgba(27,58,122,.14); border-radius:22px; background:rgba(255,255,255,.92); box-shadow:0 10px 28px rgba(27,49,100,.07); }
+    .review-panel b { display:block; font-size:12px; letter-spacing:-.025em; }
+    .review-panel span { display:block; margin-top:4px; color:var(--muted); font-size:9px; }
+    .review-actions { display:flex; gap:8px; }
+    .review-actions button { min-height:39px; padding:0 15px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); font-size:9px; font-weight:800; cursor:pointer; }
+    .review-actions .primary { border-color:var(--navy); background:linear-gradient(135deg,var(--blue),var(--navy)); color:#fff; box-shadow:0 7px 16px rgba(27,58,122,.18); }
+    .review-actions button.selected { outline:4px solid rgba(45,107,204,.2); }
+    @media(max-width:720px){.review-panel{width:calc(100% - 20px);align-items:flex-start;flex-direction:column}.review-actions{width:100%}.review-actions button{flex:1}}
+  </style>
+</head>
+<body>
+  <iframe id="branded-preview" class="preview-frame" src="/files/ecomora-peps-brand-dashboard.html" title="Peps Anonymous compact analytics dashboard"></iframe>
+
+  <section class="review-panel">
+    <div><b>Compact analytics revision</b><span>Smoother revenue trend, refined order-status colors, and a shorter dashboard analytics band.</span></div>
+    <div class="review-actions">
+      <button data-choice="revise-compact-analytics" onclick="toggleSelect(this)">Request changes</button>
+      <button class="primary" data-choice="approve-compact-analytics" onclick="toggleSelect(this)">Approve this revision</button>
+    </div>
+  </section>
+
+  <script>
+    const frame = document.getElementById('branded-preview');
+
+    function resizeFrames(innerFrame, innerDoc, middleDoc) {
+      requestAnimationFrame(() => {
+        innerFrame.style.height = `${innerDoc.documentElement.scrollHeight}px`;
+        requestAnimationFrame(() => {
+          frame.style.height = `${middleDoc.documentElement.scrollHeight}px`;
+        });
+      });
+    }
+
+    function applyRevision() {
+      const middleDoc = frame.contentDocument;
+      if (!middleDoc) return;
+
+      let middlePatch = middleDoc.getElementById('compact-middle-patch');
+      if (!middlePatch) {
+        middlePatch = middleDoc.createElement('style');
+        middlePatch.id = 'compact-middle-patch';
+        middlePatch.textContent = '.review-panel{display:none!important}';
+        middleDoc.head.appendChild(middlePatch);
+      }
+
+      const innerFrame = middleDoc.getElementById('dashboard-preview');
+      const innerDoc = innerFrame?.contentDocument;
+      if (!innerFrame || !innerDoc?.head) return;
+
+      if (!innerDoc.getElementById('compact-analytics-theme')) {
+        const compactTheme = innerDoc.createElement('style');
+        compactTheme.id = 'compact-analytics-theme';
+        compactTheme.textContent = `
+          .overview-grid { grid-template-columns:minmax(210px,.75fr) minmax(435px,1.72fr) minmax(285px,1fr); }
+          .metric-stack { gap:12px; }
+          .metric-card { min-height:120px; padding:17px 20px 14px; border-radius:24px; }
+          .metric-value { font-size:34px; }
+          .metric-row { margin-top:9px; }
+          .metric-foot { margin-top:10px; }
+          .revenue-card, .status-card { min-height:252px; padding:18px 21px 13px; border-radius:24px; }
+          .revenue-summary { margin-top:9px; }
+          .revenue-summary strong { font-size:28px; }
+          .outstanding { gap:6px; }
+          .status-body { height:169px; margin-top:0; }
+          .donut { width:134px; box-shadow:0 9px 22px rgba(27,58,122,.10); }
+          .donut::before { inset:25px; }
+          .status-legend { gap:9px; }
+
+          .chart { height:129px; margin-top:2px; padding:0; overflow:visible; }
+          .trend-chart { width:100%; height:100%; display:block; overflow:visible; }
+          .trend-grid { stroke:#dbe4ed; stroke-width:1; }
+          .trend-axis { fill:#8a9aaa; font-size:8px; font-weight:650; }
+          .trend-previous { fill:none; stroke:#9db0c7; stroke-width:2; stroke-linecap:round; stroke-dasharray:4 6; }
+          .trend-area { fill:url(#revenueArea); }
+          .trend-line { fill:none; stroke:#2d6bcc; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 5px 5px rgba(45,107,204,.18)); }
+          .trend-point { fill:#fff; stroke:#2d6bcc; stroke-width:2.5; }
+          .trend-point.active { fill:#2d6bcc; stroke:#fff; stroke-width:3; filter:drop-shadow(0 3px 4px rgba(27,58,122,.2)); }
+          .trend-guide { stroke:#2d6bcc; stroke-width:1; stroke-dasharray:2 4; opacity:.3; }
+          .trend-tooltip { fill:#1b3164; filter:drop-shadow(0 5px 7px rgba(27,49,100,.2)); }
+          .trend-tooltip-text { fill:#fff; font-size:8px; font-weight:800; }
+          .trend-legend { position:absolute; top:-17px; right:1px; display:flex; align-items:center; gap:12px; color:#718096; font-size:7px; font-weight:700; }
+          .trend-legend span { display:flex; align-items:center; gap:5px; }
+          .trend-legend i { width:12px; height:2px; border-radius:99px; background:#2d6bcc; }
+          .trend-legend .previous i { background:repeating-linear-gradient(90deg,#9db0c7 0 3px,transparent 3px 5px); }
+
+          .donut {
+            background:conic-gradient(
+              #2d6bcc 0deg 126deg,
+              var(--card) 126deg 130deg,
+              #879cc9 130deg 224deg,
+              var(--card) 224deg 228deg,
+              #e9a020 228deg 305deg,
+              var(--card) 305deg 309deg,
+              #e77b6c 309deg 360deg
+            );
+          }
+          .status-item.paid i { background:#2d6bcc; }
+          .status-item.packing i { background:#879cc9; }
+          .status-item.dispatched i { background:#e9a020; }
+          .status-item.due i { background:#e77b6c; }
+          .status-item i { box-shadow:0 0 0 3px rgba(255,255,255,.68); }
+
+          .status-pill.paid { background:#e3edff; color:#1b4f9f; }
+          .status-pill.paid::before { background:#2d6bcc; }
+          .status-pill.packing { background:#e9edf7; color:#52678f; }
+          .status-pill.packing::before { background:#879cc9; }
+          .status-pill.dispatched { background:#fff1d5; color:#8a5905; }
+          .status-pill.dispatched::before { background:#e9a020; }
+          .status-pill.due { background:#ffebe7; color:#a74739; }
+          .status-pill.due::before { background:#e77b6c; }
+
+          @media(max-width:1180px){.revenue-card,.status-card{min-height:272px}.status-body{height:185px}}
+          @media(max-width:820px){.metric-card{min-height:118px}.revenue-card,.status-card{min-height:275px}}
+        `;
+        innerDoc.head.appendChild(compactTheme);
+
+        const chart = innerDoc.querySelector('.revenue-card .chart');
+        if (chart) {
+          chart.setAttribute('role', 'img');
+          chart.setAttribute('aria-label', 'Confirmed revenue increased from £620 in week one to £1,470 in week six, compared with the previous group buy.');
+          chart.innerHTML = `
+            <div class="trend-legend"><span><i></i>Current</span><span class="previous"><i></i>Previous</span></div>
+            <svg class="trend-chart" viewBox="0 0 620 145" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="revenueArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#2d6bcc" stop-opacity=".24"/>
+                  <stop offset="72%" stop-color="#2d6bcc" stop-opacity=".045"/>
+                  <stop offset="100%" stop-color="#2d6bcc" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <line class="trend-grid" x1="42" y1="24" x2="607" y2="24"/>
+              <line class="trend-grid" x1="42" y1="58" x2="607" y2="58"/>
+              <line class="trend-grid" x1="42" y1="92" x2="607" y2="92"/>
+              <line class="trend-grid" x1="42" y1="126" x2="607" y2="126"/>
+              <text class="trend-axis" x="0" y="27">£1.5k</text>
+              <text class="trend-axis" x="8" y="61">£1k</text>
+              <text class="trend-axis" x="4" y="95">£500</text>
+              <text class="trend-axis" x="18" y="129">£0</text>
+              <path class="trend-previous" d="M53 112 C91 108,119 104,157 101 S223 90,261 88 S327 84,365 82 S431 70,469 67 S535 57,573 54"/>
+              <path class="trend-area" d="M53 109 C91 103,119 94,157 90 S223 72,261 68 S327 81,365 77 S431 48,469 44 S535 27,573 22 L573 126 L53 126 Z"/>
+              <path class="trend-line" d="M53 109 C91 103,119 94,157 90 S223 72,261 68 S327 81,365 77 S431 48,469 44 S535 27,573 22"/>
+              <line class="trend-guide" x1="469" y1="44" x2="469" y2="126"/>
+              <circle class="trend-point" cx="53" cy="109" r="4"/>
+              <circle class="trend-point" cx="157" cy="90" r="4"/>
+              <circle class="trend-point" cx="261" cy="68" r="4"/>
+              <circle class="trend-point" cx="365" cy="77" r="4"/>
+              <circle class="trend-point active" cx="469" cy="44" r="5"/>
+              <circle class="trend-point" cx="573" cy="22" r="4"/>
+              <rect class="trend-tooltip" x="439" y="10" width="61" height="23" rx="8"/>
+              <text class="trend-tooltip-text" x="469.5" y="25" text-anchor="middle">£1,260</text>
+              <text class="trend-axis" x="53" y="141" text-anchor="middle">W1</text>
+              <text class="trend-axis" x="157" y="141" text-anchor="middle">W2</text>
+              <text class="trend-axis" x="261" y="141" text-anchor="middle">W3</text>
+              <text class="trend-axis" x="365" y="141" text-anchor="middle">W4</text>
+              <text class="trend-axis" x="469" y="141" text-anchor="middle">W5</text>
+              <text class="trend-axis" x="573" y="141" text-anchor="middle">W6</text>
+            </svg>
+          `;
+        }
+      }
+
+      resizeFrames(innerFrame, innerDoc, middleDoc);
+      innerDoc.fonts?.ready?.then(() => resizeFrames(innerFrame, innerDoc, middleDoc));
+    }
+
+    frame.addEventListener('load', () => {
+      const middleDoc = frame.contentDocument;
+      const innerFrame = middleDoc?.getElementById('dashboard-preview');
+      if (innerFrame) {
+        innerFrame.addEventListener('load', applyRevision, { once:true });
+        if (innerFrame.contentDocument?.readyState === 'complete') applyRevision();
+      }
+    });
+
+    window.addEventListener('resize', applyRevision);
+  </script>
+</body>
+</html>

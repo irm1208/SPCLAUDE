@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+  <title>Selected GB Organiser visual system</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color: #0f1f38; background: #eaf1f7; font-family: Inter, sans-serif; }
+    body { margin: 0; }
+    .page {
+      min-height: 100vh;
+      padding: 42px clamp(18px, 4vw, 66px) 60px;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(45,107,204,.14), transparent 28%),
+        radial-gradient(circle at 100% 30%, rgba(27,58,122,.08), transparent 25%),
+        linear-gradient(180deg,#f9fbfd,#eaf1f7);
+    }
+    .hero, .showcase, .system-grid, .decision { max-width: 1320px; margin-right: auto; margin-left: auto; }
+    .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 25px; }
+    .kicker { margin: 0 0 9px; color: #2d6bcc; font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(30px,4vw,48px); line-height: 1.04; letter-spacing: -.05em; }
+    .hero-copy { max-width: 760px; margin: 12px 0 0; color: #627286; font-size: 14px; line-height: 1.6; }
+    .selected-badge { flex: 0 0 auto; padding: 10px 14px; border: 1px solid #b8cbe3; border-radius: 999px; background: rgba(255,255,255,.78); color: #1b3a7a; font-size: 11px; font-weight: 700; box-shadow: 0 8px 20px rgba(27,49,100,.07); }
+    .showcase { display: grid; grid-template-columns: minmax(0,1.65fr) minmax(330px,.65fr); gap: 20px; align-items: stretch; }
+    .panel { overflow: hidden; border: 1px solid #cbd8e4; border-radius: 22px; background: rgba(255,255,255,.91); box-shadow: 0 18px 48px rgba(27,49,100,.1); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid #e1e9f0; }
+    .panel-head strong { color: #253950; font-size: 13px; font-weight: 650; }
+    .panel-head span { color: #8491a1; font-size: 10px; font-weight: 600; }
+    .desktop-shell { display: grid; grid-template-columns: 120px 1fr; min-height: 560px; background: #f6f8fb; }
+    .desktop-side { padding: 15px 10px; border-right: 1px solid #dce5ed; background: #f1f5f8; }
+    .logo { display: flex; align-items: center; gap: 8px; margin: 0 5px 20px; color: #1b3a7a; font-size: 10px; font-weight: 700; }
+    .mark { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 8px; background: linear-gradient(135deg,#2d6bcc,#1b3a7a); color:white; }
+    .nav-label { margin: 0 7px 7px; color: #8d99a8; font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .nav { display: flex; align-items: center; gap: 7px; min-height: 32px; margin-bottom: 3px; padding: 0 8px; border-radius: 8px; color: #607084; font-size: 10px; font-weight: 550; }
+    .nav::before { content:""; width:7px; height:7px; border:1.5px solid currentColor; border-radius:2px; }
+    .nav.active { background:#e4edf9; color:#1b3a7a; font-weight:650; }
+    .desktop-main { min-width: 0; }
+    .topbar { display:flex; align-items:center; height:46px; padding:0 17px; border-bottom:1px solid #dce5ed; background:white; color:#788698; font-size:10px; }
+    .topbar .search { width:160px; margin-left:auto; padding:7px 9px; border:1px solid #d8e2eb; border-radius:8px; background:#f8fafc; }
+    .avatar { display:grid; width:26px; height:26px; margin-left:8px; place-items:center; border-radius:8px; background:#dfe9f7; color:#1b3a7a; font-size:8px; font-weight:700; }
+    .content { padding: 24px 22px; }
+    .title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+    .title-row h2 { margin:0; color:#102039; font-size:29px; font-weight:650; line-height:1.08; letter-spacing:-.04em; }
+    .title-row p { margin:7px 0 0; color:#6b7a8c; font-size:14px; }
+    .primary { padding:10px 13px; border:0; border-radius:10px; background:#1b3a7a; color:white; font-size:13px; font-weight:650; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-top:20px; }
+    .metric { padding:13px; border:1px solid #d9e3ec; border-radius:13px; background:white; }
+    .metric small { color:#758397; font-size:11px; font-weight:600; }
+    .metric b { display:block; margin-top:7px; color:#15273f; font-size:23px; letter-spacing:-.035em; }
+    .metric em { display:block; margin-top:5px; color:#278553; font-size:10px; font-style:normal; font-weight:650; }
+    .tools { display:flex; gap:8px; margin-top:15px; }
+    .search-field { flex:1; padding:11px 12px; border:1px solid #d5e0e9; border-radius:10px; background:white; color:#8190a2; font-size:13px; }
+    .tool { padding:10px 12px; border:1px solid #d5e0e9; border-radius:10px; background:white; color:#455970; font-size:13px; font-weight:600; }
+    .table { margin-top:11px; overflow:hidden; border:1px solid #d9e3ec; border-radius:12px; background:white; }
+    .row { display:grid; grid-template-columns:.7fr 1.1fr 1fr .7fr; align-items:center; min-height:46px; padding:0 13px; border-top:1px solid #e9eef3; color:#354a62; font-size:13px; }
+    .row.head { min-height:37px; border:0; background:#f5f8fa; color:#788698; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.035em; }
+    .code { color:#1b3a7a; font-weight:700; }
+    .amount { text-align:right; font-weight:650; }
+    .pill { width:fit-content; padding:4px 8px; border-radius:999px; background:#fff2d8; color:#98630f; font-size:11px; font-weight:650; }
+    .pill.green { background:#e3f5ea; color:#24794a; }
+
+    .mobile-panel { padding-bottom: 18px; }
+    .phone { position:relative; width:314px; height:560px; margin:18px auto 0; overflow:hidden; border:7px solid #15233a; border-radius:35px; background:#f7f9fc; box-shadow:0 18px 35px rgba(15,31,56,.2); }
+    .phone::before { content:""; position:absolute; z-index:20; top:7px; left:50%; width:80px; height:19px; transform:translateX(-50%); border-radius:0 0 13px 13px; background:#15233a; }
+    .status { display:flex; justify-content:space-between; height:32px; padding:8px 17px 0; background:white; color:#26384f; font-size:8px; font-weight:700; }
+    .mobile-top { display:flex; align-items:center; min-height:52px; padding:8px 12px; background:linear-gradient(135deg,#2d6bcc,#1b3a7a); color:white; }
+    .menu { display:grid; width:35px; height:35px; place-items:center; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:rgba(255,255,255,.1); }
+    .gb { margin-left:9px; }
+    .gb small { display:block; color:rgba(255,255,255,.7); font-size:9px; }
+    .gb strong { display:block; margin-top:2px; font-size:12px; font-weight:650; }
+    .mobile-avatar { display:grid; width:33px; height:33px; margin-left:auto; place-items:center; border-radius:10px; background:white; color:#1b3a7a; font-size:9px; font-weight:700; }
+    .mobile-scroll { padding:15px 12px 75px; }
+    .mobile-title { display:flex; justify-content:space-between; }
+    .mobile-title h3 { margin:0; font-size:24px; font-weight:650; letter-spacing:-.04em; }
+    .mobile-title p { margin:4px 0 0; color:#6f7f91; font-size:12px; }
+    .mobile-add { display:grid; width:40px; height:40px; place-items:center; border-radius:12px; background:#1b3a7a; color:white; font-size:20px; }
+    .alert { margin-top:12px; padding:12px; border:1px solid #f0d59f; border-radius:13px; background:#fff8e9; color:#714d14; }
+    .alert strong { font-size:12px; }
+    .alert p { margin:5px 0 0; color:#89672f; font-size:10px; line-height:1.4; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:8px; }
+    .action { padding:11px; border:1px solid #d9e3ec; border-radius:12px; background:white; }
+    .action small { color:#748397; font-size:9px; }
+    .action b { display:block; margin-top:5px; font-size:20px; }
+    .action span { display:block; margin-top:5px; color:#2d6bcc; font-size:9px; font-weight:650; }
+    .mobile-tabs { display:flex; gap:5px; margin-top:10px; }
+    .mobile-tabs span { padding:6px 8px; border-radius:8px; background:#e9eef4; color:#6a798c; font-size:9px; font-weight:650; }
+    .mobile-tabs span:first-child { background:#1b3a7a; color:white; }
+    .priority { margin:11px 1px 7px; font-size:11px; font-weight:650; }
+    .mini-order { margin-bottom:7px; padding:10px; border:1px solid #d9e3ec; border-radius:12px; background:white; }
+    .mini-order div { display:flex; justify-content:space-between; color:#263a52; font-size:11px; font-weight:650; }
+    .mini-order span { display:inline-block; margin-top:7px; padding:3px 6px; border-radius:999px; background:#fff2d8; color:#98630f; font-size:8px; font-weight:700; }
+    .bottom { position:absolute; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(5,1fr); height:63px; border-top:1px solid #d9e3ec; background:rgba(255,255,255,.97); }
+    .bottom span { display:flex; align-items:center; flex-direction:column; justify-content:center; gap:3px; color:#8290a1; font-size:8px; font-weight:600; }
+    .bottom span:nth-child(2) { color:#1b3a7a; font-weight:700; }
+    .bottom b { font-size:12px; }
+    .system-grid { display:grid; grid-template-columns:1.15fr 1fr 1fr; gap:14px; margin-top:18px; }
+    .system-card { padding:18px; border:1px solid #cbd8e4; border-radius:17px; background:rgba(255,255,255,.83); box-shadow:0 10px 30px rgba(27,49,100,.06); }
+    .system-card h3 { margin:0 0 12px; font-size:14px; }
+    .type-ramp { display:flex; flex-wrap:wrap; gap:7px; }
+    .type-token { padding:8px 9px; border-radius:9px; background:#eef3f8; }
+    .type-token b { display:block; color:#1b3a7a; font-size:12px; }
+    .type-token span { display:block; margin-top:2px; color:#718094; font-size:9px; }
+    .rule-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+    .rule-list li { display:flex; gap:8px; color:#617185; font-size:11px; line-height:1.4; }
+    .rule-list li::before { content:"✓"; color:#278553; font-weight:700; }
+    .swatches { display:flex; gap:8px; margin-bottom:11px; }
+    .swatch { width:34px; height:34px; border-radius:10px; box-shadow:inset 0 0 0 1px rgba(15,31,56,.1); }
+    .system-card p { margin:0; color:#67778b; font-size:11px; line-height:1.5; }
+    .decision { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:18px; padding:18px 20px; border:1px solid #bfcfe0; border-radius:17px; background:white; box-shadow:0 12px 34px rgba(27,49,100,.08); }
+    .decision strong { display:block; font-size:14px; }
+    .decision p { margin:4px 0 0; color:#718094; font-size:11px; }
+    .decision-options { display:flex; gap:8px; }
+    .decision-btn { padding:11px 15px; border:1px solid #cbd8e4; border-radius:11px; color:#4b5d72; background:#f8fafc; font-size:12px; font-weight:650; cursor:pointer; }
+    .decision-btn.approve { border-color:#1b3a7a; background:#1b3a7a; color:white; }
+    .decision-btn.selected { box-shadow:0 0 0 3px rgba(45,107,204,.18); }
+    @media(max-width:950px){ .hero{align-items:flex-start;flex-direction:column}.showcase{grid-template-columns:850px 350px;overflow-x:auto}.system-grid{grid-template-columns:1fr}.decision{align-items:flex-start;flex-direction:column} }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div><p class="kicker">Final direction · ready for approval</p><h1>One organiser. Two intentional modes.</h1><p class="hero-copy">Desktop remains a calm, data-rich workspace. Mobile becomes an action-led operating surface. Both use the website's Inter font, Peps colour system and one consistent hierarchy.</p></div>
+      <span class="selected-badge">Desktop C + Mobile C</span>
+    </header>
+
+    <section class="showcase">
+      <article class="panel">
+        <header class="panel-head"><strong>Desktop · structured order workspace</strong><span>≥ 1024px</span></header>
+        <div class="desktop-shell">
+          <aside class="desktop-side"><div class="logo"><span class="mark">P</span>GB Organiser</div><p class="nav-label">Workspace</p><div class="nav">Overview</div><div class="nav active">Orders</div><div class="nav">Dispatch</div><div class="nav">Members</div><div class="nav">Products</div><div class="nav">Testing</div></aside>
+          <div class="desktop-main"><div class="topbar">Peps Anonymous&nbsp; / &nbsp;GB Organiser<div class="search">Search workspace…</div><span class="avatar">AP</span></div><div class="content"><div class="title-row"><div><h2>Orders</h2><p>Track payments, fulfilment and member orders.</p></div><button class="primary">+ Add order</button></div><div class="metrics"><div class="metric"><small>Total orders</small><b>124</b><em>+12 this week</em></div><div class="metric"><small>Order value</small><b>£18.4k</b><em>84% collected</em></div><div class="metric"><small>Awaiting payment</small><b>17</b><em>£2,640 due</em></div><div class="metric"><small>Ready to dispatch</small><b>8</b><em>3 due today</em></div></div><div class="tools"><div class="search-field">⌕ &nbsp; Search member or order</div><button class="tool">Status</button><button class="tool">Filters · 2</button></div><div class="table"><div class="row head"><span>Order</span><span>Member</span><span>Status</span><span class="amount">Total</span></div><div class="row"><span class="code">#10482</span><span>@northstar</span><span class="pill">Awaiting payment</span><span class="amount">£186.40</span></div><div class="row"><span class="code">#10481</span><span>@samuel_r</span><span class="pill green">Paid</span><span class="amount">£242.00</span></div><div class="row"><span class="code">#10480</span><span>@cobalt_uk</span><span class="pill green">Packed</span><span class="amount">£94.60</span></div><div class="row"><span class="code">#10479</span><span>@fieldnote</span><span class="pill green">Paid</span><span class="amount">£318.20</span></div></div></div></div>
+        </div>
+      </article>
+
+      <article class="panel mobile-panel">
+        <header class="panel-head"><strong>Mobile · action-first workspace</strong><span>&lt; 768px</span></header>
+        <div class="phone"><div class="status"><span>9:41</span><span>● ◒ ▰</span></div><header class="mobile-top"><span class="menu">☰</span><div class="gb"><small>Active group buy</small><strong>Summer Peptide Run</strong></div><span class="mobile-avatar">AP</span></header><div class="mobile-scroll"><div class="mobile-title"><div><h3>Orders</h3><p>Tuesday, 15 July</p></div><span class="mobile-add">+</span></div><div class="alert"><strong>! &nbsp;17 orders need attention</strong><p>Three payments have been outstanding for over 7 days.</p></div><div class="actions"><div class="action"><small>Chase payment</small><b>17</b><span>Review →</span></div><div class="action"><small>Ready to dispatch</small><b>8</b><span>Open queue →</span></div></div><div class="mobile-tabs"><span>Needs action</span><span>All orders</span><span>Completed</span></div><div class="priority">Priority queue</div><div class="mini-order"><div><b>#10482 · @northstar</b><b>£186</b></div><span>7 days overdue</span></div><div class="mini-order"><div><b>#10476 · @bluewater</b><b>£128</b></div><span>Payment due</span></div><div class="mini-order"><div><b>#10471 · @helix_uk</b><b>£310</b></div><span>Address missing</span></div></div><nav class="bottom"><span><b>⌂</b>Overview</span><span><b>▤</b>Orders</span><span><b>▣</b>Dispatch</span><span><b>◎</b>Members</span><span><b>•••</b>More</span></nav></div>
+      </article>
+    </section>
+
+    <section class="system-grid">
+      <article class="system-card"><h3>Typography contract</h3><div class="type-ramp"><div class="type-token"><b>29 / 650</b><span>Desktop page title</span></div><div class="type-token"><b>24 / 650</b><span>Mobile page title</span></div><div class="type-token"><b>16 / 650</b><span>Section heading</span></div><div class="type-token"><b>14 / 400</b><span>Body copy</span></div><div class="type-token"><b>13 / 600</b><span>Controls &amp; table</span></div><div class="type-token"><b>11 / 600</b><span>Labels — minimum</span></div></div></article>
+      <article class="system-card"><h3>Responsive behaviour</h3><ul class="rule-list"><li>Desktop sidebar becomes a drawer below 1024px.</li><li>Desktop tables become action cards below 768px.</li><li>Filters open as a mobile bottom sheet.</li><li>Every touch control is at least 44px.</li></ul></article>
+      <article class="system-card"><h3>Surface and colour rules</h3><div class="swatches"><span class="swatch" style="background:#1b3a7a"></span><span class="swatch" style="background:#2d6bcc"></span><span class="swatch" style="background:#f8fafc"></span><span class="swatch" style="background:#fff"></span><span class="swatch" style="background:#e9a020"></span></div><p>White cards, slate borders, restrained shadow, 12–14px radii and Peps navy for selected or primary actions. Status colour remains semantic, never decorative.</p></article>
+    </section>
+
+    <section class="decision"><div><strong>Approve this combined visual system?</strong><p>This approves the desktop typography and the mobile action-first responsive behaviour—not implementation yet.</p></div><div class="decision-options"><button class="decision-btn" data-choice="revise-selected-system" onclick="toggleSelect(this)">Revise</button><button class="decision-btn approve" data-choice="approve-selected-system" onclick="toggleSelect(this)">Approve visual system</button></div></section>
+  </main>
+</body>
+</html>

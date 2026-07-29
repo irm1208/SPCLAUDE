@@ -1,0 +1,995 @@
+.gb-settings-atlas,
+.gb-settings-atlas *,
+.gb-settings-atlas-state,
+.gb-settings-atlas-state * {
+  box-sizing: border-box;
+}
+
+.gb-settings-atlas {
+  --gbs-navy: #1b3a7a;
+  --gbs-deep: #1b3164;
+  --gbs-blue: #2d6bcc;
+  --gbs-ink: #0f1f38;
+  --gbs-body: #374151;
+  --gbs-muted: #6b7280;
+  --gbs-subtle: #8a9aaa;
+  --gbs-canvas: #f8fafc;
+  --gbs-surface: #ffffff;
+  --gbs-border: #d0dae4;
+  --gbs-border-soft: #e6ebf0;
+  --gbs-success: #168a63;
+  --gbs-danger: #c94949;
+  width: 100%;
+  min-width: 0;
+  color: var(--gbs-ink);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.gb-settings-atlas button,
+.gb-settings-atlas input,
+.gb-settings-atlas select,
+.gb-settings-atlas textarea {
+  color: inherit;
+  font: inherit;
+}
+
+.gb-settings-atlas button {
+  cursor: pointer;
+}
+
+.gb-settings-atlas__page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 24px;
+  margin-bottom: 14px;
+  padding: 2px 2px 0;
+}
+
+.gb-settings-atlas__page-heading > div {
+  min-width: 0;
+}
+
+.gb-settings-atlas__eyebrow,
+.gb-settings-atlas__editor-heading > div > span,
+.gb-settings-atlas__field > label,
+.gb-settings-atlas__field-label {
+  display: block;
+  color: var(--gbs-blue);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-transform: none;
+}
+
+.gb-settings-atlas__page-heading h1 {
+  margin: 4px 0 0;
+  color: var(--gbs-ink);
+  font-size: 24px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.gb-settings-atlas__page-heading p {
+  max-width: 60ch;
+  margin: 5px 0 0;
+  color: var(--gbs-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gb-settings-atlas__status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 30px;
+  gap: 6px;
+  border: 1px solid rgba(45, 107, 204, 0.22);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--gbs-navy);
+  background: #eef4fc;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.gb-settings-atlas__status svg {
+  width: 13px;
+  height: 13px;
+}
+
+.gb-settings-atlas__status[data-status="active"] {
+  border-color: rgba(22, 138, 99, 0.24);
+  color: #11684c;
+  background: #eaf7f1;
+}
+
+.gb-settings-atlas__status[data-status="closed"] {
+  border-color: rgba(201, 73, 73, 0.22);
+  color: #a03737;
+  background: #fff1f1;
+}
+
+.gb-settings-atlas__status[data-status="archived"] {
+  border-color: #d8dee7;
+  color: #586575;
+  background: #f1f4f7;
+}
+
+.gb-settings-atlas__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.gb-settings-atlas__metric {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 76px;
+  gap: 10px;
+  border: 1px solid var(--gbs-border);
+  border-radius: 8px;
+  padding: 12px 13px;
+  background: var(--gbs-surface);
+  box-shadow: 0 2px 8px rgba(27, 49, 100, 0.035);
+}
+
+.gb-settings-atlas__metric-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--gbs-blue);
+  background: #edf3fb;
+}
+
+.gb-settings-atlas__metric-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.gb-settings-atlas__metric > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.gb-settings-atlas__metric small {
+  color: var(--gbs-subtle);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-transform: none;
+}
+
+.gb-settings-atlas__metric strong {
+  overflow: hidden;
+  color: var(--gbs-ink);
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__metric em {
+  color: var(--gbs-muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.gb-settings-atlas__workspace {
+  display: grid;
+  grid-template-columns: minmax(210px, 232px) minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.gb-settings-atlas__rail {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid var(--gbs-border);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--gbs-surface);
+  box-shadow: 0 3px 12px rgba(27, 49, 100, 0.04);
+}
+
+.gb-settings-atlas__rail > button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  gap: 9px;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 9px;
+  color: var(--gbs-body);
+  background: transparent;
+  box-shadow: inset 3px 0 transparent;
+  text-align: left;
+  transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.gb-settings-atlas__rail > button:hover {
+  color: var(--gbs-navy);
+  background: var(--gbs-canvas);
+}
+
+.gb-settings-atlas__rail > button.is-active {
+  color: var(--gbs-navy);
+  background: #eaf1fc;
+  box-shadow: inset 3px 0 var(--gbs-blue);
+}
+
+.gb-settings-atlas__rail > button:last-child:not(.is-active) {
+  color: #9d4141;
+}
+
+.gb-settings-atlas__rail-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--gbs-muted);
+  background: #f1f4f7;
+}
+
+.gb-settings-atlas__rail-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gb-settings-atlas__rail > button.is-active .gb-settings-atlas__rail-icon {
+  color: #ffffff;
+  background: var(--gbs-blue);
+}
+
+.gb-settings-atlas__rail > button > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.gb-settings-atlas__rail strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__rail small {
+  overflow: hidden;
+  color: var(--gbs-subtle);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__editor {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--gbs-border);
+  border-radius: 8px;
+  background: var(--gbs-surface);
+  box-shadow: 0 3px 14px rgba(27, 49, 100, 0.045);
+}
+
+.gb-settings-atlas__editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--gbs-border);
+  padding: 17px 20px;
+  background: #fbfcfe;
+}
+
+.gb-settings-atlas__editor-heading h2 {
+  margin: 4px 0 0;
+  color: var(--gbs-ink);
+  font-size: 17px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.gb-settings-atlas__editor-heading p {
+  margin: 4px 0 0;
+  color: var(--gbs-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gb-settings-atlas__editor-content {
+  min-width: 0;
+  min-height: 360px;
+  padding: 20px;
+}
+
+.gb-settings-atlas__form-stack {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.gb-settings-atlas__field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.gb-settings-atlas__field > label,
+.gb-settings-atlas__field-label {
+  color: var(--gbs-muted);
+}
+
+.gb-settings-atlas__field input,
+.gb-settings-atlas__field select,
+.gb-settings-atlas__field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--gbs-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  color: var(--gbs-ink);
+  background: #ffffff;
+  box-shadow: none;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.gb-settings-atlas__field input,
+.gb-settings-atlas__field select {
+  min-height: 42px;
+}
+
+.gb-settings-atlas__field textarea {
+  min-height: 90px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.gb-settings-atlas__field input:focus,
+.gb-settings-atlas__field select:focus,
+.gb-settings-atlas__field textarea:focus {
+  border-color: rgba(45, 107, 204, 0.64);
+  box-shadow: 0 0 0 3px rgba(45, 107, 204, 0.1);
+}
+
+.gb-settings-atlas__field-grid {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  border-top: 1px solid var(--gbs-border-soft);
+  padding-top: 18px;
+}
+
+.gb-settings-atlas__field-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gb-settings-atlas__field-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gb-settings-atlas__help {
+  margin: 0;
+  color: var(--gbs-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gb-settings-atlas__editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 16px;
+  margin: 2px -20px -20px;
+  border-top: 1px solid var(--gbs-border);
+  padding: 13px 20px;
+  background: #fbfcfe;
+}
+
+.gb-settings-atlas__editor-footer > span {
+  min-width: 0;
+  color: var(--gbs-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.gb-settings-atlas__editor-footer--passive strong {
+  color: var(--gbs-navy);
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__save-button,
+.gb-settings-atlas__copy-button,
+.gb-settings-atlas__add-button,
+.gb-settings-atlas__danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 760;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.gb-settings-atlas__save-button {
+  min-width: 150px;
+  min-height: 40px;
+  border: 1px solid var(--gbs-navy);
+  padding: 0 14px;
+  color: #ffffff;
+  background: var(--gbs-navy);
+}
+
+.gb-settings-atlas__save-button:hover {
+  background: var(--gbs-deep);
+}
+
+.gb-settings-atlas__save-button[data-saved] {
+  border-color: var(--gbs-success);
+  background: var(--gbs-success);
+}
+
+.gb-settings-atlas__save-button svg,
+.gb-settings-atlas__copy-button svg,
+.gb-settings-atlas__add-button svg,
+.gb-settings-atlas__danger-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gb-settings-atlas__status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gb-settings-atlas__status-grid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 50px;
+  gap: 6px;
+  border: 1px solid var(--gbs-border);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--gbs-body);
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 720;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.gb-settings-atlas__status-grid button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gb-settings-atlas__status-grid button:hover {
+  border-color: #9eb4ce;
+  color: var(--gbs-navy);
+}
+
+.gb-settings-atlas__status-grid button[aria-pressed="true"] {
+  border-color: var(--gbs-navy);
+  color: #ffffff;
+  background: var(--gbs-navy);
+}
+
+.gb-settings-atlas__status-grid button[data-status="active"][aria-pressed="true"] {
+  border-color: var(--gbs-success);
+  background: var(--gbs-success);
+}
+
+.gb-settings-atlas__status-grid button[data-status="closed"][aria-pressed="true"] {
+  border-color: var(--gbs-danger);
+  background: var(--gbs-danger);
+}
+
+.gb-settings-atlas__status-grid button[data-status="archived"][aria-pressed="true"] {
+  border-color: #596777;
+  background: #596777;
+}
+
+.gb-settings-atlas__join-code {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.gb-settings-atlas__join-code output {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 42px;
+  overflow: hidden;
+  border: 1px solid var(--gbs-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  color: var(--gbs-ink);
+  background: var(--gbs-canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__copy-button {
+  min-height: 42px;
+  border: 1px solid var(--gbs-border);
+  padding: 0 13px;
+  color: var(--gbs-navy);
+  background: #ffffff;
+}
+
+.gb-settings-atlas__copy-button:hover {
+  border-color: #9eb4ce;
+  background: var(--gbs-canvas);
+}
+
+.gb-settings-atlas__copy-button[data-copied] {
+  border-color: rgba(22, 138, 99, 0.28);
+  color: #11684c;
+  background: #eaf7f1;
+}
+
+.gb-settings-atlas__switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 62px;
+  gap: 18px;
+  border-top: 1px solid var(--gbs-border-soft);
+  padding-top: 16px;
+  cursor: pointer;
+}
+
+.gb-settings-atlas__switch-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.gb-settings-atlas__switch-row strong {
+  color: var(--gbs-ink);
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.gb-settings-atlas__switch-row small {
+  color: var(--gbs-subtle);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gb-settings-atlas__switch-row input {
+  position: relative;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 44px;
+  margin: 0;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 8px,
+    #d1d5db 8px,
+    #d1d5db 36px,
+    transparent 36px
+  );
+  cursor: pointer;
+}
+
+.gb-settings-atlas__switch-row input::before {
+  position: absolute;
+  top: 12px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 31, 56, 0.25);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.gb-settings-atlas__switch-row input:checked {
+  background: linear-gradient(
+    to bottom,
+    transparent 8px,
+    var(--gbs-blue) 8px,
+    var(--gbs-blue) 36px,
+    transparent 36px
+  );
+}
+
+.gb-settings-atlas__switch-row input:checked::before {
+  transform: translateX(20px);
+}
+
+.gb-settings-atlas__empty {
+  margin: 0;
+  border: 1px dashed var(--gbs-border);
+  border-radius: 7px;
+  padding: 18px;
+  color: var(--gbs-muted);
+  background: var(--gbs-canvas);
+  font-size: 13px;
+  text-align: center;
+}
+
+.gb-settings-atlas__member-card {
+  display: grid;
+  gap: 13px;
+  border-top: 1px solid var(--gbs-border-soft);
+  padding-top: 16px;
+}
+
+.gb-settings-atlas__member-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 12px;
+}
+
+.gb-settings-atlas__member-card > header > span {
+  color: var(--gbs-navy);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.gb-settings-atlas__icon-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #efc8c8;
+  border-radius: 6px;
+  padding: 0;
+  color: var(--gbs-danger);
+  background: #ffffff;
+}
+
+.gb-settings-atlas__icon-button:hover {
+  background: #fff2f2;
+}
+
+.gb-settings-atlas__icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gb-settings-atlas__add-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px dashed var(--gbs-border);
+  padding: 0 13px;
+  color: var(--gbs-muted);
+  background: transparent;
+}
+
+.gb-settings-atlas__add-button:hover {
+  border-color: #9eb4ce;
+  color: var(--gbs-navy);
+  background: var(--gbs-canvas);
+}
+
+.gb-settings-atlas__danger-list {
+  display: grid;
+}
+
+.gb-settings-atlas__danger-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.gb-settings-atlas__danger-row + .gb-settings-atlas__danger-row {
+  border-top: 1px solid #f0d4d4;
+}
+
+.gb-settings-atlas__danger-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--gbs-danger);
+  background: #fff0f0;
+}
+
+.gb-settings-atlas__danger-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gb-settings-atlas__danger-row > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.gb-settings-atlas__danger-row strong {
+  color: var(--gbs-ink);
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.gb-settings-atlas__danger-row small {
+  color: var(--gbs-subtle);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gb-settings-atlas__danger-button {
+  min-height: 40px;
+  border: 1px solid #e7b8b8;
+  padding: 0 13px;
+  color: #a23838;
+  background: #ffffff;
+}
+
+.gb-settings-atlas__danger-button:hover {
+  background: #fff2f2;
+}
+
+.gb-settings-atlas__danger-button--solid {
+  border-color: var(--gbs-danger);
+  color: #ffffff;
+  background: var(--gbs-danger);
+}
+
+.gb-settings-atlas__danger-button--solid:hover {
+  background: #ad3939;
+}
+
+.gb-settings-atlas__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
+.gb-settings-atlas__spin {
+  animation: gb-settings-atlas-spin 900ms linear infinite;
+}
+
+@keyframes gb-settings-atlas-spin {
+  to { transform: rotate(360deg); }
+}
+
+.gb-settings-atlas-state {
+  display: grid;
+  width: 100%;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid #d0dae4;
+  border-radius: 8px;
+  padding: 32px;
+  color: #0f1f38;
+  background: #ffffff;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+}
+
+.gb-settings-atlas-state__icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 3px;
+  place-items: center;
+  border-radius: 8px;
+  color: #2d6bcc;
+  background: #edf3fb;
+}
+
+.gb-settings-atlas-state__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.gb-settings-atlas-state h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 760;
+}
+
+.gb-settings-atlas-state p {
+  max-width: 46ch;
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gb-settings-atlas-state[data-tone="danger"] .gb-settings-atlas-state__icon {
+  color: #c94949;
+  background: #fff0f0;
+}
+
+.gb-settings-atlas :focus-visible,
+.gb-settings-atlas-state :focus-visible {
+  outline: 3px solid rgba(45, 107, 204, 0.48);
+  outline-offset: 2px;
+}
+
+.gb-settings-atlas button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+@media (max-width: 900px) {
+  .gb-settings-atlas__workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .gb-settings-atlas__rail {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(132px, 1fr));
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+
+  .gb-settings-atlas__rail > button {
+    min-height: 56px;
+    scroll-snap-align: start;
+  }
+
+  .gb-settings-atlas__rail small {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .gb-settings-atlas__page-heading {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .gb-settings-atlas__page-heading h1 {
+    font-size: 21px;
+  }
+
+  .gb-settings-atlas__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .gb-settings-atlas__metric {
+    min-height: 64px;
+  }
+
+  .gb-settings-atlas__field-grid,
+  .gb-settings-atlas__status-grid,
+  .gb-settings-atlas__join-code {
+    grid-template-columns: 1fr;
+  }
+
+  .gb-settings-atlas button,
+  .gb-settings-atlas input,
+  .gb-settings-atlas select {
+    min-height: 44px;
+  }
+
+  .gb-settings-atlas__editor-heading,
+  .gb-settings-atlas__editor-content,
+  .gb-settings-atlas__editor-footer {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .gb-settings-atlas__editor-content {
+    min-height: 0;
+  }
+
+  .gb-settings-atlas__editor-footer {
+    align-items: stretch;
+    margin-right: -14px;
+    margin-bottom: -20px;
+    margin-left: -14px;
+  }
+
+  .gb-settings-atlas__save-button,
+  .gb-settings-atlas__copy-button,
+  .gb-settings-atlas__danger-button {
+    min-height: 44px;
+  }
+
+  .gb-settings-atlas__icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .gb-settings-atlas__danger-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .gb-settings-atlas__danger-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .gb-settings-atlas__page-heading {
+    flex-direction: column;
+  }
+
+  .gb-settings-atlas__status {
+    align-self: flex-start;
+  }
+
+  .gb-settings-atlas__editor-footer {
+    flex-direction: column;
+  }
+
+  .gb-settings-atlas__save-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-settings-atlas *,
+  .gb-settings-atlas *::before,
+  .gb-settings-atlas *::after,
+  .gb-settings-atlas-state * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

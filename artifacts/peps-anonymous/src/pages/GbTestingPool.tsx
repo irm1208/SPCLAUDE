@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   FlaskConical, Loader2, AlertCircle, TestTube, RefreshCw,
   Lock, Unlock, CheckCircle2, Clock, XCircle, ChevronDown,
@@ -9,6 +9,14 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
 import { HubBottomNav, HubSection } from "@/components/HubBottomNav";
+import { ClinicalPoolGauge } from "@/components/testing-pool/ClinicalPoolGauge";
+import {
+  ClinicalPanel,
+  RoundStatusRail,
+  ThresholdStepGrid,
+  VoteLeaderboard,
+} from "@/components/testing-pool/ClinicalTestingPoolUi";
+import "@/components/testing-pool/clinical-testing-pool.css";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -101,29 +109,12 @@ const STATUS_LABELS: Record<string, string> = {
   results_received: "Results In",
 };
 
-const ARC1 = "#3B82F6";
-const ARC2 = "#8B5CF6";
-const ARC3 = "#E9A020";
-const ARC4 = "#10B981";
 const HIT  = "#10B981";
-const STEP_COLORS = [ARC1, ARC2, ARC3, ARC4];
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function fmtUsd(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
-function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
-}
-
-function describeArc(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
-  const s = polarToXY(cx, cy, r, startDeg);
-  const e = polarToXY(cx, cy, r, endDeg);
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
 }
 
 // ── layout wrapper ─────────────────────────────────────────────────────────────
@@ -140,146 +131,6 @@ export function GbPoolLayout({ title, children }: { title?: string; children: Re
         setHubMoreOpen={() => {}}
       />
     </PageLayout>
-  );
-}
-
-// ── Pool Gauge ────────────────────────────────────────────────────────────────
-
-interface GaugeSegment { color: string; cost: number; }
-
-function PoolGauge({ raisedUsd, segments, contributorCount }: { raisedUsd: number; segments: GaugeSegment[]; contributorCount: number }) {
-  const SIZE = 280;
-  const cx = SIZE / 2; const cy = SIZE / 2;
-  const START = 135; const END = 405; const TOTAL = END - START;
-  const R = 104; const SW = 18;
-
-  const totalGoal = segments.reduce((s, seg) => s + seg.cost, 0);
-  const allFunded = totalGoal > 0 && raisedUsd >= totalGoal;
-
-  let cumCost = 0;
-  const segs = segments.map(seg => {
-    const startFrac = totalGoal > 0 ? cumCost / totalGoal : 0;
-    cumCost += seg.cost;
-    const endFrac = totalGoal > 0 ? cumCost / totalGoal : 1;
-    return {
-      color: seg.color,
-      startAngle: START + startFrac * TOTAL,
-      endAngle: START + endFrac * TOTAL,
-      startCost: cumCost - seg.cost,
-      endCost: cumCost,
-    };
-  });
-
-  return (
-    <div className="flex flex-col items-center w-full">
-      <svg width="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ overflow: "visible", maxWidth: SIZE }}>
-        <defs>
-          <filter id="gbGaugeFilled" x="-50%" y="-50%" width="200%" height="200%">
-            <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#10B981" floodOpacity="0.4" />
-          </filter>
-        </defs>
-        <path d={describeArc(cx, cy, R, START, END)} fill="none" stroke="var(--t-border)" strokeWidth={SW} strokeLinecap="butt" />
-        {segs.map((seg, i) => {
-          const fillEnd = Math.min(seg.endAngle, Math.max(seg.startAngle, seg.startAngle + (
-            raisedUsd <= seg.startCost ? 0 :
-            raisedUsd >= seg.endCost ? (seg.endAngle - seg.startAngle) :
-            ((raisedUsd - seg.startCost) / (seg.endCost - seg.startCost)) * (seg.endAngle - seg.startAngle)
-          )));
-          if (fillEnd <= seg.startAngle + 0.01) return null;
-          const isLast = i === segs.length - 1;
-          const isFirst = i === 0;
-          return (
-            <motion.path
-              key={i}
-              d={describeArc(cx, cy, R, seg.startAngle, fillEnd)}
-              fill="none" stroke={seg.color} strokeWidth={SW}
-              strokeLinecap={isFirst && isLast ? "round" : isFirst ? "round" : isLast && fillEnd >= seg.endAngle - 0.5 ? "round" : "butt"}
-              filter={allFunded ? "url(#gbGaugeFilled)" : undefined}
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 1.2, delay: i * 0.15, ease: [0.22, 1, 0.36, 1] }}
-            />
-          );
-        })}
-        {segs.length > 1 && segs.slice(0, -1).map((seg, i) => {
-          const angleDeg = seg.endAngle;
-          const angleRad = (angleDeg - 90) * (Math.PI / 180);
-          const inner = R - SW / 2 - 1;
-          const outer = R + SW / 2 + 1;
-          return (
-            <line key={`div-${i}`}
-              x1={cx + inner * Math.cos(angleRad)} y1={cy + inner * Math.sin(angleRad)}
-              x2={cx + outer * Math.cos(angleRad)} y2={cy + outer * Math.sin(angleRad)}
-              stroke="var(--t-bg)" strokeWidth={3} strokeLinecap="round" />
-          );
-        })}
-        <text x={cx} y={cy - 14} textAnchor="middle" fontSize="9" fontWeight="700"
-          letterSpacing="0.12em" style={{ fill: "var(--t-muted)", textTransform: "uppercase" }}>POOL TOTAL</text>
-        <text x={cx} y={cy + 14} textAnchor="middle" fontFamily="ui-monospace,SFMono-Regular,monospace"
-          fontSize="28" fontWeight="800" letterSpacing="-0.03em" style={{ fill: "var(--t-text)" }}>
-          {fmtUsd(raisedUsd)}
-        </text>
-        <text x={cx} y={cy + 32} textAnchor="middle" fontSize="9.5" fontWeight="600" letterSpacing="0.08em"
-          style={{ fill: "var(--t-muted)", textTransform: "uppercase" }}>
-          {contributorCount} CONTRIBUTOR{contributorCount !== 1 ? "S" : ""}
-        </text>
-      </svg>
-    </div>
-  );
-}
-
-// ── Milestone Step Card ───────────────────────────────────────────────────────
-
-function MilestoneCard({ step, milestone, prevAmount, raisedUsd, accentColor }: {
-  step: number; milestone: Milestone; prevAmount: number; raisedUsd: number; accentColor: string;
-}) {
-  const hit = raisedUsd >= milestone.amount;
-  const stepNum = String(step).padStart(2, "0");
-  const stepCost = milestone.amount - prevAmount;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: step * 0.1, type: "spring", stiffness: 280, damping: 24 }}
-      className="relative overflow-hidden min-w-0"
-      style={{
-        borderRadius: 8,
-        border: `1.5px solid ${hit ? HIT : "var(--t-border)"}`,
-        background: hit ? "rgba(16,185,129,0.05)" : "var(--t-surface)",
-        padding: "14px 16px",
-      }}
-    >
-      <div className="absolute -bottom-2 -right-1 select-none pointer-events-none font-black"
-        style={{ fontSize: 64, color: hit ? "rgba(16,185,129,0.07)" : "rgba(0,0,0,0.04)", lineHeight: 1, fontFamily: "ui-monospace,SFMono-Regular,monospace", letterSpacing: "-0.05em" }}>
-        {stepNum}
-      </div>
-      <div className="relative">
-        <div className="flex items-center gap-1.5 mb-2.5">
-          {hit
-            ? <Unlock className="w-3.5 h-3.5 shrink-0" style={{ color: HIT }} />
-            : <Lock className="w-3.5 h-3.5 shrink-0" style={{ color: accentColor }} />}
-          <span className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: hit ? HIT : accentColor }}>
-            Step {stepNum} · {hit ? "Unlocked" : "Locked"}
-          </span>
-        </div>
-        <p className="font-extrabold leading-none mb-0.5"
-          style={{ fontSize: 22, color: hit ? HIT : "var(--t-text)", fontFamily: "ui-monospace,SFMono-Regular,monospace", letterSpacing: "-0.02em" }}>
-          {fmtUsd(milestone.amount)}
-        </p>
-        {prevAmount > 0 && (
-          <p className="text-[10px] mb-1.5" style={{ color: "var(--t-muted)" }}>
-            Lab test Cost: {fmtUsd(stepCost)}
-          </p>
-        )}
-        <p className="text-[13px] font-semibold leading-tight mb-1 break-words" style={{ color: "var(--t-text)" }}>
-          {milestone.label}
-        </p>
-        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-          {milestone.type === "vial" ? `Vial #${milestone.vialNum ?? step}` : "This step"}
-        </p>
-      </div>
-    </motion.div>
   );
 }
 
@@ -761,6 +612,7 @@ function LateContributionForm({ gbId, round, paymentMethods, onDone }: {
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function GbTestingPool() {
+  const reduceMotion = useReducedMotion();
   const [, params] = useRoute("/testing/:gbId");
   const [, setLocation] = useLocation();
   const gbId = params?.gbId ?? "";
@@ -800,6 +652,12 @@ export default function GbTestingPool() {
     }).catch(() => {});
   }, [gbId, load, refreshKey, isLoggedIn]);
 
+  useEffect(() => {
+    if (!gbId || !isLoggedIn) return;
+    const timer = window.setInterval(() => void load(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [gbId, isLoggedIn, load]);
+
   if (loading) {
     return (
       <GbPoolLayout title="Testing Pool">
@@ -816,6 +674,19 @@ export default function GbTestingPool() {
         <div className="p-8 text-center">
           <AlertCircle className="w-8 h-8 mx-auto mb-3" style={{ color: "#EF4444" }} />
           <p className="text-sm" style={{ color: "var(--t-text)" }}>{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              void load();
+            }}
+            className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold"
+            style={{ background: "var(--t-blue)", color: "#FFFFFF" }}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Retry
+          </button>
         </div>
       </GbPoolLayout>
     );
@@ -845,123 +716,114 @@ export default function GbTestingPool() {
   const isResults = round.status === "results_received";
   const hasResults = !!(round.resultNotes || round.resultPdfUrl);
 
-  // Build gauge segments from milestones (incremental costs)
-  const gaugeSegments: GaugeSegment[] = milestones.map((m, i) => ({
-    color: STEP_COLORS[i % STEP_COLORS.length],
-    cost: i === 0 ? m.amount : m.amount - milestones[i - 1].amount,
-  }));
-
   const topAmount = milestones.length > 0 ? milestones[milestones.length - 1].amount : 0;
   const progressPct = topAmount > 0 ? Math.min(100, (poolTotal / topAmount) * 100) : 0;
-
-  // Status pipeline stages
-  const STAGES = [
-    { key: "active",           label: "Collecting" },
-    { key: "closed",           label: "Closed"     },
-    { key: "sent_to_lab",      label: "At Lab"     },
-    { key: "results_received", label: "Results"    },
-  ] as const;
-  const stageIdx = STAGES.findIndex(s => s.key === round.status);
-  const activeIdx = stageIdx === -1 ? 0 : stageIdx;
 
   return (
     <GbPoolLayout title={`${gbName ? gbName + " · " : ""}Testing Pool`}>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={reduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
-        className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 overflow-x-hidden"
+        className="clinical-testing clinical-testing--member"
       >
-        {/* ── Branded Header ── */}
-        <motion.div
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="relative overflow-hidden mb-4 sm:mb-6"
-          style={{ borderRadius: 8, background: "linear-gradient(135deg, var(--t-blue-deep, #1B3A7A) 0%, #1e3a8a 100%)" }}
-        >
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ backgroundImage: "radial-gradient(circle at 90% 25%, rgba(255,255,255,0.1) 0%, transparent 55%)" }} />
-          <div className="relative px-4 sm:px-6 py-4 sm:py-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <button
-                    onClick={() => setLocation("/account?s=lab-pool")}
-                    className="flex items-center gap-1 text-[10px] font-bold tracking-[0.12em] uppercase transition-opacity hover:opacity-60"
-                    style={{ color: "rgba(255,255,255,0.5)" }}
-                  >
-                    <ChevronLeft className="w-3 h-3" />
-                    Testing Pools
-                  </button>
-                  <span className="w-px h-3 shrink-0" style={{ background: "rgba(255,255,255,0.2)" }} />
-                  <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                  <span className="text-[9px] font-bold tracking-[0.2em] uppercase" style={{ color: "rgba(255,255,255,0.45)" }}>
-                    Lab Testing Pool
-                  </span>
-                </div>
-                <h1 className="text-[20px] sm:text-[22px] font-extrabold text-white leading-tight">
-                  {gbName || "Group Buy"}
-                </h1>
-                <div className="flex items-center gap-2 sm:gap-3 mt-2.5 flex-wrap">
-                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.7)" }}>
-                    {progressPct.toFixed(1)}% funded
-                  </span>
-                  <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.5)" }}>
-                    {contributorCount} contributor{contributorCount !== 1 ? "s" : ""}
-                  </span>
-                  <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.5)" }}>
-                    {totalVotes} vote{totalVotes !== 1 ? "s" : ""} cast
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setRefreshKey(k => k + 1)}
-                className="w-9 h-9 flex items-center justify-center shrink-0 transition-opacity hover:opacity-70"
-                style={{ borderRadius: 6, background: "rgba(255,255,255,0.12)" }}
-                title="Refresh"
+        <header className="clinical-testing__member-header">
+          <div className="clinical-testing__member-heading">
+            <div className="clinical-testing__member-kicker">
+              <a
+                href="/account?s=lab-pool"
+                className="clinical-testing__member-back"
               >
-                <RefreshCw className="w-4 h-4" style={{ color: "rgba(255,255,255,0.7)" }} />
-              </button>
+                <ChevronLeft aria-hidden="true" />
+                Testing pools
+              </a>
+              <span className="clinical-testing__member-round">Round {round.id}</span>
             </div>
-
-            {/* Status Pipeline */}
-            <div className="mt-3 sm:mt-4 px-1">
-              <div className="flex items-center w-full gap-0">
-                {STAGES.map((stage, i) => {
-                  const done = i < activeIdx;
-                  const active = i === activeIdx;
-                  const nodeColor = done ? "#4ade80" : active ? "#ffffff" : "rgba(255,255,255,0.25)";
-                  const ringColor = done ? "#4ade80" : active ? "#ffffff" : "rgba(255,255,255,0.2)";
-                  const textColor = done ? "#4ade80" : active ? "#ffffff" : "rgba(255,255,255,0.35)";
-                  const lineColor = done ? "#4ade80" : "rgba(255,255,255,0.15)";
-                  return (
-                    <div key={stage.key} className="flex items-center" style={{ flex: i < STAGES.length - 1 ? "1 1 0%" : "0 0 auto" }}>
-                      <div className="flex flex-col items-center shrink-0">
-                        <div className="flex items-center justify-center"
-                          style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${ringColor}`, background: done ? "#4ade80" : active ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)", boxShadow: active ? "0 0 0 3px rgba(255,255,255,0.12)" : "none", transition: "all 0.3s ease" }}>
-                          {done && (
-                            <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
-                              <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          )}
-                          {active && <span className="w-2 h-2 rounded-full block" style={{ background: "#fff" }} />}
-                        </div>
-                        <span className="text-[9px] font-bold tracking-wider mt-1 text-center leading-tight"
-                          style={{ color: textColor, whiteSpace: "nowrap" }}>
-                          {stage.label}
-                        </span>
-                      </div>
-                      {i < STAGES.length - 1 && (
-                        <div className="flex-1 h-px mx-1.5" style={{ background: lineColor, minWidth: 0, transition: "background 0.3s ease" }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <h1>{gbName || "Group Buy"} · Lab Testing Pool</h1>
+            <p className="clinical-testing__member-note">
+              {round.fundingNote || "Community-funded independent testing for the winning product batch."}
+            </p>
           </div>
-        </motion.div>
+          <div className="clinical-testing__member-actions">
+            <span
+              className="clinical-testing__member-status"
+              data-active={round.status === "active" || undefined}
+            >
+              <span aria-hidden="true" />
+              {STATUS_LABELS[round.status] ?? round.status}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRefreshKey(key => key + 1)}
+              className="clinical-testing__member-refresh"
+              aria-label="Refresh testing pool"
+              title="Refresh testing pool"
+            >
+              <RefreshCw aria-hidden="true" />
+            </button>
+          </div>
+        </header>
+
+        <RoundStatusRail status={round.status} />
+
+        <div className="clinical-testing__member-grid">
+          <div className="clinical-testing__member-primary">
+            <ClinicalPanel
+              title="Pool progress"
+              meta={<span>{progressPct.toFixed(1)}% funded</span>}
+            >
+              <ClinicalPoolGauge
+                raised={poolTotal}
+                milestones={milestones}
+                contributorCount={contributorCount}
+                statusLabel={STATUS_LABELS[round.status] ?? round.status}
+                active={round.status === "active"}
+              />
+              <ThresholdStepGrid milestones={milestones} raised={poolTotal} />
+            </ClinicalPanel>
+          </div>
+
+          <aside className="clinical-testing__member-aside">
+            {pendingContribution ? <PendingContributionCard pc={pendingContribution} /> : null}
+
+            <AnimatePresence>
+              {isOptedIn && !isAdminView && !isClosed && !hasVoted ? (
+                <motion.div
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  <VoteForm
+                    gbId={gbId}
+                    peptideOptions={peptideOptions}
+                    testOptions={round.testOptions}
+                    maxVials={data.maxVials}
+                    maxCompoundVotes={round.maxCompoundVotes ?? 1}
+                    maxTestVotes={round.maxTestVotes ?? 1}
+                    onDone={() => { setLoading(true); load(); }}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            {hasVoted && existingVote ? <ExistingVoteCard vote={existingVote} /> : null}
+
+            <ClinicalPanel
+              title="Live leaderboard"
+              meta={<span>{totalVotes} vote{totalVotes === 1 ? "" : "s"}</span>}
+            >
+              {votes.length > 0 ? (
+                <VoteLeaderboard
+                  votes={votes}
+                  totalVotes={totalVotes}
+                  batches={peptideBatches}
+                />
+              ) : (
+                <p className="clinical-testing__member-empty">No votes have been cast yet.</p>
+              )}
+            </ClinicalPanel>
+          </aside>
+        </div>
 
         {/* ── Lab Results Hero — main feature when results are in ── */}
         {isResults && resultsAvailable && (
@@ -1131,158 +993,7 @@ export default function GbTestingPool() {
           );
         })()}
 
-        {/* ── Milestone Step Cards (responsive grid — all visible, no horizontal scroll) ── */}
-        {milestones.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-4 sm:mb-6">
-            {milestones.map((m, i) => (
-              <MilestoneCard
-                key={i}
-                step={i + 1}
-                milestone={m}
-                prevAmount={i > 0 ? milestones[i - 1].amount : 0}
-                raisedUsd={poolTotal}
-                accentColor={STEP_COLORS[i % STEP_COLORS.length]}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* ── Two-column layout ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-
-          {/* ── LEFT: Pool gauge + leaderboard ── */}
-          <div className="space-y-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-              className="p-4 sm:p-6"
-              style={{ borderRadius: 8, background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: "var(--t-muted)" }}>Pool Progress</span>
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1"
-                  style={{ borderRadius: 4, background: round.status === "active" ? "rgba(16,185,129,0.1)" : "rgba(59,130,246,0.1)", color: round.status === "active" ? HIT : "var(--t-blue)", border: `1px solid ${round.status === "active" ? "rgba(16,185,129,0.25)" : "rgba(59,130,246,0.25)"}` }}>
-                  {round.status === "active" && (
-                    <motion.span className="w-1.5 h-1.5 inline-block shrink-0"
-                      style={{ background: HIT, borderRadius: "50%" }}
-                      animate={{ opacity: [1, 0.25, 1] }}
-                      transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }} />
-                  )}
-                  {STATUS_LABELS[round.status] ?? round.status}
-                </span>
-              </div>
-
-              {/* Gauge */}
-              <PoolGauge raisedUsd={poolTotal} segments={gaugeSegments} contributorCount={contributorCount} />
-
-              {/* Milestone legend */}
-              <div className="flex flex-col items-stretch gap-1.5 mt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-5 sm:gap-y-1.5">
-                {milestones.map((m, i) => {
-                  const hit = poolTotal >= m.amount;
-                  const color = STEP_COLORS[i % STEP_COLORS.length];
-                  return (
-                    <div key={i} className="flex items-center gap-1.5 min-w-0 max-w-full">
-                      <span className="w-3 h-2 inline-block shrink-0" style={{ background: color, borderRadius: 1 }} />
-                      <span className="text-[10px] font-semibold min-w-0 break-words" style={{ color: hit ? "var(--t-text)" : "var(--t-muted)" }}>
-                        {m.label} · {fmtUsd(m.amount)}
-                      </span>
-                      {hit && <CheckCircle2 className="w-3 h-3 shrink-0" style={{ color: HIT }} />}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Vote standings */}
-              {votes.length > 0 && (
-                <div className="mt-3 pt-2.5 border-t" style={{ borderColor: "var(--t-border)" }}>
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <FlaskConical className="w-2.5 h-2.5" style={{ color: "var(--t-blue)" }} />
-                    <span className="text-[8px] font-bold tracking-[0.12em] uppercase" style={{ color: "var(--t-blue)" }}>Compound Votes</span>
-                    <span className="text-[8px] font-semibold ml-auto tabular-nums" style={{ color: "var(--t-muted)" }}>{totalVotes} cast</span>
-                  </div>
-                  <div className="space-y-1">
-                    {votes.slice(0, 5).map((v, i) => {
-                      const pct = totalVotes > 0 ? (v.totalVotes / totalVotes) * 100 : 0;
-                      const barColor = i === 0 ? "rgba(59,130,246,0.7)" : i === 1 ? "rgba(139,92,246,0.55)" : "rgba(148,163,184,0.35)";
-                      return (
-                        <div key={v.peptideName} className="flex items-center gap-2 mb-[10px]">
-                          <div className="flex items-center gap-1 shrink-0 w-40 min-w-0">
-                            <span className="text-[10px] truncate min-w-0" style={{ color: "var(--t-muted)" }}>{v.peptideName}</span>
-                            {peptideBatches[v.peptideName] && (
-                              <span className="text-[8px] font-bold leading-none px-1.5 py-0.5 rounded-full shrink-0 tabular-nums"
-                                style={{ background: "rgba(59,130,246,0.1)", color: "var(--t-blue)", border: "1px solid rgba(59,130,246,0.25)" }}
-                                title={`Batch ${peptideBatches[v.peptideName]}`}>
-                                {peptideBatches[v.peptideName]}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(148,163,184,0.12)" }}>
-                            <motion.div className="h-full rounded-full"
-                              style={{ background: barColor }}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${pct}%` }}
-                              transition={{ duration: 0.9, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] }} />
-                          </div>
-                          <span className="text-[10px] font-semibold tabular-nums shrink-0" style={{ color: "var(--t-blue)" }}>{v.totalVotes}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Test type chips */}
-                  {Object.keys(testVotes).length > 0 && (
-                    <div className="pb-4 pt-2.5 border-t" style={{ borderColor: "var(--t-border)" }}>
-                      <span className="text-[9px] font-bold tracking-[0.14em] uppercase block mb-2" style={{ color: "var(--t-muted)" }}>Test Selections</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(testVotes).sort(([,a],[,b]) => b - a).map(([name, count], i) => {
-                          const chipColors = ["rgba(59,130,246,0.1)","rgba(139,92,246,0.1)","rgba(16,185,129,0.1)","rgba(233,160,32,0.1)"];
-                          const textColors = ["var(--t-blue)", ARC2, HIT, ARC3];
-                          const borderColors = ["rgba(59,130,246,0.25)","rgba(139,92,246,0.25)","rgba(16,185,129,0.25)","rgba(233,160,32,0.25)"];
-                          return (
-                            <span key={name} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                              style={{ background: chipColors[i % 4], color: textColors[i % 4], border: `1px solid ${borderColors[i % 4]}` }}>
-                              {name}
-                              <span className="text-[9px] font-bold opacity-70">{count}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          </div>
-
-          {/* ── RIGHT: Vote form + standings + results ── */}
-          <div className="space-y-4">
-
-            {/* Pending contribution (late opt-in payment awaiting review) */}
-            {pendingContribution && <PendingContributionCard pc={pendingContribution} />}
-
-            {/* Vote form — only for opted-in, non-closed, non-voted members (not admin view) */}
-            <AnimatePresence>
-              {isOptedIn && !isAdminView && !isClosed && !hasVoted && (
-                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-                  <VoteForm
-                    gbId={gbId}
-                    peptideOptions={peptideOptions}
-                    testOptions={round.testOptions}
-                    maxVials={data.maxVials}
-                    maxCompoundVotes={round.maxCompoundVotes ?? 1}
-                    maxTestVotes={round.maxTestVotes ?? 1}
-                    onDone={() => { setLoading(true); load(); }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Existing vote */}
-            {hasVoted && existingVote && <ExistingVoteCard vote={existingVote} />}
-
-            {/* Tests being done — shown once voting has closed */}
+        {/* Tests being done — shown once voting has closed */}
             {isClosed && (() => {
               const testMilestones = milestones.filter(m => m.type === "test");
               if (testMilestones.length === 0) return null;

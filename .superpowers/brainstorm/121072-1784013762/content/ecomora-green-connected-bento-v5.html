@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peps Anonymous — Original Green Connected Dashboard</title>
+  <style>
+    :root { --ink:#1c1d1a; --muted:#797b75; --line:#dedfd9; --page:#e9eae5; --lime:#c9f36b; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; min-height:100%; background:radial-gradient(circle at 5% 3%,rgba(255,255,255,.68),transparent 25%),var(--page); color:var(--ink); font-family:Manrope,"Avenir Next",ui-rounded,sans-serif; }
+    .preview-frame { display:block; width:100%; min-height:790px; border:0; background:transparent; }
+    .review-panel { width:min(1508px,calc(100% - 38px)); display:flex; align-items:center; justify-content:space-between; gap:24px; margin:16px auto 44px; padding:16px 18px 16px 22px; border:1px solid rgba(28,29,26,.09); border-radius:22px; background:rgba(255,255,255,.9); box-shadow:0 9px 26px rgba(42,44,36,.055); }
+    .review-panel b { display:block; font-size:12px; letter-spacing:-.025em; }
+    .review-panel span { display:block; margin-top:4px; color:var(--muted); font-size:9px; }
+    .review-actions { display:flex; gap:8px; }
+    .review-actions button { min-height:39px; padding:0 15px; border:1px solid #d4d5ce; border-radius:12px; background:#fff; color:var(--ink); font-size:9px; font-weight:800; cursor:pointer; }
+    .review-actions .primary { border-color:var(--ink); background:var(--ink); color:#fff; box-shadow:0 7px 16px rgba(28,29,26,.16); }
+    .review-actions button.selected { outline:4px solid rgba(201,243,107,.45); }
+    @media(max-width:720px){.review-panel{width:calc(100% - 20px);align-items:flex-start;flex-direction:column}.review-actions{width:100%}.review-actions button{flex:1}}
+  </style>
+</head>
+<body>
+  <iframe id="green-preview" class="preview-frame" src="/files/ecomora-peps-connected-bento-v4.html" title="Peps Anonymous original green connected dashboard"></iframe>
+
+  <section class="review-panel">
+    <div><b>Original green style restored</b><span>The connected bento layout and compact graph now use the original lime, charcoal, and warm-neutral palette.</span></div>
+    <div class="review-actions">
+      <button data-choice="revise-green-bento" onclick="toggleSelect(this)">Request changes</button>
+      <button class="primary" data-choice="approve-green-bento" onclick="toggleSelect(this)">Approve green style</button>
+    </div>
+  </section>
+
+  <script>
+    const outerFrame = document.getElementById('green-preview');
+
+    function ensurePatch(doc, id, css) {
+      if (!doc || doc.getElementById(id)) return;
+      const style = doc.createElement('style');
+      style.id = id;
+      style.textContent = css;
+      doc.head.appendChild(style);
+    }
+
+    function applyGreenStyle() {
+      const levelOneDoc = outerFrame.contentDocument;
+      const levelTwoFrame = levelOneDoc?.getElementById('cards-preview');
+      const levelTwoDoc = levelTwoFrame?.contentDocument;
+      const levelThreeFrame = levelTwoDoc?.getElementById('revision-preview');
+      const levelThreeDoc = levelThreeFrame?.contentDocument;
+      const levelFourFrame = levelThreeDoc?.getElementById('branded-preview');
+      const levelFourDoc = levelFourFrame?.contentDocument;
+      const levelFiveFrame = levelFourDoc?.getElementById('dashboard-preview');
+      const appDoc = levelFiveFrame?.contentDocument;
+
+      if (!levelOneDoc || !levelTwoFrame || !levelTwoDoc || !levelThreeFrame || !levelThreeDoc || !levelFourFrame || !levelFourDoc || !levelFiveFrame || !appDoc?.head) return false;
+
+      const wrapperReset = '.review-panel{display:none!important}.preview-frame{min-height:0!important}html,body{background:#e9eae5!important}';
+      ensurePatch(levelOneDoc, 'green-wrapper-one', wrapperReset);
+      ensurePatch(levelTwoDoc, 'green-wrapper-two', wrapperReset);
+      ensurePatch(levelThreeDoc, 'green-wrapper-three', wrapperReset);
+      ensurePatch(levelFourDoc, 'green-wrapper-four', wrapperReset);
+
+      ensurePatch(appDoc, 'original-green-theme', `
+        :root {
+          --page:#e9eae5;
+          --surface:#ffffff;
+          --card:#f3f4f0;
+          --card-strong:#eeefea;
+          --ink:#1c1d1a;
+          --muted:#797b75;
+          --line:#dedfd9;
+          --line-dark:#d4d5ce;
+          --lime:#c9f36b;
+          --lime-strong:#b7e85a;
+          --coral:#ff8e79;
+          --orange:#f2a65a;
+          --lavender:#d9d6ef;
+          --shadow:0 18px 55px rgba(42,44,36,.08);
+        }
+
+        body {
+          background:radial-gradient(circle at 5% 3%,rgba(255,255,255,.66),transparent 25%),#e9eae5!important;
+          color:#1c1d1a!important;
+          font-family:Manrope,"Avenir Next",ui-rounded,sans-serif!important;
+        }
+
+        .topbar {
+          border-color:rgba(255,255,255,.9)!important;
+          box-shadow:0 10px 32px rgba(44,46,38,.055)!important;
+        }
+        .brand-mark .one,.brand-mark .two,.brand-mark .three { background:#1c1d1a!important; }
+        .brand-mark .four { background:#c9f36b!important; }
+        .brand-copy b { color:#1c1d1a!important; }
+        .brand-copy small { color:#797b75!important; }
+
+        .primary-nav { background:#f2f3ef!important; }
+        .nav-item { color:#6f716b!important; }
+        .nav-item.active {
+          border-color:#1c1d1a!important;
+          background:#1c1d1a!important;
+          color:#fff!important;
+          box-shadow:0 5px 15px rgba(28,29,26,.17)!important;
+        }
+
+        .icon-btn,.avatar-button,.search,.period,.mini-search { border-color:#dedfd9!important; background:#f7f7f4!important; }
+        .avatar-large { background:linear-gradient(140deg,#574d3d,#171713)!important; }
+        .notification-dot { background:#ff8e79!important; }
+
+        .dashboard { border-color:rgba(255,255,255,.92)!important; box-shadow:var(--shadow)!important; }
+        .title-group h1,.metric-value,.revenue-summary strong,.card-top h2 { color:#1c1d1a!important; }
+        .live-pill { background:#e9f8d0!important; color:#465e20!important; }
+        .live-pill::before { background:#7da63e!important; box-shadow:0 0 0 3px rgba(125,166,62,.12)!important; }
+
+        .action.primary { border-color:#1c1d1a!important; background:#1c1d1a!important; color:#fff!important; box-shadow:0 7px 16px rgba(28,29,26,.16)!important; }
+
+        .bento-shell {
+          border-color:rgba(28,29,26,.075)!important;
+          background:linear-gradient(145deg,#dedfd9 0%,#ecede8 54%,#dfe0da 100%)!important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 12px 28px rgba(42,44,36,.055)!important;
+        }
+        .bento-shell::before { background:rgba(201,243,107,.09)!important; }
+
+        .card { border-color:rgba(28,29,26,.05)!important; background:#fff!important; box-shadow:0 1px 1px rgba(42,44,36,.025),inset 0 1px 0 rgba(255,255,255,.76)!important; }
+        .metric-card { background:linear-gradient(145deg,#f8f9f5,#f1f2ed)!important; }
+        .metric-card::after { border-color:rgba(255,255,255,.56)!important; }
+        .status-card { background:linear-gradient(145deg,#f8f9f5,#f1f2ed)!important; }
+        .products-card { background:linear-gradient(145deg,#f7f8f4,#eff0eb)!important; }
+
+        .sparkline i { background:#aeb0aa!important; }
+        .sparkline i:last-child { background:#1c1d1a!important; }
+        .delta { background:#c9f36b!important; color:#354311!important; }
+        .delta.negative { background:#ffd3ca!important; color:#7e3024!important; }
+        .outstanding .dot { background:#ff8e79!important; }
+
+        .trend-line { stroke:#1c1d1a!important; filter:drop-shadow(0 5px 5px rgba(28,29,26,.14))!important; }
+        .trend-area stop:first-child { stop-color:#c9f36b!important; stop-opacity:.34!important; }
+        .trend-area stop:nth-child(2) { stop-color:#c9f36b!important; stop-opacity:.07!important; }
+        .trend-area stop:last-child { stop-color:#c9f36b!important; }
+        .trend-point { stroke:#1c1d1a!important; }
+        .trend-point.active { fill:#c9f36b!important; stroke:#1c1d1a!important; }
+        .trend-guide { stroke:#1c1d1a!important; }
+        .trend-tooltip { fill:#1c1d1a!important; }
+        .trend-legend i { background:#1c1d1a!important; }
+        .trend-previous { stroke:#aeb0aa!important; }
+        .trend-legend .previous i { background:repeating-linear-gradient(90deg,#aeb0aa 0 3px,transparent 3px 5px)!important; }
+
+        .donut {
+          background:conic-gradient(
+            #c9f36b 0deg 126deg,
+            #f3f4f0 126deg 130deg,
+            #1c1d1a 130deg 224deg,
+            #f3f4f0 224deg 228deg,
+            #f2a65a 228deg 305deg,
+            #f3f4f0 305deg 309deg,
+            #d9d6ef 309deg 360deg
+          )!important;
+          box-shadow:0 9px 22px rgba(42,44,36,.09)!important;
+        }
+        .donut::before { background:#f3f4f0!important; }
+        .status-item.paid i { background:#c9f36b!important; }
+        .status-item.packing i { background:#1c1d1a!important; }
+        .status-item.dispatched i { background:#f2a65a!important; }
+        .status-item.due i { background:#d9d6ef!important; }
+
+        .status-pill.paid { background:#e1f7b6!important; color:#40551c!important; }
+        .status-pill.paid::before { background:#71962f!important; }
+        .status-pill.packing { background:#dfdfdb!important; color:#444640!important; }
+        .status-pill.packing::before { background:#565851!important; }
+        .status-pill.dispatched { background:#ffe3c5!important; color:#7c4b19!important; }
+        .status-pill.dispatched::before { background:#c47a2c!important; }
+        .status-pill.due { background:#ffd7cf!important; color:#7a3428!important; }
+        .status-pill.due::before { background:#c76351!important; }
+
+        .top-product { background:#1c1d1a!important; box-shadow:0 12px 22px rgba(28,29,26,.15)!important; }
+        .vial-halo { background:#c9f36b!important; }
+        .product-metric span { background:#c9f36b!important; color:#354311!important; }
+        .progress i { background:#1c1d1a!important; }
+      `);
+
+      requestAnimationFrame(() => {
+        levelFiveFrame.style.height = `${appDoc.documentElement.scrollHeight}px`;
+        requestAnimationFrame(() => {
+          levelFourFrame.style.height = `${levelFourDoc.documentElement.scrollHeight}px`;
+          requestAnimationFrame(() => {
+            levelThreeFrame.style.height = `${levelThreeDoc.documentElement.scrollHeight}px`;
+            requestAnimationFrame(() => {
+              levelTwoFrame.style.height = `${levelTwoDoc.documentElement.scrollHeight}px`;
+              requestAnimationFrame(() => {
+                outerFrame.style.height = `${levelOneDoc.documentElement.scrollHeight}px`;
+              });
+            });
+          });
+        });
+      });
+      return true;
+    }
+
+    function patchWhenReady(attempt = 0) {
+      if (applyGreenStyle() || attempt > 28) return;
+      setTimeout(() => patchWhenReady(attempt + 1), 120);
+    }
+
+    outerFrame.addEventListener('load', () => patchWhenReady());
+    window.addEventListener('resize', () => patchWhenReady());
+  </script>
+</body>
+</html>

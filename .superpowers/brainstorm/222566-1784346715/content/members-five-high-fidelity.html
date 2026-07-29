@@ -1,0 +1,374 @@
+<style>
+  #claude-content{padding:0!important;background:#e9eef5}
+  .indicator-bar{display:none}
+  .main{overflow:hidden!important}
+  .hf *{box-sizing:border-box}
+  .hf{height:calc(100vh - 41px);min-height:720px;color:#0f1f38;font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:#e9eef5;display:flex;flex-direction:column}
+  .compare-bar{height:76px;flex:0 0 76px;padding:0 22px;background:#fff;border-bottom:1px solid #d8e0e9;display:flex;align-items:center;gap:24px;box-shadow:0 2px 12px rgba(15,31,56,.06);position:relative;z-index:20}
+  .compare-title{min-width:205px}
+  .compare-title strong{display:block;font-size:13px;letter-spacing:-.01em}
+  .compare-title span{font-size:10px;color:#718096}
+  .concept-tabs{display:flex;gap:7px;flex:1;overflow-x:auto;padding:8px 2px}
+  .concept-tab{border:1px solid #d5dee8;background:#f8fafc;border-radius:10px;padding:8px 11px;text-align:left;min-width:142px;color:#4b5c70;cursor:pointer;transition:.18s ease}
+  .concept-tab:hover{border-color:#7895c5;background:#f2f6fb}
+  .concept-tab.is-active{background:#17346f;border-color:#17346f;color:#fff;box-shadow:0 7px 16px rgba(27,58,122,.2)}
+  .concept-tab b{display:block;font-size:11px;margin-bottom:1px}
+  .concept-tab small{font-size:9px;opacity:.72}
+  .compare-help{font-size:10px;color:#718096;max-width:145px;line-height:1.35}
+
+  .app-frame{flex:1;min-height:0;display:grid;grid-template-columns:222px minmax(850px,1fr);overflow:auto;background:#f8fafc}
+  .v2-sidebar{background:#152f65;color:#fff;min-height:100%;display:flex;flex-direction:column;position:sticky;left:0;top:0;z-index:10;box-shadow:8px 0 24px rgba(15,31,56,.08)}
+  .brand{height:66px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;padding:0 17px;gap:10px}
+  .brand-mark{width:29px;height:29px;display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:4px;border-radius:9px;background:rgba(255,255,255,.08)}
+  .brand-mark i{display:block;border-radius:2px;background:#fff}.brand-mark i:nth-child(2),.brand-mark i:nth-child(3){background:#e9a020}
+  .brand-copy strong{font-size:12px;display:block}.brand-copy span{font-size:9px;color:rgba(255,255,255,.55);display:block;margin-top:1px}
+  .gb-card{margin:14px 13px 12px;padding:11px;border-radius:11px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);display:grid;grid-template-columns:31px 1fr;gap:9px}
+  .gb-monogram{width:31px;height:31px;border-radius:8px;background:#fff;color:#17346f;display:grid;place-items:center;font-size:9px;font-weight:800}
+  .gb-card small{font-size:7px;text-transform:uppercase;letter-spacing:.12em;color:#f0bd5b}.gb-card strong{font-size:9px;display:block;margin:2px 0}.gb-card em{font-style:normal;font-size:8px;color:rgba(255,255,255,.62)}
+  .side-scroll{padding:3px 12px 14px;flex:1}
+  .nav-label{font-size:7px;text-transform:uppercase;letter-spacing:.18em;color:rgba(255,255,255,.4);margin:13px 7px 5px}
+  .nav-item{height:31px;border-radius:8px;padding:0 9px;display:flex;align-items:center;gap:9px;color:rgba(255,255,255,.67);font-size:9px;margin-bottom:2px}
+  .nav-item .ico{width:15px;text-align:center;font-size:11px;opacity:.85}
+  .nav-item.active{background:#fff;color:#17346f;font-weight:800;box-shadow:0 4px 10px rgba(5,15,40,.2)}
+  .nav-item .count{margin-left:auto;background:#e9a020;color:#17346f;min-width:17px;height:17px;border-radius:9px;display:grid;place-items:center;font-size:7px;font-weight:900}
+  .side-bottom{border-top:1px solid rgba(255,255,255,.1);padding:10px 13px 12px}
+  .profile{display:flex;align-items:center;gap:8px}.profile-avatar{width:27px;height:27px;border-radius:50%;background:#e9a020;color:#17346f;display:grid;place-items:center;font-size:8px;font-weight:900}
+  .profile strong{font-size:8px;display:block}.profile span{font-size:7px;color:rgba(255,255,255,.5)}
+
+  .workspace{min-width:850px;min-height:100%;display:flex;flex-direction:column}
+  .topbar{height:58px;flex:0 0 58px;background:#fff;border-bottom:1px solid #dce3ec;display:flex;align-items:center;padding:0 24px;gap:18px;position:sticky;top:0;z-index:8}
+  .crumbs{display:flex;align-items:center;gap:8px;font-size:9px;color:#7b899a}.crumbs strong{color:#243752}.crumbs b{font-size:11px;color:#bac3ce}
+  .global-search{margin-left:auto;width:240px;height:31px;border:1px solid #d5dee8;border-radius:9px;background:#f8fafc;color:#8a98a9;padding:0 10px;display:flex;align-items:center;gap:7px;font-size:8px}.global-search kbd{margin-left:auto;border:1px solid #d5dee8;background:#fff;border-radius:5px;padding:2px 5px;font-size:7px}
+  .top-action{height:31px;border:0;border-radius:8px;background:#17346f;color:#fff;padding:0 12px;font-size:8px;font-weight:800}
+  .bell{width:31px;height:31px;border-radius:8px;border:1px solid #d5dee8;background:#fff;display:grid;place-items:center;font-size:11px;color:#607086}
+  .page-viewport{flex:1;overflow:auto}
+  .concept{display:none;min-height:100%;padding:25px 28px 32px;animation:conceptIn .25s ease}
+  .concept.is-active{display:block}
+  @keyframes conceptIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .eyebrow{font-size:8px;text-transform:uppercase;letter-spacing:.18em;font-weight:800;color:#2d6bcc}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:19px}
+  .page-head h1{font-size:25px;letter-spacing:-.04em;line-height:1.05;margin:5px 0 5px}.page-head p{font-size:10px;color:#6b7a8d;max-width:520px}
+  .head-actions{display:flex;gap:7px;align-items:center}
+  .btn{height:32px;border-radius:8px;border:1px solid #cfdae6;background:#fff;color:#31445e;padding:0 12px;font-size:8px;font-weight:800;cursor:pointer}
+  .btn.primary{background:#17346f;border-color:#17346f;color:#fff}.btn.amber{background:#e9a020;border-color:#e9a020;color:#182d58}
+  .pick.selected{outline:3px solid rgba(45,107,204,.22)}
+  .panel{background:#fff;border:1px solid #d9e2eb;border-radius:13px;box-shadow:0 7px 20px rgba(28,48,77,.05)}
+  .panel-title{display:flex;align-items:center;justify-content:space-between;padding:14px 15px;border-bottom:1px solid #e3e9f0}
+  .panel-title h2{font-size:11px;margin:0}.panel-title p{font-size:8px;color:#8190a2;margin-top:2px}.result{font-size:8px;color:#758498;background:#f1f5f9;border-radius:12px;padding:4px 7px}
+  .metrics4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+  .metric-card{background:#fff;border:1px solid #d9e2eb;border-radius:12px;padding:12px 13px;min-height:70px;box-shadow:0 5px 14px rgba(28,48,77,.04);position:relative;overflow:hidden}
+  .metric-card small{font-size:7px;text-transform:uppercase;letter-spacing:.13em;color:#8290a1;font-weight:800}.metric-card strong{display:block;font-size:20px;letter-spacing:-.04em;margin:5px 0 1px}.metric-card span{font-size:8px;color:#7a899a}
+  .metric-card.primary{background:linear-gradient(135deg,#2d6bcc,#17346f);border:0;color:#fff}.metric-card.primary small,.metric-card.primary span{color:rgba(255,255,255,.67)}
+  .metric-card.dark{background:#1c2b3d;border:0;color:#fff}.metric-card.dark small,.metric-card.dark span{color:rgba(255,255,255,.6)}
+  .metric-icon{position:absolute;right:10px;top:10px;width:24px;height:24px;border-radius:8px;background:#edf3fb;display:grid;place-items:center;color:#2d6bcc;font-size:10px}.primary .metric-icon,.dark .metric-icon{background:rgba(255,255,255,.12);color:#fff}
+  .toolbar{padding:10px 12px;border-bottom:1px solid #e5eaf0;display:flex;align-items:center;gap:7px}
+  .search{height:30px;min-width:210px;border:1px solid #d5dee8;background:#f8fafc;border-radius:8px;padding:0 10px;color:#8492a3;font-size:8px;display:flex;align-items:center;gap:7px}
+  .filter{height:30px;border:1px solid #d5dee8;background:#fff;border-radius:8px;padding:0 9px;font-size:8px;color:#455872;display:flex;align-items:center;gap:6px}.filter i{font-style:normal;color:#2d6bcc}
+  .toolbar .spacer{flex:1}.segmented{display:flex;background:#eef2f7;border-radius:8px;padding:3px;gap:2px}.segmented button{height:23px;border:0;background:transparent;border-radius:6px;padding:0 8px;color:#768599;font-size:7px}.segmented button.active{background:#fff;color:#17346f;box-shadow:0 2px 5px rgba(15,31,56,.1);font-weight:800}
+  .member-table{width:100%;border-collapse:collapse;table-layout:fixed}.member-table th{height:30px;padding:0 10px;text-align:left;font-size:7px;text-transform:uppercase;letter-spacing:.09em;color:#8996a6;background:#fbfcfd;border-bottom:1px solid #e5eaf0}.member-table th.right,.member-table td.right{text-align:right}
+  .member-table td{padding:8px 10px;border-bottom:1px solid #edf1f5;font-size:8px;color:#475970;vertical-align:middle}.member-table tbody tr{transition:.15s}.member-table tbody tr:hover{background:#f7faff}.member-table tbody tr:last-child td{border-bottom:0}
+  .person{display:flex;align-items:center;gap:8px}.avatar{width:27px;height:27px;border-radius:8px;background:#e9eff8;color:#17346f;display:grid;place-items:center;font-size:8px;font-weight:900;flex:none}.avatar.round{border-radius:50%}.avatar.blue{background:linear-gradient(135deg,#4a7bd4,#17346f);color:#fff}.avatar.amber{background:#fff1d1;color:#8a5a00}
+  .person strong{display:block;font-size:8px;color:#192c47}.person span{font-size:7px;color:#8290a1}
+  .badge{display:inline-flex;align-items:center;gap:4px;border-radius:10px;padding:3px 6px;font-size:7px;font-weight:800;white-space:nowrap}.badge:before{content:'';width:4px;height:4px;border-radius:50%;background:currentColor}.badge.success{color:#178451;background:#eaf8f1}.badge.warn{color:#a26300;background:#fff4dc}.badge.info{color:#2764b7;background:#ebf3ff}.badge.danger{color:#b13b3b;background:#fdecec}.badge.neutral{color:#65758a;background:#eef2f6}
+  .mini-btn{border:1px solid #d5dee8;background:#fff;border-radius:6px;height:23px;padding:0 7px;color:#49617f;font-size:7px;font-weight:800}
+
+  /* Concept 1 */
+  .c1{background:#f5f8fc}
+  .ops-layout{display:grid;grid-template-columns:minmax(0,1fr) 214px;gap:12px}
+  .attention{background:#1c2b3d;color:#fff;border-radius:13px;padding:14px;box-shadow:0 10px 22px rgba(16,29,46,.16)}
+  .attention-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.attention-head strong{font-size:10px}.attention-head span{width:21px;height:21px;border-radius:7px;background:#e9a020;color:#172d5a;display:grid;place-items:center;font-size:8px;font-weight:900}
+  .attention-sub{font-size:7px;color:rgba(255,255,255,.53);margin:-7px 0 11px}
+  .queue-card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:9px;margin-bottom:7px}
+  .queue-card .qtop{display:flex;align-items:center;gap:6px;margin-bottom:5px}.queue-card .qavatar{width:22px;height:22px;border-radius:7px;background:#fff1d1;color:#7a4e00;display:grid;place-items:center;font-size:7px;font-weight:900}.queue-card strong{font-size:8px}.queue-card span{font-size:7px;color:rgba(255,255,255,.55);display:block}.queue-card p{font-size:7px;color:#f3c56f;margin:5px 0 7px}.queue-card button{width:100%;height:23px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;border-radius:6px;font-size:7px}
+  .queue-footer{margin-top:9px;width:100%;height:27px;border:0;border-radius:7px;background:#e9a020;color:#172d5a;font-size:7px;font-weight:900}
+
+  /* Concept 2 */
+  .c2{background:#eef3f8}
+  .crm-summary{display:flex;gap:17px;margin-bottom:14px;padding:10px 13px}.crm-summary div{padding-right:18px;border-right:1px solid #e0e6ed}.crm-summary div:last-child{border:0}.crm-summary small{display:block;font-size:7px;color:#8390a0}.crm-summary strong{font-size:13px}
+  .crm-layout{display:grid;grid-template-columns:292px minmax(0,1fr);gap:12px;min-height:476px}
+  .crm-list{overflow:hidden}.crm-list .toolbar{display:block}.crm-list .search{min-width:0;width:100%;margin-bottom:7px}.crm-list-filters{display:flex;gap:4px}
+  .crm-row{padding:9px 10px;border-bottom:1px solid #e7ecf1;display:grid;grid-template-columns:1fr auto;align-items:center;cursor:pointer}.crm-row:hover,.crm-row.active{background:#eef5ff}.crm-row.active{box-shadow:inset 3px 0 #2d6bcc}.crm-row .person-meta{text-align:right}.crm-row .person-meta strong{display:block;font-size:8px}.crm-row .person-meta span{font-size:7px;color:#8794a4}
+  .crm-detail{display:grid;grid-template-columns:minmax(0,1fr) 190px;overflow:hidden}
+  .crm-profile{padding:17px;border-right:1px solid #e2e8ef}.profile-hero{display:flex;align-items:center;gap:11px;padding-bottom:14px;border-bottom:1px solid #e4e9ef}.profile-hero .avatar{width:43px;height:43px;font-size:11px;border-radius:13px}.profile-hero h2{font-size:15px;margin:0}.profile-hero p{font-size:8px;color:#7f8d9e;margin-top:2px}.profile-hero .badge{margin-top:5px}
+  .profile-actions{margin-left:auto;display:flex;gap:5px}.profile-actions button{width:29px;height:29px;border:1px solid #d5dee8;background:#fff;border-radius:8px;color:#29496f}
+  .profile-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}.profile-stat{background:#f7f9fc;border-radius:8px;padding:9px}.profile-stat small{font-size:6px;color:#8492a2;text-transform:uppercase}.profile-stat strong{display:block;font-size:11px;margin-top:3px}
+  .section-heading{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}.section-heading h3{font-size:9px;margin:0}.section-heading button{border:0;background:transparent;color:#2d6bcc;font-size:7px;font-weight:800}
+  .order-card{border:1px solid #dce4ec;border-radius:9px;padding:8px 9px;margin-bottom:6px;display:grid;grid-template-columns:1fr auto;gap:8px}.order-card strong{font-size:8px;display:block}.order-card p{font-size:7px;color:#8090a2;margin-top:2px}.order-card .amount{text-align:right}.order-card .amount strong{font-size:9px}.order-card .amount span{font-size:7px;color:#168451}
+  .activity{padding:14px 12px;background:#fbfcfd}.activity h3{font-size:9px}.activity > p{font-size:7px;color:#8391a2;margin-top:2px}.timeline{margin-top:13px}.event{position:relative;padding:0 0 14px 20px}.event:before{content:'';position:absolute;left:5px;top:5px;bottom:-2px;width:1px;background:#d7e1eb}.event:last-child:before{display:none}.event:after{content:'';position:absolute;left:1px;top:3px;width:9px;height:9px;border-radius:50%;background:#2d6bcc;border:2px solid #e5efff}.event strong{font-size:7px;display:block}.event span{font-size:7px;color:#8190a2}.event p{font-size:7px;color:#4c5e74;margin-top:2px;line-height:1.35}
+
+  /* Concept 3 */
+  .c3{background:#f5f7fb}
+  .signal-grid{display:grid;grid-template-columns:1.25fr .75fr .75fr;grid-template-rows:104px 104px;gap:10px;margin-bottom:12px}
+  .signal-hero{grid-row:1/3;border-radius:15px;padding:17px;color:#fff;background:radial-gradient(circle at 85% 20%,rgba(100,172,255,.7),transparent 28%),linear-gradient(135deg,#2d6bcc,#142e65);position:relative;overflow:hidden}
+  .signal-hero small{font-size:7px;text-transform:uppercase;letter-spacing:.15em;color:rgba(255,255,255,.67)}.signal-hero h2{font-size:31px;margin:8px 0 2px;letter-spacing:-.06em}.signal-hero p{font-size:8px;color:rgba(255,255,255,.7)}
+  .spark{height:45px;display:flex;align-items:flex-end;gap:5px;position:absolute;left:18px;right:18px;bottom:14px}.spark i{flex:1;border-radius:4px 4px 1px 1px;background:rgba(255,255,255,.28)}.spark i:nth-child(1){height:28%}.spark i:nth-child(2){height:40%}.spark i:nth-child(3){height:36%}.spark i:nth-child(4){height:61%}.spark i:nth-child(5){height:52%}.spark i:nth-child(6){height:73%}.spark i:nth-child(7){height:87%;background:#e9a020}.spark i:nth-child(8){height:94%;background:#fff}
+  .signal-card{border-radius:15px;background:#fff;border:1px solid #d9e2eb;padding:13px;position:relative;overflow:hidden;box-shadow:0 6px 16px rgba(28,48,77,.04)}
+  .signal-card small{font-size:7px;text-transform:uppercase;letter-spacing:.12em;color:#8592a2}.signal-card strong{display:block;font-size:18px;margin:6px 0 1px}.signal-card p{font-size:7px;color:#7b899a}.signal-card.amber{background:#fff8e9;border-color:#f1ddaf}.signal-card.dark{background:#1c2b3d;border:0;color:#fff}.signal-card.dark small,.signal-card.dark p{color:rgba(255,255,255,.58)}
+  .donut{position:absolute;right:12px;bottom:12px;width:43px;height:43px;border-radius:50%;background:conic-gradient(#2d6bcc 0 72%,#dce7f4 72%);display:grid;place-items:center}.donut:after{content:'72%';width:29px;height:29px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:7px;font-weight:900}
+  .country-bars{margin-top:8px}.country-bars div{display:flex;align-items:center;gap:5px;margin-bottom:4px;font-size:6px;color:#718196}.country-bars i{height:4px;border-radius:4px;background:#2d6bcc}.country-bars div:nth-child(1) i{width:58%}.country-bars div:nth-child(2) i{width:38%;background:#5e89d5}.country-bars div:nth-child(3) i{width:24%;background:#98b4e4}
+  .signal-directory{display:grid;grid-template-columns:minmax(0,1fr) 224px;gap:10px}
+  .cohort-list{padding:11px}.cohort-list h3{font-size:9px}.cohort-list p{font-size:7px;color:#8190a2;margin:2px 0 9px}.cohort{display:flex;align-items:center;gap:8px;padding:8px;border-radius:9px;background:#f7f9fc;margin-bottom:6px}.cohort .cohort-icon{width:26px;height:26px;border-radius:8px;background:#e7effc;color:#2d6bcc;display:grid;place-items:center;font-size:10px}.cohort strong{font-size:8px;display:block}.cohort span{font-size:7px;color:#8491a1}.cohort b{margin-left:auto;font-size:12px}
+
+  /* Concept 4 */
+  .c4{background:#f3f6f9}
+  .journey-head{align-items:center}.journey-total{display:flex;align-items:center;gap:18px}.journey-total b{font-size:28px;letter-spacing:-.06em}.journey-total div{font-size:8px;color:#758498;line-height:1.5}.journey-total strong{color:#203653}
+  .journey-card{overflow:hidden}.journey-toolbar{padding:12px 14px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #e2e8ef}.journey-toolbar h2{font-size:11px;margin:0 12px 0 0}.journey-toolbar .search{margin-left:auto}
+  .stage-head{display:grid;grid-template-columns:205px repeat(4,1fr) 80px;padding:9px 12px;background:#1c2b3d;color:#fff}.stage-head span{font-size:7px;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.62);padding:0 8px}.stage-head span:first-child{color:#fff}.stage-head b{display:block;font-size:10px;color:#fff;margin-top:2px}
+  .journey-row{display:grid;grid-template-columns:205px repeat(4,1fr) 80px;align-items:stretch;border-bottom:1px solid #e6ebf1;min-height:61px;background:#fff}.journey-row:last-child{border:0}.journey-member{padding:10px 12px;display:flex;align-items:center;gap:8px;border-right:1px solid #e6ebf1}.journey-step{padding:10px 8px;position:relative;display:flex;align-items:center}.journey-step:before{content:'';position:absolute;left:0;right:0;top:50%;height:2px;background:#dbe3ec}.journey-step:first-of-type:before{left:50%}.journey-step.done:before{background:#4e7fd2}.stage-node{position:relative;z-index:1;width:23px;height:23px;border-radius:50%;background:#eef2f6;border:2px solid #c9d4df;color:#8593a3;display:grid;place-items:center;font-size:7px;font-weight:900}.journey-step.done .stage-node{background:#2d6bcc;border-color:#2d6bcc;color:#fff}.journey-step.current .stage-node{background:#fff5df;border-color:#e9a020;color:#986100;box-shadow:0 0 0 4px rgba(233,160,32,.13)}.journey-step span{font-size:6px;color:#8492a3;margin-left:5px;line-height:1.35}.journey-step span b{display:block;color:#40536c;font-size:7px}
+  .journey-action{display:grid;place-items:center;padding:8px}.journey-action button{width:56px;height:23px;border-radius:6px;border:1px solid #d2dce6;background:#fff;color:#365170;font-size:7px}
+  .journey-bottom{display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:10px}.insight-strip{padding:12px 14px;display:flex;align-items:center;gap:12px}.insight-icon{width:31px;height:31px;border-radius:9px;background:#fff3da;color:#9b6500;display:grid;place-items:center}.insight-strip strong{font-size:9px;display:block}.insight-strip p{font-size:7px;color:#7c8b9d;margin-top:2px}.insight-strip button{margin-left:auto}
+
+  /* Concept 5 */
+  .c5{background:#fbfcfd;padding:29px 42px 40px}
+  .editorial-head{display:grid;grid-template-columns:1fr auto;align-items:start;padding-bottom:24px;border-bottom:1px solid #ccd6e1}.editorial-title{display:flex;align-items:flex-end;gap:19px}.editorial-title .big{font-family:Georgia,serif;font-size:66px;line-height:.85;color:#17346f;letter-spacing:-.08em}.editorial-title h1{font-family:Georgia,serif;font-size:25px;font-weight:500;margin:0 0 3px}.editorial-title p{font-size:9px;color:#7c8999;max-width:390px}
+  .editorial-actions{display:flex;gap:7px}.editorial-meta{display:flex;gap:26px;margin:18px 0 17px}.editorial-meta div{min-width:105px}.editorial-meta small{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.14em;color:#93a0af}.editorial-meta strong{display:block;font-family:Georgia,serif;font-size:15px;font-weight:500;margin-top:4px}.editorial-meta span{font-size:7px;color:#8290a0}
+  .quiet-controls{display:flex;align-items:center;gap:16px;border-top:1px solid #e3e8ee;border-bottom:1px solid #d5dee7;padding:10px 0}.quiet-search{border:0;background:transparent;font-size:9px;color:#8996a5;width:230px}.quiet-controls button{border:0;background:transparent;color:#66778b;font-size:8px}.quiet-controls button.active{color:#17346f;font-weight:900}.quiet-controls .right{margin-left:auto}
+  .quiet-table{width:100%;border-collapse:collapse}.quiet-table th{text-align:left;height:35px;font-size:7px;text-transform:uppercase;letter-spacing:.12em;color:#9aa5b2;border-bottom:1px solid #e0e6ec}.quiet-table th:last-child,.quiet-table td:last-child{text-align:right}.quiet-table td{padding:12px 0;border-bottom:1px solid #e8edf2;font-size:8px;color:#53667d}.quiet-table tr.selected{background:linear-gradient(90deg,#f0f5fc,transparent)}.quiet-table tr.selected td:first-child{box-shadow:inset 3px 0 #2d6bcc;padding-left:10px}.quiet-name{display:flex;align-items:center;gap:9px}.quiet-name .avatar{background:transparent;border:1px solid #c9d5e1;border-radius:50%}.quiet-name strong{font-family:Georgia,serif;font-size:11px;font-weight:500;color:#203651;display:block}.quiet-name span{font-size:7px;color:#8b97a5}
+  .expanded-member td{padding:0!important;border-bottom:1px solid #d8e1ea!important}.expanded-card{margin:0 0 10px 38px;padding:12px 14px;background:#f3f7fc;border-radius:0 0 11px 11px;display:grid;grid-template-columns:1.2fr repeat(3,.6fr) auto;gap:15px;align-items:center}.expanded-card p{font-size:7px;color:#748498;line-height:1.45}.expanded-card small{display:block;font-size:6px;text-transform:uppercase;color:#91a0b0}.expanded-card strong{font-family:Georgia,serif;font-size:11px;font-weight:500}.expanded-card button{height:27px}
+
+  @media(max-width:1120px){.compare-help{display:none}.concept-tab{min-width:126px}.app-frame{grid-template-columns:72px minmax(850px,1fr)}.brand-copy,.gb-card>div:not(.gb-monogram),.nav-label,.nav-item span,.nav-item .count,.profile>div{display:none}.brand{justify-content:center;padding:0}.gb-card{display:flex;justify-content:center;padding:9px 5px}.side-scroll{padding:4px 10px}.nav-item{justify-content:center;padding:0}.nav-item .ico{font-size:13px}.side-bottom{display:flex;justify-content:center}.c5{padding-left:28px;padding-right:28px}}
+</style>
+
+<div class="hf">
+  <div class="compare-bar">
+    <div class="compare-title"><strong>Members redesign gallery</strong><span>High-fidelity comparison · same shell and data</span></div>
+    <div class="concept-tabs" role="tablist" aria-label="Redesign concepts">
+      <button class="concept-tab is-active" data-tab="c1"><b>01 · Command Ledger</b><small>Operations + attention queue</small></button>
+      <button class="concept-tab" data-tab="c2"><b>02 · Member CRM</b><small>Persistent member context</small></button>
+      <button class="concept-tab" data-tab="c3"><b>03 · Signal Board</b><small>Cohorts + visual health</small></button>
+      <button class="concept-tab" data-tab="c4"><b>04 · Journey Map</b><small>Progress across fulfilment</small></button>
+      <button class="concept-tab" data-tab="c5"><b>05 · Quiet Directory</b><small>Refined progressive detail</small></button>
+    </div>
+    <div class="compare-help">Switch through all five. Use “Shortlist” only after viewing the complete page.</div>
+  </div>
+
+  <div class="app-frame">
+    <aside class="v2-sidebar">
+      <div class="brand"><span class="brand-mark"><i></i><i></i><i></i><i></i></span><span class="brand-copy"><strong>Peps Anonymous</strong><span>GB Organiser</span></span></div>
+      <div class="gb-card"><span class="gb-monogram">W25</span><div><small>Active group buy</small><strong>Winter Peptide Run 2025</strong><em>● Open · Closes 18 July</em></div></div>
+      <div class="side-scroll">
+        <div class="nav-label">Workspace</div>
+        <div class="nav-item"><span class="ico">▦</span><span>Overview</span></div>
+        <div class="nav-item"><span class="ico">✓</span><span>Todo List</span><span class="count">3</span></div>
+        <div class="nav-item active"><span class="ico">♙</span><span>Members</span></div>
+        <div class="nav-label">Orders</div>
+        <div class="nav-item"><span class="ico">▤</span><span>Orders</span><span class="count">8</span></div>
+        <div class="nav-item"><span class="ico">◩</span><span>Broadcast</span></div>
+        <div class="nav-label">Fulfilment</div>
+        <div class="nav-item"><span class="ico">▱</span><span>Parcels</span></div>
+        <div class="nav-item"><span class="ico">⌁</span><span>Dispatch</span><span class="count">12</span></div>
+        <div class="nav-item"><span class="ico">⌗</span><span>QR Codes</span></div>
+        <div class="nav-label">Insights</div>
+        <div class="nav-item"><span class="ico">↗</span><span>Profit & Loss</span></div>
+        <div class="nav-item"><span class="ico">◇</span><span>Vendor COAs</span></div>
+      </div>
+      <div class="side-bottom"><div class="profile"><span class="profile-avatar">AM</span><div><strong>Alex Morgan</strong><span>Lead organiser</span></div></div></div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="crumbs"><span>GB Organiser</span><b>›</b><strong>Members</strong></div>
+        <div class="global-search"><span>⌕</span><span>Search this group buy</span><kbd>⌘ K</kbd></div>
+        <button class="top-action">＋ Create order</button>
+        <button class="bell">♢</button>
+      </header>
+
+      <main class="page-viewport">
+        <!-- 01 Command Ledger -->
+        <section class="concept c1 is-active" id="c1">
+          <div class="page-head">
+            <div><div class="eyebrow">Member operations</div><h1>Members</h1><p>Move quickly from signal to follow-up across every participant, payment, and fulfilment state.</p></div>
+            <div class="head-actions"><button class="btn">⇩ Export</button><button class="btn primary">✉ Message members</button><button class="btn amber pick" data-choice="command-ledger" onclick="toggleSelect(this)">Shortlist 01</button></div>
+          </div>
+          <div class="metrics4">
+            <div class="metric-card"><span class="metric-icon">♙</span><small>Members</small><strong>42</strong><span>Unique participants</span></div>
+            <div class="metric-card"><span class="metric-icon">▤</span><small>Orders</small><strong>87</strong><span>2.1 orders per member</span></div>
+            <div class="metric-card primary"><span class="metric-icon">£</span><small>Collected</small><strong>£18,640</strong><span>91% of expected value</span></div>
+            <div class="metric-card dark"><span class="metric-icon">!</span><small>Needs attention</small><strong>6</strong><span>4 payment · 2 fulfilment</span></div>
+          </div>
+          <div class="ops-layout">
+            <div class="panel">
+              <div class="panel-title"><div><h2>Member ledger</h2><p>Every participant in Winter Peptide Run 2025</p></div><span class="result">42 members</span></div>
+              <div class="toolbar"><div class="search">⌕ Search name, username, or country</div><button class="filter"><i>●</i> All statuses⌄</button><button class="filter">◎ All countries⌄</button><span class="spacer"></span><div class="segmented"><button class="active">All 42</button><button>Attention 6</button><button>Ready 19</button></div></div>
+              <table class="member-table"><thead><tr><th style="width:28%">Member ↕</th><th>Country</th><th>Orders ↕</th><th>Order value ↕</th><th>Payment</th><th>Fulfilment</th><th class="right">Last order ↕</th><th style="width:36px"></th></tr></thead>
+                <tbody>
+                  <tr><td><div class="person"><span class="avatar blue">JR</span><div><strong>James Reed</strong><span>@j4mes_r</span></div></div></td><td>🇬🇧 United Kingdom</td><td><strong>5</strong></td><td><strong>£1,860</strong></td><td><span class="badge success">Confirmed</span></td><td><span class="badge info">Packing</span></td><td class="right">12 Jul 2026</td><td>›</td></tr>
+                  <tr><td><div class="person"><span class="avatar amber">R9</span><div><strong>Reeper90</strong><span>@reeper90</span></div></div></td><td>🇩🇪 Germany</td><td><strong>4</strong></td><td><strong>£1,240</strong></td><td><span class="badge warn">1 pending</span></td><td><span class="badge neutral">On hold</span></td><td class="right">11 Jul 2026</td><td>›</td></tr>
+                  <tr><td><div class="person"><span class="avatar">MC</span><div><strong>Maya Chen</strong><span>@mchen</span></div></div></td><td>🇳🇱 Netherlands</td><td><strong>3</strong></td><td><strong>£980</strong></td><td><span class="badge success">Confirmed</span></td><td><span class="badge info">Ready</span></td><td class="right">10 Jul 2026</td><td>›</td></tr>
+                  <tr><td><div class="person"><span class="avatar">NS</span><div><strong>NoShoesNoService</strong><span>@noshoes</span></div></div></td><td>🇫🇷 France</td><td><strong>2</strong></td><td><strong>£720</strong></td><td><span class="badge success">Confirmed</span></td><td><span class="badge success">Dispatched</span></td><td class="right">09 Jul 2026</td><td>›</td></tr>
+                  <tr><td><div class="person"><span class="avatar amber">UB</span><div><strong>Urban Blend</strong><span>@urbanblend</span></div></div></td><td>🇺🇸 United States</td><td><strong>6</strong></td><td><strong>£2,340</strong></td><td><span class="badge danger">2 overdue</span></td><td><span class="badge neutral">Blocked</span></td><td class="right">08 Jul 2026</td><td>›</td></tr>
+                  <tr><td><div class="person"><span class="avatar">LK</span><div><strong>Lena K.</strong><span>@lenak</span></div></div></td><td>🇮🇪 Ireland</td><td><strong>3</strong></td><td><strong>£1,105</strong></td><td><span class="badge success">Confirmed</span></td><td><span class="badge info">Packing</span></td><td class="right">07 Jul 2026</td><td>›</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <aside class="attention">
+              <div class="attention-head"><strong>Attention queue</strong><span>6</span></div><p class="attention-sub">Prioritised by urgency and value.</p>
+              <div class="queue-card"><div class="qtop"><span class="qavatar">UB</span><div><strong>Urban Blend</strong><span>@urbanblend</span></div></div><p>£840 overdue · 6 days</p><button>Open payment history →</button></div>
+              <div class="queue-card"><div class="qtop"><span class="qavatar">R9</span><div><strong>Reeper90</strong><span>@reeper90</span></div></div><p>Payment proof needs review</p><button>Review proof →</button></div>
+              <div class="queue-card"><div class="qtop"><span class="qavatar">SB</span><div><strong>Silver Birch</strong><span>@silverbirch</span></div></div><p>Address incomplete</p><button>Message member →</button></div>
+              <button class="queue-footer">Work all 6 items</button>
+            </aside>
+          </div>
+        </section>
+
+        <!-- 02 Member CRM -->
+        <section class="concept c2" id="c2">
+          <div class="page-head">
+            <div><div class="eyebrow">Relationship workspace</div><h1>Member CRM</h1><p>Keep the directory and the full member story in view at the same time.</p></div>
+            <div class="head-actions"><button class="btn">⇩ Export</button><button class="btn primary">✉ Message members</button><button class="btn amber pick" data-choice="member-crm" onclick="toggleSelect(this)">Shortlist 02</button></div>
+          </div>
+          <div class="panel crm-summary"><div><small>Total members</small><strong>42</strong></div><div><small>Order value</small><strong>£18,640</strong></div><div><small>Repeat members</small><strong>68%</strong></div><div><small>Payment confirmed</small><strong>36 / 42</strong></div><div><small>Countries</small><strong>8</strong></div></div>
+          <div class="crm-layout">
+            <div class="panel crm-list">
+              <div class="panel-title"><div><h2>Directory</h2><p>Sorted by most recent</p></div><span class="result">42</span></div>
+              <div class="toolbar"><div class="search">⌕ Search members</div><div class="crm-list-filters"><button class="filter">All statuses⌄</button><button class="filter">Country⌄</button><button class="filter">Sort: recent⌄</button></div></div>
+              <div class="crm-row active" data-member="James Reed"><div class="person"><span class="avatar blue round">JR</span><div><strong>James Reed</strong><span>@j4mes_r · 🇬🇧</span></div></div><div class="person-meta"><strong>£1,860</strong><span>5 orders</span></div></div>
+              <div class="crm-row" data-member="Reeper90"><div class="person"><span class="avatar amber round">R9</span><div><strong>Reeper90</strong><span>@reeper90 · 🇩🇪</span></div></div><div class="person-meta"><strong>£1,240</strong><span class="badge warn">Pending</span></div></div>
+              <div class="crm-row" data-member="Maya Chen"><div class="person"><span class="avatar round">MC</span><div><strong>Maya Chen</strong><span>@mchen · 🇳🇱</span></div></div><div class="person-meta"><strong>£980</strong><span>3 orders</span></div></div>
+              <div class="crm-row" data-member="NoShoesNoService"><div class="person"><span class="avatar round">NS</span><div><strong>NoShoesNoService</strong><span>@noshoes · 🇫🇷</span></div></div><div class="person-meta"><strong>£720</strong><span>2 orders</span></div></div>
+              <div class="crm-row" data-member="Urban Blend"><div class="person"><span class="avatar amber round">UB</span><div><strong>Urban Blend</strong><span>@urbanblend · 🇺🇸</span></div></div><div class="person-meta"><strong>£2,340</strong><span class="badge danger">Overdue</span></div></div>
+              <div class="crm-row" data-member="Lena K."><div class="person"><span class="avatar round">LK</span><div><strong>Lena K.</strong><span>@lenak · 🇮🇪</span></div></div><div class="person-meta"><strong>£1,105</strong><span>3 orders</span></div></div>
+            </div>
+            <div class="panel crm-detail">
+              <div class="crm-profile">
+                <div class="profile-hero"><span class="avatar blue">JR</span><div><h2>James Reed</h2><p>@j4mes_r · United Kingdom · Member since Jan 2025</p><span class="badge success">In good standing</span></div><div class="profile-actions"><button>✉</button><button>•••</button></div></div>
+                <div class="profile-stats"><div class="profile-stat"><small>Total spent</small><strong>£1,860</strong></div><div class="profile-stat"><small>Orders</small><strong>5</strong></div><div class="profile-stat"><small>Products</small><strong>11</strong></div><div class="profile-stat"><small>Open items</small><strong>0</strong></div></div>
+                <div class="section-heading"><h3>Current orders</h3><button>View all 5 →</button></div>
+                <div class="order-card"><div><strong>GB-2026-0087</strong><p>Retatrutide 20mg × 3 · SS-31 10mg × 2</p></div><div class="amount"><strong>£620</strong><span>● Packing</span></div></div>
+                <div class="order-card"><div><strong>GB-2026-0064</strong><p>Tirzepatide 30mg × 2 · BAC water × 3</p></div><div class="amount"><strong>£485</strong><span>● Paid</span></div></div>
+                <div class="section-heading"><h3>Member details</h3><button>Edit details</button></div>
+                <div class="profile-stats"><div class="profile-stat"><small>Country</small><strong>United Kingdom</strong></div><div class="profile-stat"><small>Telegram</small><strong>@j4mes_r</strong></div><div class="profile-stat"><small>Last order</small><strong>12 Jul</strong></div><div class="profile-stat"><small>Fulfilled</small><strong>3 / 5</strong></div></div>
+              </div>
+              <aside class="activity"><h3>Member activity</h3><p>Latest changes and conversations</p><div class="timeline">
+                <div class="event"><strong>Order moved to packing</strong><span>Today · 10:42</span><p>GB-2026-0087 is ready for fulfilment.</p></div>
+                <div class="event"><strong>Payment confirmed</strong><span>11 Jul · 18:12</span><p>£620 received via bank transfer.</p></div>
+                <div class="event"><strong>Order submitted</strong><span>10 Jul · 09:26</span><p>5 products across two compounds.</p></div>
+                <div class="event"><strong>Broadcast delivered</strong><span>8 Jul · 14:03</span><p>“Supplier parcel has landed.”</p></div>
+              </div></aside>
+            </div>
+          </div>
+        </section>
+
+        <!-- 03 Signal Board -->
+        <section class="concept c3" id="c3">
+          <div class="page-head">
+            <div><div class="eyebrow">Member intelligence</div><h1>Member signals</h1><p>See the shape and health of the membership before dropping into individual records.</p></div>
+            <div class="head-actions"><button class="btn">⇩ Export</button><button class="btn primary">✉ Message segment</button><button class="btn amber pick" data-choice="signal-board" onclick="toggleSelect(this)">Shortlist 03</button></div>
+          </div>
+          <div class="signal-grid">
+            <div class="signal-hero"><small>Active membership</small><h2>42 members</h2><p>+8 since this group buy opened</p><div class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            <div class="signal-card"><small>Payment health</small><strong>86%</strong><p>36 fully confirmed</p><div class="donut"></div></div>
+            <div class="signal-card amber"><small>Needs attention</small><strong>6</strong><p>£1,420 at risk</p><span class="badge warn" style="margin-top:8px">Review queue</span></div>
+            <div class="signal-card"><small>Top countries</small><div class="country-bars"><div>UK <i></i> 24</div><div>DE <i></i> 8</div><div>NL <i></i> 5</div></div></div>
+            <div class="signal-card dark"><small>Repeat participation</small><strong>68%</strong><p>29 returning members</p></div>
+          </div>
+          <div class="signal-directory">
+            <div class="panel">
+              <div class="panel-title"><div><h2>Members</h2><p>Segmented by engagement and operational status</p></div><span class="result">42 records</span></div>
+              <div class="toolbar"><div class="search">⌕ Search name, username, or country</div><button class="filter">Cohort: All⌄</button><button class="filter">Country⌄</button><span class="spacer"></span><button class="filter">Sort: value ↓</button></div>
+              <table class="member-table"><thead><tr><th style="width:30%">Member ↕</th><th>Cohort</th><th>Orders ↕</th><th>Value ↕</th><th>Health</th><th class="right">Last active ↕</th></tr></thead><tbody>
+                <tr><td><div class="person"><span class="avatar blue round">JR</span><div><strong>James Reed</strong><span>@j4mes_r · 🇬🇧</span></div></div></td><td><span class="badge info">Champion</span></td><td>5</td><td><strong>£1,860</strong></td><td><span class="badge success">Healthy</span></td><td class="right">Today</td></tr>
+                <tr><td><div class="person"><span class="avatar amber round">UB</span><div><strong>Urban Blend</strong><span>@urbanblend · 🇺🇸</span></div></div></td><td><span class="badge neutral">Returning</span></td><td>6</td><td><strong>£2,340</strong></td><td><span class="badge danger">At risk</span></td><td class="right">2 days ago</td></tr>
+                <tr><td><div class="person"><span class="avatar round">MC</span><div><strong>Maya Chen</strong><span>@mchen · 🇳🇱</span></div></div></td><td><span class="badge info">New</span></td><td>3</td><td><strong>£980</strong></td><td><span class="badge success">Healthy</span></td><td class="right">Today</td></tr>
+                <tr><td><div class="person"><span class="avatar amber round">R9</span><div><strong>Reeper90</strong><span>@reeper90 · 🇩🇪</span></div></div></td><td><span class="badge neutral">Returning</span></td><td>4</td><td><strong>£1,240</strong></td><td><span class="badge warn">Watch</span></td><td class="right">Yesterday</td></tr>
+              </tbody></table>
+            </div>
+            <aside class="panel cohort-list"><h3>Smart cohorts</h3><p>Click a cohort to filter the directory.</p>
+              <div class="cohort"><span class="cohort-icon">★</span><div><strong>Champions</strong><span>High value · fully paid</span></div><b>9</b></div>
+              <div class="cohort"><span class="cohort-icon">↺</span><div><strong>Returning</strong><span>Joined 2+ group buys</span></div><b>20</b></div>
+              <div class="cohort"><span class="cohort-icon">＋</span><div><strong>First timers</strong><span>New this group buy</span></div><b>13</b></div>
+              <div class="cohort"><span class="cohort-icon" style="background:#fff0df;color:#a15f00">!</span><div><strong>At risk</strong><span>Payment or fulfilment issue</span></div><b>6</b></div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- 04 Journey Map -->
+        <section class="concept c4" id="c4">
+          <div class="page-head journey-head">
+            <div><div class="eyebrow">Fulfilment journey</div><h1>Members in motion</h1><p>Track each participant across order, payment, packing, and delivery without opening separate records.</p></div>
+            <div class="journey-total"><b>42</b><div><strong>members moving</strong><br>through this group buy</div></div>
+            <div class="head-actions"><button class="btn primary">✉ Message members</button><button class="btn amber pick" data-choice="journey-map" onclick="toggleSelect(this)">Shortlist 04</button></div>
+          </div>
+          <div class="panel journey-card">
+            <div class="journey-toolbar"><h2>Member journey map</h2><button class="filter">All statuses⌄</button><button class="filter">All countries⌄</button><button class="filter">Sort: attention first⌄</button><div class="search">⌕ Search members</div></div>
+            <div class="stage-head"><span>Member <b>42 total</b></span><span>Ordered <b>42</b></span><span>Paid <b>36</b></span><span>Packed <b>27</b></span><span>Delivered <b>16</b></span><span>Details</span></div>
+            <div class="journey-row">
+              <div class="journey-member"><div class="person"><span class="avatar blue round">JR</span><div><strong>James Reed</strong><span>@j4mes_r · 5 orders</span></div></div></div>
+              <div class="journey-step done"><span class="stage-node">✓</span><span><b>12 Jul</b>£1,860</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>12 Jul</b>Confirmed</span></div><div class="journey-step current"><span class="stage-node">3</span><span><b>Today</b>Packing</span></div><div class="journey-step"><span class="stage-node">4</span><span><b>Next</b>Dispatch</span></div><div class="journey-action"><button>Open →</button></div>
+            </div>
+            <div class="journey-row">
+              <div class="journey-member"><div class="person"><span class="avatar amber round">R9</span><div><strong>Reeper90</strong><span>@reeper90 · 4 orders</span></div></div></div>
+              <div class="journey-step done"><span class="stage-node">✓</span><span><b>11 Jul</b>£1,240</span></div><div class="journey-step current"><span class="stage-node">!</span><span><b>6 days</b>Pending</span></div><div class="journey-step"><span class="stage-node">3</span><span><b>Blocked</b>Await paid</span></div><div class="journey-step"><span class="stage-node">4</span><span><b>Later</b>—</span></div><div class="journey-action"><button>Open →</button></div>
+            </div>
+            <div class="journey-row">
+              <div class="journey-member"><div class="person"><span class="avatar round">MC</span><div><strong>Maya Chen</strong><span>@mchen · 3 orders</span></div></div></div>
+              <div class="journey-step done"><span class="stage-node">✓</span><span><b>10 Jul</b>£980</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>10 Jul</b>Confirmed</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>Yesterday</b>Packed</span></div><div class="journey-step current"><span class="stage-node">4</span><span><b>Today</b>Ready</span></div><div class="journey-action"><button>Open →</button></div>
+            </div>
+            <div class="journey-row">
+              <div class="journey-member"><div class="person"><span class="avatar round">NS</span><div><strong>NoShoesNoService</strong><span>@noshoes · 2 orders</span></div></div></div>
+              <div class="journey-step done"><span class="stage-node">✓</span><span><b>9 Jul</b>£720</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>9 Jul</b>Confirmed</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>11 Jul</b>Packed</span></div><div class="journey-step done"><span class="stage-node">✓</span><span><b>12 Jul</b>Dispatched</span></div><div class="journey-action"><button>Open →</button></div>
+            </div>
+            <div class="journey-row">
+              <div class="journey-member"><div class="person"><span class="avatar amber round">UB</span><div><strong>Urban Blend</strong><span>@urbanblend · 6 orders</span></div></div></div>
+              <div class="journey-step done"><span class="stage-node">✓</span><span><b>8 Jul</b>£2,340</span></div><div class="journey-step current"><span class="stage-node">!</span><span><b>2 overdue</b>£840 due</span></div><div class="journey-step"><span class="stage-node">3</span><span><b>Blocked</b>Await paid</span></div><div class="journey-step"><span class="stage-node">4</span><span><b>Later</b>—</span></div><div class="journey-action"><button>Open →</button></div>
+            </div>
+          </div>
+          <div class="journey-bottom">
+            <div class="panel insight-strip"><span class="insight-icon">!</span><div><strong>6 members are paused before packing</strong><p>£1,420 in order value is waiting on payment or address confirmation.</p></div><button class="btn">Review blockers</button></div>
+            <div class="panel insight-strip"><span class="insight-icon" style="background:#e8f5ee;color:#168451">✓</span><div><strong>16 fully delivered</strong><p>38% of member journeys are complete.</p></div><button class="btn">View delivered</button></div>
+          </div>
+        </section>
+
+        <!-- 05 Quiet Directory -->
+        <section class="concept c5" id="c5">
+          <div class="editorial-head">
+            <div class="editorial-title"><span class="big">42</span><div><div class="eyebrow">Winter Peptide Run 2025</div><h1>Members</h1><p>A calm, precise directory of every participant, their orders, payments, and fulfilment progress.</p></div></div>
+            <div class="editorial-actions"><button class="btn">Export directory</button><button class="btn primary">Message members</button><button class="btn amber pick" data-choice="quiet-directory" onclick="toggleSelect(this)">Shortlist 05</button></div>
+          </div>
+          <div class="editorial-meta">
+            <div><small>Total order value</small><strong>£18,640</strong><span>Across 87 orders</span></div>
+            <div><small>Payment confirmed</small><strong>36 members</strong><span>86% of directory</span></div>
+            <div><small>Ready or dispatched</small><strong>27 members</strong><span>64% fulfilled</span></div>
+            <div><small>Needs attention</small><strong style="color:#a26300">6 members</strong><span>£1,420 to resolve</span></div>
+          </div>
+          <div class="quiet-controls"><input class="quiet-search" placeholder="⌕  Search name, username, or country"><button class="active">All 42</button><button>Attention 6</button><button>Ready 19</button><button>Dispatched 16</button><span class="right"></span><button>All countries⌄</button><button>Sort by recent⌄</button></div>
+          <table class="quiet-table"><thead><tr><th style="width:29%">Member</th><th>Country</th><th>Orders</th><th>Total spent</th><th>Payment</th><th>Fulfilment</th><th>Last order</th><th></th></tr></thead><tbody>
+            <tr class="selected"><td><div class="quiet-name"><span class="avatar">JR</span><div><strong>James Reed</strong><span>@j4mes_r</span></div></div></td><td>United Kingdom</td><td>5 orders</td><td><strong>£1,860</strong></td><td><span class="badge success">Confirmed</span></td><td>Packing</td><td>12 Jul 2026</td><td>⌃</td></tr>
+            <tr class="expanded-member"><td colspan="8"><div class="expanded-card"><p><strong style="display:block;margin-bottom:3px">Latest order · GB-2026-0087</strong>Retatrutide 20mg × 3 · SS-31 10mg × 2</p><div><small>Order value</small><strong>£620</strong></div><div><small>Products</small><strong>5 items</strong></div><div><small>Status</small><strong>Packing</strong></div><button class="btn primary">Open member</button></div></td></tr>
+            <tr><td><div class="quiet-name"><span class="avatar">R9</span><div><strong>Reeper90</strong><span>@reeper90</span></div></div></td><td>Germany</td><td>4 orders</td><td><strong>£1,240</strong></td><td><span class="badge warn">1 pending</span></td><td>On hold</td><td>11 Jul 2026</td><td>⌄</td></tr>
+            <tr><td><div class="quiet-name"><span class="avatar">MC</span><div><strong>Maya Chen</strong><span>@mchen</span></div></div></td><td>Netherlands</td><td>3 orders</td><td><strong>£980</strong></td><td><span class="badge success">Confirmed</span></td><td>Ready</td><td>10 Jul 2026</td><td>⌄</td></tr>
+            <tr><td><div class="quiet-name"><span class="avatar">NS</span><div><strong>NoShoesNoService</strong><span>@noshoes</span></div></div></td><td>France</td><td>2 orders</td><td><strong>£720</strong></td><td><span class="badge success">Confirmed</span></td><td>Dispatched</td><td>09 Jul 2026</td><td>⌄</td></tr>
+            <tr><td><div class="quiet-name"><span class="avatar">UB</span><div><strong>Urban Blend</strong><span>@urbanblend</span></div></div></td><td>United States</td><td>6 orders</td><td><strong>£2,340</strong></td><td><span class="badge danger">2 overdue</span></td><td>Blocked</td><td>08 Jul 2026</td><td>⌄</td></tr>
+            <tr><td><div class="quiet-name"><span class="avatar">LK</span><div><strong>Lena K.</strong><span>@lenak</span></div></div></td><td>Ireland</td><td>3 orders</td><td><strong>£1,105</strong></td><td><span class="badge success">Confirmed</span></td><td>Packing</td><td>07 Jul 2026</td><td>⌄</td></tr>
+          </tbody></table>
+        </section>
+      </main>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.concept-tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.concept'));
+    tabs.forEach(function(tab){
+      tab.addEventListener('click', function(){
+        tabs.forEach(function(item){ item.classList.remove('is-active'); });
+        panels.forEach(function(panel){ panel.classList.remove('is-active'); });
+        tab.classList.add('is-active');
+        var panel = document.getElementById(tab.getAttribute('data-tab'));
+        if(panel) panel.classList.add('is-active');
+        var viewport = document.querySelector('.page-viewport');
+        if(viewport) viewport.scrollTop = 0;
+        if(window.brainstorm) window.brainstorm.send({type:'view', choice:tab.getAttribute('data-tab'), text:tab.textContent.trim()});
+      });
+    });
+    document.querySelectorAll('.crm-row').forEach(function(row){
+      row.addEventListener('click', function(){
+        document.querySelectorAll('.crm-row').forEach(function(item){item.classList.remove('active');});
+        row.classList.add('active');
+      });
+    });
+  })();
+</script>

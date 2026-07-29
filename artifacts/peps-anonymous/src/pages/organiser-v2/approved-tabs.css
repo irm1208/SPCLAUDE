@@ -1,0 +1,810 @@
+/* Final approved layer for every live workspace destination. */
+
+/* Shared containment ------------------------------------------------------- */
+
+.organiser-v2 .ov2-workspace-screen[data-page],
+.organiser-v2 .ov2-workspace-screen[data-page] > *,
+.organiser-v2 .ov2-workspace-screen[data-page] > * > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] {
+  width: 100%;
+  overflow-x: clip;
+  color: #0F1F38;
+  letter-spacing: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] *,
+.organiser-v2 .ov2-workspace-screen[data-page] *::before,
+.organiser-v2 .ov2-workspace-screen[data-page] *::after {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(img, video, canvas) {
+  max-width: 100%;
+  height: auto;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(
+  .overflow-x-auto,
+  .qr-codes-panel-wrapper
+) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+  scrollbar-gutter: stable;
+}
+
+/* Legacy Tailwind typography --------------------------------------------- */
+
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[7px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[8px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[8\.5px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[9px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[9\.5px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[10px\],
+.organiser-v2 .ov2-workspace-screen[data-page] .text-\[10\.5px\] {
+  font-size: var(--approved-type-label) !important;
+  line-height: var(--approved-leading-label) !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] .font-black,
+.organiser-v2 .ov2-workspace-screen[data-page] .font-extrabold {
+  font-weight: 700 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.font-thin, .font-extralight, .font-light, .font-normal) {
+  font-weight: 400 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.font-medium) {
+  font-weight: 500 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.font-semibold) {
+  font-weight: 600 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.font-bold) {
+  font-weight: 700 !important;
+}
+
+/* Peps surfaces ----------------------------------------------------------- */
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.rounded-2xl) {
+  border-radius: 13px !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.rounded-xl) {
+  border-radius: 12px !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.rounded-lg) {
+  border-radius: 8px !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(
+  .atlas-card,
+  .ov2-card,
+  .ov2-todo-workspace,
+  .rounded-xl.bg-white,
+  .rounded-2xl.bg-white,
+  .rounded-lg.bg-white,
+  .qr-codes-panel-wrapper > div
+) {
+  border-color: #D0DAE4 !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 4px 14px rgba(15, 31, 56, 0.045);
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(
+  .border-border,
+  .border-gray-200,
+  .border-slate-200,
+  .divide-y > :not([hidden]) ~ :not([hidden])
+) {
+  border-color: #D0DAE4;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) {
+  box-shadow: 0 8px 24px rgba(15, 31, 56, 0.09) !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(input, select, textarea) {
+  max-width: 100%;
+  border-color: #D0DAE4;
+  color: #0F1F38;
+  background-color: #FFFFFF;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page] :where(button, a[href], input, select, textarea):focus-visible {
+  outline: 3px solid #2D6BCC;
+  outline-offset: 2px;
+}
+
+/* Treatment roots -------------------------------------------------------- */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] {
+  --approved-workflow-gap: 16px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="board"] {
+  --approved-workflow-gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] {
+  --approved-workflow-gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="composer"] {
+  --approved-workflow-gap: 16px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] {
+  --approved-workflow-gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="insight"] {
+  --approved-workflow-gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="support"] {
+  --approved-workflow-gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] {
+  --approved-workflow-gap: 16px;
+}
+
+/* Dashboard: preserve the command centre composition. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-command-center {
+  width: 100%;
+  max-width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] :where(
+  .ov2-command-hero,
+  .ov2-command-grid,
+  .ov2-pipeline-heading
+) {
+  min-width: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-command-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-order-board {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* Board: retain grouped tasks, calendar rails, and the detail sheet. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="board"] .ov2-todo-workspace {
+  min-height: min(680px, calc(100dvh - 170px));
+  border-radius: 13px !important;
+  overflow: hidden;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="board"] :where(
+  .ov2-todo-content,
+  .ov2-todo-detail,
+  .ov2-todo-group-card
+) {
+  min-width: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="board"] .ov2-todo-categories {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* Tables: keep row rhythm and put wide data inside bounded scrollers. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(.atlas-metric-grid, .atlas-metric-grid-four) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] .atlas-data-table-scroll {
+  max-width: 100%;
+  max-height: min(68dvh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(.atlas-data-table, table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(th, td) {
+  vertical-align: middle;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(tbody tr) {
+  min-height: 52px;
+}
+
+/* Composer: audience controls and message body remain distinct panes. */
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-composer {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.82fr) minmax(320px, 1.18fr);
+  gap: 14px 18px;
+  align-items: start;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-composer > * {
+  margin-top: 0 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-composer > :where(h2, p) {
+  grid-column: 1 / -1;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-audience {
+  min-width: 0;
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-message {
+  display: flex;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 3;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-message > * {
+  margin-top: 0 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-message textarea {
+  min-height: 180px !important;
+  resize: vertical;
+}
+
+/* Logistics: stage selectors stay horizontal and operational lists scroll. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] > :where(.space-y-3, .space-y-4, .space-y-5, .max-w-5xl) {
+  width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] :where(
+  .flex.flex-nowrap,
+  .dispatch-segment,
+  .qr-codes-panel-wrapper .flex.gap-1\.5.flex-wrap
+) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] :where(
+  .max-h-52,
+  .max-h-56,
+  .max-h-60,
+  .max-h-64,
+  .max-h-80
+) {
+  overscroll-behavior: contain;
+}
+
+/* Insight: metrics remain scannable and charts/tables stay bounded. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="insight"] :where(.grid-cols-4) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="insight"] :where(canvas, svg[role="img"]) {
+  max-width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="insight"] :where(.overflow-x-auto, .rounded-xl.overflow-hidden) {
+  max-width: 100%;
+}
+
+/* Support: list, conversation, and composer panes share a stable height. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="support"] > .flex.flex-col {
+  min-height: min(620px, calc(100dvh - 180px));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="support"] :where(.overflow-y-auto, textarea) {
+  overscroll-behavior: contain;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="support"] textarea {
+  min-height: 92px;
+}
+
+/* Configuration: preserve form groups and catalogue controls. */
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] :where(form, .space-y-4, .space-y-5) {
+  width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] :where(.grid-cols-2, .grid-cols-3, .grid-cols-4) {
+  align-items: start;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] :where(textarea) {
+  resize: vertical;
+}
+
+/* Live page hooks --------------------------------------------------------- */
+
+/* Overview and Orders retain their approved dedicated compositions. */
+.organiser-v2 .ov2-workspace-screen[data-page="overview"] .approved-command-overview,
+.organiser-v2 .ov2-workspace-screen[data-page="orders"] .approved-order-desk {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Todo */
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-header {
+  flex-wrap: wrap;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] :where(
+  .ov2-todo-header h2,
+  .ov2-todo-task-title,
+  .ov2-todo-group-label
+) {
+  font-weight: 600 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-content :where(.grid-cols-7) {
+  min-width: 620px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-detail {
+  max-width: min(360px, 100%);
+}
+
+/* Members */
+.organiser-v2 .ov2-workspace-screen[data-page="members"] .atlas-members-page {
+  width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="members"] .atlas-directory-card {
+  overflow: hidden;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="members"] .atlas-data-table {
+  min-width: 760px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="members"] .atlas-metric-trend {
+  font-weight: 700 !important;
+}
+
+/* Broadcast */
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] :where(.max-h-40, .max-h-52) {
+  scrollbar-gutter: stable;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="broadcast"] :where(label, button) {
+  min-width: 0;
+}
+
+/* Parcels */
+.organiser-v2 .ov2-workspace-screen[data-page="parcels"] > .space-y-4 > .rounded-2xl {
+  border: 1px solid #D0DAE4;
+  background: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(15, 31, 56, 0.045);
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="parcels"] :where(.flex.items-start.justify-between, .flex.items-center.justify-between) {
+  min-width: 0;
+}
+
+/* Real Dispatch: DispatchTab routes to components/AdminDispatch. */
+.organiser-v2 .ov2-workspace-screen[data-page="dispatch"] > .max-w-5xl {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+  padding: 0;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="dispatch"] > .max-w-5xl > .flex.flex-nowrap {
+  position: sticky;
+  z-index: 6;
+  top: 0;
+  border: 1px solid #D0DAE4;
+  background: #F8FAFC;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="dispatch"] :where(.divide-y, .max-h-64, table) {
+  max-width: 100%;
+}
+
+/* QR Codes */
+.organiser-v2 .ov2-workspace-screen[data-page="qrcodes"] .qr-codes-panel-wrapper {
+  width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="qrcodes"] .qr-codes-panel-wrapper :where(.grid-cols-3) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Reshippers */
+.organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4 > * {
+  margin-top: 0 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4 > :not(.rounded-2xl),
+.organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4 > :last-child {
+  grid-column: 1 / -1;
+}
+
+/* International legs */
+.organiser-v2 .ov2-workspace-screen[data-page="legs"] > .space-y-4 > .space-y-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="legs"] > .space-y-4 > .space-y-2 > * {
+  margin-top: 0 !important;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="legs"] :where(.max-h-32, .overflow-y-auto) {
+  overscroll-behavior: contain;
+}
+
+/* Shipping rates */
+.organiser-v2 .ov2-workspace-screen[data-page="shipping"] :where(.grid-cols-2) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="shipping"] input[type="range"] {
+  min-height: 24px;
+}
+
+/* Profit and loss */
+.organiser-v2 .ov2-workspace-screen[data-page="pnl"] > .space-y-5 > .grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="pnl"] :where(.tabular-nums) {
+  white-space: nowrap;
+}
+
+/* Vendor COAs */
+.organiser-v2 .ov2-workspace-screen[data-page="labtests"] .overflow-x-auto {
+  border: 1px solid #D0DAE4;
+  border-radius: 12px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="labtests"] table {
+  min-width: 720px;
+}
+
+/* Lab testing pool */
+.organiser-v2 .ov2-workspace-screen[data-page="testinggroups"] > .space-y-4 > .grid-cols-2 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="testinggroups"] :where(.divide-y) {
+  max-height: min(54dvh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Supplier summary */
+.organiser-v2 .ov2-workspace-screen[data-page="summary"] > .space-y-4 > .grid-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="summary"] :where(.rounded-xl.overflow-hidden) {
+  border: 1px solid #D0DAE4;
+}
+
+/* Tickets */
+.organiser-v2 .ov2-workspace-screen[data-page="tickets"] > .flex.flex-col {
+  width: min(100%, 980px);
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="tickets"] :where(.max-w-\[85\%\]) {
+  max-width: min(85%, 680px);
+}
+
+/* GB settings */
+.organiser-v2 .ov2-workspace-screen[data-page="settings"] > .space-y-4 > .rounded-xl {
+  border: 1px solid #D0DAE4;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="settings"] :where(.grid-cols-2, .grid-cols-4) {
+  gap: 12px;
+}
+
+/* Live ProductsTab from GbOrganiser. */
+.organiser-v2 .ov2-workspace-screen[data-page="products"] > .space-y-4 > .flex.items-center.justify-between {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="products"] :where(.overflow-x-auto) table {
+  min-width: 620px;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="products"] :where(.max-h-80, .overflow-y-auto) {
+  overscroll-behavior: contain;
+}
+
+/* Rules */
+.organiser-v2 .ov2-workspace-screen[data-page="rules"] > .space-y-4 {
+  width: 100%;
+}
+
+.organiser-v2 .ov2-workspace-screen[data-page="rules"] :where(textarea) {
+  min-height: 72px;
+}
+
+/* Tablet ----------------------------------------------------------------- */
+
+@media (max-width: 1023px) {
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(
+    .ov2-page-header,
+    .atlas-card-heading,
+    .ov2-todo-header,
+    .ov2-pipeline-heading
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-page] > :where(.space-y-3, .space-y-4, .space-y-5) > :where(
+    .flex.items-center.justify-between,
+    .flex.items-start.justify-between
+  ) {
+    flex-wrap: wrap;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-command-metrics,
+  .organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(.atlas-metric-grid, .atlas-metric-grid-four),
+  .organiser-v2 .ov2-workspace-screen[data-treatment="insight"] :where(.grid-cols-4),
+  .organiser-v2 .ov2-workspace-screen[data-page="testinggroups"] > .space-y-4 > .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="table"] .atlas-data-table-scroll {
+    max-height: min(62dvh, 680px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="support"] > .flex.flex-col {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    flex-direction: column;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="support"] > .flex.flex-col > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-composer {
+    display: block;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4,
+  .organiser-v2 .ov2-workspace-screen[data-page="legs"] > .space-y-4 > .space-y-2 {
+    display: block;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="broadcast"] .organiser-broadcast-composer > * + *,
+  .organiser-v2 .ov2-workspace-screen[data-page="reshippers"] > .space-y-4 > * + *,
+  .organiser-v2 .ov2-workspace-screen[data-page="legs"] > .space-y-4 > .space-y-2 > * + * {
+    margin-top: 14px !important;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] :where(
+    form .grid-cols-2,
+    form .grid-cols-3,
+    form .grid-cols-4
+  ) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile ----------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .organiser-v2 .ov2-workspace-screen[data-page] {
+    overflow-x: clip;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(
+    button,
+    a[href],
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+    select,
+    textarea
+  ) {
+    min-height: 44px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(button, a[href]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] input[type="range"] {
+    min-height: 44px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(input[type="checkbox"], input[type="radio"]) {
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    flex: 0 0 18px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(
+    .ov2-page-header,
+    .atlas-card-heading,
+    .ov2-todo-header,
+    .ov2-pipeline-heading
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-page] > :where(.space-y-3, .space-y-4, .space-y-5) > :where(
+    .flex.items-center.justify-between,
+    .flex.items-start.justify-between,
+    .flex.items-end.justify-between
+  ) {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="composer"] :where(
+    form .grid,
+    [class~="grid-cols-2"],
+    [class~="grid-cols-3"],
+    [class~="grid-cols-4"]
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-treatment="logistics"] :where(
+    form .grid,
+    [class~="grid-cols-2"],
+    [class~="grid-cols-3"],
+    [class~="grid-cols-4"]
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-treatment="insight"] :where(
+    form .grid,
+    [class~="grid-cols-2"],
+    [class~="grid-cols-3"],
+    [class~="grid-cols-4"]
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-treatment="support"] :where(
+    form .grid,
+    [class~="grid-cols-2"],
+    [class~="grid-cols-3"],
+    [class~="grid-cols-4"]
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-treatment="configuration"] :where(
+    form .grid,
+    [class~="grid-cols-2"],
+    [class~="grid-cols-3"],
+    [class~="grid-cols-4"]
+  ),
+  .organiser-v2 .ov2-workspace-screen[data-page="orders"] .orders-filter-studio-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-command-metrics,
+  .organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(.atlas-metric-grid, .atlas-metric-grid-four),
+  .organiser-v2 .ov2-workspace-screen[data-page="qrcodes"] .qr-codes-panel-wrapper :where(.grid-cols-3),
+  .organiser-v2 .ov2-workspace-screen[data-page="testinggroups"] > .space-y-4 > .grid-cols-2,
+  .organiser-v2 .ov2-workspace-screen[data-page="summary"] > .space-y-4 > .grid-cols-3,
+  .organiser-v2 .ov2-workspace-screen[data-page="pnl"] > .space-y-5 > .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-treatment="table"] .atlas-data-table-scroll {
+    width: 100%;
+    max-height: min(58dvh, 600px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-workspace {
+    min-height: calc(100dvh - 150px);
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-header {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-view-switcher {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-view-switcher button {
+    flex: 1 0 auto;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="todos"] .ov2-todo-content {
+    overflow-x: auto;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="dispatch"] > .max-w-5xl > .flex.flex-nowrap {
+    margin-inline: -2px;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="dispatch"] > .max-w-5xl > .flex.flex-nowrap button {
+    min-width: max-content;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="products"] > .space-y-4 > .flex.items-center.justify-between > .flex {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="products"] > .space-y-4 > .flex.items-center.justify-between > .flex button {
+    flex: 1 0 auto;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="tickets"] :where(.max-w-\[85\%\]) {
+    max-width: 92%;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page="rules"] :where(.flex.items-start.gap-2) {
+    align-items: flex-start;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] .ov2-todo-detail,
+  .organiser-v2 .ov2-workspace-screen[data-page] .atlas-drawer,
+  .organiser-v2 .ov2-workspace-screen[data-page] [role="dialog"] > :where(.rounded-xl, .rounded-2xl) {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0 !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .organiser-v2 .ov2-workspace-screen[data-treatment="dashboard"] .ov2-command-metrics,
+  .organiser-v2 .ov2-workspace-screen[data-treatment="table"] :where(.atlas-metric-grid, .atlas-metric-grid-four),
+  .organiser-v2 .ov2-workspace-screen[data-page="qrcodes"] .qr-codes-panel-wrapper :where(.grid-cols-3),
+  .organiser-v2 .ov2-workspace-screen[data-page="testinggroups"] > .space-y-4 > .grid-cols-2,
+  .organiser-v2 .ov2-workspace-screen[data-page="summary"] > .space-y-4 > .grid-cols-3,
+  .organiser-v2 .ov2-workspace-screen[data-page="pnl"] > .space-y-5 > .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(.px-4, .p-4, .p-5) {
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organiser-v2 .ov2-workspace-screen[data-page] *,
+  .organiser-v2 .ov2-workspace-screen[data-page] *::before,
+  .organiser-v2 .ov2-workspace-screen[data-page] *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
