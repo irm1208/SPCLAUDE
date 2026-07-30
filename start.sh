@@ -94,6 +94,10 @@ node -e "
   server.listen(5000, '0.0.0.0', () => console.log('[proxy] Port 5000 → 21504 ready'));
 " &
 
+# Ensure .env exists — dev scripts use --env-file=../../.env and fail hard if absent.
+# Replit injects secrets as real env vars, so an empty file is fine.
+touch "$(dirname "$0")/.env"
+
 # Map GEMINI_API_KEY → AI_INTEGRATIONS_GEMINI_API_KEY when the Replit integration key is absent
 if [ -z "${AI_INTEGRATIONS_GEMINI_API_KEY}" ] && [ -n "${GEMINI_API_KEY}" ]; then
   export AI_INTEGRATIONS_GEMINI_API_KEY="${GEMINI_API_KEY}"
