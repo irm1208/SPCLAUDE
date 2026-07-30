@@ -101,6 +101,7 @@ export interface ApiProduct {
   mgSize?: string | null;
   price?: number | string | null;
   stock?: number | null;
+  sold?: number;
   active?: boolean;
   maxPerCustomer?: number | null;
   halfKitEnabled?: boolean;

@@ -48,10 +48,16 @@ export VITE_PORT=21504
 # Start port 5000 proxy FIRST so the workflow's waitForPort=5000 check passes.
 # The proxy retries the connection to 21504 on each request, so it works even
 # before Vite is fully up.
+# WebSocket upgrade support is required so that Vite's HMR socket works when
+# the app is accessed via the .replit.dev HTTPS proxy — without it the HMR
+# connection silently fails and any runtime error shows as a blank white page
+# instead of the error overlay (see vite.config.ts hmr comment).
 echo "[start] Starting port 5000 → 21504 proxy..."
 node -e "
   const http = require('http');
-  http.createServer((req, res) => {
+  const net  = require('net');
+
+  const server = http.createServer((req, res) => {
     const opts = {
       host: '127.0.0.1', port: 21504,
       path: req.url, method: req.method,
@@ -68,7 +74,24 @@ node -e "
         res.end('Starting up — please refresh in a moment.');
       }
     });
-  }).listen(5000, '0.0.0.0', () => console.log('[proxy] Port 5000 → 21504 ready'));
+  });
+
+  // Forward WebSocket upgrades (needed for Vite HMR via the .replit.dev proxy).
+  server.on('upgrade', (req, clientSocket, head) => {
+    const upstream = net.connect(21504, '127.0.0.1', () => {
+      const reqLine = req.method + ' ' + req.url + ' HTTP/1.1\r\n';
+      const hdrs = Object.entries({ ...req.headers, host: 'localhost' })
+        .map(([k, v]) => k + ': ' + v).join('\r\n');
+      upstream.write(reqLine + hdrs + '\r\n\r\n');
+      if (head && head.length) upstream.write(head);
+      upstream.pipe(clientSocket, { end: true });
+      clientSocket.pipe(upstream, { end: true });
+    });
+    upstream.on('error', () => clientSocket.destroy());
+    clientSocket.on('error', () => upstream.destroy());
+  });
+
+  server.listen(5000, '0.0.0.0', () => console.log('[proxy] Port 5000 → 21504 ready'));
 " &
 
 # Map GEMINI_API_KEY → AI_INTEGRATIONS_GEMINI_API_KEY when the Replit integration key is absent

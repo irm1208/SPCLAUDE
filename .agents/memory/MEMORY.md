@@ -1,3 +1,4 @@
+- [Vite 504 dep optimisation on .replit.dev](vite-504-dep-optimization.md) — clearing .vite cache causes 504s via edge proxy; fix is optimizeDeps.entries listing all pages.
 - [Multi-chain crypto payment rails](multi-chain-crypto-rails.md) — chain choice stored as paymentCryptoNetwork; CHAIN_WALLET_CONFIGS drives all resolution; getAdminCryptoOptions() exported for auto-verifier; pickedOption={currency,network} replaces pickedCurrency in PaymentPanel.
 - [Organiser V2 placeholder data traps](organiser-v2-placeholder-data.md) — mapApiGroupBuy fills fake fallbacks (maxMembers=1, counts 0); wire V2 tabs from raw API values via props, never SampleGB counts.
 - [Organiser V2 drawer portal CSS scoping](ov2-drawer-portal-scoping.md) — mobile drawer is a portalled Sheet; `.organiser-v2 .ov2-sidebar-drawer` selectors never match it, use compound `.organiser-v2.ov2-sidebar-drawer`.
