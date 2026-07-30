@@ -1172,9 +1172,6 @@ export default function GbTestingPool() {
                 </div>
               )}
             </motion.div>
-
-          </div>
-        </div>
       </motion.div>
     </GbPoolLayout>
   );
