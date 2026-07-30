@@ -15,6 +15,7 @@ import { PageHeader, SetupProgressCard } from "./OrganiserUi";
 import { organiserApi, type ApiGroupBuy, type ApiProduct } from "./api/organiser-api";
 import { buildSetupPayload, buildSetupProducts, buildSetupRules, type SetupDraftSnapshot } from "./setup-draft";
 import { SetupDraftProvider } from "./setup-draft-context";
+import { TOUR_EVENT_WIZARD_STEP } from "./tour/tour-script";
 
 export default function SetupWizard({
   onModeChange,
@@ -44,6 +45,18 @@ export default function SetupWizard({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [showLaunchModal]);
+
+  // Let the guided tour drive the wizard to a specific step.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const stepIndex = (event as CustomEvent<number>).detail;
+      if (Number.isInteger(stepIndex) && stepIndex >= 0 && stepIndex < WIZARD_STEPS.length) {
+        setCurrent(stepIndex);
+      }
+    };
+    window.addEventListener(TOUR_EVENT_WIZARD_STEP, handler);
+    return () => window.removeEventListener(TOUR_EVENT_WIZARD_STEP, handler);
+  }, []);
 
   const handleContinue = () => {
     if (isLast) setShowLaunchModal(true);
@@ -177,7 +190,7 @@ export default function SetupWizard({
           <SetupProgressCard label="Visibility" value={visibility === "public" ? "Public" : "Private"} detail="Can be changed before launch" />
         </div>
 
-        <section className="ov2-card ov2-form-panel" aria-labelledby="ov2-step-title">
+        <section className="ov2-card ov2-form-panel" aria-labelledby="ov2-step-title" data-tour="wizard-form">
           <div className="ov2-form-panel-heading">
             <div>
               <span>Step {current + 1} of {WIZARD_STEPS.length}</span>
@@ -200,7 +213,7 @@ export default function SetupWizard({
             >
               <ArrowLeft aria-hidden="true" /> Back
             </button>
-            <button type="button" className="ov2-primary-button" onClick={handleContinue} disabled={saving}>
+            <button type="button" className="ov2-primary-button" onClick={handleContinue} disabled={saving} data-tour="wizard-launch-button">
               {isLast ? <><Rocket aria-hidden="true" /> Launch group buy</> : <>Continue <ArrowRight aria-hidden="true" /></>}
             </button>
           </footer>

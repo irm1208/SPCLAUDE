@@ -49,7 +49,7 @@ export default function ShippingStep() {
       {options.length > 0 ? (
         <div className="space-y-3">
           {options.map((opt, index) => (
-            <div key={opt.id} className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+            <div key={opt.id} className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour={index === 0 ? "shipping-option" : undefined}>
               {/* Header with title and delete */}
               <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                 <div className="flex items-center gap-2">
@@ -141,7 +141,7 @@ export default function ShippingStep() {
               </div>
 
               {/* Toggles */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-1">
+              <div className="flex flex-col sm:flex-row gap-3 pt-1" data-tour={index === 0 ? "shipping-toggles" : undefined}>
                 <label className="flex items-center gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"

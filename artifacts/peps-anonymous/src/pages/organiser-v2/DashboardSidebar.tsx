@@ -128,7 +128,7 @@ export default function DashboardSidebar({
 
       <div className="ov2-sidebar-scroll">
         {mode === "setup" ? (
-          <nav className="ov2-setup-nav" aria-label="Group buy setup steps">
+          <nav className="ov2-setup-nav" aria-label="Group buy setup steps" data-tour="setup-nav">
             <p className="ov2-sidebar-kicker">Create group buy</p>
             {WIZARD_STEPS.map((step, index) => {
               const isCurrent = index === currentStep;
@@ -151,11 +151,11 @@ export default function DashboardSidebar({
             })}
           </nav>
         ) : (
-          <nav className="ov2-workspace-nav" aria-label="Workspace sections">
+          <nav className="ov2-workspace-nav" aria-label="Workspace sections" data-tour="sidebar-nav">
             {WORKSPACE_GROUPS.map(group => {
               const expanded = expandedGroups.has(group.id);
               return (
-                <section key={group.id} className="ov2-nav-group">
+                <section key={group.id} className="ov2-nav-group" data-tour={`nav-group-${group.id}`}>
                   {group.label ? (
                     <button
                       type="button"
@@ -179,6 +179,7 @@ export default function DashboardSidebar({
                             key={tab.id}
                             className={isActive ? "ov2-nav-link is-active" : "ov2-nav-link"}
                             aria-current={isActive ? "page" : undefined}
+                            data-tour={`nav-${tab.id}`}
                             title={tab.description}
                             onClick={() => selectTab(tab.id)}
                           >

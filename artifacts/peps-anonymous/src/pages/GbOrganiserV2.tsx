@@ -6,6 +6,8 @@ import type { OrganiserGB } from "./GbOrganiser";
 import SetupWizard from "./organiser-v2/SetupWizard";
 import Workspace from "./organiser-v2/Workspace";
 import WelcomeModal from "./organiser-v2/WelcomeModal";
+import GuidedTour from "./organiser-v2/tour/GuidedTour";
+import { TOUR_EVENT_START, TOUR_SEEN_KEY } from "./organiser-v2/tour/tour-script";
 import { V2_VARS } from "./organiser-v2/theme";
 import {
   CommandPalette,
@@ -37,6 +39,7 @@ export default function GbOrganiserV2() {
     return fromUrl ?? localStorage.getItem("v2:selectedGroupBuyId") ?? "";
   });
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
@@ -85,7 +88,31 @@ export default function GbOrganiserV2() {
     setModeState(nextMode);
   };
 
+  // First visit: offer the guided tour once the workspace is ready.
+  const workspaceReady = isApprovedOrganiser && !groupBuysQuery.isLoading && !groupBuysQuery.isError;
+  useEffect(() => {
+    if (!workspaceReady) return;
+    if (localStorage.getItem(TOUR_SEEN_KEY) === "true") return;
+    if (localStorage.getItem("v2:welcomeDismissed") === "true") return;
+    setShowWelcome(true);
+  }, [workspaceReady]);
+
+  // The topbar's Tour button (and anything else) can open the tour by event.
+  useEffect(() => {
+    const handler = () => setShowTour(true);
+    window.addEventListener(TOUR_EVENT_START, handler);
+    return () => window.removeEventListener(TOUR_EVENT_START, handler);
+  }, []);
+
   const commands: CommandAction[] = [
+    {
+      id: "start-tour",
+      label: "Take the Guided Tour",
+      description: "A narrated walkthrough of setup and the workspace",
+      keywords: ["tour", "tutorial", "help", "guide", "walkthrough"],
+      category: "Help",
+      action: () => setShowTour(true),
+    },
     {
       id: "switch-setup",
       label: "Switch to Setup",
@@ -209,10 +236,19 @@ export default function GbOrganiserV2() {
       {showWelcome ? (
         <WelcomeModal
           onStart={() => {
-            setMode("setup");
             setShowWelcome(false);
+            setShowTour(true);
           }}
           onDismiss={() => setShowWelcome(false)}
+        />
+      ) : null}
+
+      {showTour ? (
+        <GuidedTour
+          mode={mode === "setup" || !selectedGroupBuy || !selectedApiGroupBuy ? "setup" : "workspace"}
+          workspaceAvailable={Boolean(selectedGroupBuy && selectedApiGroupBuy)}
+          onRequestMode={setMode}
+          onClose={() => setShowTour(false)}
         />
       ) : null}
 

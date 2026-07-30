@@ -14,6 +14,7 @@
   "dependencies": {
     "@workspace/db": "workspace:*",
     "csv-parse": "^6.2.1",
+    "msedge-tts": "^2.0.7",
     "pg": "^8.20.0"
   },
   "devDependencies": {

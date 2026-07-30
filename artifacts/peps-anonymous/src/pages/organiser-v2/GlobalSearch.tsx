@@ -167,13 +167,13 @@ export default function GlobalSearch({ selectedGbId, onNavigate, open, onClose }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-center"
+      className="fixed inset-0 z-50 flex justify-center px-3 sm:px-0"
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[560px] mt-[10vh] self-start bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col"
-        style={{ border: `1px solid ${V2_CARD_BORDER}`, maxHeight: "60vh" }}
+        className="w-full max-w-[560px] mt-[6vh] sm:mt-[10vh] self-start bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ border: `1px solid ${V2_CARD_BORDER}`, maxHeight: "min(60vh, calc(100dvh - 120px))" }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >

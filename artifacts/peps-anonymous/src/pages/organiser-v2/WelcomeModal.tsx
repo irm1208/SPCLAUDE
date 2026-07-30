@@ -104,7 +104,7 @@ export default function WelcomeModal({ onStart, onDismiss }: WelcomeModalProps) 
             style={{ background: "var(--t-blue)" }}
           >
             <Rocket className="w-4 h-4" />
-            Start Setup Wizard
+            Take the Guided Tour
           </button>
           <button
             onClick={handleDismiss}

@@ -29,6 +29,7 @@ export default function BasicsStep() {
           value={name}
           onChange={event => setName(event.target.value)}
           placeholder="e.g. Winter Peptide Run 2025"
+          data-tour="basics-name-input"
           className="w-full h-10 px-3.5 rounded-lg text-[14px] transition-colors"
           style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
         />
@@ -38,7 +39,7 @@ export default function BasicsStep() {
       </div>
 
       {/* Description */}
-      <div>
+      <div data-tour="basics-description">
         <label className="block text-[14px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
           Description
         </label>
@@ -53,7 +54,7 @@ export default function BasicsStep() {
       </div>
 
       {/* Currency & Close Date (side by side on desktop) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-tour="basics-schedule">
         <div>
           <label className="block text-[14px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
             Currency <span style={{ color: "#EF4444" }}>*</span>
@@ -92,7 +93,7 @@ export default function BasicsStep() {
       </div>
 
       {/* Supplier Info */}
-      <div className="pt-3 border-t" style={{ borderColor: V2_CARD_BORDER }}>
+      <div className="pt-3 border-t" style={{ borderColor: V2_CARD_BORDER }} data-tour="basics-supplier">
         <h4 className="text-[14px] font-bold mb-3" style={{ color: "var(--t-text)" }}>Supplier Information</h4>
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

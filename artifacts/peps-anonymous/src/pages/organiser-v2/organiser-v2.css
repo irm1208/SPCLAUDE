@@ -1928,7 +1928,12 @@
   .organiser-v2 .ov2-breadcrumbs > span:first-child,
   .organiser-v2 .ov2-breadcrumbs > svg:first-of-type,
   .organiser-v2 .ov2-share-action,
-  .organiser-v2 .ov2-topbar-actions > .ov2-secondary-button {
+  .organiser-v2 .ov2-topbar-actions > .ov2-secondary-button:not([data-tour="topbar-tour-button"]) {
+    display: none;
+  }
+
+  /* Keep the guided tour reachable on phones — icon-only to save room. */
+  .organiser-v2 .ov2-topbar-actions > [data-tour="topbar-tour-button"] .ov2-action-label {
     display: none;
   }
 
@@ -2016,7 +2021,20 @@
   }
 
   .organiser-v2 .ov2-form-footer {
+    gap: 10px;
     padding: 14px 17px;
+  }
+
+  /* Continue/Launch stretches into an easy thumb target; Back stays compact. */
+  .organiser-v2 .ov2-form-footer .ov2-primary-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* Wide tables pan with momentum instead of rubber-banding the page. */
+  .organiser-v2 :where(.atlas-data-table-scroll, .overflow-x-auto) {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 
   .organiser-v2 .ov2-launch-dialog {

@@ -50,7 +50,7 @@ export default function AccessStep() {
   return (
     <div className="space-y-4">
       {/* Entry Fee */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="access-entry-fee">
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
@@ -113,7 +113,7 @@ export default function AccessStep() {
       </div>
 
       {/* Country Restrictions */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="access-countries">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Globe className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Country Restrictions</span>
@@ -201,7 +201,7 @@ export default function AccessStep() {
       </div>
 
       {/* Blocked Accounts */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="access-blocked">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Users className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Blocked Accounts</span>
@@ -252,7 +252,7 @@ export default function AccessStep() {
       </div>
 
       {/* Invite PIN */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="access-pin">
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4" style={{ color: "var(--t-blue)" }} />

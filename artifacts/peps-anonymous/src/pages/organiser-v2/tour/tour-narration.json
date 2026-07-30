@@ -1,0 +1,227 @@
+[
+  {
+    "id": "welcome-intro",
+    "caption": "Welcome",
+    "text": "Welcome to the Group Buy Organiser. This quick tour will show you how to create, launch, and manage your first group buy."
+  },
+  {
+    "id": "welcome-what-is-a-gb",
+    "caption": "What is a group buy?",
+    "text": "A group buy combines everyone's orders into one larger supplier order. You manage the process, and the organiser keeps everything in one place."
+  },
+  {
+    "id": "welcome-what-we-cover",
+    "caption": "What we'll cover",
+    "text": "We'll begin with the Setup Wizard. Then, we'll explore the workspace and the tools you'll use every day. Ready? Let's get started."
+  },
+  {
+    "id": "wizard-shell",
+    "caption": "The Setup Wizard",
+    "text": "The Setup Wizard has seven simple steps. Nothing goes live until you launch. As you enter details, a preview will show what your members see."
+  },
+  {
+    "id": "wizard-basics",
+    "caption": "Basics",
+    "text": "First, add your group buy name, description, currency, closing date, supplier details, and member limit."
+  },
+  {
+    "id": "wizard-basics-try",
+    "caption": "Name your group buy",
+    "text": "Now, enter a clear name for your group buy. The preview will open and update as you type."
+  },
+  {
+    "id": "wizard-products",
+    "caption": "Products",
+    "text": "Next, add the products your members can order. Each product needs a name, member price, supplier, and available stock."
+  },
+  {
+    "id": "wizard-products-try",
+    "caption": "Add your first product",
+    "text": "Enter your first product now. The preview will show how its name, price, and availability appear on the member order form."
+  },
+  {
+    "id": "wizard-shipping",
+    "caption": "Shipping",
+    "text": "Now, add your delivery methods and prices. The preview shows how members choose an option, enter an address, or upload a prepaid label."
+  },
+  {
+    "id": "wizard-payments",
+    "caption": "Accepting Payments",
+    "text": "Choose how you'd like to be paid. You can enable one payment method, or offer several."
+  },
+  {
+    "id": "payment-crypto",
+    "caption": "Direct Crypto",
+    "text": "Direct crypto lets members pay your wallet. Enter the correct wallet address and network for each coin you accept."
+  },
+  {
+    "id": "payment-anonpay",
+    "caption": "Anon Pay",
+    "text": "Anon Pay lets members pay with supported crypto, while you receive the currency you selected."
+  },
+  {
+    "id": "payment-revolut",
+    "caption": "Revolut",
+    "text": "With Revolut, members pay using your Revtag. Make sure the name and payment instructions are clear."
+  },
+  {
+    "id": "payment-paypal",
+    "caption": "PayPal",
+    "text": "With PayPal, members use your payment link. You can also explain which payment type they should select."
+  },
+  {
+    "id": "wizard-payments-try",
+    "caption": "Enable a payment method",
+    "text": "Your turn. Enable at least one payment method and enter its details. The preview will show the instructions your members receive."
+  },
+  {
+    "id": "wizard-access",
+    "caption": "Access",
+    "text": "Access controls who can join. You can add an entry fee, restrict countries, or require a four-digit PIN."
+  },
+  {
+    "id": "access-preview",
+    "caption": "Member preview",
+    "text": "The preview shows the joining screen your members will see, including any fee, restrictions, or PIN requirement."
+  },
+  {
+    "id": "wizard-rules",
+    "caption": "Rules and Information",
+    "text": "Add your welcome message, payment rules, refund information, and disclaimer. Members will read and accept these before ordering."
+  },
+  {
+    "id": "wizard-review",
+    "caption": "Review and Launch",
+    "text": "Review brings everything together. Green means a section is ready. Amber means something is missing. Select Edit to make any changes."
+  },
+  {
+    "id": "wizard-launch",
+    "caption": "Going live",
+    "text": "Finally, choose public or private. Public group buys can be discovered. Private group buys can only be opened using the correct link."
+  },
+  {
+    "id": "workspace-shell",
+    "caption": "The Workspace",
+    "text": "Welcome to your workspace. The sidebar groups your tools into daily tasks, people, orders, shipping, quality, and setup."
+  },
+  {
+    "id": "workspace-overview",
+    "caption": "Overview",
+    "text": "Overview shows your active orders, order value, unpaid members, and orders ready for dispatch. Start here whenever you sign in."
+  },
+  {
+    "id": "workspace-pipeline",
+    "caption": "Order Pipeline",
+    "text": "The order pipeline follows each order through four stages: intake, paid, packing, and dispatched. Choose the view that works best for you."
+  },
+  {
+    "id": "workspace-tasks",
+    "caption": "Tasks",
+    "text": "Use Tasks to organise your work. Add deadlines, create categories, and link a task directly to an order."
+  },
+  {
+    "id": "workspace-members",
+    "caption": "Members",
+    "text": "Members shows everyone taking part. Select a member to view their orders, payments, spending, and fulfilment history."
+  },
+  {
+    "id": "workspace-tickets",
+    "caption": "Tickets",
+    "text": "Tickets keeps member questions and problems together. Reply to each message, then update the ticket when the issue is resolved."
+  },
+  {
+    "id": "workspace-broadcast",
+    "caption": "Announcements",
+    "text": "Use Announcements to send group updates. Start with a template, then choose whether to message everyone or a selected group."
+  },
+  {
+    "id": "workspace-orders",
+    "caption": "Orders",
+    "text": "Orders is where you manage purchases. Search, filter, edit details, confirm payments, and update each order's status."
+  },
+  {
+    "id": "workspace-orders-bulk",
+    "caption": "Bulk Order Tools",
+    "text": "Select several orders to update them together. You can also import tracking numbers, or export order data as a C.S.V. file."
+  },
+  {
+    "id": "workspace-summary",
+    "caption": "Supplier Summary",
+    "text": "Supplier Summary combines every order into one product list. It shows exactly what you need to purchase from your supplier."
+  },
+  {
+    "id": "workspace-pnl",
+    "caption": "Profit and Loss",
+    "text": "Profit and Loss compares your revenue with your costs. Add each expense to see your current profit and margin."
+  },
+  {
+    "id": "workspace-parcels",
+    "caption": "Incoming Parcels",
+    "text": "Add supplier parcels and tracking numbers here. Record what each parcel contains, then follow it until it arrives."
+  },
+  {
+    "id": "workspace-dispatch",
+    "caption": "Dispatch",
+    "text": "Dispatch guides you through receiving stock, preparing member orders, printing labels, and confirming that each parcel has been sent."
+  },
+  {
+    "id": "workspace-labels",
+    "caption": "Shipping Labels",
+    "text": "Shipping Labels shows which members supplied a label or Q.R. code, and which members still need a reminder."
+  },
+  {
+    "id": "workspace-forwarders",
+    "caption": "Package Forwarders",
+    "text": "Use Package Forwarders when someone receives a parcel, then sends it onwards to members in another country."
+  },
+  {
+    "id": "workspace-routes",
+    "caption": "International Routes",
+    "text": "International Routes tracks each country and hand-off when a parcel travels through several locations or forwarders."
+  },
+  {
+    "id": "workspace-rates",
+    "caption": "Shipping Rates",
+    "text": "Shipping Rates is where you manage delivery methods, supported countries, and the prices your members pay."
+  },
+  {
+    "id": "workspace-coas",
+    "caption": "Vendor Certificates",
+    "text": "Vendor Certificates stores your supplier's Certificates of Analysis. Record the product, batch, purity, and review status for each certificate."
+  },
+  {
+    "id": "workspace-testing",
+    "caption": "Lab Testing Pool",
+    "text": "Use the Lab Testing Pool to organise independent testing, collect member contributions, manage samples, and share the final results."
+  },
+  {
+    "id": "workspace-settings",
+    "caption": "Settings",
+    "text": "Settings lets you update the group buy name, dates, capacity, status, access, entry fee, and member notices."
+  },
+  {
+    "id": "workspace-archive",
+    "caption": "Archive and Delete",
+    "text": "Archive controls are also inside Settings. Check everything carefully before archiving or permanently deleting a group buy."
+  },
+  {
+    "id": "workspace-products",
+    "caption": "Products",
+    "text": "Return to Products to add items, change prices, update suppliers, manage stock, or import several products at once."
+  },
+  {
+    "id": "workspace-rules",
+    "caption": "Rules and Information",
+    "text": "Return to Rules and Information whenever you need to update your welcome message, participation rules, or disclaimer."
+  },
+  {
+    "id": "workspace-search",
+    "caption": "Search",
+    "text": "Need to find something quickly? Use Search, or press Control K on Windows, or Command K on a Mac."
+  },
+  {
+    "id": "tour-finish",
+    "caption": "You're ready",
+    "text": "And that's it. Start with Overview, manage payments in Orders, and use Dispatch when your stock arrives. You can replay this tour whenever you need it."
+  }
+]
