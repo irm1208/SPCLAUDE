@@ -56,16 +56,14 @@ export function effectiveStableCurrency(
 }
 
 export const ETH_RPC_ENDPOINTS = [
-  "https://eth.llamarpc.com",
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://eth-mainnet.public.blastapi.io",
+  "https://mainnet.gateway.tenderly.co",
+  "https://1rpc.io/eth",
+  "https://rpc.mevblocker.io",
   "https://cloudflare-eth.com",
   "https://rpc.ankr.com/eth",
-  "https://ethereum-rpc.publicnode.com",
-  "https://1rpc.io/eth",
-  "https://eth-mainnet.public.blastapi.io",
-  "https://ethereum.blockpi.network/v1/rpc/public",
-  "https://eth.drpc.org",
-  "https://mainnet.gateway.tenderly.co",
-  "https://rpc.mevblocker.io",
 ];
 
 export const BSC_RPC_ENDPOINTS = [
@@ -148,7 +146,7 @@ export async function evmJsonRpc(endpoints: string[], method: string, params: un
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(7000),
       });
       const json: any = await res.json();
       if (json.error) throw new Error(json.error.message ?? "RPC error");

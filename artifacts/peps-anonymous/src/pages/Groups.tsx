@@ -7,6 +7,7 @@ import {
   FlaskConical, Zap, Activity, Dna, Leaf, Microscope, HeartPulse, Brain,
   Clock, Calendar, TestTube, TriangleAlert, Star, RefreshCcw,
   ChevronDown, Hash, Check, Search, Boxes, Globe,
+  DollarSign,
 } from "lucide-react";
 import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
@@ -14,6 +15,7 @@ import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { PageLayout } from "@/components/PageLayout";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
+import { PricingPreviewModal } from "@/components/PricingPreviewModal";
 
 const STATUS_DOT: Record<string, string> = {
   draft:    "#94A3B8",
@@ -418,6 +420,7 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
 }
 
 function JoinModal({ onClose }: { onClose: () => void }) {
+  const [, setLocation] = useLocation();
   const [selectedGbId, setSelectedGbId] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [pin, setPin] = useState("");
@@ -439,6 +442,7 @@ function JoinModal({ onClose }: { onClose: () => void }) {
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<(() => void) | null>(null);
   const [entryFeeModal, setEntryFeeModal] = useState<{ groupBuyId: string; fee: EntryFeePaymentInfo; retry: () => Promise<void> } | null>(null);
+  const [pricingPreviewOpen, setPricingPreviewOpen] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
@@ -681,6 +685,19 @@ function JoinModal({ onClose }: { onClose: () => void }) {
                 </AnimatePresence>
               </div>
             </div>
+
+            {/* ── Pricing preview trigger ── */}
+            {selectedGbId && (
+              <button
+                type="button"
+                onClick={() => setPricingPreviewOpen(true)}
+                className="w-full rounded-xl px-4 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors"
+                style={{ background: "rgba(22,163,74,0.07)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.2)" }}
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                Preview Pricing
+              </button>
+            )}
 
             {/* ── Country picker (only when GB has country legs) ── */}
             {hasCountryLegs && (
@@ -936,12 +953,24 @@ function JoinModal({ onClose }: { onClose: () => void }) {
           onConfirmed={async () => {
             try {
               await entryFeeModal.retry();
+              setLocation(`/order?gbId=${entryFeeModal.groupBuyId}`);
             } finally {
               setEntryFeeModal(null);
             }
           }}
         />
       )}
+
+      <AnimatePresence>
+        {pricingPreviewOpen && selectedGb && (
+          <PricingPreviewModal
+            gbId={selectedGb.id}
+            gbName={selectedGb.name}
+            username={account?.telegramUsername ?? "user"}
+            onClose={() => setPricingPreviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

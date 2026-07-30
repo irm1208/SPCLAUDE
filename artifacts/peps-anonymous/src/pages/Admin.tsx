@@ -9,7 +9,7 @@ import {
   Bell, CalendarDays, Calendar, ToggleLeft, ToggleRight, MessageSquarePlus, MessageSquare, TestTube, PackageCheck, Globe, FlaskConical, Info,
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
-  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu,
+  Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus, TrendingUp,
 } from "lucide-react";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -31,6 +31,10 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+} from "recharts";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -6879,6 +6883,49 @@ interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: strin
 interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
+interface PnlOrder {
+  id: string; createdAt: string; grandTotal: number; productSubtotal: number;
+  deliveryRevenue: number; vendorShipping: number; tips: number;
+  orderType: string | null; groupBuyId: string | null;
+  lineItems: { productName: string; quantity: number; lineTotal: number }[];
+}
+interface PnlBucket {
+  key: string; label: string; revenue: number;
+  cost: number; profit: number | null; margin: number | null; orderCount: number;
+}
+type PnlPeriod = "day" | "week" | "month" | "quarter" | "halfyear" | "year";
+type PnlOrderType = "all" | "wholesale" | "direct" | "groupbuy";
+
+function pnlPeriodKey(date: Date, period: PnlPeriod): string {
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  if (period === "day") return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (period === "week") {
+    const dt = new Date(Date.UTC(y, m, d));
+    const day = dt.getUTCDay() || 7;
+    dt.setUTCDate(dt.getUTCDate() + 4 - day);
+    const ys = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+    const wk = Math.ceil(((dt.getTime() - ys.getTime()) / 86400000 + 1) / 7);
+    return `${dt.getUTCFullYear()}-W${String(wk).padStart(2, "0")}`;
+  }
+  if (period === "month") return `${y}-${String(m + 1).padStart(2, "0")}`;
+  if (period === "quarter") return `${y}-Q${Math.ceil((m + 1) / 3)}`;
+  if (period === "halfyear") return `${y}-H${m < 6 ? 1 : 2}`;
+  return String(y);
+}
+function pnlPeriodLabel(key: string, period: PnlPeriod): string {
+  if (period === "day") {
+    const [yy, mm, dd] = key.split("-").map(Number);
+    return new Date(yy, mm - 1, dd).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  }
+  if (period === "week") { const [y, w] = key.split("-"); return `${w} '${String(y).slice(2)}`; }
+  if (period === "month") {
+    const [y, mo] = key.split("-").map(Number);
+    return new Date(y, mo - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+  }
+  if (period === "quarter") return key.replace("-", " ");
+  if (period === "halfyear") { const [y, h] = key.split("-"); return `${h} '${String(y).slice(2)}`; }
+  return key;
+}
 
 // ── Uther wholesale tiered package shipping (mirrors server wholesale-shipping) ──
 // A vendor defines tier columns (e.g. "1–5", "6–10", …) with an upper kit bound
@@ -7161,6 +7208,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [editPersonalCost, setEditPersonalCost] = useState("");
   const [editPersonalAuto, setEditPersonalAuto] = useState(false);
 
+  // P&L tracker state
+  const [pnlOrders, setPnlOrders] = useState<PnlOrder[]>([]);
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>("month");
+  const [showPnl, setShowPnl] = useState(false);
+
   const fetchCosts = useCallback(async () => {
     try {
       const res = await fetch(apiUrl("/admin/fs3-costs"), {
@@ -7169,6 +7222,15 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       });
       if (res.ok) setCosts(await res.json());
     } catch { /* non-fatal */ }
+  }, [secret]);
+
+  const fetchPnl = useCallback(async () => {
+    setPnlLoading(true);
+    try {
+      const res = await fetch(apiUrl("/admin/fs3-pnl"), { headers: { "x-admin-secret": secret }, credentials: "omit" });
+      if (res.ok) { const d = await res.json(); setPnlOrders(Array.isArray(d.orders) ? d.orders : []); }
+    } catch { /* non-fatal */ }
+    setPnlLoading(false);
   }, [secret]);
 
   const fetchData = useCallback(async () => {
@@ -7205,11 +7267,12 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   useEffect(() => {
     fetchData();
     fetchCosts();
+    fetchPnl();
     fetch(apiUrl("/admin/order-countries"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.ok ? r.json() : [])
       .then(setAvailableCountries)
       .catch(() => {});
-  }, [fetchData, fetchCosts]);
+  }, [fetchData, fetchCosts, fetchPnl]);
 
   // Fetch members + orders + parcels whenever the selected GB changes; also reset ping panel + batch builder
   useEffect(() => {
@@ -7663,6 +7726,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const grandTotal = productTotal + packageTotal;
 
     const orderRef = o.code ? `Order no. ${o.code} (${o.telegramUsername})` : `Order (${o.telegramUsername})`;
+    const addrLines = (o.shippingAddress ?? "").split(",").map(p => p.trim()).filter(Boolean);
     const lines = [
       orderRef,
       "New Order:",
@@ -7676,9 +7740,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       "",
       "Address:",
       o.shippingName?.trim() || o.telegramUsername,
-      o.shippingAddress?.trim() || "",
-      o.shippingCountry?.trim() || "",
-      `Mobile - ${o.shippingPhone?.trim() || "no mobile"}`,
+      ...addrLines,
+      o.shippingCountry?.trim() || null,
+      `Phone: ${o.shippingPhone?.trim() || "no phone"}`,
     ].filter(l => l !== null);
 
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
@@ -7829,9 +7893,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     // or every member of a shared order combined into one).
     const buildOrderBlock = (orders: Fs3GbOrder[], idx: number): { text: string; grandTotal: number; isShared: boolean } => {
       const items = orders.flatMap(o => o.lineItems ?? []);
-      const itemLines = items.map(li => {
-        const qty = li.quantity % 1 === 0 ? String(Math.round(li.quantity)) : li.quantity.toFixed(1);
-        return `${li.productName} x${qty} = ${fmt(itemPrice(li))}`;
+      // Group same products so "BPC-157 10mg x2" and "BPC-157 10mg x3" from different
+      // members collapse into "BPC-157 10mg x5 = $..." instead of appearing twice.
+      const productMap = new Map<string, { qty: number; cost: number }>();
+      for (const li of items) {
+        const key = li.productName.trim();
+        const cost = itemPrice(li);
+        const existing = productMap.get(key);
+        if (existing) { existing.qty += li.quantity; existing.cost += cost; }
+        else { productMap.set(key, { qty: li.quantity, cost }); }
+      }
+      const itemLines = [...productMap.entries()].map(([name, { qty, cost }]) => {
+        const qtyStr = qty % 1 === 0 ? String(Math.round(qty)) : qty.toFixed(1);
+        return `${name} x${qtyStr} = ${fmt(cost)}`;
       });
       const totalKits = items.reduce((s, li) => s + li.quantity, 0);
       const productTotal = items.reduce((s, li) => s + itemPrice(li), 0);
@@ -7848,6 +7922,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       const grandTotal = productTotal + packageTotal;
       const qtyDisplay = totalKits % 1 === 0 ? String(Math.round(totalKits)) : totalKits.toFixed(1);
       const orderRef = anchor.code ? `Order no. ${anchor.code} (${anchor.telegramUsername})` : `Order (${anchor.telegramUsername})`;
+      const addrLines = (anchor.shippingAddress ?? "").split(",").map((p: string) => p.trim()).filter(Boolean);
       const text = [
         orderRef,
         `New Order ${idx}:`,
@@ -7861,10 +7936,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         "",
         "Address:",
         anchor.shippingName?.trim() || anchor.telegramUsername,
-        anchor.shippingAddress?.trim() || "",
-        anchor.shippingCountry?.trim() || "",
-        `Mobile - ${anchor.shippingPhone?.trim() || "no mobile"}`,
-      ].join("\n");
+        ...addrLines,
+        anchor.shippingCountry?.trim() || null,
+        `Phone: ${anchor.shippingPhone?.trim() || "no phone"}`,
+      ].filter((l: string | null) => l !== null).join("\n");
       return { text, grandTotal, isShared: !!anchor.sharedOrderId };
     };
 
@@ -7909,6 +7984,32 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const unitMargin = unitProfit !== null && unitPrice > 0 ? (unitProfit / unitPrice) * 100 : null;
     return { ...r, cost, totalCost, profit, margin, unitPrice, unitProfit, unitMargin };
   }), [filteredRows, getCost]);
+
+  // ── P&L time-series buckets ──
+  const pnlBuckets = useMemo((): PnlBucket[] => {
+    if (!pnlOrders.length) return [];
+    const map = new Map<string, { revenue: number; knownRevenue: number; cost: number; orderCount: number }>();
+    for (const order of pnlOrders) {
+      const key = pnlPeriodKey(new Date(order.createdAt), pnlPeriod);
+      if (!map.has(key)) map.set(key, { revenue: 0, knownRevenue: 0, cost: 0, orderCount: 0 });
+      const b = map.get(key)!;
+      b.revenue += order.grandTotal;
+      b.orderCount++;
+      for (const li of order.lineItems) {
+        const uc = getCost(li.productName);
+        if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, b]) => ({
+      key,
+      label: pnlPeriodLabel(key, pnlPeriod),
+      revenue: b.revenue,
+      cost: b.cost,
+      profit: b.knownRevenue > 0 ? b.knownRevenue - b.cost : null,
+      margin: b.knownRevenue > 0 ? ((b.knownRevenue - b.cost) / b.knownRevenue) * 100 : null,
+      orderCount: b.orderCount,
+    }));
+  }, [pnlOrders, pnlPeriod, getCost]);
 
   const knownRows = useMemo(() => enrichedRows.filter(r => r.totalCost !== null), [enrichedRows]);
   const unknownRows = useMemo(() => enrichedRows.filter(r => r.totalCost === null), [enrichedRows]);
@@ -9008,6 +9109,434 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
             </div>
           </div>
         </Card>
+      )}
+
+      {/* ── P&L Tracker ── */}
+      {showPnl && (
+        <Card className="p-4 space-y-4 border-2 border-violet-200">
+          {/* Header row */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">P&amp;L Tracker</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {pnlOrders.length} orders · profit uses known-cost products only
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(["day","week","month","quarter","year"] as PnlPeriod[]).map(p => (
+                <button key={p} onClick={() => setPnlPeriod(p)}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${pnlPeriod === p ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+              <button onClick={fetchPnl} disabled={pnlLoading}
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                {pnlLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {pnlLoading && !pnlBuckets.length ? (
+            <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+          ) : pnlBuckets.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">No order data yet</div>
+          ) : (() => {
+            const totalRev = pnlBuckets.reduce((s, b) => s + b.revenue, 0);
+            const totalCost = pnlBuckets.reduce((s, b) => s + b.cost, 0);
+            const totalProfit = pnlBuckets.reduce((s, b) => s + (b.profit ?? 0), 0);
+            const hasCosts = pnlBuckets.some(b => b.cost > 0);
+            const bestBucket = pnlBuckets.reduce<PnlBucket | null>((best, b) => b.profit !== null && (best === null || b.profit > (best.profit ?? 0)) ? b : best, null);
+            const chartData = pnlBuckets.map(b => ({
+              label: b.label, orderCount: b.orderCount,
+              Revenue: parseFloat(b.revenue.toFixed(2)),
+              Cost: hasCosts ? parseFloat(b.cost.toFixed(2)) : undefined,
+              Profit: b.profit !== null ? parseFloat(b.profit.toFixed(2)) : undefined,
+            }));
+            return (
+              <>
+                {/* Summary stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Total Revenue", value: `$${fmtUsd(totalRev)}`, color: "text-foreground" },
+                    { label: "Known Cost", value: `$${fmtUsd(totalCost)}`, color: "text-red-600", show: hasCosts },
+                    { label: "Known Profit", value: `$${fmtUsd(totalProfit)}`, color: totalProfit >= 0 ? "text-green-600" : "text-red-600", show: hasCosts },
+                    { label: "Best Period", value: bestBucket ? bestBucket.label : "—", sub: bestBucket?.profit != null ? `$${fmtUsd(bestBucket.profit)}` : undefined, color: "text-violet-600", show: hasCosts },
+                  ].filter(c => c.show !== false).map(c => (
+                    <Card key={c.label} className="p-3 text-center bg-slate-50/60">
+                      <p className={`text-base font-bold ${c.color}`}>{c.value}</p>
+                      {c.sub && <p className="text-[10px] font-mono text-muted-foreground">{c.sub}</p>}
+                      <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">{c.label}</p>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Chart */}
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`} width={48} />
+                      <RechartsTooltip
+                        contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
+                        formatter={(val: number, name: string) => [`$${fmtUsd(val)}`, name]}
+                        labelFormatter={(label, payload) => {
+                          const orders = payload?.[0]?.payload?.orderCount ?? 0;
+                          return `${label} · ${orders} order${orders !== 1 ? "s" : ""}`;
+                        }}
+                      />
+                      <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="Revenue" fill="#818cf8" radius={[3,3,0,0]} maxBarSize={40} />
+                      {hasCosts && <Bar dataKey="Cost" fill="#fca5a5" radius={[3,3,0,0]} maxBarSize={40} />}
+                      {hasCosts && <Line dataKey="Profit" type="monotone" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: "#22c55e" }} />}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-border text-left text-muted-foreground">
+                        <th className="px-3 py-2 font-semibold">Period</th>
+                        <th className="px-3 py-2 font-semibold text-right">Orders</th>
+                        <th className="px-3 py-2 font-semibold text-right">Revenue</th>
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right text-red-600">Cost</th>}
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right text-green-600">Profit</th>}
+                        {hasCosts && <th className="px-3 py-2 font-semibold text-right">Margin</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...pnlBuckets].reverse().map((b, i) => (
+                        <tr key={b.key} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">{b.label}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{b.orderCount}</td>
+                          <td className="px-3 py-2 text-right font-mono">${fmtUsd(b.revenue)}</td>
+                          {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">{b.cost > 0 ? `$${fmtUsd(b.cost)}` : "—"}</td>}
+                          {hasCosts && (
+                            <td className={`px-3 py-2 text-right font-mono font-semibold ${b.profit === null ? "text-muted-foreground" : b.profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              {b.profit === null ? "—" : `$${fmtUsd(b.profit)}`}
+                            </td>
+                          )}
+                          {hasCosts && (
+                            <td className={`px-3 py-2 text-right ${b.margin === null ? "text-muted-foreground" : b.margin >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              {b.margin === null ? "—" : `${b.margin.toFixed(1)}%`}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-bold border-t-2 border-border">
+                        <td className="px-3 py-2">Total</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{pnlBuckets.reduce((s,b)=>s+b.orderCount,0)}</td>
+                        <td className="px-3 py-2 text-right font-mono">${fmtUsd(totalRev)}</td>
+                        {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">${fmtUsd(totalCost)}</td>}
+                        {hasCosts && <td className={`px-3 py-2 text-right font-mono ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>${fmtUsd(totalProfit)}</td>}
+                        {hasCosts && <td className={`px-3 py-2 text-right ${totalRev > 0 ? (totalProfit/totalRev >= 0 ? "text-green-600":"text-red-600") : ""}`}>{totalRev > 0 ? `${((totalProfit/totalRev)*100).toFixed(1)}%` : "—"}</td>}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {!hasCosts && (
+                  <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+                    💡 Add product costs in "My Prices" to see cost and profit columns.
+                  </p>
+                )}
+              </>
+            );
+          })()}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── P&L Tab (standalone, FS3-password gated) ─────────────────
+
+function PnlTab({ secret }: { secret: string }) {
+  const [authed, setAuthed] = useState(false);
+  const [pass, setPass] = useState("");
+  const [passErr, setPassErr] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pass.trim()) return;
+    setChecking(true);
+    try {
+      const res = await fetch(apiUrl("/admin/fs3-verify"), {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pass }),
+        credentials: "omit",
+      });
+      if (res.ok) { setAuthed(true); setPassErr(""); }
+      else { const d = await res.json().catch(() => ({})); setPassErr(d.error || "Incorrect password"); }
+    } catch { setPassErr("Network error"); }
+    setChecking(false);
+  };
+
+  if (!authed) return (
+    <div className="max-w-sm mx-auto mt-16">
+      <form onSubmit={handleAuth} className="space-y-4 p-6 border border-border rounded-2xl bg-card shadow-sm">
+        <div className="text-center space-y-1">
+          <TrendingUp className="w-7 h-7 mx-auto text-violet-500" />
+          <h2 className="font-bold text-base">P&amp;L Access</h2>
+          <p className="text-xs text-muted-foreground">Enter your FS3 password to continue</p>
+        </div>
+        <Input type="password" placeholder="FS3 password" value={pass} onChange={e => setPass(e.target.value)} autoFocus />
+        {passErr && <p className="text-xs text-red-600 font-medium">{passErr}</p>}
+        <Button type="submit" className="w-full" disabled={checking || !pass.trim()}>
+          {checking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          Unlock
+        </Button>
+      </form>
+    </div>
+  );
+
+  return <PnlContent secret={secret} onLock={() => setAuthed(false)} />;
+}
+
+function PnlContent({ secret, onLock }: { secret: string; onLock: () => void }) {
+  const [orders, setOrders] = useState<PnlOrder[]>([]);
+  const [costs, setCosts] = useState<Fs3CostEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PnlPeriod>("month");
+  const [orderType, setOrderType] = useState<PnlOrderType>("all");
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pnlRes, costsRes] = await Promise.all([
+        fetch(apiUrl("/admin/fs3-pnl"), { headers: { "x-admin-secret": secret }, credentials: "omit" }),
+        fetch(apiUrl("/admin/fs3-costs"), { headers: { "x-admin-secret": secret }, credentials: "omit" }),
+      ]);
+      if (pnlRes.ok) { const d = await pnlRes.json(); setOrders(Array.isArray(d.orders) ? d.orders : []); }
+      if (costsRes.ok) setCosts(await costsRes.json());
+    } catch { /* non-fatal */ }
+    setLoading(false);
+  }, [secret]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const getCost = useMemo(() => makeCostLookup(costs), [costs]);
+
+  const filteredOrders = useMemo(() => {
+    if (orderType === "all") return orders;
+    if (orderType === "wholesale") return orders.filter(o => o.orderType === "wholesale" || o.orderType === "wholesale_shared");
+    if (orderType === "groupbuy") return orders.filter(o => !!o.groupBuyId);
+    return orders.filter(o => !o.groupBuyId && o.orderType !== "wholesale" && o.orderType !== "wholesale_shared");
+  }, [orders, orderType]);
+
+  const buckets = useMemo((): PnlBucket[] => {
+    if (!filteredOrders.length) return [];
+    const map = new Map<string, { revenue: number; knownRevenue: number; cost: number; orderCount: number }>();
+    for (const order of filteredOrders) {
+      const key = pnlPeriodKey(new Date(order.createdAt), period);
+      if (!map.has(key)) map.set(key, { revenue: 0, knownRevenue: 0, cost: 0, orderCount: 0 });
+      const b = map.get(key)!;
+      b.revenue += order.grandTotal;
+      b.orderCount++;
+      for (const li of order.lineItems) {
+        const uc = getCost(li.productName);
+        if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, b]) => ({
+      key,
+      label: pnlPeriodLabel(key, period),
+      revenue: b.revenue,
+      cost: b.cost,
+      profit: b.knownRevenue > 0 ? b.knownRevenue - b.cost : null,
+      margin: b.knownRevenue > 0 ? ((b.knownRevenue - b.cost) / b.knownRevenue) * 100 : null,
+      orderCount: b.orderCount,
+    }));
+  }, [filteredOrders, period, getCost]);
+
+  const PERIODS: { value: PnlPeriod; label: string }[] = [
+    { value: "day",      label: "Daily"       },
+    { value: "week",     label: "Weekly"      },
+    { value: "month",    label: "Monthly"     },
+    { value: "quarter",  label: "Quarterly"   },
+    { value: "halfyear", label: "Bi-annually" },
+    { value: "year",     label: "Annually"    },
+  ];
+  const TYPE_FILTERS: { value: PnlOrderType; label: string }[] = [
+    { value: "all",       label: "All"        },
+    { value: "wholesale", label: "Wholesale"  },
+    { value: "direct",    label: "Direct"     },
+    { value: "groupbuy",  label: "Group Buys" },
+  ];
+
+  const totalRev    = buckets.reduce((s, b) => s + b.revenue, 0);
+  const totalCost   = buckets.reduce((s, b) => s + b.cost, 0);
+  const totalProfit = buckets.reduce((s, b) => s + (b.profit ?? 0), 0);
+  const hasCosts    = buckets.some(b => b.cost > 0);
+  const bestBucket  = buckets.reduce<PnlBucket | null>((best, b) => b.profit !== null && (best === null || b.profit > (best.profit ?? 0)) ? b : best, null);
+  const chartData   = buckets.map(b => ({
+    label: b.label, orderCount: b.orderCount,
+    Revenue: parseFloat(b.revenue.toFixed(2)),
+    Cost:    hasCosts ? parseFloat(b.cost.toFixed(2)) : undefined,
+    Profit:  b.profit !== null ? parseFloat(b.profit.toFixed(2)) : undefined,
+  }));
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-violet-600" />
+            P&amp;L Tracker
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {filteredOrders.length} order{filteredOrders.length !== 1 ? "s" : ""} · profit uses known-cost products only
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={fetchData} disabled={loading}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={onLock}>
+            <Lock className="w-3.5 h-3.5" />Lock
+          </Button>
+        </div>
+      </div>
+
+      {/* Order type filter */}
+      <div className="flex flex-wrap gap-2">
+        {TYPE_FILTERS.map(f => (
+          <button key={f.value} onClick={() => setOrderType(f.value)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+              orderType === f.value
+                ? "bg-violet-600 text-white border-violet-600"
+                : "bg-white text-slate-600 border-slate-200 hover:border-violet-300 hover:text-violet-700"
+            }`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Period selector */}
+      <div className="flex flex-wrap gap-1.5">
+        {PERIODS.map(p => (
+          <button key={p.value} onClick={() => setPeriod(p.value)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+              period === p.value ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {loading && !buckets.length ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : buckets.length === 0 ? (
+        <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">
+          {orders.length === 0 ? "No order data yet" : "No orders match this filter"}
+        </div>
+      ) : (
+        <>
+          {/* Summary stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Total Revenue", value: `$${fmtUsd(totalRev)}`,    color: "text-foreground" },
+              { label: "Known Cost",    value: `$${fmtUsd(totalCost)}`,   color: "text-red-600",   show: hasCosts },
+              { label: "Known Profit",  value: `$${fmtUsd(totalProfit)}`, color: totalProfit >= 0 ? "text-green-600" : "text-red-600", show: hasCosts },
+              { label: "Best Period",   value: bestBucket ? bestBucket.label : "—", sub: bestBucket?.profit != null ? `$${fmtUsd(bestBucket.profit)}` : undefined, color: "text-violet-600", show: hasCosts },
+            ].filter(c => c.show !== false).map(c => (
+              <Card key={c.label} className="p-3 text-center">
+                <p className={`text-base font-bold ${c.color}`}>{c.value}</p>
+                {c.sub && <p className="text-[10px] font-mono text-muted-foreground">{c.sub}</p>}
+                <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">{c.label}</p>
+              </Card>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <Card className="p-4">
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false}
+                    tickFormatter={v => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`} width={52} />
+                  <RechartsTooltip
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
+                    formatter={(val: number, name: string) => [`$${fmtUsd(val)}`, name]}
+                    labelFormatter={(label, payload) => {
+                      const cnt = payload?.[0]?.payload?.orderCount ?? 0;
+                      return `${label} · ${cnt} order${cnt !== 1 ? "s" : ""}`;
+                    }}
+                  />
+                  <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Revenue" fill="#818cf8" radius={[3,3,0,0]} maxBarSize={40} />
+                  {hasCosts && <Bar dataKey="Cost" fill="#fca5a5" radius={[3,3,0,0]} maxBarSize={40} />}
+                  {hasCosts && <Line dataKey="Profit" type="monotone" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: "#22c55e" }} />}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          {/* Breakdown table */}
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-border text-left text-muted-foreground">
+                  <th className="px-3 py-2.5 font-semibold">Period</th>
+                  <th className="px-3 py-2.5 font-semibold text-right">Orders</th>
+                  <th className="px-3 py-2.5 font-semibold text-right">Revenue</th>
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right text-red-600">Cost</th>}
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right text-green-600">Profit</th>}
+                  {hasCosts && <th className="px-3 py-2.5 font-semibold text-right">Margin</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {[...buckets].reverse().map((b, i) => (
+                  <tr key={b.key} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{b.label}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{b.orderCount}</td>
+                    <td className="px-3 py-2 text-right font-mono">${fmtUsd(b.revenue)}</td>
+                    {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">{b.cost > 0 ? `$${fmtUsd(b.cost)}` : "—"}</td>}
+                    {hasCosts && (
+                      <td className={`px-3 py-2 text-right font-mono font-semibold ${b.profit === null ? "text-muted-foreground" : b.profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {b.profit === null ? "—" : `$${fmtUsd(b.profit)}`}
+                      </td>
+                    )}
+                    {hasCosts && (
+                      <td className={`px-3 py-2 text-right ${b.margin === null ? "text-muted-foreground" : b.margin >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {b.margin === null ? "—" : `${b.margin.toFixed(1)}%`}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-bold border-t-2 border-border">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{buckets.reduce((s, b) => s + b.orderCount, 0)}</td>
+                  <td className="px-3 py-2 text-right font-mono">${fmtUsd(totalRev)}</td>
+                  {hasCosts && <td className="px-3 py-2 text-right font-mono text-red-600">${fmtUsd(totalCost)}</td>}
+                  {hasCosts && <td className={`px-3 py-2 text-right font-mono ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>${fmtUsd(totalProfit)}</td>}
+                  {hasCosts && <td className={`px-3 py-2 text-right ${totalRev > 0 ? (totalProfit / totalRev >= 0 ? "text-green-600" : "text-red-600") : ""}`}>{totalRev > 0 ? `${((totalProfit / totalRev) * 100).toFixed(1)}%` : "—"}</td>}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {!hasCosts && (
+            <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+              💡 Add product costs in the FS3 tab → "My Prices" to see cost and profit columns.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -12169,6 +12698,9 @@ function UsernamesTab({ secret }: { secret: string }) {
   const [kpi, setKpi] = useState<AccountsKpi | null>(null);
   const [gbFilter, setGbFilter] = useState("");
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
+  const [guestsFilter, setGuestsFilter] = useState(false);
+  const [registeringAll, setRegisteringAll] = useState(false);
+  const [registerResult, setRegisterResult] = useState<{ created: number; total: number } | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid" | "pending">("all");
   const [allGroupBuys, setAllGroupBuys] = useState<{ id: string; name: string }[]>([]);
   const [membersPage, setMembersPage] = useState(0);
@@ -12198,6 +12730,7 @@ function UsernamesTab({ secret }: { secret: string }) {
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
+      if (guestsFilter) params.set("guests", "true");
       params.set("limit", "2000");
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
@@ -12205,7 +12738,7 @@ function UsernamesTab({ secret }: { secret: string }) {
       setRows(Array.isArray(data) ? data : (data.customers ?? []));
     } catch { /* ignore */ }
     setLoading(false);
-  }, [secret, searchQuery, gbFilter, wholesaleFilter]);
+  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter]);
 
   useEffect(() => { fetch$(); }, [fetch$]);
 
@@ -12345,7 +12878,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   // Reset to page 0 when any filter/sort/search changes
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
 
   return (
     <div className="space-y-4">
@@ -12446,6 +12979,17 @@ function UsernamesTab({ secret }: { secret: string }) {
           <option value="all">All order types</option>
           <option value="wholesale">Wholesale only</option>
         </select>
+        <button
+          onClick={() => { setGuestsFilter(v => !v); setWholesaleFilter(false); setGbFilter(""); }}
+          className={cn(
+            "h-9 px-3 rounded-lg border text-xs font-semibold transition-colors shrink-0",
+            guestsFilter
+              ? "border-orange-400 bg-orange-50 text-orange-700 hover:bg-orange-100"
+              : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          {guestsFilter ? "No Account ✕" : "No Account"}
+        </button>
       </div>
 
       {/* Status filter + tag filter + sort */}
@@ -12508,9 +13052,46 @@ function UsernamesTab({ secret }: { secret: string }) {
         </select>
       </div>
 
+      {guestsFilter && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-orange-800">Guest orderers — no registered account</p>
+            <p className="text-xs text-orange-600 mt-0.5">These users placed orders without signing up. Register them as accounts so they can log in and set a password on their next visit.</p>
+            {registerResult && (
+              <p className="text-xs font-semibold text-green-700 mt-1">✓ {registerResult.created} account{registerResult.created !== 1 ? "s" : ""} created ({registerResult.total} processed)</p>
+            )}
+          </div>
+          <button
+            onClick={async () => {
+              if (!window.confirm(`Register all ${displayed.length} guest orderers as accounts? They'll be prompted to set a password on their next login.`)) return;
+              setRegisteringAll(true);
+              setRegisterResult(null);
+              try {
+                const r = await fetch(apiUrl("/admin/bulk-register-guests"), {
+                  method: "POST",
+                  headers: { "x-admin-secret": secret },
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || "Failed");
+                setRegisterResult({ created: d.created, total: d.total });
+                fetch$();
+              } catch (e) {
+                alert(e instanceof Error ? e.message : "Registration failed");
+              }
+              setRegisteringAll(false);
+            }}
+            disabled={registeringAll || displayed.length === 0}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 transition-colors"
+          >
+            {registeringAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+            Register All
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {displayed.length} member{displayed.length !== 1 ? "s" : ""}
+          {displayed.length} {guestsFilter ? "guest orderer" : "member"}{displayed.length !== 1 ? "s" : ""}
           {totalMembersPages > 1 && <span className="ml-1 text-muted-foreground/60">· page {safePage + 1}/{totalMembersPages}</span>}
           {selected.size > 0 && <span className="ml-1 font-semibold text-violet-600">· {selected.size} selected</span>}
         </p>
@@ -12598,7 +13179,7 @@ function UsernamesTab({ secret }: { secret: string }) {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : displayed.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">No customers found.</div>
+        <div className="text-center py-12 text-muted-foreground text-sm">{guestsFilter ? "No guest orderers found." : "No customers found."}</div>
       ) : (
         <div className="space-y-1.5">
           {displayedPage.map(row => {
@@ -12637,11 +13218,14 @@ function UsernamesTab({ secret }: { secret: string }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-foreground truncate">{row.telegramUsername}</p>
                         {row.country && <span className="text-[11px] text-muted-foreground font-medium">{row.country}</span>}
-                        <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", acctStatus === "active" ? "bg-green-100 text-green-700" : acctStatus === "suspended" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{acctStatus}</span>
-                        {row.telegramConnected
+                        {(row as any).isGuest
+                          ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">No Account</span>
+                          : <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", acctStatus === "active" ? "bg-green-100 text-green-700" : acctStatus === "suspended" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{acctStatus}</span>
+                        }
+                        {!(row as any).isGuest && (row.telegramConnected
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">Connected</span>
                           : <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Disconnected</span>
-                        }
+                        )}
                         {(row.tags ?? []).includes("seller") && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Seller</span>}
                         {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesaler</span>}
                         {(row.organiserStatus === "approved" || (row.tags ?? []).includes("group_buy_organiser")) && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700">Organiser</span>}
@@ -14473,6 +15057,7 @@ const ALL_TABS_META = [
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
+  { id: "pnl", label: "P&L", icon: TrendingUp },
   { id: "notifications", label: "Notifs", icon: Bell },
   { id: "announcements", label: "Announcements", icon: MessageSquarePlus },
   { id: "tg-templates", label: "Tg Templates", icon: MessageSquare },
@@ -18741,6 +19326,14 @@ type AdminShareMember = {
   orderId: string | null; orderCode: string | null; orderStatus: string | null;
   paymentStatus: string | null; hasDeliveryAddress: boolean;
 };
+type AdminShareOrganiserPayment = {
+  status: "unpaid" | "pending" | "confirmed";
+  txHash: string | null;
+  currency: string | null;
+  network: string | null;
+  confirmedAt: string | null;
+  amountDue: number;
+};
 type AdminShareDetail = {
   id: string; status: string; creatorUsername: string;
   delivery: { username: string | null; name: string | null; phone: string | null; email: string | null; address: string | null; country: string | null };
@@ -18748,6 +19341,7 @@ type AdminShareDetail = {
   combinedKits: number; combinedSubtotal: number;
   totalVendorShipping: number | null; totalKits: number | null; allPaid: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
+  organiserPayment: AdminShareOrganiserPayment | null;
 };
 
 function ShareStatusBadge({ status }: { status: string }) {
@@ -18991,6 +19585,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detailById, setDetailById] = useState<Record<string, AdminShareDetail>>({});
   const [detailLoading, setDetailLoading] = useState(false);
+  const [confirmingOrgPay, setConfirmingOrgPay] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19013,6 +19608,23 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
         if (r.ok) { const d = await r.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [id]: d })); }
       } catch { /* ignore */ }
       setDetailLoading(false);
+    }
+  };
+
+  const confirmOrgPayment = async (shareId: string) => {
+    if (!window.confirm("Confirm this organiser payment? This cannot be undone.")) return;
+    setConfirmingOrgPay(shareId);
+    try {
+      const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); alert((d as any).error ?? "Failed to confirm payment"); return; }
+      // Refresh detail
+      const r2 = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
+      if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
+    } finally {
+      setConfirmingOrgPay(null);
     }
   };
 
@@ -19078,6 +19690,12 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           {row.paidCount}/{row.memberCount} paid
                         </span>
                       )}
+                      {(() => {
+                        const op = detailById[row.id]?.organiserPayment;
+                        if (!op || op.status === "unpaid") return null;
+                        if (op.status === "confirmed") return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Org paid ✓</span>;
+                        return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Org pay pending</span>;
+                      })()}
                     </div>
                     <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
                       Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
@@ -19161,6 +19779,65 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           <span>Subtotal {money(detail.combinedSubtotal)}</span>
                           {detail.totalVendorShipping != null && <span>Vendor shipping {money(detail.totalVendorShipping)}</span>}
                         </div>
+
+                        {/* Organiser → platform payment */}
+                        {detail.organiserPayment && (() => {
+                          const op = detail.organiserPayment!;
+                          const isPending   = op.status === "pending";
+                          const isConfirmed = op.status === "confirmed";
+                          const isUnpaid    = op.status === "unpaid";
+                          return (
+                            <div className="rounded-lg p-3 text-xs space-y-2"
+                              style={isConfirmed
+                                ? { background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.35)" }
+                                : isPending
+                                  ? { background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.40)" }
+                                  : { background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
+                              {/* Header row */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Organiser → Platform Payment</span>
+                                {isConfirmed && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Confirmed</span>}
+                                {isPending   && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Pending confirmation</span>}
+                                {isUnpaid    && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>Not yet submitted</span>}
+                              </div>
+
+                              {/* Amount due */}
+                              <div style={{ color: "var(--adm-muted)" }}>
+                                Amount due: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{money(op.amountDue)}</span>
+                                <span className="ml-1" style={{ color: "var(--adm-muted)" }}>
+                                  ({money(detail.combinedSubtotal)} products + {money(detail.totalVendorShipping ?? 0)} shipping)
+                                </span>
+                              </div>
+
+                              {/* Submitted tx details (pending or confirmed) */}
+                              {(isPending || isConfirmed) && op.txHash && (
+                                <div className="space-y-1" style={{ color: "var(--adm-muted)" }}>
+                                  <div>
+                                    Currency: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{op.currency} ({op.network})</span>
+                                  </div>
+                                  <div>
+                                    Tx hash: <span className="font-mono break-all" style={{ color: "var(--adm-text)" }}>{op.txHash}</span>
+                                  </div>
+                                  {isConfirmed && op.confirmedAt && (
+                                    <div>Confirmed: <span style={{ color: "var(--adm-text)" }}>{new Date(op.confirmedAt).toLocaleString()}</span></div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Confirm button (only when pending) */}
+                              {isPending && (
+                                <button
+                                  onClick={() => confirmOrgPayment(row.id)}
+                                  disabled={confirmingOrgPay === row.id}
+                                  className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity"
+                                  style={{ background: "#16a34a" }}
+                                >
+                                  {confirmingOrgPay === row.id ? "Confirming…" : "✓ Confirm Payment"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -21868,7 +22545,8 @@ const SIDEBAR_SECTIONS = [
     label: "System",
     items: [
       { id: "shipping",      label: "Delivery Methods", icon: Truck,           keywords: ["delivery options", "shipping methods", "couriers", "postal services", "rates", "zones", "global shipping rate", "equal split", "weighted split", "origin postcode", "origin country", "live shipping rates", "vendor shipping warning"] },
-      { id: "fs3",           label: "FS3",              icon: ShieldCheck,     keywords: ["fs3", "revenue breakdown", "profit", "product profit", "financials", "group buy revenue", "cogs", "cost of goods", "fee inputs", "p&l", "pnl"] },
+      { id: "fs3",           label: "FS3",              icon: ShieldCheck,     keywords: ["fs3", "revenue breakdown", "product profit", "financials", "group buy revenue", "cogs", "cost of goods", "fee inputs", "my prices", "wholesale costs"] },
+      { id: "pnl",           label: "P&L",              icon: TrendingUp,      keywords: ["p&l", "pnl", "profit and loss", "profit", "margin", "revenue chart", "cost chart", "wholesale pnl", "direct pnl", "group buy pnl", "bi-annual", "quarterly revenue", "monthly revenue", "financial tracker"] },
       { id: "config",        label: "Site Settings",    icon: Settings2,       keywords: ["site settings", "configuration", "telegram bot", "webhook", "general settings", "site name", "registration links", "registration codes", "homepage sections", "search section", "lab tests section", "faq section", "portal section", "stats section", "public navigation", "portal nav order", "admin tab order", "drag drop", "maintenance mode", "discuss limit", "post limit"] },
       { id: "siteconfig",    label: "Raw Config Keys",  icon: Settings2,       keywords: ["raw config", "site config", "key value", "all keys", "feature flags", "secrets", "tokens", "api keys", "advanced", "low level", "ad hoc key", "scheduler intervals"] },
       { id: "schedulers",    label: "Schedulers",       icon: Clock,           keywords: ["jobs", "cron", "background", "schedulers", "interval", "auto refresh", "auto close", "tracking refresh", "qiyunle sync", "pool verify", "run now", "gb auto close", "pool payment", "enable scheduler", "disable scheduler", "next run", "last run"] },
@@ -25006,6 +25684,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
           {activeTab === "fs3"          && <Fs3Tab secret={secret} />}
+          {activeTab === "pnl"          && <PnlTab secret={secret} />}
           {activeTab === "notifications" && <NotificationsTab secret={secret} />}
           {activeTab === "tg-templates"  && <AdminTelegramTemplates secret={secret} />}
           {activeTab === "announcements" && <ScheduledAnnouncementsTab secret={secret} />}

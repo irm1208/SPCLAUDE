@@ -106,14 +106,18 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
         onClick={onClose}
       />
       <motion.div
-        initial={{ scale: 0.96, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.96, opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
         transition={{ type: "spring", damping: 32, stiffness: 380 }}
-        className="fixed inset-0 z-[61] flex items-center justify-center p-5 pointer-events-none"
+        className="fixed inset-x-0 bottom-0 z-[61] flex justify-center pb-[88px] sm:inset-0 sm:items-center sm:pb-0 sm:p-5 pointer-events-none"
       >
-        <div className="w-full max-w-sm rounded-3xl overflow-hidden pointer-events-auto bg-white shadow-2xl max-h-[90vh] flex flex-col">
-          <div className="px-5 pt-4 pb-3 flex items-center gap-3 shrink-0">
+        <div className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl overflow-hidden pointer-events-auto bg-white shadow-2xl max-h-[calc(100dvh-130px)] sm:max-h-[88vh] flex flex-col">
+          {/* Drag handle — mobile only */}
+          <div className="flex justify-center pt-3 pb-1 shrink-0 sm:hidden">
+            <div className="w-10 h-1 rounded-full bg-slate-200" />
+          </div>
+          <div className="px-5 pt-2 sm:pt-4 pb-3 flex items-center gap-3 shrink-0">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#F3EEFF" }}>
               <Wallet className="w-5 h-5" style={{ color: "#7C3AED" }} />
             </div>
@@ -144,13 +148,31 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
             ) : (
               <>
                 {fee.status === "rejected" && (
-                  <div className="flex gap-2 items-start p-2.5 bg-red-50 rounded-lg border border-red-100">
-                    <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
-                    <div className="text-xs text-red-600">
-                      <p className="font-semibold">Your previous submission was rejected</p>
-                      {fee.rejectionReason && <p className="mt-0.5">{fee.rejectionReason}</p>}
-                      <p className="mt-1 text-red-500/80">Please submit a new transaction hash below.</p>
+                  <div className="space-y-2">
+                    <div className="flex gap-2 items-start p-2.5 bg-red-50 rounded-lg border border-red-100">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
+                      <div className="text-xs text-red-600">
+                        <p className="font-semibold">Your previous submission was not recognised</p>
+                        {fee.rejectionReason && <p className="mt-0.5">{fee.rejectionReason}</p>}
+                        <p className="mt-1 text-red-500/80">Please submit a new transaction hash below.</p>
+                      </div>
                     </div>
+                    {fee.organiserContact && (
+                      <div className="flex gap-2 items-start p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <Send className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                        <div className="text-xs text-slate-600">
+                          <p className="font-medium">Need help? Contact the organiser directly:</p>
+                          <a
+                            href={`https://t.me/${fee.organiserContact}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold text-violet-600 hover:underline mt-0.5 inline-block"
+                          >
+                            @{fee.organiserContact} on Telegram
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -158,8 +180,8 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                   <div className="flex gap-2 items-start p-2.5 bg-amber-50 rounded-lg border border-amber-100">
                     <Loader2 className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0 animate-spin" />
                     <p className="text-xs text-amber-700">
-                      Verifying your transaction — this can take a few minutes. This screen will update automatically once confirmed.
-                      {" "}If it's still pending after a while, the organiser reviews and confirms these manually too, so it will go through — no need to resend unless you made a mistake.
+                      Transaction received — checking on-chain now. This screen updates automatically once confirmed.
+                      {" "}If it doesn't confirm shortly, the organiser can also manually approve from the GB panel.
                     </p>
                   </div>
                 )}
@@ -232,7 +254,7 @@ export function EntryFeePaymentModal({ groupBuyId, initial, onClose, onConfirmed
                   )}
                   <Button className="w-full" onClick={handleSubmitTx} disabled={submitTx.isPending || !txHash.trim()}>
                     {submitTx.isPending
-                      ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Submitting…</>
+                      ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Verifying on-chain…</>
                       : fee.hasTxHash
                         ? <><RefreshCw className="w-4 h-4 mr-2" />Resubmit</>
                         : <><Send className="w-4 h-4 mr-2" />Submit Transaction</>

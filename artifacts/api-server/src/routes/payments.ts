@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
-import { siteConfigTable, ordersTable, groupBuysTable, gbReshippersTable, gbCountryLegsTable, accountsTable } from "@workspace/db";
+import { siteConfigTable, ordersTable, groupBuysTable, gbReshippersTable, gbCountryLegsTable, accountsTable, wholesaleSharesTable } from "@workspace/db";
 import { eq, or, and, sql } from "drizzle-orm";
 import { logCustomerActivity } from "../lib/activity-log";
 import { writeLog } from "../lib/audit-log";
@@ -316,7 +316,7 @@ export async function resolveLockedUsdPerCoin(
  * - Non-GB orders: always use the global site wallet (USDT ERC-20).
  */
 export async function resolveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
@@ -325,11 +325,32 @@ export async function resolveOrderCrypto(
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
-  // Wholesale orders: prefer the dedicated wholesale USDT wallet
+  // Wholesale shared orders: use the organiser's leadCryptoOptions if set, else fall back to wholesale admin wallets
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db
+      .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const opts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
+    if (opts.length > 0) {
+      return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network };
+    }
+    const wsWallet = await getConfig("wholesale_usdt_wallet");
+    if (wsWallet) return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
+    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet");
+    if (wsUsdcWallet) return { walletAddress: wsUsdcWallet, currency: "USDC", network: defaultNetwork };
+    const walletAddress = await getConfig("walletAddress");
+    return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
+  }
+  // Wholesale orders: prefer the dedicated wholesale USDT wallet, then USDC ERC-20 wallet
   if (order.orderType === "wholesale") {
     const wsWallet = await getConfig("wholesale_usdt_wallet");
     if (wsWallet) {
       return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
+    }
+    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet");
+    if (wsUsdcWallet) {
+      return { walletAddress: wsUsdcWallet, currency: "USDC", network: defaultNetwork };
     }
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
@@ -423,11 +444,23 @@ export async function getAdminCryptoOptions(): Promise<Array<{ currency: string;
  * - Any other single-rail: the one resolved currency.
  */
 export async function getOrderCryptoOptions(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string; options: Array<{ currency: string; network: string; walletAddress: string | null }> }> {
   const base = await resolveOrderCrypto(order);
 
-  if (!order.groupBuyId && order.orderType !== "wholesale") {
+  // Wholesale shared: expose all organiser leadCryptoOptions so buyer can pick chain/coin
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db
+      .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const opts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
+    if (opts.length > 0) {
+      return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network, options: opts };
+    }
+  }
+
+  if (!order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared") {
     const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
     if (paymentRoutingEnabled) {
       const chainOpts = await getAdminCryptoOptions();
@@ -454,10 +487,23 @@ export async function getOrderCryptoOptions(
  * the choice was validated against getOrderCryptoOptions at rate-lock time.
  */
 export async function resolveEffectiveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
+  // Wholesale shared: match persisted currency+network against organiser's leadCryptoOptions
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
+    const [share] = await db
+      .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const opts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
+    const match = opts.find(o =>
+      o.currency.toUpperCase() === order.paymentCryptoCurrency!.toUpperCase() &&
+      o.network.toLowerCase() === order.paymentCryptoNetwork!.toLowerCase()
+    );
+    if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+  }
   // For non-GB non-wholesale orders: use the chain wallet matching the stored currency+network
-  if (!order.groupBuyId && order.orderType !== "wholesale" && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
+  if (!order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
     const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
     if (paymentRoutingEnabled) {
       const allOpts = await getAdminCryptoOptions();
@@ -466,6 +512,18 @@ export async function resolveEffectiveOrderCrypto(
         o.network.toLowerCase() === order.paymentCryptoNetwork!.toLowerCase()
       );
       if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+    }
+  }
+  // Wholesale orders: if the customer chose USDC ERC-20, verify against the dedicated USDC wallet
+  // (the USDC wallet may be a different address than the USDT wallet, so we cannot fall through
+  // to resolveOrderCrypto which only knows the USDT address).
+  if (order.orderType === "wholesale" && order.paymentCryptoCurrency?.toUpperCase() === "USDC") {
+    const net = (order.paymentCryptoNetwork ?? "ERC-20").toLowerCase();
+    if (/erc.?20|ethereum/.test(net)) {
+      const wsUsdcErc20Wallet = await getConfig("wholesale_usdc_erc20_wallet");
+      if (wsUsdcErc20Wallet) {
+        return { walletAddress: wsUsdcErc20Wallet, currency: "USDC", network: "ERC-20" };
+      }
     }
   }
   const base = await resolveOrderCrypto(order);
@@ -483,16 +541,14 @@ const USDC_DECIMALS = 6;
 const BSC_USDT_DECIMALS = 18;
 
 const ETH_RPC_ENDPOINTS = [
-  "https://eth.llamarpc.com",
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://eth-mainnet.public.blastapi.io",
+  "https://mainnet.gateway.tenderly.co",
+  "https://1rpc.io/eth",
+  "https://rpc.mevblocker.io",
   "https://cloudflare-eth.com",
   "https://rpc.ankr.com/eth",
-  "https://ethereum-rpc.publicnode.com",
-  "https://1rpc.io/eth",
-  "https://eth-mainnet.public.blastapi.io",
-  "https://ethereum.blockpi.network/v1/rpc/public",
-  "https://eth.drpc.org",
-  "https://mainnet.gateway.tenderly.co",
-  "https://rpc.mevblocker.io",
 ];
 
 const BSC_RPC_ENDPOINTS = [
@@ -642,7 +698,7 @@ async function evmJsonRpc(endpoints: string[], method: string, params: unknown[]
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(7000),
       });
       const json: any = await res.json();
       if (json.error) throw new Error(json.error.message ?? "RPC error");
@@ -969,7 +1025,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   const orderId = req.query["orderId"] as string | undefined;
   if (orderId) {
     const [order] = await db
-      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork })
+      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork, sharedOrderId: ordersTable.sharedOrderId })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
 
@@ -1014,6 +1070,34 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
             anonPayNetwork = wsAnonPayNetwork ?? "ERC20";
           } else {
             anonPayEnabled = false;
+          }
+        }
+      } else if (order.orderType === "wholesale_shared" && order.sharedOrderId && paymentRoutingEnabled) {
+        const [share] = await db
+          .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions, creatorUsername: wholesaleSharesTable.creatorUsername })
+          .from(wholesaleSharesTable)
+          .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+        const leadOpts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
+        if (leadOpts.length > 0) {
+          availableCryptoOptions = leadOpts;
+          cryptoWalletAddress    = leadOpts[0].walletAddress;
+          cryptoCurrency         = leadOpts[0].currency;
+          cryptoNetwork          = leadOpts[0].network;
+          collectedBy = { type: "organiser", username: share!.creatorUsername };
+        } else {
+          // Organiser hasn't set options — fall back to wholesale admin wallets
+          const [wsUsdtWallet, wsUsdcErc20Wallet] = await Promise.all([
+            getConfig("wholesale_usdt_wallet"),
+            getConfig("wholesale_usdc_erc20_wallet"),
+          ]);
+          const wsCryptoOpts: { currency: string; network: string; walletAddress: string }[] = [];
+          if (wsUsdtWallet)      wsCryptoOpts.push({ currency: "USDT", network: "ERC-20", walletAddress: wsUsdtWallet });
+          if (wsUsdcErc20Wallet) wsCryptoOpts.push({ currency: "USDC", network: "ERC-20", walletAddress: wsUsdcErc20Wallet });
+          if (wsCryptoOpts.length > 0) {
+            availableCryptoOptions = wsCryptoOpts;
+            cryptoWalletAddress    = wsCryptoOpts[0].walletAddress;
+            cryptoCurrency         = wsCryptoOpts[0].currency;
+            cryptoNetwork          = wsCryptoOpts[0].network;
           }
         }
       } else if (order.groupBuyId && paymentRoutingEnabled) {

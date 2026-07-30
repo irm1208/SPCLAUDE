@@ -22,7 +22,7 @@ import {
   Navigation, MapPin, Box, UsersRound, Eye, EyeOff, QrCode,
   LayoutList, LayoutGrid, Store, Star, RefreshCcw, Hash, Wallet, Boxes, Pencil,
   Download, Maximize2, Archive, ArchiveRestore, MoreHorizontal,
-  Percent, Target,
+  Percent, Target, DollarSign,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -71,6 +71,7 @@ import { Glp1ShotForm } from "@/components/Glp1ShotForm";
 import { T } from "@/lib/theme";
 import { fmtC } from "@/lib/currency";
 import { LabTestsListPopup } from "@/components/LabTestsPopup";
+import { PricingPreviewModal } from "@/components/PricingPreviewModal";
 import { DashboardHome } from "@/components/DashboardHome";
 import { DashboardShell, StatCard, palette, ACCENT, ACCENT_SOFT, SecIcon, HERO_GRAD } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -115,9 +116,9 @@ const SECTION_ALL_META: { id: Section; label: string; icon: React.ElementType }[
   { id: "telegram",    label: "Telegram",     icon: MessageCircle },
   { id: "history",     label: "My History",   icon: History },
   { id: "health-hub",  label: "Health",       icon: HeartPulse },
-  { id: "lab-pool",    label: "Lab Pool",     icon: TestTube },
-  { id: "support",     label: "Support",      icon: MessageSquare },
-  { id: "gb-testing",       label: "GB Testing",       icon: FlaskConical },
+  { id: "lab-pool",    label: "Testing Pools", icon: TestTube },
+  { id: "support",     label: "Support",       icon: MessageSquare },
+  { id: "gb-testing",       label: "GB Testing",        icon: FlaskConical },
   { id: "wholesale-access", label: "Wholesale Access",  icon: Lock },
 ];
 
@@ -2195,6 +2196,7 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
 // ─── Join Group Buy Modal ──────────────────────────────────────────────────────
 
 function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: string }) {
+  const [, setLocation] = useLocation();
   const [gbId, setGbId] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -2215,6 +2217,7 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<(() => void) | null>(null);
   const [entryFeeModal, setEntryFeeModal] = useState<{ groupBuyId: string; fee: EntryFeePaymentInfo; retry: () => Promise<void> } | null>(null);
+  const [pricingPreviewOpen, setPricingPreviewOpen] = useState(false);
   const join = useJoinGroupBuy();
   const { account } = useAccount();
   const { data: activeGbs = [], isLoading: gbsLoading } = useActiveGroupBuys();
@@ -2548,6 +2551,19 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
             </div>
           </div>
 
+          {/* Pricing preview trigger */}
+          {gbId && (
+            <button
+              type="button"
+              onClick={() => setPricingPreviewOpen(true)}
+              className="w-full rounded-2xl px-4 flex items-center justify-center gap-1.5 text-sm font-semibold transition-colors"
+              style={{ background: "rgba(22,163,74,0.07)", color: "#16A34A", border: "1px solid rgba(22,163,74,0.2)", height: 44 }}
+            >
+              <DollarSign className="w-4 h-4" />
+              Preview Pricing
+            </button>
+          )}
+
           {/* Country picker (only when GB has country legs) */}
           {hasCountryLegs && (
             <div>
@@ -2746,12 +2762,24 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
           onConfirmed={async () => {
             try {
               await entryFeeModal.retry();
+              setLocation(`/order?gbId=${entryFeeModal.groupBuyId}`);
             } finally {
               setEntryFeeModal(null);
             }
           }}
         />
       )}
+
+      <AnimatePresence>
+        {pricingPreviewOpen && selected && (
+          <PricingPreviewModal
+            gbId={selected.id}
+            gbName={selected.name}
+            username={account?.telegramUsername ?? "user"}
+            onClose={() => setPricingPreviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -7629,10 +7657,7 @@ export default function CustomerPortal() {
 
   // ─── Layout wrapper ─────────────────────────────────────────────────────────
 
-  const hasTestingOpt = orders.some(o => (o.testingContribution ?? 0) > 0) || activePools.length > 0 || lateOptInGbs.length > 0 || gbPools.length > 0;
-  const DEFAULT_NAV_ORDER: Section[] = hasTestingOpt
-    ? ["home","orders","groups","lab-pool","gb-testing","compounds","blood-tests","health","glp1","plotter","profile","telegram","support"]
-    : ["home","orders","groups","compounds","blood-tests","health","glp1","plotter","profile","telegram","support"];
+  const DEFAULT_NAV_ORDER: Section[] = ["home","orders","groups","lab-pool","compounds","blood-tests","health","glp1","plotter","profile","telegram","support"];
 
   const ALWAYS_INCLUDE: Section[] = ["support"];
   const _navFromCfg: Section[] = navCfg.length > 0
@@ -7640,15 +7665,17 @@ export default function CustomerPortal() {
         ...navCfg
           .filter(c => c.id === "home" || c.enabled)
           .map(c => c.id as Section)
-          .filter(id => PORTAL_SECTIONS.includes(id) && !ALWAYS_INCLUDE.includes(id as Section)),
+          // strip gb-testing — it's merged into lab-pool now
+          .filter(id => PORTAL_SECTIONS.includes(id) && !ALWAYS_INCLUDE.includes(id as Section) && id !== "gb-testing"),
         ...ALWAYS_INCLUDE,
       ]
     : [];
 
   const _navOrderBase: Section[] = _navFromCfg.length > 0 ? _navFromCfg : DEFAULT_NAV_ORDER;
-  const _navOrder: Section[] = hasTestingOpt && !_navOrderBase.includes("lab-pool")
-    ? ["home", "orders", "groups", "lab-pool", ..._navOrderBase.filter(id => !["home","orders","groups","lab-pool"].includes(id))]
-    : _navOrderBase;
+  // Ensure lab-pool is always 4th (after home/orders/groups), never absent
+  const _navOrder: Section[] = _navOrderBase.includes("lab-pool")
+    ? _navOrderBase
+    : ["home", "orders", "groups", "lab-pool", ..._navOrderBase.filter(id => !["home","orders","groups"].includes(id))];
 
   const _sortedNav: Section[] = ["home", ..._navOrder.filter(id => id !== "home")];
 
@@ -7698,6 +7725,7 @@ export default function CustomerPortal() {
           draft: organiserGbs.filter(g => g.status === "draft").length,
           total: organiserGbs.filter(g => g.status !== "archived").length,
         }}
+        gbPools={gbPools.filter(p => p.isOptedIn)}
       />
     );
   }
@@ -7818,24 +7846,80 @@ export default function CustomerPortal() {
   // ─── Lab Pool section ────────────────────────────────────────────────────────
 
   if (section === "lab-pool") {
-    return inShell("lab-pool", "Pool Leaders", (
+    const fmtUsd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
+    const statusLabel: Record<string, string> = {
+      active: "Voting open", collecting: "Collecting", closed: "Closed", results_received: "Results in",
+    };
+    return inShell("lab-pool", "Testing Pools", (
       <>
-        <p className="text-[13px]" style={{ color: T.subtle }}>
-          Run community-funded third-party lab testing rounds. View your contributions and manage your standalone pools below.
-        </p>
+        {/* ── GB Testing Pools ─────────────────────────────────────────────── */}
+        {gbPools.length > 0 && (
+          <div className="w-full max-w-[860px]">
+            <p className="section-label" style={{ marginBottom: 12 }}>Group Buy Testing Pools</p>
+            <div className="flex flex-col gap-3">
+              {gbPools.map(pool => {
+                const isOptedIn = pool.isOptedIn;
+                const canLate = pool.canLateOptIn;
+                const isDone = pool.roundStatus === "results_received";
+                const accentColor = isOptedIn ? "var(--t-blue)" : canLate ? "#B45309" : T.muted;
+                const bgColor = isOptedIn ? "rgba(59,130,246,0.06)" : canLate ? "rgba(245,158,11,0.06)" : T.surface;
+                const borderColor = isOptedIn ? "rgba(59,130,246,0.25)" : canLate ? "rgba(245,158,11,0.35)" : T.border;
+                const badge = isOptedIn ? "Opted in" : canLate ? "Late opt-in available" : "Member — not opted in";
+                const sub = isOptedIn
+                  ? (statusLabel[pool.roundStatus] ?? pool.roundStatus)
+                  : canLate
+                  ? `You can still contribute${pool.anyContribution ? "" : ` — ${fmtUsd(pool.contributionAmount)}`}`
+                  : "View pool progress and results";
+                return (
+                  <div
+                    key={pool.gbId}
+                    className="flex items-center gap-4 p-5 cursor-pointer transition-opacity hover:opacity-80"
+                    style={{ background: bgColor, border: `1.5px solid ${borderColor}`, borderRadius: 8 }}
+                    onClick={() => setLocation(`/testing/${pool.gbId}`)}
+                    role="button" tabIndex={0}
+                    onKeyDown={e => e.key === "Enter" && setLocation(`/testing/${pool.gbId}`)}
+                  >
+                    <div className="w-12 h-12 flex items-center justify-center shrink-0" style={{ borderRadius: 8, background: isOptedIn ? "rgba(59,130,246,0.12)" : canLate ? "rgba(245,158,11,0.12)" : "rgba(100,100,100,0.08)" }}>
+                      <FlaskConical className="w-5 h-5" style={{ color: accentColor }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[14px] font-bold leading-tight" style={{ color: T.text }}>{pool.gbName}</p>
+                        {isDone && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669" }}>Results in</span>}
+                      </div>
+                      <p className="text-[12px] mt-0.5 font-semibold" style={{ color: accentColor }}>{badge}</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: T.muted }}>{sub}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 shrink-0" style={{ color: accentColor }} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── My Contributions ─────────────────────────────────────────────── */}
         <div className="w-full max-w-[860px]">
           <p className="section-label" style={{ marginBottom: 12 }}>My Contributions</p>
           <AccountPoolContributions />
         </div>
+
+        {/* ── Standalone Testing Pools ─────────────────────────────────────── */}
         <div className="w-full max-w-[860px]">
           <p className="section-label" style={{ marginBottom: 12 }}>Standalone Testing Pools</p>
-          <PoolLeaderDashboard />
+          <PoolLeaderDashboard compact />
         </div>
       </>
     ));
   }
 
-  // ─── GB Testing section ──────────────────────────────────────────────────────
+  // ─── GB Testing section (legacy — redirects into lab-pool) ──────────────────
+
+  if (section === "gb-testing") {
+    // Merged into Testing Pools — just switch there
+    setSection("lab-pool");
+    return null;
+  }
 
   if (section === "wholesale-access") {
     return inShell("wholesale-access", "Wholesale Access", (

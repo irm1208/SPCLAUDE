@@ -315,8 +315,13 @@ export default function Review() {
         onError: (err: any) => {
           const errMsg: string = (err.data as any)?.error || err.message || "";
           const is404 = err.status === 404 || errMsg.toLowerCase().includes("not found");
-          if (is404 && !retried) {
-            // The order was deleted by an admin — clear the stale ID and place a fresh one
+          // The stale orderId points to an order that's now in a non-editable status
+          // (e.g. Processing). Treat it the same as a deleted order — clear the stale
+          // ID and place a fresh order so the user isn't stuck.
+          const isStaleStatus = errMsg.toLowerCase().includes("cannot be edited");
+          if ((is404 || isStaleStatus) && !retried) {
+            // The order was deleted or moved to a non-editable status — clear the stale
+            // ID and place a fresh one
             setRetried(true);
             draft.clearOrderId();
             if (payload.groupBuyId) {

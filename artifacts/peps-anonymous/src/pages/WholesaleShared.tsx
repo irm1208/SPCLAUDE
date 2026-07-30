@@ -33,6 +33,7 @@ import {
   setWholesaleShareSettings,
   publishWholesaleShare,
   removeWholesaleShareMember,
+  submitOrganiserPayment,
   useInvalidateWholesaleShare,
   useWholesaleShareMessages,
   postWholesaleShareMessage,
@@ -194,6 +195,13 @@ export default function WholesaleShared() {
     name: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", phone: "",
   });
   const onwardSeeded = useRef(false);
+
+  // Organiser → platform payment form (shown after all members pay).
+  // orgPayPickedIdx = index into share.organiserPayment.cryptoOptions.
+  const [orgPayTxHash, setOrgPayTxHash] = useState("");
+  const [orgPayPickedIdx, setOrgPayPickedIdx] = useState<number | null>(null);
+  const [orgPayError, setOrgPayError] = useState("");
+  const [orgPayCopied, setOrgPayCopied] = useState(false);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
@@ -769,6 +777,22 @@ export default function WholesaleShared() {
     );
   };
 
+  // Organiser submits their platform payment tx hash.
+  const submitOrgPayment = async () => {
+    if (!id || orgPayPickedIdx === null) return;
+    const opts = share.organiserPayment?.cryptoOptions ?? [];
+    const picked = opts[orgPayPickedIdx];
+    if (!picked) return;
+    if (!orgPayTxHash.trim()) { setOrgPayError("Please paste your transaction hash."); return; }
+    setOrgPayError(""); setBusy("org-pay");
+    try {
+      await submitOrganiserPayment(id, { txHash: orgPayTxHash.trim(), currency: picked.currency, network: picked.network });
+      invalidate(id);
+      setOrgPayTxHash("");
+    } catch (e) { setOrgPayError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
   const changeSplit = async (mode: WholesaleSplitMode) => {
     if (!id || mode === share.splitMode) return;
     setActionError(""); setBusy("split");
@@ -1304,7 +1328,10 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
-  const sectionWhatYouOwe = (stage === "paying" || stage === "done") && myMember ? (
+  // Hidden for the organiser when they have their own wallet — their personal order
+  // is bundled into the platform payment they forward to admin (shown in
+  // sectionOrganiserPayment), so no separate per-order Pay step is needed.
+  const sectionWhatYouOwe = (stage === "paying" || stage === "done") && myMember && !share.organiserPayment ? (
     <div id={GUIDE_ANCHORS.owe} style={flashStyle(GUIDE_ANCHORS.owe)}>
       <WhatYouOwe
         share={share}
@@ -1369,6 +1396,195 @@ export default function WholesaleShared() {
           </div>
           {m.orderCode && (
             <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Order #{m.orderCode}</p>
+          )}
+        </div>
+      </section>
+    );
+  })() : null;
+
+  // ── Organiser → platform payment section ─────────────────────────────────────
+  // Shown whenever the organiser has their own wallet set (share.organiserPayment
+  // is non-null). Members pay the organiser directly; the organiser then forwards
+  // the combined total (products + vendor shipping) to admin. Visible immediately —
+  // not gated on everyone having paid — so the organiser can pay admin in parallel.
+  const sectionOrganiserPayment = (share.isCreator && share.organiserPayment) ? (() => {
+    const op = share.organiserPayment!;
+    const opts = op.cryptoOptions;
+    const pickedOpt = orgPayPickedIdx !== null ? opts[orgPayPickedIdx] ?? null : null;
+    const productTotal = share.combinedSubtotal;
+    const shippingTotal = share.totalVendorShipping ?? 0;
+    const amountDue = op.amountDue;
+
+    const statusBadge = op.status === "confirmed" ? (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
+        <CheckCircle2 className="w-3.5 h-3.5" /> Payment confirmed
+      </span>
+    ) : op.status === "pending" ? (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(234,179,8,0.12)", color: "#92400e" }}>
+        <Clock className="w-3.5 h-3.5" /> Awaiting confirmation
+      </span>
+    ) : null;
+
+    return (
+      <section className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Platform Payment</p>
+          {statusBadge}
+        </div>
+
+        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(45,107,204,0.25)", background: "rgba(45,107,204,0.04)" }}>
+          {/* Amount breakdown */}
+          <div className="px-4 pt-4 pb-3 space-y-3">
+            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+              {op.status === "confirmed"
+                ? "You've sent the group payment — we'll process the order."
+                : op.status === "pending"
+                  ? "We've received your tx hash and are confirming your payment."
+                  : "Everyone has paid — now send the combined group payment to us."}
+            </p>
+
+            <div className="rounded-xl p-3 space-y-1.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: "var(--t-muted)" }}>All members' products</span>
+                <span className="font-semibold" style={{ color: "var(--t-text)" }}>{money(productTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: "var(--t-muted)" }}>Vendor shipping</span>
+                <span className="font-semibold" style={{ color: "var(--t-text)" }}>{money(shippingTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1.5 border-t text-sm" style={{ borderColor: "var(--t-border)" }}>
+                <span className="font-bold" style={{ color: "var(--t-text)" }}>Total to send</span>
+                <span className="text-lg font-bold" style={{ color: "var(--t-blue)" }}>{money(amountDue)}</span>
+              </div>
+            </div>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              Tips and organiser fees are peer-to-peer — they stay with you and are not included here.
+            </p>
+          </div>
+
+          {/* Submitted tx info (pending/confirmed) */}
+          {(op.status === "pending" || op.status === "confirmed") && op.txHash && (
+            <div className="px-4 pb-4 space-y-1.5 border-t" style={{ borderColor: "rgba(45,107,204,0.15)" }}>
+              <p className="text-xs font-semibold pt-3" style={{ color: "var(--t-muted)" }}>Your submitted transaction</p>
+              <div className="rounded-lg p-2.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                <p className="text-[11px] font-mono break-all" style={{ color: "var(--t-text)" }}>{op.txHash}</p>
+                {(op.currency || op.network) && (
+                  <p className="text-xs mt-1" style={{ color: "var(--t-muted)" }}>
+                    {[op.currency, op.network].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+              </div>
+              {op.confirmedAt && (
+                <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                  Confirmed {new Date(op.confirmedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Payment form (only while unpaid) */}
+          {op.status === "unpaid" && opts.length > 0 && (
+            <div className="px-4 pb-4 space-y-3 border-t" style={{ borderColor: "rgba(45,107,204,0.15)" }}>
+              <p className="text-xs font-semibold pt-3" style={{ color: "var(--t-muted)" }}>
+                Choose a wallet to send to
+              </p>
+
+              {/* Wallet option cards */}
+              <div className="space-y-2">
+                {opts.map((opt, i) => {
+                  const picked = orgPayPickedIdx === i;
+                  return (
+                    <button
+                      key={`${opt.currency}-${opt.network}`}
+                      onClick={() => { setOrgPayPickedIdx(i); setOrgPayCopied(false); }}
+                      className="w-full rounded-xl p-3 text-left transition-all"
+                      style={picked
+                        ? { background: "var(--t-blue-08)", border: "1.5px solid var(--t-blue-25)" }
+                        : { background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold" style={{ color: picked ? "var(--t-blue)" : "var(--t-text)" }}>
+                            {opt.currency}
+                            <span className="font-normal text-xs ml-1.5" style={{ color: "var(--t-muted)" }}>{opt.network}</span>
+                          </p>
+                          <p className="text-xs font-mono mt-0.5 truncate" style={{ color: "var(--t-muted)" }}>
+                            {opt.walletAddress}
+                          </p>
+                        </div>
+                        <div className="shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                          style={picked ? { background: "var(--t-blue)", borderColor: "var(--t-blue)" } : { borderColor: "var(--t-border)" }}>
+                          {picked && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected wallet address with copy */}
+              {pickedOpt && (
+                <div className="rounded-xl p-3 space-y-1.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
+                    Send {money(amountDue)} to this address
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <p className="flex-1 text-xs font-mono break-all" style={{ color: "var(--t-text)" }}>
+                      {pickedOpt.walletAddress}
+                    </p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(pickedOpt.walletAddress).catch(() => {});
+                        setOrgPayCopied(true);
+                        setTimeout(() => setOrgPayCopied(false), 2000);
+                      }}
+                      className="shrink-0 inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold"
+                      style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", border: "1px solid var(--t-blue-25)" }}
+                    >
+                      {orgPayCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {orgPayCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Tx hash input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold block" style={{ color: "var(--t-muted)" }}>
+                  Paste your transaction hash
+                </label>
+                <input
+                  value={orgPayTxHash}
+                  onChange={e => setOrgPayTxHash(e.target.value)}
+                  placeholder="0x… or blockchain explorer tx hash"
+                  className="w-full h-10 px-3 rounded-lg border text-sm font-mono outline-none"
+                  style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+                />
+              </div>
+
+              {orgPayError && (
+                <p className="text-xs px-1" style={{ color: "#b91c1c" }}>{orgPayError}</p>
+              )}
+
+              <button
+                onClick={() => void submitOrgPayment()}
+                disabled={busy === "org-pay" || orgPayPickedIdx === null || !orgPayTxHash.trim()}
+                className="w-full h-11 rounded-xl text-sm font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{ background: "var(--t-blue)" }}
+              >
+                {busy === "org-pay" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                Submit payment
+              </button>
+            </div>
+          )}
+
+          {/* No crypto options configured */}
+          {op.status === "unpaid" && opts.length === 0 && (
+            <div className="px-4 pb-4 pt-1">
+              <p className="text-sm" style={{ color: "var(--t-muted)" }}>
+                Contact us directly to arrange your payment — we'll send you the wallet details.
+              </p>
+            </div>
           )}
         </div>
       </section>
@@ -2389,6 +2605,7 @@ export default function WholesaleShared() {
       {sectionGroup}
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
+      {sectionOrganiserPayment}
       {!organiserDone && sectionWhatYouOwe}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}

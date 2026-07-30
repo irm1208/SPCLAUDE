@@ -1096,36 +1096,44 @@ export default function PaymentPanel({
         </div>
 
         <div className="space-y-2.5">
-          {availableMethods.includes("crypto") && [...new Set(availableCryptoOptions.map(o => o.currency))].map(cur => {
-            const nets = availableCryptoOptions.filter(o => o.currency === cur);
-            return (
-              <button
-                key={cur}
-                onClick={() => {
-                  setCryptoCurrency(cur);
-                  setError("");
-                  if (nets.length === 1) {
-                    setCryptoNetwork(nets[0].network);
-                    setPickedOption({ currency: cur, network: nets[0].network });
-                    setStep("choice");
-                  } else {
-                    setStep("chain");
-                  }
-                }}
-                className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
-                style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
-              >
-                <CryptoIconBadge currency={cur} size={44} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Pay with {cur}</p>
-                  <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-                    {nets.map(o => o.network).join(" · ")} · {isAutoVerified(cur, nets[0].network) ? "Verified on-chain" : "Organiser confirms"}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
-              </button>
-            );
-          })}
+          {availableMethods.includes("crypto") && (() => {
+            const networkGroups = new Map<string, typeof availableCryptoOptions>();
+            for (const opt of availableCryptoOptions) {
+              if (!networkGroups.has(opt.network)) networkGroups.set(opt.network, []);
+              networkGroups.get(opt.network)!.push(opt);
+            }
+            return [...networkGroups.entries()].map(([network, opts]) => {
+              const { name, badge } = getNetworkDisplay(network);
+              const coinLabels = [...new Set(opts.map(o => o.currency))].join(" / ");
+              return (
+                <button
+                  key={network}
+                  onClick={() => {
+                    setCryptoNetwork(network);
+                    setError("");
+                    if (opts.length === 1) {
+                      setCryptoCurrency(opts[0].currency);
+                      setPickedOption({ currency: opts[0].currency, network });
+                      setStep("choice");
+                    } else {
+                      setStep("chain");
+                    }
+                  }}
+                  className="w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group"
+                  style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
+                >
+                  <NetworkIcon network={network} size={44} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{badge || name}</p>
+                    <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+                      {coinLabels} · {isAutoVerified(opts[0].currency, network) ? "Verified on-chain" : "Organiser confirms"}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
+                </button>
+              );
+            });
+          })()}
 
           {availableMethods.includes("revolut") && (
             <button
@@ -1733,49 +1741,44 @@ export default function PaymentPanel({
   // ── Crypto: chain picker ─────────────────────────────────────
 
   if (step === "chain") {
-    const networksForCurrency = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
+    const coinsForNetwork = availableCryptoOptions.filter(o => o.network.toLowerCase() === cryptoNetwork.toLowerCase());
     return (
       <Card className="p-5 space-y-4" style={cryptoStyle}>
         <CollectedByBanner collectedBy={collectedBy} />
         <div className="flex items-center gap-3">
-          {multiMethod && (
-            <button
-              onClick={goToMethodPicker}
-              className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"
-              style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" style={{ color: "var(--crypto-text-primary)" }} />
-            </button>
-          )}
-          <CryptoIconBadge currency={cryptoCurrency} size={30} />
-          <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>Pay with {cryptoCurrency}</p>
+          <button
+            onClick={goToMethodPicker}
+            className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"
+            style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
+          >
+            <ArrowLeft className="w-3.5 h-3.5" style={{ color: "var(--crypto-text-primary)" }} />
+          </button>
+          <NetworkIcon network={cryptoNetwork} size={30} />
+          <p className="font-bold text-base" style={{ color: "var(--crypto-text-primary)" }}>
+            {getNetworkDisplay(cryptoNetwork).badge || getNetworkDisplay(cryptoNetwork).name}
+          </p>
         </div>
 
-        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--crypto-text-muted)" }}>Choose your blockchain</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--crypto-text-muted)" }}>Choose your coin</p>
 
         <div className="grid grid-cols-2 gap-3">
-          {networksForCurrency.map(opt => (
+          {coinsForNetwork.map(opt => (
             <button
-              key={opt.network}
+              key={opt.currency}
               onClick={() => {
-                setCryptoNetwork(opt.network);
-                setPickedOption({ currency: cryptoCurrency, network: opt.network });
+                setCryptoCurrency(opt.currency);
+                setPickedOption({ currency: opt.currency, network: cryptoNetwork });
                 setStep("choice");
                 setError("");
               }}
               className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl transition-all text-center"
               style={{ background: "var(--crypto-glass-bg)", border: "1px solid var(--crypto-glass-border)" }}
             >
-              <NetworkIcon network={opt.network} size={38} />
+              <CryptoIconBadge currency={opt.currency} size={38} />
               <span>
-                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{getNetworkDisplay(opt.network).name}</span>
-                {getNetworkDisplay(opt.network).badge && (
-                  <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-1" style={{ background: "var(--crypto-glass-border)", color: "var(--crypto-text-muted)" }}>
-                    {getNetworkDisplay(opt.network).badge}
-                  </span>
-                )}
+                <span className="block text-sm font-bold leading-tight" style={{ color: "var(--crypto-text-primary)" }}>{opt.currency}</span>
                 <span className="block text-[10px] mt-1 leading-tight" style={{ color: "var(--crypto-text-muted)" }}>
-                  {isAutoVerified(cryptoCurrency, opt.network) ? "Auto-verified on-chain" : "Organiser confirms manually"}
+                  {isAutoVerified(opt.currency, cryptoNetwork) ? "Auto-verified on-chain" : "Organiser confirms manually"}
                 </span>
               </span>
             </button>
@@ -1792,11 +1795,11 @@ export default function PaymentPanel({
       <Card className="p-5 space-y-4" style={cryptoStyle}>
         <CollectedByBanner collectedBy={collectedBy} />
         <div className="flex items-center gap-3">
-          {(multiMethod || availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase()).length > 1) && (
+          {(multiMethod || availableCryptoOptions.filter(o => o.network.toLowerCase() === cryptoNetwork.toLowerCase()).length > 1) && (
             <button
               onClick={() => {
-                const nets = availableCryptoOptions.filter(o => o.currency.toUpperCase() === cryptoCurrency.toUpperCase());
-                if (nets.length > 1) { setStep("chain"); } else { goToMethodPicker(); }
+                const coinsForNet = availableCryptoOptions.filter(o => o.network.toLowerCase() === cryptoNetwork.toLowerCase());
+                if (coinsForNet.length > 1) { setStep("chain"); } else { goToMethodPicker(); }
                 setError("");
               }}
               className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"

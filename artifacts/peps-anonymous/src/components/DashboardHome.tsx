@@ -35,13 +35,14 @@ interface DashboardHomeProps {
   viewerAccess?: { id: string; name: string; hasQrAccess?: boolean; hasLegAccess?: boolean }[];
   isOrganiser?: boolean;
   organiserGb?: { active: number; draft: number; total: number } | null;
+  gbPools?: { gbId: string; gbName: string; roundStatus: string }[];
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DashboardHome({
   username, credits, orders, activeCompounds, bloodTestCount, glp1Logs, groupBuys,
-  onSection, onLogout, navProps, viewerAccess = [], isOrganiser, organiserGb,
+  onSection, onLogout, navProps, viewerAccess = [], isOrganiser, organiserGb, gbPools = [],
 }: DashboardHomeProps) {
   const { dark } = useThemeStore();
   const [, navigate] = useLocation();
@@ -499,6 +500,41 @@ export function DashboardHome({
             <StatCard T={T} label="Lab Tests" value={bloodTestCount} Icon={Award} iconColor="#2D6BCC" onClick={() => onSection("blood-tests")} />
             <StatCard T={T} label="Compounds" value={activeCompounds.length} Icon={FlaskConical} iconColor="#16A34A" onClick={() => onSection("compounds")} />
           </div>
+
+          {/* GB Testing shortcut — only when user has opted in */}
+          {gbPools.length > 0 && (
+            <div
+              style={{ ...cardStyle, padding: 18, cursor: "pointer" }}
+              onClick={() => onSection("gb-testing")}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => e.key === "Enter" && onSection("gb-testing")}
+            >
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <SecIcon Icon={FlaskConical} />
+                  <span className="font-extrabold" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>GB Testing</span>
+                </div>
+                <span className="flex items-center gap-1 font-semibold" style={{ fontSize: 11.5, color: ACCENT }}>
+                  View <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {gbPools.slice(0, 3).map(p => (
+                  <div key={p.gbId} className="flex items-center gap-2 rounded-md" style={{ padding: "7px 10px", background: T.panel2, border: `1px solid ${T.border}` }}>
+                    <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: "#16A34A" }} />
+                    <p className="font-medium truncate flex-1" style={{ fontSize: 12, color: T.text }}>{p.gbName}</p>
+                    <span className="rounded font-bold shrink-0" style={{ fontSize: 9, padding: "2px 6px", background: "rgba(22,163,74,0.12)", color: "#16A34A" }}>
+                      {p.roundStatus === "active" ? "Live" : p.roundStatus === "closed" ? "Closed" : p.roundStatus}
+                    </span>
+                  </div>
+                ))}
+                {gbPools.length > 3 && (
+                  <p style={{ fontSize: 11, color: T.muted, textAlign: "center", marginTop: 2 }}>+{gbPools.length - 3} more</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Statistic */}
           <div style={{ ...cardStyle, padding: 22 }}>

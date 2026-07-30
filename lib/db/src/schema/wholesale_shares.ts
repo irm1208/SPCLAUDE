@@ -90,6 +90,16 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   mainTrackingStatusCode: integer("main_tracking_status_code"),
   mainTrackingEvents: jsonb("main_tracking_events").$type<WholesaleOnwardTrackingEvent[]>().notNull().default([]),
   mainTrackingChecked: timestamp("main_tracking_checked", { withTimezone: true }),
+  // ── Organiser → platform payment ────────────────────────────────────────────
+  // After every member has paid, the organiser sends the combined product+shipping
+  // total to the platform admin. Tips and peer-to-peer organiser fees are excluded
+  // (they stay with the organiser). 'unpaid' → organiser submits tx → 'pending'
+  // → admin confirms → 'confirmed'.
+  organiserPaymentStatus: text("organiser_payment_status").notNull().default("unpaid"),
+  organiserPaymentTxHash: text("organiser_payment_tx_hash"),
+  organiserPaymentCurrency: text("organiser_payment_currency"),
+  organiserPaymentNetwork: text("organiser_payment_network"),
+  organiserPaymentConfirmedAt: timestamp("organiser_payment_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),

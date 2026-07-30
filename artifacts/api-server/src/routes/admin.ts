@@ -3964,6 +3964,68 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   });
 });
 
+// ─── GET /api/admin/fs3-pnl ──────────────────────────────────────────────────
+// Returns all non-cancelled orders with per-order totals + line items so the
+// client can bucket by any time period and compute revenue / cost / profit.
+router.get("/admin/fs3-pnl", async (req: any, res: any) => {
+  if (!requireAdmin(req, res)) return;
+  const allOrders = await db
+    .select({
+      id: ordersTable.id,
+      createdAt: ordersTable.createdAt,
+      grandTotal: ordersTable.grandTotal,
+      productSubtotal: ordersTable.productSubtotal,
+      deliveryPrice: ordersTable.deliveryPrice,
+      vendorShipping: ordersTable.vendorShipping,
+      tip: ordersTable.tip,
+      orderType: ordersTable.orderType,
+      groupBuyId: ordersTable.groupBuyId,
+    })
+    .from(ordersTable)
+    .where(and(
+      inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]),
+      isNull(ordersTable.deletedAt)
+    ));
+
+  const orderIds = allOrders.map(o => o.id);
+  const allLineItems = orderIds.length > 0
+    ? await db
+        .select({
+          orderId: orderLineItemsTable.orderId,
+          productName: orderLineItemsTable.productName,
+          quantity: orderLineItemsTable.quantity,
+          lineTotal: orderLineItemsTable.lineTotal,
+        })
+        .from(orderLineItemsTable)
+        .where(inArray(orderLineItemsTable.orderId, orderIds))
+    : [];
+
+  const liByOrder = new Map<string, typeof allLineItems>();
+  for (const li of allLineItems) {
+    if (!liByOrder.has(li.orderId)) liByOrder.set(li.orderId, []);
+    liByOrder.get(li.orderId)!.push(li);
+  }
+
+  const orders = allOrders.map(o => ({
+    id: o.id,
+    createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+    grandTotal: parseFloat(String(o.grandTotal ?? "0")),
+    productSubtotal: parseFloat(String(o.productSubtotal ?? "0")),
+    deliveryRevenue: parseFloat(String(o.deliveryPrice ?? "0")),
+    vendorShipping: parseFloat(String(o.vendorShipping ?? "0")),
+    tips: parseFloat(String(o.tip ?? "0")),
+    orderType: o.orderType ?? null,
+    groupBuyId: o.groupBuyId ?? null,
+    lineItems: (liByOrder.get(o.id) ?? []).map(li => ({
+      productName: String(li.productName),
+      quantity: parseFloat(String(li.quantity)),
+      lineTotal: parseFloat(String(li.lineTotal ?? "0")),
+    })),
+  }));
+
+  res.json({ orders });
+});
+
 // ─── POST /api/admin/fs3-ping-address ────────────────────────────────────────
 // Finds orders in a GB that are missing a delivery address, applies optional
 // exclusion / courier filters, and sends each holder a Telegram nudge with
@@ -4909,6 +4971,7 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   const offset = page * limit;
   const gbIdFilter = typeof req.query.gbId === "string" ? req.query.gbId.trim() : null;
   const wholesaleOnly = req.query.wholesale === "true";
+  const guestsOnly = req.query.guests === "true";
 
   try {
     // If filtering by group buy, resolve the set of member accountIds first
@@ -4951,6 +5014,57 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
 
     // Fetch accounts
     const accounts = await db.select().from(accountsTable).orderBy(desc(accountsTable.createdAt));
+
+    // ── Guest-orderer view: users with orders but no registered account ──
+    if (guestsOnly) {
+      const accountNorm = new Set<string>();
+      for (const a of accounts) {
+        const raw = (a.telegramUsername ?? "").toLowerCase();
+        accountNorm.add(raw);
+        accountNorm.add(raw.startsWith("@") ? raw.slice(1) : `@${raw}`);
+      }
+      const seen = new Set<string>();
+      const guestRows: Array<{
+        telegramUsername: string; email: null; accountStatus: null; createdAt: string | null;
+        country: null; lastLoginIp: null; tags: string[]; telegramConnected: false;
+        organiserStatus: null; poolLeaderStatus: null; reshipperStatus: null;
+        credits: number; isWholesale: false; isGuest: true;
+        orderCount: number; totalSpent: number; lastOrderAt: string | null;
+        draftCount: number; submittedCount: number; processingCount: number;
+        shippedCount: number; completedCount: number; cancelledCount: number;
+        pendingPaymentCount: number; paidCount: number; unpaidCount: number;
+      }> = [];
+      for (const s of orderStats) {
+        const raw = s.telegramUsername ?? "";
+        const lower = raw.toLowerCase();
+        if (accountNorm.has(lower)) continue;
+        const canonical = lower.startsWith("@") ? lower : `@${lower}`;
+        if (seen.has(canonical)) continue;
+        seen.add(canonical);
+        const display = lower.startsWith("@") ? raw : `@${raw}`;
+        guestRows.push({
+          telegramUsername: display,
+          email: null, accountStatus: null,
+          createdAt: s.lastOrderAt ?? null,
+          country: null, lastLoginIp: null, tags: [],
+          telegramConnected: false, organiserStatus: null,
+          poolLeaderStatus: null, reshipperStatus: null,
+          credits: 0, isWholesale: false, isGuest: true,
+          orderCount: s.orderCount, totalSpent: s.totalSpent, lastOrderAt: s.lastOrderAt ?? null,
+          draftCount: s.draftCount, submittedCount: s.submittedCount,
+          processingCount: s.processingCount, shippedCount: s.shippedCount,
+          completedCount: s.completedCount, cancelledCount: s.cancelledCount,
+          pendingPaymentCount: s.pendingPaymentCount, paidCount: s.paidCount,
+          unpaidCount: s.unpaidCount,
+        });
+      }
+      const filteredGuests = guestRows
+        .filter(g => !q || g.telegramUsername.toLowerCase().includes(q))
+        .sort((a, b) => new Date(b.lastOrderAt ?? 0).getTime() - new Date(a.lastOrderAt ?? 0).getTime());
+      const total = filteredGuests.length;
+      const page_data = filteredGuests.slice(offset, offset + limit);
+      return res.json({ customers: page_data, total, page, limit });
+    }
 
     // Merge and filter
     const zeroStats = { orderCount: 0, totalSpent: 0, lastOrderAt: null, draftCount: 0, submittedCount: 0, processingCount: 0, shippedCount: 0, completedCount: 0, cancelledCount: 0, pendingPaymentCount: 0, paidCount: 0, unpaidCount: 0 };
@@ -5006,6 +5120,69 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   } catch (err) {
     console.error("[admin/customers]", err);
     res.status(500).json({ error: "Failed to fetch customers" });
+  }
+});
+
+// ─── POST /api/admin/bulk-register-guests ─────────────────────
+// Create stub accounts (passwordHash = null) for every unique order username
+// that has no existing account. Returns { created, skipped }.
+router.post("/admin/bulk-register-guests", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const normalizeTgLocal = (raw: string) => {
+      const t = raw.trim().toLowerCase();
+      return t.startsWith("@") ? t : `@${t}`;
+    };
+
+    const [orderUsernames, existingAccounts] = await Promise.all([
+      db.select({ telegramUsername: ordersTable.telegramUsername })
+        .from(ordersTable)
+        .where(isNull(ordersTable.deletedAt))
+        .groupBy(ordersTable.telegramUsername),
+      db.select({ telegramUsername: accountsTable.telegramUsername })
+        .from(accountsTable),
+    ]);
+
+    const knownSet = new Set<string>();
+    for (const a of existingAccounts) {
+      const raw = (a.telegramUsername ?? "").toLowerCase();
+      knownSet.add(raw);
+      knownSet.add(raw.startsWith("@") ? raw.slice(1) : `@${raw}`);
+    }
+
+    const toCreate: string[] = [];
+    const seen = new Set<string>();
+    for (const { telegramUsername } of orderUsernames) {
+      const raw = (telegramUsername ?? "").trim();
+      if (!raw) continue;
+      const normalized = normalizeTgLocal(raw);
+      if (normalized.length < 2 || normalized.length > 64) continue;
+      if (knownSet.has(normalized.toLowerCase())) continue;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      toCreate.push(normalized);
+    }
+
+    let created = 0;
+    const BATCH = 100;
+    for (let i = 0; i < toCreate.length; i += BATCH) {
+      const batch = toCreate.slice(i, i + BATCH);
+      const result = await db.insert(accountsTable)
+        .values(batch.map(tg => ({ telegramUsername: tg, accountStatus: "active" as const })))
+        .onConflictDoNothing();
+      created += batch.length;
+    }
+
+    const skipped = toCreate.length - created;
+    await writeLog("change", "info", "admin_bulk_register_guests",
+      `Admin bulk-registered ${created} guest orderer(s) as stub accounts`,
+      { created, skipped, total: toCreate.length },
+    ).catch(() => {});
+
+    res.json({ ok: true, created, skipped, total: toCreate.length });
+  } catch (err) {
+    console.error("[admin/bulk-register-guests]", err);
+    res.status(500).json({ error: "Failed to register guests" });
   }
 });
 
@@ -9269,17 +9446,38 @@ router.post("/admin/impersonate", async (req: any, res: any): Promise<void> => {
     res.status(400).json({ error: "telegramUsername is required" }); return;
   }
   const bare = telegramUsername.replace(/^@+/, "").toLowerCase().trim();
-  // Verify the account exists
+  const withAt = "@" + bare;
+  // Prefer the registered account so the session is scoped to the canonical username.
+  // Fall back to the orders table for users who placed orders without creating an account
+  // — /api/account/me handles a missing accounts row gracefully (nulls for profile fields)
+  // and all order/history routes look up by telegram_username from the JWT.
+  let storedUsername: string | null = null;
   const [account] = await db.select({ telegramUsername: accountsTable.telegramUsername })
     .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, bare))
+    .where(or(
+      eq(sql`lower(${accountsTable.telegramUsername})`, bare),
+      eq(sql`lower(${accountsTable.telegramUsername})`, withAt),
+    ))
     .limit(1);
-  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  if (account) {
+    storedUsername = account.telegramUsername;
+  } else {
+    // No registered account — look for any order with this telegram username
+    const [orderRow] = await db.select({ telegramUsername: ordersTable.telegramUsername })
+      .from(ordersTable)
+      .where(or(
+        eq(sql`lower(${ordersTable.telegramUsername})`, bare),
+        eq(sql`lower(${ordersTable.telegramUsername})`, withAt),
+      ))
+      .limit(1);
+    if (orderRow) storedUsername = orderRow.telegramUsername;
+  }
+  if (!storedUsername) { res.status(404).json({ error: "No account or orders found for this username" }); return; }
   // Clean stale tokens
   const now = Date.now();
   for (const [k, v] of impersonateTokens) { if (v.expiresAt < now) impersonateTokens.delete(k); }
   const token = randomUUID();
-  impersonateTokens.set(token, { telegramUsername: bare, expiresAt: now + 300_000 });
+  impersonateTokens.set(token, { telegramUsername: storedUsername, expiresAt: now + 300_000 });
   res.json({ token });
 });
 

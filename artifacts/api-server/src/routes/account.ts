@@ -1169,6 +1169,12 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
   })();
 
   if (!loginSucceeded) {
+    // Detect stub account: exists but no password set — tell user to sign up
+    if (account && !account.passwordHash) {
+      res.status(200).json({ ok: false, needsSetup: true });
+      return;
+    }
+
     // Pad timing
     await bcrypt.hash("notfound", 4);
 

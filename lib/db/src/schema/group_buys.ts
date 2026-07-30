@@ -323,6 +323,9 @@ export const gbEntryFeePaymentsTable = pgTable("gb_entry_fee_payments", {
   // Fee amount + currency snapshotted from the GB at the time the row was created.
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   currency: text("currency").notNull(),
+  // Randomized display amount — base fee + a random cent suffix (e.g. 10.00 → 10.54).
+  // Unique per customer so the amount itself acts as a secondary receipt; used for verification.
+  randomizedAmount: numeric("randomized_amount", { precision: 10, scale: 2 }),
   // USD value locked at submission time — mirrors orders.paymentUsdAmount, used for verification.
   amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }),
   paymentMethod: text("payment_method"), // crypto | manual

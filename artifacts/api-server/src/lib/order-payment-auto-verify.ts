@@ -14,6 +14,7 @@ import {
   groupBuysTable,
   gbReshippersTable,
   siteConfigTable,
+  wholesaleSharesTable,
 } from "@workspace/db";
 import { and, eq, isNotNull, ne, or } from "drizzle-orm";
 import {
@@ -48,12 +49,38 @@ async function resolveOrderCrypto(order: {
   groupBuyId: string | null;
   orderType?: string | null;
   shippingCountry?: string | null;
+  sharedOrderId?: string | null;
 }): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
 
   const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
   if (!paymentRoutingEnabled) {
+    const walletAddress = await getConfig("walletAddress");
+    return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
+  }
+
+  // Wholesale shared: use organiser's leadCryptoOptions, matching the persisted currency+network if set
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db
+      .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const opts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
+    if (opts.length > 0) {
+      const persisted = order as any;
+      if (persisted.paymentCryptoCurrency && persisted.paymentCryptoNetwork) {
+        const match = opts.find((o: any) =>
+          o.currency.toUpperCase() === String(persisted.paymentCryptoCurrency).toUpperCase() &&
+          o.network.toLowerCase() === String(persisted.paymentCryptoNetwork).toLowerCase()
+        );
+        if (match) return { walletAddress: match.walletAddress, currency: match.currency, network: match.network };
+      }
+      return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network };
+    }
+    // Organiser hasn't set options — fall back to wholesale admin wallets
+    const wsWallet = await getConfig("wholesale_usdt_wallet");
+    if (wsWallet) return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
@@ -131,6 +158,7 @@ type PendingOrder = {
   code: string | null;
   telegramUsername: string;
   groupBuyId: string | null;
+  sharedOrderId: string | null;
   orderType: string | null;
   shippingCountry: string | null;
   deliveryMethod: string;
@@ -363,6 +391,7 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
         code: ordersTable.code,
         telegramUsername: ordersTable.telegramUsername,
         groupBuyId: ordersTable.groupBuyId,
+        sharedOrderId: ordersTable.sharedOrderId,
         orderType: ordersTable.orderType,
         shippingCountry: ordersTable.shippingCountry,
         deliveryMethod: ordersTable.deliveryMethod,

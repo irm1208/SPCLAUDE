@@ -1903,12 +1903,23 @@ export default function AccountOrderDetail() {
       for (const li of order.lineItems) {
         if (li.productId) quantities[li.productId] = li.quantity;
       }
+      // The stored shippingAddress is a comma-joined string built from
+      // [addrLine1, addrLine2?, addrCity, addrPostcode]. Parse it back so each
+      // field lands in the correct input on the wholesale form.
+      const parts = (order.shippingAddress ?? "").split(",").map(s => s.trim()).filter(Boolean);
+      const addrLine1 = parts[0] ?? "";
+      const addrPostcode = parts.length >= 3 ? (parts[parts.length - 1] ?? "") : "";
+      const addrCity = parts.length >= 3 ? (parts[parts.length - 2] ?? "") : (parts[1] ?? "");
+      const addrLine2 = parts.length >= 4 ? parts.slice(1, parts.length - 2).join(", ") : "";
       sessionStorage.setItem("peps:edit-wholesale", JSON.stringify({
         quantities,
         fullName: order.shippingName ?? "",
         phone: order.shippingPhone ?? "",
         email: order.shippingEmail ?? "",
-        shippingAddress: order.shippingAddress ?? "",
+        addrLine1,
+        addrLine2,
+        addrCity,
+        addrPostcode,
         shippingCountry: order.shippingCountry ?? "",
         notes: (order.notes ?? "").split("\n").filter(l => !l.startsWith("Shipping region:")).join("\n").trim(),
         tip: order.tip ?? 0,
@@ -2745,7 +2756,7 @@ export default function AccountOrderDetail() {
                       <SecIcon Icon={Pencil} />
                       <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                     </div>
-                    {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" ? (
+                    {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}
@@ -2757,7 +2768,8 @@ export default function AccountOrderDetail() {
                       <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         This is a shared wholesale order. Items and shipping are managed from the shared order page.
                       </div>
-                    ) : EDITABLE_STATUSES.includes(order.status) ? (
+                    ) : isPaidOrder && order.orderType === "wholesale" ? null
+                    : EDITABLE_STATUSES.includes(order.status) ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}

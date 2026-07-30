@@ -58,7 +58,7 @@ const POOL_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-export function PoolLeaderDashboard() {
+export function PoolLeaderDashboard({ compact = false }: { compact?: boolean }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showApply, setShowApply] = useState(false);
@@ -90,6 +90,20 @@ export function PoolLeaderDashboard() {
   }
 
   if (!status || !status.status) {
+    if (compact) {
+      return (
+        <>
+          <button
+            onClick={() => setShowApply(true)}
+            className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+            style={{ background: "rgba(16,185,129,0.10)", color: "#065F46", border: "1px solid rgba(16,185,129,0.25)" }}
+          >
+            Apply to be a pool leader
+          </button>
+          {showApply && <ApplyModal onClose={() => setShowApply(false)} onSuccess={() => { setShowApply(false); qc.invalidateQueries({ queryKey: ["/api/account/pool-leader/status"] }); }} />}
+        </>
+      );
+    }
     return (
       <div className="rounded-xl p-5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <h3 className="text-sm font-bold mb-2" style={{ color: "var(--t-text)" }}>Become a Pool Leader</h3>
@@ -108,6 +122,13 @@ export function PoolLeaderDashboard() {
   }
 
   if (status.status === "applied") {
+    if (compact) {
+      return (
+        <p className="text-xs px-3 py-1.5 rounded-lg inline-block" style={{ background: "rgba(245,158,11,0.10)", color: "#92400E", border: "1px solid rgba(245,158,11,0.3)" }}>
+          Pool leader application pending review
+        </p>
+      );
+    }
     return (
       <div className="rounded-xl p-5" style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.3)" }}>
         <h3 className="text-sm font-bold mb-1" style={{ color: "var(--t-text)" }}>Application pending</h3>
@@ -117,6 +138,13 @@ export function PoolLeaderDashboard() {
   }
 
   if (status.status === "rejected") {
+    if (compact) {
+      return (
+        <p className="text-xs px-3 py-1.5 rounded-lg inline-block" style={{ background: "rgba(220,38,38,0.06)", color: "#991B1B", border: "1px solid rgba(220,38,38,0.25)" }}>
+          Application rejected — contact an admin
+        </p>
+      );
+    }
     return (
       <div className="rounded-xl p-5" style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.25)" }}>
         <h3 className="text-sm font-bold mb-1" style={{ color: "var(--t-text)" }}>Application rejected</h3>

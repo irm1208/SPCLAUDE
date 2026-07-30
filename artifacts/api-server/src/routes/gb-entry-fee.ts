@@ -2,8 +2,9 @@ import { Router, type IRouter } from "express";
 import { db, groupBuysTable, gbEntryFeePaymentsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "../middleware/account-auth";
-import { shapeEntryFeePayment, getEntryFeeCryptoOptions, type EntryFeeGb } from "../lib/gb-entry-fee";
+import { shapeEntryFeePayment, getEntryFeeCryptoOptions, resolveEffectiveEntryFeeCrypto, confirmEntryFeePayment, type EntryFeeGb } from "../lib/gb-entry-fee";
 import { sendAdminMessage, notifyUser } from "../lib/telegram";
+import { verifyTransaction } from "../lib/payment-verify";
 
 const router: IRouter = Router();
 
@@ -90,20 +91,51 @@ router.post("/account/entry-fee/:paymentId/submit-tx", requireAccount, async (re
     .where(eq(gbEntryFeePaymentsTable.id, paymentId))
     .returning();
 
-  res.json(await shapeEntryFeePayment(updated ?? payment, gb));
+  let finalPayment = updated ?? payment;
+  let autoConfirmed = false;
 
-  // Best-effort: let the organiser/admin know a payment is awaiting review — auto-verify
-  // only catches genuine on-chain matches, so anything it can't confirm (wrong network,
-  // insufficient confirmations, a bad hash) would otherwise sit "submitted" forever with
-  // no one aware a manual confirm/reject in the GB Organiser panel is needed.
-  const amountLabel = `${payment.amount} ${gb.currency}`;
-  const alertMsg =
-    `💳 <b>Entry fee submitted</b> — <i>${gb.name}</i>\n` +
-    `@${tg} submitted a tx hash for ${amountLabel}.\n` +
-    `Review &amp; confirm in the GB Organiser panel if it isn't auto-verified within a few minutes.`;
-  sendAdminMessage(alertMsg).catch(() => {});
-  if (gb.organiserId && gb.organiserId.replace(/^@/, "").toLowerCase() !== tg.replace(/^@/, "").toLowerCase()) {
-    notifyUser(gb.organiserId, "payment", alertMsg).catch(() => {});
+  // Attempt immediate on-chain verification — mirrors the regular payment flow so
+  // customers get instant confirmation instead of waiting up to 10 min for the scheduler.
+  // If this fails transiently (RPC timeout, not yet indexed), leave as "submitted" and
+  // the background auto-verifier will catch it on its next run.
+  try {
+    const storedCurrency = resolvedCurrency ?? finalPayment.paymentCryptoCurrency;
+    const crypto = await resolveEffectiveEntryFeeCrypto(gb as EntryFeeGb, storedCurrency);
+    if (crypto.walletAddress) {
+      const amountUsd = parseFloat(String(finalPayment.amountUsd ?? "0"));
+      if (amountUsd > 0) {
+        const verifyResult = await verifyTransaction(
+          txHash.trim(), crypto.walletAddress, amountUsd, crypto.currency, crypto.network, 0.01,
+        );
+        if (verifyResult.verified) {
+          const confirmed = await confirmEntryFeePayment(paymentId, "auto-verify");
+          if (confirmed) {
+            finalPayment = confirmed;
+            autoConfirmed = true;
+            console.log(`[gb-entry-fee] Instantly confirmed — payment ${paymentId} (GB ${payment.groupBuyId})`);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    // Transient RPC/network error — background scheduler will retry
+    console.warn(`[gb-entry-fee] Immediate verify failed for ${paymentId}:`, err?.message ?? err);
+  }
+
+  res.json(await shapeEntryFeePayment(finalPayment, gb));
+
+  // Only alert organiser/admin if not auto-confirmed — if it verified instantly they don't
+  // need to manually review anything.
+  if (!autoConfirmed) {
+    const amountLabel = `${payment.amount} ${gb.currency}`;
+    const alertMsg =
+      `💳 <b>Entry fee submitted</b> — <i>${gb.name}</i>\n` +
+      `@${tg} submitted a tx hash for ${amountLabel}.\n` +
+      `Review &amp; confirm in the GB Organiser panel if it isn't auto-verified within a few minutes.`;
+    sendAdminMessage(alertMsg).catch(() => {});
+    if (gb.organiserId && gb.organiserId.replace(/^@/, "").toLowerCase() !== tg.replace(/^@/, "").toLowerCase()) {
+      notifyUser(gb.organiserId, "payment", alertMsg).catch(() => {});
+    }
   }
 });
 

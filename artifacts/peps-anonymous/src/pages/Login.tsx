@@ -171,7 +171,10 @@ export default function Login() {
         telegramUsername: username.trim(),
         credential: credential.trim(),
       });
-      if (result.needsPassword) {
+      if ((result as any).needsSetup) {
+        setTab("signup");
+        setError("An account has been created for you — please set a password to complete your registration.");
+      } else if (result.needsPassword) {
         setStep("set-password");
       } else {
         setLocation(nextParam || "/account");

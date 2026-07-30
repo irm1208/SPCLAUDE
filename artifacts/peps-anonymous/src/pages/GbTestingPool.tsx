@@ -3,8 +3,8 @@ import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   FlaskConical, Loader2, AlertCircle, TestTube, RefreshCw,
-  Lock, CheckCircle2, Clock, XCircle, ChevronDown,
-  ExternalLink, Users, ChevronLeft, Trophy,
+  Lock, Unlock, CheckCircle2, Clock, XCircle, ChevronDown,
+  ExternalLink, Users, ChevronLeft, Trophy, ClipboardList, FileText,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount } from "@/hooks/use-account";
@@ -825,6 +825,117 @@ export default function GbTestingPool() {
           </aside>
         </div>
 
+        {/* ── Lab Results Hero — main feature when results are in ── */}
+        {isResults && resultsAvailable && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="mb-4 sm:mb-6 overflow-hidden"
+            style={{ borderRadius: 12, border: "1px solid rgba(233,160,32,0.35)", boxShadow: "0 4px 32px rgba(233,160,32,0.10)" }}
+          >
+            {/* Amber gradient header */}
+            <div
+              className="px-4 sm:px-6 py-4 sm:py-5"
+              style={{ background: "linear-gradient(135deg, #92400e 0%, #b45309 40%, #d97706 100%)" }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)" }}
+                  >
+                    <FlaskConical className="w-5 h-5" style={{ color: "#fde68a" }} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: "rgba(253,230,138,0.75)" }}>Lab Results</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.18)", color: "#fef3c7" }}>
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "#fde68a" }} />
+                        Published
+                      </span>
+                    </div>
+                    <p className="font-extrabold text-[17px] sm:text-[19px] leading-tight text-white">
+                      {gbName || "Group Buy"} — Results
+                    </p>
+                    {round.resultPostedAt && (
+                      <p className="text-[11px] mt-0.5" style={{ color: "rgba(253,230,138,0.7)" }}>
+                        Posted {new Date(round.resultPostedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Results body */}
+            <div style={{ background: "var(--t-surface)" }}>
+              {isOptedIn ? (
+                <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4">
+                  {/* Notes */}
+                  {round.resultNotes && (
+                    <div
+                      className="p-4 rounded-xl"
+                      style={{ background: "rgba(233,160,32,0.06)", border: "1px solid rgba(233,160,32,0.18)" }}
+                    >
+                      <p className="text-[9px] font-bold tracking-[0.15em] uppercase mb-2" style={{ color: "#b45309" }}>Summary</p>
+                      <div className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "var(--t-text)" }}>
+                        {round.resultNotes}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PDF — one click, opens directly */}
+                  {round.resultPdfUrl ? (
+                    <a
+                      href={round.resultPdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl font-bold text-sm transition-opacity hover:opacity-90"
+                      style={{ background: "linear-gradient(135deg, #b45309, #d97706)", color: "#fff", boxShadow: "0 2px 12px rgba(180,83,9,0.25)" }}
+                    >
+                      <FileText className="w-4 h-4" />
+                      View Full Lab Report
+                      <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                    </a>
+                  ) : (
+                    /* Notes-only round — link to the results page */
+                    <button
+                      onClick={() => setLocation(`/testing/${gbId}/results`)}
+                      className="inline-flex items-center justify-center gap-1.5 w-full px-4 py-3 rounded-xl font-semibold text-sm transition-opacity hover:opacity-80"
+                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                      View Results
+                    </button>
+                  )}
+
+                  {/* Funding note */}
+                  {round.fundingNote && (
+                    <div className="px-3 py-2.5 rounded-lg" style={{ background: "var(--t-bg)", border: "1px dashed var(--t-border)" }}>
+                      <p className="text-[9px] font-bold tracking-[0.14em] uppercase mb-1" style={{ color: "var(--t-muted)" }}>Funding Note</p>
+                      <p className="text-[12px] whitespace-pre-wrap" style={{ color: "var(--t-muted)" }}>{round.fundingNote}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="px-4 sm:px-6 py-5 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: "rgba(148,163,184,0.12)" }}>
+                    <Lock className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--t-text)" }}>Results are in — contributors only</p>
+                    <p className="text-[12px]" style={{ color: "var(--t-muted)" }}>
+                      The lab results for this round are private to people who chipped in. Contribute to unlock access.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {/* ── Community Vote Result — winning compound (with batch) + test, shown once voting closes ── */}
         {isClosed && (() => {
           const winner = data.thresholds?.leadingPeptide || null;
@@ -1062,42 +1173,8 @@ export default function GbTestingPool() {
               )}
             </motion.div>
 
-            {/* Lab Results — private, on a separate contributors-only page */}
-            {isResults && resultsAvailable && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.34 }}
-                className="p-4 sm:p-5 space-y-3"
-                style={{ borderRadius: 8, background: "var(--t-surface)", border: "1px solid var(--t-border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(233,160,32,0.12)" }}>
-                    <FlaskConical className="w-3.5 h-3.5" style={{ color: "#E9A020" }} />
-                  </div>
-                  <p className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: "var(--t-muted)" }}>Lab Results</p>
-                </div>
-                {isOptedIn ? (
-                  <>
-                    <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-                      The lab results for this round are ready — private to contributors.
-                    </p>
-                    <button
-                      onClick={() => setLocation(`/testing/${gbId}/results`)}
-                      className="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg transition-opacity hover:opacity-90"
-                      style={{ background: "var(--t-blue)", color: "#fff" }}
-                    >
-                      View Results <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex items-start gap-2 text-sm" style={{ color: "var(--t-muted)" }}>
-                    <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                    <p>Results are in, but they&rsquo;re private to people who chipped in for this round.</p>
-                  </div>
-                )}
-              </motion.div>
-            )}
+          </div>
+        </div>
       </motion.div>
     </GbPoolLayout>
   );
