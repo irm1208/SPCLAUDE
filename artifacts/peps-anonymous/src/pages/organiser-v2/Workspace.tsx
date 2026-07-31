@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderCog } from "lucide-react";
+import { Copy, FolderCog } from "lucide-react";
+import CloneGroupBuyModal from "./CloneGroupBuyModal";
+import type { ApiGroupBuy } from "./api/organiser-api";
 import { WORKSPACE_PAGE_META, type WorkspaceTabId } from "./nav";
 import type { SampleGB } from "./data";
 import OverviewTabV3 from "./OverviewTabV3";
@@ -65,12 +67,14 @@ export default function Workspace({
   organiserName,
   onGroupBuyUpdated,
   onModeChange,
+  onCloned,
 }: {
   groupBuy: SampleGB;
   apiGroupBuy: OrganiserGB;
   organiserName: string;
   onGroupBuyUpdated: (groupBuy: OrganiserGB) => void;
   onModeChange?: () => void;
+  onCloned?: (newGroupBuy: ApiGroupBuy) => void;
 }) {
   const [active, setActiveState] = useState<WorkspaceTabId>(readTabFromUrl);
   const setActive = (tab: WorkspaceTabId) => {
@@ -79,6 +83,7 @@ export default function Workspace({
   };
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | undefined>();
+  const [showCloneModal, setShowCloneModal] = useState(false);
   const gb = groupBuy;
   const repositories = useMemo(
     () => createApiOrganiserRepositories({ groupBuyId: gb.id }),
@@ -247,11 +252,23 @@ export default function Workspace({
             onProfile={() => window.location.assign("/account")}
             organiserName={organiserName}
             organiserRole="Lead organiser"
-            secondaryActions={onModeChange ? (
-              <button type="button" className="ov2-secondary-button" onClick={onModeChange}>
-                <FolderCog aria-hidden="true" /> <span className="ov2-action-label">Manage</span>
-              </button>
-            ) : undefined}
+            secondaryActions={(
+              <>
+                {onModeChange ? (
+                  <button type="button" className="ov2-secondary-button" onClick={onModeChange}>
+                    <FolderCog aria-hidden="true" /> <span className="ov2-action-label">Manage</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="ov2-secondary-button"
+                  onClick={() => setShowCloneModal(true)}
+                  title="Clone this group buy"
+                >
+                  <Copy aria-hidden="true" /> <span className="ov2-action-label">Clone</span>
+                </button>
+              </>
+            )}
             primaryAction={primaryAction}
           />
         )}
@@ -281,6 +298,17 @@ export default function Workspace({
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
       />
+
+      {showCloneModal ? (
+        <CloneGroupBuyModal
+          groupBuy={{ id: gb.id, name: gb.name }}
+          onCloned={newGroupBuy => {
+            setShowCloneModal(false);
+            onCloned?.(newGroupBuy);
+          }}
+          onClose={() => setShowCloneModal(false)}
+        />
+      ) : null}
     </OrganiserRepositoryProvider>
   );
 }

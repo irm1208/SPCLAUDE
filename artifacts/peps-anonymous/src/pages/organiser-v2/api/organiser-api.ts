@@ -419,6 +419,10 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/todos/${encodeURIComponent(todoId)}`,
     { method: "DELETE" },
   ),
+  cloneGroupBuy: (groupBuyId: string, sections: string[]) => request<ApiGroupBuy>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/clone`,
+    { method: "POST", body: { sections } },
+  ),
   };
 }
 

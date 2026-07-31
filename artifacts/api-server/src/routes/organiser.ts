@@ -611,6 +611,132 @@ router.get("/organiser/group-buys/:id", requireOrganiser, async (req, res): Prom
   res.json(formatGb(gb));
 });
 
+// POST /api/organiser/group-buys/:id/clone — clone a GB (selective section copy)
+router.post("/organiser/group-buys/:id/clone", requireOrganiser, async (req, res): Promise<void> => {
+  const username = req.organiser!.telegramUsername;
+  const sourceId = String(req.params["id"]);
+
+  const sections: string[] = Array.isArray(req.body?.sections)
+    ? req.body.sections.filter((s: unknown) => typeof s === "string")
+    : ["settings", "products", "shipping", "payments", "access", "rules"];
+
+  // Fetch source GB (must belong to this organiser)
+  const [source] = await db.select().from(groupBuysTable).where(gbOwner(req, sourceId));
+  if (!source) {
+    res.status(404).json({ error: "Group buy not found" });
+    return;
+  }
+
+  const newId = await uniqueGroupBuyId();
+
+  // Always-present base fields
+  const values: Record<string, unknown> = {
+    id: newId,
+    name: `Copy of ${source.name}`,
+    status: "draft",
+    hiddenFromList: true,
+    approvalStatus: "pending_approval",
+    organiserId: username,
+  };
+
+  if (sections.includes("settings")) {
+    Object.assign(values, {
+      description: source.description ?? undefined,
+      closeDate: source.closeDate ?? undefined,
+      manufacturer: source.manufacturer ?? undefined,
+      manufacturerCountry: source.manufacturerCountry ?? undefined,
+      infoCards: source.infoCards ?? undefined,
+      currency: source.currency ?? "GBP",
+      labTestSupplier: source.labTestSupplier ?? undefined,
+      memberLimit: source.memberLimit ?? undefined,
+      minMembers: source.minMembers ?? undefined,
+      maxKitsPerCustomer: source.maxKitsPerCustomer ?? undefined,
+      maxKitsTotal: source.maxKitsTotal ?? undefined,
+      minKitsPerPerson: source.minKitsPerPerson ?? undefined,
+      orderPageMessage: source.orderPageMessage ?? undefined,
+      allowHalfKits: source.allowHalfKits ?? true,
+      allowHalfKitsEnabled: (source as Record<string, unknown>).allowHalfKitsEnabled ?? undefined,
+      allowEditOrderWhenClosed: source.allowEditOrderWhenClosed ?? undefined,
+      allowEditAddressWhenClosed: source.allowEditAddressWhenClosed ?? undefined,
+      allowDeleteOrderWhenClosed: source.allowDeleteOrderWhenClosed ?? undefined,
+    });
+  }
+
+  if (sections.includes("shipping")) {
+    Object.assign(values, {
+      shippingOptions: source.shippingOptions ?? undefined,
+      vendorShippingEnabled: source.vendorShippingEnabled ?? false,
+      vendorShippingMessage: source.vendorShippingMessage ?? undefined,
+      vendorShippingAmount: source.vendorShippingAmount ?? undefined,
+    });
+  }
+
+  if (sections.includes("payments")) {
+    Object.assign(values, {
+      paymentsEnabled: source.paymentsEnabled ?? true,
+      paymentMessageEnabled: source.paymentMessageEnabled ?? false,
+      paymentMessage: source.paymentMessage ?? undefined,
+      organiserPayments: source.organiserPayments ?? undefined,
+      adminFeeEnabled: source.adminFeeEnabled ?? false,
+      adminFeeType: source.adminFeeType ?? "fixed",
+      adminFeeAmount: source.adminFeeAmount ?? undefined,
+      adminFeeLabel: source.adminFeeLabel ?? undefined,
+      entryFeeEnabled: source.entryFeeEnabled ?? false,
+      entryFeeAmount: source.entryFeeAmount ?? undefined,
+      entryFeeLabel: source.entryFeeLabel ?? undefined,
+    });
+  }
+
+  if (sections.includes("access")) {
+    Object.assign(values, {
+      allowedCountries: source.allowedCountries ?? undefined,
+      excludedCountries: source.excludedCountries ?? undefined,
+      blockedAccounts: source.blockedAccounts ?? undefined,
+      // Invite PIN is intentionally NOT cloned (security — organiser must set a new one)
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [newGb] = await db.insert(groupBuysTable).values(values as any).returning();
+
+  // Clone products (group_buy_products links) if requested
+  if (sections.includes("products")) {
+    const sourceProducts = await db
+      .select()
+      .from(groupBuyProductsTable)
+      .where(eq(groupBuyProductsTable.groupBuyId, sourceId));
+
+    if (sourceProducts.length > 0) {
+      await db.insert(groupBuyProductsTable).values(
+        sourceProducts.map(p => ({
+          id: randomUUID().slice(0, 12),
+          groupBuyId: newId,
+          productId: p.productId,
+          priceOverride: p.priceOverride ?? undefined,
+          active: p.active,
+          sortOrder: p.sortOrder ?? undefined,
+          maxPerCustomer: p.maxPerCustomer ?? undefined,
+        })),
+      );
+    }
+  }
+
+  // Clone organiser rules if requested
+  if (sections.includes("rules") && source.organiserRules && Array.isArray(source.organiserRules) && source.organiserRules.length > 0) {
+    await db
+      .update(groupBuysTable)
+      .set({ organiserRules: source.organiserRules })
+      .where(eq(groupBuysTable.id, newId));
+  }
+
+  writeLog("change", "info", "organiser_gb_cloned",
+    `Organiser @${username} cloned GB "${source.name}" → "${newGb.name}"`,
+    { sourceId, newId, sections, username },
+  ).catch(() => {});
+
+  res.status(201).json(formatGb(newGb));
+});
+
 // PATCH /api/organiser/group-buys/:id — update own GB
 router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;

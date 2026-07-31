@@ -35,6 +35,173 @@
   outline-offset: 2px;
 }
 
+/* ── Clone Group Buy Modal ──────────────────────────────────────────────────── */
+
+.organiser-v2 .ov2-clone-dialog {
+  position: relative;
+  z-index: 200;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.organiser-v2 .ov2-clone-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 0;
+}
+
+.organiser-v2 .ov2-clone-dialog > header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.organiser-v2 .ov2-clone-select-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px 10px;
+  border-bottom: 1px solid var(--ov2-border);
+}
+
+.organiser-v2 .ov2-clone-select-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ov2-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.organiser-v2 .ov2-clone-select-link:hover { opacity: 0.75; }
+
+.organiser-v2 .ov2-clone-count {
+  font-size: 12px;
+  color: var(--ov2-text-muted);
+}
+
+.organiser-v2 .ov2-clone-sections {
+  list-style: none;
+  margin: 0;
+  padding: 8px 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.organiser-v2 .ov2-clone-section-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--ov2-border);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  background: var(--ov2-surface);
+  user-select: none;
+}
+
+.organiser-v2 .ov2-clone-section-row:hover { background: var(--ov2-hover); }
+
+.organiser-v2 .ov2-clone-section-row[data-selected] {
+  border-color: var(--ov2-accent);
+  background: color-mix(in srgb, var(--ov2-accent) 6%, transparent);
+}
+
+.organiser-v2 .ov2-clone-section-row input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.organiser-v2 .ov2-clone-section-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--ov2-hover);
+  color: var(--ov2-text-muted);
+}
+
+.organiser-v2 .ov2-clone-section-row[data-selected] .ov2-clone-section-icon {
+  background: color-mix(in srgb, var(--ov2-accent) 12%, transparent);
+  color: var(--ov2-accent);
+}
+
+.organiser-v2 .ov2-clone-section-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.organiser-v2 .ov2-clone-section-body strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ov2-text);
+  line-height: 1.3;
+}
+
+.organiser-v2 .ov2-clone-section-body span {
+  font-size: 12px;
+  color: var(--ov2-text-muted);
+  line-height: 1.4;
+}
+
+.organiser-v2 .ov2-clone-section-check {
+  flex-shrink: 0;
+  color: var(--ov2-border);
+  transition: color 0.12s;
+}
+
+.organiser-v2 .ov2-clone-section-row[data-selected] .ov2-clone-section-check {
+  color: var(--ov2-accent);
+}
+
+.organiser-v2 .ov2-clone-pin-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 24px 0;
+  font-size: 11.5px;
+  color: var(--ov2-text-muted);
+  line-height: 1.4;
+}
+
+.organiser-v2 .ov2-clone-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--ov2-border);
+  margin-top: 12px;
+}
+
+/* ── End Clone Modal ─────────────────────────────────────────────────────────── */
+
 .organiser-v2 .ov2-shell {
   display: grid;
   grid-template-columns: var(--ov2-sidebar-width) minmax(0, 1fr);

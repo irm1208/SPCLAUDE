@@ -203,6 +203,15 @@ export default function GbOrganiserV2() {
           organiserName={profileQuery.data?.telegramUsername ?? account?.telegramUsername ?? "Organiser"}
           onGroupBuyUpdated={handleGroupBuyUpdated}
           onModeChange={() => setMode("setup")}
+          onCloned={cloned => {
+            // Add the new GB to the query cache and select it
+            queryClient.setQueryData<ApiGroupBuy[]>(["organiser", "group-buys"], current => {
+              const existing = (current ?? []).filter(gb => gb.id !== cloned.id);
+              return [cloned, ...existing];
+            });
+            setSelectedGroupBuyId(cloned.id);
+            localStorage.setItem("v2:selectedGroupBuyId", cloned.id);
+          }}
         />
       )}
 
