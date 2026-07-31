@@ -302,10 +302,13 @@ export function DashboardShell({
 
   // ── Role-gated workspaces + extra sections (mirrors the mobile "More" menu) ──
   const { account } = useAccount();
-  type SideLink = { id: string; label: string; Icon: React.ElementType; active?: boolean; go: () => void };
+  type SideLink = { id: string; label: string; Icon: React.ElementType; active?: boolean; badge?: string; go: () => void };
   const workspaceItems: SideLink[] = [
     ...(account?.organiserStatus === "approved"
-      ? [{ id: "gborganiser", label: "GB Organiser", Icon: Store, active: activeSection === "gborganiser", go: () => navigate("/gborganiser") }]
+      ? [
+          { id: "gborganiser",    label: "GB Organiser", Icon: Store, active: activeSection === "gborganiser" || location === "/gborganiser", go: () => navigate("/gborganiser") },
+          { id: "gborganiser-v2", label: "GB Organiser", Icon: Store, active: location === "/gborganiser-v2", badge: "Beta", go: () => navigate("/gborganiser-v2") },
+        ]
       : []),
     ...(account?.reshipperStatus === "approved"
       ? [{ id: "reshipper", label: "Reshipper", Icon: Truck, active: activeSection === "reshipper", go: () => navigate("/reshipper") }]
@@ -618,7 +621,7 @@ export function DashboardShell({
                 <>
                   <p className="px-3 mt-6 mb-2 font-semibold" style={{ fontSize: 12, letterSpacing: ".01em", color: T.subtle }}>Workspaces</p>
                   <nav className="flex flex-col gap-0.5">
-                    {workspaceItems.map(({ id, label, Icon, active, go }) => (
+                    {workspaceItems.map(({ id, label, Icon, active, badge, go }) => (
                       <button
                         key={id}
                         onClick={go}
@@ -633,6 +636,9 @@ export function DashboardShell({
                         {active && <span className="absolute rounded-full" style={{ left: -12, top: 11, bottom: 11, width: 3.5, background: ACCENT }} />}
                         <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.4 : 2} />
                         <span className="truncate">{label}</span>
+                        {badge && (
+                          <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: "rgba(99,102,241,0.15)", color: "#6366f1", lineHeight: 1.4 }}>{badge}</span>
+                        )}
                       </button>
                     ))}
                   </nav>

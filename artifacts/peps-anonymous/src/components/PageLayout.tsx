@@ -166,7 +166,7 @@ type PortalGroupKey = "overview" | "roles" | "health" | "research" | "support";
 const PORTAL_NAV_GROUPS: {
   key: PortalGroupKey;
   groupLabel: string;
-  items: { section: string; label: string; Icon: React.ElementType; requiresTestingContribution?: boolean; requiresWholesale?: boolean; requiresGbPools?: boolean; externalPath?: string }[];
+  items: { section: string; label: string; Icon: React.ElementType; requiresTestingContribution?: boolean; requiresWholesale?: boolean; requiresGbPools?: boolean; externalPath?: string; badge?: string }[];
 }[] = [
   {
     key: "overview",
@@ -182,8 +182,9 @@ const PORTAL_NAV_GROUPS: {
     key: "roles",
     groupLabel: "Roles",
     items: [
-      { section: "gborganiser", label: "GB Organiser",  Icon: Store },
-      { section: "reshipper",   label: "Reshipper",     Icon: Truck },
+      { section: "gborganiser",    label: "GB Organiser",        Icon: Store },
+      { section: "gborganiser-v2", label: "GB Organiser",        Icon: Store, badge: "Beta", externalPath: "/gborganiser-v2" },
+      { section: "reshipper",      label: "Reshipper",           Icon: Truck },
       { section: "lab-pool",    label: "Apply as Pool Leader", Icon: FlaskConical },
       { section: "wholesale",        label: "Wholesale",    Icon: Package,    requiresWholesale: true },
       { section: "wholesale-shared", label: "Shared Order", Icon: UsersRound, requiresWholesale: true },
@@ -362,8 +363,9 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
           <>
             {(() => { let renderedGroups = 0; return PORTAL_NAV_GROUPS.map(({ key: groupKey, groupLabel, items }) => {
               const visibleItems = items.filter(({ section, requiresTestingContribution, requiresWholesale, requiresGbPools }) => {
-                if (section === "gborganiser") return account?.organiserStatus === "approved";
-                if (section === "reshipper")   return account?.reshipperStatus === "approved";
+                if (section === "gborganiser")    return account?.organiserStatus === "approved";
+                if (section === "gborganiser-v2") return account?.organiserStatus === "approved";
+                if (section === "reshipper")      return account?.reshipperStatus === "approved";
                 if (requiresWholesale)         return account?.isWholesale === true;
                 if (requiresTestingContribution) return hasTestingContribution;
                 if (requiresGbPools)           return hasGbPools;
@@ -376,13 +378,14 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                 <React.Fragment key={groupKey}>
                   {!isFirst && <NavDivider />}
                   <SectionHeader label={groupLabel} expanded={expanded} />
-                  {visibleItems.map(({ section, label, Icon, externalPath }) => {
+                  {visibleItems.map(({ section, label, Icon, externalPath, badge }) => {
                   const isOrganiserLink = section === "gborganiser";
+                  const isOrganiserV2Link = section === "gborganiser-v2";
                   const isReshipperLink = section === "reshipper";
                   const isWholesaleLink = section === "wholesale";
                   const isWholesaleSharedLink = section === "wholesale-shared";
                   const navTarget = externalPath ?? (isOrganiserLink ? "/gborganiser" : isReshipperLink ? "/reshipper" : isWholesaleSharedLink ? "/wholesale/shared" : isWholesaleLink ? "/wholesale" : (section === "community-testing" && !isLoggedIn) ? "/community-testing" : `/account?s=${section}`);
-                  const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleSharedLink ? location.startsWith("/wholesale/shared") : isWholesaleLink ? (location.startsWith("/wholesale") && !location.startsWith("/wholesale/shared")) : activeSection === section;
+                  const active = externalPath ? location === externalPath : isOrganiserLink ? location === "/gborganiser" : isOrganiserV2Link ? location === "/gborganiser-v2" : isReshipperLink ? location.startsWith("/reshipper") : isWholesaleSharedLink ? location.startsWith("/wholesale/shared") : isWholesaleLink ? (location.startsWith("/wholesale") && !location.startsWith("/wholesale/shared")) : activeSection === section;
                   return (
                     <button
                       key={section}
@@ -398,6 +401,9 @@ function Sidebar({ location, expanded, onExpand, onCollapse }: {
                       {active && <span className="absolute rounded-full" style={{ left: -12, top: 6, bottom: 6, width: 3.5, background: ACCENT }} />}
                       <Icon className="w-4 h-4 shrink-0" strokeWidth={active ? 2 : 1.75} style={{ color: active ? NAV.activeText : NAV.itemIcon }} />
                       <span className="text-[13px] font-medium" style={labelStyle}>{label}</span>
+                      {badge && expanded && (
+                        <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: "rgba(99,102,241,0.15)", color: "#6366f1", lineHeight: 1.4 }}>{badge}</span>
+                      )}
                     </button>
                   );
                   })}
