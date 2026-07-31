@@ -1,166 +1,245 @@
 export default function BoldMonogram() {
   return (
-    <div className="min-h-screen bg-[#F5F6FA] p-12">
-      <div className="max-w-6xl mx-auto space-y-12">
-        
-        {/* Hero Card */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#2D6BCC] to-[#1B3A7A] p-16 text-center shadow-2xl">
-          <div className="relative z-10 flex flex-col items-center gap-6">
-            <svg viewBox="0 0 64 64" className="w-24 h-24" aria-label="Salt & Peps Logo">
-              {/* S letterform - bold geometric */}
-              <path
-                d="M 8 12 L 20 12 Q 24 12 24 16 Q 24 20 20 20 L 12 20 L 12 24 L 20 24 Q 28 24 28 32 Q 28 40 20 40 L 8 40 L 8 36 L 20 36 Q 24 36 24 32 Q 24 28 20 28 L 12 28 Q 8 28 8 24 L 8 20 Q 8 16 12 16 L 20 16 Q 20 12 16 12 L 8 12 Z"
-                fill="white"
-              />
-              
-              {/* Dot separator - brand blue circle */}
-              <circle cx="32" cy="26" r="3.5" fill="white" opacity="0.9" />
-              
-              {/* P letterform - bold geometric */}
-              <path
-                d="M 36 12 L 48 12 Q 56 12 56 20 Q 56 28 48 28 L 40 28 L 40 40 L 36 40 Z M 40 16 L 40 24 L 48 24 Q 52 24 52 20 Q 52 16 48 16 L 40 16 Z"
-                fill="white"
-              />
-            </svg>
-            
-            <div className="space-y-2">
-              <h1 className="text-[32px] font-[800] text-white tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
-                Salt &amp; Peps
-              </h1>
-              <p className="text-white/60 text-[12px] tracking-[0.2em] uppercase font-medium">
-                · Advanced Peptide Research ·
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen overflow-hidden flex flex-col">
+      {/* HERO SECTION - 58vh */}
+      <section className="relative flex flex-col items-center justify-center bg-[#0B1829]" style={{ height: '58vh' }}>
+        {/* Radial glow behind mark */}
+        <div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+          style={{
+            width: '300px',
+            height: '300px',
+            background: 'radial-gradient(circle, rgba(45,107,204,0.2) 0%, transparent 70%)',
+            filter: 'blur(40px)'
+          }}
+        />
+
+        {/* Mark Badge - 200x200 */}
+        <svg width="200" height="200" viewBox="0 0 64 64" className="relative z-10">
+          <defs>
+            <linearGradient id="badgeGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#1B3A7A" />
+              <stop offset="100%" stopColor="#0F2044" />
+            </linearGradient>
+          </defs>
           
-          {/* Decorative gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
+          {/* Rounded square badge background */}
+          <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#badgeGrad)" />
+          
+          {/* Letter S */}
+          <text 
+            x="7" 
+            y="44" 
+            fontFamily="Inter,Arial,sans-serif" 
+            fontSize="36" 
+            fontWeight="900" 
+            fill="white" 
+            letterSpacing="-2"
+          >
+            S
+          </text>
+          
+          {/* Separator dot */}
+          <circle cx="34" cy="32" r="4" fill="#4A8FE8" />
+          
+          {/* Letter P */}
+          <text 
+            x="38" 
+            y="44" 
+            fontFamily="Inter,Arial,sans-serif" 
+            fontSize="36" 
+            fontWeight="900" 
+            fill="white" 
+            letterSpacing="-2"
+          >
+            P
+          </text>
+          
+          {/* Subtle inner shadow/stroke */}
+          <rect 
+            x="2" 
+            y="2" 
+            width="60" 
+            height="60" 
+            rx="14" 
+            fill="none" 
+            stroke="rgba(255,255,255,0.08)" 
+            strokeWidth="1.5" 
+          />
+        </svg>
+
+        {/* Brand Name */}
+        <h1 
+          className="mt-8 text-white font-black"
+          style={{ 
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '46px',
+            fontWeight: 900,
+            letterSpacing: '-0.03em'
+          }}
+        >
+          Salt &amp; Peps
+        </h1>
+
+        {/* Descriptor */}
+        <p 
+          className="mt-3 uppercase"
+          style={{
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.4)',
+            letterSpacing: '0.2em',
+            fontFamily: 'Inter, sans-serif'
+          }}
+        >
+          · Advanced Peptide Science ·
+        </p>
+      </section>
+
+      {/* WHITE SHOWCASE SECTION - 22vh */}
+      <section 
+        className="bg-white flex flex-row items-center justify-center gap-16"
+        style={{ 
+          height: '22vh',
+          padding: '0 64px'
+        }}
+      >
+        {/* Scale A - Small */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-3">
+            <svg width="40" height="40" viewBox="0 0 64 64">
+              <defs>
+                <linearGradient id="badgeGradA" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#1B3A7A" />
+                  <stop offset="100%" stopColor="#0F2044" />
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#badgeGradA)" />
+              <text x="7" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">S</text>
+              <circle cx="34" cy="32" r="4" fill="#4A8FE8" />
+              <text x="38" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">P</text>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+            </svg>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '15px', fontWeight: 700, color: '#1B3A7A' }}>
+              Salt &amp; Peps
+            </span>
+          </div>
+          <span style={{ fontSize: '8px', color: '#94A3B8', letterSpacing: '0.15em', fontFamily: 'Inter, sans-serif' }}>
+            FAVICON / APP ICON
+          </span>
         </div>
 
-        {/* Size Demonstrations */}
-        <div>
-          <h2 className="text-lg font-bold text-[#1B3A7A] mb-6" style={{ fontFamily: 'Inter, sans-serif' }}>
-            Scale Testing
-          </h2>
-          <div className="grid grid-cols-3 gap-6">
-            {[
-              { size: 24, label: 'Small (24px)' },
-              { size: 48, label: 'Medium (48px)' },
-              { size: 80, label: 'Large (80px)' }
-            ].map(({ size, label }) => (
-              <div key={size} className="bg-white rounded-2xl p-8 shadow-lg flex flex-col items-center gap-4">
-                <svg viewBox="0 0 64 64" style={{ width: size, height: size }} aria-label="Salt & Peps Mark">
-                  <path
-                    d="M 8 12 L 20 12 Q 24 12 24 16 Q 24 20 20 20 L 12 20 L 12 24 L 20 24 Q 28 24 28 32 Q 28 40 20 40 L 8 40 L 8 36 L 20 36 Q 24 36 24 32 Q 24 28 20 28 L 12 28 Q 8 28 8 24 L 8 20 Q 8 16 12 16 L 20 16 Q 20 12 16 12 L 8 12 Z"
-                    fill="#1B3A7A"
-                  />
-                  <circle cx="32" cy="26" r="3.5" fill="#2D6BCC" />
-                  <path
-                    d="M 36 12 L 48 12 Q 56 12 56 20 Q 56 28 48 28 L 40 28 L 40 40 L 36 40 Z M 40 16 L 40 24 L 48 24 Q 52 24 52 20 Q 52 16 48 16 L 40 16 Z"
-                    fill="#1B3A7A"
-                  />
-                </svg>
-                <span className="text-xs font-semibold text-[#1B3A7A]/60 tracking-wide">
-                  {label}
-                </span>
-              </div>
-            ))}
+        {/* Divider */}
+        <div style={{ width: '1px', height: '80px', backgroundColor: '#E2E8F0' }} />
+
+        {/* Scale B - Medium */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-4">
+            <svg width="64" height="64" viewBox="0 0 64 64">
+              <defs>
+                <linearGradient id="badgeGradB" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#1B3A7A" />
+                  <stop offset="100%" stopColor="#0F2044" />
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#badgeGradB)" />
+              <text x="7" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">S</text>
+              <circle cx="34" cy="32" r="4" fill="#4A8FE8" />
+              <text x="38" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">P</text>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+            </svg>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '22px', fontWeight: 800, color: '#0F1F38' }}>
+              Salt &amp; Peps
+            </span>
+          </div>
+          <span style={{ fontSize: '8px', color: '#94A3B8', letterSpacing: '0.15em', fontFamily: 'Inter, sans-serif' }}>
+            STANDARD
+          </span>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '80px', backgroundColor: '#E2E8F0' }} />
+
+        {/* Scale C - Large */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-5">
+            <svg width="96" height="96" viewBox="0 0 64 64">
+              <defs>
+                <linearGradient id="badgeGradC" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#1B3A7A" />
+                  <stop offset="100%" stopColor="#0F2044" />
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#badgeGradC)" />
+              <text x="7" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">S</text>
+              <circle cx="34" cy="32" r="4" fill="#4A8FE8" />
+              <text x="38" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">P</text>
+              <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+            </svg>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '32px', fontWeight: 900, color: '#0F1F38' }}>
+              Salt &amp; Peps
+            </span>
+          </div>
+          <span style={{ fontSize: '8px', color: '#94A3B8', letterSpacing: '0.15em', fontFamily: 'Inter, sans-serif' }}>
+            HERO
+          </span>
+        </div>
+      </section>
+
+      {/* DARK STRIP SECTION - Remaining height */}
+      <section 
+        className="flex-1 flex flex-row items-center justify-between"
+        style={{
+          background: 'linear-gradient(90deg, #1B3A7A 0%, #2D6BCC 100%)',
+          padding: '28px 64px'
+        }}
+      >
+        {/* Left - Logo + Name */}
+        <div className="flex items-center gap-4">
+          <svg width="48" height="48" viewBox="0 0 64 64">
+            <defs>
+              <linearGradient id="badgeGradFooter" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#1B3A7A" />
+                <stop offset="100%" stopColor="#0F2044" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#badgeGradFooter)" />
+            <text x="7" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">S</text>
+            <circle cx="34" cy="32" r="4" fill="#4A8FE8" />
+            <text x="38" y="44" fontFamily="Inter,Arial,sans-serif" fontSize="36" fontWeight="900" fill="white" letterSpacing="-2">P</text>
+            <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+          </svg>
+          <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '24px', fontWeight: 800, color: 'white' }}>
+            Salt &amp; Peps
+          </span>
+        </div>
+
+        {/* Centre - Color Palette */}
+        <div className="flex items-center gap-5">
+          <div className="flex flex-col items-center gap-2">
+            <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#4A8FE8' }} />
+            <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter, sans-serif' }}>
+              #4A8FE8
+            </span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#2D6BCC' }} />
+            <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter, sans-serif' }}>
+              #2D6BCC
+            </span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#1B3A7A' }} />
+            <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter, sans-serif' }}>
+              #1B3A7A
+            </span>
           </div>
         </div>
 
-        {/* Color Variations */}
-        <div>
-          <h2 className="text-lg font-bold text-[#1B3A7A] mb-6" style={{ fontFamily: 'Inter, sans-serif' }}>
-            Color Treatments
-          </h2>
-          <div className="grid grid-cols-3 gap-6">
-            {[
-              { bg: '#1B3A7A', color: 'white', label: 'Navy Background' },
-              { bg: 'white', color: '#1B3A7A', label: 'White Background' },
-              { bg: 'linear-gradient(135deg, #2D6BCC 0%, #1B3A7A 100%)', color: 'white', label: 'Gradient' }
-            ].map(({ bg, color, label }, idx) => (
-              <div key={idx} className="flex flex-col items-center gap-4">
-                <div
-                  className="w-32 h-32 rounded-full shadow-xl flex items-center justify-center"
-                  style={{ background: bg }}
-                >
-                  <svg viewBox="0 0 64 64" className="w-12 h-12" aria-label="Salt & Peps Mark">
-                    <path
-                      d="M 8 12 L 20 12 Q 24 12 24 16 Q 24 20 20 20 L 12 20 L 12 24 L 20 24 Q 28 24 28 32 Q 28 40 20 40 L 8 40 L 8 36 L 20 36 Q 24 36 24 32 Q 24 28 20 28 L 12 28 Q 8 28 8 24 L 8 20 Q 8 16 12 16 L 20 16 Q 20 12 16 12 L 8 12 Z"
-                      fill={color === 'white' ? 'white' : color}
-                    />
-                    <circle cx="32" cy="26" r="3.5" fill={color === 'white' ? 'rgba(255,255,255,0.9)' : '#2D6BCC'} />
-                    <path
-                      d="M 36 12 L 48 12 Q 56 12 56 20 Q 56 28 48 28 L 40 28 L 40 40 L 36 40 Z M 40 16 L 40 24 L 48 24 Q 52 24 52 20 Q 52 16 48 16 L 40 16 Z"
-                      fill={color === 'white' ? 'white' : color}
-                    />
-                  </svg>
-                </div>
-                <span className="text-sm font-semibold text-[#1B3A7A]/70">
-                  {label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Product Application */}
-        <div>
-          <h2 className="text-lg font-bold text-[#1B3A7A] mb-6" style={{ fontFamily: 'Inter, sans-serif' }}>
-            Horizontal Lockup – Label Application
-          </h2>
-          <div className="bg-white rounded-2xl p-8 shadow-lg">
-            <div className="bg-[#F8FAFC] border-2 border-[#D0DAE4] rounded-xl p-6 inline-flex items-center gap-4">
-              <svg viewBox="0 0 64 64" className="w-8 h-8" aria-label="Salt & Peps Mark">
-                <path
-                  d="M 8 12 L 20 12 Q 24 12 24 16 Q 24 20 20 20 L 12 20 L 12 24 L 20 24 Q 28 24 28 32 Q 28 40 20 40 L 8 40 L 8 36 L 20 36 Q 24 36 24 32 Q 24 28 20 28 L 12 28 Q 8 28 8 24 L 8 20 Q 8 16 12 16 L 20 16 Q 20 12 16 12 L 8 12 Z"
-                  fill="#1B3A7A"
-                />
-                <circle cx="32" cy="26" r="3.5" fill="#2D6BCC" />
-                <path
-                  d="M 36 12 L 48 12 Q 56 12 56 20 Q 56 28 48 28 L 40 28 L 40 40 L 36 40 Z M 40 16 L 40 24 L 48 24 Q 52 24 52 20 Q 52 16 48 16 L 40 16 Z"
-                  fill="#1B3A7A"
-                />
-              </svg>
-              
-              <div className="flex items-baseline gap-3">
-                <span className="text-lg font-bold text-[#1B3A7A]" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  Salt &amp; Peps
-                </span>
-                <span className="text-[10px] font-semibold text-[#1B3A7A]/50 tracking-wider uppercase">
-                  Est. 2023
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Technical Specs */}
-        <div className="bg-white rounded-2xl p-8 shadow-lg">
-          <h2 className="text-lg font-bold text-[#1B3A7A] mb-4" style={{ fontFamily: 'Inter, sans-serif' }}>
-            Design Specifications
-          </h2>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-            <div className="flex justify-between items-center border-b border-[#D0DAE4] pb-2">
-              <span className="font-semibold text-[#1B3A7A]/60">Primary Navy</span>
-              <code className="bg-[#F8FAFC] px-2 py-1 rounded text-xs font-mono text-[#1B3A7A]">#1B3A7A</code>
-            </div>
-            <div className="flex justify-between items-center border-b border-[#D0DAE4] pb-2">
-              <span className="font-semibold text-[#1B3A7A]/60">Brand Blue</span>
-              <code className="bg-[#F8FAFC] px-2 py-1 rounded text-xs font-mono text-[#2D6BCC]">#2D6BCC</code>
-            </div>
-            <div className="flex justify-between items-center border-b border-[#D0DAE4] pb-2">
-              <span className="font-semibold text-[#1B3A7A]/60">Typeface</span>
-              <code className="bg-[#F8FAFC] px-2 py-1 rounded text-xs font-mono">Inter</code>
-            </div>
-            <div className="flex justify-between items-center border-b border-[#D0DAE4] pb-2">
-              <span className="font-semibold text-[#1B3A7A]/60">ViewBox</span>
-              <code className="bg-[#F8FAFC] px-2 py-1 rounded text-xs font-mono">64 × 64</code>
-            </div>
-          </div>
-        </div>
-
-      </div>
+        {/* Right - URL */}
+        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em', fontFamily: 'Inter, sans-serif' }}>
+          saltandpeps.co.uk
+        </span>
+      </section>
     </div>
   );
 }

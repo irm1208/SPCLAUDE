@@ -1,92 +1,62 @@
-export default function CrystalPeptide() {
-  // Crystal & Peptide mark — hexagonal crystal with peptide chain
-  const CrystalPeptideMark = ({ size = 64, className = "" }: { size?: number; className?: string }) => (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
-      <defs>
-        <linearGradient id="crystal-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#2D6BCC" />
-          <stop offset="100%" stopColor="#1B3A7A" />
-        </linearGradient>
-      </defs>
-      
-      {/* Hexagonal crystal outline */}
-      <path
-        d="M 32 8 L 50 20 L 50 44 L 32 56 L 14 44 L 14 20 Z"
-        stroke="url(#crystal-gradient)"
-        strokeWidth="2"
-        fill="none"
-      />
-      
-      {/* Peptide chain — 3 amino acid residues connected by curved bonds */}
-      {/* First residue */}
-      <circle cx="24" cy="28" r="3" fill="url(#crystal-gradient)" />
-      
-      {/* Second residue (center) */}
-      <circle cx="32" cy="32" r="3" fill="url(#crystal-gradient)" />
-      
-      {/* Third residue */}
-      <circle cx="40" cy="28" r="3" fill="url(#crystal-gradient)" />
-      
-      {/* Peptide bonds — smooth curves connecting residues */}
-      <path
-        d="M 26.5 27 Q 29 29 29.5 31"
-        stroke="url(#crystal-gradient)"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 34.5 31 Q 37 29 37.5 27"
-        stroke="url(#crystal-gradient)"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+import React from 'react';
 
-  // White version for dark backgrounds
-  const CrystalPeptideMarkWhite = ({ size = 64, className = "" }: { size?: number; className?: string }) => (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+export default function CrystalPeptide() {
+  // Hexagon points for flat-top orientation (radius 28 from center 32,32)
+  // Angles: -90°, -30°, 30°, 90°, 150°, 210° in radians
+  const hexPoints = [
+    [32, 4],      // top
+    [56.1, 18],   // top-right
+    [56.1, 46],   // bottom-right
+    [32, 60],     // bottom
+    [7.9, 46],    // bottom-left
+    [7.9, 18],    // top-left
+  ].map(p => p.join(',')).join(' ');
+
+  const Mark = ({ 
+    size, 
+    strokeColor = "#1B3A7A", 
+    fillColor = "#2D6BCC",
+    className = ""
+  }: { 
+    size: number; 
+    strokeColor?: string; 
+    fillColor?: string;
+    className?: string;
+  }) => (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 64 64" 
       className={className}
+      style={{ filter: 'drop-shadow(0 2px 8px rgba(27, 58, 122, 0.15))' }}
     >
-      {/* Hexagonal crystal outline */}
-      <path
-        d="M 32 8 L 50 20 L 50 44 L 32 56 L 14 44 L 14 20 Z"
-        stroke="white"
-        strokeWidth="2"
+      {/* Hexagon stroke */}
+      <polygon
+        points={hexPoints}
+        stroke={strokeColor}
+        strokeWidth="4"
         fill="none"
+        strokeLinejoin="round"
+        strokeLinecap="round"
       />
       
-      {/* Peptide chain */}
-      <circle cx="24" cy="28" r="3" fill="white" />
-      <circle cx="32" cy="32" r="3" fill="white" />
-      <circle cx="40" cy="28" r="3" fill="white" />
+      {/* Peptide nodes */}
+      <circle cx="22" cy="28" r="4.5" fill={fillColor} />
+      <circle cx="32" cy="38" r="4.5" fill={fillColor} />
+      <circle cx="42" cy="28" r="4.5" fill={fillColor} />
       
-      {/* Peptide bonds */}
+      {/* Connecting curves */}
       <path
-        d="M 26.5 27 Q 29 29 29.5 31"
-        stroke="white"
-        strokeWidth="1.5"
+        d="M 22 28 Q 24 36 32 38"
+        stroke={fillColor}
+        strokeWidth="2.5"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M 34.5 31 Q 37 29 37.5 27"
-        stroke="white"
-        strokeWidth="1.5"
+        d="M 32 38 Q 40 36 42 28"
+        stroke={fillColor}
+        strokeWidth="2.5"
         fill="none"
         strokeLinecap="round"
       />
@@ -94,73 +64,183 @@ export default function CrystalPeptide() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-12">
-      <div className="max-w-5xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-[#1B3A7A] mb-2">Crystal & Peptide</h1>
-          <p className="text-[#2D6BCC] text-lg">Salt & Peps Logo Concept</p>
-        </div>
-
-        {/* Lockup Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          {/* Lockup A — Stacked */}
-          <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <CrystalPeptideMark size={60} />
-              <div className="text-center">
-                <div className="text-[22px] font-bold text-[#1B3A7A] leading-tight">Salt</div>
-                <div className="text-[14px] text-[#2D6BCC]">& Peps</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Lockup B — Horizontal */}
-          <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 flex items-center justify-center">
-            <div className="flex items-center gap-4">
-              <CrystalPeptideMark size={48} />
-              <div className="text-[20px] font-semibold text-[#1B3A7A]">
-                Salt & Peps
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Hero / Full-bleed gradient version */}
-        <div
-          className="rounded-2xl p-12 flex flex-col items-center justify-center text-center"
+    <div className="min-h-screen overflow-hidden flex flex-col" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      {/* SECTION 1 - HERO */}
+      <section 
+        className="relative flex flex-col items-center justify-center"
+        style={{
+          height: '60vh',
+          background: '#F8FAFC',
+          backgroundImage: 'radial-gradient(circle at center, #E8F0FE 0%, transparent 60%)',
+        }}
+      >
+        {/* Concept label */}
+        <div 
+          className="absolute top-8 left-10 uppercase tracking-widest"
           style={{
-            background: "linear-gradient(135deg, #2D6BCC 0%, #1B3164 100%)",
-            minHeight: "400px"
+            fontSize: '9px',
+            color: '#94A3B8',
+            letterSpacing: '0.15em',
           }}
         >
-          <CrystalPeptideMarkWhite size={80} className="mb-6" />
-          <h2 className="text-[28px] font-bold text-white mb-2">Salt & Peps</h2>
-          <p className="text-white/70 text-lg">Advanced Peptide Science</p>
+          Crystal & Peptide
         </div>
 
-        {/* Mark showcase — isolated on white */}
-        <div className="bg-white rounded-2xl p-16 shadow-sm border border-gray-100 flex items-center justify-center">
-          <div className="text-center">
-            <CrystalPeptideMark size={120} />
-            <p className="text-sm text-gray-500 mt-6">Primary Mark</p>
-          </div>
+        {/* Large centered mark with glow */}
+        <div 
+          className="relative"
+          style={{
+            filter: 'drop-shadow(0 8px 32px rgba(45, 107, 204, 0.12))',
+          }}
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'radial-gradient(circle, rgba(45, 107, 204, 0.08) 0%, transparent 70%)',
+              transform: 'scale(1.4)',
+              filter: 'blur(40px)',
+            }}
+          />
+          <Mark size={180} />
         </div>
 
-        {/* Color specifications */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl p-6 border border-gray-100">
-            <div className="w-full h-20 rounded-lg mb-3" style={{ background: "#2D6BCC" }} />
-            <p className="text-sm font-mono text-gray-700">#2D6BCC</p>
-            <p className="text-xs text-gray-500">Primary Blue</p>
+        {/* Brand name */}
+        <h1 
+          className="mt-8"
+          style={{
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 900,
+            fontSize: '48px',
+            color: '#0F1F38',
+            letterSpacing: '-0.03em',
+          }}
+        >
+          Salt & Peps
+        </h1>
+
+        {/* Tagline */}
+        <p 
+          className="uppercase tracking-widest mt-3"
+          style={{
+            fontSize: '13px',
+            color: '#94A3B8',
+            letterSpacing: '0.15em',
+          }}
+        >
+          Advanced Peptide Science
+        </p>
+      </section>
+
+      {/* SECTION 2 - DARK HERO */}
+      <section 
+        className="flex flex-col items-center justify-center"
+        style={{
+          height: '30vh',
+          background: 'linear-gradient(135deg, #0F2044 0%, #1B3A7A 50%, #0F2044 100%)',
+        }}
+      >
+        {/* Horizontal lockup */}
+        <div className="flex items-center gap-6 mb-6">
+          <Mark size={100} strokeColor="#7BB3F0" fillColor="#7BB3F0" />
+          <h2 
+            style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 800,
+              fontSize: '32px',
+              color: 'white',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Salt & Peps
+          </h2>
+        </div>
+
+        {/* Divider and details */}
+        <div className="flex flex-col items-center">
+          <div 
+            style={{
+              width: '200px',
+              height: '1px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              marginBottom: '12px',
+            }}
+          />
+          <p 
+            className="uppercase tracking-widest"
+            style={{
+              fontSize: '10px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              letterSpacing: '0.15em',
+            }}
+          >
+            EST. 2024 · PHARMACEUTICAL GRADE
+          </p>
+        </div>
+      </section>
+
+      {/* SECTION 3 - COLOUR PALETTE */}
+      <section 
+        className="flex-1 flex items-center px-16 py-8"
+        style={{
+          background: 'white',
+        }}
+      >
+        <div className="w-full">
+          <div 
+            className="uppercase tracking-widest mb-6"
+            style={{
+              fontSize: '9px',
+              color: '#94A3B8',
+              letterSpacing: '0.15em',
+            }}
+          >
+            Brand Palette
           </div>
-          <div className="bg-white rounded-xl p-6 border border-gray-100">
-            <div className="w-full h-20 rounded-lg mb-3" style={{ background: "#1B3A7A" }} />
-            <p className="text-sm font-mono text-gray-700">#1B3A7A</p>
-            <p className="text-xs text-gray-500">Navy</p>
+          
+          <div className="flex gap-6">
+            {[
+              { hex: '#1B3A7A', name: 'Primary' },
+              { hex: '#2D6BCC', name: 'Core' },
+              { hex: '#4A8FE8', name: 'Light' },
+              { hex: '#0F2044', name: 'Deep' },
+            ].map(({ hex, name }) => (
+              <div key={hex} className="flex flex-col items-center gap-3">
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '9999px',
+                    background: hex,
+                    boxShadow: `0 4px 12px ${hex}40`,
+                  }}
+                />
+                <div className="flex flex-col items-center gap-1">
+                  <span 
+                    style={{
+                      fontSize: '10px',
+                      color: '#64748B',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    {name}
+                  </span>
+                  <span 
+                    style={{
+                      fontSize: '11px',
+                      color: '#94A3B8',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {hex}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
