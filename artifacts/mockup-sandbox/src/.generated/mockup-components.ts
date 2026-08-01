@@ -423,6 +423,7 @@ export const modules: ModuleMap = {
   "./components/mockups/redesign-terminal/Home.tsx": () => import("../components/mockups/redesign-terminal/Home.tsx"),
   "./components/mockups/sage-chart/Preview.tsx": () => import("../components/mockups/sage-chart/Preview.tsx"),
   "./components/mockups/sage-chart/SageTrendChart.tsx": () => import("../components/mockups/sage-chart/SageTrendChart.tsx"),
+  "./components/mockups/salt-peps-wordmark-concepts/SaltPepsWordmarkConcepts.tsx": () => import("../components/mockups/salt-peps-wordmark-concepts/SaltPepsWordmarkConcepts.tsx"),
   "./components/mockups/status-circles/LiquidFillRing.tsx": () => import("../components/mockups/status-circles/LiquidFillRing.tsx"),
   "./components/mockups/status-circles/MorphicWave.tsx": () => import("../components/mockups/status-circles/MorphicWave.tsx"),
   "./components/mockups/status-circles/NeonArcBlast.tsx": () => import("../components/mockups/status-circles/NeonArcBlast.tsx"),
