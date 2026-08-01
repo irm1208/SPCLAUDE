@@ -446,13 +446,15 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         <>
           <SectionHeader icon={<Package className="w-3.5 h-3.5" />} label="Not Posted" count={filteredNotPosted.length} color={NAVY} />
           {filteredNotPosted.length === 0 && (
-            <p className="text-center text-xs py-4" style={{ color: "#94A3B8" }}>No pending QR codes to post</p>
+            <p className="text-center text-xs py-2" style={{ color: "#94A3B8" }}>No pending QR codes to post</p>
           )}
-          <div className="space-y-2">
-            {filteredNotPosted.map(order => (
-              <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
-            ))}
-          </div>
+          {filteredNotPosted.length > 0 && (
+            <div className="space-y-2">
+              {filteredNotPosted.map(order => (
+                <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -461,9 +463,10 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         <>
           <SectionHeader icon={<Truck className="w-3.5 h-3.5" />} label="Waiting for QR Code" count={filteredWaiting.length} color="#D97706" />
           {filteredWaiting.length === 0 && (
-            <p className="text-center text-xs py-4" style={{ color: "#94A3B8" }}>Everyone has uploaded their QR code</p>
+            <p className="text-center text-xs py-2" style={{ color: "#94A3B8" }}>Everyone has uploaded their QR code</p>
           )}
-          <div className="space-y-2">
+          {filteredWaiting.length > 0 && (
+            <div className="space-y-2">
             {filteredWaiting.map(order => (
               <div
                 key={order.id}
@@ -492,7 +495,8 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
                 </span>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </>
       )}
 
@@ -501,13 +505,15 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         <>
           <SectionHeader icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Posted" count={filteredPosted.length} color="#16A34A" />
           {filteredPosted.length === 0 && (
-            <p className="text-center text-xs py-4" style={{ color: "#94A3B8" }}>No posted orders yet</p>
+            <p className="text-center text-xs py-2" style={{ color: "#94A3B8" }}>No posted orders yet</p>
           )}
-          <div className="space-y-2 pb-4">
-            {filteredPosted.map(order => (
-              <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
-            ))}
-          </div>
+          {filteredPosted.length > 0 && (
+            <div className="space-y-2 pb-4">
+              {filteredPosted.map(order => (
+                <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

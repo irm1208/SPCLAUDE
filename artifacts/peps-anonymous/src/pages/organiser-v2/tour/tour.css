@@ -1,0 +1,492 @@
+/* ─── Guided tour overlay ─────────────────────────────────────────────────────
+   Spotlight + caption card for the beginner tour. Tokens follow the Peps
+   Native workspace theme (theme.ts). */
+
+.ov2-tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.ov2-tour-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 31, 56, 0.55);
+  pointer-events: auto;
+}
+
+/* The spotlight is a transparent box whose enormous box-shadow dims everything
+   around it — cheap to animate and needs no SVG mask. A soft halo ring breathes
+   around the border so the highlighted area reads as alive, not framed. */
+.ov2-tour-spotlight {
+  position: absolute;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(15, 31, 56, 0.6),
+    0 0 0 3px rgba(45, 107, 204, 0.55),
+    0 0 24px 6px rgba(45, 107, 204, 0.35);
+  border: 2px solid rgba(96, 165, 250, 0.95);
+  transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1), left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.35s cubic-bezier(0.22, 1, 0.36, 1), height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ov2-tour-halo 2.4s ease-in-out infinite;
+}
+
+@keyframes ov2-tour-halo {
+  0%, 100% {
+    box-shadow:
+      0 0 0 9999px rgba(15, 31, 56, 0.6),
+      0 0 0 3px rgba(45, 107, 204, 0.55),
+      0 0 24px 6px rgba(45, 107, 204, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(15, 31, 56, 0.6),
+      0 0 0 6px rgba(45, 107, 204, 0.3),
+      0 0 34px 10px rgba(45, 107, 204, 0.5);
+  }
+}
+
+/* "Your turn" steps leave the highlighted element clickable and switch the
+   halo to amber to signal "you drive now"; regular steps swallow clicks so
+   the tour keeps control. */
+.ov2-tour-spotlight.is-waiting {
+  border-color: rgba(233, 160, 32, 0.95);
+  animation: ov2-tour-pulse 1.6s ease-in-out infinite;
+}
+
+.ov2-tour-layer:has(.ov2-tour-spotlight:not(.is-waiting))::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+@keyframes ov2-tour-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 9999px rgba(15, 31, 56, 0.6),
+      0 0 0 3px rgba(233, 160, 32, 0.5),
+      0 0 22px 5px rgba(233, 160, 32, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(15, 31, 56, 0.6),
+      0 0 0 7px rgba(233, 160, 32, 0.25),
+      0 0 34px 12px rgba(233, 160, 32, 0.55);
+  }
+}
+
+/* Animated pointer sitting on the spotlight edge, aimed into the target.
+   Rotation comes from --arrow-rot; the nudge travels along the pointing
+   direction because translateX is applied after the rotate. */
+.ov2-tour-arrow {
+  position: absolute;
+  width: 52px;
+  height: 26px;
+  color: var(--ov2-orange, #e9a020);
+  filter: drop-shadow(0 2px 5px rgba(27, 49, 100, 0.4)) drop-shadow(0 0 8px rgba(233, 160, 32, 0.45));
+  animation: ov2-tour-arrow-nudge 1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1), left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+@keyframes ov2-tour-arrow-nudge {
+  0%, 100% { transform: translate(-50%, -50%) rotate(var(--arrow-rot, 0deg)) translateX(-4px); }
+  50% { transform: translate(-50%, -50%) rotate(var(--arrow-rot, 0deg)) translateX(8px); }
+}
+
+/* ── "What members see" preview panel ──────────────────────────────────── */
+.ov2-tour-preview {
+  margin: 10px 0 2px;
+  border: 1px solid var(--ov2-border, #d5deeb);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--t-surface2, #f4f7fb);
+  animation: ov2-tour-preview-in 0.25s ease;
+}
+
+@keyframes ov2-tour-preview-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.ov2-tour-preview > header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  background: var(--ov2-navy, #0f1f38);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ov2-tour-preview > header i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.ov2-tour-preview > header span { margin-left: 6px; }
+
+.ov2-tour-mock {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--t-text, #16325c);
+}
+
+/* Dark member-facing GB card, echoing the real Groups-page card. */
+.ov2-tour-mock.is-dark {
+  background: linear-gradient(135deg, #0a0a12 0%, #14121f 55%, #241a38 100%);
+  border-radius: 12px;
+  margin: 8px;
+  padding: 12px 14px;
+  color: #f1f5f9;
+}
+.ov2-tour-mock-dark-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ov2-tour-mock-dark-icon svg { width: 13px; height: 13px; color: #e2e8f0; }
+.ov2-tour-mock-dark-kicker { color: #94a3b8; font-size: 11px; flex: 1; }
+.ov2-tour-mock-pill.is-dark-open {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+.ov2-tour-mock-dark-title { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; }
+.ov2-tour-mock-dark-sub { margin: 0; font-size: 11px; color: #94a3b8; }
+.ov2-tour-mock-dark-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  font-size: 11px;
+}
+.ov2-tour-mock-dark-rows span:nth-child(odd) { color: #cbd5e1; }
+.ov2-tour-mock-dark-rows span:nth-child(even) { color: #94a3b8; text-align: right; }
+.ov2-tour-mock-dark-button {
+  margin-top: 4px;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 6px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ov2-tour-mock-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+.ov2-tour-mock-title { font-size: 13px; font-weight: 700; }
+
+.ov2-tour-mock-muted { margin: 0; font-size: 11.5px; color: var(--t-subtle, #64748b); }
+
+.ov2-tour-mock-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.ov2-tour-mock-pill.is-open { background: #e5f6ec; color: #1a7f4b; }
+.ov2-tour-mock-pill.is-closed { background: #fdeaea; color: #b3312f; }
+
+.ov2-tour-mock-tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--ov2-border, #d5deeb);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--t-text, #16325c);
+}
+
+.ov2-tour-mock-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--ov2-border, #d5deeb);
+  background: #fff;
+}
+.ov2-tour-mock-line.is-selected { border-color: var(--t-blue, #0176d3); box-shadow: 0 0 0 1px var(--t-blue, #0176d3); }
+.ov2-tour-mock-line.is-soldout { opacity: 0.55; }
+.ov2-tour-mock-line svg { width: 15px; height: 15px; flex: none; color: var(--t-blue, #0176d3); }
+.ov2-tour-mock-line small { color: var(--t-subtle, #64748b); }
+.ov2-tour-mock-line .ov2-tour-mock-title { flex: 1; }
+
+.ov2-tour-mock-qty {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--ov2-border, #d5deeb);
+  background: #fff;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.ov2-tour-mock-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--ov2-navy, #0f1f38);
+  color: #fff;
+  font-size: 11.5px;
+}
+.ov2-tour-mock-address svg { width: 13px; height: 13px; margin-left: auto; opacity: 0.7; }
+
+.ov2-tour-mock-warn { margin: 0; font-size: 11px; font-weight: 600; color: #b3312f; }
+
+.ov2-tour-mock-pin { display: flex; gap: 6px; }
+.ov2-tour-mock-pin i {
+  width: 26px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--ov2-border, #d5deeb);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-size: 16px;
+  color: var(--t-subtle, #64748b);
+}
+
+.ov2-tour-mock-rules { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.ov2-tour-mock-rules li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.ov2-tour-mock-rules svg { width: 13px; height: 13px; color: #1a7f4b; }
+
+.ov2-tour-mock-button {
+  align-self: flex-start;
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: var(--t-blue, #0176d3);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.ov2-tour-card {
+  position: absolute;
+  pointer-events: auto;
+  background: var(--ov2-card, #ffffff);
+  border: 1px solid var(--ov2-border, #d0dae4);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(27, 49, 100, 0.32);
+  padding: 0 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1), left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ov2-tour-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes ov2-tour-card-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.ov2-tour-card.is-centred {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px));
+}
+
+@keyframes ov2-tour-card-in-centred {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.ov2-tour-card.is-centred { animation-name: ov2-tour-card-in-centred; }
+
+/* Docked bar: the target fills the screen, so the card hugs the bottom edge
+   like subtitles — slim, wide, covering as little of the panel as possible. */
+.ov2-tour-card.is-docked {
+  gap: 8px;
+  padding-bottom: 12px;
+  box-shadow: 0 10px 34px rgba(27, 49, 100, 0.4);
+}
+
+.ov2-tour-card.is-docked .ov2-tour-card-header { padding: 10px 16px; }
+.ov2-tour-card.is-docked .ov2-tour-text { font-size: 13px; }
+
+/* Floating "what members see" panel — lives over the dimmed area, away from
+   both the spotlight and the caption card. */
+.ov2-tour-float-preview {
+  position: absolute;
+  pointer-events: none;
+  animation: ov2-tour-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1), left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ov2-tour-float-preview .ov2-tour-preview {
+  margin: 0;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+
+.ov2-tour-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -20px;
+  padding: 14px 16px;
+  background: linear-gradient(120deg, var(--ov2-navy, #0f1f38) 0%, #1c3a68 70%, #24509b 100%);
+  color: #fff;
+}
+
+.ov2-tour-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ov2-tour-step-badge {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--ov2-orange, #e9a020), #f4c04f);
+  color: var(--ov2-navy, #0f1f38);
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.ov2-tour-card-header h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ov2-tour-chapter {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f4c04f;
+}
+
+.ov2-tour-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ov2-tour-card-header .ov2-icon-button { color: rgba(255, 255, 255, 0.8); }
+.ov2-tour-card-header .ov2-icon-button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+
+.ov2-tour-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ov2-muted, #6b7280);
+}
+
+.ov2-tour-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ov2-border, #d0dae4);
+  overflow: hidden;
+}
+
+.ov2-tour-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--t-blue, #2d6bcc), var(--ov2-orange, #e9a020));
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ov2-tour-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ov2-tour-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ov2-tour-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ov2-subtle, #8a9aaa);
+}
+
+.ov2-tour-skip {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--ov2-subtle, #8a9aaa);
+  cursor: pointer;
+}
+
+.ov2-tour-skip:hover { color: var(--ov2-muted, #6b7280); text-decoration: underline; }
+
+.ov2-tour-waiting {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ov2-subtle, #8a9aaa);
+}
+
+/* Phones: the card becomes a bottom sheet regardless of computed placement,
+   matching the app's 767px breakpoint. The arrow is hidden (its position is
+   computed against the floating placement, which CSS overrides here) — the
+   spotlight halo does the pointing. */
+@media (max-width: 767px) {
+  .ov2-tour-card {
+    top: auto !important;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: 12px !important;
+    right: 12px;
+    width: auto !important;
+    transform: none;
+    padding: 0 14px 12px;
+    gap: 8px;
+    max-height: 52vh;
+    overflow-y: auto;
+  }
+
+  .ov2-tour-card .ov2-tour-card-header {
+    margin: 0 -14px;
+    padding: 10px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .ov2-tour-card .ov2-tour-text { font-size: 13px; }
+
+  .ov2-tour-arrow { display: none; }
+
+  /* No dimmed real estate to float over on a phone. */
+  .ov2-tour-float-preview { display: none; }
+}

@@ -50,7 +50,7 @@ export default function PaymentsStep() {
   return (
     <div className="space-y-4">
       {/* Crypto Payment */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" data-tour="payment-crypto" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
@@ -153,7 +153,7 @@ export default function PaymentsStep() {
       </div>
 
       {/* AnonPay */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" data-tour="payment-anonpay" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
@@ -234,7 +234,7 @@ export default function PaymentsStep() {
       </div>
 
       {/* Revolut */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" data-tour="payment-revolut" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
@@ -277,7 +277,7 @@ export default function PaymentsStep() {
       </div>
 
       {/* PayPal */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" data-tour="payment-paypal" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4" style={{ color: "var(--t-blue)" }} />

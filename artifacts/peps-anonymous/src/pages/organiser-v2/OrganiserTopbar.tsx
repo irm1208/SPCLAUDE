@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, ChevronDown, Search } from "lucide-react";
+import { ArrowLeft, ChevronDown, GraduationCap, Search } from "lucide-react";
+import { TOUR_EVENT_START } from "./tour/tour-script";
 import { buildTopbarContext } from "./topbar-context";
 
 export interface OrganiserTopbarProps {
@@ -57,7 +58,7 @@ export default function OrganiserTopbar({
 
   return (
     <header className="ov2-topbar">
-      <div className="ov2-topbar-context-rail" aria-label="Group buy summary">
+      <div className="ov2-topbar-context-rail" aria-label="Group buy summary" data-tour="topbar-context">
         <span className="ov2-topbar-context-kicker">Group buy</span>
         <dl className="ov2-topbar-context-metrics">
           <div className="ov2-topbar-context-metric">
@@ -110,13 +111,22 @@ export default function OrganiserTopbar({
           <small>GB Organiser workspace</small>
         </div>
 
-        <button type="button" className="ov2-search-trigger" onClick={onSearch} aria-label="Search orders, members, and parcels">
+        <button type="button" className="ov2-search-trigger" onClick={onSearch} aria-label="Search orders, members, and parcels" data-tour="topbar-search">
           <Search aria-hidden="true" />
           <span>Search orders, members, parcels…</span>
           <kbd aria-hidden="true">⌘ K</kbd>
         </button>
 
         <div className="ov2-topbar-actions">
+          <button
+            type="button"
+            className="ov2-secondary-button"
+            onClick={() => window.dispatchEvent(new CustomEvent(TOUR_EVENT_START))}
+            title="Take the guided tour"
+            data-tour="topbar-tour-button"
+          >
+            <GraduationCap aria-hidden="true" /> <span className="ov2-action-label">Tour</span>
+          </button>
           {secondaryActions}
           {primaryAction ? (
             <button type="button" className="ov2-primary-button" onClick={primaryAction.onClick}>

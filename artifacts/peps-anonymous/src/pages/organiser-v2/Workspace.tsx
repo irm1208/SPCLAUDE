@@ -38,6 +38,7 @@ import { OrganiserRepositoryProvider } from "./domain/repository-context";
 import { mergeMemberDirectory } from "./domain/member";
 import { deriveOrderAttentionSummary } from "./domain/order-selectors";
 import { organiserApi } from "./api/organiser-api";
+import { TOUR_EVENT_ACTIVE_TAB, TOUR_EVENT_WORKSPACE_TAB } from "./tour/tour-script";
 
 const WORKSPACE_PRIMARY_NAVIGATION: Partial<Record<WorkspaceTabId, { label: string; target: WorkspaceTabId }>> = {
   overview: { label: "Create order", target: "orders" },
@@ -136,6 +137,18 @@ export default function Workspace({
   useEffect(() => {
     repositories.orders.load().catch(() => undefined);
   }, [repositories]);
+
+  // Guided tour integration: the tour can switch tabs, and the "your turn"
+  // step listens for the tab the user opens themselves.
+  useEffect(() => {
+    const handler = (event: Event) => setActive((event as CustomEvent<WorkspaceTabId>).detail);
+    window.addEventListener(TOUR_EVENT_WORKSPACE_TAB, handler);
+    return () => window.removeEventListener(TOUR_EVENT_WORKSPACE_TAB, handler);
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(TOUR_EVENT_ACTIVE_TAB, { detail: active }));
+  }, [active]);
 
   const badges: Partial<Record<WorkspaceTabId, number>> = {
     orders: pendingPayments,

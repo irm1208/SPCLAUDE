@@ -44,7 +44,7 @@ export default function ProductsStep() {
         <div className="space-y-3">
 
           {products.map((p, index) => (
-            <div key={p.id} className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+            <div key={p.id} className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour={index === 0 ? "product-row" : undefined}>
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
                 <div className="flex items-center gap-2">
@@ -75,6 +75,7 @@ export default function ProductsStep() {
                   type="text"
                   placeholder="Product name"
                   value={p.name}
+                  data-tour="product-name-input"
                   onChange={(e) => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))}
                   className="w-full h-9 px-3 rounded-md text-[14px]"
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}

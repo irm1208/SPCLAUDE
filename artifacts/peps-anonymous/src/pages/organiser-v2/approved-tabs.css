@@ -793,6 +793,14 @@
     grid-template-columns: 1fr;
   }
 
+  /* Detail/field grids inside cards and drawers stack on phones. Grids that
+     already declare a responsive prefix (sm:/md:/lg:) manage themselves, and
+     fixed-width scroll grids (min-w-*, e.g. the dispatch stage rail) plus the
+     7-column task calendar are left alone. */
+  .organiser-v2 .ov2-workspace-screen[data-page] :where(.grid.grid-cols-2, .grid.grid-cols-3):not([class*="sm:grid-cols"], [class*="md:grid-cols"], [class*="lg:grid-cols"], [class*="min-w-"]) {
+    grid-template-columns: 1fr;
+  }
+
   .organiser-v2 .ov2-workspace-screen[data-page] :where(.px-4, .p-4, .p-5) {
     padding-inline: 12px;
   }

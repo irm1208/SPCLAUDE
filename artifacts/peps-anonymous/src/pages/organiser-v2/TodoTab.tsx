@@ -982,7 +982,10 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
                 {/* Weekday headers */}
                 <div className="grid grid-cols-7 mb-1">
                   {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
-                    <div key={d} className="text-[12px] font-semibold text-center py-1" style={{ color: MS_GRAY }}>{d}</div>
+                    <div key={d} className="text-[12px] font-semibold text-center py-1" style={{ color: MS_GRAY }}>
+                      <span className="sm:hidden">{d.charAt(0)}</span>
+                      <span className="hidden sm:inline">{d}</span>
+                    </div>
                   ))}
                 </div>
                 {/* Grid */}

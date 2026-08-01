@@ -42,7 +42,7 @@ export default function RulesStep() {
       </div>
 
       {/* Welcome Message */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="rules-welcome-card">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <MessageSquare className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Welcome Message</span>
@@ -63,7 +63,7 @@ export default function RulesStep() {
       </div>
 
       {/* Rules */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="rules-list">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <FileText className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Rules & Requirements</span>
@@ -115,7 +115,7 @@ export default function RulesStep() {
       </div>
 
       {/* Disclaimer */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="rules-disclaimer">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <AlertCircle className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Disclaimer</span>
@@ -136,7 +136,7 @@ export default function RulesStep() {
       </div>
 
       {/* Additional Info */}
-      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+      <div className="rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }} data-tour="rules-info">
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
           <Info className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
           <span className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>Additional Information</span>

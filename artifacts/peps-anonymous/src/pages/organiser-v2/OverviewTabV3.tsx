@@ -182,7 +182,7 @@ export default function OverviewTabV3({
         </div>
       </section>
 
-      <section className="ov2-command-metrics" aria-label="Group buy summary">
+      <section className="ov2-command-metrics" aria-label="Group buy summary" data-tour="overview-metrics">
         {metrics.map(metric => {
           const Icon = metric.icon;
           return (
@@ -228,7 +228,7 @@ export default function OverviewTabV3({
         </section>
       </div>
 
-      <section className="ov2-pipeline-section">
+      <section className="ov2-pipeline-section" data-tour="overview-pipeline">
         <div className="ov2-pipeline-heading">
           <div><span className="ov2-section-kicker">Order workspace</span><h2>Live order pipeline</h2><p>Move from member intake to dispatch without losing context.</p></div>
           <div className="ov2-board-toolbar">
