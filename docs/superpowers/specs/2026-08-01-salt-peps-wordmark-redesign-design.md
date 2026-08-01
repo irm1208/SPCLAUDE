@@ -45,15 +45,16 @@ The refined wordmark will:
 - `salt-peps-logo-proof.svg`: light, reverse, mono, and size proof contexts.
 - Transparent PNG fallback generated from the approved SVG where the existing app contract requires it.
 
-### Deferred pass: small-size fallback
+### Deferred pass: `S&P` small-size fallback
 
-The standalone icon and favicon are explicitly deferred. Once the wordmark is approved, evaluate a small-size fallback derived from the wordmark's own letter geometry, in this order:
+The standalone icon and favicon will use a compact custom `S&P` monogram derived from the approved `Salt&Peps` lettering. The ampersand remains a real connector between the two initials; it is not replaced by a generic plus sign or badge.
 
-1. A letterform-derived `S` or `P` fallback.
-2. A compact `SP` monogram only if it remains legible and does not read as a generic tile.
-3. No standalone mark if neither option survives the 16px and one-color tests.
+The monogram will be delivered in two optical grades:
 
-No peptide-bond illustration or generic science icon will be introduced merely to fill the favicon slot.
+1. Full `S&P` monogram for 24px and larger standalone use, social avatars, and square applications.
+2. Simplified `S&P` monogram for 16px favicon use, with only the essential counters and joins retained.
+
+Both grades must survive reverse and one-color tests. No peptide-bond illustration or generic science icon will be introduced merely to fill the favicon slot.
 
 ## Application requirements
 
