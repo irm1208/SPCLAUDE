@@ -415,17 +415,37 @@
 }
 
 .organiser-v2 .ov2-sidebar-utilities {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   padding: 8px 11px;
 }
 
 .organiser-v2 .ov2-dashboard-exit,
 .organiser-v2 .ov2-setup-switch {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 9px;
   min-height: 32px;
   color: rgba(255, 255, 255, 0.74);
   background: transparent;
   font-size: 13px;
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.organiser-v2 .ov2-dashboard-exit span,
+.organiser-v2 .ov2-setup-switch span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .organiser-v2 .ov2-dashboard-exit:hover,
