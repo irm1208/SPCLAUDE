@@ -129,7 +129,7 @@ const GOOGLE_SHEETS_WEBHOOK_SECRET = process.env["GOOGLE_SHEETS_WEBHOOK_SECRET"]
 // ─── Input limits ─────────────────────────────────────────────
 const MAX_TG_LENGTH = 64;
 const MAX_NOTES_LENGTH = 1000;
-const MAX_LINE_ITEMS = 50;
+const MAX_LINE_ITEMS = 500;
 const MAX_PRODUCT_NAME_LENGTH = 200;
 const MAX_SHIPPING_NAME_LENGTH = 200;
 const MAX_SHIPPING_ADDRESS_LENGTH = 1000;
