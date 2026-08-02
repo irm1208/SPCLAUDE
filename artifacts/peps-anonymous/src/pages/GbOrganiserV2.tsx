@@ -6,6 +6,7 @@ import type { OrganiserGB } from "./GbOrganiser";
 import SetupWizard from "./organiser-v2/SetupWizard";
 import Workspace from "./organiser-v2/Workspace";
 import WelcomeModal from "./organiser-v2/WelcomeModal";
+import ChooseGroupBuyModal from "./organiser-v2/ChooseGroupBuyModal";
 import GuidedTour from "./organiser-v2/tour/GuidedTour";
 import { TOUR_EVENT_START, TOUR_SEEN_KEY } from "./organiser-v2/tour/tour-script";
 import { V2_VARS } from "./organiser-v2/theme";
@@ -42,6 +43,7 @@ export default function GbOrganiserV2() {
   const [showTour, setShowTour] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [showChooseGbModal, setShowChooseGbModal] = useState(false);
 
   const profileQuery = useQuery<OrganiserProfile>({
     queryKey: ["organiser", "profile"],
@@ -230,6 +232,7 @@ export default function GbOrganiserV2() {
           organiserName={profileQuery.data?.telegramUsername ?? account?.telegramUsername ?? "Organiser"}
           onGroupBuyUpdated={handleGroupBuyUpdated}
           onModeChange={() => setMode("setup")}
+          onChooseGroupBuy={() => setShowChooseGbModal(true)}
           onCloned={cloned => {
             // Add the new GB to the query cache and select it
             queryClient.setQueryData<ApiGroupBuy[]>(["organiser", "group-buys"], current => {
@@ -241,6 +244,18 @@ export default function GbOrganiserV2() {
           }}
         />
       )}
+
+      {showChooseGbModal ? (
+        <ChooseGroupBuyModal
+          groupBuys={groupBuysQuery.data ?? []}
+          selectedId={selectedGroupBuy?.id}
+          onSelect={id => {
+            setSelectedGroupBuyId(id);
+            localStorage.setItem("v2:selectedGroupBuyId", id);
+          }}
+          onClose={() => setShowChooseGbModal(false)}
+        />
+      ) : null}
 
       {showWelcome ? (
         <WelcomeModal

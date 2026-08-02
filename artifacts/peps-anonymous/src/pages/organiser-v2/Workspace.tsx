@@ -69,6 +69,7 @@ export default function Workspace({
   onGroupBuyUpdated,
   onModeChange,
   onCloned,
+  onChooseGroupBuy,
 }: {
   groupBuy: SampleGB;
   apiGroupBuy: OrganiserGB;
@@ -76,6 +77,7 @@ export default function Workspace({
   onGroupBuyUpdated: (groupBuy: OrganiserGB) => void;
   onModeChange?: () => void;
   onCloned?: (newGroupBuy: ApiGroupBuy) => void;
+  onChooseGroupBuy?: () => void;
 }) {
   const [active, setActiveState] = useState<WorkspaceTabId>(readTabFromUrl);
   const setActive = (tab: WorkspaceTabId) => {
@@ -265,6 +267,7 @@ export default function Workspace({
             onProfile={() => window.location.assign("/account")}
             organiserName={organiserName}
             organiserRole="Lead organiser"
+            onChooseGroupBuy={onChooseGroupBuy}
             secondaryActions={(
               <>
                 {onModeChange ? (

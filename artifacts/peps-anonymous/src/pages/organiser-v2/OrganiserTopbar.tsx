@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, ChevronDown, GraduationCap, Search } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Search } from "lucide-react";
 import { TOUR_EVENT_START } from "./tour/tour-script";
-import { buildTopbarContext } from "./topbar-context";
 
 export interface OrganiserTopbarProps {
   groupName: string;
@@ -19,6 +18,7 @@ export interface OrganiserTopbarProps {
   onProfile?: () => void;
   organiserName?: string;
   organiserRole?: string;
+  onChooseGroupBuy?: () => void;
 }
 
 function MenuGlyph() {
@@ -33,9 +33,6 @@ function MenuGlyph() {
 
 export default function OrganiserTopbar({
   groupName,
-  groupStatus,
-  memberCount,
-  orderCount,
   pageLabel,
   onOpenMenu,
   onToggleSidebar,
@@ -47,6 +44,7 @@ export default function OrganiserTopbar({
   onProfile,
   organiserName = "Alex Morgan",
   organiserRole = "Lead organiser",
+  onChooseGroupBuy,
 }: OrganiserTopbarProps) {
   const organiserInitials = organiserName
     .split(/\s+/)
@@ -54,26 +52,21 @@ export default function OrganiserTopbar({
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  const context = buildTopbarContext({ status: groupStatus, memberCount, orderCount });
 
   return (
     <header className="ov2-topbar">
-      <div className="ov2-topbar-context-rail" aria-label="Group buy summary" data-tour="topbar-context">
-        <span className="ov2-topbar-context-kicker">Group buy</span>
-        <dl className="ov2-topbar-context-metrics">
-          <div className="ov2-topbar-context-metric">
-            <dt>Status</dt>
-            <dd className="ov2-topbar-status" data-tone={context.statusTone}>{context.statusLabel}</dd>
-          </div>
-          <div className="ov2-topbar-context-metric">
-            <dt>Members</dt>
-            <dd>{context.memberLabel}</dd>
-          </div>
-          <div className="ov2-topbar-context-metric">
-            <dt>Orders</dt>
-            <dd>{context.orderLabel}</dd>
-          </div>
-        </dl>
+      <div className="ov2-topbar-context-rail" data-tour="topbar-context">
+        <button
+          type="button"
+          className="ov2-choose-gb-button"
+          onClick={onChooseGroupBuy}
+          aria-label={`Switch group buy — currently ${groupName}`}
+          disabled={!onChooseGroupBuy}
+        >
+          <span className="ov2-choose-gb-kicker">Active group buy</span>
+          <span className="ov2-choose-gb-name">{groupName}</span>
+          <ChevronRight aria-hidden="true" className="ov2-choose-gb-chevron" />
+        </button>
       </div>
 
       <div className="ov2-topbar-workbar">
