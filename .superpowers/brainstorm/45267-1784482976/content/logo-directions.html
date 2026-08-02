@@ -1,0 +1,476 @@
+<style>
+  .logo-board {
+    max-width: 1480px;
+    margin: 0 auto;
+    color: #0F1F38;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .board-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    color: #2D6BCC;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .board-kicker::before {
+    content: "";
+    width: 18px;
+    height: 2px;
+    background: #2D6BCC;
+  }
+
+  .logo-board > h2 {
+    margin-bottom: 8px;
+    color: #0F1F38;
+    font-size: clamp(24px, 3vw, 38px);
+    line-height: 1.15;
+  }
+
+  .logo-board > .subtitle {
+    max-width: 780px;
+    margin-bottom: 24px;
+    color: #6B7280;
+    font-size: 14px;
+  }
+
+  .logo-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .logo-card {
+    position: relative;
+    min-width: 0;
+    border: 1px solid #D0DAE4;
+    border-radius: 8px;
+    background: #FFFFFF;
+    overflow: hidden;
+  }
+
+  .logo-card:hover {
+    border-color: #2D6BCC;
+    box-shadow: 0 12px 28px rgba(15, 31, 56, 0.10);
+  }
+
+  .logo-card.selected {
+    border: 2px solid #2D6BCC;
+    box-shadow: 0 0 0 4px rgba(45, 107, 204, 0.12);
+  }
+
+  .direction-label {
+    position: absolute;
+    z-index: 2;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #6B7280;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .direction-letter {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #D0DAE4;
+    border-radius: 5px;
+    background: #FFFFFF;
+    color: #1B3A7A;
+  }
+
+  .recommendation {
+    position: absolute;
+    z-index: 2;
+    top: 14px;
+    right: 14px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: #1B3A7A;
+    color: #FFFFFF;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .identity-stage {
+    min-height: 338px;
+    padding: 64px 24px 20px;
+    background: #F8FAFC;
+  }
+
+  .primary-lockup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    gap: 14px;
+  }
+
+  .wordmark {
+    white-space: nowrap;
+    color: #0F1F38;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: clamp(20px, 2.1vw, 32px);
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .wordmark .blue {
+    color: #2D6BCC;
+  }
+
+  .micro-rule {
+    width: 100%;
+    height: 1px;
+    margin: 16px 0;
+    background: #D0DAE4;
+  }
+
+  .use-cases {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
+  }
+
+  .avatar-tile {
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    background: #1B3A7A;
+  }
+
+  .application {
+    min-width: 0;
+    height: 72px;
+    padding: 10px 12px;
+    border: 1px solid #D0DAE4;
+    border-radius: 6px;
+    background: #FFFFFF;
+  }
+
+  .application-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 9px;
+  }
+
+  .application-mark {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: #1B3A7A;
+    color: #FFFFFF;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .application-name {
+    min-width: 0;
+    overflow: hidden;
+    color: #0F1F38;
+    font-size: 10px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .application-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #6B7280;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 7px;
+    text-transform: uppercase;
+  }
+
+  .concept-body {
+    padding: 18px 20px 20px;
+    border-top: 1px solid #D0DAE4;
+  }
+
+  .concept-body h3 {
+    margin-bottom: 6px;
+    color: #0F1F38;
+    font-size: 17px;
+  }
+
+  .concept-body > p {
+    min-height: 58px;
+    margin-bottom: 14px;
+    color: #6B7280;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .tradeoff {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #E5EAF0;
+  }
+
+  .tradeoff div {
+    color: #6B7280;
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .tradeoff strong {
+    display: block;
+    margin-bottom: 3px;
+    color: #1B3A7A;
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+
+  .calibrated-mark {
+    width: 68px;
+    height: 68px;
+    flex: 0 0 68px;
+  }
+
+  .reference-mark {
+    width: 68px;
+    height: 68px;
+    flex: 0 0 68px;
+  }
+
+  .index-lockup {
+    display: grid;
+    grid-template-columns: auto 34px;
+    grid-template-rows: 1fr 1fr;
+    align-items: center;
+    position: relative;
+    padding: 8px 12px;
+    border-left: 2px solid #1B3A7A;
+    border-right: 2px solid #1B3A7A;
+  }
+
+  .index-lockup::before,
+  .index-lockup::after {
+    content: "";
+    position: absolute;
+    left: -2px;
+    right: -2px;
+    height: 2px;
+    background: linear-gradient(90deg, #1B3A7A 0 14px, transparent 14px calc(100% - 14px), #1B3A7A calc(100% - 14px));
+  }
+
+  .index-lockup::before { top: 0; }
+  .index-lockup::after { bottom: 0; }
+
+  .index-word {
+    color: #0F1F38;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 28px;
+    font-weight: 900;
+    line-height: 0.94;
+  }
+
+  .index-amp {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    color: #2D6BCC;
+    font-family: Georgia, serif;
+    font-size: 43px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .index-avatar {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    color: #FFFFFF;
+    font-family: Georgia, serif;
+    font-size: 34px;
+    font-weight: 700;
+  }
+
+  .index-avatar::before,
+  .index-avatar::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-top: 2px solid rgba(255,255,255,0.72);
+    border-bottom: 2px solid rgba(255,255,255,0.72);
+  }
+
+  .index-avatar::after {
+    transform: rotate(90deg);
+  }
+
+  .selection-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border: 1px solid rgba(27, 58, 122, 0.18);
+    border-radius: 6px;
+    background: #FFFFFF;
+    color: #6B7280;
+    font-size: 12px;
+  }
+
+  .selection-note strong {
+    color: #1B3A7A;
+  }
+
+  @media (max-width: 1040px) {
+    .logo-cards { grid-template-columns: 1fr; }
+    .identity-stage { min-height: 0; }
+    .concept-body > p { min-height: 0; }
+    .wordmark { font-size: 30px; }
+  }
+
+  @media (max-width: 560px) {
+    .identity-stage { padding-inline: 16px; }
+    .primary-lockup { gap: 10px; }
+    .wordmark { font-size: 22px; }
+    .calibrated-mark,
+    .reference-mark { width: 54px; height: 54px; flex-basis: 54px; }
+    .index-word { font-size: 22px; }
+    .index-amp { font-size: 35px; }
+    .tradeoff { grid-template-columns: 1fr; }
+    .selection-note { align-items: flex-start; flex-direction: column; }
+  }
+</style>
+
+<div class="logo-board">
+  <div class="board-kicker">Identity directions</div>
+  <h2>Which direction should become the SALT&amp;PEPS logo?</h2>
+  <p class="subtitle">All three are flat, vector-first systems built for the current clinical website, social avatars, packaging labels, dark mode, and one-colour reproduction. Click the direction whose form feels most ownable.</p>
+
+  <div class="logo-cards">
+    <article class="card logo-card" data-choice="a-calibrated-ampersand" onclick="toggleSelect(this)">
+      <div class="direction-label"><span class="direction-letter">A</span>Ownable connector</div>
+      <div class="recommendation">Recommended</div>
+      <div class="identity-stage">
+        <div class="primary-lockup">
+          <svg class="calibrated-mark" viewBox="0 0 72 72" role="img" aria-label="Calibrated ampersand symbol">
+            <path d="M39 11H31C21 11 15 17 15 25C15 32 19 37 27 45L39 57C44 62 50 64 58 64H61" fill="none" stroke="#1B3A7A" stroke-width="7" stroke-linecap="square" stroke-linejoin="round"/>
+            <path d="M56 28C54 38 50 47 43 54C38 60 31 63 24 63C15 63 9 58 9 50C9 41 16 36 27 30C36 25 40 21 40 14" fill="none" stroke="#1B3A7A" stroke-width="7" stroke-linecap="square" stroke-linejoin="round"/>
+            <path d="M46 35L61 59" fill="none" stroke="#2D6BCC" stroke-width="7" stroke-linecap="square"/>
+            <rect x="35" y="7" width="8" height="8" fill="#2D6BCC"/>
+          </svg>
+          <div class="wordmark">SALT<span class="blue">&amp;</span>PEPS</div>
+        </div>
+        <div class="micro-rule"></div>
+        <div class="use-cases">
+          <div class="avatar-tile">
+            <svg width="46" height="46" viewBox="0 0 72 72" aria-hidden="true">
+              <path d="M39 11H31C21 11 15 17 15 25C15 32 19 37 27 45L39 57C44 62 50 64 58 64H61" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="square" stroke-linejoin="round"/>
+              <path d="M56 28C54 38 50 47 43 54C38 60 31 63 24 63C15 63 9 58 9 50C9 41 16 36 27 30C36 25 40 21 40 14" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="square" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="application">
+            <div class="application-head"><span class="application-mark">&amp;</span><span class="application-name">SALT&amp;PEPS / TESTED</span></div>
+            <div class="application-meta"><span>Batch R24-071</span><span>10 mg</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-body">
+        <h3>Calibrated Ampersand</h3>
+        <p>A bespoke geometric ampersand built from paired loops and a measured connector. The symbol stands for samples, results, and community coordination without using a generic lab icon.</p>
+        <div class="tradeoff">
+          <div><strong>Strongest at</strong>Favicon, social avatar, digital product, flexible brand motion.</div>
+          <div><strong>Watch-out</strong>The final drawing must stay engineered so it never feels like finance or law.</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card logo-card" data-choice="b-sp-reference-block" onclick="toggleSelect(this)">
+      <div class="direction-label"><span class="direction-letter">B</span>Recognizable evolution</div>
+      <div class="identity-stage">
+        <div class="primary-lockup">
+          <svg class="reference-mark" viewBox="0 0 72 72" role="img" aria-label="SP reference block symbol">
+            <rect x="2" y="2" width="68" height="68" rx="8" fill="#1B3A7A"/>
+            <line x1="36" y1="13" x2="36" y2="59" stroke="rgba(255,255,255,0.34)" stroke-width="2"/>
+            <circle cx="36" cy="13" r="4" fill="#2D6BCC" stroke="#FFFFFF" stroke-width="2"/>
+            <text x="9" y="50" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="800">S</text>
+            <text x="39" y="50" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="800">P</text>
+          </svg>
+          <div class="wordmark">SALT&amp;PEPS</div>
+        </div>
+        <div class="micro-rule"></div>
+        <div class="use-cases">
+          <div class="avatar-tile">
+            <svg width="58" height="58" viewBox="0 0 72 72" aria-hidden="true">
+              <line x1="36" y1="12" x2="36" y2="60" stroke="rgba(255,255,255,0.34)" stroke-width="2"/>
+              <text x="7" y="51" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="39" font-weight="800">S</text>
+              <text x="39" y="51" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="39" font-weight="800">P</text>
+            </svg>
+          </div>
+          <div class="application">
+            <div class="application-head"><span class="application-mark">SP</span><span class="application-name">SALT&amp;PEPS</span></div>
+            <div class="application-meta"><span>Reference 071</span><span>Verified</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-body">
+        <h3>SP Reference Block</h3>
+        <p>A custom S/P monogram split by a central datum line. It keeps the familiar square silhouette while replacing the fragile typeset tile with a sturdier measurement-led mark.</p>
+        <div class="tradeoff">
+          <div><strong>Strongest at</strong>Existing nav slots, packaging stamps, immediate continuity.</div>
+          <div><strong>Watch-out</strong>The monogram is less ownable than the full name and can feel corporate.</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card logo-card" data-choice="c-specimen-index" onclick="toggleSelect(this)">
+      <div class="direction-label"><span class="direction-letter">C</span>Typographic reset</div>
+      <div class="identity-stage">
+        <div class="primary-lockup">
+          <div class="index-lockup" aria-label="SALT and PEPS specimen index lockup">
+            <span class="index-word">SALT</span>
+            <span class="index-word">PEPS</span>
+            <span class="index-amp">&amp;</span>
+          </div>
+        </div>
+        <div class="micro-rule"></div>
+        <div class="use-cases">
+          <div class="avatar-tile"><div class="index-avatar">&amp;</div></div>
+          <div class="application">
+            <div class="application-head"><span class="application-mark">[&amp;]</span><span class="application-name">SPECIMEN / SALT&amp;PEPS</span></div>
+            <div class="application-meta"><span>Lot SP-24071</span><span>Index 04</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="concept-body">
+        <h3>Specimen Index</h3>
+        <p>A wordmark-first identity arranged like a controlled sample record. Registration ticks and the blue ampersand turn the name into a repeatable traceability system for labels and reports.</p>
+        <div class="tradeoff">
+          <div><strong>Strongest at</strong>Packaging, COAs, batch labels, editorial and print systems.</div>
+          <div><strong>Watch-out</strong>Cooler and less personable; needs a responsive horizontal lockup for nav.</div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="selection-note">
+    <span><strong>My recommendation: A.</strong> It makes the ampersand ownable and gives the broadest system without locking the brand to a single product category.</span>
+    <span>Click A, B, or C, then return to chat.</span>
+  </div>
+</div>

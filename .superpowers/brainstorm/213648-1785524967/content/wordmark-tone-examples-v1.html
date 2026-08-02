@@ -1,0 +1,71 @@
+<style>
+  .tone-head { margin-bottom: 28px; }
+  .tone-head h2 { margin-bottom: 10px; }
+  .tone-head .subtitle { max-width: 760px; }
+  .tone-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .tone-card { overflow: hidden; border: 1px solid #d5dee8; border-radius: 10px; background: #fff; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
+  .tone-card:hover { transform: translateY(-3px); border-color: #2d6bcc; box-shadow: 0 16px 34px rgba(15,31,56,.12); }
+  .tone-card.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.16), 0 16px 34px rgba(15,31,56,.12); }
+  .tone-sample { min-height: 286px; display: flex; flex-direction: column; justify-content: space-between; padding: 22px; }
+  .tone-sample-top { display: flex; justify-content: space-between; align-items: center; color: currentColor; font: 700 10px/1 Inter, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+  .tone-index { opacity: .65; }
+  .tone-rule { width: 38px; height: 2px; background: currentColor; opacity: .55; }
+  .tone-wordmark { margin: auto 0; white-space: nowrap; color: currentColor; font: 800 37px/1 Inter, Arial, sans-serif; letter-spacing: 0; }
+  .tone-wordmark small { display: block; margin-top: 12px; color: currentColor; opacity: .65; font: 600 10px/1.4 Inter, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+  .sample-authority { color: #fff; background: #0f1f38; }
+  .sample-authority .tone-wordmark { font-family: "Arial Narrow", Inter, sans-serif; font-size: 34px; letter-spacing: .08em; }
+  .sample-authority .authority-amp { color: #6d9de8; }
+  .sample-frank { color: #0f1f38; background: #f8fafc; }
+  .sample-frank .tone-wordmark { font-size: 40px; letter-spacing: .015em; }
+  .sample-frank .frank-amp { position: relative; display: inline-block; margin: 0 2px; color: #2d6bcc; font-size: 1.16em; transform: translateY(2px); }
+  .sample-frank .frank-amp::after { content: ""; position: absolute; left: 7%; right: 7%; top: 52%; height: 2px; background: #f8fafc; transform: rotate(-17deg); }
+  .sample-frank .tone-rule { color: #2d6bcc; background: #2d6bcc; }
+  .sample-yango { color: #0f1f38; background: #eaf2fd; }
+  .sample-yango .tone-wordmark { font-size: 39px; letter-spacing: .01em; }
+  .sample-yango .yango-s { display: inline-block; color: #2d6bcc; padding-right: 7px; border-right: 4px solid #2d6bcc; }
+  .sample-yango .tone-rule { color: #2d6bcc; background: #2d6bcc; }
+  .tone-copy { padding: 17px 18px 19px; border-top: 1px solid #e3eaf1; }
+  .tone-copy h3 { margin: 0 0 7px; color: #0f1f38; font: 800 15px/1.2 Inter, system-ui, sans-serif; }
+  .tone-copy p { margin: 0; min-height: 55px; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  .tone-copy strong { color: #2d6bcc; font-weight: 800; }
+  .comparison-note { margin-top: 26px; padding: 17px 19px; border-left: 3px solid #2d6bcc; background: #f7f9fc; }
+  .comparison-note strong { color: #0f1f38; font: 800 12px/1 Inter, system-ui, sans-serif; }
+  .comparison-note p { margin: 8px 0 0; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  @media (max-width: 980px) { .tone-grid { grid-template-columns: 1fr; } .tone-sample { min-height: 230px; } }
+</style>
+
+<div class="tone-head">
+  <h2>Three SALT&amp;PEPS wordmark tones</h2>
+  <p class="subtitle">These are directional text studies based on the references you chose. The content stays the same; the typography, spacing, and one letter-level intervention change the personality.</p>
+</div>
+
+<div class="tone-grid" data-multiselect>
+  <article class="tone-card" data-choice="pivotal-authority" onclick="toggleSelect(this)">
+    <div class="tone-sample sample-authority">
+      <div class="tone-sample-top"><span>Direction A</span><span class="tone-index">Authority</span></div>
+      <div class="tone-wordmark">SALT<span class="authority-amp">&amp;</span>PEPS<small>Evidence-led nutrition</small></div>
+      <div class="tone-sample-top"><span>Measured / clinical</span><span class="tone-rule"></span></div>
+    </div>
+    <div class="tone-copy"><h3>Pivotal lead / sober authority</h3><p>Uppercase structure, disciplined spacing, and a dark reverse treatment make the identity feel established and healthcare-literate. <strong>Best when trust is the first signal.</strong></p></div>
+  </article>
+
+  <article class="tone-card" data-choice="frank-custom" onclick="toggleSelect(this)">
+    <div class="tone-sample sample-frank">
+      <div class="tone-sample-top"><span>Direction B</span><span class="tone-index">Custom detail</span></div>
+      <div class="tone-wordmark">SALT<span class="frank-amp">&amp;</span>PEPS<small>One smart detail, no extra symbol</small></div>
+      <div class="tone-sample-top"><span>Precise / editorial</span><span class="tone-rule"></span></div>
+    </div>
+    <div class="tone-copy"><h3>Frank lead / quiet intelligence</h3><p>The wordmark stays broadly familiar while the ampersand carries an authored cut. <strong>Best when distinction should feel designed, not decorated.</strong></p></div>
+  </article>
+
+  <article class="tone-card" data-choice="yango-approachable" onclick="toggleSelect(this)">
+    <div class="tone-sample sample-yango">
+      <div class="tone-sample-top"><span>Direction C</span><span class="tone-index">Approachable precision</span></div>
+      <div class="tone-wordmark">SALT&amp;PEP<span class="yango-s">S</span><small>Modern / human / exact</small></div>
+      <div class="tone-sample-top"><span>Warm / exact</span><span class="tone-rule"></span></div>
+    </div>
+    <div class="tone-copy"><h3>Yango lead / friendly precision</h3><p>Open spacing and a small final-letter intervention make the name feel more human without losing control. <strong>Best when approachability matters alongside expertise.</strong></p></div>
+  </article>
+</div>
+
+<div class="comparison-note"><strong>Shared guardrails</strong><p>All three keep the existing navy/blue palette, avoid a literal molecule or peptide icon, and treat SALT&amp;PEPS itself as the primary asset. These studies are for choosing a tone; the approved route would get custom lettering and production-ready reverse, mono, social, and favicon variants later.</p></div>

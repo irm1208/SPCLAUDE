@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:trocador.app)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:tts.travisvn.com)",
+      "Bash(curl -s \"https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAAB49E09B30ADD54DBAB8F6\")",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:geeksta.net)",
+      "WebFetch(domain:edgetts.github.io)",
+      "Bash(node --env-file=.env scripts/generate-tour-voiceover.mjs)",
+      "Bash(sort -k5 -n)"
+    ]
+  }
+}

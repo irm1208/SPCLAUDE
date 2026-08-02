@@ -1,0 +1,39 @@
+<style>
+  .research-head { margin-bottom: 24px; }
+  .reference-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .reference { overflow: hidden; border: 1px solid #d0dae4; border-radius: 14px; background: #fff; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
+  .reference:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,31,56,.11); border-color: #2d6bcc; }
+  .reference.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.15), 0 14px 30px rgba(15,31,56,.11); }
+  .ref-image { height: 168px; background: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .ref-image img { width: 100%; height: 100%; object-fit: contain; }
+  .ref-copy { padding: 16px 18px 18px; border-top: 1px solid #e3eaf1; }
+  .ref-copy h3 { margin: 0 0 7px; color: #0f1f38; font: 800 15px/1.15 Inter, system-ui, sans-serif; }
+  .ref-copy p { margin: 0; color: #5c6877; font: 500 12px/1.45 Inter, system-ui, sans-serif; }
+  .ref-copy a { display: inline-block; margin-top: 10px; color: #2d6bcc; font: 700 11px/1 Inter, system-ui, sans-serif; text-decoration: none; }
+  .principles { margin-top: 22px; padding: 18px 20px; border-left: 3px solid #2d6bcc; background: #f8fafc; }
+  .principles strong { color: #0f1f38; font: 800 12px/1 Inter, system-ui, sans-serif; }
+  .principles p { margin: 8px 0 0; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  @media (max-width: 900px) { .reference-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="research-head">
+  <h2>Wordmark research</h2>
+  <p class="subtitle">These are Dribbble references for typography and restraint, not designs to copy. Which visual language feels right for SALT&amp;PEPS?</p>
+</div>
+
+<div class="reference-grid">
+  <article class="reference" data-choice="custom-lettering" onclick="toggleSelect(this)">
+    <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/47162401/file/ee2f2f9c20cac85bfbff650cceeac618.webp?format=webp&resize=800x600&vertical=center" alt="Yango logo wordmark anatomy reference"></div>
+    <div class="ref-copy"><h3>Custom letter anatomy</h3><p>Yango’s reference shows a normal-looking wordmark becoming distinctive through one or two carefully engineered letter details.</p><a href="https://dribbble.com/shots/27213066-Yango-Logo-Wordmark" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+  </article>
+  <article class="reference" data-choice="bold-utility" onclick="toggleSelect(this)">
+    <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/43188846/file/original-09f21bc4ff20c24b3bc5cd177f8043d0.png?format=webp&resize=800x600&vertical=center" alt="Quartz wordmark reference"></div>
+    <div class="ref-copy"><h3>Bold utility</h3><p>Quartz uses a blunt, highly legible wordmark with enough personality to work without an icon or tagline.</p><a href="https://dribbble.com/shots/25985137-Quartz-Wordmark-Logo" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+  </article>
+  <article class="reference" data-choice="quiet-premium" onclick="toggleSelect(this)">
+    <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/47135848/file/4105bf6e682aa7de18ceecb4643f5a0d.png?format=webp&resize=800x600&vertical=center" alt="Delsanti wordmark reference"></div>
+    <div class="ref-copy"><h3>Quiet premium</h3><p>Delsanti demonstrates how proportion, spacing, and a soft custom serif can make a text-only identity feel considered.</p><a href="https://dribbble.com/shots/27205083-Delsanti-wordmark-textbased-logo-design-Timeless-Logo-Design" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+  </article>
+</div>
+
+<div class="principles"><strong>My recommendation for SALT&amp;PEPS</strong><p>Use the bold utility structure as the base, add one custom intervention in the ampersand or final S, and keep the rest of the wordmark extremely clean. That will feel authored and professional without looking like an AI-generated “peptide” symbol.</p></div>

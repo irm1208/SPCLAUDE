@@ -513,7 +513,7 @@ function Shell({ children, subtitle, wide }: { children: React.ReactNode; subtit
             className="rounded-lg flex items-center justify-center shrink-0"
             style={{ width: 32, height: 32, background: "#1B3A7A" }}
           >
-            <SaltPepsMark size={26} variant="reverse" />
+            <SaltPepsMark size={26} />
           </div>
           <div>
             <p className="text-sm font-bold leading-tight">Salt&amp;Peps</p>

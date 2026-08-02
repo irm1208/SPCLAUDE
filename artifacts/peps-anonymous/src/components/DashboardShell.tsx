@@ -493,7 +493,7 @@ export function DashboardShell({
             className="flex items-center justify-center shrink-0"
             style={{ width: 38, height: 38, borderRadius: 8, background: "#0176D3", color: "#fff", fontWeight: 800, fontSize: 12 }}
           >
-            <SaltPepsMark size={30} variant="reverse" />
+            <SaltPepsMark size={30} />
           </div>
 
           <nav className="flex flex-col items-center gap-1.5" style={{ marginTop: 22 }}>
@@ -587,7 +587,7 @@ export function DashboardShell({
             <div className="flex items-center px-4" style={{ height: 72 }}>
               <img
                 src={dark ? "/brand/salt-peps-logo-reverse.svg" : "/brand/salt-peps-logo.svg"}
-                alt="Salt & Peps"
+                alt="Salt&Peps"
                 width={162}
                 height={36}
                 style={{ width: "100%", maxWidth: 162, height: 36, objectFit: "contain", objectPosition: "left center" }}

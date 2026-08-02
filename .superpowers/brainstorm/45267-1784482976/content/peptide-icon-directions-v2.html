@@ -1,0 +1,528 @@
+<style>
+  .peptide-board {
+    --navy: #1B3A7A;
+    --blue: #2D6BCC;
+    --deep: #1B3164;
+    --ink: #0F1F38;
+    --body: #374151;
+    --muted: #6B7280;
+    --line: #D0DAE4;
+    --canvas: #F8FAFC;
+    max-width: 1320px;
+    margin: 0 auto;
+    color: var(--ink);
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .peptide-board * { box-sizing: border-box; }
+
+  .revision-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 12px;
+    color: var(--blue);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .revision-flag::before {
+    content: "";
+    width: 26px;
+    height: 2px;
+    background: var(--blue);
+  }
+
+  .peptide-board > h2 {
+    max-width: 820px;
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-size: clamp(26px, 3.5vw, 44px);
+    font-weight: 750;
+    line-height: 1.12;
+  }
+
+  .peptide-board > .subtitle {
+    max-width: 820px;
+    margin-bottom: 28px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .direction-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .peptide-direction {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #FFFFFF;
+    cursor: pointer;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .peptide-direction:hover {
+    border-color: var(--blue);
+    box-shadow: 0 14px 36px rgba(15, 31, 56, 0.10);
+    transform: translateY(-2px);
+  }
+
+  .peptide-direction.selected {
+    border: 2px solid var(--blue);
+    box-shadow: 0 0 0 5px rgba(45, 107, 204, 0.12);
+  }
+
+  .direction-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--canvas);
+  }
+
+  .direction-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .direction-index {
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    border-radius: 5px;
+    background: var(--navy);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .direction-title strong {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 750;
+  }
+
+  .direction-title span:last-child {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .recommended-tag {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: var(--blue);
+    color: #FFFFFF;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .direction-visual {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.75fr);
+    min-height: 320px;
+  }
+
+  .hero-lockup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 4vw, 48px);
+    min-width: 0;
+    padding: 44px clamp(24px, 5vw, 70px);
+    background: #FFFFFF;
+  }
+
+  .hero-symbol {
+    width: clamp(118px, 12vw, 156px);
+    height: clamp(118px, 12vw, 156px);
+    flex: 0 0 auto;
+    color: var(--navy);
+    --peptide-accent: var(--blue);
+  }
+
+  .hero-wordmark {
+    min-width: 0;
+    color: var(--ink);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: clamp(30px, 4.2vw, 58px);
+    font-weight: 800;
+    line-height: 0.92;
+    white-space: nowrap;
+  }
+
+  .hero-wordmark .amp {
+    color: var(--blue);
+  }
+
+  .wordmark-rule {
+    width: 42px;
+    height: 3px;
+    margin-top: 17px;
+    background: var(--blue);
+  }
+
+  .wordmark-note {
+    margin-top: 10px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+
+  .proof-column {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--line);
+    background: var(--canvas);
+  }
+
+  .optical-proof {
+    flex: 1;
+    padding: 22px 22px 18px;
+  }
+
+  .proof-label {
+    margin-bottom: 14px;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .size-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 18px;
+  }
+
+  .size-sample {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 8px;
+  }
+
+  .size-sample svg {
+    display: block;
+    color: var(--navy);
+    --peptide-accent: var(--blue);
+  }
+
+  .size-64 { width: 64px; height: 64px; }
+  .size-32 { width: 32px; height: 32px; }
+  .size-16 { width: 16px; height: 16px; }
+
+  .reverse-proof {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 19px;
+    padding: 14px;
+    border-radius: 6px;
+    background: var(--deep);
+  }
+
+  .reverse-proof svg {
+    width: 45px;
+    height: 45px;
+    flex: 0 0 45px;
+    color: #FFFFFF;
+    --peptide-accent: #FFFFFF;
+  }
+
+  .reverse-name {
+    color: #FFFFFF;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 17px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .reverse-name span { color: rgba(255,255,255,0.72); }
+
+  .label-proof {
+    padding: 16px 20px;
+    border-top: 1px solid var(--line);
+    background: #FFFFFF;
+  }
+
+  .label-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 9px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .label-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .label-brand svg {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    color: #111111;
+    --peptide-accent: #111111;
+  }
+
+  .label-code {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 7px;
+    text-transform: uppercase;
+  }
+
+  .label-data {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding-top: 8px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 7px;
+    text-transform: uppercase;
+  }
+
+  .label-data strong {
+    display: block;
+    color: var(--ink);
+    font-size: 8px;
+  }
+
+  .direction-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(180px, 0.7fr));
+    gap: 22px;
+    padding: 20px 22px 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  .direction-copy p {
+    color: var(--body);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .direction-copy strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--navy);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .board-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 22px;
+    padding: 15px 17px;
+    border: 1px solid rgba(27,58,122,0.20);
+    border-radius: 6px;
+    background: #FFFFFF;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .board-footer strong { color: var(--navy); }
+
+  @media (max-width: 980px) {
+    .direction-visual { grid-template-columns: 1fr; }
+    .proof-column { border-top: 1px solid var(--line); border-left: 0; }
+    .direction-copy { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    .direction-head { align-items: flex-start; }
+    .direction-title { align-items: flex-start; }
+    .direction-title span:last-child { display: block; margin-top: 3px; }
+    .hero-lockup { align-items: flex-start; flex-direction: column; padding: 34px 24px; }
+    .hero-wordmark { max-width: 100%; font-size: clamp(27px, 10vw, 42px); }
+    .proof-column { min-width: 0; }
+    .label-data { grid-template-columns: 1fr 1fr; }
+    .board-footer { align-items: flex-start; flex-direction: column; }
+  }
+</style>
+
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+  <defs>
+    <symbol id="cystine-fold" viewBox="0 0 64 64">
+      <path d="M13 15C21 6 39 7 48 17C56 28 43 33 31 35C19 37 11 44 16 53C21 61 35 57 43 49C49 43 51 37 55 33" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M20 37C24 36 28 35 33 34" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+      <path d="M20 37C24 36 28 35 33 34" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <path d="M21 21L14 18M46 20L53 15M17 48L9 50M48 44L56 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <path d="M22 33L27 42M43 43L36 46M29 43L34 45" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="28" cy="43" r="2.7" fill="var(--peptide-accent,#2D6BCC)"/>
+      <circle cx="35" cy="46" r="2.7" fill="var(--peptide-accent,#2D6BCC)"/>
+      <circle cx="13" cy="15" r="3" fill="var(--peptide-accent,#2D6BCC)"/>
+      <rect x="52" y="30" width="6" height="6" rx="1" fill="var(--peptide-accent,#2D6BCC)"/>
+    </symbol>
+
+    <symbol id="i4-helix" viewBox="0 0 64 64">
+      <path d="M17 53C37 59 47 49 39 42C31 35 17 39 18 30C19 21 40 27 44 18C48 10 36 6 24 11" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="7" stroke-linecap="square" stroke-linejoin="round"/>
+      <path d="M17 53C37 59 47 49 39 42" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="square"/>
+      <path d="M17 53C37 59 47 49 39 42" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
+      <path d="M18 30C19 21 40 27 44 18" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="square"/>
+      <path d="M18 30C19 21 40 27 44 18" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square"/>
+      <path d="M24 48L31 38M24 35L35 27M31 24L39 16" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="24" cy="11" r="3" fill="currentColor"/>
+    </symbol>
+
+    <symbol id="cyclic-backbone" viewBox="0 0 64 64">
+      <path d="M31 6C37 7 42 8 46 11L56 25L53 42L40 56L22 55L9 41L10 21L20 11C24 8 27 7 31 6Z" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M46 11L56 25" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="5" stroke-linecap="round"/>
+      <path d="M31 6L31 0M56 25L63 22M53 42L59 48M22 55L18 63M9 41L2 42M10 21L4 17" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M48 10L54 3M50 12L57 5" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="58" cy="3" r="2.2" fill="var(--peptide-accent,#2D6BCC)"/>
+      <path d="M17 46C27 37 38 29 50 22" fill="none" stroke="var(--peptide-accent,#2D6BCC)" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="17" cy="46" r="2.2" fill="var(--peptide-accent,#2D6BCC)"/>
+      <rect x="48" y="20" width="4.5" height="4.5" rx="0.8" fill="var(--peptide-accent,#2D6BCC)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="peptide-board">
+  <div class="revision-flag">Second pass / peptide-specific symbols</div>
+  <h2>Choose the peptide idea the icon should own</h2>
+  <p class="subtitle">These are purpose-built biological marks, not generic molecule decorations. Each icon comes from a real peptide structure and is designed as a separate symbol beside the uppercase SALT&amp;PEPS wordmark.</p>
+
+  <div class="direction-stack">
+    <section class="peptide-direction" data-choice="a-cystine-fold" onclick="toggleSelect(this)">
+      <div class="direction-head">
+        <div class="direction-title"><span class="direction-index">A</span><span><strong>Cystine Fold</strong><span> / folded peptide + disulfide bridge</span></span></div>
+        <span class="recommended-tag">Recommended</span>
+      </div>
+      <div class="direction-visual">
+        <div class="hero-lockup">
+          <svg class="hero-symbol" role="img" aria-label="Folded peptide icon with a disulfide bridge"><use href="#cystine-fold"></use></svg>
+          <div>
+            <div class="hero-wordmark">SALT<span class="amp">&amp;</span>PEPS</div>
+            <div class="wordmark-rule"></div>
+            <div class="wordmark-note">Peptide research platform</div>
+          </div>
+        </div>
+        <div class="proof-column">
+          <div class="optical-proof">
+            <div class="proof-label">Mark-only optical sizes</div>
+            <div class="size-row">
+              <span class="size-sample"><svg class="size-64"><use href="#cystine-fold"></use></svg><span>64</span></span>
+              <span class="size-sample"><svg class="size-32"><use href="#cystine-fold"></use></svg><span>32</span></span>
+              <span class="size-sample"><svg class="size-16"><use href="#cystine-fold"></use></svg><span>16</span></span>
+            </div>
+            <div class="reverse-proof"><svg><use href="#cystine-fold"></use></svg><div class="reverse-name">SALT<span>&amp;</span>PEPS</div></div>
+          </div>
+          <div class="label-proof">
+            <div class="label-top"><div class="label-brand"><svg><use href="#cystine-fold"></use></svg>SALT&amp;PEPS</div><div class="label-code">Research use only</div></div>
+            <div class="label-data"><span><strong>RETATRUTIDE</strong>Compound</span><span><strong>20 MG</strong>Strength</span><span><strong>SP-071</strong>Batch</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="direction-copy">
+        <p>A short peptide chain folds over itself and is stabilized by a cobalt disulfide bridge. That blue bridge becomes the memorable proof point and gives the symbol biological meaning at first glance.</p>
+        <p><strong>Why it works</strong>Ownable silhouette, real peptide chemistry, strong avatar, expressive without looking medical.</p>
+        <p><strong>Risk to control</strong>The over-under crossing and bridge must remain clear so it never becomes a generic loop.</p>
+      </div>
+    </section>
+
+    <section class="peptide-direction" data-choice="b-i4-helix" onclick="toggleSelect(this)">
+      <div class="direction-head">
+        <div class="direction-title"><span class="direction-index">B</span><span><strong>i+4 Helix</strong><span> / single peptide helix + hydrogen bonds</span></span></div>
+      </div>
+      <div class="direction-visual">
+        <div class="hero-lockup">
+          <svg class="hero-symbol" role="img" aria-label="Single alpha helix peptide icon"><use href="#i4-helix"></use></svg>
+          <div>
+            <div class="hero-wordmark">SALT<span class="amp">&amp;</span>PEPS</div>
+            <div class="wordmark-rule"></div>
+            <div class="wordmark-note">Peptide research platform</div>
+          </div>
+        </div>
+        <div class="proof-column">
+          <div class="optical-proof">
+            <div class="proof-label">Mark-only optical sizes</div>
+            <div class="size-row">
+              <span class="size-sample"><svg class="size-64"><use href="#i4-helix"></use></svg><span>64</span></span>
+              <span class="size-sample"><svg class="size-32"><use href="#i4-helix"></use></svg><span>32</span></span>
+              <span class="size-sample"><svg class="size-16"><use href="#i4-helix"></use></svg><span>16</span></span>
+            </div>
+            <div class="reverse-proof"><svg><use href="#i4-helix"></use></svg><div class="reverse-name">SALT<span>&amp;</span>PEPS</div></div>
+          </div>
+          <div class="label-proof">
+            <div class="label-top"><div class="label-brand"><svg><use href="#i4-helix"></use></svg>SALT&amp;PEPS</div><div class="label-code">Research use only</div></div>
+            <div class="label-data"><span><strong>SEMAGLUTIDE</strong>Compound</span><span><strong>10 MG</strong>Strength</span><span><strong>SP-104</strong>Batch</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="direction-copy">
+        <p>A single three-turn alpha helix forms a taut S silhouette. Fine blue i+4 hydrogen-bond cues create scientific specificity while the alternating front and rear ribbon segments add visual depth.</p>
+        <p><strong>Why it works</strong>Most immediately life-science, elegant beside the wordmark, recognizable from a distance.</p>
+        <p><strong>Risk to control</strong>It must stay a single technical strand so it never reads as DNA or soft wellness branding.</p>
+      </div>
+    </section>
+
+    <section class="peptide-direction" data-choice="c-cyclic-backbone" onclick="toggleSelect(this)">
+      <div class="direction-head">
+        <div class="direction-title"><span class="direction-index">C</span><span><strong>Cyclic Backbone</strong><span> / eight residues + highlighted peptide bond</span></span></div>
+      </div>
+      <div class="direction-visual">
+        <div class="hero-lockup">
+          <svg class="hero-symbol" role="img" aria-label="Cyclic peptide backbone icon"><use href="#cyclic-backbone"></use></svg>
+          <div>
+            <div class="hero-wordmark">SALT<span class="amp">&amp;</span>PEPS</div>
+            <div class="wordmark-rule"></div>
+            <div class="wordmark-note">Peptide research platform</div>
+          </div>
+        </div>
+        <div class="proof-column">
+          <div class="optical-proof">
+            <div class="proof-label">Mark-only optical sizes</div>
+            <div class="size-row">
+              <span class="size-sample"><svg class="size-64"><use href="#cyclic-backbone"></use></svg><span>64</span></span>
+              <span class="size-sample"><svg class="size-32"><use href="#cyclic-backbone"></use></svg><span>32</span></span>
+              <span class="size-sample"><svg class="size-16"><use href="#cyclic-backbone"></use></svg><span>16</span></span>
+            </div>
+            <div class="reverse-proof"><svg><use href="#cyclic-backbone"></use></svg><div class="reverse-name">SALT<span>&amp;</span>PEPS</div></div>
+          </div>
+          <div class="label-proof">
+            <div class="label-top"><div class="label-brand"><svg><use href="#cyclic-backbone"></use></svg>SALT&amp;PEPS</div><div class="label-code">Research use only</div></div>
+            <div class="label-data"><span><strong>BPC-157</strong>Compound</span><span><strong>5 MG</strong>Strength</span><span><strong>SP-157</strong>Batch</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="direction-copy">
+        <p>An asymmetric cyclic peptide with alternating residue side chains, a highlighted amide bond, and one stabilizing intramolecular contact. The central void gives it a confident seal-like silhouette.</p>
+        <p><strong>Why it works</strong>Detailed and technical, naturally suited to COAs, labels, packaging closures, and social profiles.</p>
+        <p><strong>Risk to control</strong>Asymmetry is essential; too much regularity would make it look like a gear or generic molecule.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="board-footer"><span><strong>Recommended starting point: Cystine Fold.</strong> It is the most ownable peptide-specific icon and gives the blue accent a real chemical role.</span><span>Click A, B, or C, then return to chat.</span></div>
+</div>
