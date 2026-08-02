@@ -1095,7 +1095,7 @@ export default function TodoTab({ selectedGbId, highlightId }: { selectedGbId?: 
         <>
           <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSelectedId(null)} />
           <div
-            className="ov2-todo-detail fixed lg:static inset-y-0 right-0 z-50 lg:z-auto w-[88%] max-w-[340px] sm:w-[340px] lg:w-[300px] xl:w-[340px] shrink-0 flex flex-col"
+            className="ov2-todo-detail fixed lg:static inset-y-0 right-0 z-50 lg:z-auto w-[88%] max-w-[340px] sm:w-[340px] lg:w-[300px] xl:w-[340px] shrink-0 flex flex-col overflow-hidden"
             style={{ background: MS_LIGHT, borderLeft: `1px solid ${MS_LINE}` }}
           >
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
