@@ -151,10 +151,10 @@ check(
   `${bottomNavPath}: use the shared S&P favicon-backed mark`,
 );
 check(
-  /<SaltPepsMark(?=[\s\S]*?size=\{20\})[\s\S]*?\/>/.test(
+  /<SaltPepsMark(?=[\s\S]*?size=\{26\})[\s\S]*?\/>/.test(
     bottomNav,
   ),
-  `${bottomNavPath}: render the 20px S&P mark in the TAP ME button`,
+  `${bottomNavPath}: render the larger 26px S&P mark in the TAP ME button`,
 );
 check(
   !/S&amp;P/.test(bottomNav),
@@ -172,8 +172,8 @@ check(
 const centerButton =
   bottomNav.match(/<button[\s\S]*?aria-label=\{open \?[\s\S]*?<\/button>/)?.[0] ?? "";
 check(
-  /background:\s*ACCENT/.test(centerButton),
-  `${bottomNavPath}: retain the original blue TAP ME button background`,
+  /background:\s*["']#1B3164["']/.test(centerButton),
+  `${bottomNavPath}: match the TAP ME button to the favicon background`,
 );
 check(
   /transform:\s*open\s*\?\s*["']scale\(0\.85\)["']\s*:\s*["']scale\(1\)["']/.test(
