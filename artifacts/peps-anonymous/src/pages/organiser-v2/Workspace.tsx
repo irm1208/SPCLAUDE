@@ -15,18 +15,18 @@ import GbSettingsTab from "./GbSettingsTab";
 import MembersTab from "./MembersTab";
 import GbProductsTab from "./GbProductsTab";
 import {
-  BroadcastTab as LiveBroadcastTab,
-  LabTestsTabOrg as LiveLabTestsTabOrg,
-  OrgTicketsTab as LiveOrgTicketsTab,
   OrganiserCountryLegsTab as LiveOrganiserCountryLegsTab,
-  OrganiserReshippersTab as LiveOrganiserReshippersTab,
-  OrganiserRulesTab as LiveOrganiserRulesTab,
-  ParcelsTab as LiveParcelsTab,
-  PnlTab as LivePnlTab,
-  ShippingPayTab as LiveShippingPayTab,
   SummaryTab as LiveSummaryTab,
   type OrganiserGB,
 } from "../GbOrganiser";
+import BroadcastTab from "./BroadcastTab";
+import LabTestsTab from "./LabTestsTab";
+import TicketsTab from "./TicketsTab";
+import ReshippersTab from "./ReshippersTab";
+import RulesTab from "./RulesTab";
+import ParcelsTab from "./ParcelsTab";
+import PnLTab from "./PnLTab";
+import ShippingTab from "./ShippingTab";
 import GlobalSearch from "./GlobalSearch";
 import DashboardSidebar from "./DashboardSidebar";
 import OrganiserShell from "./OrganiserShell";
@@ -199,27 +199,27 @@ export default function Workspace({
   ) : active === "todos" ? (
     <TodoTab selectedGbId={gb.id} highlightId={highlightId} />
   ) : active === "broadcast" ? (
-    <LiveBroadcastTab gb={apiGroupBuy} />
+    <BroadcastTab selectedGbId={gb.id} />
   ) : active === "parcels" ? (
-    <LiveParcelsTab gb={apiGroupBuy} />
+    <ParcelsTab selectedGbId={gb.id} />
   ) : active === "dispatch" ? (
     <DispatchTab selectedGbId={gb.id} />
   ) : active === "qrcodes" ? (
     <QrCodesTab selectedGbId={gb.id} />
   ) : active === "reshippers" ? (
-    <LiveOrganiserReshippersTab gb={apiGroupBuy} />
+    <ReshippersTab selectedGbId={gb.id} />
   ) : active === "legs" ? (
     <LiveOrganiserCountryLegsTab gb={apiGroupBuy} />
   ) : active === "shipping" ? (
-    <LiveShippingPayTab gb={apiGroupBuy} onUpdated={onGroupBuyUpdated} />
+    <ShippingTab selectedGbId={gb.id} />
   ) : active === "pnl" ? (
-    <LivePnlTab gb={apiGroupBuy} />
+    <PnLTab selectedGbId={gb.id} />
   ) : active === "labtests" ? (
-    <LiveLabTestsTabOrg gb={apiGroupBuy} />
+    <LabTestsTab selectedGbId={gb.id} />
   ) : active === "testinggroups" ? (
     <TestingGroupsTab selectedGbId={gb.id} />
   ) : active === "tickets" ? (
-    <LiveOrgTicketsTab gb={apiGroupBuy} />
+    <TicketsTab selectedGbId={gb.id} highlightId={highlightId} />
   ) : active === "settings" ? (
     <GbSettingsTab selectedGbId={gb.id} />
   ) : active === "products" ? (
@@ -229,7 +229,7 @@ export default function Workspace({
       currency={apiGroupBuy.currency}
     />
   ) : active === "rules" ? (
-    <LiveOrganiserRulesTab gb={apiGroupBuy} />
+    <RulesTab selectedGbId={gb.id} />
   ) : (
     <LiveSummaryTab gb={apiGroupBuy} />
   );

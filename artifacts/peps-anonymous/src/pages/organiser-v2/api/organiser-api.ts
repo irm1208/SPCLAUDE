@@ -110,12 +110,74 @@ export interface ApiProduct {
 export interface ApiLabTest {
   id: number;
   peptideName: string;
+  supplier?: string | null;
   purityPct?: number | string | null;
   labName?: string | null;
   batchCode?: string | null;
   url?: string | null;
   groupBuyId?: string | null;
   pending?: boolean;
+  janoshikId?: string | null;
+  mgAmount?: number | null;
+  testType?: string | null;
+  productCategory?: string | null;
+  endotoxinEuMg?: number | null;
+  sterilityPass?: boolean | null;
+  heavyMetalAs?: string | null;
+  heavyMetalCd?: string | null;
+  heavyMetalPb?: string | null;
+  heavyMetalHg?: string | null;
+  testDate?: string | null;
+  createdAt?: string;
+}
+
+export interface ApiParcel {
+  id: string;
+  groupBuyId: string;
+  label: string;
+  carrier: string;
+  trackingNumber: string;
+  notes?: string | null;
+  items: string[];
+  status: string;
+  trackingUrl?: string | null;
+  createdAt?: string;
+}
+
+export interface ApiGbReshipper {
+  id: string;
+  gbId: string;
+  reshipperUsername: string;
+  country: string;
+  enabledPaymentMethods: Record<string, boolean> | null;
+  enabled: boolean;
+  paymentTarget: string;
+  createdAt: string;
+}
+
+export interface ApiPnlData {
+  gbId: string;
+  gbName: string;
+  orders: { total: number; confirmed: number };
+  revenue: { total: number; products: number; delivery: number };
+  costs: { materials: number; lab: number; shipping: number; misc: number; platformFee: number; total: number; notes: string | null };
+  profit: { gross: number; marginPct: number };
+  productBreakdown: { name: string; totalQty: number; totalRevenue: number }[];
+}
+
+export interface ApiTicketMessage {
+  id: number;
+  ticketId: string;
+  authorRole: string;
+  authorUsername: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ApiTicketFull extends ApiTicket {
+  category?: string;
+  unreadCount?: number;
+  groupBuyName?: string | null;
 }
 
 export interface ApiTestingRound {
@@ -392,9 +454,79 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
     { method: "PUT", body },
   ),
   labTests: () => request<ApiLabTest[]>("/organiser/lab-tests"),
+  createLabTest: (body: Record<string, unknown>) => request<ApiLabTest>(
+    "/organiser/lab-tests",
+    { method: "POST", body },
+  ),
+  deleteLabTest: (id: number) => request<{ ok: boolean }>(
+    `/organiser/lab-tests/${id}`,
+    { method: "DELETE" },
+  ),
+  extractLabTest: (body: { url?: string; fileBase64?: string; mimeType?: string }) => request<Partial<ApiLabTest>>(
+    "/organiser/lab-tests/extract",
+    { method: "POST", body },
+  ),
+  getRules: (groupBuyId: string) => request<{ rules: Array<{ id: string; text: string; enabled?: boolean; format?: string }> }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/rules`,
+  ),
   updateRules: (groupBuyId: string, rules: Array<Record<string, unknown>>) => request<{ rules: unknown[] }>(
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/rules`,
     { method: "PATCH", body: { rules } },
+  ),
+  parcels: (groupBuyId: string) => request<ApiParcel[]>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels`,
+  ),
+  createParcel: (groupBuyId: string, body: Record<string, unknown>) => request<ApiParcel>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels`,
+    { method: "POST", body },
+  ),
+  deleteParcel: (groupBuyId: string, parcelId: string) => request<{ ok: boolean }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels/${encodeURIComponent(parcelId)}`,
+    { method: "DELETE" },
+  ),
+  pnl: (groupBuyId: string) => request<ApiPnlData>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/pnl`,
+  ),
+  updatePnlCosts: (groupBuyId: string, costs: Record<string, unknown>) => request<{ ok: boolean }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/pnl-costs`,
+    { method: "PUT", body: costs },
+  ),
+  gbReshippers: (groupBuyId: string) => request<ApiGbReshipper[]>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshippers`,
+  ),
+  approvedReshippers: () => request<Array<{ telegramUsername: string; reshipperPaymentMethods: unknown }>>(
+    "/organiser/approved-reshippers",
+  ),
+  addReshipper: (groupBuyId: string, body: { reshipperUsername: string; country: string; enabledPaymentMethods?: Record<string, boolean> }) => request<ApiGbReshipper>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshippers`,
+    { method: "POST", body },
+  ),
+  updateReshipper: (groupBuyId: string, username: string, body: Record<string, unknown>) => request<ApiGbReshipper>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshippers/${encodeURIComponent(username)}`,
+    { method: "PATCH", body },
+  ),
+  deleteReshipper: (groupBuyId: string, username: string) => request<{ ok: boolean }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshippers/${encodeURIComponent(username)}`,
+    { method: "DELETE" },
+  ),
+  reassignReshipper: (groupBuyId: string, orderId: string, reshipperUsername: string | null) => request<{ ok: boolean }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/orders/${encodeURIComponent(orderId)}/reassign-reshipper`,
+    { method: "PATCH", body: { reshipperUsername } },
+  ),
+  broadcast: (groupBuyId: string, body: Record<string, unknown>) => request<{ ok: boolean; sentCount?: number; skipped?: number }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/broadcast`,
+    { method: "POST", body },
+  ),
+  getTicket: (ticketId: string) => request<{ ticket: ApiTicketFull; messages: ApiTicketMessage[] }>(
+    `/organiser/tickets/${encodeURIComponent(ticketId)}`,
+  ),
+  replyTicket: (ticketId: string, body: string) => request<ApiTicketMessage>(
+    `/organiser/tickets/${encodeURIComponent(ticketId)}/messages`,
+    { method: "POST", body: { body } },
+  ),
+  generateReshippperInviteCode: (groupBuyId: string) => request<{ inviteCode: string }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshipper-invite-code`,
+    { method: "POST" },
   ),
   orders: async (groupBuyId: string) => {
     const rows = await request<ApiOrganiserOrder[]>(`/organiser/group-buys/${encodeURIComponent(groupBuyId)}/orders`);

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { V2_CARD_BORDER } from "./theme";
+import { organiserApi } from "./api/organiser-api";
 import {
   Truck, Plus, Loader2, Trash2, Save, Check, X, DollarSign,
   Package, ChevronDown, ChevronRight, Lightbulb, CheckCircle2
@@ -21,44 +22,39 @@ interface ShippingTabProps {
   selectedGbId?: string;
 }
 
-const SAMPLE_SHIPPING_OPTIONS: ShippingOption[] = [
-  {
-    id: "1",
-    label: "Standard Shipping",
-    description: "5-7 business days delivery",
-    price: "5.00",
-    requiresAddress: true,
-    requiresQrCode: false,
-  },
-  {
-    id: "2",
-    label: "Express Delivery",
-    description: "Next day delivery",
-    price: "15.00",
-    requiresAddress: true,
-    requiresQrCode: false,
-  },
-  {
-    id: "3",
-    label: "InPost Locker",
-    description: "Pick up from InPost parcel locker",
-    price: "3.00",
-    requiresAddress: false,
-    requiresQrCode: true,
-  },
-];
-
 export default function ShippingTab({ selectedGbId }: ShippingTabProps = {}) {
-  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>(SAMPLE_SHIPPING_OPTIONS);
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [expandedSection, setExpandedSection] = useState<string | null>("shipping-options");
   const [savingShipping, setSavingShipping] = useState(false);
   const [savedShipping, setSavedShipping] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   // Vendor shipping
-  const [vendorShipCost, setVendorShipCost] = useState("120.00");
-  const [vendorShipKits, setVendorShipKits] = useState("20");
+  const [vendorShipCost, setVendorShipCost] = useState("");
+  const [vendorShipKits, setVendorShipKits] = useState("");
   const [savingVendor, setSavingVendor] = useState(false);
   const [savedVendor, setSavedVendor] = useState(false);
+
+  useEffect(() => {
+    if (!selectedGbId) return;
+    organiserApi.groupBuy(selectedGbId)
+      .then(gb => {
+        if (gb.shippingOptions && Array.isArray(gb.shippingOptions)) {
+          setShippingOptions(gb.shippingOptions.map((o: any) => ({
+            id: o.id ?? String(Date.now() + Math.random()),
+            label: o.label ?? "",
+            description: o.description ?? "",
+            price: o.price != null ? String(o.price) : "0.00",
+            requiresAddress: !!o.requiresAddress,
+            requiresQrCode: !!o.requiresQrCode,
+          })));
+        }
+        if (gb.vendorShippingAmount != null) {
+          setVendorShipCost(String(gb.vendorShippingAmount));
+        }
+      })
+      .catch(() => setLoadError("Failed to load shipping settings"));
+  }, [selectedGbId]);
 
   // Shipping split
   const [splitEnabled, setSplitEnabled] = useState(false);
@@ -93,19 +89,41 @@ export default function ShippingTab({ selectedGbId }: ShippingTabProps = {}) {
   };
 
   const handleSaveShipping = async () => {
+    if (!selectedGbId) return;
     setSavingShipping(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSavingShipping(false);
-    setSavedShipping(true);
-    setTimeout(() => setSavedShipping(false), 2000);
+    try {
+      const options = shippingOptions.map(o => ({
+        id: o.id,
+        label: o.label,
+        description: o.description || undefined,
+        price: parseFloat(o.price) || 0,
+        requiresAddress: o.requiresAddress,
+        requiresQrCode: o.requiresQrCode,
+      }));
+      await organiserApi.updateGroupBuy(selectedGbId, { shippingOptions: options });
+      setSavedShipping(true);
+      setTimeout(() => setSavedShipping(false), 2000);
+    } catch {
+      setLoadError("Failed to save shipping options");
+    } finally {
+      setSavingShipping(false);
+    }
   };
 
   const handleSaveVendor = async () => {
+    if (!selectedGbId) return;
     setSavingVendor(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSavingVendor(false);
-    setSavedVendor(true);
-    setTimeout(() => setSavedVendor(false), 2000);
+    try {
+      await organiserApi.updateGroupBuy(selectedGbId, {
+        vendorShippingAmount: parseFloat(vendorShipCost) || 0,
+      });
+      setSavedVendor(true);
+      setTimeout(() => setSavedVendor(false), 2000);
+    } catch {
+      setLoadError("Failed to save vendor shipping");
+    } finally {
+      setSavingVendor(false);
+    }
   };
 
   const syncSplitSlider = (field: "equal" | "weighted", value: number) => {
@@ -139,6 +157,14 @@ export default function ShippingTab({ selectedGbId }: ShippingTabProps = {}) {
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {loadError && (
+        <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+          <p className="text-[13px] font-semibold" style={{ color: "#DC2626" }}>{loadError}</p>
+          <button onClick={() => setLoadError("")} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-100">
+            <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Shipping</h2>

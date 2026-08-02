@@ -1,49 +1,31 @@
 import { useState, useEffect } from "react";
 import { V2_CARD_BORDER } from "./theme";
+import { organiserApi, type ApiPnlData } from "./api/organiser-api";
 import {
   BarChart3, TrendingUp, TrendingDown, Loader2, Check, CheckCircle2,
-  DollarSign, Package, ShoppingBag, Lightbulb, ChevronDown, ChevronRight
+  DollarSign, Package, ShoppingBag, Lightbulb, ChevronDown, ChevronRight, X,
 } from "lucide-react";
 
 // ─── Workspace: P&L Tab ──────────────────────────────────────────────────────
-// Track revenue, costs, and profit for this group buy
-
-interface PnlData {
-  gbName: string;
-  orders: { total: number; confirmed: number };
-  revenue: { total: number; products: number; delivery: number };
-  costs: { materials: number; lab: number; shipping: number; misc: number; platformFee: number; total: number; notes: string | null };
-  profit: { gross: number; marginPct: number };
-  productBreakdown: { name: string; totalQty: number; totalRevenue: number }[];
-}
+// Revenue from confirmed orders is fetched live; costs are editable and persisted
+// via /organiser/group-buys/:id/pnl-costs.
 
 interface PnLTabProps {
   selectedGbId?: string;
 }
 
-const SAMPLE_DATA: PnlData = {
-  gbName: "Sample Group Buy",
-  orders: { total: 45, confirmed: 42 },
-  revenue: { total: 6750.00, products: 6000.00, delivery: 750.00 },
-  costs: { materials: 3200.00, lab: 450.00, shipping: 890.00, misc: 210.00, platformFee: 337.50, total: 5087.50, notes: "Material costs from Vendor A" },
-  profit: { gross: 1662.50, marginPct: 24.6 },
-  productBreakdown: [
-    { name: "Product A", totalQty: 120, totalRevenue: 3600.00 },
-    { name: "Product B", totalQty: 80, totalRevenue: 2400.00 },
-  ],
-};
-
 const COST_FIELDS = [
-  { key: "materials", label: "Materials", sub: "Raw materials, components" },
-  { key: "lab", label: "Lab Testing", sub: "Quality control, testing" },
-  { key: "shipping", label: "Vendor Shipping", sub: "Shipping from vendor to you" },
-  { key: "misc", label: "Miscellaneous", sub: "Other costs" },
-  { key: "platformFee", label: "Platform Fee", sub: "Transaction & platform fees" },
+  { key: "materials" as const, label: "Materials", sub: "Raw materials, components" },
+  { key: "lab" as const, label: "Lab Testing", sub: "Quality control, testing" },
+  { key: "shipping" as const, label: "Vendor Shipping", sub: "Shipping from vendor to you" },
+  { key: "misc" as const, label: "Miscellaneous", sub: "Other costs" },
+  { key: "platformFee" as const, label: "Platform Fee", sub: "Transaction & platform fees" },
 ] as const;
 
 export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
-  const [data, setData] = useState<PnlData | null>(null);
+  const [data, setData] = useState<ApiPnlData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [costs, setCosts] = useState({
     materials: "",
     lab: "",
@@ -58,18 +40,23 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
 
   useEffect(() => {
     if (!selectedGbId) return;
-    setData(SAMPLE_DATA);
-    setCosts({
-      materials: SAMPLE_DATA.costs.materials > 0 ? String(SAMPLE_DATA.costs.materials) : "",
-      lab: SAMPLE_DATA.costs.lab > 0 ? String(SAMPLE_DATA.costs.lab) : "",
-      shipping: SAMPLE_DATA.costs.shipping > 0 ? String(SAMPLE_DATA.costs.shipping) : "",
-      misc: SAMPLE_DATA.costs.misc > 0 ? String(SAMPLE_DATA.costs.misc) : "",
-      platformFee: SAMPLE_DATA.costs.platformFee > 0 ? String(SAMPLE_DATA.costs.platformFee) : "",
-      notes: SAMPLE_DATA.costs.notes || "",
-    });
+    setLoading(true); setError("");
+    organiserApi.pnl(selectedGbId)
+      .then(d => {
+        setData(d);
+        setCosts({
+          materials: d.costs.materials > 0 ? String(d.costs.materials) : "",
+          lab: d.costs.lab > 0 ? String(d.costs.lab) : "",
+          shipping: d.costs.shipping > 0 ? String(d.costs.shipping) : "",
+          misc: d.costs.misc > 0 ? String(d.costs.misc) : "",
+          platformFee: d.costs.platformFee > 0 ? String(d.costs.platformFee) : "",
+          notes: d.costs.notes ?? "",
+        });
+      })
+      .catch(() => setError("Failed to load P&L data"))
+      .finally(() => setLoading(false));
   }, [selectedGbId]);
 
-  // Live-computed gross profit from current (unsaved) cost inputs
   const liveRevenue = data?.revenue.total ?? 0;
   const liveTotalCosts = COST_FIELDS.reduce((sum, { key }) => sum + (parseFloat(costs[key]) || 0), 0);
   const liveGrossProfit = liveRevenue - liveTotalCosts;
@@ -77,11 +64,28 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
 
   const handleSaveCosts = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (!selectedGbId) return;
+    setSaving(true); setError("");
+    try {
+      const costBody = {
+        materials: parseFloat(costs.materials) || 0,
+        lab: parseFloat(costs.lab) || 0,
+        shipping: parseFloat(costs.shipping) || 0,
+        misc: parseFloat(costs.misc) || 0,
+        platformFee: parseFloat(costs.platformFee) || 0,
+        notes: costs.notes.trim() || null,
+      };
+      await organiserApi.updatePnlCosts(selectedGbId, costBody);
+      // Refresh data to update the server-computed totals
+      const updated = await organiserApi.pnl(selectedGbId);
+      setData(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save costs");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleSection = (section: string) => {
@@ -92,21 +96,30 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
     return (
       <div className="rounded-xl p-8 sm:p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <BarChart3 className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
-        <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>
-          No Group Buy Selected
-        </h3>
-        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
-          Select a group buy to view profit & loss
-        </p>
+        <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>No Group Buy Selected</h3>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Select a group buy to view profit & loss</p>
       </div>
     );
   }
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="rounded-xl p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" style={{ color: "var(--t-blue)" }} />
-        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Loading P&L data...</p>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Loading P&L data…</p>
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="rounded-xl p-8 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+        <p className="text-[14px] mb-3" style={{ color: "#DC2626" }}>{error}</p>
+        <button
+          onClick={() => { setError(""); setLoading(true); organiserApi.pnl(selectedGbId!).then(setData).catch(() => setError("Failed")).finally(() => setLoading(false)); }}
+          className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white"
+          style={{ background: "var(--t-blue)" }}
+        >Retry</button>
       </div>
     );
   }
@@ -114,7 +127,7 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
   const currency = "GBP";
 
   const kpiCards = [
-    { label: "Revenue", value: `${currency} ${liveRevenue.toFixed(2)}`, sub: `${data.orders.confirmed} confirmed orders`, color: "var(--t-blue)" },
+    { label: "Revenue", value: `${currency} ${liveRevenue.toFixed(2)}`, sub: `${data?.orders.confirmed ?? 0} confirmed orders`, color: "var(--t-blue)" },
     { label: "Total Costs", value: `${currency} ${liveTotalCosts.toFixed(2)}`, sub: "All expenses tracked", color: "var(--t-text)" },
     { label: "Gross Profit", value: `${currency} ${liveGrossProfit.toFixed(2)}`, sub: `${liveMarginPct.toFixed(1)}% margin (live)`, color: liveGrossProfit >= 0 ? "#16A34A" : "#DC2626" },
   ];
@@ -125,7 +138,7 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
       <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Profit & Loss</h2>
         <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
-          Track your revenue, costs, and profit for {data.gbName}
+          Track your revenue, costs, and profit{data ? ` for ${data.gbName}` : ""}
         </p>
       </div>
 
@@ -138,11 +151,20 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
           <div>
             <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>How P&L Works</h3>
             <p className="text-[14px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
-              <strong style={{ color: "var(--t-text)" }}>Revenue</strong> is calculated automatically from confirmed orders. Enter your <strong style={{ color: "var(--t-text)" }}>costs</strong> below (materials, shipping, etc.) and your <strong style={{ color: "var(--t-text)" }}>gross profit</strong> updates live. This helps you see if your group buy is profitable before you finalize it.
+              <strong style={{ color: "var(--t-text)" }}>Revenue</strong> is calculated automatically from confirmed orders. Enter your <strong style={{ color: "var(--t-text)" }}>costs</strong> below and your <strong style={{ color: "var(--t-text)" }}>gross profit</strong> updates live.
             </p>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+          <p className="text-[13px] font-semibold" style={{ color: "#DC2626" }}>{error}</p>
+          <button onClick={() => setError("")} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-100">
+            <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -172,16 +194,10 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
           >
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>
-                Cost Inputs
-              </span>
+              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Cost Inputs</span>
               <span className="text-[12px] font-normal" style={{ color: "var(--t-subtle)" }}>— Gross Profit updates live as you type</span>
             </div>
-            {expandedSection === "costs" ? (
-              <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
-            ) : (
-              <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />
-            )}
+            {expandedSection === "costs" ? <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} /> : <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />}
           </button>
 
           {expandedSection === "costs" && (
@@ -189,9 +205,7 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {COST_FIELDS.map(({ key, label, sub }) => (
                   <div key={key}>
-                    <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>
-                      {label}
-                    </label>
+                    <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>{label}</label>
                     <p className="text-[12px] mb-1.5" style={{ color: "var(--t-muted)" }}>{sub}</p>
                     <div className="flex items-center gap-1 px-3 h-10 rounded-lg" style={{ border: `1px solid ${V2_CARD_BORDER}`, background: "#fff" }}>
                       <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--t-subtle)" }}>{currency}</span>
@@ -209,11 +223,8 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
                   </div>
                 ))}
               </div>
-
               <div>
-                <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>
-                  Notes
-                </label>
+                <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Notes</label>
                 <textarea
                   value={costs.notes}
                   onChange={(e) => setCosts(c => ({ ...c, notes: e.target.value }))}
@@ -223,21 +234,14 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
                   style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "#fff" }}
                 />
               </div>
-
               <button
                 type="submit"
                 disabled={saving}
                 className="h-10 px-5 rounded-lg text-[14px] font-bold text-white flex items-center gap-2"
                 style={{ background: saved ? "#16A34A" : "var(--t-blue)" }}
               >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : saved ? (
-                  <CheckCircle2 className="w-4 h-4" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-                {saving ? "Saving..." : saved ? "Saved!" : "Save Costs"}
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                {saving ? "Saving…" : saved ? "Saved!" : "Save Costs"}
               </button>
             </form>
           )}
@@ -252,18 +256,11 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
           >
             <div className="flex items-center gap-2">
               <ShoppingBag className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>
-                Revenue Breakdown
-              </span>
+              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Revenue Breakdown</span>
             </div>
-            {expandedSection === "revenue" ? (
-              <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
-            ) : (
-              <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />
-            )}
+            {expandedSection === "revenue" ? <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} /> : <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />}
           </button>
-
-          {expandedSection === "revenue" && (
+          {expandedSection === "revenue" && data && (
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg" style={{ background: "var(--t-surface2)" }}>
@@ -275,23 +272,6 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
                   <p className="text-[18px] font-bold" style={{ color: "var(--t-text)" }}>{currency} {data.revenue.delivery.toFixed(2)}</p>
                 </div>
               </div>
-
-              {data.productBreakdown.length > 0 && (
-                <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>By Product</p>
-                  <div className="space-y-2">
-                    {data.productBreakdown.map(product => (
-                      <div key={product.name} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "var(--t-surface2)" }}>
-                        <div>
-                          <p className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{product.name}</p>
-                          <p className="text-[12px]" style={{ color: "var(--t-subtle)" }}>{product.totalQty} units</p>
-                        </div>
-                        <p className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{currency} {product.totalRevenue.toFixed(2)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -305,18 +285,11 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
           >
             <div className="flex items-center gap-2">
               <Package className="w-4 h-4" style={{ color: "var(--t-subtle)" }} />
-              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>
-                Product Breakdown
-              </span>
+              <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: "var(--t-text)" }}>Product Breakdown</span>
             </div>
-            {expandedSection === "products" ? (
-              <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} />
-            ) : (
-              <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />
-            )}
+            {expandedSection === "products" ? <ChevronDown className="w-5 h-5" style={{ color: "var(--t-blue)" }} /> : <ChevronRight className="w-5 h-5" style={{ color: "var(--t-subtle)" }} />}
           </button>
-
-          {expandedSection === "products" && (
+          {expandedSection === "products" && data && (
             <div className="p-4">
               {data.productBreakdown.length > 0 ? (
                 <div className="space-y-2">
@@ -331,7 +304,7 @@ export default function PnLTab({ selectedGbId }: PnLTabProps = {}) {
                   ))}
                 </div>
               ) : (
-                <p className="text-[14px] text-center" style={{ color: "var(--t-subtle)" }}>No product data available</p>
+                <p className="text-[14px] text-center py-4" style={{ color: "var(--t-subtle)" }}>No confirmed orders yet</p>
               )}
             </div>
           )}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { V2_CARD_BORDER } from "./theme";
-import { loadGb, saveGb } from "./storage";
+import { organiserApi } from "./api/organiser-api";
 import {
   FlaskConical, Loader2, Trash2, Check, CheckCircle2, X,
   Upload, ExternalLink, Sparkles, ChevronDown, ChevronRight,
@@ -11,8 +11,7 @@ import {
 // Full port of the v1 organiser lab tests tab: AI bulk import from URLs with a
 // review table, single file upload + AI extraction, complete manual form
 // (Janoshik ID, mg, test type, category, endotoxin, sterility, heavy metals),
-// pending/approved states and delete. Extraction is simulated and results
-// persist per-GB to localStorage until the live API is wired in.
+// pending/approved states and delete. Data is persisted via the API.
 
 interface OrgLabTest {
   id: number;
@@ -53,61 +52,7 @@ interface LabTestsTabProps {
   selectedGbId?: string;
 }
 
-const SAMPLE_TESTS: OrgLabTest[] = [
-  {
-    id: 1,
-    url: "https://janoshik.com/results/J-12345",
-    peptideName: "Semaglutide",
-    supplier: "Vendor A",
-    labName: "Janoshik",
-    batchCode: "BATCH001",
-    purityPct: "99.2",
-    testDate: "2024-01-15",
-    pending: false,
-    groupBuyId: "gb_winter25",
-    janoshikId: "J-12345",
-    mgAmount: 5,
-    testType: "HPLC",
-    productCategory: "Peptide",
-    endotoxinEuMg: 0.5,
-    sterilityPass: true,
-    heavyMetalAs: "<0.1",
-    heavyMetalCd: "<0.1",
-    heavyMetalPb: "<0.1",
-    heavyMetalHg: "<0.1",
-    createdAt: "2024-01-16T10:00:00Z",
-  },
-  {
-    id: 2,
-    url: "https://janoshik.com/results/J-67890",
-    peptideName: "Tirzepatide",
-    supplier: "Vendor B",
-    labName: "Janoshik",
-    batchCode: "BATCH002",
-    purityPct: "98.7",
-    testDate: "2024-01-20",
-    pending: true,
-    groupBuyId: "gb_winter25",
-    janoshikId: "J-67890",
-    mgAmount: 10,
-    testType: "HPLC",
-    productCategory: "Peptide",
-    endotoxinEuMg: null,
-    sterilityPass: null,
-    heavyMetalAs: null,
-    heavyMetalCd: null,
-    heavyMetalPb: null,
-    heavyMetalHg: null,
-    createdAt: "2024-01-21T10:00:00Z",
-  },
-];
-
-// Rotating presets so simulated extraction returns plausible varied data
-const EXTRACT_PRESETS = [
-  { peptideName: "BPC-157", purityPct: "99.1", mgAmount: "5", batchCode: "B240301", testType: "HPLC", productCategory: "Peptide", endotoxinEuMg: "0.4", sterilityPass: "true" },
-  { peptideName: "Semaglutide", purityPct: "99.4", mgAmount: "10", batchCode: "B240315", testType: "HPLC-MS", productCategory: "Peptide", endotoxinEuMg: "0.2", sterilityPass: "true" },
-  { peptideName: "TB-500", purityPct: "98.8", mgAmount: "10", batchCode: "B240322", testType: "HPLC", productCategory: "Peptide", endotoxinEuMg: "", sterilityPass: "" },
-];
+// No sample data — loaded from API
 
 const DEFAULT_FORM = {
   url: "", peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "", testDate: "",
@@ -160,22 +105,49 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
 
   useEffect(() => {
     if (!selectedGbId) return;
-    setTests(loadGb<OrgLabTest[]>(selectedGbId, "labTests", SAMPLE_TESTS));
+    organiserApi.labTests()
+      .then(all => {
+        const filtered = all.filter(t => String(t.groupBuyId) === String(selectedGbId));
+        setTests(filtered.map(t => ({
+          id: typeof t.id === "number" ? t.id : parseInt(String(t.id)),
+          url: t.url ?? null,
+          peptideName: t.peptideName ?? "",
+          supplier: t.supplier ?? null,
+          labName: t.labName ?? null,
+          batchCode: t.batchCode ?? null,
+          purityPct: t.purityPct != null ? String(t.purityPct) : null,
+          testDate: t.testDate ?? null,
+          pending: t.pending !== false,
+          groupBuyId: String(t.groupBuyId ?? selectedGbId),
+          janoshikId: t.janoshikId ?? null,
+          mgAmount: t.mgAmount ?? null,
+          testType: t.testType ?? null,
+          productCategory: t.productCategory ?? null,
+          endotoxinEuMg: t.endotoxinEuMg ?? null,
+          sterilityPass: t.sterilityPass ?? null,
+          heavyMetalAs: t.heavyMetalAs ?? null,
+          heavyMetalCd: t.heavyMetalCd ?? null,
+          heavyMetalPb: t.heavyMetalPb ?? null,
+          heavyMetalHg: t.heavyMetalHg ?? null,
+          createdAt: t.createdAt ?? new Date().toISOString(),
+        })));
+      })
+      .catch(() => setError("Failed to load lab tests"));
   }, [selectedGbId]);
 
-  const persist = (next: OrgLabTest[]) => {
-    setTests(next);
-    saveGb(selectedGbId, "labTests", next);
-  };
-
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (!confirm("Delete this lab test?")) return;
-    persist(tests.filter(t => t.id !== id));
+    try {
+      await organiserApi.deleteLabTest(id);
+      setTests(prev => prev.filter(t => t.id !== id));
+    } catch {
+      setError("Failed to delete lab test");
+    }
   };
 
   const resetBulk = () => { setReviewRows([]); setBulkResult(null); setBulkUrls(""); };
 
-  // Simulated per-URL AI extraction — one URL per line, sequential like v1
+  // Real per-URL AI extraction — one URL per line, sequential
   const handleExtractFromLinks = async () => {
     const urls = bulkUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
     if (!urls.length) { setError("Paste at least one URL"); return; }
@@ -194,18 +166,33 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
     for (let i = 0; i < urls.length; i++) {
       const rowIdx = startIdx + i;
       setReviewRows(rows => rows.map((r, j) => j === rowIdx ? { ...r, status: "extracting" } : r));
-      await new Promise(resolve => setTimeout(resolve, 900));
       if (!/^https?:\/\//i.test(urls[i])) {
         setReviewRows(rows => rows.map((r, j) => j === rowIdx ? { ...r, status: "error", error: "Not a valid URL" } : r));
         continue;
       }
-      const preset = EXTRACT_PRESETS[i % EXTRACT_PRESETS.length];
-      setReviewRows(rows => rows.map((r, j) => j === rowIdx ? {
-        ...r, status: "done", ...preset,
-        janoshikId: janoshikIdFromUrl(urls[i]),
-        testDate: "2026-06-15",
-        heavyMetalAs: "n/d", heavyMetalCd: "n/d", heavyMetalPb: "n/d", heavyMetalHg: "n/d",
-      } : r));
+      try {
+        const extracted = await organiserApi.extractLabTest({ url: urls[i] });
+        setReviewRows(rows => rows.map((r, j) => j === rowIdx ? {
+          ...r, status: "done",
+          peptideName: extracted.peptideName ?? r.peptideName,
+          labName: extracted.labName ?? r.labName,
+          batchCode: extracted.batchCode ?? r.batchCode,
+          purityPct: extracted.purityPct != null ? String(extracted.purityPct) : r.purityPct,
+          testDate: extracted.testDate ?? r.testDate,
+          janoshikId: extracted.janoshikId ?? janoshikIdFromUrl(urls[i]),
+          mgAmount: extracted.mgAmount != null ? String(extracted.mgAmount) : r.mgAmount,
+          testType: extracted.testType ?? r.testType,
+          productCategory: extracted.productCategory ?? r.productCategory,
+          endotoxinEuMg: extracted.endotoxinEuMg != null ? String(extracted.endotoxinEuMg) : r.endotoxinEuMg,
+          sterilityPass: extracted.sterilityPass != null ? String(extracted.sterilityPass) : r.sterilityPass,
+          heavyMetalAs: extracted.heavyMetalAs ?? r.heavyMetalAs,
+          heavyMetalCd: extracted.heavyMetalCd ?? r.heavyMetalCd,
+          heavyMetalPb: extracted.heavyMetalPb ?? r.heavyMetalPb,
+          heavyMetalHg: extracted.heavyMetalHg ?? r.heavyMetalHg,
+        } : r));
+      } catch (err: unknown) {
+        setReviewRows(rows => rows.map((r, j) => j === rowIdx ? { ...r, status: "error", error: err instanceof Error ? err.message : "Extraction failed" } : r));
+      }
     }
     setBulkExtracting(false);
   };
@@ -219,91 +206,145 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
     const readyRows = reviewRows.filter(r => r.status === "done" && r.peptideName.trim());
     if (!readyRows.length) { setError("No ready rows to submit — add a COA URL and peptide name first"); return; }
     setBulkSubmitting(true); setError(""); setBulkResult(null);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    const base = Date.now();
-    const added: OrgLabTest[] = readyRows.map((row, i) => ({
-      id: base + i,
-      url: row.url.trim() || null,
-      peptideName: row.peptideName.trim(),
-      supplier: null,
-      labName: row.labName.trim() || null,
-      batchCode: row.batchCode.trim() || null,
-      purityPct: row.purityPct || null,
-      testDate: row.testDate || null,
-      pending: true,
-      groupBuyId: selectedGbId ?? null,
-      janoshikId: row.janoshikId.trim() || null,
-      mgAmount: row.mgAmount ? parseFloat(row.mgAmount) : null,
-      testType: row.testType.trim() || null,
-      productCategory: row.productCategory.trim() || null,
-      endotoxinEuMg: row.endotoxinEuMg ? parseFloat(row.endotoxinEuMg) : null,
-      sterilityPass: row.sterilityPass !== "" ? row.sterilityPass === "true" : null,
-      heavyMetalAs: row.heavyMetalAs.trim() || null,
-      heavyMetalCd: row.heavyMetalCd.trim() || null,
-      heavyMetalPb: row.heavyMetalPb.trim() || null,
-      heavyMetalHg: row.heavyMetalHg.trim() || null,
-      createdAt: new Date().toISOString(),
-    }));
-    persist([...added, ...tests]);
-    setBulkResult({ imported: added.length, failed: 0 });
+    let imported = 0;
+    let failed = 0;
+    for (const row of readyRows) {
+      try {
+        const created = await organiserApi.createLabTest({
+          groupBuyId: selectedGbId ?? "",
+          url: row.url.trim() || undefined,
+          peptideName: row.peptideName.trim(),
+          labName: row.labName.trim() || undefined,
+          batchCode: row.batchCode.trim() || undefined,
+          purityPct: row.purityPct || undefined,
+          testDate: row.testDate || undefined,
+          janoshikId: row.janoshikId.trim() || undefined,
+          mgAmount: row.mgAmount ? parseFloat(row.mgAmount) : undefined,
+          testType: row.testType.trim() || undefined,
+          productCategory: row.productCategory.trim() || undefined,
+          endotoxinEuMg: row.endotoxinEuMg ? parseFloat(row.endotoxinEuMg) : undefined,
+          sterilityPass: row.sterilityPass !== "" ? row.sterilityPass === "true" : undefined,
+          heavyMetalAs: row.heavyMetalAs.trim() || undefined,
+          heavyMetalCd: row.heavyMetalCd.trim() || undefined,
+          heavyMetalPb: row.heavyMetalPb.trim() || undefined,
+          heavyMetalHg: row.heavyMetalHg.trim() || undefined,
+        });
+        const mapped: OrgLabTest = {
+          id: typeof created.id === "number" ? created.id : parseInt(String(created.id)),
+          url: created.url ?? null, peptideName: created.peptideName ?? row.peptideName,
+          supplier: null, labName: created.labName ?? null, batchCode: created.batchCode ?? null,
+          purityPct: created.purityPct != null ? String(created.purityPct) : null,
+          testDate: created.testDate ?? null, pending: true, groupBuyId: String(selectedGbId ?? ""),
+          janoshikId: created.janoshikId ?? null, mgAmount: created.mgAmount ?? null,
+          testType: created.testType ?? null, productCategory: created.productCategory ?? null,
+          endotoxinEuMg: created.endotoxinEuMg ?? null, sterilityPass: created.sterilityPass ?? null,
+          heavyMetalAs: created.heavyMetalAs ?? null, heavyMetalCd: created.heavyMetalCd ?? null,
+          heavyMetalPb: created.heavyMetalPb ?? null, heavyMetalHg: created.heavyMetalHg ?? null,
+          createdAt: created.createdAt ?? new Date().toISOString(),
+        };
+        setTests(prev => [mapped, ...prev]);
+        imported++;
+      } catch {
+        failed++;
+      }
+    }
+    setBulkResult({ imported, failed });
     setReviewRows([]);
     setBulkSubmitting(false);
   };
 
-  // Single file upload → simulated AI extraction → pre-fill the manual form
+  // Single file upload → real AI extraction → pre-fill the manual form
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setExtractLoading(true); setError(""); setExtracted(false);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const preset = EXTRACT_PRESETS[0];
-    setForm(f => ({
-      ...f, ...preset,
-      labName: "Janoshik",
-      janoshikId: "J-55555",
-      testDate: "2026-06-20",
-      heavyMetalAs: "n/d", heavyMetalCd: "n/d", heavyMetalPb: "n/d", heavyMetalHg: "n/d",
-    }));
-    setExtracted(true);
-    setExtractLoading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      const reader = new FileReader();
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = ev => {
+          const result = ev.target?.result as string;
+          // result is data:mime;base64,<data>
+          resolve(result.split(",")[1] ?? "");
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const extracted = await organiserApi.extractLabTest({ fileBase64, mimeType: file.type });
+      setForm(f => ({
+        ...f,
+        peptideName: extracted.peptideName ?? f.peptideName,
+        labName: extracted.labName ?? f.labName,
+        batchCode: extracted.batchCode ?? f.batchCode,
+        purityPct: extracted.purityPct != null ? String(extracted.purityPct) : f.purityPct,
+        testDate: extracted.testDate ?? f.testDate,
+        janoshikId: extracted.janoshikId ?? f.janoshikId,
+        mgAmount: extracted.mgAmount != null ? String(extracted.mgAmount) : f.mgAmount,
+        testType: extracted.testType ?? f.testType,
+        productCategory: extracted.productCategory ?? f.productCategory,
+        endotoxinEuMg: extracted.endotoxinEuMg != null ? String(extracted.endotoxinEuMg) : f.endotoxinEuMg,
+        sterilityPass: extracted.sterilityPass != null ? String(extracted.sterilityPass) : f.sterilityPass,
+        heavyMetalAs: extracted.heavyMetalAs ?? f.heavyMetalAs,
+        heavyMetalCd: extracted.heavyMetalCd ?? f.heavyMetalCd,
+        heavyMetalPb: extracted.heavyMetalPb ?? f.heavyMetalPb,
+        heavyMetalHg: extracted.heavyMetalHg ?? f.heavyMetalHg,
+      }));
+      setExtracted(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Extraction failed");
+    } finally {
+      setExtractLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleManualSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.peptideName.trim()) { setError("Peptide name is required"); return; }
     setSaving(true); setError("");
-    await new Promise(resolve => setTimeout(resolve, 800));
-    const test: OrgLabTest = {
-      id: Date.now(),
-      url: form.url.trim() || null,
-      peptideName: form.peptideName.trim(),
-      supplier: null,
-      labName: form.labName.trim() || null,
-      batchCode: form.batchCode.trim() || null,
-      purityPct: form.purityPct || null,
-      testDate: form.testDate || null,
-      pending: true,
-      groupBuyId: selectedGbId ?? null,
-      janoshikId: form.janoshikId.trim() || null,
-      mgAmount: form.mgAmount ? parseFloat(form.mgAmount) : null,
-      testType: form.testType.trim() || null,
-      productCategory: form.productCategory.trim() || null,
-      endotoxinEuMg: form.endotoxinEuMg ? parseFloat(form.endotoxinEuMg) : null,
-      sterilityPass: form.sterilityPass !== "" ? form.sterilityPass === "true" : null,
-      heavyMetalAs: form.heavyMetalAs.trim() || null,
-      heavyMetalCd: form.heavyMetalCd.trim() || null,
-      heavyMetalPb: form.heavyMetalPb.trim() || null,
-      heavyMetalHg: form.heavyMetalHg.trim() || null,
-      createdAt: new Date().toISOString(),
-    };
-    persist([test, ...tests]);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-    setForm(DEFAULT_FORM);
-    setExtracted(false);
-    setMode("none");
+    try {
+      const created = await organiserApi.createLabTest({
+        groupBuyId: selectedGbId ?? "",
+        url: form.url.trim() || undefined,
+        peptideName: form.peptideName.trim(),
+        labName: form.labName.trim() || undefined,
+        batchCode: form.batchCode.trim() || undefined,
+        purityPct: form.purityPct || undefined,
+        testDate: form.testDate || undefined,
+        janoshikId: form.janoshikId.trim() || undefined,
+        mgAmount: form.mgAmount ? parseFloat(form.mgAmount) : undefined,
+        testType: form.testType.trim() || undefined,
+        productCategory: form.productCategory.trim() || undefined,
+        endotoxinEuMg: form.endotoxinEuMg ? parseFloat(form.endotoxinEuMg) : undefined,
+        sterilityPass: form.sterilityPass !== "" ? form.sterilityPass === "true" : undefined,
+        heavyMetalAs: form.heavyMetalAs.trim() || undefined,
+        heavyMetalCd: form.heavyMetalCd.trim() || undefined,
+        heavyMetalPb: form.heavyMetalPb.trim() || undefined,
+        heavyMetalHg: form.heavyMetalHg.trim() || undefined,
+      });
+      const test: OrgLabTest = {
+        id: typeof created.id === "number" ? created.id : parseInt(String(created.id)),
+        url: created.url ?? null, peptideName: created.peptideName ?? form.peptideName.trim(),
+        supplier: null, labName: created.labName ?? null, batchCode: created.batchCode ?? null,
+        purityPct: created.purityPct != null ? String(created.purityPct) : null,
+        testDate: created.testDate ?? null, pending: true, groupBuyId: String(selectedGbId ?? ""),
+        janoshikId: created.janoshikId ?? null, mgAmount: created.mgAmount ?? null,
+        testType: created.testType ?? null, productCategory: created.productCategory ?? null,
+        endotoxinEuMg: created.endotoxinEuMg ?? null, sterilityPass: created.sterilityPass ?? null,
+        heavyMetalAs: created.heavyMetalAs ?? null, heavyMetalCd: created.heavyMetalCd ?? null,
+        heavyMetalPb: created.heavyMetalPb ?? null, heavyMetalHg: created.heavyMetalHg ?? null,
+        createdAt: created.createdAt ?? new Date().toISOString(),
+      };
+      setTests(prev => [test, ...prev]);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      setForm(DEFAULT_FORM);
+      setExtracted(false);
+      setMode("none");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save lab test");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!selectedGbId) {

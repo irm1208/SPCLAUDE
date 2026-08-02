@@ -1,142 +1,62 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  Package, Search, Filter, Download, ExternalLink, Clock,
-  CheckCircle, Truck, MapPin, User, Calendar, ChevronDown, ChevronRight,
-  X, Plus, Trash2,
+  Package, Search, Filter, ExternalLink, Clock,
+  ChevronDown, ChevronRight,
+  X, Plus, Trash2, Loader2, RefreshCw,
 } from "lucide-react";
-import { V2_CARD_BORDER, TILE } from "./theme";
+import { V2_CARD_BORDER } from "./theme";
+import { organiserApi, type ApiParcel } from "./api/organiser-api";
 
 // ─── Workspace: Parcels Tab ──────────────────────────────────────────────────
-// Masked shipping tracker — organiser ships to reshippers who forward to members.
-// Track parcels with carrier updates and manage forwarding addresses.
+// Manages GB parcels via /organiser/group-buys/:id/parcels (GET + POST + DELETE).
 
-interface TrackingUpdate {
-  timestamp: string;
-  location: string;
-  status: string;
-  description: string;
+interface ParcelsTabProps {
+  selectedGbId?: string;
 }
 
-interface Parcel {
-  id: string;
-  orderId: string;
-  memberName: string;
-  memberUsername: string;
-  reshipperName: string;
-  reshipperAddress: string;
-  carrier: string;
-  trackingNumber: string;
-  shippedDate: string;
-  estimatedDelivery: string;
-  status: "in_transit" | "out_for_delivery" | "delivered" | "exception";
-  products: string[];
-  trackingUpdates: TrackingUpdate[];
-}
-
-const SAMPLE_PARCELS: Parcel[] = [
-  {
-    id: "1",
-    orderId: "ORD-001",
-    memberName: "Alice Morgan",
-    memberUsername: "@alice_m",
-    reshipperName: "John's Reshipper",
-    reshipperAddress: "123 Warehouse St, London, UK",
-    carrier: "Royal Mail",
-    trackingNumber: "RM123456789GB",
-    shippedDate: "2024-07-08",
-    estimatedDelivery: "2024-07-15",
-    status: "in_transit",
-    products: ["Semaglutide 5mg", "Tirzepatide 10mg"],
-    trackingUpdates: [
-      { timestamp: "2024-07-11T14:30:00", location: "Birmingham Depot", status: "In Transit", description: "Parcel is on its way to the next facility" },
-      { timestamp: "2024-07-10T09:15:00", location: "Heathrow Sorting Centre", status: "Processed", description: "Parcel has been processed at sorting facility" },
-      { timestamp: "2024-07-08T16:45:00", location: "Origin Depot", status: "Collected", description: "Parcel collected by carrier" },
-    ],
-  },
-  {
-    id: "2",
-    orderId: "ORD-002",
-    memberName: "Bob Kumar",
-    memberUsername: "@bob_k",
-    reshipperName: "Sarah's Forwarding",
-    reshipperAddress: "456 Distribution Ave, Manchester, UK",
-    carrier: "DHL Express",
-    trackingNumber: "DHL987654321",
-    shippedDate: "2024-07-09",
-    estimatedDelivery: "2024-07-14",
-    status: "out_for_delivery",
-    products: ["Semaglutide 5mg"],
-    trackingUpdates: [
-      { timestamp: "2024-07-11T08:00:00", location: "Manchester Hub", status: "Out for Delivery", description: "Parcel is out for delivery" },
-      { timestamp: "2024-07-10T12:30:00", location: "Manchester Hub", status: "Arrived", description: "Arrived at local delivery facility" },
-      { timestamp: "2024-07-09T17:00:00", location: "London Gateway", status: "In Transit", description: "Parcel departed facility" },
-    ],
-  },
-  {
-    id: "3",
-    orderId: "ORD-005",
-    memberName: "Carol Smith",
-    memberUsername: "@carol_s",
-    reshipperName: "Mike's Mail Service",
-    reshipperAddress: "789 Postal Rd, Birmingham, UK",
-    carrier: "UPS",
-    trackingNumber: "1Z999AA10123456784",
-    shippedDate: "2024-07-05",
-    estimatedDelivery: "2024-07-12",
-    status: "delivered",
-    products: ["Tirzepatide 10mg", "BPC-157 5mg"],
-    trackingUpdates: [
-      { timestamp: "2024-07-12T11:20:00", location: "Birmingham", status: "Delivered", description: "Delivered to recipient" },
-      { timestamp: "2024-07-12T09:00:00", location: "Birmingham Hub", status: "Out for Delivery", description: "Out for delivery" },
-      { timestamp: "2024-07-11T15:30:00", location: "Birmingham Hub", status: "Arrived", description: "Arrived at delivery facility" },
-      { timestamp: "2024-07-10T08:00:00", location: "Coventry Hub", status: "In Transit", description: "In transit to next facility" },
-    ],
-  },
-];
-
-const STATUS_CONFIG = {
-  in_transit: { label: "In Transit", color: "#4A6CF7", bg: "#E8ECFE" },
-  out_for_delivery: { label: "Out for Delivery", color: "#F79009", bg: "#FEF0C7" },
-  delivered: { label: "Delivered", color: "#12B76A", bg: "#D1FADF" },
-  exception: { label: "Exception", color: "#F04438", bg: "#FEE4E2" },
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  pending:           { label: "Pending",          color: "#6B7280", bg: "#F2F4F7" },
+  in_transit:        { label: "In Transit",        color: "#4A6CF7", bg: "#E8ECFE" },
+  out_for_delivery:  { label: "Out for Delivery",  color: "#F79009", bg: "#FEF0C7" },
+  delivered:         { label: "Delivered",         color: "#12B76A", bg: "#D1FADF" },
+  exception:         { label: "Exception",         color: "#F04438", bg: "#FEE4E2" },
 };
 
-// 17track API carriers (sample list)
 const CARRIERS = [
-  { code: "ups", name: "UPS" },
-  { code: "fedex", name: "FedEx" },
-  { code: "dhl", name: "DHL Express" },
-  { code: "usps", name: "USPS" },
-  { code: "royalmail", name: "Royal Mail" },
-  { code: "parcelforce", name: "Parcelforce" },
-  { code: "evri", name: "Evri (Hermes)" },
-  { code: "dpd", name: "DPD" },
-  { code: "yodel", name: "Yodel" },
-  { code: "amazon", name: "Amazon Logistics" },
-  { code: "dhlglobal", name: "DHL Global Mail" },
-  { code: "tnt", name: "TNT" },
-  { code: "gls", name: "GLS" },
-  { code: "other", name: "Other (Custom URL)" },
+  "Auto", "Royal Mail", "DHL Express", "UPS", "FedEx", "USPS",
+  "Parcelforce", "Evri", "DPD", "Yodel", "TNT", "GLS", "Other",
 ];
 
-export default function ParcelsTab() {
-  const [parcels] = useState<Parcel[]>(SAMPLE_PARCELS);
+export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
+  const [parcels, setParcels] = useState<ApiParcel[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [expandedParcel, setExpandedParcel] = useState<string | null>(null);
   const [showAddParcel, setShowAddParcel] = useState(false);
 
-  // Add parcel form state
+  // Add parcel form
   const [label, setLabel] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
-  const [carrier, setCarrier] = useState("");
+  const [carrier, setCarrier] = useState("Auto");
   const [customTrackingUrl, setCustomTrackingUrl] = useState("");
   const [items, setItems] = useState<string[]>([]);
   const [itemInput, setItemInput] = useState("");
   const [notes, setNotes] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
 
-  // Sample products from orders (in real app, fetch from orders)
-  const availableProducts = ["Semaglutide 5mg", "Tirzepatide 10mg", "BPC-157 5mg", "TB-500 5mg"];
+  const load = () => {
+    if (!selectedGbId) return;
+    setLoading(true); setError("");
+    organiserApi.parcels(selectedGbId)
+      .then(setParcels)
+      .catch(() => setError("Failed to load parcels"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [selectedGbId]);
 
   const addItem = (item: string) => {
     if (item.trim() && !items.includes(item.trim())) {
@@ -145,247 +65,242 @@ export default function ParcelsTab() {
     }
   };
 
-  const handleItemInputChange = (value: string) => {
-    setItemInput(value);
-  };
-
   const handleItemPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    const pastedText = e.clipboardData.getData("text");
-
-    // Split by common delimiters: newlines, commas, semicolons, pipes
-    const parsedItems = pastedText
-      .split(/[\n,;|]+/)
-      .map(item => item.trim())
-      .filter(item => item.length > 0);
-
-    if (parsedItems.length > 1) {
-      // Multiple items detected - add all unique ones
-      const newItems = [...items];
-      parsedItems.forEach(item => {
-        if (!newItems.includes(item)) {
-          newItems.push(item);
-        }
-      });
-      setItems(newItems);
-      setItemInput("");
-    } else if (parsedItems.length === 1) {
-      // Single item - just set the input
-      setItemInput(parsedItems[0]);
+    const parsed = e.clipboardData.getData("text")
+      .split(/[\n,;|]+/).map(s => s.trim()).filter(Boolean);
+    if (parsed.length > 1) {
+      const next = [...items];
+      parsed.forEach(it => { if (!next.includes(it)) next.push(it); });
+      setItems(next); setItemInput("");
+    } else if (parsed.length === 1) {
+      setItemInput(parsed[0]);
     }
   };
 
-  const removeItem = (item: string) => {
-    setItems(items.filter((i) => i !== item));
+  const resetForm = () => {
+    setLabel(""); setTrackingNumber(""); setCarrier("Auto");
+    setCustomTrackingUrl(""); setItems([]); setNotes(""); setItemInput(""); setAddError("");
   };
 
-  const handleSubmit = () => {
-    if (!label.trim() || !trackingNumber.trim() || !carrier) {
-      alert("Please fill in label, tracking number, and carrier");
+  const handleSubmit = async () => {
+    if (!selectedGbId || !label.trim() || !trackingNumber.trim()) {
+      setAddError("Label and tracking number are required");
       return;
     }
-    // In real app, save to backend
-    alert("Parcel added successfully!");
-    // Reset form
-    setLabel("");
-    setTrackingNumber("");
-    setCarrier("");
-    setCustomTrackingUrl("");
-    setItems([]);
-    setNotes("");
-    setShowAddParcel(false);
+    setAdding(true); setAddError("");
+    try {
+      const parcel = await organiserApi.createParcel(selectedGbId, {
+        label: label.trim(),
+        trackingNumber: trackingNumber.trim(),
+        carrier: carrier || "Auto",
+        trackingUrl: customTrackingUrl.trim() || undefined,
+        items,
+        notes: notes.trim() || undefined,
+      });
+      setParcels(prev => [parcel, ...prev]);
+      resetForm();
+      setShowAddParcel(false);
+    } catch (err: unknown) {
+      setAddError(err instanceof Error ? err.message : "Failed to add parcel");
+    } finally {
+      setAdding(false);
+    }
   };
 
-  // Filter parcels
-  const filteredParcels = parcels.filter((p) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      p.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.memberUsername.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.trackingNumber.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || p.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  const handleDelete = async (parcelId: string) => {
+    if (!selectedGbId || !confirm("Delete this parcel?")) return;
+    try {
+      await organiserApi.deleteParcel(selectedGbId, parcelId);
+      setParcels(prev => prev.filter(p => p.id !== parcelId));
+    } catch {
+      setError("Failed to delete parcel");
+    }
+  };
+
+  const filteredParcels = parcels.filter(p => {
+    const q = searchQuery.toLowerCase();
+    const matchSearch = !q || p.label.toLowerCase().includes(q) || p.trackingNumber.toLowerCase().includes(q) ||
+      (p.carrier ?? "").toLowerCase().includes(q);
+    const matchStatus = statusFilter === "all" || p.status === statusFilter;
+    return matchSearch && matchStatus;
   });
 
-  // Status counts
-  const statusCounts = {
-    all: parcels.length,
-    in_transit: parcels.filter((p) => p.status === "in_transit").length,
-    out_for_delivery: parcels.filter((p) => p.status === "out_for_delivery").length,
-    delivered: parcels.filter((p) => p.status === "delivered").length,
-    exception: parcels.filter((p) => p.status === "exception").length,
-  };
+  const allStatuses = ["all", ...Array.from(new Set(parcels.map(p => p.status)))];
+
+  if (!selectedGbId) {
+    return (
+      <div className="rounded-xl p-8 sm:p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+        <Package className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
+        <h3 className="text-[15px] font-bold mb-1" style={{ color: "var(--t-text)" }}>No Group Buy Selected</h3>
+        <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Select a group buy to manage parcels</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-5">
       {/* Header */}
       <div className="rounded-xl p-4 sm:p-5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div>
-          <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Parcels (Masked Shipping)</h2>
-          <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>
-            Track parcels shipped to reshippers for member forwarding
-          </p>
+          <h2 className="text-lg sm:text-xl font-bold" style={{ color: "var(--t-text)" }}>Parcels</h2>
+          <p className="text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-subtle)" }}>Track parcels shipped to reshippers</p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAddParcel(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white self-start sm:self-auto"
+            onClick={load}
+            disabled={loading}
+            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-black/5"
+            style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          <button
+            onClick={() => { resetForm(); setShowAddParcel(true); }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white"
             style={{ background: "var(--t-blue)" }}
           >
             <Package className="w-3.5 h-3.5" /> Add Parcel
           </button>
-          <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold hover:bg-black/5 self-start sm:self-auto" style={{ color: "var(--t-blue)", border: `1px solid ${V2_CARD_BORDER}` }}>
-            <Download className="w-3.5 h-3.5" /> Export
-          </button>
         </div>
       </div>
 
-      {/* Search + Filters */}
+      {error && (
+        <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+          <p className="text-[13px] font-semibold" style={{ color: "#DC2626" }}>{error}</p>
+          <button onClick={() => setError("")} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-100">
+            <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+          </button>
+        </div>
+      )}
+
+      {/* Search + filter */}
       <div className="rounded-xl p-4 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "var(--t-subtle)" }} />
             <input
               type="text"
-              placeholder="Search by order, member, or tracking number..."
+              placeholder="Search by label, tracking number, carrier…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={e => setSearchQuery(e.target.value)}
               className="w-full h-10 pl-10 pr-3 rounded-lg text-[14px] outline-none"
               style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
             />
           </div>
-
-          {/* Status filter */}
           <div className="flex items-center gap-2 overflow-x-auto">
             <Filter className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
-            {Object.entries(statusCounts).map(([status, count]) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-colors"
-                style={{
-                  background: statusFilter === status ? "var(--t-blue-10)" : "transparent",
-                  color: statusFilter === status ? "var(--t-blue)" : "var(--t-muted)",
-                  border: `1px solid ${statusFilter === status ? "var(--t-blue)" : V2_CARD_BORDER}`,
-                }}
-              >
-                {status === "all" ? "All" : STATUS_CONFIG[status as keyof typeof STATUS_CONFIG].label} ({count})
-              </button>
-            ))}
+            {allStatuses.map(status => {
+              const cfg = status === "all" ? null : STATUS_CONFIG[status];
+              return (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className="px-3 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-colors"
+                  style={{
+                    background: statusFilter === status ? "var(--t-blue-10)" : "transparent",
+                    color: statusFilter === status ? "var(--t-blue)" : "var(--t-muted)",
+                    border: `1px solid ${statusFilter === status ? "var(--t-blue)" : V2_CARD_BORDER}`,
+                  }}
+                >
+                  {status === "all" ? `All (${parcels.length})` : (cfg?.label ?? status)}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Parcels list */}
-      {filteredParcels.length > 0 ? (
+      {loading ? (
+        <div className="rounded-xl p-12 bg-white text-center" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+          <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" style={{ color: "var(--t-blue)" }} />
+          <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>Loading parcels…</p>
+        </div>
+      ) : filteredParcels.length > 0 ? (
         <div className="space-y-3">
-          {filteredParcels.map((parcel) => {
+          {filteredParcels.map(parcel => {
             const isExpanded = expandedParcel === parcel.id;
-            const statusConfig = STATUS_CONFIG[parcel.status];
-
+            const cfg = STATUS_CONFIG[parcel.status] ?? STATUS_CONFIG.pending;
             return (
               <div key={parcel.id} className="rounded-lg bg-white overflow-hidden" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-                {/* Header */}
                 <button
                   onClick={() => setExpandedParcel(isExpanded ? null : parcel.id)}
                   className="w-full p-4 flex items-center gap-3 text-left hover:bg-black/[0.02] transition-colors"
                 >
-                  {isExpanded ? (
-                    <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                  )}
-
-                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[140px_1fr_140px_120px] gap-2 sm:gap-4">
-                    {/* Order ID */}
-                    <div>
-                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Order</div>
-                      <div className="text-[14px] font-bold" style={{ color: "var(--t-text)" }}>{parcel.orderId}</div>
-                    </div>
-
-                    {/* Member */}
+                  {isExpanded ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--t-subtle)" }} />}
+                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-[1fr_140px_120px_100px] gap-2 sm:gap-4">
                     <div className="min-w-0">
-                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Member</div>
-                      <div className="text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{parcel.memberName}</div>
-                      <div className="text-[12px] truncate" style={{ color: "var(--t-subtle)" }}>{parcel.memberUsername}</div>
+                      <div className="text-[14px] font-bold truncate" style={{ color: "var(--t-text)" }}>{parcel.label}</div>
+                      <div className="text-[12px] font-mono truncate" style={{ color: "var(--t-subtle)" }}>{parcel.trackingNumber}</div>
                     </div>
-
-                    {/* Carrier */}
                     <div>
                       <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Carrier</div>
-                      <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.carrier}</div>
+                      <div className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.carrier}</div>
                     </div>
-
-                    {/* Status */}
                     <div>
-                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Status</div>
-                      <span className="inline-block text-[12px] font-bold px-2 py-1 rounded-full" style={{ background: statusConfig.bg, color: statusConfig.color }}>
-                        {statusConfig.label}
+                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Added</div>
+                      <div className="text-[12px]" style={{ color: "var(--t-muted)" }}>
+                        {parcel.createdAt ? new Date(parcel.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="inline-block text-[12px] font-bold px-2 py-1 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
+                        {cfg.label}
                       </span>
                     </div>
                   </div>
                 </button>
 
-                {/* Expanded details */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 pt-2 space-y-4" style={{ background: "var(--t-surface2)", borderTop: `1px solid ${V2_CARD_BORDER}` }}>
-                    {/* Tracking info */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
+                  <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: "var(--t-surface2)", borderTop: `1px solid ${V2_CARD_BORDER}` }}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>
                         <div className="flex items-center gap-2">
                           <span className="text-[14px] font-mono font-semibold" style={{ color: "var(--t-text)" }}>{parcel.trackingNumber}</span>
-                          <button
-                            onClick={() => window.open(`https://track.example.com/${parcel.trackingNumber}`, "_blank")}
-                            className="text-[12px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/50"
-                            style={{ color: "var(--t-blue)" }}
-                          >
-                            Track <ExternalLink className="w-3 h-3" />
-                          </button>
+                          {parcel.trackingUrl && (
+                            <a
+                              href={parcel.trackingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[12px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/50"
+                              style={{ color: "var(--t-blue)" }}
+                            >
+                              Track <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Reshipper</div>
-                        <div className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>{parcel.reshipperName}</div>
-                        <div className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>{parcel.reshipperAddress}</div>
-                      </div>
+                      <button
+                        onClick={() => handleDelete(parcel.id)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50"
+                        style={{ color: "#DC2626" }}
+                        title="Delete parcel"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
 
-                    {/* Dates */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {parcel.items.length > 0 && (
                       <div>
-                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Shipped</div>
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[14px]" style={{ color: "var(--t-text)" }}>
-                            {new Date(parcel.shippedDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                          </span>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Items</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {parcel.items.map((item, i) => (
+                            <span key={i} className="text-[12px] px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
+                              {item}
+                            </span>
+                          ))}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Est. Delivery</div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5" style={{ color: "var(--t-subtle)" }} />
-                          <span className="text-[14px]" style={{ color: "var(--t-text)" }}>
-                            {new Date(parcel.estimatedDelivery).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    )}
 
-                    {/* Products */}
-                    <div>
-                      <div className="text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--t-subtle)" }}>Products</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {parcel.products.map((product, i) => (
-                          <span key={i} className="text-[12px] px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
-                            {product}
-                          </span>
-                        ))}
+                    {parcel.notes && (
+                      <div>
+                        <div className="text-[12px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Notes</div>
+                        <p className="text-[13px]" style={{ color: "var(--t-muted)" }}>{parcel.notes}</p>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -399,7 +314,7 @@ export default function ParcelsTab() {
             {searchQuery || statusFilter !== "all" ? "No parcels found" : "No parcels yet"}
           </h3>
           <p className="text-[14px]" style={{ color: "var(--t-subtle)" }}>
-            {searchQuery || statusFilter !== "all" ? "Try adjusting your filters" : "Shipped orders will appear here"}
+            {searchQuery || statusFilter !== "all" ? "Try adjusting your filters" : "Add your first parcel above"}
           </p>
         </div>
       )}
@@ -407,8 +322,7 @@ export default function ParcelsTab() {
       {/* Add Parcel Modal */}
       {showAddParcel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAddParcel(false)}>
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            {/* Modal header */}
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
               <div>
                 <h3 className="text-[16px] font-bold" style={{ color: "var(--t-text)" }}>Add Parcel</h3>
@@ -419,131 +333,58 @@ export default function ParcelsTab() {
               </button>
             </div>
 
-            {/* Modal body */}
             <div className="p-5 space-y-4">
-              {/* Label */}
+              {addError && (
+                <div className="p-3 rounded-lg text-[13px] font-semibold" style={{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
+                  {addError}
+                </div>
+              )}
+
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Label <span style={{ color: "#EF4444" }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Batch 5 to UK Reshipper"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
-                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                />
-                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Internal name to identify this parcel</p>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Label <span style={{ color: "#EF4444" }}>*</span></label>
+                <input type="text" placeholder="e.g. UK Batch 5 — Reshipper London" value={label} onChange={e => setLabel(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
               </div>
 
-              {/* Tracking Number */}
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Tracking Number <span style={{ color: "#EF4444" }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 1Z999AA10123456784"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[14px] font-mono outline-none"
-                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                />
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Tracking Number <span style={{ color: "#EF4444" }}>*</span></label>
+                <input type="text" placeholder="e.g. RM123456789GB" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg text-[14px] font-mono outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
               </div>
 
-              {/* Carrier */}
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Carrier (17track API) <span style={{ color: "#EF4444" }}>*</span>
-                </label>
-                <select
-                  value={carrier}
-                  onChange={(e) => setCarrier(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
-                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                >
-                  <option value="">Select carrier...</option>
-                  {CARRIERS.map((c) => (
-                    <option key={c.code} value={c.code}>{c.name}</option>
-                  ))}
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Carrier</label>
+                <select value={carrier} onChange={e => setCarrier(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}>
+                  {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Connected to 17track API for automatic tracking updates</p>
               </div>
 
-              {/* Custom Tracking URL */}
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Custom Tracking URL (optional)
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://track.carrier.com/..."
-                  value={customTrackingUrl}
-                  onChange={(e) => setCustomTrackingUrl(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none"
-                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                />
-                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>Override the default carrier tracking URL</p>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Custom Tracking URL (optional)</label>
+                <input type="url" placeholder="https://track.carrier.com/..." value={customTrackingUrl} onChange={e => setCustomTrackingUrl(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg text-[14px] outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
               </div>
 
-              {/* Items in Parcel */}
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Items in Parcel
-                </label>
-
-                {/* Product suggestions */}
-                {availableProducts.length > 0 && (
-                  <div className="mb-2">
-                    <div className="text-[12px] font-semibold mb-1.5" style={{ color: "var(--t-subtle)" }}>Quick Add from Products:</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableProducts.map((product) => (
-                        <button
-                          key={product}
-                          onClick={() => addItem(product)}
-                          disabled={items.includes(product)}
-                          className="text-[12px] px-2 py-1 rounded-md transition-opacity disabled:opacity-40"
-                          style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}
-                        >
-                          <Plus className="w-3 h-3 inline mr-0.5" /> {product}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Custom item input */}
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Items in Parcel</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Type or paste item name (or paste a list)..."
-                    value={itemInput}
-                    onChange={(e) => handleItemInputChange(e.target.value)}
-                    onPaste={handleItemPaste}
-                    onKeyPress={(e) => e.key === "Enter" && addItem(itemInput)}
-                    className="flex-1 h-10 px-3 rounded-lg text-[14px] outline-none"
-                    style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                  />
-                  <button
-                    onClick={() => addItem(itemInput)}
-                    className="px-3 h-10 rounded-lg text-[13px] font-semibold"
-                    style={{ background: "var(--t-blue)", color: "#fff" }}
-                  >
+                  <input type="text" placeholder="Type item name, press Enter or paste a list…"
+                    value={itemInput} onChange={e => setItemInput(e.target.value)}
+                    onPaste={handleItemPaste} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addItem(itemInput))}
+                    className="flex-1 h-10 px-3 rounded-lg text-[14px] outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
+                  <button type="button" onClick={() => addItem(itemInput)}
+                    className="px-3 h-10 rounded-lg text-[13px] font-semibold" style={{ background: "var(--t-blue)", color: "#fff" }}>
                     Add
                   </button>
                 </div>
-                <p className="text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>
-                  Paste multiple items separated by commas, newlines, or semicolons
-                </p>
-
-                {/* Added items */}
                 {items.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {items.map((item, i) => (
                       <div key={i} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "var(--t-surface2)" }}>
                         <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{item}</span>
-                        <button onClick={() => removeItem(item)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-50" style={{ color: "#EF4444" }}>
+                        <button type="button" onClick={() => setItems(prev => prev.filter((_, j) => j !== i))}
+                          className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-50" style={{ color: "#EF4444" }}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -552,37 +393,24 @@ export default function ParcelsTab() {
                 )}
               </div>
 
-              {/* Notes */}
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>
-                  Notes (optional)
-                </label>
-                <textarea
-                  placeholder="Add any internal notes about this parcel..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none outline-none"
-                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
-                />
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Notes (optional)</label>
+                <textarea placeholder="Add any internal notes…" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+                  className="w-full px-3 py-2 rounded-lg text-[14px] resize-none outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
               </div>
             </div>
 
-            {/* Modal footer */}
             <div className="sticky bottom-0 bg-white px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${V2_CARD_BORDER}` }}>
-              <button
-                onClick={() => setShowAddParcel(false)}
+              <button onClick={() => setShowAddParcel(false)}
                 className="px-4 py-2 rounded-lg text-[14px] font-semibold hover:bg-black/5"
-                style={{ color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}
-              >
+                style={{ color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>
                 Cancel
               </button>
-              <button
-                onClick={handleSubmit}
-                className="px-4 py-2 rounded-lg text-[14px] font-semibold text-white"
-                style={{ background: "var(--t-blue)" }}
-              >
-                Add Parcel
+              <button onClick={handleSubmit} disabled={adding}
+                className="px-4 py-2 rounded-lg text-[14px] font-semibold text-white flex items-center gap-2 disabled:opacity-50"
+                style={{ background: "var(--t-blue)" }}>
+                {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {adding ? "Adding…" : "Add Parcel"}
               </button>
             </div>
           </div>
