@@ -83,10 +83,10 @@ export default function DashboardSidebar({
     <div className="ov2-sidebar">
       <div className="ov2-brand-block">
         <div className="ov2-brand-mark" aria-hidden="true">
-          <SaltPepsMark size={24} color="#1B3164" accentColor="#0176D3" />
+          <SaltPepsMark size={24} />
         </div>
         <div className="ov2-brand-copy">
-          <strong>Salt &amp; Peps</strong>
+          <strong>Salt<span className="ov2-brand-amp">&amp;</span>Peps</strong>
           <span>GB Organiser</span>
         </div>
         <button type="button" className="ov2-sidebar-collapse" onClick={onCollapse} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>

@@ -98,10 +98,10 @@
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 9px;
   padding: 0;
-  background: #FFFFFF;
+  background: #2D6BCC;
   box-shadow: none;
   color: #FFFFFF;
   font-family: 'Inter', 'Salesforce Sans', 'Helvetica Neue', Arial, sans-serif;
@@ -136,6 +136,11 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   opacity: 1;
+}
+
+.organiser-v2 .ov2-brand-copy strong .ov2-brand-amp {
+  color: #8BB8FF;
+  font-weight: 500;
 }
 
 .organiser-v2 .ov2-brand-copy span {
