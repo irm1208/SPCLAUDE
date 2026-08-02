@@ -153,6 +153,7 @@ export function normalizeOrder(value: unknown, fallbackId?: string): OrganiserOr
     memberUsername,
     memberName,
     status,
+    paymentStatus: optionalString(value, "paymentStatus"),
     products,
     total,
     paymentMethod,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, AlertCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload, SlidersHorizontal } from "lucide-react";
+import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload, SlidersHorizontal } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { V2_CARD_BORDER } from "./theme";
 import { fmtMoney } from "./data";
@@ -18,29 +18,16 @@ import {
   type OrderStatusFilter,
 } from "./orders-filter-model";
 import {
-  AtlasDataTable,
   AtlasDrawerSection,
   AtlasEmptyState,
   AtlasPerson,
   AtlasQuickViewDrawer,
   AtlasStatusBadge,
-  type AtlasColumn,
-  type AtlasStatusTone,
 } from "./AtlasUi";
+import CompactOrderList from "./CompactOrderList";
 import OrdersMobileWorkspace from "./OrdersMobileWorkspace";
 import OrdersFilterSurface from "./OrdersFilterSurface";
 import { applyMobileOrderAction, buildMobileOrdersModel, type MobileOrderAction, type MobileOrderView } from "./orders-mobile-model";
-
-// Relative time for the card header, e.g. "03 min ago"
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.max(0, Math.floor(diffMs / 60000));
-  if (mins < 60) return `${String(mins).padStart(2, "0")} min ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 // ─── Workspace: Orders Tab ───────────────────────────────────────────────────
 // Main order management view. Shows all orders with filters, search, status badges,
@@ -75,14 +62,6 @@ const DEFAULT_FILTER_VALUES: OrderFilterValues = {
   sortOrder: "newest",
 };
 
-function atlasOrderTone(status: OrderStatus): AtlasStatusTone {
-  if (status === "pending") return "warning";
-  if (status === "cancelled") return "danger";
-  if (status === "paid" || status === "delivered") return "success";
-  if (status === "processing" || status === "shipped") return "info";
-  return "navy";
-}
-
 export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void } = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilters, setStatusFilters] = useState<OrderStatusFilter[]>(["all"]);
@@ -111,17 +90,6 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   const orders = useOrders();
   const mobileModel = useMemo(() => buildMobileOrdersModel(orders), [orders]);
 
-  // Highlight specific order if passed via highlightId
-  useEffect(() => {
-    if (highlightId) {
-      setExpandedOrders([highlightId]);
-      setTimeout(() => {
-        const el = document.querySelector(`[data-order-id="${highlightId}"]`);
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
-    }
-  }, [highlightId]);
-
   // Edit modal
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [quickViewOrder, setQuickViewOrder] = useState<Order | null>(null);
@@ -136,6 +104,18 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductMode, setNewProductMode] = useState<"existing" | "custom">("existing");
   const [viewingProofImage, setViewingProofImage] = useState<string | null>(null);
+
+  // Deep-linked orders open in the same full-details drawer as clicked cards.
+  useEffect(() => {
+    if (!highlightId) return;
+    const highlightedOrder = orders.find(order => order.id === highlightId || order.code === highlightId);
+    if (!highlightedOrder) return;
+    setQuickViewOrder(highlightedOrder);
+    window.setTimeout(() => {
+      document.querySelector(`[data-order-id="${highlightedOrder.id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  }, [highlightId, orders]);
 
   // Flag system
   const [flagNote, setFlagNote] = useState("");
@@ -160,15 +140,6 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
-
-  // Expanded orders
-  const [expandedOrders, setExpandedOrders] = useState<string[]>([]);
-
-  const toggleOrderExpand = (orderId: string) => {
-    setExpandedOrders(prev =>
-      prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
-    );
-  };
 
   // Get unique products from all orders (for dropdown)
   const uniqueProducts = Array.from(
@@ -273,14 +244,6 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
     setSelectedOrders(prev =>
       prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
     );
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedOrders.length === filteredOrders.length) {
-      setSelectedOrders([]);
-    } else {
-      setSelectedOrders(filteredOrders.map(o => o.id));
-    }
   };
 
   const bulkAddProductToOrders = () => {
@@ -618,25 +581,6 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
     }));
   };
 
-  const orderColumns: AtlasColumn<Order>[] = [
-    {
-      id: "member",
-      label: "Member",
-      width: "20%",
-      render: order => <AtlasPerson name={order.memberName} username={order.memberUsername} />,
-    },
-    {
-      id: "status",
-      label: "Status",
-      width: "20%",
-      render: order => <AtlasStatusBadge tone={order.status === "pending" ? "warning" : order.status === "cancelled" ? "danger" : order.status === "dispatched" || order.status === "delivered" ? "success" : "info"}>{STATUS_CONFIG[order.status].label}</AtlasStatusBadge>,
-    },
-    { id: "items", label: "Items", width: "21%", render: order => <span className="atlas-muted-cell">{order.products.map(product => `${product.name} × ${product.quantity}`).join(", ") || "No products"}</span> },
-    { id: "total", label: "Total", width: "9%", align: "right", render: order => <strong>{fmtMoney(order.total, "GBP")}</strong> },
-    { id: "payment", label: "Payment", width: "12%", render: order => <span className="atlas-muted-cell">{order.paymentMethod}</span> },
-    { id: "created", label: "Created", width: "11%", align: "right", render: order => <span className="atlas-muted-cell">{new Date(order.createdAt).toLocaleDateString("en-GB")}</span> },
-  ];
-
   return (
     <div className="approved-order-desk">
       <div className="orders-mobile-view">
@@ -965,233 +909,16 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
         </OrdersFilterSurface>
       </section>
 
-      {/* Orders List */}
-      {filteredOrders.length === 0 ? (
-        <div className="atlas-legacy-order-empty rounded-xl p-12 text-center bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-          <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--t-subtle)" }} />
-          <p className="text-[14px] font-semibold" style={{ color: "var(--t-text)" }}>No orders found</p>
-          <p className="text-[13px] mt-1" style={{ color: "var(--t-subtle)" }}>Try adjusting your filters</p>
-        </div>
-      ) : (
-        <>
-          {/* Select All */}
-          <div className="atlas-legacy-order-select-all flex items-center gap-2 px-4 py-2 rounded-lg bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
-            <input
-              type="checkbox"
-              checked={selectedOrders.length === filteredOrders.length}
-              onChange={toggleSelectAll}
-              className="w-4 h-4 rounded"
-              style={{ accentColor: "var(--t-blue)" }}
-            />
-            <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>
-              Select All ({filteredOrders.length})
-            </span>
-          </div>
-
-          <div className="atlas-legacy-order-cards space-y-4">
-          {filteredOrders.map((order, index) => {
-            const config = STATUS_CONFIG[order.status];
-            const isExpanded = expandedOrders.includes(order.id);
-            return (
-              <div
-                key={order.id}
-                data-order-id={order.id}
-                className="rounded-2xl overflow-hidden"
-                style={{
-                  border: `1px solid ${order.flagged ? "#D97706" : V2_CARD_BORDER}`,
-                  background: "#fff",
-                }}
-              >
-                <div className="p-4 pb-0">
-                  {/* Header: checkbox + avatar + name + status pill */}
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedOrders.includes(order.id)}
-                      onChange={() => toggleOrderSelection(order.id)}
-                      className="w-4 h-4 mt-3.5 rounded shrink-0"
-                      style={{ accentColor: "var(--t-blue)" }}
-                    />
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 text-[16px] font-bold" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
-                      {order.memberName.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-[16px] sm:text-[18px] font-bold truncate" style={{ color: "var(--t-text)" }}>
-                          {order.memberName}
-                        </h3>
-                        <span className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[12px] sm:text-[13px] font-bold shrink-0" style={{ color: config.color, border: `1.5px solid ${config.color}` }}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: config.color }} />
-                          {config.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[13px] sm:text-[14px] mt-1" style={{ color: "var(--t-muted)" }}>
-                        <Truck className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--t-blue)" }} />
-                        <span className="truncate">{order.shippingOption}</span>
-                        <span style={{ color: "var(--t-subtle)" }}>•</span>
-                        <span className="whitespace-nowrap" style={{ color: "var(--t-subtle)" }}>{timeAgo(order.createdAt)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-dashed my-3" style={{ borderColor: V2_CARD_BORDER }} />
-
-                  {/* Meta row: order id + payment */}
-                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-[13px]">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="uppercase tracking-wide shrink-0" style={{ color: "var(--t-subtle)" }}>Order :</span>
-                      <span className="font-bold" style={{ color: "var(--t-text)" }}>{order.id}</span>
-                      <span className="truncate" style={{ color: "var(--t-subtle)" }}>@{order.memberUsername}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Payment :</span>
-                      <span className="px-1.5 py-0.5 rounded font-bold" style={{ color: "var(--t-blue)", background: "var(--t-blue-08)" }}>{order.paymentMethod}</span>
-                    </div>
-                  </div>
-
-                  {/* TXID / proof row */}
-                  {order.paymentProof && (
-                    <div className="flex items-center gap-1.5 text-[13px] mt-1.5">
-                      {order.paymentProof.type === "txid" ? (
-                        <>
-                          <span className="uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>TXID :</span>
-                          <span className="font-mono text-[12px]" style={{ color: "var(--t-muted)" }}>{order.paymentProof.value.slice(0, 10)}...{order.paymentProof.value.slice(-6)}</span>
-                          <button
-                            onClick={() => copyToClipboard(order.paymentProof!.value)}
-                            className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition-colors"
-                            title="Copy full TXID"
-                          >
-                            <Copy className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Proof :</span>
-                          <button
-                            onClick={() => setViewingProofImage(order.paymentProof!.value)}
-                            className="font-bold"
-                            style={{ color: "var(--t-blue)" }}
-                          >
-                            View Screenshot →
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="border-t border-dashed my-3" style={{ borderColor: V2_CARD_BORDER }} />
-
-                  {/* Items: qty badge + name + line total */}
-                  <div className="space-y-2.5">
-                    {order.products.map((product, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-md flex items-center justify-center text-[13px] font-bold shrink-0" style={{ background: "var(--t-surface2)", color: "var(--t-muted)" }}>
-                          {product.quantity}
-                        </span>
-                        <span className="flex-1 text-[14px] sm:text-[14px] font-semibold truncate" style={{ color: "var(--t-text)" }}>{product.name}</span>
-                        <span className="text-[14px] sm:text-[14px] shrink-0" style={{ color: "var(--t-muted)" }}>{fmtMoney(product.price * product.quantity, "GBP")}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Flag / internal notes */}
-                  {(order.flagged || order.internalNotes) && (
-                    <div className="space-y-1.5 mt-3">
-                      {order.flagged && (
-                        <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(217,119,6,0.08)" }}>
-                          <Flag className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#D97706" }} />
-                          <span className="text-[12px]" style={{ color: "#D97706" }}>{order.flagged.note}</span>
-                        </div>
-                      )}
-                      {order.internalNotes && (
-                        <div className="flex items-start gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.15)" }}>
-                          <span className="text-[12px] font-bold uppercase mt-0.5 shrink-0" style={{ color: "#D97706" }}>Note</span>
-                          <span className="text-[12px]" style={{ color: "#D97706" }}>{order.internalNotes}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Expanded details */}
-                {isExpanded && (
-                  <div className="mx-4 mt-3 pt-3 border-t border-dashed space-y-3" style={{ borderColor: V2_CARD_BORDER }}>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Shipping</div>
-                        <div className="text-[13px]" style={{ color: "var(--t-text)" }}>{order.shippingOption}</div>
-                        <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>{order.country}</div>
-                      </div>
-                      <div>
-                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Payment</div>
-                        <div className="text-[13px]" style={{ color: "var(--t-text)" }}>{order.paymentMethod}</div>
-                        {order.paidAt && <div className="text-[13px]" style={{ color: "var(--t-muted)" }}>Paid {new Date(order.paidAt).toLocaleDateString()}</div>}
-                      </div>
-                    </div>
-                    {order.trackingNumber && (
-                      <div>
-                        <div className="text-[12px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--t-subtle)" }}>Tracking</div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[13px] font-mono px-2 py-0.5 rounded" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }}>{order.trackingNumber}</span>
-                          <button
-                            onClick={() => copyToClipboard(order.trackingNumber!)}
-                            className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition-colors"
-                            title="Copy tracking number"
-                          >
-                            <Copy className="w-3 h-3" style={{ color: "var(--t-subtle)" }} />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-[12px]" style={{ color: "var(--t-subtle)" }}>
-                      Created {new Date(order.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-
-                {/* Footer: neutral reference action band */}
-                <div className="px-4 pt-3 pb-4 mt-2" style={{ background: "linear-gradient(to top, #F5F5F7 0%, rgba(245,245,247,0.58) 58%, rgba(245,245,247,0) 100%)" }}>
-                  <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-[13px] uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>Total :</span>
-                    <span className="text-[22px] sm:text-[24px] font-extrabold" style={{ color: "var(--t-text)" }}>{fmtMoney(order.total, "GBP")}</span>
-                  </div>
-                  <div className="flex gap-2.5">
-                    <button
-                      onClick={() => openEditModal(order)}
-                      className="flex-1 h-9 rounded-lg text-[14px] font-bold transition-opacity hover:opacity-80"
-                      style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(0,0,0,0.10)", color: "var(--t-text)" }}
-                    >
-                      Edit Order
-                    </button>
-                    <button
-                      onClick={() => toggleOrderExpand(order.id)}
-                      className="flex-1 h-9 rounded-lg text-[14px] font-bold text-white transition-opacity hover:opacity-90"
-                      style={{ background: "#17181A" }}
-                    >
-                      {isExpanded ? "Hide Details" : "View Details"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        </>
-      )}
-
-      <section className="atlas-card atlas-orders-table-card" aria-labelledby="atlas-orders-table-title">
+      <section className="atlas-card atlas-orders-table-card orders-compact-card" aria-labelledby="atlas-orders-table-title">
         <div className="atlas-card-heading">
           <div><span className="atlas-eyebrow">Operational queue</span><h2 id="atlas-orders-table-title">All orders</h2></div>
           <span className="atlas-result-count">{filteredOrders.length} of {orders.length}</span>
         </div>
-        <AtlasDataTable
-          label="Group-buy orders"
-          rows={filteredOrders}
-          columns={orderColumns}
-          rowKey={order => order.id}
-          onRowClick={order => setQuickViewOrder(order)}
+        <CompactOrderList
+          orders={filteredOrders}
+          onOpenOrder={setQuickViewOrder}
           selected={selectedOrders}
-          onSelect={setSelectedOrders}
+          onSelectionChange={setSelectedOrders}
           empty={<AtlasEmptyState title="No orders found" description="Try adjusting your filters." />}
         />
       </section>
@@ -1211,8 +938,30 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
           <>
             <div className="atlas-drawer-summary"><AtlasStatusBadge tone={quickViewOrder.status === "pending" ? "warning" : quickViewOrder.status === "cancelled" ? "danger" : "success"}>{STATUS_CONFIG[quickViewOrder.status].label}</AtlasStatusBadge><strong>{fmtMoney(quickViewOrder.total, "GBP")}</strong><span>{quickViewOrder.paymentMethod} · {quickViewOrder.country}</span></div>
             <AtlasDrawerSection title="Items"><div className="atlas-order-history">{quickViewOrder.products.map(product => <article key={product.name}><div><strong>{product.name}</strong><small>Quantity {product.quantity}</small></div><strong>{fmtMoney(product.price * product.quantity, "GBP")}</strong></article>)}</div></AtlasDrawerSection>
-            <AtlasDrawerSection title="Delivery"><dl className="atlas-detail-list"><div><dt>Shipping</dt><dd>{quickViewOrder.shippingOption}</dd></div><div><dt>Country</dt><dd>{quickViewOrder.country}</dd></div><div><dt>Tracking</dt><dd>{quickViewOrder.trackingNumber ?? "Not assigned"}</dd></div><div><dt>Created</dt><dd>{new Date(quickViewOrder.createdAt).toLocaleDateString("en-GB")}</dd></div></dl></AtlasDrawerSection>
-            {quickViewOrder.internalNotes || quickViewOrder.flagged ? <AtlasDrawerSection title="Notes"><p className="atlas-drawer-note">{quickViewOrder.flagged?.note ?? quickViewOrder.internalNotes}</p></AtlasDrawerSection> : null}
+            <AtlasDrawerSection title="Payment">
+              <dl className="atlas-detail-list">
+                <div><dt>Method</dt><dd>{quickViewOrder.paymentMethod}</dd></div>
+                <div><dt>Status</dt><dd>{quickViewOrder.paymentStatus ?? STATUS_CONFIG[quickViewOrder.status].label}</dd></div>
+                <div><dt>Paid</dt><dd>{quickViewOrder.paidAt ? new Date(quickViewOrder.paidAt).toLocaleString("en-GB") : "Not recorded"}</dd></div>
+                <div><dt>Proof</dt><dd>{quickViewOrder.paymentProof ? quickViewOrder.paymentProof.type === "txid" ? "Transaction ID" : "Screenshot" : "Not provided"}</dd></div>
+              </dl>
+              {quickViewOrder.paymentProof ? quickViewOrder.paymentProof.type === "txid" ? (
+                <button type="button" className="atlas-drawer-inline-action" onClick={() => copyToClipboard(quickViewOrder.paymentProof!.value)}>
+                  <Copy aria-hidden="true" /> Copy {quickViewOrder.paymentProof.value.slice(0, 10)}…{quickViewOrder.paymentProof.value.slice(-6)}
+                </button>
+              ) : (
+                <button type="button" className="atlas-drawer-inline-action" onClick={() => setViewingProofImage(quickViewOrder.paymentProof!.value)}>
+                  View payment screenshot
+                </button>
+              ) : null}
+            </AtlasDrawerSection>
+            <AtlasDrawerSection title="Delivery"><dl className="atlas-detail-list"><div><dt>Shipping</dt><dd>{quickViewOrder.shippingOption}</dd></div><div><dt>Country</dt><dd>{quickViewOrder.country}</dd></div><div><dt>Tracking</dt><dd>{quickViewOrder.trackingNumber ?? "Not assigned"}</dd></div><div><dt>Created</dt><dd>{new Date(quickViewOrder.createdAt).toLocaleString("en-GB")}</dd></div></dl></AtlasDrawerSection>
+            {quickViewOrder.internalNotes || quickViewOrder.flagged ? (
+              <AtlasDrawerSection title="Notes">
+                {quickViewOrder.flagged ? <p className="atlas-drawer-note"><strong>Flag:</strong> {quickViewOrder.flagged.note}</p> : null}
+                {quickViewOrder.internalNotes ? <p className="atlas-drawer-note"><strong>Internal:</strong> {quickViewOrder.internalNotes}</p> : null}
+              </AtlasDrawerSection>
+            ) : null}
           </>
         ) : null}
       </AtlasQuickViewDrawer>

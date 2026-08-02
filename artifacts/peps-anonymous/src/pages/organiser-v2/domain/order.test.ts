@@ -8,6 +8,7 @@ test("normalizeOrder preserves the complete legacy order shape", () => {
     memberUsername: "john_doe",
     memberName: "John D.",
     status: "paid",
+    paymentStatus: "pending_confirmation",
     products: [{ name: "Semaglutide 5mg", quantity: 2, price: 45 }],
     total: 90,
     paymentMethod: "USDT (TRC20)",
@@ -23,6 +24,7 @@ test("normalizeOrder preserves the complete legacy order shape", () => {
 
   assert.ok(order);
   assert.equal(order.status, "paid");
+  assert.equal(order.paymentStatus, "pending_confirmation");
   assert.equal(order.products[0].quantity, 2);
   assert.equal(order.flagged?.note, "Express request");
   assert.equal(order.paymentProof?.value, "0xabc");

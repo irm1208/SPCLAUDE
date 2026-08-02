@@ -35,9 +35,9 @@ test("Atlas shared primitives include professional table and drawer contracts", 
   }
 });
 
-test("Orders composes the Atlas table and contextual quick view", () => {
+test("Orders composes compact summaries and contextual quick view", () => {
   const orders = source("./OrdersTab.tsx");
-  assert.match(orders, /AtlasDataTable/);
+  assert.match(orders, /CompactOrderList/);
   assert.match(orders, /AtlasQuickViewDrawer/);
   assert.match(orders, /atlas-orders-table-card/);
 });
