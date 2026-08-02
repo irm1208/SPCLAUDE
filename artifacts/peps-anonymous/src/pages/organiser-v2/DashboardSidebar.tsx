@@ -3,7 +3,7 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
-  PanelLeftClose,
+  PanelLeft,
   Settings,
 } from "lucide-react";
 import { SaltPepsMark } from "@/components/SaltPepsMark";
@@ -82,16 +82,14 @@ export default function DashboardSidebar({
   return (
     <div className="ov2-sidebar">
       <div className="ov2-brand-block">
-        <div className="ov2-brand-mark" aria-hidden="true">
-          <SaltPepsMark size={24} />
+        <div className="ov2-brand-icon-rail" aria-hidden="true">
+          <div className="ov2-brand-mark">
+            <SaltPepsMark size={30} />
+          </div>
         </div>
         <div className="ov2-brand-copy">
-          <strong>Salt<span className="ov2-brand-amp">&amp;</span>Peps</strong>
-          <span>GB Organiser</span>
+          <img src="/brand/salt-peps-logo-reverse.svg" alt="Salt&Peps" width={162} height={36} />
         </div>
-        <button type="button" className="ov2-sidebar-collapse" onClick={onCollapse} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-          <PanelLeftClose aria-hidden="true" />
-        </button>
       </div>
 
       {mode === "workspace" ? (() => {
@@ -211,6 +209,15 @@ export default function DashboardSidebar({
         >
           <Settings aria-hidden="true" />
           <span>{mode === "setup" ? "Return to workspace" : "Edit GB setup"}</span>
+        </button>
+        <button
+          type="button"
+          className="ov2-sidebar-collapse"
+          onClick={onCollapse}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeft aria-hidden="true" style={{ transform: collapsed ? "rotate(180deg)" : undefined }} />
         </button>
       </div>
 

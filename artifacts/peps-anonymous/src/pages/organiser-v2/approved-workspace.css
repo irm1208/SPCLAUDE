@@ -2,7 +2,7 @@
    This final, scoped layer restores the signed-off shell after Atlas. */
 
 .organiser-v2 {
-  --ov2-sidebar-width: 236px;
+  --ov2-sidebar-width: 250px;
   --ov2-responsive-topbar-height: 108px;
   --ov2-context-rail-height: 38px;
   --ov2-workbar-height: 70px;
@@ -84,29 +84,36 @@
 }
 
 .organiser-v2 .ov2-brand-block {
-  min-height: var(--ov2-topbar-height);
-  height: var(--ov2-topbar-height);
-  gap: 10px;
+  min-height: 72px;
+  height: 72px;
+  gap: 0;
   border-color: rgba(255, 255, 255, 0.11);
-  padding: 0 14px;
+  padding: 0;
+  background: transparent;
+}
+
+.organiser-v2 .ov2-brand-icon-rail {
+  display: flex;
+  width: 56px;
+  height: 72px;
+  flex: 0 0 56px;
+  align-items: center;
+  justify-content: center;
   background: transparent;
 }
 
 .organiser-v2 .ov2-brand-mark {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 0;
-  background: #2D6BCC;
+  background: #0176D3;
   box-shadow: none;
   color: #FFFFFF;
-  font-family: 'Inter', 'Salesforce Sans', 'Helvetica Neue', Arial, sans-serif;
-  font-size: 12px;
-  letter-spacing: -0.02em;
 }
 
 .organiser-v2 .ov2-brand-mark::before {
@@ -120,48 +127,50 @@
 }
 
 .organiser-v2 .ov2-brand-mark svg {
-  width: 24px;
-  height: 24px;
   display: block;
-}
-
-.organiser-v2 .ov2-brand-copy strong,
-.organiser-v2 .ov2-brand-copy span {
-  color: #FFFFFF;
-}
-
-.organiser-v2 .ov2-brand-copy strong {
-  font-family: 'Inter', 'Salesforce Sans', 'Helvetica Neue', Arial, sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  opacity: 1;
-}
-
-.organiser-v2 .ov2-brand-copy strong .ov2-brand-amp {
-  color: #8BB8FF;
-  font-weight: 500;
-}
-
-.organiser-v2 .ov2-brand-copy span {
-  margin-top: 0;
-  font-size: var(--approved-type-meta);
-  font-weight: 600;
-  letter-spacing: 0;
-  opacity: 0.76;
-}
-
-.organiser-v2 .ov2-sidebar-collapse {
   width: 30px;
   height: 30px;
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(4px);
+}
+
+.organiser-v2 .ov2-brand-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  padding: 0 16px;
+  background: transparent;
+}
+
+.organiser-v2 .ov2-brand-copy img {
+  display: block;
+  width: 100%;
+  max-width: 162px;
+  height: 36px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.organiser-v2 .ov2-sidebar-utilities .ov2-sidebar-collapse {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  align-self: center;
+  flex: 0 0 40px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
   box-shadow: none;
 }
 
-.organiser-v2 .ov2-sidebar-collapse:hover {
+.organiser-v2 .ov2-sidebar-utilities .ov2-sidebar-collapse svg {
+  width: 19px;
+  height: 19px;
+}
+
+.organiser-v2 .ov2-sidebar-utilities .ov2-sidebar-collapse:hover {
   color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.10);
 }
 
 .organiser-v2 .ov2-active-gb-card {
@@ -469,7 +478,15 @@
 
 .organiser-v2 .is-sidebar-collapsed .ov2-brand-block {
   justify-content: center;
-  padding: 0 10px;
+  min-height: 72px;
+  height: 72px;
+  padding: 0;
+  background: transparent;
+}
+
+.organiser-v2 .is-sidebar-collapsed .ov2-brand-icon-rail {
+  width: 100%;
+  flex-basis: 100%;
 }
 
 .organiser-v2 .is-sidebar-collapsed .ov2-brand-mark {
@@ -477,11 +494,10 @@
 }
 
 .organiser-v2 .is-sidebar-collapsed .ov2-sidebar-collapse {
-  position: absolute;
-  right: -12px;
-  border: 2px solid var(--approved-canvas);
-  color: var(--approved-navy);
-  background: #FFFFFF;
+  position: static;
+  border: 0;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
 }
 
 .organiser-v2 .is-sidebar-collapsed .ov2-active-gb-card {
