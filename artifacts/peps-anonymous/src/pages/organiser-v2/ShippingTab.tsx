@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { V2_CARD_BORDER } from "./theme";
 import { organiserApi } from "./api/organiser-api";
 import {
-  Truck, Plus, Loader2, Trash2, Save, Check, X, DollarSign,
+  Truck, Plus, Loader2, Save, Check, X, DollarSign,
   Package, ChevronDown, ChevronRight, Lightbulb, CheckCircle2
 } from "lucide-react";
 
