@@ -33,36 +33,19 @@ export function SaltPepsMark({
       aria-hidden={ariaHidden}
       focusable="false"
     >
-      {/* S — semibold */}
       <text
-        x="3"
-        y="46"
+        x="32"
+        y="33"
+        textAnchor="middle"
+        dominantBaseline="central"
         fontFamily="Inter, system-ui, sans-serif"
-        fontSize="30"
-        fontWeight="600"
+        fontSize="34"
+        fontWeight="700"
         fill={color}
-        letterSpacing="-1"
-      >S</text>
-      {/* & — light weight, accent colour */}
-      <text
-        x="22"
-        y="46"
-        fontFamily="Inter, system-ui, sans-serif"
-        fontSize="30"
-        fontWeight="300"
-        fill={accentColor}
-        letterSpacing="-1"
-      >&amp;</text>
-      {/* P — semibold */}
-      <text
-        x="40"
-        y="46"
-        fontFamily="Inter, system-ui, sans-serif"
-        fontSize="30"
-        fontWeight="600"
-        fill={color}
-        letterSpacing="-1"
-      >P</text>
+        letterSpacing="-1.5"
+      >
+        S<tspan fill={accentColor} fontWeight="300">&amp;</tspan>P
+      </text>
     </svg>
   );
 }

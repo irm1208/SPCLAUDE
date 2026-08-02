@@ -98,10 +98,10 @@
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 8px;
   padding: 0;
-  background: #0176D3;
+  background: #FFFFFF;
   box-shadow: none;
   color: #FFFFFF;
   font-family: 'Inter', 'Salesforce Sans', 'Helvetica Neue', Arial, sans-serif;
@@ -120,8 +120,8 @@
 }
 
 .organiser-v2 .ov2-brand-mark svg {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   display: block;
 }
 
