@@ -439,7 +439,7 @@ export function HubBottomNav({
                 className="hbn-ring absolute pointer-events-none"
                 style={{
                   top: "50%", left: "50%",
-                  width: 44, height: 44,
+                  width: 50, height: 50,
                   borderRadius: "50%",
                   border: `2px solid ${ACCENT}`,
                 }}
@@ -451,11 +451,11 @@ export function HubBottomNav({
               aria-label={open ? "Close menu" : "Open menu"}
               className="flex flex-col items-center justify-center rounded-full transition-all"
               style={{
-                width: 44, height: 44,
+                width: 50, height: 50,
                 background: "#1B3164",
                 color: "#fff",
                 boxShadow: "0 8px 20px rgba(1,118,211,0.45)",
-                gap: 0,
+                gap: 2,
               }}
             >
               <span
@@ -465,12 +465,12 @@ export function HubBottomNav({
                   transition: "transform 220ms ease",
                 }}
               >
-                <SaltPepsMark size={26} />
+                <SaltPepsMark size={22} />
               </span>
               {!open && (
                 <span
                   className="select-none leading-none"
-                  style={{ fontSize: 7, fontWeight: 700, letterSpacing: "0.06em", opacity: 0.85, marginTop: 2 }}
+                  style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.07em", opacity: 0.9 }}
                 >
                   TAP ME
                 </span>
