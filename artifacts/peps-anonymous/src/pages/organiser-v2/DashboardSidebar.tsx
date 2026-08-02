@@ -22,6 +22,7 @@ interface Props {
   onStepChange?: (step: number) => void;
   onNavigate?: () => void;
   onSwitchMode?: () => void;
+  onChooseGroupBuy?: () => void;
   onExitDashboard?: () => void;
   onCollapse?: () => void;
   collapsed?: boolean;
@@ -52,6 +53,7 @@ export default function DashboardSidebar({
   onStepChange,
   onNavigate,
   onSwitchMode,
+  onChooseGroupBuy,
   onExitDashboard,
   onCollapse,
   collapsed = false,
@@ -90,6 +92,15 @@ export default function DashboardSidebar({
         <div className="ov2-brand-copy">
           <img src="/brand/salt-peps-logo-reverse.svg" alt="Salt&Peps" width={162} height={36} />
         </div>
+        <button
+          type="button"
+          className="ov2-sidebar-collapse"
+          onClick={onCollapse}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeft aria-hidden="true" style={{ transform: collapsed ? "rotate(180deg)" : undefined }} />
+        </button>
       </div>
 
       {mode === "workspace" ? (() => {
@@ -103,13 +114,16 @@ export default function DashboardSidebar({
               : gbStatus === "archived"
                 ? "Archived"
                 : "";
-        const cardKicker = gbStatus === "active" ? "Active group buy" : "Current group buy";
+        const cardKicker = "Select group buy";
         return (
           <button
             type="button"
             className="ov2-active-gb-card"
-            onClick={() => selectTab("overview")}
-            aria-label={`${cardKicker}: ${gbName}.${statusLine ? ` ${statusLine}.` : ""}`}
+            onClick={onChooseGroupBuy}
+            aria-haspopup="dialog"
+            aria-label={`Choose group buy. ${cardKicker}: ${gbName}.${statusLine ? ` ${statusLine}.` : ""}`}
+            title="Choose group buy"
+            disabled={!onChooseGroupBuy}
           >
             <span className="ov2-active-gb-mark" aria-hidden="true">{initialsOf(gbName)}</span>
             <span className="ov2-active-gb-copy">
@@ -210,21 +224,11 @@ export default function DashboardSidebar({
           <Settings aria-hidden="true" />
           <span>{mode === "setup" ? "Return to workspace" : "Edit GB setup"}</span>
         </button>
-        <button
-          type="button"
-          className="ov2-sidebar-collapse"
-          onClick={onCollapse}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <PanelLeft aria-hidden="true" style={{ transform: collapsed ? "rotate(180deg)" : undefined }} />
-        </button>
       </div>
 
       <div className="ov2-profile-block">
         <span className="ov2-profile-avatar" aria-hidden="true">{initialsOf(userName)}</span>
         <span><strong>{userName}</strong><small>Organiser</small></span>
-        <ChevronDown aria-hidden="true" />
       </div>
     </div>
   );

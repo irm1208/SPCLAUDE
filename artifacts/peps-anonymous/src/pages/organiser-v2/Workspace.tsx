@@ -248,6 +248,10 @@ export default function Workspace({
             badges={badges}
             onNavigate={onNavigate}
             onSwitchMode={onModeChange}
+            onChooseGroupBuy={() => {
+              onNavigate();
+              onChooseGroupBuy?.();
+            }}
             onExitDashboard={() => window.location.assign("/account")}
             onCollapse={onCollapse}
             collapsed={collapsed}
