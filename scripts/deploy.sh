@@ -55,9 +55,6 @@ async function run() {
 run().catch(e => { console.error('[migrate] ERROR:', e.message); process.exit(1); });
 "
 
-echo "[deploy] Pushing database schema..."
-$PNPM --filter @workspace/db run push-force || echo "[deploy] drizzle-kit push exited non-zero (may be interactive prompt); continuing."
-
 echo "[deploy] Compiling API server..."
 NODE_OPTIONS="--max-old-space-size=4096" $PNPM --filter @workspace/api-server run build:compile
 
