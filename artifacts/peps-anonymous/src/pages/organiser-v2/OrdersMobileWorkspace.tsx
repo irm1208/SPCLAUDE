@@ -31,7 +31,6 @@ export default function OrdersMobileWorkspace(props: OrdersMobileWorkspaceProps)
     {view === "all" ? <div className="orders-mobile-search"><label><Search aria-hidden="true" /><input type="search" value={searchQuery} onChange={event => onSearchChange(event.target.value)} placeholder="Search orders" /></label><button ref={filterButtonRef} type="button" onClick={onOpenFilters}><SlidersHorizontal aria-hidden="true" /> Filters {activeFilterCount || ""}</button></div> : null}
     <CompactOrderList
       orders={visible}
-      onOpenOrder={onOpenOrder}
       empty={<div className="orders-mobile-empty" role="status"><strong>No orders in this view</strong><button type="button" onClick={() => onViewChange("all")}>View all orders</button></div>}
     />
   </div>;

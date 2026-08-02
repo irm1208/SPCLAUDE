@@ -105,17 +105,14 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   const [newProductMode, setNewProductMode] = useState<"existing" | "custom">("existing");
   const [viewingProofImage, setViewingProofImage] = useState<string | null>(null);
 
-  // Deep-linked orders open in the same full-details drawer as clicked cards.
+  // Deep-linked orders auto-expand their inline accordion row and scroll into view.
   useEffect(() => {
     if (!highlightId) return;
-    const highlightedOrder = orders.find(order => order.id === highlightId || order.code === highlightId);
-    if (!highlightedOrder) return;
-    setQuickViewOrder(highlightedOrder);
     window.setTimeout(() => {
-      document.querySelector(`[data-order-id="${highlightedOrder.id}"]`)
+      document.querySelector(`[data-order-id="${highlightId}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
-  }, [highlightId, orders]);
+  }, [highlightId]);
 
   // Flag system
   const [flagNote, setFlagNote] = useState("");
@@ -916,9 +913,13 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
         </div>
         <CompactOrderList
           orders={filteredOrders}
-          onOpenOrder={setQuickViewOrder}
           selected={selectedOrders}
           onSelectionChange={setSelectedOrders}
+          onEditOrder={openEditModal}
+          onSelectOrder={orderId => { toggleOrderSelection(orderId); }}
+          onCopyToClipboard={copyToClipboard}
+          onViewProofImage={setViewingProofImage}
+          initialExpandedId={highlightId ?? undefined}
           empty={<AtlasEmptyState title="No orders found" description="Try adjusting your filters." />}
         />
       </section>
