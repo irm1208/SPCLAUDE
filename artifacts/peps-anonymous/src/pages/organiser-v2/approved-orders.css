@@ -809,10 +809,13 @@
 /* ─── Inline accordion detail panel ───────────────────────────────────────── */
 
 .organiser-v2 .orders-compact-detail {
+  grid-column: 1 / -1;
   border-top: 1px solid #E5EBF3;
   padding: 16px 16px 18px;
   background: #F7FAFD;
   animation: compact-detail-in 160ms ease;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 @keyframes compact-detail-in {
