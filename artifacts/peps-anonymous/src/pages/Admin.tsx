@@ -7091,6 +7091,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [filterVendor, setFilterVendor] = useState("");
   const [filterCountry, setFilterCountry] = useState<string[]>([]);
   const [availableCountries, setAvailableCountries] = useState<string[]>([]);
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
 
   // GB-level members + orders + parcels (fetched when a GB is selected)
   const [gbMembers, setGbMembers] = useState<Fs3GbMember[]>([]);
@@ -7242,6 +7244,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       if (filterRouting) params.set("routingType", filterRouting);
       if (filterGroupBuy) params.set("groupBuyId", filterGroupBuy);
       if (filterVendor) params.set("vendor", filterVendor);
+      if (filterDateFrom) params.set("dateFrom", filterDateFrom);
+      if (filterDateTo) params.set("dateTo", filterDateTo);
       const qs = params.toString();
       const res = await fetch(apiUrl(`/admin/fs3-summary${qs ? `?${qs}` : ""}`), {
         headers: { "x-admin-secret": secret },
@@ -7262,7 +7266,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       setDataErr("Network error");
     }
     setLoading(false);
-  }, [secret, filterCountry, filterRouting, filterGroupBuy, filterVendor]);
+  }, [secret, filterCountry, filterRouting, filterGroupBuy, filterVendor, filterDateFrom, filterDateTo]);
 
   useEffect(() => {
     fetchData();
@@ -7503,8 +7507,16 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     if (filterRouting === "wholesale") base = base.filter(o => o.orderType === "wholesale");
     else if (filterRouting === "shared") base = base.filter(o => o.orderType === "wholesale_shared");
     if (filterReshipper) base = base.filter(o => o.reshipperUsername === filterReshipper);
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom); from.setHours(0, 0, 0, 0);
+      base = base.filter(o => o.createdAt && new Date(o.createdAt) >= from);
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo); to.setHours(23, 59, 59, 999);
+      base = base.filter(o => o.createdAt && new Date(o.createdAt) <= to);
+    }
     return base;
-  }, [routingOrders, filterReshipper, filterRouting]);
+  }, [routingOrders, filterReshipper, filterRouting, filterDateFrom, filterDateTo]);
 
   // Wholesale view: collapse a shared order's per-member orders into one group.
   // Orders sharing a `sharedOrderId` belong to the same wholesale shared order;
@@ -8079,7 +8091,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const activeCombinedTotalQty = activeCombinedRows.reduce((s, r) => s + r.qty, 0);
 
   // ── Filtered product revenue (used in summary cards when a filter is active) ──
-  const isFiltered = !!(filterGroupBuy || filterVendor || filterCountry.length > 0);
+  const isFiltered = !!(filterGroupBuy || filterVendor || filterCountry.length > 0 || filterDateFrom || filterDateTo);
   const filteredProductRevenue = filteredRows.reduce((s, r) => s + r.totalRevenue, 0);
 
   // Shipping totals come directly from backend — already scoped to all active filters
@@ -8531,10 +8543,30 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               </select>
             </div>
           )}
-          {(filterGroupBuy || filterVendor || filterCountry.length > 0 || filterRouting) && (
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-muted-foreground font-medium shrink-0">From</label>
+            <input
+              type="date"
+              className="text-sm border border-border rounded-md px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              value={filterDateFrom}
+              onChange={e => setFilterDateFrom(e.target.value)}
+              max={filterDateTo || undefined}
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-muted-foreground font-medium shrink-0">To</label>
+            <input
+              type="date"
+              className="text-sm border border-border rounded-md px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              value={filterDateTo}
+              onChange={e => setFilterDateTo(e.target.value)}
+              min={filterDateFrom || undefined}
+            />
+          </div>
+          {(filterGroupBuy || filterVendor || filterCountry.length > 0 || filterRouting || filterDateFrom || filterDateTo) && (
             <button
               className="text-xs text-muted-foreground hover:text-foreground underline"
-              onClick={() => { setFilterGroupBuy(""); setFilterVendor(""); setFilterCountry([]); setFilterRouting(""); setFilterReshipper(""); }}
+              onClick={() => { setFilterGroupBuy(""); setFilterVendor(""); setFilterCountry([]); setFilterRouting(""); setFilterReshipper(""); setFilterDateFrom(""); setFilterDateTo(""); }}
             >
               Clear filters
             </button>

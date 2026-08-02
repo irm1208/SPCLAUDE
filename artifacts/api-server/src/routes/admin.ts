@@ -3744,12 +3744,30 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   const routingTypeParam = req.query.routingType as string | undefined;
   const groupBuyIdParam = req.query.groupBuyId as string | undefined;
   const vendorParam = req.query.vendor as string | undefined;
+  const dateFromParam = req.query.dateFrom as string | undefined; // ISO date string e.g. "2025-01-01"
+  const dateToParam = req.query.dateTo as string | undefined;     // ISO date string e.g. "2025-12-31"
 
   // Return group summary for all non-cancelled statuses, with full order breakdown
   let allOrders = await db
     .select()
     .from(ordersTable)
     .where(and(inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]), isNull(ordersTable.deletedAt)));
+
+  // Filter by date range if requested
+  if (dateFromParam) {
+    const from = new Date(dateFromParam);
+    if (!isNaN(from.getTime())) {
+      from.setHours(0, 0, 0, 0);
+      allOrders = allOrders.filter(o => o.createdAt && new Date(o.createdAt) >= from);
+    }
+  }
+  if (dateToParam) {
+    const to = new Date(dateToParam);
+    if (!isNaN(to.getTime())) {
+      to.setHours(23, 59, 59, 999);
+      allOrders = allOrders.filter(o => o.createdAt && new Date(o.createdAt) <= to);
+    }
+  }
 
   // Filter by routing type if requested
   if (routingTypeParam && routingTypeParam !== "all") {
