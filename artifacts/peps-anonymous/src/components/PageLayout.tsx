@@ -235,8 +235,6 @@ function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
     >
       <SaltPepsMark
         size={size === "sm" ? 23 : 30}
-        variant="reverse"
-        detail={size === "sm" ? "small" : "full"}
       />
     </div>
   );

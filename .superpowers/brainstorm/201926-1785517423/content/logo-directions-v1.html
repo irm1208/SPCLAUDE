@@ -1,0 +1,111 @@
+<style>
+  :root {
+    --navy: #1b3a7a;
+    --deep: #1b3164;
+    --blue: #2d6bcc;
+    --ink: #0f1f38;
+    --paper: #f8fafc;
+  }
+  .logo-intro {
+    margin-bottom: 26px;
+  }
+  .direction-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    align-items: stretch;
+  }
+  .direction {
+    border: 1px solid #d0dae4;
+    border-radius: 16px;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+  .direction:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,31,56,.11); border-color: #2d6bcc; }
+  .direction.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.15), 0 14px 30px rgba(15,31,56,.11); }
+  .canvas { min-height: 245px; padding: 30px 24px; display: flex; flex-direction: column; justify-content: space-between; }
+  .canvas.light { background: #f8fafc; }
+  .canvas.dark { background: #1b3164; }
+  .tag { display: inline-flex; align-self: flex-start; padding: 5px 8px; border-radius: 5px; background: rgba(45,107,204,.1); color: #1b3a7a; font: 700 10px/1 Inter, system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+  .dark .tag { background: rgba(255,255,255,.12); color: #fff; }
+  .logo-lockup { display: flex; align-items: center; gap: 14px; }
+  .wordmark { color: var(--ink); font: 800 26px/1 Inter, system-ui, sans-serif; letter-spacing: .055em; white-space: nowrap; }
+  .wordmark .amp { color: var(--blue); }
+  .dark .wordmark { color: #fff; }
+  .descriptor { margin-top: 8px; color: #6b7280; font: 600 11px/1.35 Inter, system-ui, sans-serif; letter-spacing: .04em; }
+  .dark .descriptor { color: rgba(255,255,255,.65); }
+  .copy { padding: 18px 20px 20px; border-top: 1px solid #e3eaf1; }
+  .copy h3 { margin: 0 0 7px; color: #0f1f38; font: 800 16px/1.15 Inter, system-ui, sans-serif; }
+  .copy p { margin: 0; color: #5c6877; font: 500 12px/1.45 Inter, system-ui, sans-serif; }
+  .scale-row { display: flex; gap: 12px; align-items: center; margin-top: 22px; padding-top: 16px; border-top: 1px solid rgba(208,218,228,.75); }
+  .scale-label { color: #8a9aaa; font: 700 10px/1 Inter, system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+  .mini { width: 16px; height: 16px; }
+  .mini.medium { width: 24px; height: 24px; }
+  .mini.large { width: 34px; height: 34px; }
+  @media (max-width: 900px) { .direction-grid { grid-template-columns: 1fr; } .canvas { min-height: 218px; } }
+</style>
+
+<div class="logo-intro">
+  <h2>Choose a new SALT&amp;PEPS identity direction</h2>
+  <p class="subtitle">Each option redesigns the symbol and wordmark while staying inside the current navy, blue, and white brand system.</p>
+</div>
+
+<div class="direction-grid">
+  <article class="direction" data-choice="molecular-ribbon" onclick="toggleSelect(this)">
+    <div class="canvas light">
+      <span class="tag">A · Precision</span>
+      <div>
+        <div class="logo-lockup">
+          <svg width="62" height="62" viewBox="0 0 62 62" aria-label="Molecular ribbon mark">
+            <path d="M31 7c10.9 0 19.7 8.8 19.7 19.7 0 7.7-4.4 14.3-10.8 17.6-4.9 2.6-8.1 6.4-8.1 10.7M31 7c-10.9 0-19.7 8.8-19.7 19.7 0 7.7 4.4 14.3 10.8 17.6 4.9 2.6 8.1 6.4 8.1 10.7" fill="none" stroke="#1b3a7a" stroke-width="5" stroke-linecap="round"/>
+            <path d="M20.8 18.2c6.9 3.5 13.5 3.5 20.4 0M20.8 31c6.9 3.5 13.5 3.5 20.4 0M20.8 43.8c6.9-3.5 13.5-3.5 20.4 0" fill="none" stroke="#2d6bcc" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="31" cy="7" r="4" fill="#2d6bcc"/><circle cx="31" cy="55" r="4" fill="#2d6bcc"/>
+          </svg>
+          <div><div class="wordmark">SALT<span class="amp">&amp;</span>PEPS</div><div class="descriptor">RESEARCH · COMMUNITY · TRUST</div></div>
+        </div>
+        <div class="scale-row"><span class="scale-label">Favicon</span><svg class="mini" viewBox="0 0 62 62"><path d="M31 7c10.9 0 19.7 8.8 19.7 19.7 0 7.7-4.4 14.3-10.8 17.6-4.9 2.6-8.1 6.4-8.1 10.7M31 7c-10.9 0-19.7 8.8-19.7 19.7 0 7.7 4.4 14.3 10.8 17.6 4.9 2.6 8.1 6.4 8.1 10.7" fill="none" stroke="#1b3a7a" stroke-width="7" stroke-linecap="round"/><path d="M20.8 18.2c6.9 3.5 13.5 3.5 20.4 0M20.8 31c6.9 3.5 13.5 3.5 20.4 0M20.8 43.8c6.9-3.5 13.5-3.5 20.4 0" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg><svg class="mini medium" viewBox="0 0 62 62"><path d="M31 7c10.9 0 19.7 8.8 19.7 19.7 0 7.7-4.4 14.3-10.8 17.6-4.9 2.6-8.1 6.4-8.1 10.7M31 7c-10.9 0-19.7 8.8-19.7 19.7 0 7.7 4.4 14.3 10.8 17.6 4.9 2.6 8.1 6.4 8.1 10.7" fill="none" stroke="#1b3a7a" stroke-width="7" stroke-linecap="round"/><path d="M20.8 18.2c6.9 3.5 13.5 3.5 20.4 0M20.8 31c6.9 3.5 13.5 3.5 20.4 0M20.8 43.8c6.9-3.5 13.5-3.5 20.4 0" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg><svg class="mini large" viewBox="0 0 62 62"><path d="M31 7c10.9 0 19.7 8.8 19.7 19.7 0 7.7-4.4 14.3-10.8 17.6-4.9 2.6-8.1 6.4-8.1 10.7M31 7c-10.9 0-19.7 8.8-19.7 19.7 0 7.7 4.4 14.3 10.8 17.6 4.9 2.6 8.1 6.4 8.1 10.7" fill="none" stroke="#1b3a7a" stroke-width="7" stroke-linecap="round"/><path d="M20.8 18.2c6.9 3.5 13.5 3.5 20.4 0M20.8 31c6.9 3.5 13.5 3.5 20.4 0M20.8 43.8c6.9-3.5 13.5-3.5 20.4 0" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg></div>
+      </div>
+    </div>
+    <div class="copy"><h3>Molecular Ribbon</h3><p>A confident double-helix silhouette that reads as research-led, modern, and precise. The wordmark uses a wider tracking rhythm for a technical signal.</p></div>
+  </article>
+
+  <article class="direction" data-choice="clinical-seal" onclick="toggleSelect(this)">
+    <div class="canvas dark">
+      <span class="tag">B · Assured</span>
+      <div>
+        <div class="logo-lockup">
+          <svg width="62" height="62" viewBox="0 0 62 62" aria-label="Clinical seal mark">
+            <path d="M31 4 55 18v26L31 58 7 44V18L31 4Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+            <path d="M31 14v34M14 24l34 14M14 38l34-14" fill="none" stroke="#2d6bcc" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="31" cy="31" r="7" fill="#2d6bcc" stroke="#fff" stroke-width="3"/>
+          </svg>
+          <div><div class="wordmark">SALT<span class="amp">&amp;</span>PEPS</div><div class="descriptor">THE CLEARER WAY TO BUY</div></div>
+        </div>
+        <div class="scale-row"><span class="scale-label">Favicon</span><svg class="mini" viewBox="0 0 62 62"><path d="M31 4 55 18v26L31 58 7 44V18L31 4Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M31 14v34M14 24l34 14M14 38l34-14" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/><circle cx="31" cy="31" r="7" fill="#2d6bcc" stroke="#fff" stroke-width="3"/></svg><svg class="mini medium" viewBox="0 0 62 62"><path d="M31 4 55 18v26L31 58 7 44V18L31 4Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M31 14v34M14 24l34 14M14 38l34-14" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/><circle cx="31" cy="31" r="7" fill="#2d6bcc" stroke="#fff" stroke-width="3"/></svg><svg class="mini large" viewBox="0 0 62 62"><path d="M31 4 55 18v26L31 58 7 44V18L31 4Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M31 14v34M14 24l34 14M14 38l34-14" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/><circle cx="31" cy="31" r="7" fill="#2d6bcc" stroke="#fff" stroke-width="3"/></svg></div>
+      </div>
+    </div>
+    <div class="copy"><h3>Clinical Seal</h3><p>A compact crystal-grid mark designed to feel dependable at a glance. The wordmark is tighter and more editorial, with a strong dark-mode lockup for app chrome.</p></div>
+  </article>
+
+  <article class="direction" data-choice="connected-field" onclick="toggleSelect(this)">
+    <div class="canvas light">
+      <span class="tag">C · Collective</span>
+      <div>
+        <div class="logo-lockup">
+          <svg width="62" height="62" viewBox="0 0 62 62" aria-label="Connected field mark">
+            <path d="M31 7 49 17.5v27L31 55 13 44.5v-27L31 7Z" fill="none" stroke="#1b3a7a" stroke-width="4" stroke-linejoin="round"/>
+            <path d="M31 7v48M13 17.5l36 27M49 17.5 13 44.5" fill="none" stroke="#2d6bcc" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="31" cy="7" r="4" fill="#2d6bcc"/><circle cx="49" cy="17.5" r="4" fill="#2d6bcc"/><circle cx="49" cy="44.5" r="4" fill="#2d6bcc"/><circle cx="31" cy="55" r="4" fill="#2d6bcc"/><circle cx="13" cy="44.5" r="4" fill="#2d6bcc"/><circle cx="13" cy="17.5" r="4" fill="#2d6bcc"/>
+          </svg>
+          <div><div class="wordmark">SALT<span class="amp">&amp;</span>PEPS</div><div class="descriptor">PEPTIDES, MADE HUMAN</div></div>
+        </div>
+        <div class="scale-row"><span class="scale-label">Favicon</span><svg class="mini" viewBox="0 0 62 62"><path d="M31 7 49 17.5v27L31 55 13 44.5v-27L31 7Z" fill="none" stroke="#1b3a7a" stroke-width="6" stroke-linejoin="round"/><path d="M31 7v48M13 17.5l36 27M49 17.5 13 44.5" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg><svg class="mini medium" viewBox="0 0 62 62"><path d="M31 7 49 17.5v27L31 55 13 44.5v-27L31 7Z" fill="none" stroke="#1b3a7a" stroke-width="6" stroke-linejoin="round"/><path d="M31 7v48M13 17.5l36 27M49 17.5 13 44.5" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg><svg class="mini large" viewBox="0 0 62 62"><path d="M31 7 49 17.5v27L31 55 13 44.5v-27L31 7Z" fill="none" stroke="#1b3a7a" stroke-width="6" stroke-linejoin="round"/><path d="M31 7v48M13 17.5l36 27M49 17.5 13 44.5" fill="none" stroke="#2d6bcc" stroke-width="4" stroke-linecap="round"/></svg></div>
+      </div>
+    </div>
+    <div class="copy"><h3>Connected Field</h3><p>A six-node network that makes the ampersand idea feel collective and memorable. The wordmark is warmer and more human without losing structure.</p></div>
+  </article>
+</div>
+
+<p class="subtitle" style="margin-top:24px">Click a direction to select it. We can refine the chosen route before implementation.</p>

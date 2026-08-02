@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { Resvg } from "@resvg/resvg-js";
+import { PNG } from "pngjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appRoot = "artifacts/peps-anonymous";
 const failures = [];
@@ -27,108 +30,55 @@ function checkImport(source, relativePath) {
   );
 }
 
-function checkMark(source, relativePath, size, detail) {
+function checkMark(source, relativePath, size) {
   check(
     new RegExp(
-      `<SaltPepsMark(?=[\\s\\S]*?size=\\{${size}\\})(?=[\\s\\S]*?variant=["']reverse["'])${
-        detail ? `(?=[\\s\\S]*?detail=["']${detail}["'])` : ""
-      }[\\s\\S]*?\\/>`,
+      `<SaltPepsMark(?=[\\s\\S]*?size=\\{${size}\\})[\\s\\S]*?\\/>`,
     ).test(source),
-    `${relativePath}: render a ${size}px reverse SaltPepsMark${detail ? ` with ${detail} detail` : ""}`,
+    `${relativePath}: render a ${size}px favicon-backed SaltPepsMark`,
   );
 }
 
 const componentPath = `${appRoot}/src/components/SaltPepsMark.tsx`;
 const component = read(componentPath);
-const fullPaths = [
-  "M 49 44 L 43 51 L 36 56 L 28 57 L 21 53 L 19 47 L 23 41 L 31 35 L 40 29 L 45 23 L 46 16 L 41 10 L 32 7 L 23 9 L 18 15 L 18 22 L 23 28 L 43 50 L 49 56",
-  "M 43.8 21.4 55.5 13.5 M 45.7 24 57.2 16.2 M 23.2 40.6 8.4 44.8 M 24.1 43.4 9.2 47.6",
-  "M57 10.75 60.75 14.5 57 18.25 53.25 14.5Z",
-  "M7 43.25 10.75 47 7 50.75 3.25 47Z",
-];
-const smallPaths = [
-  fullPaths[0],
-  "M 44.5 22.6 56.5 14.5 M 23.5 42 7.5 46.5",
-  "M57 9.75 61.75 14.5 57 19.25 52.25 14.5Z",
-  "M6.5 41.5 11.5 46.5 6.5 51.5 1.5 46.5Z",
-];
-
-for (const path of new Set([...fullPaths, ...smallPaths])) {
-  check(
-    component.includes(path),
-    `${componentPath}: hoist canonical path ${path}`,
-  );
-}
-for (const width of ["7.25", "2.25", "8", "3.25"]) {
-  check(
-    component.includes(width),
-    `${componentPath}: preserve canonical stroke width ${width}`,
-  );
-}
 check(
-  /SVGProps<SVGSVGElement>/.test(component),
-  `${componentPath}: extend normal SVG props`,
+  /ImgHTMLAttributes<HTMLImageElement>/.test(component),
+  `${componentPath}: extend normal image props`,
+);
+check(
+  /Omit<ImgHTMLAttributes<HTMLImageElement>,\s*["']src["']\s*\|\s*["']width["']\s*\|\s*["']height["']\s*>/.test(
+    component,
+  ),
+  `${componentPath}: keep the favicon source and dimensions controlled`,
 );
 check(
   /size\?:\s*number\s*\|\s*string/.test(component),
   `${componentPath}: expose size?: number | string`,
 );
 check(
-  /variant\?:\s*["']primary["']\s*\|\s*["']reverse["']\s*\|\s*["']mono["']/.test(
-    component,
-  ),
-  `${componentPath}: expose the primary, reverse, and mono variants`,
+  /src=["']\/favicon\.svg["']/.test(component),
+  `${componentPath}: render the approved favicon asset`,
 );
 check(
-  /detail\?:\s*["']auto["']\s*\|\s*["']full["']\s*\|\s*["']small["']/.test(
-    component,
-  ),
-  `${componentPath}: expose the auto, full, and small detail modes`,
-);
-check(
-  /title\?:\s*string/.test(component),
-  `${componentPath}: expose an optional title`,
+  /alt=\{resolvedAlt\}/.test(component) && /title=\{title\}/.test(component),
+  `${componentPath}: preserve image title and alt semantics`,
 );
 check(/size\s*=\s*32/.test(component), `${componentPath}: default size to 32`);
 check(
-  /variant\s*=\s*["']primary["']/.test(component),
-  `${componentPath}: default variant to primary`,
+  /style=\{\{ display:\s*["']block["']/.test(component),
+  `${componentPath}: keep the favicon image block-level`,
 );
 check(
-  /detail\s*=\s*["']auto["']/.test(component),
-  `${componentPath}: default detail to auto`,
+  !/AMPERSAND_PATH|FULL_DETAIL_PATH|SMALL_DETAIL_PATH|SVGProps|useId|variant\??:|detail\??:|<svg\b/.test(
+    component,
+  ),
+  `${componentPath}: remove the retired inline peptide mark implementation`,
 );
 check(
-  /typeof size\s*===\s*["']number["'][\s\S]*?size\s*<\s*24/.test(component),
-  `${componentPath}: auto-select small detail below 24 numeric pixels`,
-);
-check(
-  component.includes("#1B3A7A") && component.includes("#2D6BCC"),
-  `${componentPath}: use the primary navy and blue colors`,
-);
-check(
-  component.includes("#FFFFFF"),
-  `${componentPath}: use white for the reverse variant`,
-);
-check(
-  (component.match(/#0F1F38/g) ?? []).length >= 2,
-  `${componentPath}: use mono navy for both mono channels`,
-);
-check(
-  /\buseId\s*\(\s*\)/.test(component),
-  `${componentPath}: use React useId for the optional title`,
-);
-check(
-  /<title\s+id=\{titleId\}>\{title\}<\/title>/.test(component),
-  `${componentPath}: bind the optional title to the generated id`,
-);
-check(
-  !/<text\b/i.test(component),
-  `${componentPath}: do not use SVG text elements`,
-);
-check(
-  !/https?:\/\//i.test(component),
-  `${componentPath}: do not use network URLs`,
+  /ariaHidden\s*\?\?\s*\(hasAccessibleName\s*\?\s*undefined\s*:\s*true\)/.test(
+    component,
+  ),
+  `${componentPath}: hide nameless favicon marks by default`,
 );
 
 const pageLayoutPath = `${appRoot}/src/components/PageLayout.tsx`;
@@ -150,11 +100,8 @@ check(
   `${pageLayoutPath}: render 23px and 30px responsive marks`,
 );
 check(
-  /variant=["']reverse["']/.test(brandMark) &&
-    /detail=\{size === ["']sm["'] \? ["']small["'] : ["']full["']\}/.test(
-      brandMark,
-    ),
-  `${pageLayoutPath}: use reverse marks and small detail for sm`,
+  !/variant=|detail=/.test(brandMark),
+  `${pageLayoutPath}: use the shared favicon-backed mark without legacy variants`,
 );
 check(
   !/>\s*S(?:&amp;|&)P\s*</.test(brandMark),
@@ -176,7 +123,7 @@ check(
   `${dashboardPath}: choose the horizontal wordmark from the current theme`,
 );
 check(
-  /alt=["']Salt & Peps["']/.test(dashboard),
+  /alt=["']Salt&Peps["']/.test(dashboard),
   `${dashboardPath}: give the horizontal wordmark an exact alt label`,
 );
 check(
@@ -197,8 +144,18 @@ check(
 
 const bottomNavPath = `${appRoot}/src/components/HubBottomNav.tsx`;
 const bottomNav = read(bottomNavPath);
-checkImport(bottomNav, bottomNavPath);
-checkMark(bottomNav, bottomNavPath, 20, "small");
+check(
+  /import\s+\{\s*SaltPepsMark\s*\}\s+from\s+["']@\/components\/SaltPepsMark["'];/.test(
+    bottomNav,
+  ),
+  `${bottomNavPath}: use the shared S&P favicon-backed mark`,
+);
+check(
+  /<SaltPepsMark(?=[\s\S]*?size=\{20\})[\s\S]*?\/>/.test(
+    bottomNav,
+  ),
+  `${bottomNavPath}: render the 20px S&P mark in the TAP ME button`,
+);
 check(
   !/S&amp;P/.test(bottomNav),
   `${bottomNavPath}: remove the center S&P placeholder`,
@@ -207,6 +164,16 @@ check(bottomNav.includes("TAP ME"), `${bottomNavPath}: retain TAP ME`);
 check(
   /width:\s*44,\s*height:\s*44/.test(bottomNav),
   `${bottomNavPath}: retain the 44px center button`,
+);
+check(
+  /@keyframes hbn-ring/.test(bottomNav) && /className=["']hbn-ring/.test(bottomNav),
+  `${bottomNavPath}: retain the original animated outline ring`,
+);
+const centerButton =
+  bottomNav.match(/<button[\s\S]*?aria-label=\{open \?[\s\S]*?<\/button>/)?.[0] ?? "";
+check(
+  /background:\s*ACCENT/.test(centerButton),
+  `${bottomNavPath}: retain the original blue TAP ME button background`,
 );
 check(
   /transform:\s*open\s*\?\s*["']scale\(0\.85\)["']\s*:\s*["']scale\(1\)["']/.test(
@@ -239,7 +206,7 @@ check(
 const prototypePath = `${appRoot}/src/pages/PrototypeHome.tsx`;
 const prototype = read(prototypePath);
 checkImport(prototype, prototypePath);
-checkMark(prototype, prototypePath, 22, "small");
+checkMark(prototype, prototypePath, 22);
 check(
   !/<text\b/i.test(prototype),
   `${prototypePath}: remove the font-dependent SVG text mark`,
@@ -285,10 +252,16 @@ const explorerPath = `${appRoot}/public/peptide-explorer/index.html`;
 const explorer = read(explorerPath);
 check(!explorer.includes("🧂"), `${explorerPath}: remove the salt emoji`);
 check(
-  /<img\s+class=["']brand-mark["']\s+src=["']\.\.\/brand\/salt-peps-icon-reverse-small\.svg["']\s+width=["']18["']\s+height=["']18["']\s+alt=["']["']\s+aria-hidden=["']true["']\s*\/>/.test(
+  /<img\s+class=["']brand-mark["']\s+src=["']\.\.\/favicon\.svg["']\s+width=["']18["']\s+height=["']18["']\s+alt=["']["']\s+aria-hidden=["']true["']\s*\/>/.test(
     explorer,
   ),
-  `${explorerPath}: use the relative 18px reverse small icon asset`,
+  `${explorerPath}: use the relative 18px favicon asset`,
+);
+check(
+  /<meta\s+name=["']theme-color["']\s+content=["']#1B3164["']\s*\/>/.test(
+    explorer,
+  ) && /rel=["']icon["'][^>]*href=["']\.\.\/favicon\.svg["']/.test(explorer),
+  `${explorerPath}: use the favicon in browser chrome as well as the titlebar`,
 );
 check(
   /Salt<span class=["']amp["']>&amp;<\/span>Peps/.test(explorer),
@@ -305,22 +278,68 @@ check(
   /<rect\b[^>]*width=["']180["'][^>]*height=["']180["'][^>]*fill=["']#1B3164["']/.test(
     favicon,
   ),
-  `${faviconPath}: use the deep navy 180px rounded-square background`,
+  `${faviconPath}: use the Deep Navy 180px rounded-square background`,
 );
-for (const path of new Set(smallPaths)) {
+for (const path of ["M39.14 137.13", "M109.32 137.30", "M182.38 136"]) {
   check(
     favicon.includes(path),
-    `${faviconPath}: include canonical small path ${path}`,
+    `${faviconPath}: include the approved type-derived glyph path fragment ${path}`,
   );
 }
 check(
-  /transform=["']translate\(18 18\) scale\(2\.25\)["']/.test(favicon),
-  `${faviconPath}: use the enlarged small-size favicon treatment`,
+  /transform=["']translate\(9 24\) scale\(\.70\)["']/.test(favicon),
+  `${faviconPath}: use the centered 01 favicon fit transform`,
 );
 check(
-  (favicon.match(/#FFFFFF/g) ?? []).length >= 4,
-  `${faviconPath}: render the reverse icon in white`,
+  (favicon.match(/fill=["']#FFFFFF["']/g) ?? []).length >= 3,
+  `${faviconPath}: render all three monogram glyphs in white`,
 );
+check(
+  !favicon.includes("M 49 44 L 43 51 L 36 56"),
+  `${faviconPath}: remove the previous peptide-bond path`,
+);
+for (const size of [16, 32]) {
+  try {
+    const raster = PNG.sync.read(
+      new Resvg(favicon, {
+        fitTo: { mode: "width", value: size },
+        background: "#1B3164",
+      })
+        .render()
+        .asPng(),
+    );
+    let whitePixels = 0;
+    let minX = size;
+    let minY = size;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const offset = (y * size + x) * 4;
+        const red = raster.data[offset];
+        const green = raster.data[offset + 1];
+        const blue = raster.data[offset + 2];
+        const alpha = raster.data[offset + 3];
+        if (red > 240 && green > 240 && blue > 240 && alpha > 0) {
+          whitePixels += 1;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    check(
+      whitePixels > 0 && minX >= 1 && minY >= 1 && maxX <= size - 2 && maxY <= size - 2,
+      `${faviconPath}: keep white glyphs inside the ${size}px tile (bounds ${minX},${minY}..${maxX},${maxY})`,
+    );
+  } catch (error) {
+    check(
+      false,
+      `${faviconPath}: render the ${size}px glyph bounds (${error instanceof Error ? error.message : "unknown error"})`,
+    );
+  }
+}
 const faviconWithoutNamespace = favicon.replace(
   'xmlns="http://www.w3.org/2000/svg"',
   "",
@@ -377,20 +396,21 @@ try {
 
   const decorativeMark = renderMark({});
   check(
-    /aria-hidden="true"/.test(decorativeMark) &&
+    /src="\/favicon\.svg"/.test(decorativeMark) &&
+      /alt=""/.test(decorativeMark) &&
+      /aria-hidden="true"/.test(decorativeMark) &&
       !/\srole=/.test(decorativeMark) &&
       !/aria-label(?:ledby)?=/.test(decorativeMark),
-    `${componentPath}: hide a nameless mark by default`,
+    `${componentPath}: render and hide a nameless favicon mark by default`,
   );
 
   const titledMark = renderMark({ title: "Salt & Peps peptide mark" });
-  const titleId = titledMark.match(/<title id="([^"]+)">/)?.[1];
   check(
-    Boolean(titleId) &&
-      titledMark.includes(`aria-labelledby="${titleId}"`) &&
+    /alt="Salt &amp; Peps peptide mark"/.test(titledMark) &&
+      /title="Salt &amp; Peps peptide mark"/.test(titledMark) &&
       /\srole="img"/.test(titledMark) &&
       !/aria-hidden=/.test(titledMark),
-    `${componentPath}: expose and reference an optional SVG title`,
+    `${componentPath}: expose an optional image title as its accessible name`,
   );
 
   const ariaLabelMark = renderMark({ "aria-label": "Salt & Peps" });

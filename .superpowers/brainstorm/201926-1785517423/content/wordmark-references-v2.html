@@ -1,0 +1,108 @@
+<style>
+  .research-head { margin-bottom: 28px; }
+  .research-head h2 { margin-bottom: 10px; }
+  .research-head .subtitle { max-width: 760px; }
+  .reference-group { margin-top: 30px; }
+  .group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+  .group-head h3 { margin: 0; color: #0f1f38; font: 800 17px/1.2 Inter, system-ui, sans-serif; letter-spacing: 0; }
+  .group-head p { margin: 0; color: #718096; font: 600 11px/1.4 Inter, system-ui, sans-serif; text-align: right; }
+  .reference-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .reference { overflow: hidden; border: 1px solid #d5dee8; border-radius: 10px; background: #fff; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
+  .reference:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,31,56,.11); border-color: #2d6bcc; }
+  .reference.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.15), 0 14px 30px rgba(15,31,56,.11); }
+  .ref-image { height: 178px; background: #f7f9fc; display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .ref-image img { width: 100%; height: 100%; object-fit: contain; }
+  .ref-copy { padding: 14px 16px 16px; border-top: 1px solid #e3eaf1; }
+  .ref-copy h4 { margin: 0 0 7px; color: #0f1f38; font: 800 14px/1.18 Inter, system-ui, sans-serif; }
+  .ref-copy p { margin: 0; min-height: 50px; color: #5c6877; font: 500 12px/1.45 Inter, system-ui, sans-serif; }
+  .ref-copy a { display: inline-block; margin-top: 11px; color: #2d6bcc; font: 700 11px/1 Inter, system-ui, sans-serif; text-decoration: none; }
+  .ref-copy a:hover { text-decoration: underline; }
+  .principles { margin-top: 28px; padding: 18px 20px; border-left: 3px solid #2d6bcc; background: #f7f9fc; }
+  .principles strong { color: #0f1f38; font: 800 12px/1 Inter, system-ui, sans-serif; }
+  .principles p { margin: 8px 0 0; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  @media (max-width: 980px) { .reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 650px) { .reference-grid { grid-template-columns: 1fr; } .group-head { display: block; } .group-head p { margin-top: 5px; text-align: left; } }
+</style>
+
+<div class="research-head">
+  <h2>Wordmark research: 12 references</h2>
+  <p class="subtitle">A focused Dribbble board for SALT&amp;PEPS. These are references for typography, proportion, and restraint, not designs to copy. Select the 2–3 cards whose character feels closest to the brand you want.</p>
+</div>
+
+<section class="reference-group">
+  <div class="group-head"><h3>01 / Bold utility</h3><p>Clear, confident, built to work without an icon</p></div>
+  <div class="reference-grid" data-multiselect>
+    <article class="reference" data-choice="quartz" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/43188847/file/original-2e666bcf5daebd3f4aa01b6c3e11d5c4.png?resize=752x&amp;vertical=center" alt="Quartz wordmark reference"></div>
+      <div class="ref-copy"><h4>Quartz</h4><p>Blunt, compact letterforms with immediate recognition at small sizes.</p><a href="https://dribbble.com/shots/25985137-Quartz-Wordmark-Logo" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="gocco" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/43186872/file/original-2a1f64a3a288df0071bf682df4236f46.webp?resize=752x&amp;vertical=center" alt="GOCCO wordmark reference"></div>
+      <div class="ref-copy"><h4>GOCCO</h4><p>Strong all-caps rhythm with just enough shaping to avoid generic sans.</p><a href="https://dribbble.com/shots/25984476-GOCCO-Wordmark" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="tpc" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/44644872/file/d7d1b0512a5a4254a0e948ef6245f2e7.png?resize=752x&amp;vertical=center" alt="TPC wordmark reference"></div>
+      <div class="ref-copy"><h4>TPC</h4><p>Disciplined spacing and geometry make a compact wordmark feel established.</p><a href="https://dribbble.com/shots/26443909-TPC-Logo-Wordmark" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+  </div>
+</section>
+
+<section class="reference-group">
+  <div class="group-head"><h3>02 / Custom letter anatomy</h3><p>Familiar typography with one authored intervention</p></div>
+  <div class="reference-grid" data-multiselect>
+    <article class="reference" data-choice="yango" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/47162403/file/8af6222c2033f0ce45f49b63c82c32c2.webp?resize=752x&amp;vertical=center" alt="Yango wordmark reference"></div>
+      <div class="ref-copy"><h4>Yango</h4><p>A normal-looking wordmark gains identity through a small, deliberate letter detail.</p><a href="https://dribbble.com/shots/27213066-Yango-Logo-Wordmark" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="quell" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/15322611/file/original-d822a6733a5bb621bbc660d6c79ddeaf.jpg?resize=752x&amp;vertical=center" alt="Quell wordmark reference"></div>
+      <div class="ref-copy"><h4>Quell</h4><p>Soft, controlled modifications show how a single rounded terminal can carry the voice.</p><a href="https://dribbble.com/shots/24427951-Quell-Wordmark-Logo-Concepts" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="luvi" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/43219879/file/original-47fc13897037c18b4de54fdcd7c6ccc4.png?resize=752x&amp;vertical=center" alt="Luvi wordmark reference"></div>
+      <div class="ref-copy"><h4>Luvi</h4><p>Simple lowercase construction with distinctive joins and a calm, human cadence.</p><a href="https://dribbble.com/shots/25994954-Luvi-Wordmark-Design" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="vinfong" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/42740838/file/original-45b1c1cedd6f1da2f5b5d7d619e2ee35.png?resize=752x&amp;vertical=center" alt="Vínföng wordmark reference"></div>
+      <div class="ref-copy"><h4>Vínföng</h4><p>Distinctive proportions and spacing create a memorable wordmark without symbols.</p><a href="https://dribbble.com/shots/25848505-V-nf-ng-Final-Wordmark" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+  </div>
+</section>
+
+<section class="reference-group">
+  <div class="group-head"><h3>03 / Quiet premium</h3><p>Measured, editorial, confident in white space</p></div>
+  <div class="reference-grid" data-multiselect>
+    <article class="reference" data-choice="delsanti" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/47135849/file/3850a13c371f4a39d96e6297d6805266.png?resize=752x&amp;vertical=center" alt="Delsanti wordmark reference"></div>
+      <div class="ref-copy"><h4>Delsanti</h4><p>Proportion, spacing, and a quiet serif tone make a text-only identity feel considered.</p><a href="https://dribbble.com/shots/27205083-Delsanti-wordmark-textbased-logo-design-Timeless-Logo-Design" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="forest" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/16797764/file/original-7467891ebf15af83c5078ec932a6ba84.png?resize=752x&amp;vertical=center" alt="Forest wordmark reference"></div>
+      <div class="ref-copy"><h4>Forest</h4><p>Low-noise lettering and generous spacing feel premium while staying highly usable.</p><a href="https://dribbble.com/shots/24933961-Forest-Wordmark-Logo-Design-Update" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="frank" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/46544363/file/f2f115daf22763c0847560fbd186a7ef.png?resize=752x&amp;vertical=center" alt="Frank wordmark reference"></div>
+      <div class="ref-copy"><h4>Frank</h4><p>Warm, editorial lettering that feels crafted without becoming decorative.</p><a href="https://dribbble.com/shots/27029928-Frank-Logo-Wordmark-Concept" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+  </div>
+</section>
+
+<section class="reference-group">
+  <div class="group-head"><h3>04 / Healthcare restraint</h3><p>Trustworthy, modern, and free of obvious medical clichés</p></div>
+  <div class="reference-grid" data-multiselect>
+    <article class="reference" data-choice="bow" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/48074380/file/60206ea95718431549cdade4efcb1e52.png?resize=752x&amp;vertical=center" alt="BOW MedTech wordmark reference"></div>
+      <div class="ref-copy"><h4>BOW / MedTech</h4><p>Clinical clarity comes from structure and spacing, not a forced cross or molecule.</p><a href="https://dribbble.com/shots/27474158-BOW-Logo-Wordmark-Design-for-MedTech-Startup" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="acutens" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/47207938/file/3a79144600bcc4dcb936f78c13d464b3.png?resize=752x&amp;vertical=center" alt="acuTENS healthcare wordmark reference"></div>
+      <div class="ref-copy"><h4>acuTENS</h4><p>A subtle internal letter cue carries the concept while the overall mark stays readable.</p><a href="https://dribbble.com/shots/27226799-acuTENS-Clean-Medical-Wellness-Wordmark-Logo-Design" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+    <article class="reference" data-choice="pivotal" onclick="toggleSelect(this)">
+      <div class="ref-image"><img src="https://cdn.dribbble.com/userupload/35332577/file/original-71076ed7c6a42cebecf6fde33aaa30e1.jpg?resize=752x&amp;vertical=center" alt="Pivotal Healthcare Sciences logotype reference"></div>
+      <div class="ref-copy"><h4>Pivotal Healthcare Sciences</h4><p>A sober logotype demonstrates how to signal expertise without looking institutional.</p><a href="https://dribbble.com/shots/17424655-Pivotal-Healthcare-Sciences-Logotype" target="_blank" rel="noreferrer">View on Dribbble</a></div>
+    </article>
+  </div>
+</section>
+
+<div class="principles"><strong>Working read for SALT&amp;PEPS</strong><p>The strongest path is probably a clean, bold wordmark with one custom intervention in the ampersand or final S. The board should help us choose the temperature of that intervention: utilitarian, gently human, premium, or clinical. No tagline and no forced icon are needed at this stage.</p></div>

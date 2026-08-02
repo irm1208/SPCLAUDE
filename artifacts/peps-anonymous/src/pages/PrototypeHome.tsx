@@ -78,7 +78,7 @@ export default function PrototypeHome() {
             background: "#1B3A7A",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <SaltPepsMark size={22} variant="reverse" detail="small" />
+            <SaltPepsMark size={22} />
           </div>
         </a>
 

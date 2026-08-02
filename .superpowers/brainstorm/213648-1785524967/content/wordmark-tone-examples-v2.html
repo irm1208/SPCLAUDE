@@ -1,0 +1,77 @@
+<style>
+  .source-head { margin-bottom: 26px; }
+  .source-head h2 { margin-bottom: 10px; }
+  .source-head .subtitle { max-width: 820px; }
+  .source-list { display: grid; gap: 18px; }
+  .source-card { overflow: hidden; border: 1px solid #d5dee8; border-radius: 10px; background: #fff; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
+  .source-card:hover { transform: translateY(-2px); border-color: #2d6bcc; box-shadow: 0 14px 30px rgba(15,31,56,.11); }
+  .source-card.selected { border-color: #2d6bcc; box-shadow: 0 0 0 3px rgba(45,107,204,.15), 0 14px 30px rgba(15,31,56,.11); }
+  .source-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding: 15px 18px 13px; border-bottom: 1px solid #e3eaf1; }
+  .source-card-head h3 { margin: 0; color: #0f1f38; font: 800 16px/1.2 Inter, system-ui, sans-serif; }
+  .source-card-head p { margin: 0; color: #718096; font: 600 11px/1.4 Inter, system-ui, sans-serif; text-align: right; }
+  .source-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: #dfe6ee; }
+  .source-panel { min-height: 272px; padding: 18px; }
+  .panel-kicker { color: #6b7787; font: 800 10px/1 Inter, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+  .reference-panel { display: flex; flex-direction: column; background: #f5f7fa; }
+  .reference-panel img { width: 100%; height: 218px; margin-top: 14px; object-fit: contain; }
+  .study-panel { position: relative; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+  .study-mark { position: relative; z-index: 1; margin-top: 20px; white-space: nowrap; color: #0f1f38; font-family: Inter, Arial, sans-serif; font-weight: 900; line-height: .9; letter-spacing: 0; }
+  .study-notes { position: relative; z-index: 1; margin-top: 22px; max-width: 310px; color: #5c6877; font: 600 11px/1.45 Inter, system-ui, sans-serif; }
+  .study-pivotal { background: #1d1d1d; }
+  .study-pivotal .panel-kicker, .study-pivotal .study-notes { color: #bcbcbc; }
+  .study-pivotal .study-mark { font-family: "Arial Rounded MT Bold", "Trebuchet MS", Inter, sans-serif; font-size: clamp(42px, 6vw, 68px); color: #fff; letter-spacing: 0; }
+  .study-pivotal .study-mark::before { content: ""; position: absolute; left: 24px; top: -20px; width: 33px; height: 54px; border: 7px solid #2d6bcc; border-right-color: transparent; border-bottom-color: transparent; border-radius: 50% 45% 0 0; transform: rotate(-22deg); }
+  .study-pivotal .study-mark::after { content: ""; position: absolute; left: 56px; top: -29px; width: 12px; height: 12px; border-radius: 50%; background: #2d6bcc; }
+  .study-frank { background: #f0f0f1; }
+  .study-frank .study-mark { font-size: clamp(42px, 6vw, 72px); letter-spacing: 0; transform: scaleX(.96); transform-origin: left center; }
+  .study-frank .study-notes { max-width: 350px; }
+  .study-yango { background: #17135f; }
+  .study-yango .panel-kicker, .study-yango .study-notes { color: #c6c7ff; }
+  .study-yango .study-mark { font-family: "Trebuchet MS", "Avenir Next", Inter, sans-serif; font-size: clamp(43px, 6vw, 70px); color: #2d6bcc; background: linear-gradient(105deg, #23b7dc 0%, #2d6bcc 53%, #6d63ef 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .study-yango .study-mark::after { content: ""; position: absolute; right: 14%; bottom: -15px; width: 82%; height: 1px; background: rgba(255,255,255,.35); }
+  .source-copy { padding: 16px 18px 18px; }
+  .source-copy p { margin: 0; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  .source-copy strong { color: #0f1f38; font-weight: 800; }
+  .source-copy a { display: inline-block; margin-top: 10px; color: #2d6bcc; font: 700 11px/1 Inter, system-ui, sans-serif; text-decoration: none; }
+  .source-copy a:hover { text-decoration: underline; }
+  .guardrail { margin-top: 24px; padding: 16px 18px; border-left: 3px solid #2d6bcc; background: #f7f9fc; }
+  .guardrail strong { color: #0f1f38; font: 800 12px/1 Inter, system-ui, sans-serif; }
+  .guardrail p { margin: 8px 0 0; color: #5c6877; font: 500 12px/1.5 Inter, system-ui, sans-serif; }
+  @media (max-width: 720px) { .source-columns { grid-template-columns: 1fr; } .source-panel { min-height: 235px; } .reference-panel img { height: 180px; } .source-card-head { display: block; } .source-card-head p { margin-top: 5px; text-align: left; } }
+</style>
+
+<div class="source-head">
+  <h2>Faithful tone studies</h2>
+  <p class="subtitle">The earlier screen abstracted the references too loosely. This version keeps the source artwork visible and translates its actual visual logic into a SALT&amp;PEPS proxy: case, weight, curve behavior, spacing, and custom detail.</p>
+</div>
+
+<div class="source-list" data-multiselect>
+  <article class="source-card" data-choice="pivotal-faithful" onclick="toggleSelect(this)">
+    <div class="source-card-head"><h3>A / Pivotal: rounded lowercase authority</h3><p>organic rise · compact lockup · dark field</p></div>
+    <div class="source-columns">
+      <div class="source-panel reference-panel"><div class="panel-kicker">Original reference</div><img src="https://cdn.dribbble.com/userupload/35332577/file/original-71076ed7c6a42cebecf6fde33aaa30e1.jpg?resize=752x&amp;vertical=center" alt="Pivotal Healthcare Sciences logotype reference"></div>
+      <div class="source-panel study-panel study-pivotal"><div class="panel-kicker">SALT&amp;PEPS proxy</div><div class="study-mark">salt&amp;peps</div><div class="study-notes">Lowercase, heavy rounded forms. The blue rising stroke is treated as part of the first letter rather than a separate icon.</div></div>
+    </div>
+    <div class="source-copy"><p><strong>What carries over:</strong> a thick lowercase wordmark, a human/organic gesture embedded in the first letter, and a small secondary lockup that can later read “health sciences” or a product descriptor. This is much closer to Pivotal’s construction than an all-caps corporate wordmark.</p><a href="https://dribbble.com/shots/17424655-Pivotal-Healthcare-Sciences-Logotype" target="_blank" rel="noreferrer">Open the Pivotal source</a></div>
+  </article>
+
+  <article class="source-card" data-choice="frank-faithful" onclick="toggleSelect(this)">
+    <div class="source-card-head"><h3>B / Frank: blunt geometric logotype</h3><p>near-monoline weight · tight rhythm · no decoration</p></div>
+    <div class="source-columns">
+      <div class="source-panel reference-panel"><div class="panel-kicker">Original reference</div><img src="https://cdn.dribbble.com/userupload/46544363/file/f2f115daf22763c0847560fbd186a7ef.png?resize=752x&amp;vertical=center" alt="Frank wordmark reference"></div>
+      <div class="source-panel study-panel study-frank"><div class="panel-kicker">SALT&amp;PEPS proxy</div><div class="study-mark">Salt&amp;Peps</div><div class="study-notes">One heavy geometric voice, almost no tracking, no blue accent, no separate mark. The power comes from mass and proportion.</div></div>
+    </div>
+    <div class="source-copy"><p><strong>What carries over:</strong> the visual authority comes from the letterforms themselves. The right SALT&amp;PEPS version would need custom width, terminals, and ampersand geometry, not a decorative slash or a generic bold font with extra color.</p><a href="https://dribbble.com/shots/27029928-Frank-Logo-Wordmark-Concept" target="_blank" rel="noreferrer">Open the Frank source</a></div>
+  </article>
+
+  <article class="source-card" data-choice="yango-faithful" onclick="toggleSelect(this)">
+    <div class="source-card-head"><h3>C / Yango: engineered geometric lowercase</h3><p>single-story forms · equal curves · gradient precision</p></div>
+    <div class="source-columns">
+      <div class="source-panel reference-panel"><div class="panel-kicker">Original reference</div><img src="https://cdn.dribbble.com/userupload/47162403/file/8af6222c2033f0ce45f49b63c82c32c2.webp?resize=752x&amp;vertical=center" alt="Yango wordmark reference"></div>
+      <div class="source-panel study-panel study-yango"><div class="panel-kicker">SALT&amp;PEPS proxy</div><div class="study-mark">salt&amp;peps</div><div class="study-notes">Lowercase geometric construction with deliberate curves and a controlled blue range. The distinctiveness comes from the system, not a one-off symbol.</div></div>
+    </div>
+    <div class="source-copy"><p><strong>What carries over:</strong> a custom lowercase alphabet with consistent stroke weight, open counters, and a repeatable curve language. For SALT&amp;PEPS, the ampersand and both “s” terminals would be engineered as a family.</p><a href="https://dribbble.com/shots/27213066-Yango-Logo-Wordmark" target="_blank" rel="noreferrer">Open the Yango source</a></div>
+  </article>
+</div>
+
+<div class="guardrail"><strong>Decision needed</strong><p>These are now faithful style translations, not final lettering. Pick the construction that feels right, and I’ll develop a small set of actual SALT&amp;PEPS wordmark sketches in that language before we touch the favicon or production assets.</p></div>

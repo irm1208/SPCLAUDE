@@ -434,7 +434,6 @@ export function HubBottomNav({
                 Menu
               </span>
             )}
-            {/* Pulsing ring (only when closed) */}
             {!open && (
               <span
                 className="hbn-ring absolute pointer-events-none"
@@ -466,7 +465,7 @@ export function HubBottomNav({
                   transition: "transform 220ms ease",
                 }}
               >
-                <SaltPepsMark size={20} variant="reverse" detail="small" />
+                <SaltPepsMark size={20} />
               </span>
               {!open && (
                 <span

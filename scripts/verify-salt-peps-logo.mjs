@@ -26,7 +26,7 @@ const assetContracts = [
 ];
 
 const expectedColorsByFile = new Map([
-  ["salt-peps-logo.svg", ["#0F1F38", "#1B3A7A", "#2D6BCC"]],
+  ["salt-peps-logo.svg", ["#0F1F38", "#2D6BCC"]],
   ["salt-peps-logo-reverse.svg", ["#FFFFFF"]],
   ["salt-peps-logo-mono.svg", ["#0F1F38"]],
   ["salt-peps-icon.svg", ["#1B3A7A", "#2D6BCC"]],
@@ -48,6 +48,28 @@ const expectedColorsByFile = new Map([
     ],
   ],
 ]);
+
+const wordmarkContracts = new Map([
+  ["salt-peps-logo.svg", { ampersand: "#2D6BCC", primary: "#0F1F38" }],
+  ["salt-peps-logo-reverse.svg", { ampersand: "#FFFFFF", primary: "#FFFFFF" }],
+  ["salt-peps-logo-mono.svg", { ampersand: "#0F1F38", primary: "#0F1F38" }],
+]);
+
+const wordmarkPathFragments = [
+  /M31\.59 57\.63Q25\.78 57\.63/,
+  /M65\.63 57\.63Q62\.28 57\.63/,
+  /M93\.5(?:0)? 10\.44L104\.41 10\.44/,
+  /M124\.19 22\.06L130\.47 22\.06/,
+  /M150\.53 57\.72Q145\.66 57\.72/,
+  /M190\.84 57L179\.81 57/,
+];
+
+const legacyWordmarkFragments = [
+  "M 49 44",
+  "M 43.8 21.4",
+  "peptide",
+  "SALT&amp;PEPS",
+];
 
 const allowedElements = new Set(["svg", "title", "desc", "g", "path"]);
 const allowedAttributesByElement = new Map([
@@ -386,6 +408,54 @@ function validateExactColors(fileName, usedColors, failures) {
   }
 }
 
+function validateWordmarkAsset(fileName, source, paths, failures) {
+  const contract = wordmarkContracts.get(fileName);
+  if (!contract) return;
+
+  if (!source.includes("Salt&amp;Peps")) {
+    addFailure(failures, 'must identify the title-case "Salt&Peps" wordmark');
+  }
+
+  for (const fragment of wordmarkPathFragments) {
+    if (!fragment.test(source)) {
+      addFailure(
+        failures,
+        `must contain the approved Salt&Peps glyph geometry (${fragment})`,
+      );
+    }
+  }
+
+  for (const fragment of legacyWordmarkFragments) {
+    if (source.includes(fragment)) {
+      addFailure(failures, `must not contain legacy logo content (${fragment})`);
+    }
+  }
+
+  if (paths.length !== 9) {
+    addFailure(failures, `must contain exactly 9 outlined glyph paths; found ${paths.length}`);
+  }
+
+  const fills = paths.map((path) => path.attributes.fill);
+  if (fills[4] !== contract.ampersand) {
+    addFailure(
+      failures,
+      `the ampersand path must use ${contract.ampersand}; found ${fills[4] ?? "missing"}`,
+    );
+  }
+  for (const [index, fill] of fills.entries()) {
+    if (index !== 4 && fill !== contract.primary) {
+      addFailure(
+        failures,
+        `glyph path ${index + 1} must use ${contract.primary}; found ${fill ?? "missing"}`,
+      );
+    }
+  }
+
+  if (/<g\b[^>]*\btransform=/.test(source)) {
+    addFailure(failures, "must keep the production wordmark at its canonical geometry without transforms");
+  }
+}
+
 function inspectVisibleGeometry(source, expectedViewBox) {
   const [minX, minY, width, height] = expectedViewBox.split(" ").map(Number);
 
@@ -538,6 +608,7 @@ function validateSvg(fileName, expectedViewBox, source) {
   const usedColors = new Set();
   for (const path of paths) validatePath(path, usedColors, failures);
   validateExactColors(fileName, usedColors, failures);
+  validateWordmarkAsset(fileName, source, paths, failures);
 
   if (failures.length === 0) {
     validateVisibleGeometry(source, expectedViewBox, pathEntries, failures);

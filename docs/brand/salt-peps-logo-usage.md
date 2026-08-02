@@ -1,34 +1,26 @@
-# SALT&PEPS Logo Usage
+# Salt&Peps Logo Usage
 
 ## Identity
 
-The SALT&PEPS mark is a peptide-bond ampersand. Its broad folded backbone forms the core silhouette; two repeated carbonyl cues and oxygen lozenges connect the symbol to the repeating `N-Ca-C(=O)` grammar of a peptide chain. It is an intentional brand abstraction, not a publication-grade chemical structure or a claim about a specific therapeutic peptide.
+The primary logo is the type-derived title-case wordmark `Salt&Peps`. It is a heavy geometric sans construction with no separate icon, badge, or scientific illustration. The ampersand is the only color accent in the primary version.
 
-The primary wordmark is always `SALT&PEPS` in uppercase with no spaces. Product copy may continue to use the readable name `Salt & Peps`.
+The wordmark is always `Salt&Peps` with no spaces. Product copy may use the same spelling when the brand name appears in running text.
 
 ## Production Assets
 
-All assets live in `artifacts/peps-anonymous/public/brand/`.
+Wordmark and device assets live in `artifacts/peps-anonymous/public/brand/`; the browser favicon is served from `artifacts/peps-anonymous/public/favicon.svg`.
 
 | Asset                              | Use                                                             |
 | ---------------------------------- | --------------------------------------------------------------- |
-| `salt-peps-logo.svg`               | Primary horizontal logo on white or light surfaces              |
-| `salt-peps-logo-reverse.svg`       | Horizontal logo on deep navy or dark surfaces                   |
+| `salt-peps-logo.svg`               | Primary horizontal wordmark on white or light surfaces          |
+| `salt-peps-logo-reverse.svg`       | White horizontal wordmark on deep navy or dark surfaces         |
 | `salt-peps-logo-mono.svg`          | One-color print, engraving, stamps, and restricted-color output |
-| `salt-peps-icon.svg`               | Primary standalone mark at 24px and larger                      |
-| `salt-peps-icon-small.svg`         | Optically simplified mark below 24px                            |
-| `salt-peps-icon-reverse.svg`       | Standalone mark on dark surfaces                                |
-| `salt-peps-icon-reverse-small.svg` | Simplified mark below 24px on dark surfaces                     |
-| `salt-peps-icon-mono.svg`          | One-color standalone mark                                       |
-| `salt-peps-social.svg`             | Scalable square avatar with protected clearspace                |
-| `salt-peps-icon-16.png`            | 16px bitmap fallback                                            |
-| `salt-peps-icon-32.png`            | 32px bitmap fallback                                            |
-| `salt-peps-icon-48.png`            | 48px bitmap fallback                                            |
-| `salt-peps-social-180.png`         | Transparent small profile image                                 |
-| `salt-peps-social-512.png`         | High-resolution social/profile image                            |
-| `salt-peps-apple-touch-180.png`    | Opaque Apple touch icon                                         |
 | `salt-peps-logo-1440.png`          | Transparent high-resolution horizontal fallback                 |
-| `salt-peps-logo-proof.svg`         | Light, dark, monochrome, and responsive-size proof sheet        |
+| `salt-peps-logo-proof.svg`         | Light, dark, monochrome, and size proof sheet                  |
+| `/favicon.svg`                     | Approved deep-navy `S&P` favicon for browser and website UI icon surfaces |
+| `salt-peps-apple-touch-180.png`    | Opaque `S&P` Apple touch icon                                   |
+| `salt-peps-icon*.svg`              | Existing standalone icon family; separate symbol review scope  |
+| `salt-peps-social*.png/svg`        | Existing square profile assets; separate symbol review scope   |
 
 Use SVG whenever the destination supports it. PNG files are fallbacks for platforms that require raster uploads.
 
@@ -36,24 +28,21 @@ Use SVG whenever the destination supports it. PNG files are fallbacks for platfo
 
 | Element                            | Color                |
 | ---------------------------------- | -------------------- |
-| Wordmark                           | Ink `#0F1F38`        |
-| Peptide backbone                   | Navy `#1B3A7A`       |
-| Oxygen cues and wordmark ampersand | Brand Blue `#2D6BCC` |
-| Social tile                        | Deep Navy `#1B3164`  |
-| Reverse artwork                    | White `#FFFFFF`      |
+| Wordmark letters                   | Ink `#0F1F38`        |
+| Primary wordmark ampersand         | Brand Blue `#2D6BCC` |
+| Favicon background                 | Deep Navy `#1B3164`  |
+| Favicon and reverse artwork        | White `#FFFFFF`      |
 
 Do not add gradients, shadows, transparency, outlines, or colors outside the approved variants.
 
 ## Clearspace And Size
 
-Let `x` equal one oxygen-lozenge diameter, approximately one eighth of the icon height. Keep at least `x` of empty space around every side of the standalone mark or horizontal lockup.
+Let `x` equal 8 logo units in the `360x80` viewBox. Keep at least `x` of empty space around every side of the horizontal wordmark.
 
 - Minimum full-logo width: 120px digital or 35mm print.
-- Full-detail UI icon: 24px or larger. Use `salt-peps-icon.svg`.
-- Small optical icon: 16-23px when interface space requires it. Use `salt-peps-icon-small.svg`, `salt-peps-icon-reverse-small.svg`, or the supplied 16px PNG for the matching background.
-- Minimum print icon: 10mm.
-- Social avatars must use the supplied social tile rather than placing the bare mark against an arbitrary background.
-- Apple touch icons must use the opaque `salt-peps-apple-touch-180.png`, not the transparent social PNG.
+- Use the approved `/favicon.svg` asset for square browser and website UI icon contexts.
+- Existing standalone icon and social assets remain available for non-website legacy exports and separate symbol review.
+- Apple touch icons must use the opaque `salt-peps-apple-touch-180.png`.
 
 ## Backgrounds
 
@@ -65,15 +54,15 @@ Let `x` equal one oxygen-lozenge diameter, approximately one eighth of the icon 
 ## Do Not
 
 - Stretch, compress, rotate, crop, or rearrange the logo.
-- Redraw the carbonyl bonds, remove one oxygen cue, or add atom labels.
+- Add an icon, badge, molecule, DNA helix, flask, salt shaker, or pepper illustration to the horizontal wordmark.
 - Replace the outlined wordmark with live text or another font.
 - Separate the wordmark ampersand from its approved spacing.
-- Put the mark in an unapproved decorative container.
-- Use a library molecule, DNA helix, flask, salt shaker, or pepper icon as a substitute.
+- Put the wordmark in an unapproved decorative container.
+- Recolor the ampersand outside the approved primary, reverse, or mono variants.
 
 ## Source And Regeneration
 
-The master geometry is original and generated locally with Maker.js, OpenType.js, SVGO, and resvg. Inter 800 is outlined into the final wordmark; its SIL Open Font License is stored at `scripts/logo/OFL.txt`. No generative image API is used, and no third-party scientific artwork is embedded in the mark.
+The wordmark geometry is generated locally with OpenType.js, SVGO, and resvg. Inter 800 is outlined into the final wordmark; its SIL Open Font License is stored at `scripts/logo/OFL.txt`. No live font, generative image API, or third-party artwork is embedded in the production wordmark.
 
 ```bash
 pnpm logo:generate
