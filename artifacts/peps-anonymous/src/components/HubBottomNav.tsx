@@ -11,7 +11,6 @@ import { useThemeStore } from "@/hooks/use-theme";
 import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
 import { useLogout } from "@/hooks/use-account";
 import { palette, ACCENT, FONT } from "@/components/dashboard-theme";
-import { SaltPepsMark } from "@/components/SaltPepsMark";
 
 export type HubSection = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing";
 
@@ -459,13 +458,14 @@ export function HubBottomNav({
               }}
             >
               <span
-                className="flex select-none leading-none"
+                className="select-none leading-none flex items-baseline"
                 style={{
                   transform: open ? "scale(0.85)" : "scale(1)",
                   transition: "transform 220ms ease",
+                  fontSize: 17, fontWeight: 800, letterSpacing: "-0.5px", color: "#fff",
                 }}
               >
-                <SaltPepsMark size={22} />
+                S<span style={{ fontSize: 12, fontWeight: 400, color: "#8BB8FF", margin: "0 0.5px" }}>&amp;</span>P
               </span>
               {!open && (
                 <span

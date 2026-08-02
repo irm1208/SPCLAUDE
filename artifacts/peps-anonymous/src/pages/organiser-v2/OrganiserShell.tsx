@@ -25,7 +25,7 @@ export default function OrganiserShell({
   const closeNavigation = () => setMobileOpen(false);
 
   return (
-    <div className={collapsed ? "ov2-shell is-sidebar-collapsed" : "ov2-shell"}>
+    <div className={collapsed ? "organiser-v2 ov2-shell is-sidebar-collapsed" : "organiser-v2 ov2-shell"}>
       <a href="#ov2-main-content" className="ov2-skip-link">Skip to main content</a>
 
       <aside className="ov2-sidebar-desktop" aria-label="Organiser navigation">
