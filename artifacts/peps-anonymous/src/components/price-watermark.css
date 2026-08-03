@@ -8,6 +8,12 @@
  *
  * Host element requirements: `position: relative; overflow: hidden`
  * (no extra class needed — user-select is applied automatically below).
+ *
+ * Variants:
+ *   (none)          — auto: dark text in light mode, white text in dark mode
+ *   data-pw-dark    — forced white text; use when the container is always dark
+ *   data-pw-light   — forced dark text; use when the container is always light
+ *                     (e.g. a modal hardcoded to bg-white regardless of theme)
  * ─────────────────────────────────────────────────────────────────────────── */
 
 .price-watermark {
@@ -18,19 +24,27 @@
   overflow: hidden;
   border-radius: inherit;
 
-  /* Light theme: dark text at low opacity — subtle but screenshot-traceable */
-  color: rgba(0, 0, 0, 0.075);
+  /* Light theme default: dark text at low opacity — subtle but screenshot-traceable */
+  color: rgba(0, 0, 0, 0.10);
 }
 
 /* Explicit dark-surface override (e.g. OrderForm line-items card which is
    always dark regardless of the global theme toggle) */
 .price-watermark[data-pw-dark] {
-  color: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.13);
 }
 
-/* Auto dark-mode: when [data-theme="dark"] is set on <html> */
-[data-theme="dark"] .price-watermark:not([data-pw-dark]) {
-  color: rgba(255, 255, 255, 0.10);
+/* Explicit light-surface override — forces dark text even when the global
+   theme is dark. Use on containers whose background is hardcoded light
+   (e.g. bg-white modals) so the watermark is never white-on-white. */
+.price-watermark[data-pw-light] {
+  color: rgba(0, 0, 0, 0.10);
+}
+
+/* Auto dark-mode: when [data-theme="dark"] is set on <html>.
+   Only applies to watermarks that haven't been pinned to a surface variant. */
+[data-theme="dark"] .price-watermark:not([data-pw-dark]):not([data-pw-light]) {
+  color: rgba(255, 255, 255, 0.13);
 }
 
 /* ── Copy protection ─────────────────────────────────────────────────────────

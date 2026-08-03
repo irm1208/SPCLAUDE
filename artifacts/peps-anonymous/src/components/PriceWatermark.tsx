@@ -5,11 +5,14 @@ interface PriceWatermarkProps {
   /** Logged-in member handle. "@" is prepended automatically if missing. */
   username: string;
   /**
-   * "dark" — force the white-on-dark palette, for surfaces that are always
-   * dark regardless of the global theme (e.g. the OrderForm line-items card).
+   * "dark"  — force white-on-dark palette; use when the container is always
+   *           dark regardless of the global theme (e.g. OrderForm line-items).
+   * "light" — force dark-on-light palette; use when the container is always
+   *           light regardless of the global theme (e.g. a bg-white modal that
+   *           never changes colour even when dark mode is active site-wide).
    * Omit to let CSS auto-detect via [data-theme="dark"].
    */
-  variant?: "dark";
+  variant?: "dark" | "light";
 }
 
 /**
@@ -38,7 +41,7 @@ export function PriceWatermark({ username, variant }: PriceWatermarkProps) {
     <div
       aria-hidden="true"
       className="price-watermark"
-      {...(variant === "dark" ? { "data-pw-dark": "" } : {})}
+      {...(variant === "dark" ? { "data-pw-dark": "" } : variant === "light" ? { "data-pw-light": "" } : {})}
     >
       <svg
         width="100%"
