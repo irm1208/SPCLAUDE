@@ -1,23 +1,21 @@
 /* ─── Price Watermark ────────────────────────────────────────────────────────
- * Rendered as an absolutely-positioned, pointer-events-none overlay so it
- * never blocks clicks, selection, or form input. The host element must have
- * `position: relative` and should have `overflow: hidden` to clip the repeat.
+ * Rendered as an absolutely-positioned overlay that floats ABOVE the content
+ * it covers. pointer-events: none means all clicks, taps, and form interaction
+ * pass straight through to the elements underneath.
+ *
+ * The host element must have `position: relative` and should have
+ * `overflow: hidden` so the tiling is clipped to the content boundary.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 .price-watermark {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  /* z-index high enough to sit above card backgrounds and text, but below
+     any modal/dropdown that might appear on top of the host. */
+  z-index: 10;
   pointer-events: none;
   background-repeat: repeat;
   background-size: 260px 110px;
   overflow: hidden;
   border-radius: inherit;
-  /* Ensure the watermark sits above content backgrounds but below interactive elements */
-}
-
-/* Ensure children (text, inputs, buttons) of the host container stay above the watermark */
-.price-watermark ~ * {
-  position: relative;
-  z-index: 3;
 }

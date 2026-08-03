@@ -27,7 +27,7 @@ export function PriceWatermark({ username, variant = "light", className }: Price
   if (!username) return null;
 
   const handle = username.startsWith("@") ? username : `@${username}`;
-  const fill = variant === "dark" ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.07)";
+  const fill = variant === "dark" ? "rgba(255,255,255,0.13)" : "rgba(0,0,0,0.10)";
 
   // Encode an SVG tile (260 × 110 px) with a single diagonal text instance.
   // CSS background-repeat does the tiling — no canvas, no DOM spam.
