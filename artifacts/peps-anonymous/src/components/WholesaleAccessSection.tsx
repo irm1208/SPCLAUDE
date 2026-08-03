@@ -138,10 +138,24 @@ export function WholesaleAccessSection() {
     return (
       <div className="w-full max-w-[520px] space-y-6">
         <div className="rounded-xl p-5 space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-          <h3 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Wholesale Access</h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--t-muted)" }}>
-            Pay a one-time fee to unlock wholesale pricing and the bulk shop. Your fee is returned as store credit.
-          </p>
+          <h3 className="text-base font-bold" style={{ color: "var(--t-text)" }}>How it works</h3>
+          <ol className="space-y-3">
+            {[
+              { n: "1", text: "Select Get Wholesale Access from the navigation." },
+              { n: "2", text: "Pay the $50 access fee." },
+              { n: "3", text: "The full $50 is added back to your account as credit." },
+            ].map(({ n, text }) => (
+              <li key={n} className="flex items-start gap-3">
+                <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white" style={{ background: "var(--t-blue)" }}>{n}</span>
+                <p className="text-sm leading-snug pt-0.5" style={{ color: "var(--t-text)" }}>{text}</p>
+              </li>
+            ))}
+          </ol>
+          <div className="rounded-lg px-3 py-2.5 space-y-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              The credit does not expire and can be used at any time. The $50 amount was chosen because it covers the lowest available shipping option.
+            </p>
+          </div>
           <button
             onClick={handleCreate}
             disabled={creating}
@@ -149,7 +163,7 @@ export function WholesaleAccessSection() {
             style={{ background: "var(--t-blue)" }}
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {creating ? "Setting up..." : "Start Application"}
+            {creating ? "Setting up..." : "Get Wholesale Access"}
           </button>
         </div>
       </div>

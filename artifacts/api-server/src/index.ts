@@ -7,6 +7,7 @@ import { startWholesaleShareAutoLock } from "./lib/wholesale-share-auto-lock";
 import { startPoolPaymentAutoVerify } from "./lib/pool-payment-auto-verify";
 import { startGbEntryFeeAutoVerify } from "./lib/gb-entry-fee-auto-verify";
 import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
+import { startWholesaleAccessAutoVerify } from "./lib/wholesale-access-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
 import { db, ordersTable } from "@workspace/db";
@@ -1016,6 +1017,7 @@ app.listen(port, "0.0.0.0", () => {
   startPoolPaymentAutoVerify();
   startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
+  startWholesaleAccessAutoVerify();
   startQiyunleSync();
   startGbLegsSync();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
