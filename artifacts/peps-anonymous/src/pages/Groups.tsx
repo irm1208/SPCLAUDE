@@ -9,13 +9,14 @@ import {
   ChevronDown, Hash, Check, Search, Boxes, Globe,
   DollarSign,
 } from "lucide-react";
-import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
+import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, getAccountHandle, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
 import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { PageLayout } from "@/components/PageLayout";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { PricingPreviewModal } from "@/components/PricingPreviewModal";
+import { PriceWatermark } from "@/components/PriceWatermark";
 
 const STATUS_DOT: Record<string, string> = {
   draft:    "#94A3B8",
@@ -231,10 +232,11 @@ function formatPostedAt(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function GBInfoModal({ gb, onClose, onShowLabReport }: {
+function GBInfoModal({ gb, onClose, onShowLabReport, username }: {
   gb: GroupBuySummary;
   onClose: () => void;
   onShowLabReport: (product: { name: string; batchPrefixes: string[] }) => void;
+  username?: string;
 }) {
   const cards = gb.infoCards ?? [];
   const [products, setProducts] = useState<GBProduct[]>([]);
@@ -349,7 +351,8 @@ function GBInfoModal({ gb, onClose, onShowLabReport }: {
           })}
           {/* Products with prices + inline lab report buttons + stock pills */}
           {(productsLoading || products.length > 0) && (
-            <div>
+            <div className="relative overflow-hidden">
+              <PriceWatermark username={username ?? ""} />
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Products</p>
               {productsLoading ? (
                 <div className="flex justify-center py-4">
@@ -1147,7 +1150,7 @@ export default function Groups() {
     );
   }
 
-  const username = account.telegramUsername;
+  const username = getAccountHandle(account);
 
   return (
     <PageLayout>
@@ -1252,6 +1255,7 @@ export default function Groups() {
             gb={infoGb}
             onClose={() => setInfoGb(null)}
             onShowLabReport={(product) => setLabReportProduct(product)}
+            username={username}
           />
         )}
       </AnimatePresence>

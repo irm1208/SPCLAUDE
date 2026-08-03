@@ -16,7 +16,8 @@ import { useGetProducts, useGetDeliveryMethods, useGetSiteConfig } from "@worksp
 import { useQuery } from "@tanstack/react-query";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, type GroupBuySummary } from "@/hooks/use-account";
+import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, getAccountHandle, type GroupBuySummary } from "@/hooks/use-account";
+import { PriceWatermark } from "@/components/PriceWatermark";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
@@ -1348,7 +1349,8 @@ export default function OrderForm() {
               )}
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 relative">
+              <PriceWatermark username={getAccountHandle(account)} variant="dark" />
               <AnimatePresence initial={false}>
                 {draft.lineItems.map((item) => (
                   <motion.div

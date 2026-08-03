@@ -14,6 +14,7 @@ import { LabReportPopup } from "@/components/LabTestsPopup";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
+import { PriceWatermark } from "@/components/PriceWatermark";
 import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
@@ -1302,7 +1303,8 @@ export default function WholesaleShared() {
           {share.status === "cancelled" ? "Order cancelled" : share.status === "locked" ? "Order locked · view only" : "Order submitted · view only"}
         </span>
       </div>
-      <div className="rounded-xl p-4 space-y-2.5" style={card}>
+      <div className="relative overflow-hidden rounded-xl p-4 space-y-2.5" style={card}>
+        <PriceWatermark username={share.currentUsername} />
         <div className="divide-y" style={{ borderColor: "var(--t-border)" }}>
           {myMember.items.map(it => (
             <div key={it.productId} className="flex items-center justify-between gap-3 py-2 first:pt-0">

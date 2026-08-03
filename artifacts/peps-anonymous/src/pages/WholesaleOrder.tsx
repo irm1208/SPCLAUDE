@@ -6,7 +6,8 @@ import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
-import { useAccount } from "@/hooks/use-account";
+import { useAccount, getAccountHandle } from "@/hooks/use-account";
+import { PriceWatermark } from "@/components/PriceWatermark";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
@@ -1029,7 +1030,8 @@ export default function WholesaleOrder() {
                   <p className="text-sm" style={{ color: "var(--t-muted)" }}>No products match your search.</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 relative">
+                  <PriceWatermark username={getAccountHandle(account)} />
                   {Object.entries(categoryGroups).sort(([a], [b]) => a.localeCompare(b)).map(([category, items]) => (
                     <div key={category}>
                       <p className="text-[11px] font-semibold uppercase tracking-widest mb-2 px-1" style={{ color: "var(--t-subtle)" }}>
@@ -1263,7 +1265,8 @@ export default function WholesaleOrder() {
               </div>
 
               {/* Items list */}
-              <div className="flex-1 overflow-y-auto px-4 py-3">
+              <div className="flex-1 overflow-y-auto px-4 py-3 relative">
+                <PriceWatermark username={getAccountHandle(account)} />
                 {lineItems.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 py-10">
                     <ShoppingCart className="w-8 h-8" style={{ color: "var(--t-border)" }} />
