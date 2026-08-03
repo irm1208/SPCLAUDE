@@ -1,21 +1,44 @@
 /* ─── Price Watermark ────────────────────────────────────────────────────────
- * Rendered as an absolutely-positioned overlay that floats ABOVE the content
- * it covers. pointer-events: none means all clicks, taps, and form interaction
- * pass straight through to the elements underneath.
+ * Floats ABOVE its host content (z-index 10, pointer-events none) so the
+ * username is visible in screenshots but never blocks clicks or form input.
  *
- * The host element must have `position: relative` and should have
- * `overflow: hidden` so the tiling is clipped to the content boundary.
+ * Uses fill="currentColor" in the SVG so we can switch the tint via CSS
+ * `color` rather than regenerating a data URL — data-URL SVGs can't inherit
+ * CSS custom properties from the host document.
+ *
+ * Host element requirements: `position: relative; overflow: hidden`
+ * (no extra class needed — user-select is applied automatically below).
  * ─────────────────────────────────────────────────────────────────────────── */
 
 .price-watermark {
   position: absolute;
   inset: 0;
-  /* z-index high enough to sit above card backgrounds and text, but below
-     any modal/dropdown that might appear on top of the host. */
   z-index: 10;
   pointer-events: none;
-  background-repeat: repeat;
-  background-size: 260px 110px;
   overflow: hidden;
   border-radius: inherit;
+
+  /* Light theme: dark text at low opacity — subtle but screenshot-traceable */
+  color: rgba(0, 0, 0, 0.075);
+}
+
+/* Explicit dark-surface override (e.g. OrderForm line-items card which is
+   always dark regardless of the global theme toggle) */
+.price-watermark[data-pw-dark] {
+  color: rgba(255, 255, 255, 0.10);
+}
+
+/* Auto dark-mode: when [data-theme="dark"] is set on <html> */
+[data-theme="dark"] .price-watermark:not([data-pw-dark]) {
+  color: rgba(255, 255, 255, 0.10);
+}
+
+/* ── Copy protection ─────────────────────────────────────────────────────────
+ * Any element that directly contains a .price-watermark gets user-select:none
+ * so members cannot trivially copy-paste prices out of protected sections.
+ * `:has()` is supported in Chrome 105+, Safari 15.4+, Firefox 121+.
+ * ─────────────────────────────────────────────────────────────────────────── */
+:has(> .price-watermark) {
+  user-select: none;
+  -webkit-user-select: none;
 }

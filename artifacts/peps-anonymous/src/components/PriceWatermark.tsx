@@ -1,48 +1,76 @@
+import { useId } from "react";
 import "./price-watermark.css";
 
 interface PriceWatermarkProps {
-  /** The logged-in member's handle. Rendered as-is if it starts with "@", else "@" is prepended. */
+  /** Logged-in member handle. "@" is prepended automatically if missing. */
   username: string;
-  /** "light" for pages with a light/white background (default). "dark" for dark-background surfaces. */
-  variant?: "light" | "dark";
-  className?: string;
+  /**
+   * "dark" — force the white-on-dark palette, for surfaces that are always
+   * dark regardless of the global theme (e.g. the OrderForm line-items card).
+   * Omit to let CSS auto-detect via [data-theme="dark"].
+   */
+  variant?: "dark";
 }
 
 /**
- * Absolutely-positioned, pointer-events-none overlay that tiles the member's
- * username diagonally across its host container.
+ * Absolutely-positioned, pointer-events-none watermark that tiles the
+ * member's handle diagonally across its host container.
  *
- * Usage — the host element must have `position: relative` and ideally
- * `overflow: hidden` so the watermark is clipped to the content area:
+ * Host element must have `position: relative` and `overflow: hidden`.
+ * The host automatically gets `user-select: none` via the CSS
+ * `:has(> .price-watermark)` selector — no extra class needed.
  *
- *   <div className="relative overflow-hidden rounded-xl ...">
- *     <PriceWatermark username={handle} />
- *     {children}
- *   </div>
- *
- * The watermark is rendered via a CSS background-image SVG data URL so it
- * works reliably cross-browser without polluting the DOM with many text nodes.
+ * Uses an inline <svg> so `fill="currentColor"` inherits the theme-aware
+ * `color` property set in price-watermark.css. A data-URL background-image
+ * cannot inherit CSS custom properties.
  */
-export function PriceWatermark({ username, variant = "light", className }: PriceWatermarkProps) {
+export function PriceWatermark({ username, variant }: PriceWatermarkProps) {
+  // useId produces a stable unique string per instance (React 18+)
+  const uid = useId();
+  // Strip non-alphanumeric chars so the id is a valid SVG fragment identifier
+  const patternId = `pw${uid.replace(/[^a-zA-Z0-9]/g, "")}`;
+
   if (!username) return null;
 
   const handle = username.startsWith("@") ? username : `@${username}`;
-  const fill = variant === "dark" ? "rgba(255,255,255,0.13)" : "rgba(0,0,0,0.10)";
-
-  // Encode an SVG tile (260 × 110 px) with a single diagonal text instance.
-  // CSS background-repeat does the tiling — no canvas, no DOM spam.
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='260' height='110'>` +
-    `<text transform='rotate(-25 130 55)' x='18' y='72'` +
-    ` font-family='system-ui,-apple-system,sans-serif'` +
-    ` font-size='13' font-weight='700' letter-spacing='0.5'` +
-    ` fill='${fill}'>${handle}</text>` +
-    `</svg>`;
 
   return (
     <div
       aria-hidden="true"
-      className={`price-watermark${className ? ` ${className}` : ""}`}
-      style={{ backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")` }}
-    />
+      className="price-watermark"
+      {...(variant === "dark" ? { "data-pw-dark": "" } : {})}
+    >
+      <svg
+        width="100%"
+        height="100%"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block" }}
+      >
+        <defs>
+          <pattern
+            id={patternId}
+            x="0"
+            y="0"
+            width="260"
+            height="110"
+            patternUnits="userSpaceOnUse"
+          >
+            <text
+              x="18"
+              y="72"
+              transform="rotate(-25 130 55)"
+              fontFamily="system-ui,-apple-system,sans-serif"
+              fontSize="13"
+              fontWeight="700"
+              letterSpacing="0.5"
+              fill="currentColor"
+            >
+              {handle}
+            </text>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+      </svg>
+    </div>
   );
 }
