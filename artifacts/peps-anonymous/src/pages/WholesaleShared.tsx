@@ -1201,7 +1201,8 @@ export default function WholesaleShared() {
       <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
         Tap <span className="font-semibold">Save my items</span> to keep your selection. Your saved items and delivery details stay with this shared order — close anytime and finish later from <span className="font-semibold">Your shared orders</span>.
       </p>
-      <div className="rounded-xl p-4 space-y-3" style={card}>
+      <div className="relative overflow-hidden rounded-xl p-4 space-y-3" style={card}>
+        <PriceWatermark username={share.currentUsername} />
         <div className="flex items-center gap-2 h-10 px-3 rounded-lg border" style={field}>
           <Search className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
           <input
