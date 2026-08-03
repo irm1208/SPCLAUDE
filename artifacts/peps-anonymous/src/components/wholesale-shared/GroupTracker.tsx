@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Check, CheckCircle2, Clock, CreditCard, Crown, Loader2, MapPin, Trash2, Truck } from "lucide-react";
 import type { WholesaleShareDetail } from "@/hooks/use-wholesale-shares";
+import { PriceWatermark } from "@/components/PriceWatermark";
 
 interface GroupTrackerProps {
   share: WholesaleShareDetail;
@@ -55,7 +56,8 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
   // while the page still treats delivery as incomplete (missing name/phone/country).
   const addressSet = !!(d.username && d.address && d.country && d.name && d.phone);
   return (
-    <div className="rounded-xl divide-y overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+    <div className="relative rounded-xl divide-y overflow-hidden" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
+      <PriceWatermark username={share.currentUsername} />
       {share.members.map(m => (
         <div key={m.username} className="p-4 space-y-2" style={{ borderColor: "var(--t-border)" }}>
           <div className="flex items-start justify-between gap-3">
