@@ -15,6 +15,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
+import { triggerWholesaleAccessCheck } from "../lib/wholesale-access-auto-verify";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -3602,6 +3603,7 @@ router.put("/account/wholesale-access/tx", requireAccount, async (req: any, res:
     sendAdminMessage(
       `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency2} via ${network2}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
     ).catch(() => {});
+    triggerWholesaleAccessCheck(existing.id);
     res.json({ request: updated, cryptoOptions });
   } catch (err: any) {
     console.error("[PUT /account/wholesale-access/tx]", err);
@@ -3774,7 +3776,7 @@ router.post("/account/wholesale-access/pay", requireAccount, async (req: any, re
     await sendAdminMessage(
       `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
     ).catch(() => {});
-
+    triggerWholesaleAccessCheck(existing.id);
     res.json({ verified: true });
   } catch (err: any) {
     console.error("[POST /account/wholesale-access/pay]", err);

@@ -172,6 +172,37 @@ async function runWholesaleAccessAutoVerify(): Promise<void> {
   }
 }
 
+/**
+ * Trigger an immediate verify attempt for a single request (fire-and-forget).
+ * Called right after the user submits their tx hash so they don't wait for
+ * the 10-minute scheduler cycle.
+ */
+export function triggerWholesaleAccessCheck(requestId: number): void {
+  db.select({
+    id: wholesaleAccessRequestsTable.id,
+    paymentTxHash: wholesaleAccessRequestsTable.paymentTxHash,
+    paymentCryptoCurrency: wholesaleAccessRequestsTable.paymentCryptoCurrency,
+    paymentCryptoNetwork: wholesaleAccessRequestsTable.paymentCryptoNetwork,
+    amountUsd: wholesaleAccessRequestsTable.amountUsd,
+  })
+    .from(wholesaleAccessRequestsTable)
+    .where(
+      and(
+        eq(wholesaleAccessRequestsTable.id, requestId),
+        eq(wholesaleAccessRequestsTable.status, "pending"),
+        isNotNull(wholesaleAccessRequestsTable.paymentTxHash),
+      )
+    )
+    .limit(1)
+    .then(async ([row]) => {
+      if (!row) return;
+      await checkRequest(row);
+    })
+    .catch((err: any) => {
+      console.error(`[wholesale-access-auto-verify] Immediate check error for request ${requestId}:`, err?.message ?? err);
+    });
+}
+
 export function startWholesaleAccessAutoVerify(): void {
   registerScheduler({
     name: "wholesale-access-auto-verify",
