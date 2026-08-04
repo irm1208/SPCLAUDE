@@ -122,6 +122,13 @@ export function HubBottomNav({
     };
   }, [open, setOpen, hideMinWidth]);
 
+  const [wholesaleAccessEnabled, setWholesaleAccessEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/config").then(r => r.ok ? r.json() : {}).then((d: { wholesaleAccessEnabled?: boolean }) => {
+      setWholesaleAccessEnabled(d.wholesaleAccessEnabled === true);
+    }).catch(() => {});
+  }, []);
+
   const navigate = (sectionId: HubSection) => {
     setSection(sectionId);
     setOpen(false);
@@ -145,6 +152,8 @@ export function HubBottomNav({
           { key: "wholesale", label: "Wholesale", Icon: ShoppingBag, onClick: () => go("/wholesale") },
           { key: "shared-order", label: "Shared Order", Icon: Users, onClick: () => go("/wholesale/shared") },
         ]
+      : wholesaleAccessEnabled
+      ? [{ key: "wholesale-access", label: "Get Wholesale Access", Icon: ShoppingBag, onClick: () => go("/account?s=wholesale-access") }]
       : []),
   ];
 
