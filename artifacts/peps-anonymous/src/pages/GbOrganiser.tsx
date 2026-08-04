@@ -3654,6 +3654,15 @@ function ErrorBanner({ msg, onClose }: { msg: string; onClose?: () => void }) {
   );
 }
 
+/** Redirect to login if the response is 401. Returns true if redirected. */
+function redirectIfUnauth(status: number): boolean {
+  if (status === 401) {
+    window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+    return true;
+  }
+  return false;
+}
+
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { color: string; bg: string; label: string }> = {
     draft: { color: "#64748B", bg: "rgba(100,116,139,0.1)", label: "Draft" },
@@ -9604,10 +9613,10 @@ function ParcelForm({ parcel, gbId, catalogProducts, onSaved, onCancel }: {
       };
       if (parcel) {
         const res = await fetch(`/api/organiser/group-buys/${gbId}/parcels/${parcel.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
+        if (!res.ok) { if (redirectIfUnauth(res.status)) return; const d = await res.json(); setError(d.error || "Failed"); return; }
       } else {
         const res = await fetch(`/api/organiser/group-buys/${gbId}/parcels`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
+        if (!res.ok) { if (redirectIfUnauth(res.status)) return; const d = await res.json(); setError(d.error || "Failed"); return; }
       }
       onSaved();
     } catch { setError("Connection error"); } finally { setSaving(false); }
@@ -9870,7 +9879,11 @@ export function ParcelsTab({ gb }: { gb: OrganiserGB }) {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/organiser/group-buys/${gb.id}/parcels`, { credentials: "include" });
-    if (res.ok) setParcels(await res.json());
+    if (res.ok) {
+      setParcels(await res.json());
+    } else if (!redirectIfUnauth(res.status)) {
+      setError("Failed to load parcels — please refresh.");
+    }
     setLoading(false);
   }, [gb.id]);
 

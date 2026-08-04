@@ -284,6 +284,10 @@ export async function organiserRequest<T>(
       : await response.text().catch(() => "");
 
   if (!response.ok) {
+    // Session expired — redirect to login instead of surfacing a cryptic error
+    if (response.status === 401) {
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+    }
     throw new OrganiserApiError(
       response.status,
       readErrorMessage(data, `Request failed with status ${response.status}`),
