@@ -961,6 +961,32 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS kit_fees numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
+    // wholesale_share_invite_links — organiser-generated invite links for shared orders
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS wholesale_share_invite_links (
+        code text PRIMARY KEY,
+        share_id text NOT NULL,
+        created_by_username text NOT NULL,
+        max_uses integer,
+        usage_count integer NOT NULL DEFAULT 0,
+        expires_at timestamptz,
+        is_active boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wsil_share_id_idx ON wholesale_share_invite_links(share_id)`);
+    // wholesale_share_invite_uses — audit trail of who used each link
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS wholesale_share_invite_uses (
+        id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        link_code text NOT NULL,
+        share_id text NOT NULL,
+        username text NOT NULL,
+        was_new_account boolean NOT NULL DEFAULT false,
+        used_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS wsiu_link_code_idx ON wholesale_share_invite_uses(link_code)`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);

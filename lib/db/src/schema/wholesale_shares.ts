@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, integer, timestamp, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, integer, serial, timestamp, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -189,3 +189,33 @@ export const wholesaleShareMessagesTable = pgTable("wholesale_share_messages", {
 
 export type WholesaleShareMessage = typeof wholesaleShareMessagesTable.$inferSelect;
 export type NewWholesaleShareMessage = typeof wholesaleShareMessagesTable.$inferInsert;
+
+// ── Shared-order invite links ─────────────────────────────────────────────────
+// An organiser generates a short-code link for their open shared order. The link
+// grants `isWholesale` access (registering an account if needed) and auto-joins
+// the recipient as a member. Organisers can cap max uses and set an expiry date;
+// the link is automatically invalid once the share is submitted or cancelled.
+export const wholesaleShareInviteLinksTable = pgTable("wholesale_share_invite_links", {
+  code: text("code").primaryKey(),           // 10-char uppercase alphanumeric
+  shareId: text("share_id").notNull(),
+  createdByUsername: text("created_by_username").notNull(),
+  maxUses: integer("max_uses"),              // null = unlimited
+  usageCount: integer("usage_count").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type WholesaleShareInviteLink = typeof wholesaleShareInviteLinksTable.$inferSelect;
+
+// Audit trail: one row per successful redeem (new or existing account).
+export const wholesaleShareInviteUsesTable = pgTable("wholesale_share_invite_uses", {
+  id: serial("id").primaryKey(),
+  linkCode: text("link_code").notNull(),
+  shareId: text("share_id").notNull(),
+  username: text("username").notNull(),
+  wasNewAccount: boolean("was_new_account").notNull().default(false),
+  usedAt: timestamp("used_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type WholesaleShareInviteUse = typeof wholesaleShareInviteUsesTable.$inferSelect;

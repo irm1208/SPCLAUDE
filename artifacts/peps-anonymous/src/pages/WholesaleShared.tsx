@@ -44,6 +44,7 @@ import {
   type WholesaleSplitMode,
 } from "@/hooks/use-wholesale-shares";
 import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
+import { ShareInviteLinkCard } from "@/components/wholesale-shared/ShareInviteLinkCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
 import { FeeLine, PaymentMethodEditor } from "@/components/wholesale-shared/payment-fields";
@@ -2617,6 +2618,7 @@ export default function WholesaleShared() {
     <>
       {!organiserDone && !myPaid && sectionHowItWorks}
       {sectionOrderLimits}
+      {showOrganiserOpen && id && <ShareInviteLinkCard shareId={id} />}
       {sectionShippingDelivery}
       {sectionGroup}
       {sectionMyItems}

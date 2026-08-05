@@ -4,6 +4,8 @@ import {
   wholesaleSharesTable,
   wholesaleShareMembersTable,
   wholesaleShareMessagesTable,
+  wholesaleShareInviteLinksTable,
+  wholesaleShareInviteUsesTable,
   ordersTable,
   orderLineItemsTable,
   productsTable,
@@ -16,6 +18,8 @@ import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
+import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
+import bcrypt from "bcryptjs";
 import { getActiveWholesaleVendor } from "./config";
 import { normalizeTg } from "../lib/normalize";
 import {
@@ -2356,6 +2360,478 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
     `Admin confirmed organiser platform payment for share ${share.id}`,
     { shareId: share.id });
   res.json({ ok: true });
+});
+
+// ── Wholesale Share Invite Links ──────────────────────────────────────────────
+// Organisers create a short-code invite link for their open shared order. The link
+// grants isWholesale access (registering an account if needed) and auto-joins the
+// recipient as a member. Organisers cap max uses + expiry date; the link is
+// automatically invalid once the share is submitted or cancelled.
+
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generateShareInviteCode(len = 10): string {
+  let s = "";
+  for (let i = 0; i < len; i++) s += INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)];
+  return s;
+}
+
+async function generateUniqueShareInviteCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateShareInviteCode();
+    const [existing] = await db.select({ code: wholesaleShareInviteLinksTable.code })
+      .from(wholesaleShareInviteLinksTable).where(eq(wholesaleShareInviteLinksTable.code, code));
+    if (!existing) return code;
+  }
+  return generateShareInviteCode(12);
+}
+
+// Validates a link code and returns the link + share, or an error payload.
+async function validateShareInviteLink(code: string): Promise<
+  | { ok: true; link: typeof wholesaleShareInviteLinksTable.$inferSelect; share: NonNullable<Awaited<ReturnType<typeof loadShare>>> }
+  | { ok: false; status: number; reason: string; shareId?: string }
+> {
+  const [link] = await db.select().from(wholesaleShareInviteLinksTable)
+    .where(eq(wholesaleShareInviteLinksTable.code, code));
+  if (!link) return { ok: false, status: 404, reason: "not_found" };
+  if (!link.isActive) return { ok: false, status: 410, reason: "inactive", shareId: link.shareId };
+  if (link.expiresAt && new Date(link.expiresAt as Date) < new Date()) {
+    return { ok: false, status: 410, reason: "expired", shareId: link.shareId };
+  }
+  if (link.maxUses !== null && link.usageCount >= link.maxUses) {
+    return { ok: false, status: 410, reason: "max_uses_reached", shareId: link.shareId };
+  }
+  const share = await loadShare(link.shareId);
+  if (!share) return { ok: false, status: 410, reason: "share_not_found", shareId: link.shareId };
+  if (share.status === "submitted" || share.status === "cancelled") {
+    return { ok: false, status: 410, reason: "share_not_open", shareId: link.shareId };
+  }
+  return { ok: true, link, share };
+}
+
+// Grant isWholesale + join share + record use. Call only after link has been validated.
+async function redeemShareInviteLink(
+  link: { code: string; shareId: string },
+  share: NonNullable<Awaited<ReturnType<typeof loadShare>>>,
+  username: string,
+  wasNewAccount: boolean,
+  reqIp: string | undefined,
+): Promise<void> {
+  // Grant wholesale access if not already granted
+  await db.update(accountsTable)
+    .set({ isWholesale: true })
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
+
+  // Join as member if not already a member and share has capacity
+  const existingMember = await loadMember(share.id, username);
+  if (!existingMember) {
+    const [{ c }] = await db.select({ c: sql<number>`count(*)::int` })
+      .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
+    if (share.maxMembers == null || c < share.maxMembers) {
+      const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
+        ? Number(share.organiserFlatFee).toFixed(2) : "0";
+      try {
+        await db.insert(wholesaleShareMembersTable).values({
+          id: randomUUID(), shareId: share.id, username, isCreator: false,
+          items: [], tip: "0", organiserFee: joinOrganiserFee,
+        });
+      } catch { /* unique race — already joined */ }
+    }
+  }
+
+  // Atomically increment usage count and record the use
+  await db.update(wholesaleShareInviteLinksTable)
+    .set({ usageCount: sql`${wholesaleShareInviteLinksTable.usageCount} + 1` })
+    .where(eq(wholesaleShareInviteLinksTable.code, link.code));
+
+  await db.insert(wholesaleShareInviteUsesTable).values({
+    linkCode: link.code, shareId: share.id, username, wasNewAccount,
+  });
+
+  await writeLog("order", "info", "wholesale_invite_link_redeemed",
+    `${username} redeemed invite link ${link.code} for share ${share.id}`,
+    { code: link.code, shareId: share.id, username, wasNewAccount }, reqIp);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public (no auth): peek at an invite link — returns share info + validity.
+// Used by the landing page to show who's running the order before the user
+// commits to registering or logging in.
+router.get("/wholesale-invite/:code", async (req, res): Promise<void> => {
+  const code = String(req.params.code).trim().toUpperCase();
+  const [link] = await db.select().from(wholesaleShareInviteLinksTable)
+    .where(eq(wholesaleShareInviteLinksTable.code, code));
+  if (!link) { res.status(404).json({ error: "Invite link not found." }); return; }
+
+  const share = await loadShare(link.shareId);
+  const memberCount = share
+    ? (await db.select({ c: sql<number>`count(*)::int` })
+        .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id)))[0]?.c ?? 0
+    : 0;
+
+  let validity: "valid" | "inactive" | "expired" | "max_uses_reached" | "share_not_open" = "valid";
+  if (!link.isActive) validity = "inactive";
+  else if (link.expiresAt && new Date(link.expiresAt as Date) < new Date()) validity = "expired";
+  else if (link.maxUses !== null && link.usageCount >= link.maxUses) validity = "max_uses_reached";
+  else if (!share || share.status === "submitted" || share.status === "cancelled") validity = "share_not_open";
+
+  res.json({
+    code: link.code,
+    shareId: link.shareId,
+    organiserUsername: share?.creatorUsername ?? null,
+    memberCount,
+    maxMembers: share?.maxMembers ?? null,
+    shareStatus: share?.status ?? null,
+    validity,
+    maxUses: link.maxUses,
+    usageCount: link.usageCount,
+    expiresAt: link.expiresAt ? (link.expiresAt as Date).toISOString() : null,
+  });
+});
+
+// Authenticated (account cookie): redeem an invite link. Grants isWholesale + joins share.
+router.post("/wholesale-invite/:code/redeem", requireAccount, async (req, res): Promise<void> => {
+  const code = String(req.params.code).trim().toUpperCase();
+  const me = req.account!.telegramUsername;
+
+  const validation = await validateShareInviteLink(code);
+  if (!validation.ok) {
+    res.status(validation.status).json({ error: validation.reason, shareId: validation.shareId });
+    return;
+  }
+  const { link, share } = validation;
+
+  // Idempotent: already a member → just return success
+  const existingMember = await loadMember(share.id, me);
+  if (existingMember) {
+    res.json({ ok: true, shareId: share.id, alreadyMember: true });
+    return;
+  }
+
+  // Check capacity
+  const [{ c }] = await db.select({ c: sql<number>`count(*)::int` })
+    .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
+  if (share.maxMembers != null && c >= share.maxMembers) {
+    res.status(409).json({ error: "This shared order is full." }); return;
+  }
+
+  await redeemShareInviteLink(link, share, me, false, req.ip);
+  res.json({ ok: true, shareId: share.id, alreadyMember: false });
+});
+
+// No-auth: register a new account AND redeem an invite link in one request.
+// Bypasses signup_requires_invite because the invite link IS the access gate.
+router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> => {
+  const code = String(req.params.code).trim().toUpperCase();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const { telegramUsername, password, email, country } = body;
+
+  if (!telegramUsername || typeof telegramUsername !== "string") {
+    res.status(400).json({ error: "Telegram username is required" }); return;
+  }
+  if (!password || typeof password !== "string" || password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" }); return;
+  }
+  if (!/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password as string)) {
+    res.status(400).json({ error: "Password must contain at least one number or special character" }); return;
+  }
+  if (!email || typeof email !== "string" || !(email as string).includes("@")) {
+    res.status(400).json({ error: "A valid email address is required" }); return;
+  }
+  if (!country || typeof country !== "string" || !(country as string).trim()) {
+    res.status(400).json({ error: "Country is required" }); return;
+  }
+
+  const tg = normalizeTg(telegramUsername as string);
+  if (!tg || tg.length < 2 || tg.length > 64) {
+    res.status(400).json({ error: "Invalid Telegram username" }); return;
+  }
+
+  // Validate the invite link BEFORE creating the account
+  const validation = await validateShareInviteLink(code);
+  if (!validation.ok) {
+    res.status(validation.status).json({ error: validation.reason, shareId: validation.shareId });
+    return;
+  }
+  const { link, share } = validation;
+
+  // Check capacity before we spend bcrypt time
+  const [{ c }] = await db.select({ c: sql<number>`count(*)::int` })
+    .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
+  if (share.maxMembers != null && c >= share.maxMembers) {
+    res.status(409).json({ error: "This shared order is full." }); return;
+  }
+
+  const [existing] = await db.select({ telegramUsername: accountsTable.telegramUsername, passwordHash: accountsTable.passwordHash })
+    .from(accountsTable).where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
+
+  if (existing) {
+    if (existing.passwordHash != null) {
+      // Account exists with a password — they must log in and use the redeem endpoint
+      res.status(409).json({ error: "An account with this username already exists. Please log in to use this invite link." });
+      return;
+    }
+    // Pre-created account (no password yet) — allow completing registration
+    const passwordHash = await bcrypt.hash(password as string, 12);
+    await db.update(accountsTable)
+      .set({ passwordHash, email: (email as string).trim().toLowerCase(), country: (country as string).trim() })
+      .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
+    await redeemShareInviteLink(link, share, tg, false, req.ip);
+    issueAccountCookie(res, tg);
+    res.status(200).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: false });
+    return;
+  }
+
+  // Create brand-new account with isWholesale = true from the start
+  const passwordHash = await bcrypt.hash(password as string, 12);
+  await db.insert(accountsTable).values({
+    telegramUsername: tg,
+    passwordHash,
+    email: (email as string).trim().toLowerCase(),
+    accountStatus: "active",
+    country: (country as string).trim(),
+    isWholesale: true,
+  });
+  await redeemShareInviteLink(link, share, tg, true, req.ip);
+  issueAccountCookie(res, tg);
+  await writeLog("login", "info", "account_signup_via_wholesale_invite",
+    `New account created via wholesale invite link: ${tg}`,
+    { telegramUsername: tg, shareId: share.id, linkCode: link.code }, req.ip).catch(() => {});
+  res.status(201).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: true });
+});
+
+// Organiser: create or replace the invite link for a share.
+// Deactivates any existing active link before creating the new one.
+router.post("/wholesale-shares/:id/invite-link", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can manage the invite link." }); return;
+  }
+  if (share.status !== "open") {
+    res.status(409).json({ error: "Invite links can only be created for open shared orders." }); return;
+  }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+
+  let maxUses: number | null = null;
+  if (body.maxUses != null && body.maxUses !== "") {
+    const m = Number(body.maxUses);
+    if (!Number.isFinite(m) || !Number.isInteger(m) || m < 1) {
+      res.status(400).json({ error: "Max uses must be a whole number of 1 or more (or blank for unlimited)." }); return;
+    }
+    maxUses = m;
+  }
+
+  let expiresAt: Date | null = null;
+  if (body.expiresAt != null && body.expiresAt !== "") {
+    const d = new Date(String(body.expiresAt));
+    if (isNaN(d.getTime()) || d.getTime() <= Date.now()) {
+      res.status(400).json({ error: "Expiry date must be a valid future date." }); return;
+    }
+    expiresAt = d;
+  }
+
+  // Deactivate all existing links for this share (one active link at a time)
+  await db.update(wholesaleShareInviteLinksTable)
+    .set({ isActive: false })
+    .where(eq(wholesaleShareInviteLinksTable.shareId, share.id));
+
+  const newCode = await generateUniqueShareInviteCode();
+  const [created] = await db.insert(wholesaleShareInviteLinksTable).values({
+    code: newCode, shareId: share.id, createdByUsername: me,
+    maxUses, expiresAt, isActive: true,
+  }).returning();
+
+  await writeLog("order", "info", "wholesale_invite_link_created",
+    `Organiser @${me} created invite link ${newCode} for share ${share.id}`,
+    { code: newCode, shareId: share.id, maxUses, expiresAt: expiresAt?.toISOString() }, req.ip);
+
+  res.status(201).json({
+    code: created.code, shareId: created.shareId, maxUses: created.maxUses,
+    usageCount: created.usageCount,
+    expiresAt: created.expiresAt ? (created.expiresAt as Date).toISOString() : null,
+    isActive: created.isActive, createdAt: (created.createdAt as Date).toISOString(), uses: [],
+  });
+});
+
+// Organiser: get the current active invite link + recent use history.
+router.get("/wholesale-shares/:id/invite-link", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can view the invite link." }); return;
+  }
+
+  const [link] = await db.select().from(wholesaleShareInviteLinksTable)
+    .where(and(
+      eq(wholesaleShareInviteLinksTable.shareId, share.id),
+      eq(wholesaleShareInviteLinksTable.isActive, true),
+    ))
+    .orderBy(desc(wholesaleShareInviteLinksTable.createdAt)).limit(1);
+
+  if (!link) { res.json(null); return; }
+
+  const uses = await db.select().from(wholesaleShareInviteUsesTable)
+    .where(eq(wholesaleShareInviteUsesTable.linkCode, link.code))
+    .orderBy(desc(wholesaleShareInviteUsesTable.usedAt)).limit(50);
+
+  res.json({
+    code: link.code, shareId: link.shareId, maxUses: link.maxUses,
+    usageCount: link.usageCount,
+    expiresAt: link.expiresAt ? (link.expiresAt as Date).toISOString() : null,
+    isActive: link.isActive, createdAt: (link.createdAt as Date).toISOString(),
+    uses: uses.map(u => ({
+      username: u.username, wasNewAccount: u.wasNewAccount,
+      usedAt: (u.usedAt as Date).toISOString(),
+    })),
+  });
+});
+
+// Organiser: update invite link settings (max uses, expiry, active toggle).
+router.patch("/wholesale-shares/:id/invite-link", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can manage the invite link." }); return;
+  }
+
+  const [link] = await db.select().from(wholesaleShareInviteLinksTable)
+    .where(and(
+      eq(wholesaleShareInviteLinksTable.shareId, share.id),
+      eq(wholesaleShareInviteLinksTable.isActive, true),
+    ))
+    .orderBy(desc(wholesaleShareInviteLinksTable.createdAt)).limit(1);
+  if (!link) { res.status(404).json({ error: "No active invite link found. Create one first." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const updates: Partial<typeof wholesaleShareInviteLinksTable.$inferInsert> = {};
+
+  if ("maxUses" in body) {
+    if (body.maxUses === null || body.maxUses === "") {
+      updates.maxUses = null;
+    } else {
+      const m = Number(body.maxUses);
+      if (!Number.isFinite(m) || !Number.isInteger(m) || m < 1) {
+        res.status(400).json({ error: "Max uses must be a whole number of 1 or more." }); return;
+      }
+      updates.maxUses = m;
+    }
+  }
+  if ("expiresAt" in body) {
+    if (body.expiresAt === null || body.expiresAt === "") {
+      updates.expiresAt = null;
+    } else {
+      const d = new Date(String(body.expiresAt));
+      if (isNaN(d.getTime())) { res.status(400).json({ error: "Expiry date must be a valid date." }); return; }
+      updates.expiresAt = d;
+    }
+  }
+  if ("isActive" in body) {
+    updates.isActive = body.isActive === true || body.isActive === "true";
+  }
+
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Nothing to update." }); return; }
+
+  const [updated] = await db.update(wholesaleShareInviteLinksTable)
+    .set(updates).where(eq(wholesaleShareInviteLinksTable.code, link.code)).returning();
+
+  const uses = await db.select().from(wholesaleShareInviteUsesTable)
+    .where(eq(wholesaleShareInviteUsesTable.linkCode, link.code))
+    .orderBy(desc(wholesaleShareInviteUsesTable.usedAt)).limit(50);
+
+  res.json({
+    code: updated.code, shareId: updated.shareId, maxUses: updated.maxUses,
+    usageCount: updated.usageCount,
+    expiresAt: updated.expiresAt ? (updated.expiresAt as Date).toISOString() : null,
+    isActive: updated.isActive, createdAt: (updated.createdAt as Date).toISOString(),
+    uses: uses.map(u => ({
+      username: u.username, wasNewAccount: u.wasNewAccount,
+      usedAt: (u.usedAt as Date).toISOString(),
+    })),
+  });
+});
+
+// Organiser: deactivate the current invite link.
+router.delete("/wholesale-shares/:id/invite-link", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can manage the invite link." }); return;
+  }
+
+  await db.update(wholesaleShareInviteLinksTable)
+    .set({ isActive: false })
+    .where(eq(wholesaleShareInviteLinksTable.shareId, share.id));
+
+  await writeLog("order", "info", "wholesale_invite_link_deactivated",
+    `Organiser @${me} deactivated invite link for share ${share.id}`,
+    { shareId: share.id }, req.ip);
+
+  res.json({ ok: true });
+});
+
+// Admin: list all invite links with usage stats.
+router.get("/admin/wholesale-invite-links", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const links = await db.select().from(wholesaleShareInviteLinksTable)
+    .orderBy(desc(wholesaleShareInviteLinksTable.createdAt)).limit(200);
+
+  if (links.length === 0) { res.json([]); return; }
+
+  const codes = links.map(l => l.code);
+  const usesResult = await db
+    .select({
+      linkCode: wholesaleShareInviteUsesTable.linkCode,
+      count: sql<number>`count(*)::int`,
+      newAccounts: sql<number>`count(*) filter (where ${wholesaleShareInviteUsesTable.wasNewAccount})::int`,
+    })
+    .from(wholesaleShareInviteUsesTable)
+    .where(sql`${wholesaleShareInviteUsesTable.linkCode} IN (${sql.join(codes.map(c => sql`${c}`), sql`, `)})`)
+    .groupBy(wholesaleShareInviteUsesTable.linkCode);
+
+  const usesMap = new Map(usesResult.map(u => [u.linkCode, { total: u.count, newAccounts: u.newAccounts }]));
+
+  res.json(links.map(l => ({
+    code: l.code, shareId: l.shareId, createdByUsername: l.createdByUsername,
+    maxUses: l.maxUses, usageCount: l.usageCount,
+    expiresAt: l.expiresAt ? (l.expiresAt as Date).toISOString() : null,
+    isActive: l.isActive, createdAt: (l.createdAt as Date).toISOString(),
+    actualUses: usesMap.get(l.code)?.total ?? 0,
+    newAccountsCreated: usesMap.get(l.code)?.newAccounts ?? 0,
+  })));
+});
+
+// Admin: override a specific invite link (cap uses, toggle active, change expiry).
+router.patch("/admin/wholesale-invite-links/:code", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const code = String(req.params.code).trim().toUpperCase();
+  const [link] = await db.select().from(wholesaleShareInviteLinksTable)
+    .where(eq(wholesaleShareInviteLinksTable.code, code));
+  if (!link) { res.status(404).json({ error: "Link not found." }); return; }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const updates: Partial<typeof wholesaleShareInviteLinksTable.$inferInsert> = {};
+  if ("isActive" in body) updates.isActive = body.isActive === true || body.isActive === "true";
+  if ("maxUses" in body) updates.maxUses = (body.maxUses === null || body.maxUses === "") ? null : Number(body.maxUses);
+  if ("expiresAt" in body) updates.expiresAt = body.expiresAt ? new Date(String(body.expiresAt)) : null;
+
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Nothing to update." }); return; }
+
+  const [updated] = await db.update(wholesaleShareInviteLinksTable)
+    .set(updates).where(eq(wholesaleShareInviteLinksTable.code, code)).returning();
+
+  res.json({
+    code: updated.code, shareId: updated.shareId, maxUses: updated.maxUses,
+    usageCount: updated.usageCount,
+    expiresAt: updated.expiresAt ? (updated.expiresAt as Date).toISOString() : null,
+    isActive: updated.isActive,
+  });
 });
 
 export default router;
