@@ -25,26 +25,26 @@
   border-radius: inherit;
 
   /* Light theme default: dark text at low opacity — subtle but screenshot-traceable */
-  color: rgba(0, 0, 0, 0.10);
+  color: rgba(0, 0, 0, 0.05);
 }
 
 /* Explicit dark-surface override (e.g. OrderForm line-items card which is
    always dark regardless of the global theme toggle) */
 .price-watermark[data-pw-dark] {
-  color: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.07);
 }
 
 /* Explicit light-surface override — forces dark text even when the global
    theme is dark. Use on containers whose background is hardcoded light
    (e.g. bg-white modals) so the watermark is never white-on-white. */
 .price-watermark[data-pw-light] {
-  color: rgba(0, 0, 0, 0.10);
+  color: rgba(0, 0, 0, 0.05);
 }
 
 /* Auto dark-mode: when [data-theme="dark"] is set on <html>.
    Only applies to watermarks that haven't been pinned to a surface variant. */
 [data-theme="dark"] .price-watermark:not([data-pw-dark]):not([data-pw-light]) {
-  color: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.07);
 }
 
 /* ── Copy protection ─────────────────────────────────────────────────────────
