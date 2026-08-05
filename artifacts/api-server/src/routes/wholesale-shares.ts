@@ -2445,7 +2445,7 @@ async function redeemShareInviteLink(
     .where(eq(wholesaleShareInviteLinksTable.code, link.code));
 
   await db.insert(wholesaleShareInviteUsesTable).values({
-    linkCode: link.code, shareId: share.id, username, wasNewAccount,
+    id: randomUUID(), linkCode: link.code, shareId: share.id, username, wasNewAccount,
   });
 
   await writeLog("order", "info", "wholesale_invite_link_redeemed",

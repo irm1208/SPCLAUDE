@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, integer, serial, timestamp, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, integer, timestamp, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -210,7 +210,7 @@ export type WholesaleShareInviteLink = typeof wholesaleShareInviteLinksTable.$in
 
 // Audit trail: one row per successful redeem (new or existing account).
 export const wholesaleShareInviteUsesTable = pgTable("wholesale_share_invite_uses", {
-  id: serial("id").primaryKey(),
+  id: text("id").primaryKey(),
   linkCode: text("link_code").notNull(),
   shareId: text("share_id").notNull(),
   username: text("username").notNull(),

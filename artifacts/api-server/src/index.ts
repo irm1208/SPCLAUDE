@@ -978,7 +978,7 @@ async function runStartupMigrations(): Promise<void> {
     // wholesale_share_invite_uses — audit trail of who used each link
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS wholesale_share_invite_uses (
-        id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        id text PRIMARY KEY DEFAULT gen_random_uuid(),
         link_code text NOT NULL,
         share_id text NOT NULL,
         username text NOT NULL,
