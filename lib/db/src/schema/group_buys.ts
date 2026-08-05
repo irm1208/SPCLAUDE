@@ -135,6 +135,7 @@ export const groupBuyProductsTable = pgTable("group_buy_products", {
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order"),
   maxPerCustomer: integer("max_per_customer"),
+  feePerKit: numeric("fee_per_kit", { precision: 10, scale: 2 }),
 }, (t) => [
   unique("group_buy_products_unique").on(t.groupBuyId, t.productId),
 ]);

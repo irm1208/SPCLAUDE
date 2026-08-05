@@ -41,6 +41,7 @@ type ProductDraft = {
   price: string;
   stock: string;
   maxPerCustomer: string;
+  feePerKit: string;
   halfKitEnabled: boolean;
 };
 
@@ -61,6 +62,7 @@ const EMPTY_DRAFT: ProductDraft = {
   price: "",
   stock: "",
   maxPerCustomer: "",
+  feePerKit: "",
   halfKitEnabled: true,
 };
 
@@ -74,6 +76,7 @@ function toDraft(product: ProductRecord | null): ProductDraft {
     price: String(Number(product.price ?? 0)),
     stock: product.stock === null || product.stock === undefined ? "" : String(product.stock),
     maxPerCustomer: product.maxPerCustomer == null ? "" : String(product.maxPerCustomer),
+    feePerKit: (product as Record<string, unknown>).feePerKit == null ? "" : String((product as Record<string, unknown>).feePerKit),
     halfKitEnabled: Boolean(product.halfKitEnabled),
   };
 }
@@ -123,6 +126,9 @@ function parseDraft(draft: ProductDraft): { body?: Record<string, unknown>; erro
   ) {
     return { error: "Maximum per customer must be at least 1 or blank." };
   }
+  if (draft.feePerKit.trim() && (!Number.isFinite(Number(draft.feePerKit)) || Number(draft.feePerKit) < 0)) {
+    return { error: "Fee per kit must be 0 or more, or blank." };
+  }
   return {
     body: {
       name: draft.name.trim(),
@@ -132,6 +138,7 @@ function parseDraft(draft: ProductDraft): { body?: Record<string, unknown>; erro
       price,
       stock: draft.stock.trim() ? Number(draft.stock) : null,
       maxPerCustomer: draft.maxPerCustomer.trim() ? Number(draft.maxPerCustomer) : null,
+      feePerKit: draft.feePerKit.trim() ? Number(draft.feePerKit) : null,
       halfKitEnabled: draft.halfKitEnabled,
     },
   };
@@ -244,12 +251,12 @@ export default function GbProductsTab({
     }
     setSaving(true);
     try {
-      const { maxPerCustomer, ...ownedFields } = result.body;
+      const { maxPerCustomer, feePerKit, ...ownedFields } = result.body;
       if (adding) {
         const created = await organiserApi.createProduct(selectedGbId, ownedFields);
         const [ownedProduct] = await Promise.all([
           organiserApi.updateOwnedProduct(created.id, ownedFields),
-          organiserApi.updateProduct(selectedGbId, created.id, { maxPerCustomer }),
+          organiserApi.updateProduct(selectedGbId, created.id, { maxPerCustomer, feePerKit }),
         ]);
         const saved = { ...created, ...ownedProduct, maxPerCustomer } as ProductRecord;
         setProducts(current => [...current, saved]);
@@ -260,7 +267,7 @@ export default function GbProductsTab({
       } else if (selectedProduct) {
         const [ownedProduct] = await Promise.all([
           organiserApi.updateOwnedProduct(selectedProduct.id, ownedFields),
-          organiserApi.updateProduct(selectedGbId, selectedProduct.id, { maxPerCustomer }),
+          organiserApi.updateProduct(selectedGbId, selectedProduct.id, { maxPerCustomer, feePerKit }),
         ]);
         const updated = { ...selectedProduct, ...ownedProduct, maxPerCustomer } as ProductRecord;
         setProducts(current => current.map(product => product.id === updated.id ? updated : product));
@@ -413,6 +420,7 @@ export default function GbProductsTab({
               <label><span>Price</span><input type="number" min="0" step="0.01" value={draft.price} onChange={event => setDraft(current => ({ ...current, price: event.target.value }))} required /></label>
               <label><span>Stock</span><input type="number" min="0" step="1" value={draft.stock} onChange={event => setDraft(current => ({ ...current, stock: event.target.value }))} placeholder="Unlimited" /></label>
               <label><span>Max per customer</span><input type="number" min="1" step="1" value={draft.maxPerCustomer} onChange={event => setDraft(current => ({ ...current, maxPerCustomer: event.target.value }))} placeholder="No limit" /></label>
+              <label><span>Fee per kit ($)</span><input type="number" min="0" step="0.01" value={draft.feePerKit} onChange={event => setDraft(current => ({ ...current, feePerKit: event.target.value }))} placeholder="None" /></label>
               <fieldset className="products-split__toggles products-split__wide"><legend>Availability</legend><label><span><strong>Half kits</strong><small>Allow half-kit reservations.</small></span><input type="checkbox" checked={draft.halfKitEnabled} onChange={event => setDraft(current => ({ ...current, halfKitEnabled: event.target.checked }))} /></label></fieldset>
             </div>
             <footer>

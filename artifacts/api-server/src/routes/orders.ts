@@ -543,6 +543,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   let gbAdminFeeEnabled = false;
   let gbAdminFeeType = "fixed";
   let gbAdminFeeRaw: number | null = null;
+  let gbKitFees = 0;
 
   // Validate group buy membership if a groupBuyId is provided
   if (normalizedGroupBuyId) {
@@ -687,6 +688,26 @@ router.post("/orders", async (req, res): Promise<void> => {
       gbAdminFeeRaw = parseFloat(String(gb.adminFeeAmount));
       gbAdminFeeLabel = gb.adminFeeLabel ?? null;
     }
+
+    // ── Kit fees (feePerKit × quantity per product) ───────────────────────────
+    if (clientLineItems.length > 0) {
+      const productIds = (clientLineItems as Array<{ productId: string }>).map(li => li.productId);
+      const kitFeeRows = await db
+        .select({ productId: groupBuyProductsTable.productId, feePerKit: groupBuyProductsTable.feePerKit })
+        .from(groupBuyProductsTable)
+        .where(and(
+          eq(groupBuyProductsTable.groupBuyId, normalizedGroupBuyId),
+          inArray(groupBuyProductsTable.productId, productIds),
+        ));
+      const kitFeeMap = new Map(
+        kitFeeRows.map(r => [r.productId, r.feePerKit != null ? parseFloat(String(r.feePerKit)) : 0])
+      );
+      for (const li of clientLineItems as Array<{ productId: string; quantity: number }>) {
+        const fee = kitFeeMap.get(li.productId) ?? 0;
+        if (fee > 0) gbKitFees += fee * parseFloat(String(li.quantity));
+      }
+      gbKitFees = Number(gbKitFees.toFixed(2));
+    }
   } else {
     // Non-GB orders cannot have a testing contribution
     if (testingContribution > 0) {
@@ -762,11 +783,11 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   // Resolve the admin fee now that the product subtotal is known. Percentage fees
   // are computed against the product subtotal; fixed fees use the configured amount.
-  // Direct-to-home orders never carry the admin fee, so keep both the fee and the
-  // grand total consistent by zeroing it here (the insert below also clears it).
+  // Direct-to-home orders and additions never carry the admin fee or kit fees.
   if (clientDirectShippingRequested === true || additionParent) {
     gbAdminFee = 0;
     gbAdminFeeLabel = null;
+    gbKitFees = 0;
   } else if (gbAdminFeeEnabled && gbAdminFeeRaw != null) {
     gbAdminFee = gbAdminFeeType === "percent"
       ? Number(((productSubtotal * gbAdminFeeRaw) / 100).toFixed(2))
@@ -802,7 +823,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
   }
 
-  const grandTotal = Number(Math.max(0, baseGrandTotal + gbAdminFee - couponDiscount).toFixed(2));
+  const grandTotal = Number(Math.max(0, baseGrandTotal + gbAdminFee + gbKitFees - couponDiscount).toFixed(2));
 
   const orderId = randomUUID();
   const code = await generateCode();
@@ -999,6 +1020,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       couponDiscount: couponDiscount.toFixed(2),
       adminFee: clientDirectShippingRequested === true ? "0.00" : gbAdminFee.toFixed(2),
       adminFeeLabel: clientDirectShippingRequested === true ? null : gbAdminFeeLabel,
+      kitFees: gbKitFees.toFixed(2),
       directShippingRequested: clientDirectShippingRequested === true,
       directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null
         ? parseFloat(String(clientDirectShippingCost)).toFixed(2)

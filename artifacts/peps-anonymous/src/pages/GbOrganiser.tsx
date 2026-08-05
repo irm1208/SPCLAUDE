@@ -5453,6 +5453,8 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   const [togglingHalfKit, setTogglingHalfKit] = useState<string | null>(null);
   const [pendingMaxPerCustomer, setPendingMaxPerCustomer] = useState<Record<string, string>>({});
   const [savingMaxPerCustomer, setSavingMaxPerCustomer] = useState<string | null>(null);
+  const [pendingFeePerKit, setPendingFeePerKit] = useState<Record<string, string>>({});
+  const [savingFeePerKit, setSavingFeePerKit] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<"none" | "csv" | "ai">("none");
   const [aiRows, setAiRows] = useState<ImportRow[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -5508,6 +5510,24 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
         setProducts(p => p.map(x => x.id === productId ? { ...x, halfKitEnabled: !current } : x));
       }
     } catch { /* ignore */ } finally { setTogglingHalfKit(null); }
+  };
+
+  const saveFeePerKit = async (productId: string) => {
+    setSavingFeePerKit(productId);
+    const val = pendingFeePerKit[productId];
+    const parsed = val === "" ? null : parseFloat(val);
+    if (parsed !== null && (isNaN(parsed) || parsed < 0)) { setSavingFeePerKit(null); return; }
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/products/${productId}`, {
+        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feePerKit: parsed }),
+      });
+      if (res.ok) {
+        setProducts(prev => prev.map(p => p.id === productId ? { ...p, feePerKit: parsed } as typeof p : p));
+        setPendingFeePerKit(prev => { const n = { ...prev }; delete n[productId]; return n; });
+      }
+    } catch { /* ignore */ }
+    finally { setSavingFeePerKit(null); }
   };
 
   const saveMaxPerCustomer = async (productId: string) => {
@@ -5928,6 +5948,30 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
                   style={{ background: "rgba(22,163,74,0.15)", color: "#16A34A" }}
                 >
                   {savingMaxPerCustomer === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>$/kit</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="None"
+                value={pendingFeePerKit[p.id] ?? ((p as Record<string, unknown>).feePerKit != null ? String((p as Record<string, unknown>).feePerKit) : "")}
+                onChange={e => setPendingFeePerKit(prev => ({ ...prev, [p.id]: e.target.value }))}
+                className="w-16 h-7 text-xs rounded-lg border px-2 bg-transparent"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}
+              />
+              {pendingFeePerKit[p.id] !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => saveFeePerKit(p.id)}
+                  disabled={savingFeePerKit === p.id}
+                  className="h-7 w-7 rounded-lg flex items-center justify-center disabled:opacity-50"
+                  style={{ background: "rgba(22,163,74,0.15)", color: "#16A34A" }}
+                >
+                  {savingFeePerKit === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                 </button>
               )}
             </div>

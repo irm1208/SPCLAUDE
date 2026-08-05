@@ -716,6 +716,7 @@ router.post("/organiser/group-buys/:id/clone", requireOrganiser, async (req, res
           active: p.active,
           sortOrder: p.sortOrder ?? undefined,
           maxPerCustomer: p.maxPerCustomer ?? undefined,
+          feePerKit: p.feePerKit ?? undefined,
         })),
       );
     }
@@ -1070,6 +1071,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
       maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
+      feePerKit: groupBuyProductsTable.feePerKit,
       name: productsTable.name,
       vendor: productsTable.vendor,
       price: productsTable.price,
@@ -1104,6 +1106,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
     id: r.productId,
     price: parseFloat(String(r.price)),
     priceOverride: r.priceOverride != null ? parseFloat(String(r.priceOverride)) : null,
+    feePerKit: r.feePerKit != null ? parseFloat(String(r.feePerKit)) : null,
     sold: soldByProduct.get(r.productId) ?? 0,
   })));
 });
@@ -1112,7 +1115,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
 router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]);
-  const { name, price, category, stock, priceOverride, mgSize, vendor } = req.body;
+  const { name, price, category, stock, priceOverride, feePerKit: bodyFeePerKit, mgSize, vendor } = req.body;
   if (!vendor || !String(vendor).trim()) { res.status(400).json({ error: "vendor is required" }); return; }
 
   const [gb] = await db
@@ -1162,6 +1165,7 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
       productId,
       active: true,
       priceOverride: priceOverride != null ? String(parseFloat(String(priceOverride)).toFixed(2)) : undefined,
+      feePerKit: bodyFeePerKit != null && bodyFeePerKit !== "" ? String(parseFloat(String(bodyFeePerKit)).toFixed(2)) : undefined,
     });
 
     return product;
@@ -1193,7 +1197,7 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
 
-  const { name, price, category, stock, active, priceOverride, mgSize, maxPerCustomer } = req.body;
+  const { name, price, category, stock, active, priceOverride, mgSize, maxPerCustomer, feePerKit: patchFeePerKit } = req.body;
 
   const hasProductFields = name !== undefined || price !== undefined || category !== undefined
     || stock !== undefined || active !== undefined || mgSize !== undefined;
@@ -1224,8 +1228,8 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
     }
   }
 
-  // GB-link fields (priceOverride, maxPerCustomer) — only GB ownership required
-  const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null } = {};
+  // GB-link fields (priceOverride, maxPerCustomer, feePerKit) — only GB ownership required
+  const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null; feePerKit?: string | null } = {};
   if (priceOverride !== undefined) {
     gbLinkUpdates.priceOverride = priceOverride != null && priceOverride !== ""
       ? String(parseFloat(String(priceOverride)).toFixed(2))
@@ -1233,6 +1237,11 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
   }
   if (maxPerCustomer !== undefined) {
     gbLinkUpdates.maxPerCustomer = maxPerCustomer != null ? parseInt(String(maxPerCustomer)) : null;
+  }
+  if (patchFeePerKit !== undefined) {
+    gbLinkUpdates.feePerKit = patchFeePerKit != null && patchFeePerKit !== ""
+      ? String(parseFloat(String(patchFeePerKit)).toFixed(2))
+      : null;
   }
   if (Object.keys(gbLinkUpdates).length > 0) {
     await db
@@ -1243,7 +1252,7 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
 
   writeLog("change", "info", "organiser_product_updated",
     `Organiser @${username} updated product ${productId} in GB ${id}`,
-    { gbId: id, productId, username, changedFields: [...Object.keys(productUpdates), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : [])] },
+    { gbId: id, productId, username, changedFields: [...Object.keys(productUpdates), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : []), ...(patchFeePerKit !== undefined ? ["feePerKit"] : [])] },
   ).catch(() => {});
 
   res.json({ ok: true });

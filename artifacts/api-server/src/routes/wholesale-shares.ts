@@ -434,6 +434,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       // Flat per-person organiser fee — applies to public orders, set alongside the
       // rest of the order rules.
       organiserFlatFee: share.organiserFlatFee != null ? Number(share.organiserFlatFee) : null,
+      feePerKit: share.feePerKit != null ? Number(share.feePerKit) : null,
       lockDeadline: share.lockDeadline ? (share.lockDeadline as Date).toISOString() : null,
       allowedCountries: share.allowedCountries ?? null,
       canManage: share.status === "open" && isCreatorViewer,
@@ -1403,6 +1404,14 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
     flatFee = Number(Math.min(f, 100000).toFixed(2));
   }
 
+  // Per-kit fee — applied to each member's order at lock time (kitCount × feePerKit).
+  let kitFeePerKit: number | null = null;
+  if (body.feePerKit != null && body.feePerKit !== "") {
+    const k = Number(body.feePerKit);
+    if (!Number.isFinite(k) || k < 0) { res.status(400).json({ error: "Fee per kit must be 0 or more (or blank)." }); return; }
+    kitFeePerKit = Number(Math.min(k, 100000).toFixed(2));
+  }
+
   const creatorLower = share.creatorUsername.toLowerCase();
 
   // Persist the rules, then (only when this order is public) re-resolve the flat fee
@@ -1427,6 +1436,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
           maxTotalKits: totalVal,
           maxPackages,
           organiserFlatFee: flatFee != null ? flatFee.toFixed(2) : null,
+          feePerKit: kitFeePerKit != null ? kitFeePerKit.toFixed(2) : null,
           lockDeadline: deadline,
           allowedCountries,
         })
@@ -1459,7 +1469,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
 
   await writeLog("order", "info", "wholesale_share_settings_updated",
     `Wholesale share ${share.id} rules updated by ${me}`,
-    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, maxPackages, organiserFlatFee: flatFee, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, maxPackages, organiserFlatFee: flatFee, feePerKit: kitFeePerKit, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -1780,7 +1790,12 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
         const shippingShare = shares[i] ?? 0;
         const tip = Number(m.tip ?? 0);
         const subtotal = memberSubtotal(items);
-        const grandTotal = Number((subtotal + shippingShare + tip).toFixed(2));
+        const memberKitCount = memberKits(items);
+        const shareKitFeePerKit = share.feePerKit != null ? Number(share.feePerKit) : 0;
+        const kitFeesAmount = shareKitFeePerKit > 0
+          ? Number((memberKitCount * shareKitFeePerKit).toFixed(2))
+          : 0;
+        const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount).toFixed(2));
         const orderId = randomUUID();
         const code = String(codeBase + i);
         const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
@@ -1794,6 +1809,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
           vendorShipping: shippingShare.toFixed(2),
           productSubtotal: subtotal.toFixed(2),
           tip: tip.toFixed(2),
+          kitFees: kitFeesAmount.toFixed(2),
           grandTotal: grandTotal.toFixed(2),
           status: "Submitted",
           paymentStatus: "unpaid",

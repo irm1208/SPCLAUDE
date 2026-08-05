@@ -56,6 +56,9 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // fee shown on the public card and applied to each member who joins.
   isPublic: boolean("is_public").notNull().default(false),
   organiserFlatFee: numeric("organiser_flat_fee", { precision: 10, scale: 2 }),
+  // Optional per-kit fee set by the organiser — added to each member's order total
+  // at lock time (total = quantity × feePerKit, snapshotted as kit_fees on the order).
+  feePerKit: numeric("fee_per_kit", { precision: 10, scale: 2 }),
   vendorId: text("vendor_id"), // snapshot of the active wholesale vendor at creation time
   // Chosen delivery member + their address snapshot (whole parcel ships here)
   deliveryUsername: text("delivery_username"),

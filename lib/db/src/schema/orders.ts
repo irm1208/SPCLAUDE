@@ -85,6 +85,7 @@ export const ordersTable = pgTable("orders", {
   couponDiscount: numeric("coupon_discount", { precision: 10, scale: 2 }).notNull().default("0"),
   adminFee: numeric("admin_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   adminFeeLabel: text("admin_fee_label"),
+  kitFees: numeric("kit_fees", { precision: 10, scale: 2 }).notNull().default("0"),
   creditsApplied: integer("credits_applied").notNull().default(0),
   directShippingRequested: boolean("direct_shipping_requested").notNull().default(false), // customer requested direct home address delivery
   directShippingCost: numeric("direct_shipping_cost", { precision: 10, scale: 2 }), // calculated wholesale shipping cost for direct home delivery

@@ -171,8 +171,8 @@ export default function WholesaleShared() {
   // while the organiser has unsaved edits (so polling can't clobber typing).
   const [settingsForm, setSettingsForm] = useState({
     maxMembers: "", minKitsPerMember: "1", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
-    // Max packages + flat per-person organiser fee live with the rest of the rules.
-    maxPackages: "", organiserFlatFee: "",
+    // Max packages + flat per-person organiser fee + per-kit fee live with the rest of the rules.
+    maxPackages: "", organiserFlatFee: "", feePerKit: "",
   });
   const [allowedCountriesList, setAllowedCountriesList] = useState<string[]>([]);
   const [countryToAdd, setCountryToAdd] = useState("");
@@ -383,6 +383,7 @@ export default function WholesaleShared() {
       lockDeadline: s.lockDeadline ? toDatetimeLocal(s.lockDeadline) : "",
       maxPackages: s.maxPackages != null ? String(s.maxPackages) : "",
       organiserFlatFee: s.organiserFlatFee != null ? String(s.organiserFlatFee) : "",
+      feePerKit: s.feePerKit != null ? String(s.feePerKit) : "",
     });
     setAllowedCountriesList(s.allowedCountries ?? []);
     settingsSeeded.current = true;
@@ -815,6 +816,7 @@ export default function WholesaleShared() {
         allowedCountries: allowedCountriesList.length > 0 ? allowedCountriesList : null,
         maxPackages: settingsForm.maxPackages.trim() === "" ? null : Number(settingsForm.maxPackages),
         organiserFlatFee: settingsForm.organiserFlatFee.trim() === "" ? null : Number(settingsForm.organiserFlatFee),
+        feePerKit: settingsForm.feePerKit.trim() === "" ? null : Number(settingsForm.feePerKit),
       });
       setSettingsDirty(false);
       // Don't reset settingsSeeded here. The form already holds exactly what we just
@@ -1904,6 +1906,15 @@ export default function WholesaleShared() {
           <p className="text-[11px] -mt-2" style={{ color: "var(--t-muted)" }}>
             Max packages and the flat organiser fee apply when this order is public. The fee is charged to each person who joins (paid to you directly) — leave it blank for none.
           </p>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Fee per kit ($/kit)</label>
+            <input type="number" min="0" step="0.01" value={settingsForm.feePerKit}
+              onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, feePerKit: e.target.value })); }}
+              placeholder="None" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            <p className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>
+              Added to each member's order total at lock — calculated as their total kit count × this fee. Leave blank for none.
+            </p>
+          </div>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Auto-lock deadline</label>
             <input type="datetime-local" value={settingsForm.lockDeadline}
