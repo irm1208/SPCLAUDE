@@ -753,9 +753,10 @@ router.patch("/vial/seller/shop-config", async (req, res): Promise<void> => {
   const { membersOnly } = req.body;
   if (typeof membersOnly !== "boolean") { res.status(400).json({ error: "membersOnly (boolean) is required" }); return; }
   const value = membersOnly ? "true" : "false";
+  const now = new Date();
   await db.insert(siteConfigTable)
-    .values({ key: "shop_members_only", value, updatedAt: new Date().toISOString() })
-    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value, updatedAt: new Date().toISOString() } });
+    .values({ key: "shop_members_only", value, updatedAt: now })
+    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value, updatedAt: now } });
   res.json({ membersOnly });
 });
 
