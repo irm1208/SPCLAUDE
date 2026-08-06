@@ -1140,6 +1140,8 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
     tagline: "", description: "", country: "", shipsTo: "",
     walletAddress: "", revolutLink: "", paypalLink: "",
   });
+  const [membersOnly, setMembersOnly] = useState(false);
+  const [togglingMO, setTogglingMO] = useState(false);
 
   useEffect(() => {
     fetch("/api/vial/seller/profile", { headers: sellerHeaders(session) })
@@ -1158,7 +1160,24 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+    fetch("/api/vial/seller/shop-config", { headers: sellerHeaders(session) })
+      .then(r => r.json())
+      .then(d => { if (typeof d.membersOnly === "boolean") setMembersOnly(d.membersOnly); })
+      .catch(() => {});
   }, [session]);
+
+  const toggleMembersOnly = async () => {
+    setTogglingMO(true);
+    try {
+      const next = !membersOnly;
+      const res = await fetch("/api/vial/seller/shop-config", {
+        method: "PATCH",
+        headers: sellerHeaders(session),
+        body: JSON.stringify({ membersOnly: next }),
+      });
+      if (res.ok) setMembersOnly(next);
+    } finally { setTogglingMO(false); }
+  };
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -1257,6 +1276,30 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
         <div>
           <label className="text-[11px] font-bold block mb-1" style={{ color: "var(--t-subtle)" }}>PayPal Payment Link</label>
           <input value={form.paypalLink} onChange={e => set("paypalLink", e.target.value)} placeholder="https://paypal.me/…" type="url" className="w-full h-10 px-3 rounded-xl text-sm focus:outline-none" style={inputStyle} />
+        </div>
+      </div>
+
+      <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Shop Settings</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Members only</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+              When on, guests see a login prompt instead of the product listing.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleMembersOnly}
+            disabled={togglingMO}
+            className="shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-50"
+            style={{ background: membersOnly ? "var(--t-blue)" : "var(--t-border)" }}
+          >
+            {togglingMO
+              ? <Loader2 className="absolute inset-0 m-auto w-3.5 h-3.5 animate-spin text-white" />
+              : <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${membersOnly ? "translate-x-5" : ""}`} />
+            }
+          </button>
         </div>
       </div>
 

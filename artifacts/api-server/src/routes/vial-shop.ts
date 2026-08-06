@@ -740,6 +740,25 @@ router.get("/vial/seller/profile", async (req, res): Promise<void> => {
   res.json(fmtVendor(vendor, 0));
 });
 
+router.get("/vial/seller/shop-config", async (req, res): Promise<void> => {
+  const vendor = await requireSeller(req, res);
+  if (!vendor) return;
+  const membersOnly = (await getConfig("shop_members_only")) === "true";
+  res.json({ membersOnly });
+});
+
+router.patch("/vial/seller/shop-config", async (req, res): Promise<void> => {
+  const vendor = await requireSeller(req, res);
+  if (!vendor) return;
+  const { membersOnly } = req.body;
+  if (typeof membersOnly !== "boolean") { res.status(400).json({ error: "membersOnly (boolean) is required" }); return; }
+  const value = membersOnly ? "true" : "false";
+  await db.insert(siteConfigTable)
+    .values({ key: "shop_members_only", value, updatedAt: new Date().toISOString() })
+    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value, updatedAt: new Date().toISOString() } });
+  res.json({ membersOnly });
+});
+
 router.put("/vial/seller/profile", async (req, res): Promise<void> => {
   const vendor = await requireSeller(req, res);
   if (!vendor) return;
