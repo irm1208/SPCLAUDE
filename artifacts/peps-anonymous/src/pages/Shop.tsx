@@ -5,7 +5,7 @@ import {
   FlaskConical, ShoppingCart, X, Plus, Minus, Trash2,
   ExternalLink, ChevronRight, AlertTriangle, Loader2,
   ChevronDown, Package, Zap, Shield, Check, ArrowLeft,
-  Globe, Store, Send, FileText, Tag, CreditCard, Star,
+  Globe, Store, Send, FileText, Tag, CreditCard, Star, Lock,
 } from "lucide-react";
 import { useVialCart } from "@/hooks/use-vial-cart";
 import { useCurrency } from "@/hooks/use-currency";
@@ -510,6 +510,7 @@ export default function Shop() {
   const [products, setProducts] = useState<VialProduct[]>([]);
   const [vendors, setVendors] = useState<VendorTab[]>([]);
   const [loading, setLoading] = useState(true);
+  const [membersOnly, setMembersOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedPeptide, setSelectedPeptide] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -527,12 +528,15 @@ export default function Shop() {
 
   useEffect(() => {
     fetch("/api/vial/products")
-      .then(r => r.json())
-      .then(data => { setProducts(Array.isArray(data) ? data : []); setLoading(false); })
+      .then(r => {
+        if (r.status === 401) { setMembersOnly(true); setLoading(false); return null; }
+        return r.json();
+      })
+      .then(data => { if (data) { setProducts(Array.isArray(data) ? data : []); setLoading(false); } })
       .catch(() => setLoading(false));
     fetch("/api/vial/vendors")
-      .then(r => r.json())
-      .then(data => { setVendors(Array.isArray(data) ? data.filter((v: any) => v.active !== false).map((v: any) => ({ id: v.id, name: v.name, logoUrl: v.logoUrl ?? null })) : []); })
+      .then(r => { if (r.status === 401) return null; return r.json(); })
+      .then(data => { if (data) setVendors(Array.isArray(data) ? data.filter((v: any) => v.active !== false).map((v: any) => ({ id: v.id, name: v.name, logoUrl: v.logoUrl ?? null })) : []); })
       .catch(() => {});
   }, []);
 
@@ -581,6 +585,29 @@ export default function Shop() {
   }, [addItem, clearCart, setLocation]);
 
   const inStockCount = products.filter(p => p.stock > 0).length;
+
+  if (membersOnly) {
+    return (
+      <PageLayout>
+        <div className="flex flex-col items-center justify-center px-6 py-20 text-center" style={{ background: T.bg, minHeight: "100%" }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5" style={{ background: "rgba(27,58,122,0.08)" }}>
+            <Lock className="w-7 h-7" style={{ color: "#1B3A7A" }} />
+          </div>
+          <h2 className="text-xl font-bold mb-2" style={{ color: T.text }}>Members only</h2>
+          <p className="text-sm mb-6 max-w-xs" style={{ color: T.subtle }}>
+            The Lonely Vial shop is only available to registered members. Log in or create an account to browse products.
+          </p>
+          <button
+            onClick={() => setLocation("/account")}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{ background: "#1B3A7A" }}
+          >
+            Log in / Sign up
+          </button>
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout>

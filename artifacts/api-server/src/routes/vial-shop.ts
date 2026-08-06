@@ -3,6 +3,8 @@ import { createAlert } from "../lib/create-alert";
 import { sendTelegramMessage } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { randomUUID, createHash, timingSafeEqual, randomInt } from "crypto";
+import jwt from "jsonwebtoken";
+import { getJwtSecret } from "../middleware/account-auth";
 import { db } from "@workspace/db";
 import {
   vialProductsTable, vialDiscountCodesTable,
@@ -62,6 +64,17 @@ async function requireSeller(req: any, res: any): Promise<any | null> {
 async function getConfig(key: string): Promise<string | null> {
   const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
   return row?.value ?? null;
+}
+
+/** Returns true if the request is allowed through. Returns false and sends a 401 if
+ *  shop_members_only is enabled and the caller is not logged in. */
+async function checkShopAccess(req: any, res: any): Promise<boolean> {
+  const flag = await getConfig("shop_members_only");
+  if (flag !== "true") return true;
+  const token = req.cookies?.account_session as string | undefined;
+  if (!token) { res.status(401).json({ error: "members_only" }); return false; }
+  try { jwt.verify(token, getJwtSecret()); return true; }
+  catch { res.status(401).json({ error: "members_only" }); return false; }
 }
 
 function genOrderCode(): string {
@@ -157,7 +170,8 @@ function fmtOrder(o: any, items: any[] = [], { revealWallet = true } = {}, vendo
 // PUBLIC ROUTES
 // ══════════════════════════════════════════════════════════════
 
-router.get("/vial/vendors", async (_req, res): Promise<void> => {
+router.get("/vial/vendors", async (req, res): Promise<void> => {
+  if (!await checkShopAccess(req, res)) return;
   const vendors = await db.select().from(vialVendorsTable)
     .where(eq(vialVendorsTable.active, true))
     .orderBy(vialVendorsTable.sortOrder, vialVendorsTable.createdAt);
@@ -165,7 +179,8 @@ router.get("/vial/vendors", async (_req, res): Promise<void> => {
   res.json(vendors.map(v => fmtVendor(v, products.filter(p => p.vendorId === v.id).length)));
 });
 
-router.get("/vial/products", async (_req, res): Promise<void> => {
+router.get("/vial/products", async (req, res): Promise<void> => {
+  if (!await checkShopAccess(req, res)) return;
   const products = await db
     .select().from(vialProductsTable)
     .where(eq(vialProductsTable.active, true))
@@ -179,6 +194,7 @@ router.get("/vial/products", async (_req, res): Promise<void> => {
 });
 
 router.get("/vial/products/:id", async (req, res): Promise<void> => {
+  if (!await checkShopAccess(req, res)) return;
   const [p] = await db.select().from(vialProductsTable).where(eq(vialProductsTable.id, req.params.id));
   if (!p || !p.active) { res.status(404).json({ error: "Product not found" }); return; }
   const vendor = p.vendorId ? (await db.select().from(vialVendorsTable).where(eq(vialVendorsTable.id, p.vendorId)))[0] : undefined;

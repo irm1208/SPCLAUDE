@@ -52,6 +52,7 @@ export const SITE_CONFIG_REGISTRY: ConfigKeyDescriptor[] = [
 
   // ── Access ───────────────────────────────────────────────────
   { key: "signup_requires_invite", type: "boolean", group: "Access", label: "Invite required", description: "New signups must provide a valid invite code.", defaultValue: "false", publicallyExposed: true },
+  { key: "shop_members_only", type: "boolean", group: "Access", label: "Shop — members only", description: "When enabled, the Lonely Vial product listing is only visible to logged-in users. Guests see a login prompt instead.", defaultValue: "false", publicallyExposed: false },
   { key: "discuss_limit", type: "number", group: "Access", label: "Discuss limit", description: "Per-user rate limit for discussion posts.", defaultValue: "50" },
 
   // ── Integrations ─────────────────────────────────────────────
