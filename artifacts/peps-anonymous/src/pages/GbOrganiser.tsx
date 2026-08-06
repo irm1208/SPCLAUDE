@@ -4983,8 +4983,8 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
                 <Field label="Fee label" hint="Optional — shown to customers on their order">
                   <input value={form.adminFeeLabel} onChange={e => set("adminFeeLabel", e.target.value)} type="text" placeholder="e.g. Platform fee, Admin fee" className={inputCls} style={inputStyle} />
                 </Field>
-                {form.adminFeeAmount.trim() && parseFloat(form.adminFeeAmount) > 0 && (
-                  <BackfillAdminFeeButton gbId={gb!.id} />
+                {!isNew && gb?.id && form.adminFeeAmount.trim() && parseFloat(form.adminFeeAmount) > 0 && (
+                  <BackfillAdminFeeButton gbId={gb.id} />
                 )}
               </div>
             ) : (
