@@ -19,6 +19,7 @@ export const productsTable = pgTable("products", {
   unitCount: text("unit_count"),
   wholesaleEnabled: boolean("wholesale_enabled").notNull().default(true),
   wholesalePrice: numeric("wholesale_price", { precision: 10, scale: 2 }),
+  isNew: boolean("is_new").notNull().default(false),
   halfKitEnabled: boolean("half_kit_enabled").notNull().default(true),
   stock: integer("stock"),
   lowStockThreshold: integer("low_stock_threshold"),

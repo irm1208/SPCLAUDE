@@ -15710,6 +15710,7 @@ interface WholesaleProductRow {
   mgSize: string | null;
   active: boolean;
   wholesaleEnabled: boolean;
+  isNew: boolean;
   sortOrder: number | null;
   price: number;
   wholesalePrice: number | null;
@@ -15724,6 +15725,8 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
+  const dragId = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
@@ -15789,6 +15792,55 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
     setSavingPrice(null);
   };
 
+  const toggleNew = async (id: string, isNew: boolean) => {
+    setSaving(id + "_new");
+    try {
+      await fetch(apiUrl(`/admin/wholesale-products/${id}`), {
+        method: "PATCH", headers, credentials: "omit",
+        body: JSON.stringify({ isNew }),
+      });
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, isNew } : p));
+    } catch { flash(false, "Failed to update"); }
+    setSaving(null);
+  };
+
+  const handleDragStart = (id: string) => { dragId.current = id; };
+  const handleDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); setDragOverId(id); };
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const srcId = dragId.current;
+    if (!srcId || srcId === targetId) return;
+    dragId.current = null;
+
+    const list = products.filter(p =>
+      (vendorFilter === "all" || p.vendor === vendorFilter) &&
+      (!search || p.name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.category ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        p.vendor.toLowerCase().includes(search.toLowerCase()))
+    );
+    const oldIdx = list.findIndex(p => p.id === srcId);
+    const newIdx = list.findIndex(p => p.id === targetId);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const reordered = [...list];
+    const [item] = reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, item);
+
+    const updates = reordered.map((p, i) => ({ id: p.id, sortOrder: i }));
+    const updatedMap = new Map(updates.map(u => [u.id, u.sortOrder]));
+    setProducts(prev => prev
+      .map(p => updatedMap.has(p.id) ? { ...p, sortOrder: updatedMap.get(p.id)! } : p)
+      .sort((a, b) => { const sa = a.sortOrder ?? 9999, sb = b.sortOrder ?? 9999; return sa !== sb ? sa - sb : a.name.localeCompare(b.name); }));
+
+    await Promise.all(updates.map(u =>
+      fetch(apiUrl(`/admin/wholesale-products/${u.id}`), {
+        method: "PATCH", headers, credentials: "omit",
+        body: JSON.stringify({ sortOrder: u.sortOrder }),
+      })
+    ));
+    flash(true, "Order saved ✓");
+  };
+
   const vendors = [...new Set(products.map(p => p.vendor).filter(Boolean))].sort();
   const filtered = products.filter(p => {
     if (vendorFilter !== "all" && p.vendor !== vendorFilter) return false;
@@ -15798,6 +15850,7 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
       p.vendor.toLowerCase().includes(search.toLowerCase());
   });
   const enabledCount = products.filter(p => p.wholesaleEnabled).length;
+  const newCount = products.filter(p => p.isNew).length;
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
@@ -15806,8 +15859,13 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-slate-800">Wholesale Products</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Choose which products appear on the wholesale order page
-            {!loading && <span className="ml-1 font-semibold text-slate-500">· {enabledCount}/{products.length} enabled</span>}
+            Drag to reorder · toggle visibility · mark as new
+            {!loading && (
+              <span className="ml-1 font-semibold text-slate-500">
+                · {enabledCount}/{products.length} enabled
+                {newCount > 0 && <span className="ml-1 text-emerald-500">· {newCount} new</span>}
+              </span>
+            )}
           </p>
         </div>
         {msg && (
@@ -15858,95 +15916,117 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
             </button>
           </div>
 
-          {/* Product list grouped by category */}
-          <div className="max-h-96 overflow-y-auto space-y-3 pr-1">
-            {(() => {
-              const groups: Record<string, WholesaleProductRow[]> = {};
-              filtered.forEach(p => {
-                const cat = p.category ?? "Other";
-                if (!groups[cat]) groups[cat] = [];
-                groups[cat].push(p);
-              });
-              return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([cat, items]) => (
-                <div key={cat}>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 px-1">{cat}</p>
-                  <div className="rounded-xl overflow-hidden border border-slate-100">
-                    {items.map((p, i) => (
-                      <div
-                        key={p.id}
-                        className="flex flex-col gap-2 px-3 py-2.5"
-                        style={{ background: i % 2 === 0 ? "#FAFAFA" : "white", borderTop: i === 0 ? undefined : "1px solid #F1F5F9" }}
+          {/* Flat draggable product list */}
+          <div className="max-h-[480px] overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
+            {filtered.map((p, i) => (
+              <div
+                key={p.id}
+                draggable
+                onDragStart={() => handleDragStart(p.id)}
+                onDragOver={e => handleDragOver(e, p.id)}
+                onDrop={e => handleDrop(e, p.id)}
+                onDragLeave={() => setDragOverId(null)}
+                className="flex flex-col gap-2 px-3 py-2.5 transition-colors"
+                style={{
+                  background: dragOverId === p.id ? "rgba(251,146,60,0.08)" : i % 2 === 0 ? "#FAFAFA" : "white",
+                  outline: dragOverId === p.id ? "2px solid #FB923C" : undefined,
+                  outlineOffset: "-2px",
+                  cursor: "grab",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  {/* Drag handle */}
+                  <GripVertical className="w-3.5 h-3.5 text-slate-300 shrink-0 cursor-grab" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium text-slate-700 truncate">{p.name}</p>
+                      {p.category && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-400 shrink-0">{p.category}</span>
+                      )}
+                    </div>
+                    {p.mgSize && <p className="text-[11px] text-slate-400">{p.mgSize}</p>}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* "New" toggle */}
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleNew(p.id, !p.isNew); }}
+                      disabled={saving === p.id + "_new"}
+                      title={p.isNew ? "Remove 'New' badge" : "Mark as new"}
+                      className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-all border"
+                      style={{
+                        background: p.isNew ? "rgba(16,185,129,0.1)" : "transparent",
+                        color: p.isNew ? "#059669" : "#CBD5E1",
+                        borderColor: p.isNew ? "rgba(16,185,129,0.3)" : "#E2E8F0",
+                      }}
+                    >
+                      ★ New
+                    </button>
+                    {/* Wholesale enable toggle */}
+                    {saving === p.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                    ) : (
+                      <button
+                        onClick={e => { e.stopPropagation(); toggle(p.id, !p.wholesaleEnabled); }}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors"
+                        style={{
+                          background: p.wholesaleEnabled ? "rgba(34,197,94,0.1)" : "rgba(148,163,184,0.12)",
+                          color: p.wholesaleEnabled ? "#16A34A" : "#94A3B8",
+                        }}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-700 truncate">{p.name}</p>
-                            {p.mgSize && <p className="text-[11px] text-slate-400">{p.mgSize}</p>}
-                          </div>
-                          {saving === p.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />
-                          ) : (
-                            <button
-                              onClick={() => toggle(p.id, !p.wholesaleEnabled)}
-                              className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors"
-                              style={{
-                                background: p.wholesaleEnabled ? "rgba(34,197,94,0.1)" : "rgba(148,163,184,0.12)",
-                                color: p.wholesaleEnabled ? "#16A34A" : "#94A3B8",
-                              }}
-                            >
-                              {p.wholesaleEnabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                              {p.wholesaleEnabled ? "On" : "Off"}
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-400 shrink-0">Retail: ${p.price.toFixed(2)}</span>
-                          <span className="text-[11px] text-slate-300">|</span>
-                          <span className="text-[11px] text-slate-400 shrink-0">Wholesale:</span>
-                          <div className="relative flex-1 max-w-[110px]">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">$</span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              placeholder={p.price.toFixed(2)}
-                              value={p.id in priceEdits ? priceEdits[p.id] : (p.wholesalePrice != null ? p.wholesalePrice.toFixed(2) : "")}
-                              onChange={e => setPriceEdits(prev => ({ ...prev, [p.id]: e.target.value }))}
-                              className="w-full h-6 pl-5 pr-2 rounded border text-[11px] outline-none focus:ring-1 focus:ring-orange-400"
-                              style={{ borderColor: "#E2E8F0", background: "white" }}
-                            />
-                          </div>
-                          {(p.id in priceEdits) && (
-                            savingPrice === p.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 shrink-0" />
-                            ) : (
-                              <button
-                                onClick={() => savePrice(p.id)}
-                                className="text-[11px] font-semibold px-2 py-0.5 rounded bg-orange-500 text-white shrink-0"
-                              >
-                                Save
-                              </button>
-                            )
-                          )}
-                          {p.wholesalePrice != null && !(p.id in priceEdits) && (
-                            <button
-                              onClick={() => setPriceEdits(prev => ({ ...prev, [p.id]: "" }))}
-                              className="text-[10px] text-slate-400 hover:text-red-400 shrink-0"
-                              title="Clear wholesale price"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                        {p.wholesaleEnabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                        {p.wholesaleEnabled ? "On" : "Off"}
+                      </button>
+                    )}
                   </div>
                 </div>
-              ));
-            })()}
+                {/* Price row */}
+                <div className="flex items-center gap-2 pl-5">
+                  <span className="text-[11px] text-slate-400 shrink-0">Retail: ${p.price.toFixed(2)}</span>
+                  <span className="text-[11px] text-slate-300">|</span>
+                  <span className="text-[11px] text-slate-400 shrink-0">Wholesale:</span>
+                  <div className="relative flex-1 max-w-[110px]">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">$</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder={p.price.toFixed(2)}
+                      value={p.id in priceEdits ? priceEdits[p.id] : (p.wholesalePrice != null ? p.wholesalePrice.toFixed(2) : "")}
+                      onChange={e => setPriceEdits(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      onMouseDown={e => e.stopPropagation()}
+                      className="w-full h-6 pl-5 pr-2 rounded border text-[11px] outline-none focus:ring-1 focus:ring-orange-400"
+                      style={{ borderColor: "#E2E8F0", background: "white", cursor: "text" }}
+                    />
+                  </div>
+                  {(p.id in priceEdits) && (
+                    savingPrice === p.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 shrink-0" />
+                    ) : (
+                      <button
+                        onClick={e => { e.stopPropagation(); savePrice(p.id); }}
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded bg-orange-500 text-white shrink-0"
+                      >
+                        Save
+                      </button>
+                    )
+                  )}
+                  {p.wholesalePrice != null && !(p.id in priceEdits) && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setPriceEdits(prev => ({ ...prev, [p.id]: "" })); }}
+                      className="text-[10px] text-slate-400 hover:text-red-400 shrink-0"
+                      title="Clear wholesale price"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
             {filtered.length === 0 && (
               <p className="text-xs text-slate-400 text-center py-6">No products match your search</p>
             )}
           </div>
+          <p className="text-[10px] text-slate-300 text-center">Drag rows to reorder — order is reflected on the wholesale page</p>
         </div>
       )}
     </div>

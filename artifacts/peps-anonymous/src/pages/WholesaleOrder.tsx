@@ -38,6 +38,7 @@ interface ProductWithMeta {
   mgSize?: string | null;
   active?: boolean;
   wholesaleEnabled?: boolean;
+  isNew?: boolean;
   stock?: number | null;
   lowStockThreshold?: number | null;
 }
@@ -1079,9 +1080,19 @@ export default function WholesaleOrder() {
                               }}
                             >
                               <div className="min-w-0 pr-2 sm:pr-3 space-y-1.5">
-                                <p className="text-sm font-semibold break-words" style={{ color: "var(--t-text)" }}>
-                                  {product.name}
-                                </p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-semibold break-words" style={{ color: "var(--t-text)" }}>
+                                    {product.name}
+                                  </p>
+                                  {product.isNew && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0"
+                                      style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}
+                                    >
+                                      ★ New
+                                    </span>
+                                  )}
+                                </div>
                                 {/* Stock bar */}
                                 {hasStockInfo && (
                                   <div className="space-y-0.5 max-w-[160px]">

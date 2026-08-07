@@ -62,6 +62,7 @@ router.get("/wholesale/products", async (_req, res): Promise<void> => {
       vendor: p.vendor ?? null,
       mgSize: p.mgSize ?? null,
       wholesaleEnabled: p.wholesaleEnabled,
+      isNew: p.isNew,
       stock: p.stock ?? null,
       lowStockThreshold: p.lowStockThreshold ?? null,
     }))
@@ -80,6 +81,7 @@ router.get("/admin/wholesale-products", async (req, res): Promise<void> => {
       mgSize: productsTable.mgSize,
       active: productsTable.active,
       wholesaleEnabled: productsTable.wholesaleEnabled,
+      isNew: productsTable.isNew,
       sortOrder: productsTable.sortOrder,
       price: productsTable.price,
       wholesalePrice: productsTable.wholesalePrice,
@@ -92,6 +94,7 @@ router.get("/admin/wholesale-products", async (req, res): Promise<void> => {
     ...p,
     price: parseFloat(p.price),
     wholesalePrice: p.wholesalePrice != null ? parseFloat(p.wholesalePrice) : null,
+    isNew: p.isNew,
   })));
 });
 
@@ -110,17 +113,19 @@ router.patch("/admin/wholesale-products/bulk", async (req, res): Promise<void> =
   res.json({ ok: true });
 });
 
-// PATCH /api/admin/wholesale-products/:id - toggle wholesaleEnabled and/or set wholesalePrice
+// PATCH /api/admin/wholesale-products/:id - update wholesaleEnabled, wholesalePrice, isNew, sortOrder
 router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const { id } = req.params;
-  const body = req.body as { wholesaleEnabled?: boolean; wholesalePrice?: number | null };
+  const body = req.body as { wholesaleEnabled?: boolean; wholesalePrice?: number | null; isNew?: boolean; sortOrder?: number };
 
   const updates: Partial<typeof productsTable.$inferInsert> = {};
   if (typeof body.wholesaleEnabled === "boolean") updates.wholesaleEnabled = body.wholesaleEnabled;
   if ("wholesalePrice" in body) {
     updates.wholesalePrice = body.wholesalePrice != null ? String(body.wholesalePrice) : null;
   }
+  if (typeof body.isNew === "boolean") updates.isNew = body.isNew;
+  if (typeof body.sortOrder === "number") updates.sortOrder = body.sortOrder;
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No valid fields to update" });
     return;
@@ -133,6 +138,8 @@ router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> =>
       id: productsTable.id,
       wholesaleEnabled: productsTable.wholesaleEnabled,
       wholesalePrice: productsTable.wholesalePrice,
+      isNew: productsTable.isNew,
+      sortOrder: productsTable.sortOrder,
     });
   if (!updated) {
     res.status(404).json({ error: "Product not found" });
