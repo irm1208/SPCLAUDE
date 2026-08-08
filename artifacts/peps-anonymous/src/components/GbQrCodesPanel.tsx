@@ -278,8 +278,11 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         : `/api/admin/group-buys/${gbId}/all-orders-qr`;
       const res = await fetch(url, fetchOptions);
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setError((j as { error?: string }).error ?? "Failed to load orders.");
+        const rawText = await res.text().catch(() => "");
+        console.error(`[GbQrCodesPanel] ${url} → ${res.status}`, rawText.slice(0, 500));
+        let j: { error?: string } = {};
+        try { j = JSON.parse(rawText); } catch { /* not json */ }
+        setError(j.error ?? `Server error ${res.status}: ${rawText.slice(0, 200) || "no body"}`);
         return;
       }
       setData(await res.json());

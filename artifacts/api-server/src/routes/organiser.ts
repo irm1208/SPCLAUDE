@@ -1399,32 +1399,32 @@ router.get("/organiser/group-buys/:id/all-orders-qr", requireAccount, async (req
   const username = req.account!.telegramUsername;
   const id = String(req.params["id"]);
 
-  // Admin bypass via organiser session token
-  const adminToken = req.headers["x-admin-organiser-token"];
-  let isAdminSession = false;
-  if (adminToken && typeof adminToken === "string") {
-    const session = validateAdminOrganiserSession(adminToken);
-    if (session) isAdminSession = true;
-  }
-
-  const [gb] = await db
-    .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, qrViewerUsernames: groupBuysTable.qrViewerUsernames })
-    .from(groupBuysTable)
-    .where(eq(groupBuysTable.id, id));
-
-  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
-
-  const isOwner = !!gb.organiserId && gb.organiserId.toLowerCase() === username.toLowerCase();
-  const isAdminAccount = username.toLowerCase() === (process.env["ADMIN_USERNAME"] ?? "").toLowerCase();
-  const normalizedUsername = username.toLowerCase().replace(/^@/, "");
-  const isQrViewer = (gb.qrViewerUsernames ?? []).some(u => u.toLowerCase().replace(/^@/, "") === normalizedUsername);
-
-  if (!isAdminSession && !isOwner && !isAdminAccount && !isQrViewer) {
-    res.status(403).json({ error: "Access denied. You are not authorised to view this group buy's QR codes." });
-    return;
-  }
-
   try {
+    // Admin bypass via organiser session token
+    const adminToken = req.headers["x-admin-organiser-token"];
+    let isAdminSession = false;
+    if (adminToken && typeof adminToken === "string") {
+      const session = validateAdminOrganiserSession(adminToken);
+      if (session) isAdminSession = true;
+    }
+
+    const [gb] = await db
+      .select({ id: groupBuysTable.id, name: groupBuysTable.name, organiserId: groupBuysTable.organiserId, qrViewerUsernames: groupBuysTable.qrViewerUsernames })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, id));
+
+    if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+    const isOwner = !!gb.organiserId && gb.organiserId.toLowerCase() === username.toLowerCase();
+    const isAdminAccount = username.toLowerCase() === (process.env["ADMIN_USERNAME"] ?? "").toLowerCase();
+    const normalizedUsername = username.toLowerCase().replace(/^@/, "");
+    const isQrViewer = (gb.qrViewerUsernames ?? []).some(u => u.toLowerCase().replace(/^@/, "") === normalizedUsername);
+
+    if (!isAdminSession && !isOwner && !isAdminAccount && !isQrViewer) {
+      res.status(403).json({ error: "Access denied. You are not authorised to view this group buy's QR codes." });
+      return;
+    }
+
     const orders = await db
       .select({
         id: ordersTable.id,
@@ -1443,8 +1443,9 @@ router.get("/organiser/group-buys/:id/all-orders-qr", requireAccount, async (req
 
     res.json({ gbName: gb.name, orders });
   } catch (err) {
-    console.error("[all-orders-qr] Query failed:", err);
-    res.status(500).json({ error: "Failed to load orders. The server may still be initialising — please try again in a moment." });
+    console.error(`[all-orders-qr] GB=${id} user=${username} error:`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Failed to load orders: ${msg}` });
   }
 });
 

@@ -2174,14 +2174,14 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
   if (!requireAdmin(req, res)) return;
   const id = String(req.params["id"]);
 
-  const [gb] = await db
-    .select({ id: groupBuysTable.id, name: groupBuysTable.name })
-    .from(groupBuysTable)
-    .where(eq(groupBuysTable.id, id));
-
-  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
-
   try {
+    const [gb] = await db
+      .select({ id: groupBuysTable.id, name: groupBuysTable.name })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, id));
+
+    if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
     const orders = await db
       .select({
         id: ordersTable.id,
@@ -2200,8 +2200,9 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
 
     res.json({ gbName: gb.name, orders });
   } catch (err) {
-    console.error("[admin/all-orders-qr] Query failed:", err);
-    res.status(500).json({ error: "Failed to load orders. The server may still be initialising — please try again in a moment." });
+    console.error(`[admin/all-orders-qr] GB=${id} error:`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Failed to load orders: ${msg}` });
   }
 });
 
