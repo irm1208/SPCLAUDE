@@ -5042,8 +5042,14 @@ function ProductsTab({ secret }: { secret: string }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } });
-    setProducts(await res.json());
+    try {
+      const res = await fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } });
+      const data = await res.json();
+      setProducts(Array.isArray(data) ? data : []);
+      if (!res.ok) setMsg((data as { error?: string }).error ?? "Failed to load products");
+    } catch {
+      setMsg("Network error loading products");
+    }
     setLoading(false);
   }, [secret]);
 

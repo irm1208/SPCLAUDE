@@ -962,6 +962,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS kit_fees numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
+    // weight_grams on products (shipping weight)
+    await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS weight_grams integer`);
     // wholesale_share_invite_links and wholesale_share_invite_uses are managed
     // by Drizzle migration 0018_wholesale_invite_links — not here.
     console.log("[startup:migrations] Schema sync complete");
