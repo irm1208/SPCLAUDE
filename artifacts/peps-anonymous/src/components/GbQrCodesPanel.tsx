@@ -204,11 +204,9 @@ function OrderCard({
           {hasRoyalMail && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full hidden sm:inline" style={{ background: "rgba(220,38,38,0.08)", color: "#B91C1C" }}>RM</span>
           )}
-          {extraQrs.map(([key]) => (
-            <span key={key} className="text-[10px] font-bold px-2 py-0.5 rounded-full hidden sm:inline" style={{ background: "rgba(27,58,122,0.1)", color: NAVY }}>
-              {labelForKey(key)}
-            </span>
-          ))}
+          {order.hasQrCodes && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full hidden sm:inline" style={{ background: "rgba(27,58,122,0.1)", color: NAVY }}>QR</span>
+          )}
 
           {order.qrPosted ? (
             <button
