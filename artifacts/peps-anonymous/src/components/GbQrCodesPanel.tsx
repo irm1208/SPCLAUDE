@@ -6,11 +6,17 @@ interface QrOrder {
   code: string;
   telegramUsername: string;
   deliveryMethod: string;
-  inpostQrCode: string | null;
-  royalMailQrCode: string | null;
-  qrCodes?: Record<string, string> | null;
+  hasInpostQr: boolean;
+  hasRoyalMailQr: boolean;
+  hasQrCodes: boolean;
   qrPosted: boolean;
   status: string;
+}
+
+interface LazyQrData {
+  inpostQrCode: string | null;
+  royalMailQrCode: string | null;
+  qrCodes: Record<string, string> | null;
 }
 
 interface PageData {
@@ -91,28 +97,61 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
   );
 }
 
-function getExtraQrCodes(order: QrOrder): [string, string][] {
-  if (!order.qrCodes) return [];
-  return Object.entries(order.qrCodes).filter(([key]) => key !== "inpost" && key !== "royal-mail");
+function getExtraQrCodes(qrCodes: Record<string, string> | null): [string, string][] {
+  if (!qrCodes) return [];
+  return Object.entries(qrCodes).filter(([key]) => key !== "inpost" && key !== "royal-mail");
 }
 
 function hasAnyQr(order: QrOrder): boolean {
-  return !!order.inpostQrCode || !!order.royalMailQrCode || getExtraQrCodes(order).length > 0;
+  return order.hasInpostQr || order.hasRoyalMailQr || order.hasQrCodes;
 }
 
 function OrderCard({
   order,
+  gbId,
+  mode,
+  fetchOptions,
   onTogglePosted,
 }: {
   order: QrOrder;
+  gbId: string;
+  mode: "organiser" | "admin";
+  fetchOptions: RequestInit;
   onTogglePosted: (orderId: string, posted: boolean) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const hasInpost = !!order.inpostQrCode;
-  const hasRoyalMail = !!order.royalMailQrCode;
-  const extraQrs = getExtraQrCodes(order);
-  const hasAny = hasInpost || hasRoyalMail || extraQrs.length > 0;
+  const [qrData, setQrData] = useState<LazyQrData | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+
+  const hasInpost = order.hasInpostQr;
+  const hasRoyalMail = order.hasRoyalMailQr;
+  const hasAny = order.hasInpostQr || order.hasRoyalMailQr || order.hasQrCodes;
+
+  async function loadQrData() {
+    if (qrData || qrLoading) return;
+    setQrLoading(true);
+    setQrError(null);
+    try {
+      const url = mode === "organiser"
+        ? `/api/organiser/group-buys/${gbId}/orders/${order.id}/qr-data`
+        : `/api/admin/group-buys/${gbId}/orders/${order.id}/qr-data`;
+      const res = await fetch(url, fetchOptions);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setQrData(await res.json());
+    } catch {
+      setQrError("Could not load QR images");
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  function handleExpand() {
+    const next = !open;
+    setOpen(next);
+    if (next && hasAny) loadQrData();
+  }
 
   async function handleTogglePosted(e: React.MouseEvent) {
     e.stopPropagation();
@@ -136,7 +175,7 @@ function OrderCard({
         <button
           type="button"
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
-          onClick={() => setOpen(o => !o)}
+          onClick={handleExpand}
         >
           <div
             className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -199,7 +238,7 @@ function OrderCard({
           {hasAny && (
             <button
               type="button"
-              onClick={() => setOpen(o => !o)}
+              onClick={handleExpand}
               className="w-7 h-7 rounded-lg flex items-center justify-center"
               style={{ background: "rgba(27,58,122,0.05)" }}
             >
@@ -213,15 +252,21 @@ function OrderCard({
         <div className="px-4 pb-4 border-t" style={{ borderColor: "rgba(27,58,122,0.1)" }}>
           <div className="flex flex-col items-center gap-4 pt-3">
             <p className="text-xs font-semibold" style={{ color: NAVY }}>@{stripAt(order.telegramUsername)} · {order.deliveryMethod}</p>
-            {hasInpost && order.inpostQrCode && (
-              <QrImage src={order.inpostQrCode} label="InPost" username={order.telegramUsername} />
+            {qrLoading && <Loader2 className="w-5 h-5 animate-spin" style={{ color: NAVY }} />}
+            {qrError && <p className="text-xs" style={{ color: "#DC2626" }}>{qrError}</p>}
+            {qrData && (
+              <>
+                {hasInpost && qrData.inpostQrCode && (
+                  <QrImage src={qrData.inpostQrCode} label="InPost" username={order.telegramUsername} />
+                )}
+                {hasRoyalMail && qrData.royalMailQrCode && (
+                  <QrImage src={qrData.royalMailQrCode} label="Royal Mail" username={order.telegramUsername} />
+                )}
+                {getExtraQrCodes(qrData.qrCodes).map(([key, src]) => (
+                  <QrImage key={key} src={src} label={labelForKey(key)} username={order.telegramUsername} />
+                ))}
+              </>
             )}
-            {hasRoyalMail && order.royalMailQrCode && (
-              <QrImage src={order.royalMailQrCode} label="Royal Mail" username={order.telegramUsername} />
-            )}
-            {extraQrs.map(([key, src]) => (
-              <QrImage key={key} src={src} label={labelForKey(key)} username={order.telegramUsername} />
-            ))}
           </div>
         </div>
       )}
@@ -460,7 +505,7 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
           {filteredNotPosted.length > 0 && (
             <div className="space-y-2">
               {filteredNotPosted.map(order => (
-                <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
+                <OrderCard key={order.id} order={order} gbId={gbId} mode={mode} fetchOptions={fetchOptions} onTogglePosted={handleTogglePosted} />
               ))}
             </div>
           )}
@@ -519,7 +564,7 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
           {filteredPosted.length > 0 && (
             <div className="space-y-2 pb-4">
               {filteredPosted.map(order => (
-                <OrderCard key={order.id} order={order} onTogglePosted={handleTogglePosted} />
+                <OrderCard key={order.id} order={order} gbId={gbId} mode={mode} fetchOptions={fetchOptions} onTogglePosted={handleTogglePosted} />
               ))}
             </div>
           )}

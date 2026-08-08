@@ -1425,7 +1425,7 @@ router.get("/organiser/group-buys/:id/all-orders-qr", requireAccount, async (req
       return;
     }
 
-    const orders = await db
+    const rawOrders = await db
       .select({
         id: ordersTable.id,
         code: ordersTable.code,
@@ -1441,11 +1441,74 @@ router.get("/organiser/group-buys/:id/all-orders-qr", requireAccount, async (req
       .where(and(eq(ordersTable.groupBuyId, id), isNull(ordersTable.deletedAt)))
       .orderBy(ordersTable.telegramUsername);
 
+    // Strip large base64 image fields — return boolean flags only to keep response small
+    const orders = rawOrders.map(o => ({
+      id: o.id,
+      code: o.code,
+      telegramUsername: o.telegramUsername,
+      deliveryMethod: o.deliveryMethod,
+      hasInpostQr: o.inpostQrCode !== null,
+      hasRoyalMailQr: o.royalMailQrCode !== null,
+      hasQrCodes: o.qrCodes !== null && Object.keys(o.qrCodes as Record<string, string>).length > 0,
+      qrPosted: o.qrPosted,
+      status: o.status,
+    }));
+
     res.json({ gbName: gb.name, orders });
   } catch (err) {
     console.error(`[all-orders-qr] GB=${id} user=${username} error:`, err);
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: `Failed to load orders: ${msg}` });
+  }
+});
+
+// GET /api/organiser/group-buys/:gbId/orders/:orderId/qr-data
+// Returns the actual QR image data for a single order (lazy-loaded by the panel on expand).
+// Access: same as all-orders-qr (GB organiser, admin, or listed QR viewer).
+router.get("/organiser/group-buys/:gbId/orders/:orderId/qr-data", requireAccount, async (req, res): Promise<void> => {
+  const username = req.account!.telegramUsername;
+  const gbId = String(req.params["gbId"]);
+  const orderId = String(req.params["orderId"]);
+
+  try {
+    const adminToken = req.headers["x-admin-organiser-token"];
+    let isAdminSession = false;
+    if (adminToken && typeof adminToken === "string") {
+      const session = validateAdminOrganiserSession(adminToken);
+      if (session) isAdminSession = true;
+    }
+
+    const [gb] = await db
+      .select({ id: groupBuysTable.id, organiserId: groupBuysTable.organiserId, qrViewerUsernames: groupBuysTable.qrViewerUsernames })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, gbId));
+
+    if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+    const isOwner = !!gb.organiserId && gb.organiserId.toLowerCase() === username.toLowerCase();
+    const isAdminAccount = username.toLowerCase() === (process.env["ADMIN_USERNAME"] ?? "").toLowerCase();
+    const normalizedUsername = username.toLowerCase().replace(/^@/, "");
+    const isQrViewer = (gb.qrViewerUsernames ?? []).some(u => u.toLowerCase().replace(/^@/, "") === normalizedUsername);
+
+    if (!isAdminSession && !isOwner && !isAdminAccount && !isQrViewer) {
+      res.status(403).json({ error: "Access denied." });
+      return;
+    }
+
+    const [order] = await db
+      .select({
+        inpostQrCode: ordersTable.inpostQrCode,
+        royalMailQrCode: ordersTable.royalMailQrCode,
+        qrCodes: ordersTable.qrCodes,
+      })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(order);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Failed to load QR data: ${msg}` });
   }
 });
 

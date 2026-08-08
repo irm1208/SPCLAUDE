@@ -2182,7 +2182,7 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
 
     if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
 
-    const orders = await db
+    const rawOrders = await db
       .select({
         id: ordersTable.id,
         code: ordersTable.code,
@@ -2198,11 +2198,49 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
       .where(and(eq(ordersTable.groupBuyId, id), isNull(ordersTable.deletedAt)))
       .orderBy(ordersTable.telegramUsername);
 
+    // Strip large base64 image fields — return boolean flags only to keep response small
+    const orders = rawOrders.map(o => ({
+      id: o.id,
+      code: o.code,
+      telegramUsername: o.telegramUsername,
+      deliveryMethod: o.deliveryMethod,
+      hasInpostQr: o.inpostQrCode !== null,
+      hasRoyalMailQr: o.royalMailQrCode !== null,
+      hasQrCodes: o.qrCodes !== null && Object.keys(o.qrCodes as Record<string, string>).length > 0,
+      qrPosted: o.qrPosted,
+      status: o.status,
+    }));
+
     res.json({ gbName: gb.name, orders });
   } catch (err) {
     console.error(`[admin/all-orders-qr] GB=${id} error:`, err);
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: `Failed to load orders: ${msg}` });
+  }
+});
+
+// ─── GET /api/admin/group-buys/:gbId/orders/:orderId/qr-data ──────────────
+// Returns actual QR image data for one order (lazy-loaded on panel expand).
+router.get("/admin/group-buys/:gbId/orders/:orderId/qr-data", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const gbId = String(req.params["gbId"]);
+  const orderId = String(req.params["orderId"]);
+
+  try {
+    const [order] = await db
+      .select({
+        inpostQrCode: ordersTable.inpostQrCode,
+        royalMailQrCode: ordersTable.royalMailQrCode,
+        qrCodes: ordersTable.qrCodes,
+      })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(order);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Failed to load QR data: ${msg}` });
   }
 });
 
