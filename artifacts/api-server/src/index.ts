@@ -439,6 +439,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE geo_ip_cache ADD COLUMN IF NOT EXISTS is_hosting boolean`);
     // products — per-product half-kit toggle
     await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS half_kit_enabled boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_new boolean NOT NULL DEFAULT false`);
     // group_buy_products — per-customer quantity cap
     await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS max_per_customer integer`);
     // Seed test catalog — compound-specific analysis tests from Janoshik + standalone tests.

@@ -268,7 +268,7 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
     ? { credentials: "include" }
     : { headers: fetchHeaders };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isRetry = false) => {
     if (!gbId) return;
     setLoading(true);
     setError(null);
@@ -280,6 +280,12 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
       if (!res.ok) {
         const rawText = await res.text().catch(() => "");
         console.error(`[GbQrCodesPanel] ${url} → ${res.status}`, rawText.slice(0, 500));
+        // If we get a bare 500 with no body (server startup window), auto-retry once after 3s
+        if (!isRetry && res.status === 500 && !rawText.trim()) {
+          setLoading(true);
+          setTimeout(() => { load(true); }, 3000);
+          return;
+        }
         let j: { error?: string } = {};
         try { j = JSON.parse(rawText); } catch { /* not json */ }
         setError(j.error ?? `Server error ${res.status}: ${rawText.slice(0, 200) || "no body"}`);
