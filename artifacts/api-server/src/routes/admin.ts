@@ -2181,23 +2181,28 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
 
-  const orders = await db
-    .select({
-      id: ordersTable.id,
-      code: ordersTable.code,
-      telegramUsername: ordersTable.telegramUsername,
-      deliveryMethod: ordersTable.deliveryMethod,
-      inpostQrCode: ordersTable.inpostQrCode,
-      royalMailQrCode: ordersTable.royalMailQrCode,
-      qrCodes: ordersTable.qrCodes,
-      qrPosted: ordersTable.qrPosted,
-      status: ordersTable.status,
-    })
-    .from(ordersTable)
-    .where(and(eq(ordersTable.groupBuyId, id), isNull(ordersTable.deletedAt)))
-    .orderBy(ordersTable.telegramUsername);
+  try {
+    const orders = await db
+      .select({
+        id: ordersTable.id,
+        code: ordersTable.code,
+        telegramUsername: ordersTable.telegramUsername,
+        deliveryMethod: ordersTable.deliveryMethod,
+        inpostQrCode: ordersTable.inpostQrCode,
+        royalMailQrCode: ordersTable.royalMailQrCode,
+        qrCodes: ordersTable.qrCodes,
+        qrPosted: ordersTable.qrPosted,
+        status: ordersTable.status,
+      })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.groupBuyId, id), isNull(ordersTable.deletedAt)))
+      .orderBy(ordersTable.telegramUsername);
 
-  res.json({ gbName: gb.name, orders });
+    res.json({ gbName: gb.name, orders });
+  } catch (err) {
+    console.error("[admin/all-orders-qr] Query failed:", err);
+    res.status(500).json({ error: "Failed to load orders. The server may still be initialising — please try again in a moment." });
+  }
 });
 
 // ─── PATCH /api/admin/orders/:id/qr-posted ────────────────────
