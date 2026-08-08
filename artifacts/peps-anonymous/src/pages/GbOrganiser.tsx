@@ -13003,8 +13003,8 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   archived: { color: "#6B7280", bg: "rgba(107,114,128,0.12)", label: "Archived" },
 };
 
-const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "orders"];
-const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "qrcodes", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
+const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "orders", "qrcodes"];
+const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
   if (!gbId) return {};
