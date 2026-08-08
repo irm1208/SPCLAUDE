@@ -77,8 +77,30 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
   );
 }
 
+function isPdf(src: string) {
+  return src.startsWith("data:application/pdf") || src.startsWith("data:application/octet-stream");
+}
+
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
   const [showModal, setShowModal] = useState(false);
+
+  if (isPdf(src)) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
+        <a
+          href={src}
+          download={`${label.toLowerCase().replace(/\s+/g, "-")}-qr-${stripAt(username)}.pdf`}
+          className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80"
+          style={{ background: "rgba(27,58,122,0.08)", color: NAVY, border: `1px solid rgba(27,58,122,0.15)` }}
+        >
+          <QrCode className="w-4 h-4 shrink-0" />
+          Download {label} QR (PDF)
+        </a>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="flex flex-col items-center gap-2">
