@@ -20111,6 +20111,17 @@ type WholesaleTrackingShare = {
   };
   members: WholesaleMemberTracking[];
 };
+type WholesaleIndividualOrder = {
+  code: string;
+  telegramUsername: string;
+  trackingNumbers: string[];
+  paymentStatus: string;
+  shippingName: string | null;
+  shippingPostcode: string | null;
+  shippingCountry: string | null;
+  status: string | null;
+  createdAt: string | null;
+};
 
 function TrackingStatusPill({ status, code }: { status: string | null; code: number | null }) {
   if (!status) return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.15)", color: "var(--adm-muted)" }}>No data</span>;
@@ -20143,10 +20154,12 @@ function TrackingEventsList({ events }: { events: WholesaleTrackingEvent[] }) {
 
 function WholesaleTrackingTab({ secret }: { secret: string }) {
   const [shares, setShares] = useState<WholesaleTrackingShare[]>([]);
+  const [wholesaleOrders, setWholesaleOrders] = useState<WholesaleIndividualOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [typeTab, setTypeTab] = useState<"shared" | "wholesale">("shared");
   const [filterTab, setFilterTab] = useState<"all" | "not_shipped" | "in_transit" | "delivered">("all");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
@@ -20155,20 +20168,32 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
     setLoading(true); setError(null);
     fetch(apiUrl("/admin/wholesale-tracking"), { headers: { "x-admin-secret": secret } })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(d => setShares(d.shares ?? []))
+      .then(d => { setShares(d.shares ?? []); setWholesaleOrders(d.wholesaleOrders ?? []); })
       .catch(() => setError("Failed to load tracking data"))
       .finally(() => setLoading(false));
   }, [secret]);
 
   useEffect(() => { load(); }, [load]);
 
+  // ── helpers ─────────────────────────────────────────────────────────────────
   const isDelivered = (s: WholesaleTrackingShare) =>
     s.mainTracking.statusCode === 40 || /delivered/i.test(s.mainTracking.status ?? "");
   const isInTransit = (s: WholesaleTrackingShare) =>
     !!s.mainTracking.trackingNumber && !isDelivered(s);
   const isNotShipped = (s: WholesaleTrackingShare) => !s.mainTracking.trackingNumber;
 
-  const afterFilter = useMemo(() => {
+  const woHasTracking = (o: WholesaleIndividualOrder) => o.trackingNumbers.length > 0;
+
+  const fmtDate = (iso: string | null) => {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }); }
+    catch { return iso; }
+  };
+
+  const onwardCount = (s: WholesaleTrackingShare) => s.members.filter(m => m.onwardTracking).length;
+
+  // ── shared-orders filtering ──────────────────────────────────────────────
+  const sharesFiltered = useMemo(() => {
     let list = shares;
     if (filterTab === "not_shipped") list = list.filter(isNotShipped);
     else if (filterTab === "in_transit") list = list.filter(isInTransit);
@@ -20186,33 +20211,61 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
     );
   }, [shares, filterTab, search]);
 
-  // Reset page when filter/search changes
-  useEffect(() => { setPage(0); setExpandedId(null); }, [filterTab, search]);
-
-  const totalPages = Math.ceil(afterFilter.length / PAGE_SIZE);
-  const pageSlice = afterFilter.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-  const counts = useMemo(() => ({
+  const shareCounts = useMemo(() => ({
     all: shares.length,
     not_shipped: shares.filter(isNotShipped).length,
     in_transit: shares.filter(isInTransit).length,
     delivered: shares.filter(isDelivered).length,
   }), [shares]);
 
-  const fmtDate = (iso: string | null) => {
-    if (!iso) return "—";
-    try { return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }); }
-    catch { return iso; }
+  // ── wholesale-orders filtering ───────────────────────────────────────────
+  const woFilterTab = filterTab === "delivered" || filterTab === "in_transit" ? "shipped" : filterTab;
+  const woFiltered = useMemo(() => {
+    let list = wholesaleOrders;
+    if (filterTab === "not_shipped") list = list.filter(o => !woHasTracking(o));
+    else if (filterTab === "in_transit" || filterTab === "delivered") list = list.filter(o => woHasTracking(o));
+    if (!search.trim()) return list;
+    const q = search.toLowerCase();
+    return list.filter(o =>
+      o.code.toLowerCase().includes(q) ||
+      o.telegramUsername.toLowerCase().includes(q) ||
+      (o.shippingCountry ?? "").toLowerCase().includes(q) ||
+      (o.shippingName ?? "").toLowerCase().includes(q) ||
+      o.trackingNumbers.some(t => t.toLowerCase().includes(q))
+    );
+  }, [wholesaleOrders, filterTab, search]);
+
+  const woCounts = useMemo(() => ({
+    all: wholesaleOrders.length,
+    not_shipped: wholesaleOrders.filter(o => !woHasTracking(o)).length,
+    shipped: wholesaleOrders.filter(o => woHasTracking(o)).length,
+  }), [wholesaleOrders]);
+
+  // ── pagination ───────────────────────────────────────────────────────────
+  const activeList = typeTab === "shared" ? sharesFiltered : woFiltered;
+  useEffect(() => { setPage(0); setExpandedId(null); }, [filterTab, search, typeTab]);
+  const totalPages = Math.ceil(activeList.length / PAGE_SIZE);
+  const pageSlice = activeList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const FILTER_TABS: { key: typeof filterTab; label: string }[] = typeTab === "shared"
+    ? [
+        { key: "all", label: "All" },
+        { key: "not_shipped", label: "Not Shipped" },
+        { key: "in_transit", label: "In Transit" },
+        { key: "delivered", label: "Delivered" },
+      ]
+    : [
+        { key: "all", label: "All" },
+        { key: "not_shipped", label: "Not Shipped" },
+        { key: "in_transit", label: "Shipped" }, // re-use "in_transit" key for wholesale shipped
+      ];
+
+  const getCount = (key: string) => {
+    if (typeTab === "shared") return (shareCounts as any)[key] ?? 0;
+    if (key === "all") return woCounts.all;
+    if (key === "not_shipped") return woCounts.not_shipped;
+    return woCounts.shipped; // in_transit maps to shipped for wholesale
   };
-
-  const onwardCount = (s: WholesaleTrackingShare) => s.members.filter(m => m.onwardTracking).length;
-
-  const FILTER_TABS: { key: typeof filterTab; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "not_shipped", label: "Not Shipped" },
-    { key: "in_transit", label: "In Transit" },
-    { key: "delivered", label: "Delivered" },
-  ];
 
   return (
     <div className="space-y-4">
@@ -20222,7 +20275,7 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
             <Truck className="w-5 h-5" /> Wholesale Tracking
           </h2>
           <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>
-            All shared orders — main vendor parcel and per-member onward forwarding. Full unmasked numbers.
+            All wholesale orders — main parcels, onward forwarding, and individual orders. Full unmasked numbers.
           </p>
         </div>
         <button
@@ -20235,7 +20288,30 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
         </button>
       </div>
 
-      {/* Filter tabs */}
+      {/* ── Type tabs ── */}
+      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+        {([
+          { key: "shared" as const, label: "Shared Orders", count: shares.length },
+          { key: "wholesale" as const, label: "Wholesale Orders", count: wholesaleOrders.length },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => { setTypeTab(t.key); setFilterTab("all"); }}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={typeTab === t.key
+              ? { background: "var(--adm-card)", color: "var(--adm-text)", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }
+              : { color: "var(--adm-muted)" }
+            }
+          >
+            {t.label}
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+              style={{ background: "var(--adm-border)", color: "var(--adm-muted)" }}
+            >{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Status filter pills ── */}
       <div className="flex gap-1.5 flex-wrap">
         {FILTER_TABS.map(t => (
           <button
@@ -20254,7 +20330,7 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
                 : { background: "var(--adm-shell)", color: "var(--adm-muted)" }
               }
             >
-              {counts[t.key]}
+              {getCount(t.key)}
             </span>
           </button>
         ))}
@@ -20265,7 +20341,7 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by share ID, organiser, tracking number, country…"
+          placeholder={typeTab === "shared" ? "Search by share ID, organiser, tracking number, country…" : "Search by order code, username, tracking number, country…"}
           className="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none"
           style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}
         />
@@ -20277,14 +20353,65 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
         </div>
       ) : error ? (
         <div className="text-sm py-8 text-center" style={{ color: "#ef4444" }}>{error}</div>
-      ) : afterFilter.length === 0 ? (
+      ) : activeList.length === 0 ? (
         <div className="text-sm py-12 text-center" style={{ color: "var(--adm-muted)" }}>
-          {search || filterTab !== "all" ? "No matches." : "No shared orders yet."}
+          {search || filterTab !== "all" ? "No matches." : typeTab === "shared" ? "No shared orders yet." : "No individual wholesale orders yet."}
         </div>
+      ) : typeTab === "wholesale" ? (
+        <>
+          <div className="space-y-2">
+            {(pageSlice as WholesaleIndividualOrder[]).map(order => (
+              <div key={order.code} className="rounded-xl px-4 py-3" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>{order.code}</span>
+                      {order.trackingNumbers.length > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>Shipped</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.12)", color: "var(--adm-muted)" }}>Not shipped</span>
+                      )}
+                      {order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed" ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Paid</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{order.paymentStatus}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
+                      <span><strong style={{ color: "var(--adm-text)" }}>@{order.telegramUsername}</strong></span>
+                      {order.shippingCountry && <span>→ {order.shippingCountry}</span>}
+                      {order.shippingName && <span>{order.shippingName}</span>}
+                      {order.shippingPostcode && <span className="font-mono">{order.shippingPostcode}</span>}
+                      <span className="ml-auto shrink-0">{fmtDate(order.createdAt)}</span>
+                    </div>
+                    {order.trackingNumbers.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {order.trackingNumbers.map((tn, i) => (
+                          <span key={i} className="font-mono text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-shell)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{tn}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs" style={{ color: "var(--adm-muted)" }}>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, activeList.length)} of {activeList.length}
+              </span>
+              <div className="flex gap-1.5">
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}>← Prev</button>
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}>Next →</button>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div className="space-y-2">
-            {pageSlice.map(share => {
+            {(pageSlice as WholesaleTrackingShare[]).map(share => {
               const open = expandedId === share.id;
               const mt = share.mainTracking;
               const latestEvent = mt.events[0] ?? null;
@@ -20424,7 +20551,7 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-1">
               <span className="text-xs" style={{ color: "var(--adm-muted)" }}>
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, afterFilter.length)} of {afterFilter.length}
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, activeList.length)} of {activeList.length}
               </span>
               <div className="flex gap-1.5">
                 <button

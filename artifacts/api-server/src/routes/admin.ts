@@ -9899,7 +9899,40 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       .from(wholesaleSharesTable)
       .orderBy(desc(wholesaleSharesTable.createdAt));
 
-    if (shares.length === 0) { res.json({ shares: [] }); return; }
+    // Load individual wholesale orders (orderType = 'wholesale', not shared)
+    const wholesaleOrders = await db
+      .select({
+        code: ordersTable.code,
+        telegramUsername: ordersTable.telegramUsername,
+        trackingNumber: ordersTable.trackingNumber,
+        trackingNumbers: ordersTable.trackingNumbers,
+        paymentStatus: ordersTable.paymentStatus,
+        shippingName: ordersTable.shippingName,
+        shippingPostcode: ordersTable.shippingPostcode,
+        shippingCountry: ordersTable.shippingCountry,
+        createdAt: ordersTable.createdAt,
+        status: ordersTable.status,
+      })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.orderType, "wholesale"), isNull(ordersTable.deletedAt)))
+      .orderBy(desc(ordersTable.createdAt));
+
+    const wholesaleOrdersResult = wholesaleOrders.map(o => ({
+      code: o.code,
+      telegramUsername: o.telegramUsername,
+      trackingNumbers: [
+        ...(o.trackingNumber ? [o.trackingNumber] : []),
+        ...((o.trackingNumbers ?? []).filter((t: string) => t !== o.trackingNumber)),
+      ],
+      paymentStatus: o.paymentStatus,
+      shippingName: o.shippingName ?? null,
+      shippingPostcode: o.shippingPostcode ?? null,
+      shippingCountry: o.shippingCountry ?? null,
+      status: o.status ?? null,
+      createdAt: o.createdAt ? (o.createdAt as Date).toISOString() : null,
+    }));
+
+    if (shares.length === 0) { res.json({ shares: [], wholesaleOrders: wholesaleOrdersResult }); return; }
 
     const shareIds = shares.map(s => s.id);
 
@@ -9928,7 +9961,7 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       membersByShare[m.shareId].push(m);
     }
 
-    const result = shares.map(share => ({
+    const sharesResult = shares.map(share => ({
       id: share.id,
       status: share.status,
       creatorUsername: share.creatorUsername,
@@ -9959,7 +9992,7 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       })),
     }));
 
-    res.json({ shares: result });
+    res.json({ shares: sharesResult, wholesaleOrders: wholesaleOrdersResult });
   } catch (err) {
     console.error("[admin/wholesale-tracking]", err);
     res.status(500).json({ error: "Failed to load tracking data" });
