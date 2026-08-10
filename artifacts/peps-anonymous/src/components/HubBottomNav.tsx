@@ -467,23 +467,16 @@ export function HubBottomNav({
               }}
             >
               <span
-                className="select-none leading-none flex items-baseline"
+                className="select-none leading-none"
                 style={{
                   transform: open ? "scale(0.85)" : "scale(1)",
                   transition: "transform 220ms ease",
-                  fontSize: 17, fontWeight: 800, letterSpacing: "-0.5px", color: "#fff",
+                  fontSize: 11, fontWeight: 800, letterSpacing: "0.04em",
+                  textTransform: "uppercase", color: "#fff",
                 }}
               >
-                S<span style={{ fontSize: 12, fontWeight: 400, color: "#8BB8FF", margin: "0 0.5px" }}>&amp;</span>P
+                {open ? "✕" : "Menu"}
               </span>
-              {!open && (
-                <span
-                  className="select-none leading-none"
-                  style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.07em", opacity: 0.9 }}
-                >
-                  TAP ME
-                </span>
-              )}
             </button>
           </div>
 
