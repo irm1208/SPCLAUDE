@@ -684,7 +684,7 @@ export function useTelegramStatus(enabled = true) {
 
 export function useTelegramLinkInit() {
   return useMutation({
-    mutationFn: async (): Promise<{ code: string; expiresAt: string; botUrl: string | null; instruction: string }> => {
+    mutationFn: async (): Promise<{ code: string; expiresAt: string; botUrl: string | null; deepLink: string | null; instruction: string }> => {
       const res = await fetch("/api/account/telegram/link-init", {
         method: "POST",
         credentials: "include",

@@ -180,7 +180,7 @@ async function startFeedbackFlow(chatId: string): Promise<void> {
 // ── Guided ticket-creation conversation state machine ─────────────────────────
 
 interface TicketConv {
-  step: "awaiting_category" | "awaiting_gbtype" | "awaiting_gb" | "awaiting_subject" | "awaiting_body" | "labs_search";
+  step: "awaiting_category" | "awaiting_gbtype" | "awaiting_gb" | "awaiting_subject" | "awaiting_body" | "labs_search" | "sage_chat";
   category?: string;
   issueType?: string;
   groupBuyId?: string;
@@ -442,14 +442,144 @@ async function appendToTicket(ticketId: string, username: string, chatId: string
 
 // ── Main Menu ─────────────────────────────────────────────────────────────────
 
-async function sendMainMenu(chatId: string, username?: string): Promise<void> {
-  const { template } = await getTemplate("bot_menu_header");
-  const text = username
-    ? renderTemplate(template, { username })
-    : template.replace(/Hey @\{\{username\}\}! /, "");
+// ── Account snapshot for personalised menu ────────────────────────────────────
+
+interface AccountSnapshot {
+  credits: number;
+  activeOrders: number;
+  pendingPayment: number;
+  missingAddress: number;
+  upcomingGbName: string | null;
+  upcomingGbDaysLeft: number | null;
+}
+
+async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnapshot> {
+  const norm = telegramUsername.replace(/^@/, "").toLowerCase();
+
+  const [acct] = await db
+    .select({ credits: accountsTable.credits })
+    .from(accountsTable)
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
+  const credits = acct?.credits ?? 0;
+
+  const activeR = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM orders
+     WHERE regexp_replace(lower(telegram_username),'^@','') = $1
+       AND status NOT IN ('Cancelled','Completed')
+       AND deleted_at IS NULL`,
+    [norm],
+  );
+  const activeOrders = parseInt(activeR.rows[0]?.count ?? "0", 10);
+
+  const payR = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM orders
+     WHERE regexp_replace(lower(telegram_username),'^@','') = $1
+       AND status IN ('Submitted','Processing')
+       AND payment_status NOT IN ('confirmed','test_confirmed')
+       AND deleted_at IS NULL`,
+    [norm],
+  );
+  const pendingPayment = parseInt(payR.rows[0]?.count ?? "0", 10);
+
+  const addrR = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM orders
+     WHERE regexp_replace(lower(telegram_username),'^@','') = $1
+       AND status IN ('Submitted','Processing')
+       AND (shipping_address IS NULL OR shipping_address = '')
+       AND deleted_at IS NULL`,
+    [norm],
+  );
+  const missingAddress = parseInt(addrR.rows[0]?.count ?? "0", 10);
+
+  const gbR = await pool.query<{ name: string; close_at: string }>(
+    `SELECT gb.name, gb.close_at
+     FROM group_buys gb
+     JOIN account_group_buys agb ON agb.group_buy_id = gb.id
+     JOIN accounts a ON lower(a.telegram_username) = $1
+       AND a.telegram_username = agb.account_id
+     WHERE gb.close_at IS NOT NULL
+       AND gb.close_at > NOW()
+       AND gb.deleted_at IS NULL
+     ORDER BY gb.close_at ASC
+     LIMIT 1`,
+    [norm],
+  );
+  let upcomingGbName: string | null = null;
+  let upcomingGbDaysLeft: number | null = null;
+  if (gbR.rows[0]) {
+    upcomingGbName = gbR.rows[0].name;
+    const ms = new Date(gbR.rows[0].close_at).getTime() - Date.now();
+    upcomingGbDaysLeft = Math.max(0, Math.ceil(ms / 86_400_000));
+  }
+
+  return { credits, activeOrders, pendingPayment, missingAddress, upcomingGbName, upcomingGbDaysLeft };
+}
+
+// ── Notification pref labels ───────────────────────────────────────────────────
+
+const NOTIF_PREF_LABELS: Record<string, string> = {
+  status:          "Order status updates",
+  deleted:         "Order cancellations",
+  payment:         "Payment confirmations",
+  profile:         "Profile changes",
+  new_order:       "New order alerts",
+  wholesale_chat:  "Wholesale chat messages",
+};
+const NOTIF_PREF_KEYS = Object.keys(NOTIF_PREF_LABELS);
+
+async function sendNotifPrefs(chatId: string, telegramUsername: string): Promise<void> {
+  const norm = telegramUsername.replace(/^@/, "").toLowerCase();
+  const [acct] = await db
+    .select({ telegramNotifications: accountsTable.telegramNotifications })
+    .from(accountsTable)
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
+
+  const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
+  const prefs: Record<string, boolean> = { ...defaults, ...((acct?.telegramNotifications && typeof acct.telegramNotifications === "object") ? acct.telegramNotifications as Record<string, boolean> : {}) };
+
+  const keyboard = NOTIF_PREF_KEYS.map(key => {
+    const on = prefs[key] !== false;
+    return [{ text: `${on ? "✅" : "❌"} ${NOTIF_PREF_LABELS[key]}`, callback_data: `mn:notif_toggle:${key}` }];
+  });
+  keyboard.push([{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]);
+
   await sendTelegramMessageFull(
     chatId,
-    text,
+    `🔔 <b>Notification Preferences</b>\n\nToggle which updates you receive from Salt &amp; Peps.\nTap any item to toggle it on or off.`,
+    "HTML",
+    undefined,
+    { reply_markup: { inline_keyboard: keyboard } },
+  );
+}
+
+async function sendMainMenu(chatId: string, username?: string): Promise<void> {
+  const { template } = await getTemplate("bot_menu_header");
+  let headerText = username
+    ? renderTemplate(template, { username })
+    : template.replace(/Hey @\{\{username\}\}! /, "");
+
+  // Personalised snapshot + pending nudges
+  if (username) {
+    try {
+      const snap = await getAccountSnapshot(username);
+      const parts: string[] = [];
+      if (snap.activeOrders > 0) parts.push(`📦 ${snap.activeOrders} active order${snap.activeOrders !== 1 ? "s" : ""}`);
+      if (snap.credits > 0) parts.push(`💳 £${snap.credits} credits`);
+      if (snap.upcomingGbName && snap.upcomingGbDaysLeft !== null) {
+        parts.push(`🌍 GB closes in ${snap.upcomingGbDaysLeft}d`);
+      }
+      if (parts.length > 0) headerText += "\n\n" + parts.join("  •  ");
+
+      const nudges: string[] = [];
+      if (snap.pendingPayment > 0) nudges.push(`⚠️ <b>${snap.pendingPayment} order${snap.pendingPayment !== 1 ? "s" : ""} awaiting payment</b> — tap My Orders`);
+      if (snap.missingAddress > 0) nudges.push(`📭 <b>${snap.missingAddress} order${snap.missingAddress !== 1 ? "s" : ""} need${snap.missingAddress === 1 ? "s" : ""} a shipping address</b>`);
+      if (nudges.length > 0) headerText += "\n\n" + nudges.join("\n");
+    } catch { /* snapshot is non-critical */ }
+  }
+
+  await sendTelegramMessageFull(
+    chatId,
+    headerText,
     "HTML",
     undefined,
     {
@@ -464,8 +594,12 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
             { text: "🧪 Lab Reports",   callback_data: "mn:labs" },
           ],
           [
-            { text: "🎫 Open a Ticket", callback_data: "mn:ticket" },
-            { text: "❓ Help",           callback_data: "mn:help" },
+            { text: "🤖 Ask Sage",       callback_data: "mn:sage" },
+            { text: "🔔 Notifications",  callback_data: "mn:notif" },
+          ],
+          [
+            { text: "🎫 Open a Ticket",  callback_data: "mn:ticket" },
+            { text: "❓ Help",            callback_data: "mn:help" },
           ],
         ],
       },
@@ -2032,6 +2166,62 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         res.json({ ok: true }); return;
       }
 
+      // ── 🤖 Ask Sage ──────────────────────────────────────────────────────────
+      if (action === "sage") {
+        if (!linked) {
+          const { template: notLinkedTpl } = await getTemplate("bot_not_linked");
+          await sendTelegramMessage(cbChatId, notLinkedTpl, "HTML");
+          res.json({ ok: true }); return;
+        }
+        clearConv(cbChatId);
+        setConv(cbChatId, { step: "sage_chat" });
+        await sendTelegramMessageFull(
+          cbChatId,
+          `🤖 <b>Sage — Health &amp; Compounds Advisor</b>\n\nAsk me anything about peptides, compounds, dosing protocols, or research. I'll do my best to help.\n\n<i>Send your question below, or tap Back to return to the menu.</i>`,
+          "HTML",
+          undefined,
+          { reply_markup: { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]] } },
+        );
+        res.json({ ok: true }); return;
+      }
+
+      // ── 🔔 Notification Preferences ──────────────────────────────────────────
+      if (action === "notif") {
+        if (!linked) {
+          const { template: notLinkedTpl } = await getTemplate("bot_not_linked");
+          await sendTelegramMessage(cbChatId, notLinkedTpl, "HTML");
+          res.json({ ok: true }); return;
+        }
+        await sendNotifPrefs(cbChatId, linked.telegramUsername);
+        res.json({ ok: true }); return;
+      }
+
+      // ── Toggle individual notification pref ──────────────────────────────────
+      if (action.startsWith("notif_toggle:")) {
+        if (!linked) { res.json({ ok: true }); return; }
+        const prefKey = action.slice("notif_toggle:".length);
+        if (!NOTIF_PREF_KEYS.includes(prefKey)) { res.json({ ok: true }); return; }
+
+        const norm = linked.telegramUsername.replace(/^@/, "").toLowerCase();
+        const [acctRow] = await db
+          .select({ telegramNotifications: accountsTable.telegramNotifications })
+          .from(accountsTable)
+          .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
+
+        const existing = (acctRow?.telegramNotifications && typeof acctRow.telegramNotifications === "object")
+          ? acctRow.telegramNotifications as Record<string, boolean>
+          : {};
+        const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
+        const updated = { ...defaults, ...existing, [prefKey]: !(({ ...defaults, ...existing })[prefKey] ?? true) };
+
+        await db.update(accountsTable)
+          .set({ telegramNotifications: updated })
+          .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
+
+        await sendNotifPrefs(cbChatId, linked.telegramUsername);
+        res.json({ ok: true }); return;
+      }
+
       res.json({ ok: true });
       return;
     }
@@ -2132,6 +2322,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
   // ── /start ────────────────────────────────────────────────────────────────
   if (text === "/start" || text.startsWith("/start ")) {
     const appUrl = (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(/\/+$/, "");
+    const startPayload = text.startsWith("/start ") ? text.slice(7).trim() : "";
 
     // Admin /start — show the admin control panel menu
     const startAdminChatId = await getAdminChatId();
@@ -2167,19 +2358,111 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       res.json({ ok: true }); return;
     }
 
-    // If already linked, show the main menu directly
+    // ── Deep-link auto-linking: t.me/Bot?start=HEXTOKEN ───────────────────
+    if (/^[A-F0-9]{8}$/i.test(startPayload)) {
+      const code = startPayload.toUpperCase();
+      const [tokenAccount] = await db
+        .select()
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramLinkToken, code));
+
+      if (!tokenAccount) {
+        if (wasTokenConsumed(code)) {
+          const { template: alreadyUsedTpl } = await getTemplate("bot_link_already_used");
+          await sendTelegramMessage(chatId, alreadyUsedTpl, "HTML");
+        } else {
+          const { template: notFoundTpl } = await getTemplate("bot_link_not_found");
+          await sendTelegramMessage(chatId, notFoundTpl, "HTML");
+        }
+        res.json({ ok: true }); return;
+      }
+
+      const nowDl = new Date();
+      if (tokenAccount.telegramLinkExpiresAt && tokenAccount.telegramLinkExpiresAt < nowDl) {
+        const { template: expiredTpl } = await getTemplate("bot_link_expired");
+        await sendTelegramMessage(chatId, expiredTpl, "HTML");
+        res.json({ ok: true }); return;
+      }
+
+      await db.update(accountsTable)
+        .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
+        .where(eq(accountsTable.telegramUsername, tokenAccount.telegramUsername));
+      markTokenConsumed(code);
+
+      await sendMainMenu(chatId, tokenAccount.telegramUsername);
+      const { template: linkSuccessTpl } = await getTemplate("bot_link_success");
+      await sendTelegramMessage(
+        chatId,
+        renderTemplate(linkSuccessTpl, { username: tokenAccount.telegramUsername }),
+        "HTML",
+      );
+      writeLog("login", "info", "telegram_linked", `Telegram linked via deep-link: ${tokenAccount.telegramUsername}`, { telegramUsername: tokenAccount.telegramUsername, chatId }).catch(() => {});
+      res.json({ ok: true }); return;
+    }
+
+    // ── GB invite deep link: t.me/Bot?start=gb_GBID ──────────────────────
+    if (startPayload.startsWith("gb_")) {
+      const gbId = startPayload.slice(3);
+      const [gbRow] = await db
+        .select({ name: groupBuysTable.name, status: groupBuysTable.status, currency: groupBuysTable.currency })
+        .from(groupBuysTable)
+        .where(eq(groupBuysTable.id, gbId));
+
+      const [alreadyLinkedGb] = await db
+        .select({ telegramUsername: accountsTable.telegramUsername })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramChatId, chatId));
+
+      if (gbRow) {
+        if (alreadyLinkedGb) {
+          await sendTelegramMessageFull(
+            chatId,
+            `🌍 <b>${gbRow.name}</b>\n\nYou've been invited to join this group buy.\nStatus: <b>${gbRow.status ?? "Open"}</b>  •  Currency: <b>${gbRow.currency ?? "GBP"}</b>`,
+            "HTML",
+            undefined,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "🛒 View Group Buy", url: `${appUrl}/group-buy/${gbId}` }],
+                  [{ text: "🏠 Main Menu", callback_data: "mn:menu" }],
+                ],
+              },
+            },
+          );
+        } else {
+          const { template: startTplGb } = await getTemplate("bot_start_unlinked");
+          const startTextGb = renderTemplate(startTplGb, { app_url: appUrl });
+          await sendTelegramMessageFull(
+            chatId,
+            `🌍 <b>You've been invited to join ${gbRow.name}!</b>\n\nLink your Salt &amp; Peps account to access this group buy and more.\n\n${startTextGb}`,
+            "HTML",
+            undefined,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: "🌐 Open Salt & Peps", url: appUrl }]],
+              },
+            },
+          );
+        }
+        res.json({ ok: true }); return;
+      }
+      // gbId not found — fall through to normal /start flow
+    }
+
+    // If already linked, show the personalised main menu
     const [alreadyLinked] = await db
       .select({ telegramUsername: accountsTable.telegramUsername })
       .from(accountsTable)
       .where(eq(accountsTable.telegramChatId, chatId));
     if (alreadyLinked) {
+      clearConv(chatId);
       await sendMainMenu(chatId, alreadyLinked.telegramUsername);
       res.json({ ok: true }); return;
     }
+
+    // Not linked — show welcome with link instructions
     const { template: startTpl } = await getTemplate("bot_start_unlinked");
-    const startText = renderTemplate(startTpl, {
-      app_url: appUrl,
-    });
+    const startText = renderTemplate(startTpl, { app_url: appUrl });
     await sendTelegramMessageFull(
       chatId,
       startText,
@@ -2551,6 +2834,58 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       res.json({ ok: true }); return;
     }
 
+    // ── Sage chat — multi-turn health/compound advisor ───────────────────────
+    if (conv.step === "sage_chat") {
+      // Keep conv alive (refresh TTL) so multi-turn works
+      setConv(chatId, { step: "sage_chat" });
+      const question = text.trim();
+      try {
+        const sageReply = await gemini.models.generateContent({
+          model: "gemini-2.5-flash",
+          config: {
+            systemInstruction: [
+              "You are Sage, a knowledgeable health and compounds advisor for Salt & Peps, a peptide ordering platform.",
+              "You help members understand peptides, research compounds, dosing protocols, cycling, storage, and how to read lab results.",
+              "Guidelines:",
+              "- Be concise but thorough. Use 2-6 sentences unless a longer answer is clearly needed.",
+              "- Focus on established research. Acknowledge uncertainty where it exists.",
+              "- Do not prescribe doses for human use. Frame all dosing as research context only.",
+              "- Respond in plain text — no markdown, no asterisks, no bullet symbols (this is Telegram).",
+              "- If asked something completely unrelated to health, compounds, or peptides, politely redirect.",
+              "- Do not mention that you are an AI unless directly asked.",
+            ].join("\n"),
+            maxOutputTokens: 512,
+          },
+          contents: [{ role: "user", parts: [{ text: question }] }],
+        });
+        const sageText = sageReply.text ?? "I couldn't generate a response. Please try again.";
+        await sendTelegramMessageFull(
+          chatId,
+          `🤖 <b>Sage</b>\n\n${sageText}`,
+          "HTML",
+          undefined,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔄 Ask another question", callback_data: "mn:sage" }],
+                [{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }],
+              ],
+            },
+          },
+        );
+      } catch (err) {
+        console.error("[telegram:sage] Gemini error:", err);
+        await sendTelegramMessageFull(
+          chatId,
+          `🤖 <b>Sage</b>\n\nI'm having trouble right now. Please try again in a moment.`,
+          "HTML",
+          undefined,
+          { reply_markup: { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]] } },
+        );
+      }
+      res.json({ ok: true }); return;
+    }
+
     // In awaiting_category or awaiting_gb — buttons expected, not text
     // Re-prompt gently
     const { template: awaitingTpl } = await getTemplate("bot_awaiting_buttons");
@@ -2627,6 +2962,7 @@ router.post("/account/telegram/link-init", requireAccount, async (req, res): Pro
     code,
     expiresAt: expiresAt.toISOString(),
     botUrl: botUsername ? `https://t.me/${botUsername}` : null,
+    deepLink: botUsername ? `https://t.me/${botUsername}?start=${code}` : null,
     instruction: `Send /link ${code} to the bot`,
   });
 });

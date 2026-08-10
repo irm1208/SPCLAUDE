@@ -355,7 +355,7 @@ function TelegramCard() {
   const unlink = useTelegramUnlink();
   const updatePrefs = useTelegramUpdatePrefs();
 
-  const [linkData, setLinkData] = useState<{ code: string; botUrl: string | null; instruction: string } | null>(null);
+  const [linkData, setLinkData] = useState<{ code: string; botUrl: string | null; deepLink: string | null; instruction: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [unlinkConfirm, setUnlinkConfirm] = useState(false);
 
@@ -374,7 +374,7 @@ function TelegramCard() {
   const handleLinkInit = async () => {
     try {
       const data = await linkInit.mutateAsync();
-      setLinkData({ code: data.code, botUrl: data.botUrl, instruction: data.instruction });
+      setLinkData({ code: data.code, botUrl: data.botUrl, deepLink: data.deepLink, instruction: data.instruction });
     } catch {
     }
   };
@@ -494,32 +494,54 @@ function TelegramCard() {
           ) : (
             <div className="space-y-3">
               <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--t-blue-06)", border: "1px solid var(--t-blue-15)" }}>
-                <p className="text-[11px] font-semibold" style={{ color: "var(--t-blue)" }}>Step 1 — Open the bot</p>
-                {linkData.botUrl ? (
-                  <a
-                    href={linkData.botUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-xs font-bold underline" style={{ color: "var(--t-blue)" }}
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    Open the Telegram bot
-                  </a>
+                {linkData.deepLink ? (
+                  /* One-tap deep-link flow */
+                  <>
+                    <p className="text-[11px] font-semibold" style={{ color: "var(--t-blue)" }}>Link in one tap</p>
+                    <a
+                      href={linkData.deepLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full h-10 rounded-lg text-sm font-bold text-white"
+                      style={{ background: "var(--t-blue)" }}
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Link Telegram instantly →
+                    </a>
+                    <details>
+                      <summary className="text-[11px] cursor-pointer select-none" style={{ color: "var(--t-blue)" }}>Or link manually</summary>
+                      <div className="mt-2 flex items-center gap-2 bg-white rounded-lg px-3 py-2" style={{ border: "1px solid var(--t-border)" }}>
+                        <code className="flex-1 text-xs font-mono font-bold text-slate-800 select-all">/link {linkData.code}</code>
+                        <button onClick={handleCopy} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
+                          {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                        </button>
+                      </div>
+                    </details>
+                    <p className="text-[11px] text-slate-400">Code expires in 15 minutes.</p>
+                  </>
                 ) : (
-                  <p className="text-xs" style={{ color: "var(--t-blue)" }}>Open the Salt&amp;Peps bot on Telegram</p>
+                  /* Manual 2-step fallback */
+                  <>
+                    <p className="text-[11px] font-semibold" style={{ color: "var(--t-blue)" }}>Step 1 — Open the bot</p>
+                    {linkData.botUrl ? (
+                      <a href={linkData.botUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-xs font-bold underline" style={{ color: "var(--t-blue)" }}>
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        Open the Telegram bot
+                      </a>
+                    ) : (
+                      <p className="text-xs" style={{ color: "var(--t-blue)" }}>Open the Salt&amp;Peps bot on Telegram</p>
+                    )}
+                    <p className="text-[11px] font-semibold mt-2" style={{ color: "var(--t-blue)" }}>Step 2 — Send this command</p>
+                    <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2" style={{ border: "1px solid var(--t-border)" }}>
+                      <code className="flex-1 text-xs font-mono font-bold text-slate-800 select-all">/link {linkData.code}</code>
+                      <button onClick={handleCopy} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
+                        {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-400">This code expires in 15 minutes.</p>
+                  </>
                 )}
-
-                <p className="text-[11px] font-semibold mt-2" style={{ color: "var(--t-blue)" }}>Step 2 — Send this command</p>
-                <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2" style={{ border: "1px solid var(--t-border)" }}>
-                  <code className="flex-1 text-xs font-mono font-bold text-slate-800 select-all">/link {linkData.code}</code>
-                  <button
-                    onClick={handleCopy}
-                    className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                  >
-                    {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-400">This code expires in 15 minutes.</p>
               </div>
 
               <div className="flex gap-2">

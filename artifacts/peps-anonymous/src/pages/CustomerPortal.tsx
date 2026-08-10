@@ -770,7 +770,7 @@ function TelegramCard() {
   const unlink = useTelegramUnlink();
   const updatePrefs = useTelegramUpdatePrefs();
   const sendTest = useTelegramSendTest();
-  const [linkData, setLinkData] = useState<{ code: string; botUrl: string | null } | null>(null);
+  const [linkData, setLinkData] = useState<{ code: string; botUrl: string | null; deepLink: string | null } | null>(null);
   const [copied, setCopied] = useState(false);
   const [unlinkConfirm, setUnlinkConfirm] = useState(false);
   const [testResult, setTestResult] = useState<"idle" | "checking" | "sent" | "not-linked" | "error">("idle");
@@ -794,7 +794,7 @@ function TelegramCard() {
     if (!tgLoading && !linked && !autoInitDoneRef.current) {
       autoInitDoneRef.current = true;
       linkInit.mutateAsync().then((data) => {
-        setLinkData({ code: data.code, botUrl: data.botUrl });
+        setLinkData({ code: data.code, botUrl: data.botUrl, deepLink: data.deepLink });
         initiatedLinkRef.current = true;
       }).catch(() => { /* ignore */ });
     }
@@ -814,7 +814,7 @@ function TelegramCard() {
   const handleLinkInit = async () => {
     try {
       const data = await linkInit.mutateAsync();
-      setLinkData({ code: data.code, botUrl: data.botUrl });
+      setLinkData({ code: data.code, botUrl: data.botUrl, deepLink: data.deepLink });
       initiatedLinkRef.current = true;
     }
     catch { /* ignore */ }
@@ -934,58 +934,87 @@ function TelegramCard() {
         ) : (
           /* Not linked — unified single-page layout */
           (<div className="space-y-3">
-            <div className="rounded-xl p-3.5 space-y-3" style={{ background: "rgba(27,58,122,0.05)", border: "1px solid rgba(27,58,122,0.15)" }}>
-
-              {/* Step 1 */}
-              <div className="flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white mt-0.5"
-                  style={{ background: "var(--t-blue-deep)" }}>1</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold" style={{ color: T.text }}>Open the bot & tap Start</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: T.muted }}>This lets the bot know it can message you</p>
-                  <a href={BOT_URL} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 mt-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
-                    style={{ background: "var(--t-blue-deep)", color: "#fff" }}>
-                    <ExternalLink className="w-3 h-3" />
-                    Open @{BOT_USERNAME}
-                  </a>
-                </div>
+            {/* One-tap deep-link button — shown when deepLink is available */}
+            {linkData?.deepLink ? (
+              <div className="rounded-xl p-3.5 space-y-3" style={{ background: "rgba(27,58,122,0.05)", border: "1px solid rgba(27,58,122,0.15)" }}>
+                <p className="text-xs font-bold" style={{ color: T.text }}>Link Telegram in one tap</p>
+                <p className="text-[11px]" style={{ color: T.muted }}>Tap the button below to open the bot — it will link your account automatically.</p>
+                <a
+                  href={linkData.deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full h-10 rounded-xl text-sm font-bold"
+                  style={{ background: "var(--t-blue-deep)", color: "#fff" }}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Link Telegram instantly →
+                </a>
+                <div className="h-px" style={{ background: T.border }} />
+                <details>
+                  <summary className="text-[11px] cursor-pointer select-none" style={{ color: T.muted }}>Or link manually with a code</summary>
+                  <div className="mt-2 flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <code className="flex-1 text-xs font-mono font-bold select-all" style={{ color: T.text }}>/link {linkData.code}</code>
+                    <button onClick={handleCopy} className="shrink-0 p-1 rounded transition-colors" style={{ color: T.muted }}>
+                      {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: T.muted }}>
+                    <Clock className="w-3 h-3 shrink-0" />
+                    This code expires in 15 minutes
+                  </p>
+                </details>
               </div>
-
-              <div className="h-px" style={{ background: T.border }} />
-
-              {/* Step 2 */}
-              <div className="flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white mt-0.5"
-                  style={{ background: "var(--t-blue-deep)" }}>2</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold mb-1.5" style={{ color: T.text }}>Send this command to the bot</p>
-                  {linkInit.isPending && !linkData ? (
-                    <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: T.subtle }} />
-                      <span className="text-[11px]" style={{ color: T.muted }}>Generating your code…</span>
-                    </div>
-                  ) : linkData ? (
-                    <>
+            ) : (
+              <div className="rounded-xl p-3.5 space-y-3" style={{ background: "rgba(27,58,122,0.05)", border: "1px solid rgba(27,58,122,0.15)" }}>
+                {/* Step 1 */}
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white mt-0.5"
+                    style={{ background: "var(--t-blue-deep)" }}>1</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold" style={{ color: T.text }}>Open the bot & tap Start</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: T.muted }}>This lets the bot know it can message you</p>
+                    <a href={BOT_URL} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 mt-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+                      style={{ background: "var(--t-blue-deep)", color: "#fff" }}>
+                      <ExternalLink className="w-3 h-3" />
+                      Open @{BOT_USERNAME}
+                    </a>
+                  </div>
+                </div>
+                <div className="h-px" style={{ background: T.border }} />
+                {/* Step 2 */}
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white mt-0.5"
+                    style={{ background: "var(--t-blue-deep)" }}>2</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold mb-1.5" style={{ color: T.text }}>Send this command to the bot</p>
+                    {linkInit.isPending && !linkData ? (
                       <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                        <code className="flex-1 text-xs font-mono font-bold select-all" style={{ color: T.text }}>/link {linkData.code}</code>
-                        <button onClick={handleCopy} className="shrink-0 p-1 rounded transition-colors" style={{ color: T.muted }}>
-                          {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: T.subtle }} />
+                        <span className="text-[11px]" style={{ color: T.muted }}>Generating your code…</span>
                       </div>
-                      <p className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: T.muted }}>
-                        <Clock className="w-3 h-3 shrink-0" />
-                        This code expires in 15 minutes
-                      </p>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                      <span className="text-[11px]" style={{ color: T.muted }}>Could not load code — try resending below</span>
-                    </div>
-                  )}
+                    ) : linkData ? (
+                      <>
+                        <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                          <code className="flex-1 text-xs font-mono font-bold select-all" style={{ color: T.text }}>/link {linkData.code}</code>
+                          <button onClick={handleCopy} className="shrink-0 p-1 rounded transition-colors" style={{ color: T.muted }}>
+                            {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        <p className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: T.muted }}>
+                          <Clock className="w-3 h-3 shrink-0" />
+                          This code expires in 15 minutes
+                        </p>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                        <span className="text-[11px]" style={{ color: T.muted }}>Could not load code — try resending below</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
             <div className="flex gap-2">
               <button onClick={handleLinkInit} disabled={linkInit.isPending}
                 className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-50"
