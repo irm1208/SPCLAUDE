@@ -38,6 +38,7 @@ import {
   geoIpCacheTable,
   groupBuyProductsTable,
   wholesaleSharesTable,
+  wholesaleShareMembersTable,
   ticketsTable,
   routingHistoryTable,
   intlShippingRatesTable,
@@ -56,6 +57,7 @@ import { calculateVendorShipping } from "../lib/vendor-shipping";
 import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
+import { callSageAI } from "../lib/sage-ai";
 import { logCustomerActivity } from "../lib/activity-log";
 
 function escapeHtml(str: string): string {
@@ -5996,6 +5998,290 @@ router.get("/admin/dashboard", async (req: any, res: any): Promise<void> => {
   }
 });
 
+// ─── POST /api/admin/orders/bulk-tracking/ai-parse ───────────────────────────
+// Paste unstructured tracking text → AI extracts shipments (tracking #s, address,
+// items) → fuzzy-matched to existing orders by postcode/phone/name/items.
+// Returns proposed matches for admin review before applying.
+router.post("/admin/orders/bulk-tracking/ai-parse", async (req: any, res: any): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { rawText } = req.body;
+  if (!rawText || typeof rawText !== "string" || rawText.trim().length === 0) {
+    res.status(400).json({ error: "rawText is required" }); return;
+  }
+  if (rawText.length > 80_000) {
+    res.status(400).json({ error: "Input too large (max 80,000 characters)" }); return;
+  }
+
+  // ── Step 1: AI extraction ──────────────────────────────────────────────────
+  const systemPrompt = `You are a logistics assistant. Extract every distinct shipment from user-provided text.
+
+Each shipment block typically contains:
+- A label / parcel identifier line (e.g. "洪福106 电报", "Gly 002", etc.)
+- A list of items with quantities (e.g. "Semaglutide 10mg ×2" or "Retatrutide 40mg x4")
+- A delivery address (name, street, city, postcode, country, phone)
+- One or more tracking numbers (17track links, Royal Mail links, or plain tracking codes)
+
+Return a JSON array (no markdown, no code fences, pure JSON). Each element must have:
+{
+  "label": "<parcel label/identifier if present, else empty string>",
+  "trackingNumbers": ["<tracking number 1>", "<tracking number 2>"],
+  "items": [{"name": "<product name>", "qty": <number>}],
+  "address": {
+    "name": "<recipient full name>",
+    "line1": "<street address line 1>",
+    "city": "<city or town>",
+    "postcode": "<postcode or zip, strip spaces, uppercase>",
+    "country": "<country name>",
+    "phone": "<phone number>"
+  }
+}
+
+Rules:
+- Extract tracking numbers from URLs: "17track.net/en#nums=ABC123" → "ABC123", "royalmail.com/：HD355877507GB" → "HD355877507GB"
+- If multiple tracking numbers appear for one shipment, include all in trackingNumbers array.
+- Normalise postcodes: strip all spaces and convert to uppercase.
+- qty should be a positive integer; default 1 if not stated.
+- Include ALL shipments you find.
+- Return ONLY the JSON array, nothing else.`;
+
+  const userMessage = `Extract all shipments from this text:\n\n${rawText.slice(0, 60_000)}`;
+
+  type ParsedShipment = {
+    label: string;
+    trackingNumbers: string[];
+    items: { name: string; qty: number }[];
+    address: { name: string; line1: string; city: string; postcode: string; country: string; phone: string };
+  };
+
+  let parsed: ParsedShipment[] = [];
+  try {
+    const raw = await callSageAI({
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      maxTokens: 16384,
+      enableWebSearch: false,
+      temperature: 0.1,
+    });
+    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const arr = JSON.parse(cleaned);
+    if (Array.isArray(arr)) parsed = arr.slice(0, 200);
+  } catch (err) {
+    console.error("[bulk-tracking/ai-parse] AI error:", err);
+    res.status(502).json({ error: "AI parsing failed — check input and try again" }); return;
+  }
+
+  // ── Step 2: Load recent orders with addresses + line items ─────────────────
+  const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000); // last year
+  const recentOrders = await db
+    .select({
+      id: ordersTable.id,
+      code: ordersTable.code,
+      telegramUsername: ordersTable.telegramUsername,
+      status: ordersTable.status,
+      trackingNumber: ordersTable.trackingNumber,
+      groupBuyId: ordersTable.groupBuyId,
+      sharedOrderId: ordersTable.sharedOrderId,
+      shippingName: ordersTable.shippingName,
+      shippingPhone: ordersTable.shippingPhone,
+      shippingAddress: ordersTable.shippingAddress,
+      shippingCity: ordersTable.shippingCity,
+      shippingPostcode: ordersTable.shippingPostcode,
+      shippingCountry: ordersTable.shippingCountry,
+      grandTotal: ordersTable.grandTotal,
+      createdAt: ordersTable.createdAt,
+    })
+    .from(ordersTable)
+    .where(and(
+      notInArray(ordersTable.status, ["Cancelled", "Deleted"]),
+      gte(ordersTable.createdAt, cutoff),
+    ))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(10_000);
+
+  const orderIds = recentOrders.map(o => o.id);
+  const allLineItems = orderIds.length > 0
+    ? await db.select({
+        orderId: orderLineItemsTable.orderId,
+        productName: orderLineItemsTable.productName,
+        quantity: orderLineItemsTable.quantity,
+      }).from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds))
+    : [];
+
+  const lineItemsByOrder: Record<string, { productName: string; quantity: string }[]> = {};
+  for (const li of allLineItems) {
+    if (!lineItemsByOrder[li.orderId]) lineItemsByOrder[li.orderId] = [];
+    lineItemsByOrder[li.orderId].push({ productName: li.productName, quantity: li.quantity });
+  }
+
+  // ── Step 3: Score each parsed shipment against each order ──────────────────
+  function normalizePostcode(s: string): string {
+    return (s ?? "").replace(/\s+/g, "").toUpperCase();
+  }
+  function normalizePhone(s: string): string {
+    return (s ?? "").replace(/\D/g, "").slice(-9); // last 9 digits
+  }
+  function wordSet(s: string): Set<string> {
+    return new Set((s ?? "").toLowerCase().split(/\s+/).filter(w => w.length > 1));
+  }
+  function wordOverlap(a: Set<string>, b: Set<string>): number {
+    let n = 0;
+    for (const w of a) if (b.has(w)) n++;
+    return n;
+  }
+
+  type MatchResult = {
+    orderId: string;
+    orderCode: string;
+    telegramUsername: string;
+    shippingName: string | null;
+    shippingPostcode: string | null;
+    shippingCountry: string | null;
+    shippingAddress: string | null;
+    currentTrackingNumber: string | null;
+    grandTotal: string;
+    groupBuyId: string | null;
+    lineItems: { productName: string; quantity: string }[];
+    score: number;
+    confidence: "high" | "medium" | "low" | "none";
+    matchReasons: string[];
+  };
+
+  function scoreOrder(order: typeof recentOrders[0], shipment: ParsedShipment): { score: number; reasons: string[] } {
+    let score = 0;
+    const reasons: string[] = [];
+
+    const oPostcode = normalizePostcode(order.shippingPostcode ?? "");
+    const pPostcode = normalizePostcode(shipment.address.postcode ?? "");
+    if (oPostcode && pPostcode && oPostcode === pPostcode) {
+      score += 50; reasons.push("postcode");
+    }
+
+    const oPhone = normalizePhone(order.shippingPhone ?? "");
+    const pPhone = normalizePhone(shipment.address.phone ?? "");
+    if (oPhone && pPhone && oPhone.length >= 7 && oPhone === pPhone) {
+      score += 40; reasons.push("phone");
+    }
+
+    const oNameWords = wordSet(order.shippingName ?? "");
+    const pNameWords = wordSet(shipment.address.name ?? "");
+    const nameOverlap = wordOverlap(oNameWords, pNameWords);
+    if (nameOverlap >= 2) { score += nameOverlap * 8; reasons.push("name"); }
+    else if (nameOverlap === 1) { score += 4; }
+
+    const oAddrWords = wordSet((order.shippingAddress ?? "") + " " + (order.shippingCity ?? ""));
+    const pAddrWords = wordSet((shipment.address.line1 ?? "") + " " + (shipment.address.city ?? ""));
+    const addrOverlap = wordOverlap(oAddrWords, pAddrWords);
+    if (addrOverlap >= 2) { score += addrOverlap * 3; reasons.push("address"); }
+
+    const orderItems = lineItemsByOrder[order.id] ?? [];
+    let itemHits = 0;
+    for (const pi of (shipment.items ?? [])) {
+      const piLow = pi.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      for (const oi of orderItems) {
+        const oiLow = oi.productName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (piLow.length >= 4 && oiLow.length >= 4 && (piLow.includes(oiLow.slice(0, 8)) || oiLow.includes(piLow.slice(0, 8)))) {
+          itemHits++; break;
+        }
+      }
+    }
+    if (itemHits > 0) { score += itemHits * 2; reasons.push("items"); }
+
+    return { score, reasons };
+  }
+
+  function confidence(score: number): "high" | "medium" | "low" | "none" {
+    if (score >= 50) return "high";
+    if (score >= 20) return "medium";
+    if (score >= 6) return "low";
+    return "none";
+  }
+
+  const matchedOrderIds = new Set<string>();
+  const shipmentResults = parsed.map((shipment, idx) => {
+    let best: { score: number; reasons: string[]; order: typeof recentOrders[0] } | null = null;
+    for (const order of recentOrders) {
+      const { score, reasons } = scoreOrder(order, shipment);
+      if (score > 0 && (!best || score > best.score)) {
+        best = { score, reasons, order };
+      }
+    }
+
+    let match: MatchResult | null = null;
+    if (best && best.score >= 6) {
+      matchedOrderIds.add(best.order.id);
+      match = {
+        orderId: best.order.id,
+        orderCode: best.order.code,
+        telegramUsername: best.order.telegramUsername,
+        shippingName: best.order.shippingName,
+        shippingPostcode: best.order.shippingPostcode,
+        shippingCountry: best.order.shippingCountry,
+        shippingAddress: best.order.shippingAddress,
+        currentTrackingNumber: best.order.trackingNumber,
+        grandTotal: best.order.grandTotal,
+        groupBuyId: best.order.groupBuyId,
+        lineItems: lineItemsByOrder[best.order.id] ?? [],
+        score: best.score,
+        confidence: confidence(best.score),
+        matchReasons: best.reasons,
+      };
+    }
+
+    return {
+      id: `shipment-${idx}`,
+      label: shipment.label,
+      trackingNumbers: shipment.trackingNumbers ?? [],
+      items: shipment.items ?? [],
+      parsedAddress: shipment.address,
+      match,
+    };
+  });
+
+  // ── Step 4: Outstanding orders ─────────────────────────────────────────────
+  // Orders from same GB(s) as any matched order, OR same sharedOrderId group,
+  // that have NO tracking number and are not in the matched set.
+  const matchedGbIds = new Set<string>();
+  const matchedSharedIds = new Set<string>();
+  for (const s of shipmentResults) {
+    if (s.match?.groupBuyId) matchedGbIds.add(s.match.groupBuyId);
+    if (s.match) {
+      const o = recentOrders.find(r => r.id === s.match!.orderId);
+      if (o?.sharedOrderId) matchedSharedIds.add(o.sharedOrderId);
+    }
+  }
+
+  const outstanding = recentOrders.filter(o =>
+    !o.trackingNumber &&
+    !matchedOrderIds.has(o.id) &&
+    !["Cancelled", "Deleted", "Shipped"].includes(o.status) &&
+    (
+      (matchedGbIds.size > 0 && o.groupBuyId && matchedGbIds.has(o.groupBuyId)) ||
+      (matchedSharedIds.size > 0 && o.sharedOrderId && matchedSharedIds.has(o.sharedOrderId))
+    )
+  ).map(o => ({
+    orderId: o.id,
+    orderCode: o.code,
+    telegramUsername: o.telegramUsername,
+    shippingName: o.shippingName,
+    shippingCountry: o.shippingCountry,
+    grandTotal: o.grandTotal,
+    status: o.status,
+    groupBuyId: o.groupBuyId,
+    lineItems: (lineItemsByOrder[o.id] ?? []).map(li => ({ productName: li.productName, quantity: li.quantity })),
+  }));
+
+  res.json({
+    shipments: shipmentResults,
+    outstanding,
+    stats: {
+      total: parsed.length,
+      matched: shipmentResults.filter(s => s.match && s.match.confidence !== "none").length,
+      unmatched: shipmentResults.filter(s => !s.match || s.match.confidence === "none").length,
+      outstandingCount: outstanding.length,
+    },
+  });
+});
+
 // ─── PATCH /api/admin/orders/bulk-tracking ────────────────────
 // Accepts CSV lines (ORDER_CODE,TRACKING_NUMBER) and applies tracking + marks Shipped.
 router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<void> => {
@@ -9583,6 +9869,102 @@ router.post("/admin/wholesale-access-requests/:id/reject", async (req: any, res:
     `❌ <b>Wholesale Access Not Approved</b>\n\n${reason ? `Reason: ${reason}\n\n` : ""}Please contact support via your account portal if you have any questions.`
   ).catch(() => {});
   res.json({ ok: true });
+});
+
+// ── GET /api/admin/wholesale-tracking — all shared orders with tracking info ───
+// Returns every wholesale share that has a main parcel tracking number OR at least
+// one member with an onward tracking number, with full (unmasked) tracking data
+// for the admin view. Members with no onward tracking are included for context.
+router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    // Load all shares that have a main tracking number
+    const shares = await db
+      .select({
+        id: wholesaleSharesTable.id,
+        status: wholesaleSharesTable.status,
+        creatorUsername: wholesaleSharesTable.creatorUsername,
+        deliveryUsername: wholesaleSharesTable.deliveryUsername,
+        shippingCountry: wholesaleSharesTable.shippingCountry,
+        shippingName: wholesaleSharesTable.shippingName,
+        mainTrackingNumber: wholesaleSharesTable.mainTrackingNumber,
+        mainTrackingCarrier: wholesaleSharesTable.mainTrackingCarrier,
+        mainTrackingStatus: wholesaleSharesTable.mainTrackingStatus,
+        mainTrackingStatusCode: wholesaleSharesTable.mainTrackingStatusCode,
+        mainTrackingEvents: wholesaleSharesTable.mainTrackingEvents,
+        mainTrackingChecked: wholesaleSharesTable.mainTrackingChecked,
+        createdAt: wholesaleSharesTable.createdAt,
+        submittedAt: wholesaleSharesTable.submittedAt,
+      })
+      .from(wholesaleSharesTable)
+      .where(isNotNull(wholesaleSharesTable.mainTrackingNumber))
+      .orderBy(desc(wholesaleSharesTable.createdAt));
+
+    if (shares.length === 0) { res.json({ shares: [] }); return; }
+
+    const shareIds = shares.map(s => s.id);
+
+    // Load ALL members for these shares (include those with onward tracking too)
+    const members = await db
+      .select({
+        id: wholesaleShareMembersTable.id,
+        shareId: wholesaleShareMembersTable.shareId,
+        username: wholesaleShareMembersTable.username,
+        isCreator: wholesaleShareMembersTable.isCreator,
+        onwardTrackingNumber: wholesaleShareMembersTable.onwardTrackingNumber,
+        onwardCarrier: wholesaleShareMembersTable.onwardCarrier,
+        onwardTrackingStatus: wholesaleShareMembersTable.onwardTrackingStatus,
+        onwardTrackingStatusCode: wholesaleShareMembersTable.onwardTrackingStatusCode,
+        onwardTrackingEvents: wholesaleShareMembersTable.onwardTrackingEvents,
+        onwardTrackingChecked: wholesaleShareMembersTable.onwardTrackingChecked,
+      })
+      .from(wholesaleShareMembersTable)
+      .where(inArray(wholesaleShareMembersTable.shareId, shareIds))
+      .orderBy(asc(wholesaleShareMembersTable.joinedAt));
+
+    // Group members by shareId
+    const membersByShare: Record<string, typeof members> = {};
+    for (const m of members) {
+      if (!membersByShare[m.shareId]) membersByShare[m.shareId] = [];
+      membersByShare[m.shareId].push(m);
+    }
+
+    const result = shares.map(share => ({
+      id: share.id,
+      status: share.status,
+      creatorUsername: share.creatorUsername,
+      deliveryUsername: share.deliveryUsername,
+      shippingCountry: share.shippingCountry,
+      shippingName: share.shippingName,
+      createdAt: share.createdAt ? (share.createdAt as Date).toISOString() : null,
+      submittedAt: share.submittedAt ? (share.submittedAt as Date).toISOString() : null,
+      mainTracking: {
+        trackingNumber: share.mainTrackingNumber ?? null,
+        carrier: share.mainTrackingCarrier ?? null,
+        status: share.mainTrackingStatus ?? null,
+        statusCode: share.mainTrackingStatusCode ?? null,
+        events: (share.mainTrackingEvents ?? []) as Array<{ date: string; status: string; location: string }>,
+        lastChecked: share.mainTrackingChecked ? (share.mainTrackingChecked as Date).toISOString() : null,
+      },
+      members: (membersByShare[share.id] ?? []).map(m => ({
+        username: m.username,
+        isCreator: m.isCreator,
+        onwardTracking: m.onwardTrackingNumber ? {
+          trackingNumber: m.onwardTrackingNumber,
+          carrier: m.onwardCarrier ?? null,
+          status: m.onwardTrackingStatus ?? null,
+          statusCode: m.onwardTrackingStatusCode ?? null,
+          events: (m.onwardTrackingEvents ?? []) as Array<{ date: string; status: string; location: string }>,
+          lastChecked: m.onwardTrackingChecked ? (m.onwardTrackingChecked as Date).toISOString() : null,
+        } : null,
+      })),
+    }));
+
+    res.json({ shares: result });
+  } catch (err) {
+    console.error("[admin/wholesale-tracking]", err);
+    res.status(500).json({ error: "Failed to load tracking data" });
+  }
 });
 
 // ── GET /api/admin/impersonate-redirect?token=XYZ — set cookie and redirect ────

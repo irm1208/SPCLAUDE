@@ -18292,7 +18292,370 @@ function parseCsvLines(raw: string): BulkTrackingLine[] {
   });
 }
 
+// ── AI Paste types ──────────────────────────────────────────────────────────
+interface AiParsedAddress { name: string; line1: string; city: string; postcode: string; country: string; phone: string }
+interface AiParsedItem    { name: string; qty: number }
+interface AiMatchResult   {
+  orderId: string; orderCode: string; telegramUsername: string;
+  shippingName: string | null; shippingPostcode: string | null;
+  shippingCountry: string | null; shippingAddress: string | null;
+  currentTrackingNumber: string | null; grandTotal: string; groupBuyId: string | null;
+  lineItems: { productName: string; quantity: string }[];
+  score: number; confidence: "high" | "medium" | "low" | "none";
+  matchReasons: string[];
+}
+interface AiShipment {
+  id: string; label: string;
+  trackingNumbers: string[];
+  items: AiParsedItem[];
+  parsedAddress: AiParsedAddress;
+  match: AiMatchResult | null;
+}
+interface AiOutstandingOrder {
+  orderId: string; orderCode: string; telegramUsername: string;
+  shippingName: string | null; shippingCountry: string | null;
+  grandTotal: string; status: string;
+  lineItems: { productName: string; quantity: string }[];
+}
+interface AiParseResponse {
+  shipments: AiShipment[];
+  outstanding: AiOutstandingOrder[];
+  stats: { total: number; matched: number; unmatched: number; outstandingCount: number };
+}
+
+function ConfidenceBadge({ c }: { c: "high" | "medium" | "low" | "none" }) {
+  const styles: Record<string, { bg: string; color: string; label: string }> = {
+    high:   { bg: "rgba(34,197,94,0.12)",  color: "#16a34a", label: "High confidence" },
+    medium: { bg: "rgba(245,158,11,0.12)", color: "#d97706", label: "Medium confidence" },
+    low:    { bg: "rgba(239,68,68,0.12)",  color: "#dc2626", label: "Low confidence" },
+    none:   { bg: "rgba(148,163,184,0.12)", color: "#64748b", label: "No match" },
+  };
+  const s = styles[c] ?? styles.none;
+  return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: s.bg, color: s.color }}>{s.label}</span>;
+}
+
+// ── AI Paste sub-component ─────────────────────────────────────────────────
+function AiPasteMode({ secret }: { secret: string }) {
+  const [raw, setRaw] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<AiParseResponse | null>(null);
+  // Which shipments are checked (included in apply)
+  const [included, setIncluded] = useState<Record<string, boolean>>({});
+  // Per-shipment tracking number overrides
+  const [trackingOverride, setTrackingOverride] = useState<Record<string, string>>({});
+  // Per-shipment order code overrides (in case admin wants to reassign)
+  const [codeOverride, setCodeOverride] = useState<Record<string, string>>({});
+  const [applying, setApplying] = useState(false);
+  const [applyResults, setApplyResults] = useState<BulkTrackingResult[] | null>(null);
+
+  const handleParse = async () => {
+    if (!raw.trim()) return;
+    setParsing(true); setParseError(null); setParsed(null); setApplyResults(null);
+    try {
+      const r = await fetch(apiUrl("/admin/orders/bulk-tracking/ai-parse"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ rawText: raw }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setParseError(d.error ?? "Parse failed"); return; }
+      const result = d as AiParseResponse;
+      setParsed(result);
+      // Auto-check high+medium matches
+      const init: Record<string, boolean> = {};
+      for (const s of result.shipments) {
+        init[s.id] = s.match !== null && s.match.confidence !== "none";
+      }
+      setIncluded(init);
+      setTrackingOverride({});
+      setCodeOverride({});
+    } catch { setParseError("Network error — please try again"); }
+    finally { setParsing(false); }
+  };
+
+  const handleApply = async () => {
+    if (!parsed) return;
+    const lines: BulkTrackingLine[] = [];
+    for (const s of parsed.shipments) {
+      if (!included[s.id]) continue;
+      const code = (codeOverride[s.id] ?? s.match?.orderCode ?? "").trim();
+      if (!code) continue;
+      const tracking = (trackingOverride[s.id] ?? s.trackingNumbers[0] ?? "").trim();
+      lines.push({ code, trackingNumber: tracking });
+    }
+    if (!lines.length) return;
+    setApplying(true); setApplyResults(null);
+    try {
+      const r = await fetch(apiUrl("/admin/orders/bulk-tracking"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ lines }),
+      });
+      const d = await r.json();
+      setApplyResults(d.results ?? []);
+    } catch { setApplyResults([{ code: "—", trackingNumber: "", ok: false, error: "Network error" }]); }
+    finally { setApplying(false); }
+  };
+
+  const includedCount = parsed ? parsed.shipments.filter(s => included[s.id]).length : 0;
+
+  return (
+    <div className="space-y-5">
+      {/* Paste area */}
+      <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-foreground">Paste Tracking Info</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Paste any format — vendor dispatch messages, address blocks, item lists, 17track links. AI will extract each shipment and match it to an order.
+          </p>
+        </div>
+        <textarea
+          value={raw}
+          onChange={e => { setRaw(e.target.value); setParsed(null); setApplyResults(null); setParseError(null); }}
+          placeholder={"Paste tracking numbers, addresses, and items here…"}
+          rows={10}
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none resize-y"
+          style={{ minHeight: 160 }}
+        />
+        <button
+          onClick={handleParse}
+          disabled={parsing || !raw.trim()}
+          className="h-10 px-5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition-colors disabled:opacity-40"
+          style={{ background: "#0f172a" }}
+        >
+          {parsing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analysing with AI…</> : <><Sparkles className="w-3.5 h-3.5" /> Parse with AI</>}
+        </button>
+        {parseError && <p className="text-xs text-red-500">{parseError}</p>}
+      </div>
+
+      {/* Stats bar */}
+      {parsed && (
+        <div className="flex gap-3 flex-wrap">
+          {[
+            { label: "Shipments found", val: parsed.stats.total, color: "#0f172a" },
+            { label: "Matched to orders", val: parsed.stats.matched, color: "#16a34a" },
+            { label: "Unmatched", val: parsed.stats.unmatched, color: "#dc2626" },
+            { label: "Outstanding orders", val: parsed.stats.outstandingCount, color: "#d97706" },
+          ].map(s => (
+            <div key={s.label} className="flex-1 min-w-[100px] rounded-xl border border-border bg-white px-4 py-3 text-center">
+              <p className="text-lg font-bold" style={{ color: s.color }}>{s.val}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Shipment match cards */}
+      {parsed && parsed.shipments.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-foreground">Matched Shipments — review before applying</p>
+            <div className="flex gap-2">
+              <button onClick={() => { const n: Record<string,boolean> = {}; for (const s of parsed.shipments) n[s.id] = s.match !== null; setIncluded(n); }} className="text-[11px] text-muted-foreground hover:text-foreground">Select all</button>
+              <span className="text-[11px] text-muted-foreground">·</span>
+              <button onClick={() => setIncluded({})} className="text-[11px] text-muted-foreground hover:text-foreground">Deselect all</button>
+            </div>
+          </div>
+
+          {parsed.shipments.map(s => {
+            const isOn = !!included[s.id];
+            const trackVal = trackingOverride[s.id] ?? s.trackingNumbers[0] ?? "";
+            const codeVal = codeOverride[s.id] ?? s.match?.orderCode ?? "";
+            return (
+              <div
+                key={s.id}
+                className="rounded-2xl border bg-white overflow-hidden transition-all"
+                style={{ borderColor: isOn ? (s.match?.confidence === "high" ? "#22c55e" : s.match?.confidence === "medium" ? "#f59e0b" : "#e2e8f0") : "#e2e8f0" }}
+              >
+                {/* Header row */}
+                <div className="flex items-start gap-3 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={isOn}
+                    onChange={e => setIncluded(prev => ({ ...prev, [s.id]: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 rounded shrink-0 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {/* Label + confidence */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {s.label && <span className="text-xs font-semibold text-foreground">{s.label}</span>}
+                      {s.match ? <ConfidenceBadge c={s.match.confidence} /> : <ConfidenceBadge c="none" />}
+                      {s.match?.matchReasons && s.match.matchReasons.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">matched by: {s.match.matchReasons.join(", ")}</span>
+                      )}
+                    </div>
+
+                    {/* Tracking numbers */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {s.trackingNumbers.map((tn, i) => (
+                        <span key={i} className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700">{tn}</span>
+                      ))}
+                      {s.trackingNumbers.length === 0 && <span className="text-[11px] text-amber-600 italic">No tracking number extracted</span>}
+                    </div>
+
+                    {/* Parsed address */}
+                    <div className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-foreground">{s.parsedAddress.name}</span>
+                      {s.parsedAddress.line1 && <> · {s.parsedAddress.line1}</>}
+                      {s.parsedAddress.city && <> · {s.parsedAddress.city}</>}
+                      {s.parsedAddress.postcode && <> · {s.parsedAddress.postcode}</>}
+                      {s.parsedAddress.country && <> · {s.parsedAddress.country}</>}
+                    </div>
+
+                    {/* Parsed items */}
+                    {s.items.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {s.items.slice(0, 8).map((it, i) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "#f1f5f9", color: "#475569" }}>
+                            {it.name} ×{it.qty}
+                          </span>
+                        ))}
+                        {s.items.length > 8 && <span className="text-[10px] text-muted-foreground">+{s.items.length - 8} more</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Matched order detail + editable fields */}
+                <div className="border-t border-border px-4 pb-4 pt-3 bg-slate-50 space-y-3">
+                  {s.match ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <span className="font-mono font-bold text-foreground">{s.match.orderCode}</span>
+                        <span className="text-muted-foreground">{s.match.telegramUsername}</span>
+                        {s.match.shippingName && <span className="text-muted-foreground">· {s.match.shippingName}</span>}
+                        {s.match.shippingPostcode && <span className="font-mono text-muted-foreground">{s.match.shippingPostcode}</span>}
+                        {s.match.shippingCountry && <span className="text-muted-foreground">{s.match.shippingCountry}</span>}
+                        {s.match.currentTrackingNumber && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: "rgba(245,158,11,0.12)", color: "#d97706" }}>
+                            already has tracking: {s.match.currentTrackingNumber}
+                          </span>
+                        )}
+                      </div>
+                      {s.match.lineItems.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {s.match.lineItems.slice(0, 8).map((li, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border" style={{ background: "#fff", borderColor: "#e2e8f0", color: "#475569" }}>
+                              {li.productName} ×{li.quantity}
+                            </span>
+                          ))}
+                          {s.match.lineItems.length > 8 && <span className="text-[10px] text-muted-foreground">+{s.match.lineItems.length - 8} more</span>}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">No order matched — enter the order code manually below to include it.</p>
+                  )}
+
+                  {/* Editable fields (always shown when checked) */}
+                  {isOn && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Order Code</label>
+                        <input
+                          value={codeVal}
+                          onChange={e => setCodeOverride(prev => ({ ...prev, [s.id]: e.target.value }))}
+                          placeholder={s.match?.orderCode ?? "Enter order code…"}
+                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Tracking Number (primary)</label>
+                        <input
+                          value={trackVal}
+                          onChange={e => setTrackingOverride(prev => ({ ...prev, [s.id]: e.target.value }))}
+                          placeholder={s.trackingNumbers[0] ?? "Enter tracking number…"}
+                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Apply button */}
+          <button
+            onClick={handleApply}
+            disabled={applying || includedCount === 0}
+            className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-40"
+            style={{ background: "#F24908" }}
+          >
+            {applying
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Applying…</>
+              : <><Truck className="w-4 h-4" /> Apply {includedCount} Match{includedCount !== 1 ? "es" : ""} & Mark Shipped</>
+            }
+          </button>
+        </div>
+      )}
+
+      {/* Apply results */}
+      {applyResults && (
+        <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
+          <p className="text-xs font-semibold text-foreground">Apply Results</p>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {applyResults.map((r, i) => (
+              <div key={i} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-mono", r.ok ? "bg-green-50" : "bg-red-50")}>
+                <span className={cn("text-base leading-none", r.ok ? "text-green-600" : "text-red-500")}>{r.ok ? "✓" : "✗"}</span>
+                <span className="font-bold text-foreground">{r.code}</span>
+                <span className="text-muted-foreground truncate flex-1">{r.trackingNumber || "—"}</span>
+                {!r.ok && <span className="text-red-500 shrink-0">{r.error}</span>}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {applyResults.filter(r => r.ok).length} succeeded · {applyResults.filter(r => !r.ok).length} failed
+          </p>
+        </div>
+      )}
+
+      {/* Outstanding orders (unshipped from matched GBs) */}
+      {parsed && parsed.outstanding.length > 0 && (
+        <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-500" /> {parsed.outstanding.length} Outstanding Order{parsed.outstanding.length !== 1 ? "s" : ""} — Not Yet Shipped
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              These orders are from the same group buy as your matched shipments but have no tracking number yet.
+            </p>
+          </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {parsed.outstanding.map(o => (
+              <div key={o.orderId} className="flex items-start gap-3 rounded-lg px-3 py-2.5" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="font-mono font-bold text-foreground">{o.orderCode}</span>
+                    <span className="text-muted-foreground">{o.telegramUsername}</span>
+                    {o.shippingName && <span className="text-muted-foreground">· {o.shippingName}</span>}
+                    {o.shippingCountry && <span className="text-muted-foreground">· {o.shippingCountry}</span>}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.12)", color: "#d97706" }}>{o.status}</span>
+                  </div>
+                  {o.lineItems.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {o.lineItems.slice(0, 6).map((li, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-amber-100 text-amber-700">
+                          {li.productName} ×{li.quantity}
+                        </span>
+                      ))}
+                      {o.lineItems.length > 6 && <span className="text-[10px] text-muted-foreground">+{o.lineItems.length - 6} more</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BulkShipmentTab({ secret }: { secret: string }) {
+  const [mode, setMode] = useState<"csv" | "ai">("ai");
   const [csv, setCsv] = useState("");
   const [preview, setPreview] = useState<BulkTrackingLine[]>([]);
   const [applying, setApplying] = useState(false);
@@ -18325,72 +18688,98 @@ function BulkShipmentTab({ secret }: { secret: string }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-bold text-foreground">Bulk Tracking</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Paste order codes and tracking numbers to ship many orders at once</p>
-      </div>
-
-      <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
-        <p className="text-xs font-semibold text-foreground">CSV Input</p>
-        <p className="text-[11px] text-muted-foreground">One line per order: <code className="bg-muted rounded px-1">ORDER_CODE,TRACKING_NUMBER</code></p>
-        <textarea
-          value={csv}
-          onChange={e => { setCsv(e.target.value); setPreview([]); setResults(null); }}
-          placeholder={"ABC123,1Z999AA10123456784\nDEF456,1Z999BB20987654321"}
-          rows={8}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-orange-100/30 resize-y"
-        />
-        <button
-          onClick={handleParse}
-          disabled={!csv.trim()}
-          className="h-9 px-4 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-40 transition-colors"
-        >
-          Preview ({parseCsvLines(csv).length} lines)
-        </button>
-      </div>
-
-      {preview.length > 0 && (
-        <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-foreground">Preview — {preview.length} orders</p>
-            <button onClick={() => setPreview([])} className="text-[11px] text-muted-foreground hover:text-foreground">Clear</button>
-          </div>
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
-            {preview.map((l, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2 bg-slate-50 text-xs font-mono">
-                <span className="font-bold text-foreground">{l.code}</span>
-                <span className="text-muted-foreground truncate flex-1">{l.trackingNumber || <em className="not-italic text-amber-500">no tracking</em>}</span>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={handleApply}
-            disabled={applying}
-            className="w-full h-11 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow transition-all"
-            style={{ background: "#F24908" }}
-          >
-            {applying ? <><Loader2 className="w-4 h-4 animate-spin" /> Applying…</> : <><Truck className="w-4 h-4" /> Apply All & Mark Shipped</>}
-          </button>
-        </div>
-      )}
-
-      {results && (
-        <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
-          <p className="text-xs font-semibold text-foreground">Results</p>
-          <div className="space-y-1.5 max-h-72 overflow-y-auto">
-            {results.map((r, i) => (
-              <div key={i} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-mono", r.ok ? "bg-green-50" : "bg-red-50")}>
-                <span className={cn("text-base leading-none", r.ok ? "text-green-600" : "text-red-500")}>{r.ok ? "✓" : "✗"}</span>
-                <span className="font-bold text-foreground">{r.code}</span>
-                <span className="text-muted-foreground truncate flex-1">{r.trackingNumber || "—"}</span>
-                {!r.ok && <span className="text-red-500 shrink-0">{r.error}</span>}
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {results.filter(r => r.ok).length} succeeded · {results.filter(r => !r.ok).length} failed
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Bulk Tracking</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {mode === "ai" ? "Paste vendor dispatch messages — AI matches tracking numbers to orders automatically" : "Paste order codes and tracking numbers to ship many orders at once"}
           </p>
         </div>
+        <div className="flex rounded-xl border border-border overflow-hidden text-xs font-semibold">
+          <button
+            onClick={() => setMode("ai")}
+            className="px-4 py-2 transition-colors"
+            style={mode === "ai" ? { background: "#0f172a", color: "#fff" } : { background: "#fff", color: "#64748b" }}
+          >
+            <Sparkles className="w-3 h-3 inline mr-1.5" />AI Paste
+          </button>
+          <button
+            onClick={() => setMode("csv")}
+            className="px-4 py-2 transition-colors"
+            style={mode === "csv" ? { background: "#0f172a", color: "#fff" } : { background: "#fff", color: "#64748b" }}
+          >
+            CSV
+          </button>
+        </div>
+      </div>
+
+      {mode === "ai" ? (
+        <AiPasteMode secret={secret} />
+      ) : (
+        <>
+          <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
+            <p className="text-xs font-semibold text-foreground">CSV Input</p>
+            <p className="text-[11px] text-muted-foreground">One line per order: <code className="bg-muted rounded px-1">ORDER_CODE,TRACKING_NUMBER</code></p>
+            <textarea
+              value={csv}
+              onChange={e => { setCsv(e.target.value); setPreview([]); setResults(null); }}
+              placeholder={"ABC123,1Z999AA10123456784\nDEF456,1Z999BB20987654321"}
+              rows={8}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none resize-y"
+            />
+            <button
+              onClick={handleParse}
+              disabled={!csv.trim()}
+              className="h-9 px-4 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-40 transition-colors"
+            >
+              Preview ({parseCsvLines(csv).length} lines)
+            </button>
+          </div>
+
+          {preview.length > 0 && (
+            <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-foreground">Preview — {preview.length} orders</p>
+                <button onClick={() => setPreview([])} className="text-[11px] text-muted-foreground hover:text-foreground">Clear</button>
+              </div>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {preview.map((l, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2 bg-slate-50 text-xs font-mono">
+                    <span className="font-bold text-foreground">{l.code}</span>
+                    <span className="text-muted-foreground truncate flex-1">{l.trackingNumber || <em className="not-italic text-amber-500">no tracking</em>}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={handleApply}
+                disabled={applying}
+                className="w-full h-11 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow transition-all"
+                style={{ background: "#F24908" }}
+              >
+                {applying ? <><Loader2 className="w-4 h-4 animate-spin" /> Applying…</> : <><Truck className="w-4 h-4" /> Apply All & Mark Shipped</>}
+              </button>
+            </div>
+          )}
+
+          {results && (
+            <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold text-foreground">Results</p>
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {results.map((r, i) => (
+                  <div key={i} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-mono", r.ok ? "bg-green-50" : "bg-red-50")}>
+                    <span className={cn("text-base leading-none", r.ok ? "text-green-600" : "text-red-500")}>{r.ok ? "✓" : "✗"}</span>
+                    <span className="font-bold text-foreground">{r.code}</span>
+                    <span className="text-muted-foreground truncate flex-1">{r.trackingNumber || "—"}</span>
+                    {!r.ok && <span className="text-red-500 shrink-0">{r.error}</span>}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {results.filter(r => r.ok).length} succeeded · {results.filter(r => !r.ok).length} failed
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -19682,6 +20071,281 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Wholesale Tracking Tab ──────────────────────────────────────────────────
+
+type WholesaleTrackingEvent = { date: string; status: string; location: string };
+type WholesaleMemberTracking = {
+  username: string;
+  isCreator: boolean;
+  onwardTracking: {
+    trackingNumber: string;
+    carrier: string | null;
+    status: string | null;
+    statusCode: number | null;
+    events: WholesaleTrackingEvent[];
+    lastChecked: string | null;
+  } | null;
+};
+type WholesaleTrackingShare = {
+  id: string;
+  status: string;
+  creatorUsername: string;
+  deliveryUsername: string | null;
+  shippingCountry: string | null;
+  shippingName: string | null;
+  createdAt: string | null;
+  submittedAt: string | null;
+  mainTracking: {
+    trackingNumber: string | null;
+    carrier: string | null;
+    status: string | null;
+    statusCode: number | null;
+    events: WholesaleTrackingEvent[];
+    lastChecked: string | null;
+  };
+  members: WholesaleMemberTracking[];
+};
+
+function TrackingStatusPill({ status, code }: { status: string | null; code: number | null }) {
+  if (!status) return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.15)", color: "var(--adm-muted)" }}>No data</span>;
+  const delivered = code === 40 || /delivered/i.test(status);
+  const inTransit = code === 30 || /transit|depart|arrival|customs/i.test(status);
+  const exception = code === 50 || /exception|fail|return|undeliver/i.test(status);
+  if (delivered) return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>{status}</span>;
+  if (exception) return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>{status}</span>;
+  if (inTransit) return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>{status}</span>;
+  return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{status}</span>;
+}
+
+function TrackingEventsList({ events }: { events: WholesaleTrackingEvent[] }) {
+  if (!events.length) return <p className="text-xs italic py-2" style={{ color: "var(--adm-muted)" }}>No tracking events yet.</p>;
+  return (
+    <ol className="relative border-l pl-4 space-y-3 mt-2" style={{ borderColor: "var(--adm-border)" }}>
+      {events.map((ev, i) => (
+        <li key={i} className="relative">
+          <span className="absolute -left-[17px] top-1 w-2 h-2 rounded-full" style={{ background: i === 0 ? "var(--adm-accent)" : "var(--adm-border)" }} />
+          <p className="text-xs font-medium leading-snug" style={{ color: "var(--adm-text)" }}>{ev.status}</p>
+          <p className="text-[10px] mt-0.5" style={{ color: "var(--adm-muted)" }}>
+            {ev.location && <span className="mr-2">{ev.location}</span>}
+            <span>{ev.date}</span>
+          </p>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function WholesaleTrackingTab({ secret }: { secret: string }) {
+  const [shares, setShares] = useState<WholesaleTrackingShare[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    fetch(apiUrl("/admin/wholesale-tracking"), { headers: { "x-admin-secret": secret } })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => setShares(d.shares ?? []))
+      .catch(() => setError("Failed to load tracking data"))
+      .finally(() => setLoading(false));
+  }, [secret]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return shares;
+    const q = search.toLowerCase();
+    return shares.filter(s =>
+      s.id.toLowerCase().includes(q) ||
+      s.creatorUsername.toLowerCase().includes(q) ||
+      (s.deliveryUsername ?? "").toLowerCase().includes(q) ||
+      (s.shippingCountry ?? "").toLowerCase().includes(q) ||
+      (s.mainTracking.trackingNumber ?? "").toLowerCase().includes(q) ||
+      (s.mainTracking.status ?? "").toLowerCase().includes(q) ||
+      s.members.some(m => m.username.toLowerCase().includes(q) || (m.onwardTracking?.trackingNumber ?? "").toLowerCase().includes(q))
+    );
+  }, [shares, search]);
+
+  const fmtDate = (iso: string | null) => {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }); }
+    catch { return iso; }
+  };
+
+  const onwardCount = (s: WholesaleTrackingShare) => s.members.filter(m => m.onwardTracking).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: "var(--adm-text)" }}>
+            <Truck className="w-5 h-5" /> Wholesale Tracking
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>
+            All shared orders with tracking data — main vendor parcel and per-member onward forwarding. Full unmasked numbers for admin.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          style={{ background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--adm-muted)" }} />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by share ID, organiser, tracking number, country…"
+          className="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none"
+          style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm py-12 justify-center" style={{ color: "var(--adm-muted)" }}>
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading tracking data…
+        </div>
+      ) : error ? (
+        <div className="text-sm py-8 text-center" style={{ color: "#ef4444" }}>{error}</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-sm py-12 text-center" style={{ color: "var(--adm-muted)" }}>
+          {search ? "No matches." : "No shared orders with tracking numbers yet."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(share => {
+            const open = expandedId === share.id;
+            const mt = share.mainTracking;
+            const latestEvent = mt.events[0] ?? null;
+            const oc = onwardCount(share);
+            return (
+              <div key={share.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
+                {/* ── Collapsed row ── */}
+                <button
+                  onClick={() => setExpandedId(open ? null : share.id)}
+                  className="w-full text-left px-4 py-3 flex items-start gap-3"
+                >
+                  {open
+                    ? <ChevronDown className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />
+                    : <ChevronRight className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />}
+                  <div className="min-w-0 flex-1">
+                    {/* Row 1: share ID + status badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{share.id}</span>
+                      <ShareStatusBadge status={share.status} />
+                      {oc > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6" }}>
+                          {oc} onward parcel{oc !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                    {/* Row 2: organiser · country · tracking number */}
+                    <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
+                      <span>Organiser <strong style={{ color: "var(--adm-text)" }}>@{share.creatorUsername}</strong></span>
+                      {share.shippingCountry && <span>→ {share.shippingCountry}</span>}
+                      {mt.trackingNumber && (
+                        <span className="font-mono" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
+                      )}
+                      {mt.carrier && <span>{mt.carrier}</span>}
+                    </div>
+                    {/* Row 3: tracking status + latest event */}
+                    <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                      <TrackingStatusPill status={mt.status} code={mt.statusCode} />
+                      {latestEvent && (
+                        <span className="text-[11px] truncate max-w-xs" style={{ color: "var(--adm-muted)" }}>{latestEvent.status}</span>
+                      )}
+                      {mt.lastChecked && (
+                        <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--adm-muted)" }}>checked {fmtDate(mt.lastChecked)}</span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+
+                {/* ── Expanded detail ── */}
+                {open && (
+                  <div className="border-t px-4 pb-5 pt-4 space-y-5" style={{ borderColor: "var(--adm-border)" }}>
+                    {/* Main parcel */}
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Main Parcel (vendor → recipient)</h3>
+                      <div className="rounded-lg p-3 space-y-1" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {mt.trackingNumber
+                            ? <span className="font-mono text-sm font-semibold" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
+                            : <span className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No tracking number set</span>}
+                          {mt.carrier && <span className="text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{mt.carrier}</span>}
+                          <TrackingStatusPill status={mt.status} code={mt.statusCode} />
+                        </div>
+                        {mt.lastChecked && <p className="text-[11px]" style={{ color: "var(--adm-muted)" }}>Last refreshed: {fmtDate(mt.lastChecked)}</p>}
+                        <p className="text-[11px]" style={{ color: "var(--adm-muted)" }}>
+                          Recipient: <strong style={{ color: "var(--adm-text)" }}>@{share.deliveryUsername ?? "—"}</strong>
+                          {share.shippingName && <> ({share.shippingName})</>}
+                          {share.shippingCountry && <> · {share.shippingCountry}</>}
+                        </p>
+                        <TrackingEventsList events={mt.events} />
+                      </div>
+                    </div>
+
+                    {/* Member onward tracking */}
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Onward Parcels (recipient → members)</h3>
+                      {share.members.length === 0 ? (
+                        <p className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No members loaded.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {share.members.map(m => (
+                            <div key={m.username} className="rounded-lg p-3" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                <span className="text-xs font-semibold" style={{ color: "var(--adm-text)" }}>@{m.username}</span>
+                                {m.isCreator && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>organiser</span>
+                                )}
+                                {m.onwardTracking ? (
+                                  <>
+                                    <span className="font-mono text-xs" style={{ color: "var(--adm-text)" }}>{m.onwardTracking.trackingNumber}</span>
+                                    {m.onwardTracking.carrier && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{m.onwardTracking.carrier}</span>}
+                                    <TrackingStatusPill status={m.onwardTracking.status} code={m.onwardTracking.statusCode} />
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] italic" style={{ color: "var(--adm-muted)" }}>No onward tracking</span>
+                                )}
+                              </div>
+                              {m.onwardTracking && (
+                                <>
+                                  {m.onwardTracking.lastChecked && (
+                                    <p className="text-[10px] mb-1" style={{ color: "var(--adm-muted)" }}>Last checked: {fmtDate(m.onwardTracking.lastChecked)}</p>
+                                  )}
+                                  <TrackingEventsList events={m.onwardTracking.events} />
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Meta footer */}
+                    <div className="flex gap-4 text-[11px] pt-1 border-t flex-wrap" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
+                      <span>Created: {fmtDate(share.createdAt)}</span>
+                      {share.submittedAt && <span>Submitted: {fmtDate(share.submittedAt)}</span>}
+                      <span>{share.members.length} member{share.members.length !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -22650,6 +23314,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
       { id: "wholesale-access", label: "Access Requests",  icon: Lock,         keywords: ["wholesale access", "access requests", "pay in", "enable wholesale", "disable wholesale", "applications", "wholesale toggle", "open applications", "close applications"] },
+      { id: "wholesale-tracking", label: "Tracking",          icon: Truck,        keywords: ["wholesale tracking", "shared order tracking", "main parcel", "onward tracking", "tracking status", "tracking events", "delivery status", "shared parcel", "dispatch tracking"] },
       { id: "dispatch",         label: "Dispatch",          icon: PackageCheck, keywords: ["dispatch", "packing slips", "shipped items", "ready to ship", "group buy shipped", "parcels shipped", "vendor parcel", "dispatch status", "ready for dispatch", "waiting orders", "reshipper dispatch", "shipped qty"] },
     ],
   },
@@ -25824,6 +26489,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
           {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}
+          {activeTab === "wholesale-tracking" && <WholesaleTrackingTab secret={secret} />}
           {activeTab === "dispatch"      && <AdminDispatch secret={secret} />}
           {activeTab === "invite-codes"  && <InviteCodesTab secret={secret} />}
           {activeTab === "coupons"       && <AdminCouponsTab secret={secret} />}
