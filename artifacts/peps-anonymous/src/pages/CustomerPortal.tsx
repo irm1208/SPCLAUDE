@@ -408,6 +408,40 @@ function OrderGridCard({
         )}
       </div>
 
+      {/* Shipment status strip — wholesale & shared only */}
+      {(kind === "wholesale" || kind === "shared") && (
+        <div className="flex items-center gap-2 mt-3 pt-3" style={{ borderTop: `1px dashed ${T.border}` }}>
+          {order.trackingNumber ? (
+            <>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                style={{ background: "rgba(34,197,94,0.12)" }}>
+                <Truck className="w-3 h-3" style={{ color: "#22c55e" }} />
+              </div>
+              <span className="text-[11.5px] font-semibold flex-1" style={{ color: "#16a34a" }}>Shipped</span>
+              <span className="text-[10px] font-mono truncate max-w-[110px]" style={{ color: T.muted }}>
+                {order.trackingNumber}
+              </span>
+            </>
+          ) : kind === "shared" ? (
+            <>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                style={{ background: "rgba(100,116,139,0.08)" }}>
+                <Package className="w-3 h-3" style={{ color: T.subtle }} />
+              </div>
+              <span className="text-[11.5px]" style={{ color: T.subtle }}>View order for shipping updates</span>
+            </>
+          ) : (
+            <>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                style={{ background: "rgba(234,179,8,0.10)" }}>
+                <Clock className="w-3 h-3" style={{ color: "#eab308" }} />
+              </div>
+              <span className="text-[11.5px] font-medium" style={{ color: T.muted }}>Not yet shipped</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* total */}
       <div className="flex items-center justify-between mt-3.5 pt-3.5" style={{ borderTop: `1px solid ${T.border}` }}>
         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: T.subtle }}>Total</span>

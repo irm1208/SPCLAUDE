@@ -2196,6 +2196,103 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // ── Shipment status summary card ─────────────────────────────────────────────
+  // Always-visible once the share is locked/submitted. Gives every member a quick
+  // at-a-glance answer: has the group parcel shipped? Has my onward parcel been sent?
+  // The detailed tracking sections below expand on this when tracking is available.
+  const sectionShipmentStatus = (share.isMember && (share.status === "submitted" || share.status === "locked")) ? (() => {
+    const mainShipped = !!share.mainTracking?.hasTracking;
+    const isRecipient = !!myMember?.isRecipient;
+    const onwardShipped = !isRecipient && !!myMember?.onwardTracking?.hasTracking;
+    const others = share.members.filter(m => !m.isRecipient);
+    const forwardedCount = others.filter(m => m.onwardTracking?.hasTracking).length;
+
+    return (
+      <section className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipment Status</p>
+        <div className="rounded-xl overflow-hidden" style={card}>
+          {/* Row 1: Group parcel (vendor → recipient) */}
+          <div className="flex items-center gap-3 p-4">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: mainShipped ? "rgba(34,197,94,0.12)" : "rgba(234,179,8,0.10)" }}>
+              {mainShipped
+                ? <Truck className="w-4 h-4" style={{ color: "#22c55e" }} />
+                : <Clock className="w-4 h-4" style={{ color: "#eab308" }} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                {isRecipient ? "Your combined parcel" : "Group parcel"}
+              </p>
+              <p className="text-xs" style={{ color: mainShipped ? "#16a34a" : "var(--t-muted)" }}>
+                {mainShipped
+                  ? (trackStatusMeta(share.mainTracking?.status).label)
+                  : "Not yet shipped by vendor"}
+              </p>
+            </div>
+            <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full shrink-0"
+              style={mainShipped
+                ? { background: "rgba(34,197,94,0.12)", color: "#16a34a" }
+                : { background: "rgba(234,179,8,0.10)", color: "#a16207" }}>
+              {mainShipped ? "Shipped" : "Pending"}
+            </span>
+          </div>
+
+          {/* Row 2: Forwarded parcel — for non-recipient members */}
+          {!isRecipient && (
+            <>
+              <div style={{ height: 1, background: "var(--t-border)", margin: "0 16px" }} />
+              <div className="flex items-center gap-3 p-4">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: onwardShipped ? "rgba(34,197,94,0.12)" : "rgba(100,116,139,0.08)" }}>
+                  <Package className="w-4 h-4" style={{ color: onwardShipped ? "#22c55e" : "var(--t-muted)" }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Your forwarded parcel</p>
+                  <p className="text-xs" style={{ color: onwardShipped ? "#16a34a" : "var(--t-muted)" }}>
+                    {onwardShipped ? "Forwarded by recipient" : mainShipped ? "Awaiting forwarding by recipient" : "Waiting for group parcel first"}
+                  </p>
+                </div>
+                <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={onwardShipped
+                    ? { background: "rgba(34,197,94,0.12)", color: "#16a34a" }
+                    : { background: "rgba(100,116,139,0.08)", color: "var(--t-muted)" }}>
+                  {onwardShipped ? "Shipped" : "Pending"}
+                </span>
+              </div>
+            </>
+          )}
+
+          {/* Row 2 (recipient view): forwarding progress for other members */}
+          {isRecipient && others.length > 0 && (
+            <>
+              <div style={{ height: 1, background: "var(--t-border)", margin: "0 16px" }} />
+              <div className="flex items-center gap-3 p-4">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: forwardedCount > 0 ? "rgba(45,107,204,0.10)" : "rgba(100,116,139,0.08)" }}>
+                  <Users className="w-4 h-4" style={{ color: forwardedCount > 0 ? "var(--t-blue)" : "var(--t-muted)" }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Member forwarding</p>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                    {forwardedCount === others.length
+                      ? "All members forwarded"
+                      : `${forwardedCount} of ${others.length} member${others.length !== 1 ? "s" : ""} forwarded`}
+                  </p>
+                </div>
+                <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full shrink-0"
+                  style={forwardedCount === others.length && others.length > 0
+                    ? { background: "rgba(34,197,94,0.12)", color: "#16a34a" }
+                    : { background: "rgba(100,116,139,0.08)", color: "var(--t-muted)" }}>
+                  {forwardedCount}/{others.length}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    );
+  })() : null;
+
   // Main parcel (vendor → recipient) tracking, shown to EVERY member once admin adds
   // the combined-order tracking number — presented like the public GB parcel tracking.
   // The recipient sees the real number; everyone else sees a fully-dotted masked number.
@@ -2618,6 +2715,7 @@ export default function WholesaleShared() {
     <>
       {!organiserDone && !myPaid && sectionHowItWorks}
       {sectionOrderLimits}
+      {sectionShipmentStatus}
       {showOrganiserOpen && id && <ShareInviteLinkCard shareId={id} />}
       {sectionShippingDelivery}
       {sectionGroup}
