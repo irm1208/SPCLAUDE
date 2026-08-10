@@ -451,16 +451,20 @@ interface AccountSnapshot {
   missingAddress: number;
   upcomingGbName: string | null;
   upcomingGbDaysLeft: number | null;
+  isOrganiser: boolean;
+  pendingOrderCode: string | null;
+  missingAddressCode: string | null;
 }
 
 async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnapshot> {
   const norm = telegramUsername.replace(/^@/, "").toLowerCase();
 
   const [acct] = await db
-    .select({ credits: accountsTable.credits })
+    .select({ credits: accountsTable.credits, organiserStatus: accountsTable.organiserStatus })
     .from(accountsTable)
     .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
   const credits = acct?.credits ?? 0;
+  const isOrganiser = acct?.organiserStatus === "approved";
 
   const activeR = await pool.query<{ count: string }>(
     `SELECT COUNT(*) AS count FROM orders
@@ -471,8 +475,8 @@ async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnap
   );
   const activeOrders = parseInt(activeR.rows[0]?.count ?? "0", 10);
 
-  const payR = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM orders
+  const payR = await pool.query<{ count: string; single_code: string | null }>(
+    `SELECT COUNT(*) AS count, MIN(code) AS single_code FROM orders
      WHERE regexp_replace(lower(telegram_username),'^@','') = $1
        AND status IN ('Submitted','Processing')
        AND payment_status NOT IN ('confirmed','test_confirmed')
@@ -480,9 +484,10 @@ async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnap
     [norm],
   );
   const pendingPayment = parseInt(payR.rows[0]?.count ?? "0", 10);
+  const pendingOrderCode = pendingPayment === 1 ? (payR.rows[0]?.single_code ?? null) : null;
 
-  const addrR = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM orders
+  const addrR = await pool.query<{ count: string; single_code: string | null }>(
+    `SELECT COUNT(*) AS count, MIN(code) AS single_code FROM orders
      WHERE regexp_replace(lower(telegram_username),'^@','') = $1
        AND status IN ('Submitted','Processing')
        AND (shipping_address IS NULL OR shipping_address = '')
@@ -490,6 +495,7 @@ async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnap
     [norm],
   );
   const missingAddress = parseInt(addrR.rows[0]?.count ?? "0", 10);
+  const missingAddressCode = missingAddress === 1 ? (addrR.rows[0]?.single_code ?? null) : null;
 
   const gbR = await pool.query<{ name: string; close_at: string }>(
     `SELECT gb.name, gb.close_at
@@ -512,7 +518,79 @@ async function getAccountSnapshot(telegramUsername: string): Promise<AccountSnap
     upcomingGbDaysLeft = Math.max(0, Math.ceil(ms / 86_400_000));
   }
 
-  return { credits, activeOrders, pendingPayment, missingAddress, upcomingGbName, upcomingGbDaysLeft };
+  return { credits, activeOrders, pendingPayment, missingAddress, upcomingGbName, upcomingGbDaysLeft, isOrganiser, pendingOrderCode, missingAddressCode };
+}
+
+// ── Sage bot helpers ───────────────────────────────────────────────────────────
+
+const DEFAULT_BOT_SAGE_LIMIT = 10;
+
+/** Get the site-configured Sage system prompt, falling back to a hardcoded default. */
+async function getSageBotSystemPrompt(): Promise<string> {
+  try {
+    const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "sage_system_prompt_template"));
+    if (row?.value?.trim()) {
+      // Replace health-data placeholders — personalised biomarkers aren't available in the bot
+      return row.value
+        .replace("{{HEALTH_DATA}}", "(Personal health data is not available in the Telegram bot. For personalised analysis please use the website.)")
+        .replace("{{CHARTABLE_MARKERS}}", "")
+        .trim();
+    }
+  } catch { /* fallback below */ }
+  return [
+    "You are Sage, a knowledgeable health and compounds advisor for Salt & Peps, a peptide ordering platform.",
+    "You help members understand peptides, research compounds, dosing protocols, cycling, storage, and how to read lab results.",
+    "Guidelines:",
+    "- Be concise but thorough. Use 2-6 sentences unless a longer answer is clearly needed.",
+    "- Focus on established research. Acknowledge uncertainty where it exists.",
+    "- Do not prescribe doses for human use. Frame all dosing as research context only.",
+    "- Respond in plain text — no markdown, no asterisks, no bullet symbols (this is Telegram).",
+    "- If asked something completely unrelated to health, compounds, or peptides, politely redirect.",
+    "- Do not mention that you are an AI unless directly asked.",
+  ].join("\n");
+}
+
+/**
+ * Atomically check + increment the daily Sage quota for a user.
+ * Shares the same discuss_count / discuss_count_date columns used by /blood-tests/discuss.
+ */
+async function checkAndIncrementSageQuota(telegramUsername: string): Promise<{ allowed: boolean; limit: number }> {
+  const norm = telegramUsername.replace(/^@/, "").toLowerCase();
+  try {
+    const [limitRow] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "discuss_limit"));
+    const siteLimit = Math.max(1, parseInt(limitRow?.value ?? String(DEFAULT_BOT_SAGE_LIMIT), 10));
+
+    const [acct] = await db
+      .select({ discussLimitOverride: accountsTable.discussLimitOverride })
+      .from(accountsTable)
+      .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
+    const limit = (acct?.discussLimitOverride != null && acct.discussLimitOverride > 0) ? acct.discussLimitOverride : siteLimit;
+
+    const r = await pool.query<{ used: string }>(
+      `UPDATE accounts
+         SET discuss_count = CASE WHEN discuss_count_date = CURRENT_DATE THEN discuss_count + 1 ELSE 1 END,
+             discuss_count_date = CURRENT_DATE
+       WHERE regexp_replace(lower(telegram_username), '^@', '') = $1
+         AND (discuss_count_date IS DISTINCT FROM CURRENT_DATE OR discuss_count < $2)
+       RETURNING discuss_count AS used`,
+      [norm, limit],
+    );
+    return { allowed: r.rows.length > 0, limit };
+  } catch {
+    return { allowed: true, limit: DEFAULT_BOT_SAGE_LIMIT }; // fail open
+  }
+}
+
+/** Roll back one Sage quota increment (on Gemini error). */
+async function rollbackSageQuota(telegramUsername: string): Promise<void> {
+  const norm = telegramUsername.replace(/^@/, "").toLowerCase();
+  await pool.query(
+    `UPDATE accounts
+       SET discuss_count = GREATEST(discuss_count - 1, 0)
+     WHERE regexp_replace(lower(telegram_username), '^@', '') = $1
+       AND discuss_count_date = CURRENT_DATE`,
+    [norm],
+  ).catch(() => {});
 }
 
 // ── Notification pref labels ───────────────────────────────────────────────────
@@ -558,10 +636,12 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
     ? renderTemplate(template, { username })
     : template.replace(/Hey @\{\{username\}\}! /, "");
 
+  let snap: AccountSnapshot | null = null;
+
   // Personalised snapshot + pending nudges
   if (username) {
     try {
-      const snap = await getAccountSnapshot(username);
+      snap = await getAccountSnapshot(username);
       const parts: string[] = [];
       if (snap.activeOrders > 0) parts.push(`📦 ${snap.activeOrders} active order${snap.activeOrders !== 1 ? "s" : ""}`);
       if (snap.credits > 0) parts.push(`💳 £${snap.credits} credits`);
@@ -571,10 +651,51 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
       if (parts.length > 0) headerText += "\n\n" + parts.join("  •  ");
 
       const nudges: string[] = [];
-      if (snap.pendingPayment > 0) nudges.push(`⚠️ <b>${snap.pendingPayment} order${snap.pendingPayment !== 1 ? "s" : ""} awaiting payment</b> — tap My Orders`);
-      if (snap.missingAddress > 0) nudges.push(`📭 <b>${snap.missingAddress} order${snap.missingAddress !== 1 ? "s" : ""} need${snap.missingAddress === 1 ? "s" : ""} a shipping address</b>`);
+      if (snap.pendingPayment === 1 && snap.pendingOrderCode) {
+        nudges.push(`⚠️ <b>Order ${snap.pendingOrderCode} awaiting payment</b>`);
+      } else if (snap.pendingPayment > 1) {
+        nudges.push(`⚠️ <b>${snap.pendingPayment} orders awaiting payment</b>`);
+      }
+      if (snap.missingAddress === 1 && snap.missingAddressCode) {
+        nudges.push(`📭 <b>Order ${snap.missingAddressCode} needs a shipping address</b>`);
+      } else if (snap.missingAddress > 1) {
+        nudges.push(`📭 <b>${snap.missingAddress} orders need a shipping address</b>`);
+      }
       if (nudges.length > 0) headerText += "\n\n" + nudges.join("\n");
     } catch { /* snapshot is non-critical */ }
+  }
+
+  // Build keyboard — core rows always present
+  const keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> = [
+    [
+      { text: "📦 My Orders",      callback_data: "mn:orders" },
+      { text: "🚚 Tracking",       callback_data: "mn:tracking" },
+    ],
+    [
+      { text: "🌍 My Group Buys", callback_data: "mn:gbs" },
+      { text: "🧪 Lab Reports",   callback_data: "mn:labs" },
+    ],
+    [
+      { text: "🤖 Ask Sage",       callback_data: "mn:sage" },
+      { text: "🔔 Notifications",  callback_data: "mn:notif" },
+    ],
+    [
+      { text: "🎫 Open a Ticket",  callback_data: "mn:ticket" },
+      { text: "❓ Help",            callback_data: "mn:help" },
+    ],
+  ];
+
+  // Organiser shortcut row
+  if (snap?.isOrganiser) {
+    keyboard.push([{ text: "🗂 Organiser Dashboard", url: `${appUrl}/gborganiser` }]);
+  }
+
+  // Direct action buttons for single pending/missing-address orders
+  if (snap?.pendingOrderCode) {
+    keyboard.push([{ text: `💳 Pay Order ${snap.pendingOrderCode} →`, url: `${appUrl}/account?s=orders` }]);
+  }
+  if (snap?.missingAddressCode && snap.missingAddressCode !== snap.pendingOrderCode) {
+    keyboard.push([{ text: `📭 Add Address for ${snap.missingAddressCode} →`, url: `${appUrl}/account?s=orders` }]);
   }
 
   await sendTelegramMessageFull(
@@ -582,28 +703,7 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
     headerText,
     "HTML",
     undefined,
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "📦 My Orders",      callback_data: "mn:orders" },
-            { text: "🚚 Tracking",       callback_data: "mn:tracking" },
-          ],
-          [
-            { text: "🌍 My Group Buys", callback_data: "mn:gbs" },
-            { text: "🧪 Lab Reports",   callback_data: "mn:labs" },
-          ],
-          [
-            { text: "🤖 Ask Sage",       callback_data: "mn:sage" },
-            { text: "🔔 Notifications",  callback_data: "mn:notif" },
-          ],
-          [
-            { text: "🎫 Open a Ticket",  callback_data: "mn:ticket" },
-            { text: "❓ Help",            callback_data: "mn:help" },
-          ],
-        ],
-      },
-    },
+    { reply_markup: { inline_keyboard: keyboard } },
   );
 }
 
@@ -2839,21 +2939,31 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       // Keep conv alive (refresh TTL) so multi-turn works
       setConv(chatId, { step: "sage_chat" });
       const question = text.trim();
+
+      // Daily quota — shared with /blood-tests/discuss
+      const username = linked?.telegramUsername ?? "";
+      if (username) {
+        const quota = await checkAndIncrementSageQuota(username);
+        if (!quota.allowed) {
+          await sendTelegramMessageFull(
+            chatId,
+            `🤖 <b>Sage</b>\n\nYou've reached your daily Sage limit (${quota.limit} questions). Come back tomorrow, or visit the website for your personalised health dashboard.`,
+            "HTML",
+            undefined,
+            { reply_markup: { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]] } },
+          );
+          res.json({ ok: true }); return;
+        }
+      }
+
+      // Fetch the site-configured Sage system prompt
+      const systemPrompt = await getSageBotSystemPrompt();
+
       try {
         const sageReply = await gemini.models.generateContent({
           model: "gemini-2.5-flash",
           config: {
-            systemInstruction: [
-              "You are Sage, a knowledgeable health and compounds advisor for Salt & Peps, a peptide ordering platform.",
-              "You help members understand peptides, research compounds, dosing protocols, cycling, storage, and how to read lab results.",
-              "Guidelines:",
-              "- Be concise but thorough. Use 2-6 sentences unless a longer answer is clearly needed.",
-              "- Focus on established research. Acknowledge uncertainty where it exists.",
-              "- Do not prescribe doses for human use. Frame all dosing as research context only.",
-              "- Respond in plain text — no markdown, no asterisks, no bullet symbols (this is Telegram).",
-              "- If asked something completely unrelated to health, compounds, or peptides, politely redirect.",
-              "- Do not mention that you are an AI unless directly asked.",
-            ].join("\n"),
+            systemInstruction: systemPrompt,
             maxOutputTokens: 512,
           },
           contents: [{ role: "user", parts: [{ text: question }] }],
@@ -2875,6 +2985,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         );
       } catch (err) {
         console.error("[telegram:sage] Gemini error:", err);
+        if (username) await rollbackSageQuota(username);
         await sendTelegramMessageFull(
           chatId,
           `🤖 <b>Sage</b>\n\nI'm having trouble right now. Please try again in a moment.`,

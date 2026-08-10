@@ -4,7 +4,7 @@
  */
 import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable, wholesaleShareMembersTable, wholesaleSharesTable, ordersTable } from "@workspace/db";
 import { eq, and, ne, or, isNull, lt, inArray, sql } from "drizzle-orm";
-import { sendTelegramMessageFull, getTemplate, renderTemplate } from "./telegram";
+import { sendTelegramMessageFull, getTemplate, renderTemplate, notifyUser } from "./telegram";
 import type { TrackingPackage, TrackingEvent } from "@workspace/db";
 import { registerScheduler } from "./scheduler-registry";
 import { translateZh } from "./translate-zh";
@@ -400,6 +400,119 @@ async function refreshTrackingLinks(): Promise<number> {
   return refreshed;
 }
 
+/**
+ * Refresh 17track status for individual (non-GB, non-shared-wholesale) orders that
+ * have a tracking number and are not yet in a terminal state.
+ * Writes tracking_status, tracking_events, tracking_last_checked to the orders table.
+ * Sends a Telegram notification to the customer when the status changes.
+ */
+async function refreshIndividualOrders(): Promise<number> {
+  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+
+  const orders = await db
+    .select({
+      id: ordersTable.id,
+      code: ordersTable.code,
+      trackingNumber: ordersTable.trackingNumber,
+      trackingNumbers: ordersTable.trackingNumbers,
+      trackingStatus: ordersTable.trackingStatus,
+      telegramUsername: ordersTable.telegramUsername,
+    })
+    .from(ordersTable)
+    .where(
+      and(
+        // Has at least one tracking number
+        or(
+          ne(ordersTable.trackingNumber, ""),
+          sql`jsonb_array_length(coalesce(${ordersTable.trackingNumbers}, '[]'::jsonb)) > 0`,
+        ),
+        // Not a GB or shared wholesale order
+        isNull(ordersTable.groupBuyId),
+        isNull(ordersTable.sharedOrderId),
+        // Not deleted
+        isNull(ordersTable.deletedAt),
+        // Not in a terminal status
+        or(
+          isNull(ordersTable.trackingStatus),
+          eq(ordersTable.trackingStatus, "pending"),
+          eq(ordersTable.trackingStatus, "in_transit"),
+          eq(ordersTable.trackingStatus, "out_for_delivery"),
+          eq(ordersTable.trackingStatus, "attempted"),
+          eq(ordersTable.trackingStatus, "exception"),
+        ),
+        // Stale (never checked or checked >90 min ago)
+        or(
+          isNull(ordersTable.trackingLastChecked),
+          lt(ordersTable.trackingLastChecked, staleThreshold),
+        ),
+      ),
+    );
+
+  if (orders.length === 0) {
+    console.log("[tracking-auto-refresh] No stale individual orders to refresh");
+    return 0;
+  }
+
+  console.log(`[tracking-auto-refresh] Refreshing ${orders.length} individual order(s)`);
+  let refreshed = 0;
+
+  for (const order of orders) {
+    try {
+      // Canonical tracking numbers (trackingNumbers array preferred)
+      const nums: string[] = Array.isArray(order.trackingNumbers) && order.trackingNumbers.length
+        ? order.trackingNumbers
+        : (order.trackingNumber?.trim() ? [order.trackingNumber.trim()] : []);
+      if (!nums.length) continue;
+
+      // Drive status from the first number
+      const num = nums[0];
+      await track17Register(num, 0);
+      await sleep(500);
+      const accepted = await track17GetInfo(num, 0);
+
+      if (!accepted) {
+        await db.update(ordersTable)
+          .set({ trackingLastChecked: new Date() })
+          .where(eq(ordersTable.id, order.id));
+        continue;
+      }
+
+      const { status, events } = parseTrack17Response(accepted);
+      const oldStatus = order.trackingStatus;
+
+      await db.update(ordersTable)
+        .set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() })
+        .where(eq(ordersTable.id, order.id));
+
+      if (status !== oldStatus) {
+        refreshed++;
+        // Notify customer on meaningful status change (skip silent statuses)
+        const SILENT = new Set(["pending", "delivered", "undeliverable", "expired"]);
+        if (!SILENT.has(status) && order.telegramUsername?.trim()) {
+          const emoji: Record<string, string> = {
+            in_transit: "📦", out_for_delivery: "🚚", attempted: "⚠️", exception: "❗",
+          };
+          const statusLabel = status.replace(/_/g, " ");
+          const trackUrl = `https://t.17track.net/en#nums=${encodeURIComponent(num)}`;
+          const text =
+            `${emoji[status] ?? "📬"} <b>Order ${order.code} — tracking update</b>\n\n` +
+            `Status: <b>${statusLabel}</b>\n\n` +
+            `Tracking: <code>${num}</code>\n` +
+            `<a href="${trackUrl}">🔍 Track parcel →</a>`;
+          notifyUser(order.telegramUsername, "status", text, {
+            inline_keyboard: [[{ text: "🚚 Track Parcel →", url: trackUrl }]],
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error(`[tracking-auto-refresh] Error refreshing order ${order.id}:`, err);
+    }
+    await sleep(API_CALL_DELAY_MS);
+  }
+
+  return refreshed;
+}
+
 async function runRefresh(): Promise<void> {
   console.log("[tracking-auto-refresh] Starting auto-refresh run…");
   const key = await getTrack17Key();
@@ -413,7 +526,8 @@ async function runRefresh(): Promise<void> {
     const packageCount = await refreshTrackingLinks();
     const onwardCount = await refreshWholesaleOnwardParcels();
     const mainCount = await refreshWholesaleMainParcels();
-    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s), ${mainCount} shared main parcel(s) updated`);
+    const individualCount = await refreshIndividualOrders();
+    console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s), ${mainCount} shared main parcel(s), ${individualCount} individual order(s) updated`);
   } catch (err) {
     console.error("[tracking-auto-refresh] Run failed:", err);
   }

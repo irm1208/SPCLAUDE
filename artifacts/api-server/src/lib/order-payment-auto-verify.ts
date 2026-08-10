@@ -371,6 +371,7 @@ async function fireConfirmNotification(
 
     notifyUserFromTemplate(order.telegramUsername, "payment", "customer_payment_confirmed",
       { code, gb_name: gbContext, username, order_total: orderTotal, delivery, app_url: appUrl, amount_received: amountReceived, payment_method: method },
+      { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
     ).catch(() => {});
 
     sendAdminFromTemplate("admin_payment_confirmed",

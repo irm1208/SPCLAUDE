@@ -20130,6 +20130,9 @@ type WholesaleIndividualOrder = {
   shippingPhone: string | null;
   status: string | null;
   createdAt: string | null;
+  trackingStatus: string | null;
+  trackingEvents: Array<{ date: string; status: string; location: string }>;
+  trackingLastChecked: string | null;
 };
 
 function TrackingStatusPill({ status, code }: { status: string | null; code: number | null }) {
@@ -20432,11 +20435,16 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
                         </div>
                       </div>
 
-                      {/* Tracking numbers with 17track links */}
+                      {/* Tracking numbers with live status + 17track links */}
                       {order.trackingNumbers.length > 0 && (
                         <div>
                           <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>
                             Parcel{order.trackingNumbers.length !== 1 ? "s" : ""} ({order.trackingNumbers.length})
+                            {order.trackingStatus && (
+                              <span className="ml-2 normal-case font-normal">
+                                <TrackingStatusPill status={order.trackingStatus.replace(/_/g, " ")} code={null} />
+                              </span>
+                            )}
                           </h3>
                           <div className="space-y-2">
                             {order.trackingNumbers.map((tn, i) => (
@@ -20455,6 +20463,18 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
                               </div>
                             ))}
                           </div>
+                          {/* Live tracking events from 17track */}
+                          {order.trackingEvents.length > 0 && (
+                            <div className="mt-3">
+                              <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Tracking events</h4>
+                              <TrackingEventsList events={order.trackingEvents} />
+                            </div>
+                          )}
+                          {order.trackingLastChecked && (
+                            <p className="text-[10px] mt-2" style={{ color: "var(--adm-muted)" }}>
+                              Last checked: {fmtDate(order.trackingLastChecked)}
+                            </p>
+                          )}
                         </div>
                       )}
 

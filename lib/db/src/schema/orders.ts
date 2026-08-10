@@ -34,6 +34,11 @@ export const ordersTable = pgTable("orders", {
   // Per-tracking shipped items: { "<trackingNumber>": [{name, qty}] }
   // Populated when admin applies bulk tracking that includes item info (AI-parse path).
   trackingShippedItems: jsonb("tracking_shipped_items").$type<Record<string, Array<{name: string; qty: number}>>>(),
+  // Live 17track status cache for individual (non-GB, non-shared-wholesale) orders.
+  // Populated by the tracking-auto-refresh loop; null until first fetch.
+  trackingStatus: text("tracking_status"),
+  trackingEvents: jsonb("tracking_events").$type<Array<{ date: string; status: string; location: string }>>(),
+  trackingLastChecked: timestamp("tracking_last_checked", { withTimezone: true }),
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   paymentTxHash: text("payment_tx_hash"),
   paymentTxHashes: jsonb("payment_tx_hashes").$type<string[]>(),

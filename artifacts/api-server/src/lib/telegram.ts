@@ -162,11 +162,12 @@ export async function notifyUserFromTemplate(
   prefKey: keyof TelegramPrefs,
   eventKey: string,
   vars: Record<string, string>,
+  replyMarkup?: Record<string, unknown>,
 ): Promise<void> {
   const { template, enabled } = await getTemplate(eventKey);
   if (!enabled) return;
   const text = renderTemplate(template, vars);
-  return notifyUser(telegramUsername, prefKey, text);
+  return notifyUser(telegramUsername, prefKey, text, replyMarkup);
 }
 
 /**
@@ -375,6 +376,7 @@ export async function notifyUserFull(
   telegramUsername: string,
   prefKey: keyof TelegramPrefs,
   text: string,
+  replyMarkup?: Record<string, unknown>,
 ): Promise<NotifyResult> {
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
@@ -410,7 +412,11 @@ export async function notifyUserFull(
       return { ok: false, chatId: account.telegramChatId };
     }
 
-    const result = await sendTelegramMessageFull(account.telegramChatId, text, "HTML", { recipientType: "user", recipientUsername: bare });
+    const result = await sendTelegramMessageFull(
+      account.telegramChatId, text, "HTML",
+      { recipientType: "user", recipientUsername: bare },
+      replyMarkup ? { reply_markup: replyMarkup } : undefined,
+    );
     if (result.ok) {
       console.log(`[telegram:notify] SENT event=${prefKey} user=@${bare} chatId=${account.telegramChatId}`);
     } else {
@@ -427,10 +433,11 @@ export async function notifyUser(
   telegramUsername: string,
   prefKey: keyof TelegramPrefs,
   text: string,
+  replyMarkup?: Record<string, unknown>,
 ): Promise<void> {
   // Fire both Telegram and Discord in parallel; failures are independent
   await Promise.all([
-    notifyUserFull(telegramUsername, prefKey, text),
+    notifyUserFull(telegramUsername, prefKey, text, replyMarkup),
     notifyUserDiscord(telegramUsername, prefKey, text).catch(() => {}),
   ]);
 }

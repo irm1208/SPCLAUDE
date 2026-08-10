@@ -177,6 +177,10 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS ip_address text`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS qr_codes jsonb`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS reshipper_username text`);
+    // orders — 17track live-status cache for individual (non-GB, non-shared-wholesale) orders
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_status text`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_events jsonb`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_last_checked timestamptz`);
     // accounts — reshipper + credits + login tracking columns
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_login_ip text`);
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_login_at timestamptz`);

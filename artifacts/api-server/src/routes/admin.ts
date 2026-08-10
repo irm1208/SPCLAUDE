@@ -1456,6 +1456,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     ).catch(() => {});
     notifyUserFromTemplate(existing.telegramUsername, "status", "customer_order_cancelled",
       { code: existing.code, gb_name: patchGbContext, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel, app_url: appUrl },
+      { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
     ).catch(() => {});
     sendAdminFromTemplate("admin_order_cancelled",
       { code: existing.code, gb_name: patchGbContext, organiser: patchGbOrganiser, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel },
@@ -1474,6 +1475,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
       : (existing.trackingNumber ? `\nTracking: <code>${existing.trackingNumber}</code>` : "");
     notifyUserFromTemplate(existing.telegramUsername, "status", "customer_status_update",
       { code: existing.code, emoji, status: updates.status, gb_name: patchGbContext, tracking: trackingLine, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel, app_url: appUrl },
+      { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
     ).catch(() => {});
     sendAdminFromTemplate("admin_status_update",
       { code: existing.code, emoji, status: updates.status, gb_name: patchGbContext, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel },
@@ -1512,6 +1514,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
       : "";
     notifyUserFromTemplate(existing.telegramUsername, "payment", "customer_payment_confirmed",
       { code: existing.code, gb_name: patchGbContext, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, app_url: appUrl, amount_received: _patchAmtReceived, payment_method: _patchPayMethod },
+      { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
     ).catch(() => {});
     sendAdminFromTemplate("admin_payment_confirmed",
       { code: existing.code, gb_name: patchGbContext, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, amount_received: _patchAmtReceived, payment_method: _patchPayMethod, txid_line: _patchTxidLine, test_info: _patchTestInfo },
@@ -6379,6 +6382,14 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
 
         notifyUserFromTemplate(order.telegramUsername, "status", "customer_order_shipped",
           { code: order.code, gb_name: btGbContext, tracking, username: order.telegramUsername.replace(/^@/, ""), order_total: String(order.grandTotal), delivery: order.deliveryMethod, payment_status: btPaidLabel, app_url: appUrl },
+          {
+            inline_keyboard: [
+              [
+                { text: "📦 View Order", url: `${appUrl}/account?s=orders` },
+                { text: "🚚 Track →", url: `https://t.17track.net/en#nums=${encodeURIComponent(tracking)}` },
+              ],
+            ],
+          },
         ).catch(() => {});
       }
 
@@ -9968,6 +9979,9 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         shippingPhone: ordersTable.shippingPhone,
         createdAt: ordersTable.createdAt,
         status: ordersTable.status,
+        trackingStatus: ordersTable.trackingStatus,
+        trackingEvents: ordersTable.trackingEvents,
+        trackingLastChecked: ordersTable.trackingLastChecked,
       })
       .from(ordersTable)
       .where(and(eq(ordersTable.orderType, "wholesale"), isNull(ordersTable.deletedAt)))
@@ -9989,6 +10003,9 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       shippingPhone: o.shippingPhone ?? null,
       status: o.status ?? null,
       createdAt: o.createdAt ? (o.createdAt as Date).toISOString() : null,
+      trackingStatus: o.trackingStatus ?? null,
+      trackingEvents: (o.trackingEvents ?? []) as Array<{ date: string; status: string; location: string }>,
+      trackingLastChecked: o.trackingLastChecked ? (o.trackingLastChecked as Date).toISOString() : null,
     }));
 
     if (shares.length === 0) { res.json({ shares: [], wholesaleOrders: wholesaleOrdersResult }); return; }
