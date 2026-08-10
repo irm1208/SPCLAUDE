@@ -138,6 +138,7 @@ interface OrderDetail {
   status: string;
   adminMessage: string | null;
   trackingNumber: string | null;
+  trackingShippedItems?: Record<string, Array<{name: string; qty: number}>> | null;
   shippingCarrier?: string | null;
   paymentStatus: string;
   paymentTxHash: string | null;
@@ -2393,46 +2394,105 @@ export default function AccountOrderDetail() {
                       )}
 
                       {/* Direct / wholesale tracking number — parcel card style */}
-                      {order.trackingNumber && (
-                        <div className="rounded-lg p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
-                          <div className="flex items-center gap-2">
-                            <SecIcon Icon={Truck} />
-                            <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Tracking</span>
-                          </div>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>
-                                {(order as any).shippingCarrier ? (order as any).shippingCarrier : "Your Parcel"}
-                              </p>
-                              <p className="font-mono font-bold text-sm tracking-widest break-all" style={{ color: "var(--t-text)" }}>{order.trackingNumber}</p>
+                      {order.trackingNumber && (() => {
+                        // Compute per-item shipped qty across ALL tracking numbers
+                        const shippedMap: Record<string, number> = {};
+                        const tsiMap = order.trackingShippedItems ?? {};
+                        for (const items of Object.values(tsiMap)) {
+                          for (const { name, qty } of items) {
+                            const key = name.toLowerCase().trim();
+                            shippedMap[key] = (shippedMap[key] ?? 0) + qty;
+                          }
+                        }
+                        const hasShippedData = Object.keys(tsiMap).length > 0;
+
+                        // Items in THIS specific parcel
+                        const thisParcelItems: Array<{name: string; qty: number}> = tsiMap[order.trackingNumber] ?? [];
+
+                        // Outstanding: order line items not yet shipped (or partially shipped)
+                        const outstandingItems: Array<{name: string; qty: number}> = [];
+                        if (hasShippedData && order.lineItems?.length > 0) {
+                          for (const li of order.lineItems) {
+                            const key = li.productName.toLowerCase().trim();
+                            const shipped = shippedMap[key] ?? 0;
+                            const remaining = li.quantity - shipped;
+                            if (remaining > 0.001) {
+                              outstandingItems.push({ name: li.productName, qty: remaining });
+                            }
+                          }
+                        }
+
+                        return (
+                          <div className="rounded-lg p-4 sm:p-5 space-y-2.5" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", color: "var(--t-text)" }}>
+                            <div className="flex items-center gap-2">
+                              <SecIcon Icon={Truck} />
+                              <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Tracking</span>
                             </div>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5"
-                              style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "var(--t-blue)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "var(--t-blue-15)" : "rgba(148,163,184,0.18)" }}>
-                              {order.status}
-                            </span>
-                          </div>
-                          {order.lineItems?.length > 0 && (
-                            <div className="pt-2 space-y-0.5" style={{ borderTop: "1px solid var(--t-border)" }}>
-                              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Contents</p>
-                              {order.lineItems.map((li: OrderLineItem, i: number) => (
-                                <div key={i} className="flex items-center gap-1.5">
-                                  <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
-                                  <span className="text-xs" style={{ color: "var(--t-muted)" }}>{li.productName} <span style={{ color: "var(--t-subtle)" }}>×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}</span></span>
-                                </div>
-                              ))}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: "var(--t-subtle)" }}>
+                                  {(order as any).shippingCarrier ? (order as any).shippingCarrier : "Your Parcel"}
+                                </p>
+                                <p className="font-mono font-bold text-sm tracking-widest break-all" style={{ color: "var(--t-text)" }}>{order.trackingNumber}</p>
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5"
+                                style={{ color: order.status === "Completed" ? "light-dark(#16a34a, #22c55e)" : order.status === "Shipped" ? "var(--t-blue)" : "light-dark(#64748b, #94a3b8)", background: order.status === "Completed" ? "rgba(34,197,94,0.14)" : order.status === "Shipped" ? "var(--t-blue-15)" : "rgba(148,163,184,0.18)" }}>
+                                {order.status}
+                              </span>
                             </div>
-                          )}
-                          <a
-                            href={`https://t.17track.net/en#nums=${encodeURIComponent(order.trackingNumber)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
-                            style={{ color: "var(--t-blue)" }}
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 shrink-0" /> Track on 17track
-                          </a>
-                        </div>
-                      )}
+
+                            {/* Shipped items for this parcel */}
+                            {thisParcelItems.length > 0 && (
+                              <div className="pt-2 space-y-1" style={{ borderTop: "1px solid var(--t-border)" }}>
+                                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>In this parcel</p>
+                                {thisParcelItems.map((it, i) => (
+                                  <div key={i} className="flex items-center gap-1.5">
+                                    <Package className="w-3 h-3 shrink-0" style={{ color: "light-dark(#16a34a, #22c55e)" }} />
+                                    <span className="text-xs" style={{ color: "var(--t-muted)" }}>{it.name} <span className="font-semibold" style={{ color: "light-dark(#16a34a, #22c55e)" }}>×{Number.isInteger(it.qty) ? it.qty : it.qty.toFixed(1)}</span></span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Outstanding items not yet shipped */}
+                            {outstandingItems.length > 0 && (
+                              <div className="rounded-md px-3 py-2.5 space-y-1" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#d97706" }}>Still outstanding</p>
+                                {outstandingItems.map((it, i) => (
+                                  <div key={i} className="flex items-center gap-1.5">
+                                    <Package className="w-3 h-3 shrink-0" style={{ color: "#d97706" }} />
+                                    <span className="text-xs" style={{ color: "var(--t-muted)" }}>{it.name} <span className="font-semibold" style={{ color: "#d97706" }}>×{Number.isInteger(it.qty) ? it.qty : it.qty.toFixed(1)}</span></span>
+                                  </div>
+                                ))}
+                                <p className="text-[10px] mt-1" style={{ color: "#d97706" }}>A separate parcel will follow for these items.</p>
+                              </div>
+                            )}
+
+                            {/* Fallback: show all items if no shipped-item data at all */}
+                            {!hasShippedData && order.lineItems?.length > 0 && (
+                              <div className="pt-2 space-y-0.5" style={{ borderTop: "1px solid var(--t-border)" }}>
+                                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--t-subtle)" }}>Contents</p>
+                                {order.lineItems.map((li: OrderLineItem, i: number) => (
+                                  <div key={i} className="flex items-center gap-1.5">
+                                    <Package className="w-3 h-3 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                                    <span className="text-xs" style={{ color: "var(--t-muted)" }}>{li.productName} <span style={{ color: "var(--t-subtle)" }}>×{li.quantity % 1 === 0 ? li.quantity : li.quantity.toFixed(1)}</span></span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <a
+                              href={`https://t.17track.net/en#nums=${encodeURIComponent(order.trackingNumber)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
+                              style={{ color: "var(--t-blue)" }}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" /> Track on 17track
+                            </a>
+                          </div>
+                        );
+                      })()}
 
                       {/* Dispatch photos uploaded by admin */}
                       <MemberDispatchImages orderId={order.id} />

@@ -963,6 +963,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS kit_fees numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS fee_per_kit numeric(10,2)`);
+    // Tracking shipped items — populated by AI bulk-tracking parse so members see what's in each parcel
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_shipped_items jsonb`);
     // weight_grams on products (shipping weight)
     await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS weight_grams integer`);
     // wholesale_share_invite_links and wholesale_share_invite_uses are managed

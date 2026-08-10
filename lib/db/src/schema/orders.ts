@@ -31,6 +31,9 @@ export const ordersTable = pgTable("orders", {
   adminMessage: text("admin_message"),
   trackingNumber: text("tracking_number"),
   trackingNumbers: jsonb("tracking_numbers").$type<string[]>(),
+  // Per-tracking shipped items: { "<trackingNumber>": [{name, qty}] }
+  // Populated when admin applies bulk tracking that includes item info (AI-parse path).
+  trackingShippedItems: jsonb("tracking_shipped_items").$type<Record<string, Array<{name: string; qty: number}>>>(),
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   paymentTxHash: text("payment_tx_hash"),
   paymentTxHashes: jsonb("payment_tx_hashes").$type<string[]>(),

@@ -6337,7 +6337,7 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
 
   const results: { code: string; trackingNumber: string; ok: boolean; error?: string }[] = [];
 
-  for (const { code, trackingNumber } of lines) {
+  for (const { code, trackingNumber, items } of lines) {
     const safeCode = String(code ?? "").trim();
     const tracking = String(trackingNumber ?? "").trim();
     if (!safeCode) { results.push({ code: safeCode, trackingNumber: tracking, ok: false, error: "Empty code" }); continue; }
@@ -6346,8 +6346,16 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, safeCode));
       if (!order) { results.push({ code: safeCode, trackingNumber: tracking, ok: false, error: "Order not found" }); continue; }
 
+      // Merge shipped items for this tracking number into the existing map
+      const updateFields: Record<string, unknown> = { trackingNumber: tracking || null, status: "Shipped", updatedAt: new Date() };
+      if (tracking && Array.isArray(items) && items.length > 0) {
+        const existing: Record<string, Array<{name: string; qty: number}>> =
+          (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? {};
+        updateFields.trackingShippedItems = { ...existing, [tracking]: items };
+      }
+
       await db.update(ordersTable)
-        .set({ trackingNumber: tracking || null, status: "Shipped", updatedAt: new Date() })
+        .set(updateFields as any)
         .where(eq(ordersTable.code, safeCode));
 
       if (tracking) {
@@ -9953,8 +9961,11 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         trackingNumbers: ordersTable.trackingNumbers,
         paymentStatus: ordersTable.paymentStatus,
         shippingName: ordersTable.shippingName,
+        shippingAddress: ordersTable.shippingAddress,
+        shippingCity: ordersTable.shippingCity,
         shippingPostcode: ordersTable.shippingPostcode,
         shippingCountry: ordersTable.shippingCountry,
+        shippingPhone: ordersTable.shippingPhone,
         createdAt: ordersTable.createdAt,
         status: ordersTable.status,
       })
@@ -9971,8 +9982,11 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       ],
       paymentStatus: o.paymentStatus,
       shippingName: o.shippingName ?? null,
+      shippingAddress: o.shippingAddress ?? null,
+      shippingCity: o.shippingCity ?? null,
       shippingPostcode: o.shippingPostcode ?? null,
       shippingCountry: o.shippingCountry ?? null,
+      shippingPhone: o.shippingPhone ?? null,
       status: o.status ?? null,
       createdAt: o.createdAt ? (o.createdAt as Date).toISOString() : null,
     }));

@@ -1543,6 +1543,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       currency,
       adminMessage: order.adminMessage ?? null,
       trackingNumber: order.trackingNumber ?? null,
+      trackingShippedItems: (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? null,
       notes: order.notes ?? null,
       directShippingRequested: order.directShippingRequested ?? false,
       createdAt: (order.createdAt as Date).toISOString(),

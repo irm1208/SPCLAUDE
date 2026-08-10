@@ -18287,7 +18287,7 @@ function AccountsTab({ secret }: { secret: string }) {
 }
 
 // ─── Bulk Shipment Tab ────────────────────────────────────────
-interface BulkTrackingLine { code: string; trackingNumber: string }
+interface BulkTrackingLine { code: string; trackingNumber: string; items?: { name: string; qty: number }[] }
 interface BulkTrackingResult { code: string; trackingNumber: string; ok: boolean; error?: string }
 
 function parseCsvLines(raw: string): BulkTrackingLine[] {
@@ -18388,7 +18388,7 @@ function AiPasteMode({ secret }: { secret: string }) {
       const code = (codeOverride[s.id] ?? s.match?.orderCode ?? "").trim();
       if (!code) continue;
       const tracking = (trackingOverride[s.id] ?? s.trackingNumbers[0] ?? "").trim();
-      lines.push({ code, trackingNumber: tracking });
+      lines.push({ code, trackingNumber: tracking, items: s.items.length > 0 ? s.items : undefined });
     }
     if (!lines.length) return;
     setApplying(true); setApplyResults(null);
@@ -20123,8 +20123,11 @@ type WholesaleIndividualOrder = {
   trackingNumbers: string[];
   paymentStatus: string;
   shippingName: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
   shippingPostcode: string | null;
   shippingCountry: string | null;
+  shippingPhone: string | null;
   status: string | null;
   createdAt: string | null;
 };
@@ -20366,41 +20369,105 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
       ) : typeTab === "wholesale" ? (
         <>
           <div className="space-y-2">
-            {(pageSlice as WholesaleIndividualOrder[]).map(order => (
-              <div key={order.code} className="rounded-xl px-4 py-3" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
-                <div className="flex items-start gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>{order.code}</span>
-                      {order.trackingNumbers.length > 0 ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>Shipped</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.12)", color: "var(--adm-muted)" }}>Not shipped</span>
-                      )}
-                      {order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed" ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Paid</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{order.paymentStatus}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
-                      <span><strong style={{ color: "var(--adm-text)" }}>@{order.telegramUsername}</strong></span>
-                      {order.shippingCountry && <span>→ {order.shippingCountry}</span>}
-                      {order.shippingName && <span>{order.shippingName}</span>}
-                      {order.shippingPostcode && <span className="font-mono">{order.shippingPostcode}</span>}
-                      <span className="ml-auto shrink-0">{fmtDate(order.createdAt)}</span>
-                    </div>
-                    {order.trackingNumbers.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {order.trackingNumbers.map((tn, i) => (
-                          <span key={i} className="font-mono text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-shell)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{tn}</span>
-                        ))}
+            {(pageSlice as WholesaleIndividualOrder[]).map(order => {
+              const open = expandedId === order.code;
+              return (
+                <div key={order.code} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
+                  {/* ── Collapsed row ── */}
+                  <button
+                    onClick={() => setExpandedId(open ? null : order.code)}
+                    className="w-full text-left px-4 py-3 flex items-start gap-3"
+                  >
+                    {open
+                      ? <ChevronDown className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />
+                      : <ChevronRight className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>{order.code}</span>
+                        {order.trackingNumbers.length > 0 ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>Shipped</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.12)", color: "var(--adm-muted)" }}>Not shipped</span>
+                        )}
+                        {order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed" ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Paid</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>{order.paymentStatus}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
+                      <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
+                        <span><strong style={{ color: "var(--adm-text)" }}>@{order.telegramUsername}</strong></span>
+                        {order.shippingCountry && <span>→ {order.shippingCountry}</span>}
+                        {order.shippingName && <span>{order.shippingName}</span>}
+                        {order.shippingPostcode && <span className="font-mono">{order.shippingPostcode}</span>}
+                        <span className="ml-auto shrink-0">{fmtDate(order.createdAt)}</span>
+                      </div>
+                      {order.trackingNumbers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {order.trackingNumbers.map((tn, i) => (
+                            <span key={i} className="font-mono text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-shell)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{tn}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* ── Expanded detail ── */}
+                  {open && (
+                    <div className="border-t px-4 pb-5 pt-4 space-y-4" style={{ borderColor: "var(--adm-border)" }}>
+                      {/* Shipping address */}
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Delivery Address</h3>
+                        <div className="rounded-lg p-3 text-xs space-y-0.5" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                          {order.shippingName && <p className="font-semibold" style={{ color: "var(--adm-text)" }}>{order.shippingName}</p>}
+                          {order.shippingAddress && <p style={{ color: "var(--adm-muted)" }}>{order.shippingAddress}</p>}
+                          {(order.shippingCity || order.shippingPostcode) && (
+                            <p style={{ color: "var(--adm-muted)" }}>{[order.shippingCity, order.shippingPostcode].filter(Boolean).join(" ")}</p>
+                          )}
+                          {order.shippingCountry && <p style={{ color: "var(--adm-muted)" }}>{order.shippingCountry}</p>}
+                          {order.shippingPhone && <p style={{ color: "var(--adm-muted)" }}>{order.shippingPhone}</p>}
+                          {!order.shippingName && !order.shippingAddress && !order.shippingCity && !order.shippingPostcode && !order.shippingCountry && (
+                            <p className="italic" style={{ color: "var(--adm-muted)" }}>No address on file</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Tracking numbers with 17track links */}
+                      {order.trackingNumbers.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>
+                            Parcel{order.trackingNumbers.length !== 1 ? "s" : ""} ({order.trackingNumbers.length})
+                          </h3>
+                          <div className="space-y-2">
+                            {order.trackingNumbers.map((tn, i) => (
+                              <div key={i} className="rounded-lg p-3 flex items-center gap-3 flex-wrap" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                                <span className="font-mono text-sm font-semibold flex-1 min-w-0 break-all" style={{ color: "var(--adm-text)" }}>{tn}</span>
+                                <a
+                                  href={`https://t.17track.net/en#nums=${encodeURIComponent(tn)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-semibold shrink-0 underline underline-offset-2"
+                                  style={{ color: "var(--adm-accent)" }}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  Track →
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Meta footer */}
+                      <div className="flex gap-4 text-[11px] pt-1 border-t flex-wrap" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
+                        <span>Order status: <strong style={{ color: "var(--adm-text)" }}>{order.status ?? "—"}</strong></span>
+                        <span>Created: {fmtDate(order.createdAt)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-1">
