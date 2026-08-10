@@ -9878,7 +9878,7 @@ router.post("/admin/wholesale-access-requests/:id/reject", async (req: any, res:
 router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   try {
-    // Load all shares that have a main tracking number
+    // Load ALL wholesale shares (not just ones with tracking)
     const shares = await db
       .select({
         id: wholesaleSharesTable.id,
@@ -9897,7 +9897,6 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         submittedAt: wholesaleSharesTable.submittedAt,
       })
       .from(wholesaleSharesTable)
-      .where(isNotNull(wholesaleSharesTable.mainTrackingNumber))
       .orderBy(desc(wholesaleSharesTable.createdAt));
 
     if (shares.length === 0) { res.json({ shares: [] }); return; }

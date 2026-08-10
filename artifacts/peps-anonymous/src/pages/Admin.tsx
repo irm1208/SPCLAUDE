@@ -20147,6 +20147,9 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [filterTab, setFilterTab] = useState<"all" | "not_shipped" | "in_transit" | "delivered">("all");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
 
   const load = useCallback(() => {
     setLoading(true); setError(null);
@@ -20159,10 +20162,20 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return shares;
+  const isDelivered = (s: WholesaleTrackingShare) =>
+    s.mainTracking.statusCode === 40 || /delivered/i.test(s.mainTracking.status ?? "");
+  const isInTransit = (s: WholesaleTrackingShare) =>
+    !!s.mainTracking.trackingNumber && !isDelivered(s);
+  const isNotShipped = (s: WholesaleTrackingShare) => !s.mainTracking.trackingNumber;
+
+  const afterFilter = useMemo(() => {
+    let list = shares;
+    if (filterTab === "not_shipped") list = list.filter(isNotShipped);
+    else if (filterTab === "in_transit") list = list.filter(isInTransit);
+    else if (filterTab === "delivered") list = list.filter(isDelivered);
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return shares.filter(s =>
+    return list.filter(s =>
       s.id.toLowerCase().includes(q) ||
       s.creatorUsername.toLowerCase().includes(q) ||
       (s.deliveryUsername ?? "").toLowerCase().includes(q) ||
@@ -20171,7 +20184,20 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
       (s.mainTracking.status ?? "").toLowerCase().includes(q) ||
       s.members.some(m => m.username.toLowerCase().includes(q) || (m.onwardTracking?.trackingNumber ?? "").toLowerCase().includes(q))
     );
-  }, [shares, search]);
+  }, [shares, filterTab, search]);
+
+  // Reset page when filter/search changes
+  useEffect(() => { setPage(0); setExpandedId(null); }, [filterTab, search]);
+
+  const totalPages = Math.ceil(afterFilter.length / PAGE_SIZE);
+  const pageSlice = afterFilter.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const counts = useMemo(() => ({
+    all: shares.length,
+    not_shipped: shares.filter(isNotShipped).length,
+    in_transit: shares.filter(isInTransit).length,
+    delivered: shares.filter(isDelivered).length,
+  }), [shares]);
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return "—";
@@ -20181,6 +20207,13 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
 
   const onwardCount = (s: WholesaleTrackingShare) => s.members.filter(m => m.onwardTracking).length;
 
+  const FILTER_TABS: { key: typeof filterTab; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "not_shipped", label: "Not Shipped" },
+    { key: "in_transit", label: "In Transit" },
+    { key: "delivered", label: "Delivered" },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -20189,7 +20222,7 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
             <Truck className="w-5 h-5" /> Wholesale Tracking
           </h2>
           <p className="text-xs mt-0.5" style={{ color: "var(--adm-muted)" }}>
-            All shared orders with tracking data — main vendor parcel and per-member onward forwarding. Full unmasked numbers for admin.
+            All shared orders — main vendor parcel and per-member onward forwarding. Full unmasked numbers.
           </p>
         </div>
         <button
@@ -20200,6 +20233,31 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {FILTER_TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setFilterTab(t.key)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+            style={filterTab === t.key
+              ? { background: "var(--adm-accent)", color: "#fff" }
+              : { background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }
+            }
+          >
+            {t.label}
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+              style={filterTab === t.key
+                ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
+                : { background: "var(--adm-shell)", color: "var(--adm-muted)" }
+              }
+            >
+              {counts[t.key]}
+            </span>
+          </button>
+        ))}
       </div>
 
       <div className="relative">
@@ -20219,134 +20277,172 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
         </div>
       ) : error ? (
         <div className="text-sm py-8 text-center" style={{ color: "#ef4444" }}>{error}</div>
-      ) : filtered.length === 0 ? (
+      ) : afterFilter.length === 0 ? (
         <div className="text-sm py-12 text-center" style={{ color: "var(--adm-muted)" }}>
-          {search ? "No matches." : "No shared orders with tracking numbers yet."}
+          {search || filterTab !== "all" ? "No matches." : "No shared orders yet."}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(share => {
-            const open = expandedId === share.id;
-            const mt = share.mainTracking;
-            const latestEvent = mt.events[0] ?? null;
-            const oc = onwardCount(share);
-            return (
-              <div key={share.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
-                {/* ── Collapsed row ── */}
-                <button
-                  onClick={() => setExpandedId(open ? null : share.id)}
-                  className="w-full text-left px-4 py-3 flex items-start gap-3"
-                >
-                  {open
-                    ? <ChevronDown className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />
-                    : <ChevronRight className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />}
-                  <div className="min-w-0 flex-1">
-                    {/* Row 1: share ID + status badges */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{share.id}</span>
-                      <ShareStatusBadge status={share.status} />
-                      {oc > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6" }}>
-                          {oc} onward parcel{oc !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-                    {/* Row 2: organiser · country · tracking number */}
-                    <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
-                      <span>Organiser <strong style={{ color: "var(--adm-text)" }}>@{share.creatorUsername}</strong></span>
-                      {share.shippingCountry && <span>→ {share.shippingCountry}</span>}
-                      {mt.trackingNumber && (
-                        <span className="font-mono" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
-                      )}
-                      {mt.carrier && <span>{mt.carrier}</span>}
-                    </div>
-                    {/* Row 3: tracking status + latest event */}
-                    <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                      <TrackingStatusPill status={mt.status} code={mt.statusCode} />
-                      {latestEvent && (
-                        <span className="text-[11px] truncate max-w-xs" style={{ color: "var(--adm-muted)" }}>{latestEvent.status}</span>
-                      )}
-                      {mt.lastChecked && (
-                        <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--adm-muted)" }}>checked {fmtDate(mt.lastChecked)}</span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-
-                {/* ── Expanded detail ── */}
-                {open && (
-                  <div className="border-t px-4 pb-5 pt-4 space-y-5" style={{ borderColor: "var(--adm-border)" }}>
-                    {/* Main parcel */}
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Main Parcel (vendor → recipient)</h3>
-                      <div className="rounded-lg p-3 space-y-1" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {mt.trackingNumber
-                            ? <span className="font-mono text-sm font-semibold" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
-                            : <span className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No tracking number set</span>}
-                          {mt.carrier && <span className="text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{mt.carrier}</span>}
-                          <TrackingStatusPill status={mt.status} code={mt.statusCode} />
-                        </div>
-                        {mt.lastChecked && <p className="text-[11px]" style={{ color: "var(--adm-muted)" }}>Last refreshed: {fmtDate(mt.lastChecked)}</p>}
-                        <p className="text-[11px]" style={{ color: "var(--adm-muted)" }}>
-                          Recipient: <strong style={{ color: "var(--adm-text)" }}>@{share.deliveryUsername ?? "—"}</strong>
-                          {share.shippingName && <> ({share.shippingName})</>}
-                          {share.shippingCountry && <> · {share.shippingCountry}</>}
-                        </p>
-                        <TrackingEventsList events={mt.events} />
+        <>
+          <div className="space-y-2">
+            {pageSlice.map(share => {
+              const open = expandedId === share.id;
+              const mt = share.mainTracking;
+              const latestEvent = mt.events[0] ?? null;
+              const oc = onwardCount(share);
+              const delivered = isDelivered(share);
+              const notShipped = isNotShipped(share);
+              return (
+                <div key={share.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
+                  {/* ── Collapsed row ── */}
+                  <button
+                    onClick={() => setExpandedId(open ? null : share.id)}
+                    className="w-full text-left px-4 py-3 flex items-start gap-3"
+                  >
+                    {open
+                      ? <ChevronDown className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />
+                      : <ChevronRight className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--adm-muted)" }} />}
+                    <div className="min-w-0 flex-1">
+                      {/* Row 1: share ID + badges */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{share.id}</span>
+                        <ShareStatusBadge status={share.status} />
+                        {delivered && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>✓ Delivered</span>
+                        )}
+                        {notShipped && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.12)", color: "var(--adm-muted)" }}>Not shipped</span>
+                        )}
+                        {oc > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6" }}>
+                            {oc} onward parcel{oc !== 1 ? "s" : ""}
+                          </span>
+                        )}
                       </div>
+                      {/* Row 2: organiser · country · tracking number */}
+                      <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>
+                        <span>Organiser <strong style={{ color: "var(--adm-text)" }}>@{share.creatorUsername}</strong></span>
+                        {share.shippingCountry && <span>→ {share.shippingCountry}</span>}
+                        {mt.trackingNumber && (
+                          <span className="font-mono" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
+                        )}
+                        {mt.carrier && <span>{mt.carrier}</span>}
+                      </div>
+                      {/* Row 3: tracking status pill + latest event */}
+                      {!notShipped && (
+                        <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                          <TrackingStatusPill status={mt.status} code={mt.statusCode} />
+                          {latestEvent && (
+                            <span className="text-[11px] truncate max-w-xs" style={{ color: "var(--adm-muted)" }}>{latestEvent.status}</span>
+                          )}
+                          {mt.lastChecked && (
+                            <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--adm-muted)" }}>checked {fmtDate(mt.lastChecked)}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
+                  </button>
 
-                    {/* Member onward tracking */}
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Onward Parcels (recipient → members)</h3>
-                      {share.members.length === 0 ? (
-                        <p className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No members loaded.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {share.members.map(m => (
-                            <div key={m.username} className="rounded-lg p-3" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
-                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                <span className="text-xs font-semibold" style={{ color: "var(--adm-text)" }}>@{m.username}</span>
-                                {m.isCreator && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>organiser</span>
-                                )}
-                                {m.onwardTracking ? (
+                  {/* ── Expanded detail ── */}
+                  {open && (
+                    <div className="border-t px-4 pb-5 pt-4 space-y-5" style={{ borderColor: "var(--adm-border)" }}>
+                      {/* Main parcel */}
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>Main Parcel (vendor → recipient)</h3>
+                        <div className="rounded-lg p-3 space-y-1.5" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {mt.trackingNumber
+                              ? <span className="font-mono text-sm font-semibold" style={{ color: "var(--adm-text)" }}>{mt.trackingNumber}</span>
+                              : <span className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No tracking number set</span>}
+                            {mt.carrier && <span className="text-xs px-2 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{mt.carrier}</span>}
+                            <TrackingStatusPill status={mt.status} code={mt.statusCode} />
+                          </div>
+                          <p className="text-[11px]" style={{ color: "var(--adm-muted)" }}>
+                            Recipient: <strong style={{ color: "var(--adm-text)" }}>@{share.deliveryUsername ?? "—"}</strong>
+                            {share.shippingName && <> ({share.shippingName})</>}
+                            {share.shippingCountry && <> · {share.shippingCountry}</>}
+                          </p>
+                          {mt.lastChecked && <p className="text-[10px]" style={{ color: "var(--adm-muted)" }}>Last refreshed: {fmtDate(mt.lastChecked)}</p>}
+                          <TrackingEventsList events={mt.events} />
+                        </div>
+                      </div>
+
+                      {/* Member onward tracking */}
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>
+                          Onward Parcels (recipient → members)
+                          {oc > 0 && <span className="ml-1.5 normal-case font-normal" style={{ color: "var(--adm-muted)" }}>· {oc} of {share.members.length} shipped</span>}
+                        </h3>
+                        {share.members.length === 0 ? (
+                          <p className="text-xs italic" style={{ color: "var(--adm-muted)" }}>No members.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {share.members.map(m => (
+                              <div key={m.username} className="rounded-lg p-3" style={{ background: "var(--adm-shell)", border: "1px solid var(--adm-border)" }}>
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="text-xs font-semibold" style={{ color: "var(--adm-text)" }}>@{m.username}</span>
+                                  {m.isCreator && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>organiser</span>
+                                  )}
+                                  {m.onwardTracking ? (
+                                    <>
+                                      <span className="font-mono text-xs" style={{ color: "var(--adm-text)" }}>{m.onwardTracking.trackingNumber}</span>
+                                      {m.onwardTracking.carrier && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{m.onwardTracking.carrier}</span>}
+                                      <TrackingStatusPill status={m.onwardTracking.status} code={m.onwardTracking.statusCode} />
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] italic" style={{ color: "var(--adm-muted)" }}>No onward tracking yet</span>
+                                  )}
+                                </div>
+                                {m.onwardTracking && (
                                   <>
-                                    <span className="font-mono text-xs" style={{ color: "var(--adm-text)" }}>{m.onwardTracking.trackingNumber}</span>
-                                    {m.onwardTracking.carrier && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--adm-card)", color: "var(--adm-muted)" }}>{m.onwardTracking.carrier}</span>}
-                                    <TrackingStatusPill status={m.onwardTracking.status} code={m.onwardTracking.statusCode} />
+                                    {m.onwardTracking.lastChecked && (
+                                      <p className="text-[10px] mb-1" style={{ color: "var(--adm-muted)" }}>Last checked: {fmtDate(m.onwardTracking.lastChecked)}</p>
+                                    )}
+                                    <TrackingEventsList events={m.onwardTracking.events} />
                                   </>
-                                ) : (
-                                  <span className="text-[10px] italic" style={{ color: "var(--adm-muted)" }}>No onward tracking</span>
                                 )}
                               </div>
-                              {m.onwardTracking && (
-                                <>
-                                  {m.onwardTracking.lastChecked && (
-                                    <p className="text-[10px] mb-1" style={{ color: "var(--adm-muted)" }}>Last checked: {fmtDate(m.onwardTracking.lastChecked)}</p>
-                                  )}
-                                  <TrackingEventsList events={m.onwardTracking.events} />
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                    {/* Meta footer */}
-                    <div className="flex gap-4 text-[11px] pt-1 border-t flex-wrap" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
-                      <span>Created: {fmtDate(share.createdAt)}</span>
-                      {share.submittedAt && <span>Submitted: {fmtDate(share.submittedAt)}</span>}
-                      <span>{share.members.length} member{share.members.length !== 1 ? "s" : ""}</span>
+                      {/* Meta footer */}
+                      <div className="flex gap-4 text-[11px] pt-1 border-t flex-wrap" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
+                        <span>Created: {fmtDate(share.createdAt)}</span>
+                        {share.submittedAt && <span>Submitted: {fmtDate(share.submittedAt)}</span>}
+                        <span>{share.members.length} member{share.members.length !== 1 ? "s" : ""}</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs" style={{ color: "var(--adm-muted)" }}>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, afterFilter.length)} of {afterFilter.length}
+              </span>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
+                  style={{ background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}
+                >← Prev</button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
+                  style={{ background: "var(--adm-card)", color: "var(--adm-muted)", border: "1px solid var(--adm-border)" }}
+                >Next →</button>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
