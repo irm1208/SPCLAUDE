@@ -9941,6 +9941,7 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         submittedAt: wholesaleSharesTable.submittedAt,
       })
       .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.status, "submitted"))
       .orderBy(desc(wholesaleSharesTable.createdAt));
 
     // Load individual wholesale orders (orderType = 'wholesale', not shared)
