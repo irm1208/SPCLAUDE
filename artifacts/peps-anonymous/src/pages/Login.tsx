@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { User, Lock, Eye, EyeOff, ArrowLeft, Loader2, AlertCircle, LogIn, UserPlus, CheckCircle2, ShieldCheck, Mail, MessageCircle, Bell, KeyRound, RotateCcw, Users, Globe, ChevronDown, Ticket } from "lucide-react";
@@ -140,6 +140,63 @@ export default function Login() {
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
   const [showForgotPw, setShowForgotPw] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+
+  // ── Post-signup Telegram linking state ────────────────────────────────────
+  const [tgLinkData, setTgLinkData] = useState<{ deepLink: string | null; botUsername: string | null } | null>(null);
+  const [tgLinked, setTgLinked] = useState(false);
+  const [tgLinking, setTgLinking] = useState(false);
+  const tgWidgetContainerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch a fresh link token + deep link as soon as the Telegram prompt appears
+  useEffect(() => {
+    if (tab !== "signup" || step !== "telegram-prompt") return;
+    let cancelled = false;
+    fetch("/api/account/telegram/link-init", { method: "POST" })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { deepLink: string | null; botUrl: string | null } | null) => {
+        if (cancelled || !data) return;
+        const botUsername = data.botUrl ? data.botUrl.split("/").pop()! : null;
+        setTgLinkData({ deepLink: data.deepLink, botUsername });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [tab, step]);
+
+  // Inject the Telegram Login Widget script once we know the bot username
+  useEffect(() => {
+    const container = tgWidgetContainerRef.current;
+    if (!tgLinkData?.botUsername || !container || tgLinked) return;
+
+    (window as any).onTelegramWidgetAuth = async (user: Record<string, unknown>) => {
+      setTgLinking(true);
+      try {
+        const r = await fetch("/api/account/telegram/widget-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(user),
+        });
+        if (r.ok) {
+          setTgLinked(true);
+        }
+      } catch { /* ignore */ }
+      setTgLinking(false);
+    };
+
+    container.innerHTML = "";
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", tgLinkData.botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-onauth", "onTelegramWidgetAuth(user)");
+    script.setAttribute("data-request-access", "write");
+    script.async = true;
+    container.appendChild(script);
+
+    return () => {
+      container.innerHTML = "";
+      delete (window as any).onTelegramWidgetAuth;
+    };
+  }, [tgLinkData?.botUsername, tgLinked]);
 
   const smartLogin = useSmartLogin();
   const signup = useSignup();
@@ -770,20 +827,69 @@ export default function Login() {
                 </div>
 
                 {/* CTAs */}
-                <button
-                  onClick={() => setLocation("/account?s=telegram&next=groups")}
-                  className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                  style={{ background: "var(--t-blue-deep)" }}>
-                  <Bell className="w-4 h-4" />
-                  Set up Telegram notifications
-                </button>
+                {tgLinked ? (
+                  // ── Linked success state ─────────────────────────────────
+                  <div className="space-y-3">
+                    <div className="flex flex-col items-center gap-2 py-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center"
+                        style={{ background: "rgba(34,197,94,0.12)" }}>
+                        <CheckCircle2 className="w-6 h-6 text-green-500" />
+                      </div>
+                      <p className="text-sm font-bold" style={{ color: T.text }}>Telegram linked!</p>
+                      <p className="text-xs text-center" style={{ color: T.muted }}>You'll now receive order notifications in Telegram.</p>
+                    </div>
+                    <button
+                      onClick={() => setStep("join-group-buy")}
+                      className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                      style={{ background: "var(--t-blue-deep)" }}>
+                      Continue →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Telegram Login Widget — rendered by the injected script */}
+                    <div className="flex flex-col items-center gap-1">
+                      <p className="text-[11px] font-medium mb-1" style={{ color: T.muted }}>Connect instantly with one tap:</p>
+                      <div ref={tgWidgetContainerRef} className="flex justify-center min-h-[44px]">
+                        {!tgLinkData?.botUsername && (
+                          <div className="h-10 w-40 rounded-xl animate-pulse" style={{ background: T.surface2 }} />
+                        )}
+                      </div>
+                      {tgLinking && (
+                        <p className="text-xs" style={{ color: T.muted }}>Linking…</p>
+                      )}
+                    </div>
 
-                <button
-                  onClick={() => setStep("join-group-buy")}
-                  className="w-full h-10 rounded-xl text-xs font-semibold transition-colors"
-                  style={{ color: T.muted }}>
-                  Skip for now
-                </button>
+                    {/* Deep link fallback — open bot directly */}
+                    {tgLinkData?.deepLink && (
+                      <a
+                        href={tgLinkData.deepLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                        style={{ background: "var(--t-blue-deep)" }}>
+                        <MessageCircle className="w-4 h-4" />
+                        Open in Telegram to link →
+                      </a>
+                    )}
+                    {!tgLinkData?.deepLink && (
+                      <button
+                        onClick={() => setLocation("/account?s=telegram&next=groups")}
+                        className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                        style={{ background: "var(--t-blue-deep)" }}>
+                        <Bell className="w-4 h-4" />
+                        Set up Telegram notifications
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setStep("join-group-buy")}
+                      className="w-full h-10 rounded-xl text-xs font-semibold transition-colors"
+                      style={{ color: T.muted }}>
+                      Skip for now
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 

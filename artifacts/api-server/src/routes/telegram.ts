@@ -3,7 +3,7 @@ import { db, pool } from "@workspace/db";
 import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable, wholesaleChatTelegramMessagesTable } from "@workspace/db";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull } from "drizzle-orm";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { sendTelegramMessage, sendTelegramMessageFull, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
@@ -3076,6 +3076,66 @@ router.post("/account/telegram/link-init", requireAccount, async (req, res): Pro
     deepLink: botUsername ? `https://t.me/${botUsername}?start=${code}` : null,
     instruction: `Send /link ${code} to the bot`,
   });
+});
+
+// ── POST /api/account/telegram/widget-auth — verify Telegram Login Widget payload ─
+router.post("/account/telegram/widget-auth", requireAccount, async (req, res): Promise<void> => {
+  const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body as {
+    id: number; first_name?: string; last_name?: string; username?: string;
+    photo_url?: string; auth_date: number; hash: string;
+  };
+
+  if (!id || !auth_date || !hash) {
+    res.status(400).json({ error: "Invalid widget payload" });
+    return;
+  }
+
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    res.status(503).json({ error: "Bot not configured" });
+    return;
+  }
+
+  // Telegram Login Widget verification (https://core.telegram.org/widgets/login#checking-authorization)
+  // data_check_string = all fields except hash, sorted alphabetically, joined with \n
+  const fields: Record<string, string> = { id: String(id), auth_date: String(auth_date) };
+  if (first_name) fields.first_name = first_name;
+  if (last_name) fields.last_name = last_name;
+  if (username) fields.username = username;
+  if (photo_url) fields.photo_url = photo_url;
+
+  const dataCheckString = Object.keys(fields).sort().map(k => `${k}=${fields[k]}`).join("\n");
+  const secretKey = createHash("sha256").update(botToken).digest();
+  const expectedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+  if (expectedHash !== hash) {
+    res.status(403).json({ error: "Invalid widget signature" });
+    return;
+  }
+
+  // Reject stale auth (Telegram recommends < 24 h)
+  if (Date.now() / 1000 - auth_date > 86_400) {
+    res.status(403).json({ error: "Auth expired — please try again" });
+    return;
+  }
+
+  const tg = normalizeTg(req.account!.telegramUsername);
+
+  await db
+    .update(accountsTable)
+    .set({ telegramChatId: String(id), telegramLinkToken: null, telegramLinkExpiresAt: null })
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
+
+  writeLog("login", "info", "telegram_widget_linked", `Telegram widget-linked for: ${tg}`, {
+    telegramUsername: tg, telegramId: id,
+  }).catch(() => {});
+
+  // Welcome DM
+  sendTelegramMessage(String(id),
+    `✅ Your Telegram is now linked to your Salt & Peps account (@${tg}). You'll receive order notifications here.`,
+  ).catch(() => {});
+
+  res.json({ ok: true });
 });
 
 // ── DELETE /api/account/telegram/unlink ──────────────────────────────────────
