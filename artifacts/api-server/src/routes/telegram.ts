@@ -391,6 +391,99 @@ async function finaliseTicket(
       }).catch(() => {});
     }
   }).catch(() => {});
+
+  // ── Notify GB organiser (mirrors web ticket behaviour) ────────────────────
+  if (conv.groupBuyId) {
+    (async () => {
+      try {
+        const [gb] = await db
+          .select({ organiserId: groupBuysTable.organiserId, name: groupBuysTable.name })
+          .from(groupBuysTable)
+          .where(eq(groupBuysTable.id, conv.groupBuyId!));
+
+        if (gb?.organiserId) {
+          const [organiserAcct] = await db
+            .select({ telegramChatId: accountsTable.telegramChatId })
+            .from(accountsTable)
+            .where(eq(accountsTable.telegramUsername, gb.organiserId));
+
+          if (organiserAcct?.telegramChatId) {
+            const orgMsg =
+              `🎫 <b>New ticket for your Group Buy</b>\n` +
+              `GB: <b>${gb.name ?? conv.groupBuyId}</b>\n` +
+              `From: @${username}\n` +
+              (conv.issueType ? `Issue type: ${conv.issueType}\n` : "") +
+              `Subject: <b>${conv.subject}</b>\n\n` +
+              `${body.slice(0, 300)}${body.length > 300 ? "…" : ""}`;
+
+            sendTelegramMessageFull(
+              organiserAcct.telegramChatId,
+              orgMsg,
+              "HTML",
+              { recipientType: "user", recipientUsername: gb.organiserId },
+              { reply_markup: { inline_keyboard: [[{ text: "💬 Reply", callback_data: `org:rt:${ticketId}` }]] } },
+            ).then(({ ok, messageId }) => {
+              const orgChatId = organiserAcct.telegramChatId;
+              if (ok && messageId && orgChatId) {
+                db.insert(ticketTelegramMessagesTable).values({
+                  telegramMessageId: messageId, chatId: orgChatId, ticketId,
+                }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+        }
+      } catch { /* best-effort */ }
+    })();
+  }
+
+  // ── Notify reshipper(s) for order-issue tickets ───────────────────────────
+  // Look up any active orders belonging to this user that have a reshipper assigned,
+  // deduplicate by reshipper, and send each one a direct Telegram notification.
+  if (category === "order_issue") {
+    (async () => {
+      try {
+        const norm = username.replace(/^@/, "").toLowerCase();
+        const reshippedOrders = await db
+          .select({ reshipperUsername: ordersTable.reshipperUsername })
+          .from(ordersTable)
+          .where(
+            and(
+              sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${norm}`,
+              isNotNull(ordersTable.reshipperUsername),
+              isNull(ordersTable.deletedAt),
+              notInArray(ordersTable.status, ["Cancelled", "Completed"]),
+            ),
+          );
+
+        const uniqueReshippers = [...new Set(
+          reshippedOrders.map(o => o.reshipperUsername).filter(Boolean) as string[]
+        )];
+
+        for (const reshipperTg of uniqueReshippers) {
+          const [reshipperAcct] = await db
+            .select({ telegramChatId: accountsTable.telegramChatId })
+            .from(accountsTable)
+            .where(sql`lower(${accountsTable.telegramUsername}) = ${reshipperTg.replace(/^@/, "").toLowerCase()}`);
+
+          if (reshipperAcct?.telegramChatId) {
+            const reshipMsg =
+              `🎫 <b>New order-issue ticket</b>\n` +
+              `From: @${username}\n` +
+              `Subject: <b>${conv.subject}</b>\n\n` +
+              `${body.slice(0, 300)}${body.length > 300 ? "…" : ""}`;
+
+            sendTelegramMessageFull(
+              reshipperAcct.telegramChatId,
+              reshipMsg,
+              "HTML",
+              { recipientType: "user", recipientUsername: reshipperTg },
+              { reply_markup: { inline_keyboard: [[{ text: "💬 Reply", callback_data: `org:rt:${ticketId}` }]] } },
+            ).catch(() => {});
+          }
+        }
+      } catch { /* best-effort */ }
+    })();
+  }
 }
 
 // ── Ticket reply helpers ──────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import jwt from "jsonwebtoken";
-import { db, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, groupBuysTable, accountsTable } from "@workspace/db";
-import { eq, and, desc, asc, inArray } from "drizzle-orm";
+import { db, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, groupBuysTable, accountsTable, ordersTable } from "@workspace/db";
+import { eq, and, desc, asc, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { getJwtSecret } from "../middleware/account-auth";
@@ -19,7 +19,7 @@ import {
 } from "@workspace/api-zod";
 import { z } from "zod";
 
-const CreateTicketBody = _CreateTicketBody.extend({ groupBuyId: z.string().optional(), issueType: z.string().optional() } as any);
+const CreateTicketBody = _CreateTicketBody.extend({ groupBuyId: z.string().optional(), issueType: z.string().optional(), orderId: z.string().optional() } as any);
 
 const router: IRouter = Router();
 
@@ -68,7 +68,7 @@ router.post("/account/tickets", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid request body" });
     return;
   }
-  const { category, subject, description, groupBuyId, issueType } = parsed.data;
+  const { category, subject, description, groupBuyId, issueType, orderId } = parsed.data as any;
 
   const ticketId = randomUUID();
   const now = new Date();
@@ -171,6 +171,66 @@ router.post("/account/tickets", async (req, res): Promise<void> => {
     } catch {
       // Organiser notification is best-effort — never block ticket creation
     }
+  }
+
+  // ── Notify reshipper(s) for order-issue tickets ───────────────────────────
+  // If the ticket explicitly names an orderId, notify that order's reshipper.
+  // Otherwise, for any order_issue ticket, notify reshippers on ALL active
+  // reshipped orders belonging to this user (deduplicated).
+  if (category === "order_issue") {
+    (async () => {
+      try {
+        const norm = username.replace(/^@/, "").toLowerCase();
+        let reshipperUsernames: string[] = [];
+
+        if (orderId) {
+          // Specific order
+          const [order] = await db
+            .select({ reshipperUsername: ordersTable.reshipperUsername })
+            .from(ordersTable)
+            .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.deletedAt)));
+          if (order?.reshipperUsername) reshipperUsernames = [order.reshipperUsername];
+        } else {
+          // All active reshipped orders for this user
+          const orders = await db
+            .select({ reshipperUsername: ordersTable.reshipperUsername })
+            .from(ordersTable)
+            .where(
+              and(
+                sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${norm}`,
+                isNotNull(ordersTable.reshipperUsername),
+                isNull(ordersTable.deletedAt),
+                notInArray(ordersTable.status, ["Cancelled", "Completed"]),
+              ),
+            );
+          reshipperUsernames = [...new Set(orders.map(o => o.reshipperUsername).filter(Boolean) as string[])];
+        }
+
+        for (const reshipperTg of reshipperUsernames) {
+          const [reshipperAcct] = await db
+            .select({ telegramChatId: accountsTable.telegramChatId })
+            .from(accountsTable)
+            .where(sql`lower(${accountsTable.telegramUsername}) = ${reshipperTg.replace(/^@/, "").toLowerCase()}`);
+
+          if (reshipperAcct?.telegramChatId) {
+            const reshipMsg =
+              `🎫 <b>New order-issue ticket</b>\n` +
+              `From: @${username}\n` +
+              (issueType ? `Issue type: ${issueType}\n` : "") +
+              `Subject: <b>${subject.trim()}</b>\n\n` +
+              `${description.trim().slice(0, 300)}${description.trim().length > 300 ? "…" : ""}`;
+
+            sendTelegramMessageFull(
+              reshipperAcct.telegramChatId,
+              reshipMsg,
+              "HTML",
+              { recipientType: "user", recipientUsername: reshipperTg },
+              { reply_markup: { inline_keyboard: [[{ text: "💬 Reply", callback_data: `org:rt:${ticketId}` }]] } },
+            ).catch(() => {});
+          }
+        }
+      } catch { /* best-effort */ }
+    })();
   }
 
   createAlert(
