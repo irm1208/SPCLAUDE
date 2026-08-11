@@ -179,6 +179,11 @@ async function startFeedbackFlow(chatId: string): Promise<void> {
 
 // ── Guided ticket-creation conversation state machine ─────────────────────────
 
+interface SageHistoryEntry {
+  role: "user" | "model";
+  parts: Array<{ text: string }>;
+}
+
 interface TicketConv {
   step: "awaiting_category" | "awaiting_gbtype" | "awaiting_gb" | "awaiting_subject" | "awaiting_body" | "labs_search" | "sage_chat";
   category?: string;
@@ -186,6 +191,7 @@ interface TicketConv {
   groupBuyId?: string;
   groupBuyName?: string;
   subject?: string;
+  sageHistory?: SageHistoryEntry[];
   ts: number;
 }
 
@@ -2936,9 +2942,8 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 
     // ── Sage chat — multi-turn health/compound advisor ───────────────────────
     if (conv.step === "sage_chat") {
-      // Keep conv alive (refresh TTL) so multi-turn works
-      setConv(chatId, { step: "sage_chat" });
       const question = text.trim();
+      const SAGE_MAX_TURNS = 6; // max user+model pairs to keep
 
       // Daily quota — shared with /blood-tests/discuss
       const username = linked?.telegramUsername ?? "";
@@ -2956,6 +2961,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
       }
 
+      // Build contents array: prior history + this user turn
+      const priorHistory: SageHistoryEntry[] = conv.sageHistory ?? [];
+      const userTurn: SageHistoryEntry = { role: "user", parts: [{ text: question }] };
+      const contents: SageHistoryEntry[] = [...priorHistory, userTurn];
+
       // Fetch the site-configured Sage system prompt
       const systemPrompt = await getSageBotSystemPrompt();
 
@@ -2966,9 +2976,20 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
             systemInstruction: systemPrompt,
             maxOutputTokens: 512,
           },
-          contents: [{ role: "user", parts: [{ text: question }] }],
+          contents,
         });
-        const sageText = sageReply.text ?? "I couldn't generate a response. Please try again.";
+        const sageText = (sageReply.text ?? "").trim() || "I couldn't generate a response. Please try again.";
+
+        // Append model reply to history and prune to last SAGE_MAX_TURNS pairs
+        const modelTurn: SageHistoryEntry = { role: "model", parts: [{ text: sageText }] };
+        let updatedHistory: SageHistoryEntry[] = [...contents, modelTurn];
+        if (updatedHistory.length > SAGE_MAX_TURNS * 2) {
+          updatedHistory = updatedHistory.slice(updatedHistory.length - SAGE_MAX_TURNS * 2);
+        }
+
+        // Persist history in conv (also refreshes TTL)
+        setConv(chatId, { step: "sage_chat", sageHistory: updatedHistory });
+
         await sendTelegramMessageFull(
           chatId,
           `🤖 <b>Sage</b>\n\n${sageText}`,
@@ -2977,7 +2998,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: "🔄 Ask another question", callback_data: "mn:sage" }],
+                [{ text: "🔄 New conversation", callback_data: "mn:sage" }],
                 [{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }],
               ],
             },
@@ -2986,6 +3007,8 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       } catch (err) {
         console.error("[telegram:sage] Gemini error:", err);
         if (username) await rollbackSageQuota(username);
+        // Keep conv alive with existing history so user can retry
+        setConv(chatId, { step: "sage_chat", sageHistory: priorHistory });
         await sendTelegramMessageFull(
           chatId,
           `🤖 <b>Sage</b>\n\nI'm having trouble right now. Please try again in a moment.`,
