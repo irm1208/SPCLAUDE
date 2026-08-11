@@ -439,7 +439,7 @@ export function HubBottomNav({
                   boxShadow: "0 2px 8px rgba(1,118,211,0.5)",
                 }}
               >
-                Menu
+                Click here
               </span>
             )}
             {!open && (
