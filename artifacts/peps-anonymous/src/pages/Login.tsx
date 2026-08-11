@@ -113,11 +113,13 @@ export default function Login() {
     queryKey: ["site-config"],
     queryFn: async () => {
       const res = await fetch("/api/config");
-      return res.json() as Promise<{ signupRequiresInvite?: boolean }>;
+      return res.json() as Promise<{ signupRequiresInvite?: boolean; telegramWidgetEnabled?: boolean }>;
     },
     staleTime: 60_000,
   });
   const inviteRequired = siteConfig?.signupRequiresInvite ?? false;
+  // Widget is opt-in via admin flag (default off until BotFather /setdomain is configured).
+  const telegramWidgetEnabled = siteConfig?.telegramWidgetEnabled ?? false;
 
   useEffect(() => {
     // Only redirect if user was already logged in when they arrived at /login.
@@ -145,6 +147,7 @@ export default function Login() {
   const [tgLinkData, setTgLinkData] = useState<{ deepLink: string | null; botUsername: string | null } | null>(null);
   const [tgLinked, setTgLinked] = useState(false);
   const [tgLinking, setTgLinking] = useState(false);
+  const [tgWidgetFailed, setTgWidgetFailed] = useState(false);
   const tgWidgetContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch a fresh link token + deep link as soon as the Telegram prompt appears
@@ -162,10 +165,12 @@ export default function Login() {
     return () => { cancelled = true; };
   }, [tab, step]);
 
-  // Inject the Telegram Login Widget script once we know the bot username
+  // Inject the Telegram Login Widget script once we know the bot username.
+  // Only runs when the admin flag is on; adds a 3-second watchdog that promotes
+  // the deep-link fallback if the widget fails to render (e.g. /setdomain not set).
   useEffect(() => {
     const container = tgWidgetContainerRef.current;
-    if (!tgLinkData?.botUsername || !container || tgLinked) return;
+    if (!telegramWidgetEnabled || !tgLinkData?.botUsername || !container || tgLinked) return;
 
     (window as any).onTelegramWidgetAuth = async (user: Record<string, unknown>) => {
       setTgLinking(true);
@@ -192,11 +197,20 @@ export default function Login() {
     script.async = true;
     container.appendChild(script);
 
+    // Watchdog: if the widget hasn't rendered an iframe after 3 s, fall back to
+    // the deep link. This catches the common case where /setdomain wasn't called.
+    const watchdog = setTimeout(() => {
+      if (container && !container.querySelector("iframe")) {
+        setTgWidgetFailed(true);
+      }
+    }, 3000);
+
     return () => {
+      clearTimeout(watchdog);
       container.innerHTML = "";
       delete (window as any).onTelegramWidgetAuth;
     };
-  }, [tgLinkData?.botUsername, tgLinked]);
+  }, [telegramWidgetEnabled, tgLinkData?.botUsername, tgLinked]);
 
   const smartLogin = useSmartLogin();
   const signup = useSignup();
@@ -847,20 +861,24 @@ export default function Login() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {/* Telegram Login Widget — rendered by the injected script */}
-                    <div className="flex flex-col items-center gap-1">
-                      <p className="text-[11px] font-medium mb-1" style={{ color: T.muted }}>Connect instantly with one tap:</p>
-                      <div ref={tgWidgetContainerRef} className="flex justify-center min-h-[44px]">
-                        {!tgLinkData?.botUsername && (
-                          <div className="h-10 w-40 rounded-xl animate-pulse" style={{ background: T.surface2 }} />
+                    {/* Telegram Login Widget — only shown when admin flag is on and widget hasn't failed */}
+                    {telegramWidgetEnabled && !tgWidgetFailed && (
+                      <div className="flex flex-col items-center gap-1">
+                        <p className="text-[11px] font-medium mb-1" style={{ color: T.muted }}>Connect instantly with one tap:</p>
+                        <div ref={tgWidgetContainerRef} className="flex justify-center min-h-[44px]">
+                          {!tgLinkData?.botUsername && (
+                            <div className="h-10 w-40 rounded-xl animate-pulse" style={{ background: T.surface2 }} />
+                          )}
+                        </div>
+                        {tgLinking && (
+                          <p className="text-xs" style={{ color: T.muted }}>Linking…</p>
                         )}
                       </div>
-                      {tgLinking && (
-                        <p className="text-xs" style={{ color: T.muted }}>Linking…</p>
-                      )}
-                    </div>
+                    )}
 
-                    {/* Deep link fallback — open bot directly */}
+                    {/* Primary CTA: deep link.
+                        Promoted to top-level (with updated label) when the widget is
+                        disabled or failed; shown as a secondary option otherwise. */}
                     {tgLinkData?.deepLink && (
                       <a
                         href={tgLinkData.deepLink}
@@ -869,7 +887,9 @@ export default function Login() {
                         className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
                         style={{ background: "var(--t-blue-deep)" }}>
                         <MessageCircle className="w-4 h-4" />
-                        Open in Telegram to link →
+                        {tgWidgetFailed
+                          ? "Use Telegram app instead →"
+                          : "Open in Telegram to link →"}
                       </a>
                     )}
                     {!tgLinkData?.deepLink && (

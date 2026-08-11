@@ -74,6 +74,17 @@ To run the application, use the following commands:
 
 Preferred communication style: Simple, everyday language.
 
+## One-time ops: Telegram Login Widget
+
+The Telegram Login Widget requires the **production domain** to be whitelisted with BotFather before it will render:
+
+1. Open a chat with [@BotFather](https://t.me/botfather) on Telegram.
+2. Send `/setdomain` and select your bot.
+3. Enter the production domain (e.g. `pepsanonymous.com`) — no `https://` prefix, no trailing slash.
+4. Once done, enable the widget in the admin panel: go to **Admin → Site Config** and toggle `telegramWidgetEnabled` to `true` (or call `PATCH /api/admin/config/telegram-widget-enabled` with `{ "enabled": true }`).
+
+Until step 4 is done the widget is hidden site-wide and users see only the deep-link fallback button, which always works.
+
 ## Gotchas
 
 - **DB Schema Push on Startup**: The `npm start` command includes `drizzle-kit push --force`, which modifies the production database schema. Ensure this is intentional for your deployment strategy.

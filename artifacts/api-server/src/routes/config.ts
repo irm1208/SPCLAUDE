@@ -60,6 +60,7 @@ router.get("/config", async (_req, res): Promise<void> => {
     rawWholesaleApproval, rawAdminFeeEnabled, rawAdminFeeAmount,
     rawAdminFeeCountries, rawSignupRequiresInvite, deliveryTips,
     rawSharedComingSoon, rawSharedComingSoonMessage, rawWholesaleAccess, rawWholesaleAccessAmount,
+    rawTelegramWidgetEnabled,
   ] = await Promise.all([
     getConfigValue("vendorShippingWarning"),
     getConfigValue("groupBuysPageMessage"),
@@ -74,6 +75,7 @@ router.get("/config", async (_req, res): Promise<void> => {
     getConfigValue("wholesale_shared_coming_soon_message"),
     getConfigValue("wholesale_access_enabled"),
     getConfigValue("wholesale_access_amount"),
+    getConfigValue("telegram_widget_enabled"),
   ]);
 
   const vendorShippingWarning = rawWarning === null ? true : rawWarning === "true";
@@ -103,6 +105,8 @@ router.get("/config", async (_req, res): Promise<void> => {
     deliveryTipsItems: deliveryTips.items,
     wholesaleAccessEnabled: rawWholesaleAccess === "true",
     wholesaleAccessAmount: rawWholesaleAccessAmount ? parseFloat(rawWholesaleAccessAmount) : null,
+    // Telegram Login Widget is off by default — requires BotFather /setdomain first.
+    telegramWidgetEnabled: rawTelegramWidgetEnabled === "true",
   });
 });
 
@@ -167,6 +171,20 @@ router.patch("/admin/vendor-shipping-warning", async (req, res): Promise<void> =
   }
   await setConfigValue("vendorShippingWarning", enabled ? "true" : "false");
   res.json({ vendorShippingWarning: enabled });
+});
+
+// ─── PATCH /api/admin/config/telegram-widget-enabled ─────────────────────────
+// Toggles the Telegram Login Widget. Must only be enabled after BotFather
+// /setdomain has been called for the production domain.
+router.patch("/admin/config/telegram-widget-enabled", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { enabled } = req.body as { enabled?: boolean };
+  if (typeof enabled !== "boolean") {
+    res.status(400).json({ error: "enabled must be boolean" });
+    return;
+  }
+  await setConfigValue("telegram_widget_enabled", enabled ? "true" : "false");
+  res.json({ telegramWidgetEnabled: enabled });
 });
 
 router.patch("/admin/config/wholesale-access-enabled", async (req, res): Promise<void> => {
