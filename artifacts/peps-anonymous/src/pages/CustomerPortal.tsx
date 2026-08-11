@@ -2335,11 +2335,22 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
     if (!selected) return null;
     const { allowedCountries, excludedCountries } = selected;
     const hasRestrictions = (allowedCountries && allowedCountries.length > 0) || (excludedCountries && excludedCountries.length > 0);
-    if (hasRestrictions && !userCountry) return "Please set your country in your profile before joining this group buy.";
-    if (userCountry && allowedCountries && allowedCountries.length > 0 && !allowedCountries.includes(userCountry))
-      return `This group buy is only available to members in: ${allowedCountries.join(", ")}`;
-    if (userCountry && excludedCountries && excludedCountries.length > 0 && excludedCountries.includes(userCountry))
-      return `This group buy is not available in your country (${userCountry})`;
+    if (hasRestrictions && !rawUserCountry) return "Please set your country in your profile before joining this group buy.";
+    // Normalize both sides to ISO codes before comparing.
+    // allowedCountries/excludedCountries are stored as ISO codes ("GB");
+    // account.country may be stored as a code or full name.
+    const toCode = (v: string): string => {
+      const t = v.trim();
+      if (t.length === 2) return t.toUpperCase();
+      return COUNTRY_LIST.find(c => c.name.toLowerCase() === t.toLowerCase())?.code?.toUpperCase() ?? t.toUpperCase();
+    };
+    const toName = (v: string): string =>
+      COUNTRY_LIST.find(c => c.code.toUpperCase() === v.trim().toUpperCase())?.name ?? v.trim();
+    const userCode = rawUserCountry ? toCode(rawUserCountry) : null;
+    if (userCode && allowedCountries && allowedCountries.length > 0 && !allowedCountries.map(toCode).includes(userCode))
+      return `This group buy is only available to members in: ${allowedCountries.map(toName).join(", ")}`;
+    if (userCode && excludedCountries && excludedCountries.length > 0 && excludedCountries.map(toCode).includes(userCode))
+      return `This group buy is not available in your country (${toName(rawUserCountry!)})`;
     return null;
   })();
 

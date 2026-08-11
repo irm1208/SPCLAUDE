@@ -7,6 +7,7 @@ import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
+import { normalizeToCode as normalizeCountryToCode } from "../lib/country-utils";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
@@ -436,39 +437,31 @@ router.post("/account/join-gb", requireAccount, async (req, res): Promise<void> 
     .select({ country: accountsTable.country })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, bareTg));
-  // Normalise stored country: ISO-2 codes (e.g. "GB") are expanded to full names
-  // so they match the full-name strings stored in allowedCountries / excludedCountries.
+  // Normalise both sides to ISO-2 codes before comparing.
+  // allowedCountries/excludedCountries are stored as ISO codes ("GB").
+  // account.country may be stored as a code ("GB") or full name ("United Kingdom").
   const rawUserCountry = userAcct?.country ?? null;
-  const userCountry = rawUserCountry
-    ? (({
-        GB: "United Kingdom", IE: "Ireland", BE: "Belgium", NL: "Netherlands",
-        LU: "Luxembourg", DE: "Germany", AT: "Austria", FR: "France",
-        ES: "Spain", PT: "Portugal", IT: "Italy", SE: "Sweden", DK: "Denmark",
-        FI: "Finland", NO: "Norway", EE: "Estonia", LV: "Latvia", LT: "Lithuania",
-        PL: "Poland", CZ: "Czech Republic", SK: "Slovakia", HU: "Hungary",
-        RO: "Romania", BG: "Bulgaria", HR: "Croatia", SI: "Slovenia",
-        GR: "Greece", CY: "Cyprus", MT: "Malta", CH: "Switzerland",
-        US: "United States", CA: "Canada", AU: "Australia",
-      } as Record<string, string>)[rawUserCountry.trim().toUpperCase()] ?? rawUserCountry.trim())
-    : null;
+  const userCountryCode = rawUserCountry ? normalizeCountryToCode(rawUserCountry) : null;
 
   if (gb.allowedCountries && gb.allowedCountries.length > 0) {
-    if (!userCountry) {
+    if (!userCountryCode) {
       res.status(403).json({ error: "Please set your country in your profile before joining this group buy." });
       return;
     }
-    if (!gb.allowedCountries.includes(userCountry)) {
+    const allowedCodes = gb.allowedCountries.map(normalizeCountryToCode);
+    if (!allowedCodes.includes(userCountryCode)) {
       res.status(403).json({ error: `This group buy is only available to members in: ${gb.allowedCountries.join(", ")}` });
       return;
     }
   }
   if (gb.excludedCountries && gb.excludedCountries.length > 0) {
-    if (!userCountry) {
+    if (!userCountryCode) {
       res.status(403).json({ error: "Please set your country in your profile before joining this group buy." });
       return;
     }
-    if (gb.excludedCountries.includes(userCountry)) {
-      res.status(403).json({ error: `This group buy is not available in your country (${userCountry})` });
+    const excludedCodes = gb.excludedCountries.map(normalizeCountryToCode);
+    if (excludedCodes.includes(userCountryCode)) {
+      res.status(403).json({ error: `This group buy is not available in your country (${rawUserCountry})` });
       return;
     }
   }
