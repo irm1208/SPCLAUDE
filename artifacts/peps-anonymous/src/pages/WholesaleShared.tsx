@@ -2120,45 +2120,81 @@ export default function WholesaleShared() {
   const showMemberPaymentRoster = (share.canMarkMemberPayments ?? false)
     && share.members.some(m => !!m.orderId);
 
+  const memberPaymentPaidCount = share.members.filter(m =>
+    m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed"
+  ).length;
+  const memberPaymentTotal = share.members.filter(m => !!m.orderId).length;
+
   const sectionMemberPaymentRoster = showMemberPaymentRoster ? (
     <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>
-        Member Payments — Mark Paid
-      </p>
-      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
+      <div className="flex items-center justify-between px-1">
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>
+          Member Payments
+        </p>
+        <span
+          className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+          style={memberPaymentPaidCount === memberPaymentTotal
+            ? { background: "rgba(34,197,94,0.15)", color: "#15803d" }
+            : { background: "rgba(245,158,11,0.12)", color: "#b45309" }
+          }
+        >
+          {memberPaymentPaidCount}/{memberPaymentTotal} paid
+        </span>
+      </div>
+      <div
+        className="rounded-xl overflow-hidden divide-y"
+        style={{ border: "1px solid var(--t-border)" }}
+      >
         {share.members.filter(m => !!m.orderId).map(m => {
           const isPaid = m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed";
+          const isPending = m.paymentStatus === "pending_confirmation";
           const isBusy = busy === `memberpay:${m.username}`;
           return (
-            <div key={m.username} className="px-3 py-2.5 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>
-                  @{m.username.replace(/^@/, "")}
-                  {m.isCreator && (
-                    <span className="text-[10px] ml-1.5" style={{ color: "var(--t-muted)" }}>(you)</span>
-                  )}
-                  {m.isRecipient && (
-                    <span className="text-[10px] ml-1.5" style={{ color: "var(--t-muted)" }}>recipient</span>
-                  )}
-                </p>
-                {m.orderCode && (
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                    Order {m.orderCode}
-                    {m.paymentStatus && (
-                      <> · <span style={{ color: isPaid ? "#15803d" : "#92400e" }}>
-                        {isPaid ? "Paid" : m.paymentStatus === "pending_confirmation" ? "Pending" : "Unpaid"}
-                      </span></>
+            <div
+              key={m.username}
+              className="px-3 py-3 flex items-center justify-between gap-3"
+              style={{
+                background: isPaid
+                  ? "rgba(34,197,94,0.04)"
+                  : isPending
+                    ? "rgba(245,158,11,0.04)"
+                    : "transparent",
+              }}
+            >
+              <div className="min-w-0 flex items-center gap-2.5">
+                {/* Status dot */}
+                <span
+                  className="shrink-0 w-2 h-2 rounded-full"
+                  style={{
+                    background: isPaid ? "#22c55e" : isPending ? "#f59e0b" : "var(--t-border)",
+                    boxShadow: isPaid ? "0 0 0 3px rgba(34,197,94,0.18)" : isPending ? "0 0 0 3px rgba(245,158,11,0.18)" : "none",
+                  }}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text)" }}>
+                    @{m.username.replace(/^@/, "")}
+                    {m.isCreator && (
+                      <span className="text-[10px] font-normal ml-1.5" style={{ color: "var(--t-muted)" }}>you</span>
+                    )}
+                    {m.isRecipient && (
+                      <span className="text-[10px] font-normal ml-1.5" style={{ color: "var(--t-muted)" }}>recipient</span>
                     )}
                   </p>
-                )}
+                  <p className="text-[11px] mt-0.5" style={{
+                    color: isPaid ? "#16a34a" : isPending ? "#d97706" : "var(--t-muted)",
+                  }}>
+                    {m.orderCode ? `Order ${m.orderCode} · ` : ""}
+                    {isPaid ? "Paid" : isPending ? "Pending confirmation" : "Unpaid"}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => toggleMemberPayment(m.username, !isPaid)}
                 disabled={isBusy}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-bold disabled:opacity-50 transition-all"
                 style={isPaid
-                  ? { background: "rgba(34,197,94,0.12)", color: "#15803d", border: "1px solid rgba(34,197,94,0.25)" }
-                  : { background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }
+                  ? { background: "rgba(34,197,94,0.15)", color: "#15803d", border: "1px solid rgba(34,197,94,0.30)" }
+                  : { background: "var(--t-blue)", color: "#fff", border: "none" }
                 }
               >
                 {isBusy
@@ -2173,33 +2209,8 @@ export default function WholesaleShared() {
         })}
       </div>
       <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
-        Use this to confirm payment from members who paid by bank transfer or sent funds directly to you.
-        Once all members are marked paid the order is automatically submitted.
+        Confirm payments received by bank transfer or directly. Once all members are marked paid the order submits automatically.
       </p>
-    </section>
-  ) : null;
-
-  // Organiser fees — confirm each member's peer-to-peer fee as paid.
-  const sectionFeeRoster = showFeeRoster ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fees — Mark Paid</p>
-      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-        {share.members.filter(m => m.organiserFee > 0).map(m => (
-          <div key={m.username} className="px-3 py-2.5 space-y-1.5">
-            <p className="text-sm font-medium" style={{ color: "var(--t-text)" }}>
-              @{m.username.replace(/^@/, "")}{m.isYou && <span className="text-[10px] ml-1" style={{ color: "var(--t-muted)" }}>(you)</span>}
-            </p>
-            <FeeLine
-              label="Organiser fee"
-              amount={money(m.organiserFee)}
-              paid={m.organiserFeePaid}
-              canConfirm={share.fees?.canConfirmOrganiserFees ?? false}
-              busy={busy === `feepaid:organiser:${m.username}`}
-              onToggle={() => toggleFeePaid(m.username, "organiser", !m.organiserFeePaid)}
-            />
-          </div>
-        ))}
-      </div>
     </section>
   ) : null;
 
@@ -2800,7 +2811,6 @@ export default function WholesaleShared() {
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionMemberPaymentRoster}
-      {sectionFeeRoster}
       {sectionRecipientAddressPrompt}
       {sectionOrderTracking}
       {sectionMyOnwardAddress}
