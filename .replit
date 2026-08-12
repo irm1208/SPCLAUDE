@@ -58,6 +58,7 @@ MOCKUP_BASE_PATH = "/__mockup/"
 APP_URL = "https://saltandpeps.co.uk"
 AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 SAGE_PROXY_MODEL = "claude-opus-4-7"
+SAGE_PROXY_BASE_URL = "https://api.nuoda.vip"
 
 [userenv.production]
 PUBLIC_URL = "saltandpeps.co.uk"
