@@ -19,8 +19,9 @@ import { searchWebForSage, searchPubMed, fetchUrlContent } from "./web-search";
 
 export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 
-const BASE_URL          = (process.env.SAGE_PROXY_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
-const FALLBACK_BASE_URL = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
+const BASE_URL              = (process.env.SAGE_PROXY_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
+const FALLBACK_BASE_URL     = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
+const FALLBACK_API_KEY_ENV  = "SAGE_PROXY_FALLBACK_API_KEY";
 const DEFAULT_MODEL  = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
 const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-sonnet-4-5-20250929";
 
@@ -74,20 +75,22 @@ function isEndpointRetriable(err: unknown): boolean {
 }
 
 /**
- * Tries `fn(primaryUrl)`. If it throws a retriable endpoint error and a
- * fallback URL is provided, logs a warning and retries with `fn(fallbackUrl)`.
+ * Tries `fn(primaryUrl, primaryKey)`. If it throws a retriable endpoint error
+ * and a fallback URL is provided, retries with `fn(fallbackUrl, fallbackKey)`.
  */
 async function withUrlFallback<T>(
   primaryUrl: string,
+  primaryKey: string,
   fallbackUrl: string | null,
-  fn: (url: string) => Promise<T>,
+  fallbackKey: string,
+  fn: (url: string, key: string) => Promise<T>,
 ): Promise<T> {
   try {
-    return await fn(primaryUrl);
+    return await fn(primaryUrl, primaryKey);
   } catch (err) {
     if (fallbackUrl && isEndpointRetriable(err)) {
       console.warn(`[sage-ai] ${primaryUrl} unreachable (${err instanceof Error ? err.message.slice(0, 120) : err}), retrying with fallback ${fallbackUrl}`);
-      return fn(fallbackUrl);
+      return fn(fallbackUrl, fallbackKey);
     }
     throw err;
   }
@@ -484,20 +487,21 @@ export async function callSageAIStreamWithTools({
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
+  const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;
   const activeModel = model ?? await getActiveSageModel();
 
-  const runWith = async (url: string): Promise<string> => {
+  const runWith = async (url: string, key: string): Promise<string> => {
     const tryWithTools = async (mdl: string): Promise<string> => {
       try {
-        const result = await runToolLoop(mdl, apiKey, url, system, messages, maxTokens, temperature, onStatus);
-        const streamed = await streamResponse(mdl, apiKey, url, system, result.augmentedMessages, maxTokens, temperature, onToken);
+        const result = await runToolLoop(mdl, key, url, system, messages, maxTokens, temperature, onStatus);
+        const streamed = await streamResponse(mdl, key, url, system, result.augmentedMessages, maxTokens, temperature, onToken);
         if (!streamed && result.finalText) { onToken(result.finalText); return result.finalText; }
         return streamed;
       } catch (toolErr) {
         const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
         if (msg.includes("no_stream_body") || msg.includes("400") || msg.includes("tool")) {
           console.warn("[sage-ai] Tool loop failed, falling back to plain stream:", msg);
-          return streamResponse(mdl, apiKey, url, system, messages, maxTokens, temperature, onToken);
+          return streamResponse(mdl, key, url, system, messages, maxTokens, temperature, onToken);
         }
         throw toolErr;
       }
@@ -514,7 +518,7 @@ export async function callSageAIStreamWithTools({
     }
   };
 
-  return withUrlFallback(baseUrl, fallbackUrl, runWith);
+  return withUrlFallback(baseUrl, apiKey, fallbackUrl, fallbackKey, runWith);
 }
 
 /**
@@ -528,17 +532,18 @@ export async function callSageAIStream({
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
+  const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;
   const activeModel = model ?? await getActiveSageModel();
 
-  const runWith = async (url: string): Promise<string> => {
+  const runWith = async (url: string, key: string): Promise<string> => {
     const tryStream = async (mdl: string): Promise<string> => {
       try {
-        const result = await streamResponse(mdl, apiKey, url, system, messages, maxTokens, temperature, onToken);
+        const result = await streamResponse(mdl, key, url, system, messages, maxTokens, temperature, onToken);
         if (result) return result;
-        return callModel(mdl, apiKey, url, system, messages, maxTokens, temperature);
+        return callModel(mdl, key, url, system, messages, maxTokens, temperature);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg === "no_stream_body") return callModel(mdl, apiKey, url, system, messages, maxTokens, temperature);
+        if (msg === "no_stream_body") return callModel(mdl, key, url, system, messages, maxTokens, temperature);
         throw err;
       }
     };
@@ -554,7 +559,7 @@ export async function callSageAIStream({
     }
   };
 
-  return withUrlFallback(baseUrl, fallbackUrl, runWith);
+  return withUrlFallback(baseUrl, apiKey, fallbackUrl, fallbackKey, runWith);
 }
 
 export async function callSageAI({
@@ -564,21 +569,22 @@ export async function callSageAI({
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
+  const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;
 
-  const runWith = async (url: string): Promise<string> => {
+  const runWith = async (url: string, key: string): Promise<string> => {
     if (model) {
-      return callModel(model, apiKey, url, system, messages, maxTokens, temperature, jsonMode);
+      return callModel(model, key, url, system, messages, maxTokens, temperature, jsonMode);
     }
 
     const activeModel = await getActiveSageModel();
 
     const callFn = enableWebSearch
       ? async (m: string) => {
-          const { finalText, augmentedMessages } = await runToolLoop(m, apiKey, url, system, messages, maxTokens, temperature);
+          const { finalText, augmentedMessages } = await runToolLoop(m, key, url, system, messages, maxTokens, temperature);
           if (finalText) return finalText;
-          return callModel(m, apiKey, url, system, augmentedMessages, maxTokens, temperature, jsonMode);
+          return callModel(m, key, url, system, augmentedMessages, maxTokens, temperature, jsonMode);
         }
-      : (m: string) => callModel(m, apiKey, url, system, messages, maxTokens, temperature, jsonMode);
+      : (m: string) => callModel(m, key, url, system, messages, maxTokens, temperature, jsonMode);
 
     try {
       return await callFn(activeModel);
@@ -591,5 +597,5 @@ export async function callSageAI({
     }
   };
 
-  return withUrlFallback(baseUrl, fallbackUrl, runWith);
+  return withUrlFallback(baseUrl, apiKey, fallbackUrl, fallbackKey, runWith);
 }
