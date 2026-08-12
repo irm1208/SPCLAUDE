@@ -19,7 +19,8 @@ import { searchWebForSage, searchPubMed, fetchUrlContent } from "./web-search";
 
 export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 
-const BASE_URL       = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
+const BASE_URL          = (process.env.SAGE_PROXY_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
+const FALLBACK_BASE_URL = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
 const DEFAULT_MODEL  = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
 const FALLBACK_MODEL = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-sonnet-4-5-20250929";
 
@@ -59,6 +60,37 @@ export async function getActiveSageModel(): Promise<string> {
 
 export function getSageFallbackModel(): string {
   return FALLBACK_MODEL;
+}
+
+/** Returns true for errors that are worth retrying against a different base URL. */
+function isEndpointRetriable(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  // 5xx responses from the proxy
+  if (/proxy error (5\d\d)/.test(msg)) return true;
+  // Network-level failures (DNS, connection refused, timeout)
+  if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT")) return true;
+  return false;
+}
+
+/**
+ * Tries `fn(primaryUrl)`. If it throws a retriable endpoint error and a
+ * fallback URL is provided, logs a warning and retries with `fn(fallbackUrl)`.
+ */
+async function withUrlFallback<T>(
+  primaryUrl: string,
+  fallbackUrl: string | null,
+  fn: (url: string) => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn(primaryUrl);
+  } catch (err) {
+    if (fallbackUrl && isEndpointRetriable(err)) {
+      console.warn(`[sage-ai] ${primaryUrl} unreachable (${err instanceof Error ? err.message.slice(0, 120) : err}), retrying with fallback ${fallbackUrl}`);
+      return fn(fallbackUrl);
+    }
+    throw err;
+  }
 }
 
 export type TextContentPart  = { type: "text"; text: string };
@@ -451,42 +483,38 @@ export async function callSageAIStreamWithTools({
   const apiKey = (apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY);
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
+  const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
   const activeModel = model ?? await getActiveSageModel();
 
-  const tryWithTools = async (mdl: string): Promise<string> => {
-    let augmentedMessages: SageMessage[];
-    try {
-      const result = await runToolLoop(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onStatus);
-      augmentedMessages = result.augmentedMessages;
+  const runWith = async (url: string): Promise<string> => {
+    const tryWithTools = async (mdl: string): Promise<string> => {
+      try {
+        const result = await runToolLoop(mdl, apiKey, url, system, messages, maxTokens, temperature, onStatus);
+        const streamed = await streamResponse(mdl, apiKey, url, system, result.augmentedMessages, maxTokens, temperature, onToken);
+        if (!streamed && result.finalText) { onToken(result.finalText); return result.finalText; }
+        return streamed;
+      } catch (toolErr) {
+        const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+        if (msg.includes("no_stream_body") || msg.includes("400") || msg.includes("tool")) {
+          console.warn("[sage-ai] Tool loop failed, falling back to plain stream:", msg);
+          return streamResponse(mdl, apiKey, url, system, messages, maxTokens, temperature, onToken);
+        }
+        throw toolErr;
+      }
+    };
 
-      // Stream the final response using the tool-augmented conversation history
-      const streamed = await streamResponse(mdl, apiKey, baseUrl, system, augmentedMessages, maxTokens, temperature, onToken);
-      // If streamed returned empty, fall back to the non-streamed text we already have
-      if (!streamed && result.finalText) {
-        onToken(result.finalText);
-        return result.finalText;
+    try {
+      return await tryWithTools(activeModel);
+    } catch (primaryErr) {
+      if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+        console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
+        return tryWithTools(FALLBACK_MODEL);
       }
-      return streamed;
-    } catch (toolErr) {
-      const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-      // Proxy doesn't support tools → fall back to plain streaming
-      if (msg.includes("no_stream_body") || msg.includes("400") || msg.includes("tool")) {
-        console.warn("[sage-ai] Tool loop failed, falling back to plain stream:", msg);
-        return streamResponse(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onToken);
-      }
-      throw toolErr;
+      throw primaryErr;
     }
   };
 
-  try {
-    return await tryWithTools(activeModel);
-  } catch (primaryErr) {
-    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
-      return await tryWithTools(FALLBACK_MODEL);
-    }
-    throw primaryErr;
-  }
+  return withUrlFallback(baseUrl, fallbackUrl, runWith);
 }
 
 /**
@@ -499,31 +527,34 @@ export async function callSageAIStream({
   const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
+  const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
   const activeModel = model ?? await getActiveSageModel();
 
-  const tryStream = async (mdl: string): Promise<string> => {
-    try {
-      const result = await streamResponse(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature, onToken);
-      if (result) return result;
-      return callModel(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg === "no_stream_body") {
-        return callModel(mdl, apiKey, baseUrl, system, messages, maxTokens, temperature);
+  const runWith = async (url: string): Promise<string> => {
+    const tryStream = async (mdl: string): Promise<string> => {
+      try {
+        const result = await streamResponse(mdl, apiKey, url, system, messages, maxTokens, temperature, onToken);
+        if (result) return result;
+        return callModel(mdl, apiKey, url, system, messages, maxTokens, temperature);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === "no_stream_body") return callModel(mdl, apiKey, url, system, messages, maxTokens, temperature);
+        throw err;
       }
-      throw err;
+    };
+
+    try {
+      return await tryStream(activeModel);
+    } catch (primaryErr) {
+      if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+        console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying stream with fallback "${FALLBACK_MODEL}"`);
+        return tryStream(FALLBACK_MODEL);
+      }
+      throw primaryErr;
     }
   };
 
-  try {
-    return await tryStream(activeModel);
-  } catch (primaryErr) {
-    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying stream with fallback "${FALLBACK_MODEL}"`);
-      return await tryStream(FALLBACK_MODEL);
-    }
-    throw primaryErr;
-  }
+  return withUrlFallback(baseUrl, fallbackUrl, runWith);
 }
 
 export async function callSageAI({
@@ -532,28 +563,33 @@ export async function callSageAI({
   const apiKey = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
+  const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
 
-  if (model) {
-    return await callModel(model, apiKey, baseUrl, system, messages, maxTokens, temperature, jsonMode);
-  }
-
-  const activeModel = await getActiveSageModel();
-
-  const callFn = enableWebSearch
-    ? async (m: string, k: string) => {
-        const { finalText, augmentedMessages } = await runToolLoop(m, k, baseUrl, system, messages, maxTokens, temperature);
-        if (finalText) return finalText;
-        return callModel(m, k, baseUrl, system, augmentedMessages, maxTokens, temperature, jsonMode);
-      }
-    : (m: string, k: string) => callModel(m, k, baseUrl, system, messages, maxTokens, temperature, jsonMode);
-
-  try {
-    return await callFn(activeModel, apiKey);
-  } catch (primaryErr) {
-    if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
-      console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
-      return await callFn(FALLBACK_MODEL, apiKey);
+  const runWith = async (url: string): Promise<string> => {
+    if (model) {
+      return callModel(model, apiKey, url, system, messages, maxTokens, temperature, jsonMode);
     }
-    throw primaryErr;
-  }
+
+    const activeModel = await getActiveSageModel();
+
+    const callFn = enableWebSearch
+      ? async (m: string) => {
+          const { finalText, augmentedMessages } = await runToolLoop(m, apiKey, url, system, messages, maxTokens, temperature);
+          if (finalText) return finalText;
+          return callModel(m, apiKey, url, system, augmentedMessages, maxTokens, temperature, jsonMode);
+        }
+      : (m: string) => callModel(m, apiKey, url, system, messages, maxTokens, temperature, jsonMode);
+
+    try {
+      return await callFn(activeModel);
+    } catch (primaryErr) {
+      if ((isTokenExhaustedError(primaryErr) || isModelPermissionError(primaryErr)) && activeModel !== FALLBACK_MODEL) {
+        console.warn(`[sage-ai] Primary model "${activeModel}" unavailable (${isModelPermissionError(primaryErr) ? "403 permission" : "no tokens"}) — retrying with fallback "${FALLBACK_MODEL}"`);
+        return callFn(FALLBACK_MODEL);
+      }
+      throw primaryErr;
+    }
+  };
+
+  return withUrlFallback(baseUrl, fallbackUrl, runWith);
 }
