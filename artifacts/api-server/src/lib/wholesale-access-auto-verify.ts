@@ -29,7 +29,7 @@ import { writeLog } from "./audit-log";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
-async function confirmWholesaleAccess(requestId: number): Promise<void> {
+export async function confirmWholesaleAccess(requestId: number): Promise<void> {
   // Re-fetch inside confirm to guard against double-confirm races.
   const [req] = await db
     .select()

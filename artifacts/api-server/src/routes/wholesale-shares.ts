@@ -33,6 +33,11 @@ import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
+import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // Fully opaque tracking-number mask — show no real characters so participants (and
 // anyone they share a screenshot with) cannot identify the carrier or origin of the
@@ -2460,6 +2465,10 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     `Currency: ${escHtml(String(currency).trim())} (${escHtml(String(network).trim())})`,
     `Tx hash: <code>${escHtml(txHash.trim())}</code>`,
   ].join("\n")).catch(() => {});
+
+  // Kick off an immediate on-chain verification attempt — no need to wait for
+  // the 10-minute scheduler cycle.
+  triggerWholesaleOrganiserPaymentCheck(share.id);
 
   res.json({ ok: true });
 });

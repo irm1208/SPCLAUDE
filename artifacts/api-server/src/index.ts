@@ -8,6 +8,7 @@ import { startPoolPaymentAutoVerify } from "./lib/pool-payment-auto-verify";
 import { startGbEntryFeeAutoVerify } from "./lib/gb-entry-fee-auto-verify";
 import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
 import { startWholesaleAccessAutoVerify } from "./lib/wholesale-access-auto-verify";
+import { startWholesaleOrganiserPaymentAutoVerify } from "./lib/wholesale-organiser-payment-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
 import { startEmailScheduler } from "./lib/email-scheduler";
@@ -1035,6 +1036,7 @@ app.listen(port, "0.0.0.0", () => {
   startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
   startWholesaleAccessAutoVerify();
+  startWholesaleOrganiserPaymentAutoVerify();
   startQiyunleSync();
   startGbLegsSync();
   startEmailScheduler();

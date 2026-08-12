@@ -123,12 +123,12 @@ export function WholesaleAccessSection() {
             <Clock className="w-7 h-7" style={{ color: "#f59e0b" }} />
           </div>
           <div>
-            <h3 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Payment Under Review</h3>
+            <h3 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Verifying Payment</h3>
             <p className="text-sm mt-2" style={{ color: "var(--t-muted)" }}>
-              We've received your payment. Access will be granted once confirmed — usually within a few hours.
+              Your transaction is being verified on-chain. This usually takes just a few minutes — refresh this page to check the status.
             </p>
           </div>
-          <p className="text-xs" style={{ color: "var(--t-muted)" }}>You'll be notified when your access is ready.</p>
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>You'll be notified via Telegram when your access is ready.</p>
         </div>
       </div>
     );

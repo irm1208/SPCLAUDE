@@ -16,7 +16,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
-import { triggerWholesaleAccessCheck } from "../lib/wholesale-access-auto-verify";
+import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -3870,6 +3870,9 @@ router.post("/account/wholesale-access/submit-test", requireAccount, async (req:
 });
 
 // ── POST /api/account/wholesale-access/pay ────────────────────────────────────
+// Submits the full payment tx hash and immediately verifies it on-chain.
+// Returns the real verification result so PaymentPanel can react instantly —
+// no need to wait for the 10-minute scheduler cycle.
 router.post("/account/wholesale-access/pay", requireAccount, async (req: any, res: any): Promise<void> => {
   try {
     const username: string = req.account.telegramUsername;
@@ -3887,17 +3890,46 @@ router.post("/account/wholesale-access/pay", requireAccount, async (req: any, re
       .limit(1);
     if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
 
+    // Save the hash so the scheduler can retry if the sync verify fails.
     await db.update(wholesaleAccessRequestsTable)
       .set({ paymentTxHash: txHash.trim() })
       .where(eq(wholesaleAccessRequestsTable.id, existing.id));
 
-    const network = existing.paymentCryptoNetwork ?? "?";
-    const currency = existing.paymentCryptoCurrency ?? "USDT";
-    await sendAdminMessage(
-      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}\n\nConfirm: POST /api/admin/wholesale-access-requests/${existing.id}/confirm`
+    const currency = (existing.paymentCryptoCurrency ?? "USDT").toUpperCase();
+    const network  = existing.paymentCryptoNetwork ?? "ERC-20";
+
+    sendAdminMessage(
+      `💸 <b>Wholesale Full Payment Submitted</b>\n\n@${username.replace("@", "")} submitted their full payment.\nAmount: <b>$${existing.amountUsd}</b> ${currency} via ${network}\nTx: <code>${txHash.trim()}</code>\nRequest ID: ${existing.id}`
     ).catch(() => {});
-    triggerWholesaleAccessCheck(existing.id);
-    res.json({ verified: true });
+
+    // Resolve admin wallet for this currency/network.
+    const options = await getAdminCryptoOptions();
+    const opt =
+      options.find(o => o.currency.toUpperCase() === currency && o.network.toLowerCase() === network.toLowerCase()) ??
+      options.find(o => o.currency.toUpperCase() === currency) ??
+      options[0];
+
+    if (!opt?.walletAddress) {
+      // No wallet configured — fall back to manual admin confirm.
+      triggerWholesaleAccessCheck(existing.id);
+      res.json({ verified: false, pending: true, reason: "Payment received. Our team will verify and confirm your access shortly." });
+      return;
+    }
+
+    // Verify on-chain synchronously so the user gets an instant result.
+    const result = await verifyTransaction(txHash.trim(), opt.walletAddress, existing.amountUsd, currency, network, 0.01);
+
+    if (!result.verified) {
+      const r = result as { verified: false; reason: string; pending?: boolean; manual?: boolean };
+      // Keep the scheduler retry running for pending/propagating transactions.
+      triggerWholesaleAccessCheck(existing.id);
+      res.json({ verified: false, pending: r.pending ?? false, reason: r.reason });
+      return;
+    }
+
+    // Confirmed — grant access immediately (re-fetch guard inside prevents double-grant).
+    await confirmWholesaleAccess(existing.id);
+    res.json({ verified: true, blockConfirmations: result.blockConfirmations });
   } catch (err: any) {
     console.error("[POST /account/wholesale-access/pay]", err);
     res.status(500).json({ error: "Internal error" });
