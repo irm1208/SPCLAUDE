@@ -5,7 +5,7 @@ import { inArray } from "drizzle-orm";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import type { Request, Response } from "express";
-import { GoogleGenAI } from "../lib/google-genai";
+import { callSageAI, type SageMessage } from "../lib/sage-ai";
 
 const router: IRouter = Router();
 
@@ -15,14 +15,6 @@ const AI_KEYS = [
   "ai_chat_message_limit",
   "ai_chat_contact_handle",
 ] as const;
-
-const gemini = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
 
 // ── GET /admin/ai-chatbot/config ──────────────────────────────────────────────
 router.get("/admin/ai-chatbot/config", async (req: Request, res: Response): Promise<void> => {
@@ -106,25 +98,25 @@ router.post("/admin/ai-chatbot/test", async (req: Request, res: Response): Promi
     "- Do not mention that you are an AI unless directly asked",
   ].filter(Boolean).join("\n");
 
-  // Build multi-turn conversation history for context
-  const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+  // Build multi-turn conversation history for Sage (role: "user" | "assistant")
+  const messages: SageMessage[] = [];
   for (const turn of (history ?? [])) {
-    contents.push({ role: turn.role, parts: [{ text: turn.text }] });
+    messages.push({ role: turn.role === "model" ? "assistant" : "user", content: turn.text });
   }
-  contents.push({ role: "user", parts: [{ text: message.trim() }] });
+  messages.push({ role: "user", content: message.trim() });
 
   try {
-    const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
-      config: { systemInstruction },
-      contents,
+    const reply = await callSageAI({
+      system: systemInstruction,
+      messages,
+      maxTokens: 600,
+      enableWebSearch: false,
+      temperature: 0.3,
     });
-
-    const reply = (response.text ?? "").trim() || "I'm not sure about that.";
-    res.json({ reply });
+    res.json({ reply: reply.trim() || "I'm not sure about that." });
   } catch (err) {
-    console.error("[ai-chatbot:test] Gemini error:", err);
-    res.status(500).json({ error: "AI request failed. Check that the Gemini integration is configured." });
+    console.error("[ai-chatbot:test] Sage error:", err);
+    res.status(500).json({ error: "AI request failed. Check that the Sage AI proxy is configured." });
   }
 });
 

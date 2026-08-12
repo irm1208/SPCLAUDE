@@ -11,6 +11,7 @@ import { normalizeTg } from "../lib/normalize";
 import { translateZh } from "../lib/translate-zh";
 import { refreshSingleGbParcel, fetchTrackingEventsForNumber } from "../lib/tracking-auto-refresh";
 import { GoogleGenAI } from "../lib/google-genai";
+import { callSageAI } from "../lib/sage-ai";
 
 const router: IRouter = Router();
 
@@ -100,7 +101,7 @@ function incrementAiUsage(chatId: string): number {
 // ── AI response generator ─────────────────────────────────────────────────────
 
 async function generateAiResponse(transcript: string, contactHandle: string, userMessage: string): Promise<string> {
-  const systemInstruction = [
+  const system = [
     "You are a helpful support assistant for Salts & Peps, a peptide ordering platform.",
     "Your job is to answer customer questions concisely and helpfully.",
     transcript
@@ -116,13 +117,15 @@ async function generateAiResponse(transcript: string, contactHandle: string, use
     "- Do not mention that you are an AI unless directly asked",
   ].filter(Boolean).join("\n");
 
-  const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: { systemInstruction },
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+  const reply = await callSageAI({
+    system,
+    messages: [{ role: "user", content: userMessage }],
+    maxTokens: 400,
+    enableWebSearch: false,
+    temperature: 0.3,
   });
 
-  return (response.text ?? "").trim() || "I'm not sure about that. Please contact support for more help.";
+  return reply.trim() || "I'm not sure about that. Please contact support for more help.";
 }
 
 // ── Feedback conversation state machine ───────────────────────────────────────
