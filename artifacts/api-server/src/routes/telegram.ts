@@ -247,6 +247,9 @@ async function startTicketFlow(chatId: string): Promise<void> {
 }
 
 async function askGroupBuyIssueType(chatId: string): Promise<void> {
+  // Only one issue type remains (order_issue); skip straight to GB picker
+  // by setting category+issueType immediately. The back button from the
+  // GB picker still returns here (tc:back:gbtype) which then re-triggers this.
   setConv(chatId, { step: "awaiting_gbtype", category: "group_buy" });
   await sendTelegramMessageFull(
     chatId,
@@ -256,9 +259,8 @@ async function askGroupBuyIssueType(chatId: string): Promise<void> {
     {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "📦 Order Issue",      callback_data: "tc:gbtype:order_issue" }],
-          [{ text: "💬 General Support",  callback_data: "tc:gbtype:general_support" }],
-          [{ text: "⬅️ Back",            callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
+          [{ text: "📦 Order Issue",  callback_data: "tc:gbtype:order_issue" }],
+          [{ text: "⬅️ Back",        callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
         ],
       },
     },
@@ -279,17 +281,29 @@ async function offerGroupBuyPicker(chatId: string, username: string): Promise<vo
   );
 
   if (gbRows.rows.length === 0) {
-    // No GBs found — skip straight to subject
-    setConv(chatId, { step: "awaiting_subject", category: "group_buy" });
-    await askForSubject(chatId);
+    // No GB memberships — tell the user and offer a link to browse active GBs
+    clearConv(chatId);
+    await sendTelegramMessageFull(
+      chatId,
+      `🌍 <b>Group Buy Ticket</b>\n\nYou're not currently a member of any group buys, so there's no specific GB to route your ticket to.\n\nBrowse active group buys on the website to join one, or open a general support ticket.`,
+      "HTML",
+      undefined,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🛒 Browse Group Buys", url: (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(/\/+$/, "") }],
+            [{ text: "⬅️ Back", callback_data: "mn:ticket" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
+          ],
+        },
+      },
+    );
     return;
   }
 
   const keyboard = gbRows.rows.map(r => [
     { text: r.name, callback_data: `tc:gb:${r.group_buy_id}` },
   ]);
-  keyboard.push([{ text: "🔍 Other / Not Listed", callback_data: "tc:gb:_other" }]);
-  keyboard.push([{ text: "⬅️ Back",              callback_data: "tc:back:gbtype" }, { text: "🏠 Menu", callback_data: "mn:menu" }]);
+  keyboard.push([{ text: "⬅️ Back", callback_data: "tc:back:gbtype" }, { text: "🏠 Menu", callback_data: "mn:menu" }]);
 
   await sendTelegramMessageFull(
     chatId,
@@ -767,20 +781,23 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
   // Build keyboard — core rows always present
   const keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> = [
     [
-      { text: "📦 My Orders",      callback_data: "mn:orders" },
-      { text: "🚚 Tracking",       callback_data: "mn:tracking" },
+      { text: "📦 My Orders",         callback_data: "mn:orders" },
+      { text: "🚚 Tracking",          callback_data: "mn:tracking" },
     ],
     [
-      { text: "🌍 My Group Buys", callback_data: "mn:gbs" },
-      { text: "🧪 Lab Reports",   callback_data: "mn:labs" },
+      { text: "🌍 My Group Buys",     callback_data: "mn:gbs" },
+      { text: "🛒 Active Group Buys", callback_data: "mn:active_gbs" },
     ],
     [
-      { text: "🤖 Ask Sage",       callback_data: "mn:sage" },
-      { text: "🔔 Notifications",  callback_data: "mn:notif" },
+      { text: "🧪 Lab Reports",       callback_data: "mn:labs" },
+      { text: "🤖 Ask Sage",          callback_data: "mn:sage" },
     ],
     [
-      { text: "🎫 Open a Ticket",  callback_data: "mn:ticket" },
-      { text: "❓ Help",            callback_data: "mn:help" },
+      { text: "🔔 Notifications",     callback_data: "mn:notif" },
+      { text: "🎫 Open a Ticket",     callback_data: "mn:ticket" },
+    ],
+    [
+      { text: "❓ Help",              callback_data: "mn:help" },
     ],
   ];
 
@@ -957,18 +974,13 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       } else if (cbData.startsWith("tc:gb:")) {
         const conv = getConv(cbChatId);
         const gbId = cbData.slice("tc:gb:".length);
-        if (gbId === "_other") {
-          setConv(cbChatId, { step: "awaiting_subject", category: "group_buy", issueType: conv?.issueType });
-          await askForSubject(cbChatId);
-        } else {
-          const result = await pool.query<{ name: string }>(
-            "SELECT name FROM group_buys WHERE id = $1 LIMIT 1",
-            [gbId],
-          );
-          const gbName = result.rows[0]?.name ?? gbId;
-          setConv(cbChatId, { step: "awaiting_subject", category: "group_buy", issueType: conv?.issueType, groupBuyId: gbId, groupBuyName: gbName });
-          await askForSubject(cbChatId);
-        }
+        const result = await pool.query<{ name: string }>(
+          "SELECT name FROM group_buys WHERE id = $1 LIMIT 1",
+          [gbId],
+        );
+        const gbName = result.rows[0]?.name ?? gbId;
+        setConv(cbChatId, { step: "awaiting_subject", category: "group_buy", issueType: conv?.issueType, groupBuyId: gbId, groupBuyName: gbName });
+        await askForSubject(cbChatId);
       }
 
       res.json({ ok: true });
@@ -2262,6 +2274,58 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         res.json({ ok: true }); return;
       }
 
+      // ── 🛒 Active Group Buys (public, open) ─────────────────────────────────
+      if (action === "active_gbs") {
+        const activeGbs = await db
+          .select({ id: groupBuysTable.id, name: groupBuysTable.name, closeDate: groupBuysTable.closeDate, description: groupBuysTable.description })
+          .from(groupBuysTable)
+          .where(and(
+            eq(groupBuysTable.status, "active"),
+            eq(groupBuysTable.hiddenFromList, false),
+          ))
+          .limit(12);
+
+        if (activeGbs.length === 0) {
+          await sendTelegramMessageFull(
+            cbChatId,
+            `🛒 <b>Active Group Buys</b>\n\nThere are no open group buys right now.\n\nCheck the website for upcoming launches.`,
+            "HTML",
+            undefined,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "🌐 View website", url: `${appUrl}` }],
+                  [{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }],
+                ],
+              },
+            },
+          );
+          res.json({ ok: true }); return;
+        }
+
+        const lines = activeGbs.map(gb => {
+          const closeStr = gb.closeDate
+            ? ` · closes ${new Date(gb.closeDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+            : "";
+          return `🛒 <b>${gb.name}</b>${closeStr}`;
+        });
+
+        const gbKeyboard: { text: string; url?: string; callback_data?: string }[][] = activeGbs.map(gb => [
+          { text: `🛒 Order — ${gb.name}`, url: `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}` },
+        ]);
+        gbKeyboard.push([{ text: "🌐 All group buys", url: `${appUrl}` }]);
+        gbKeyboard.push([{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]);
+
+        await sendTelegramMessageFull(
+          cbChatId,
+          `🛒 <b>Active Group Buys</b>\n\nCurrently open for orders:\n\n${lines.join("\n")}`,
+          "HTML",
+          undefined,
+          { reply_markup: { inline_keyboard: gbKeyboard } },
+        );
+        res.json({ ok: true }); return;
+      }
+
       // ── 🧪 Lab Reports ──────────────────────────────────────────────────────
       if (action === "labs" || action === "labs_search") {
         if (action === "labs_search") {
@@ -3039,13 +3103,14 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       const SAGE_MAX_TURNS = 6; // max user+model pairs to keep
 
       // Daily quota — shared with /blood-tests/discuss
-      const username = linked?.telegramUsername ?? "";
-      if (username) {
-        const quota = await checkAndIncrementSageQuota(username);
+      // `username` is the outer variable set from linkedAccount (line 2836)
+      const sageUsername = username;
+      if (sageUsername) {
+        const quota = await checkAndIncrementSageQuota(sageUsername);
         if (!quota.allowed) {
           await sendTelegramMessageFull(
             chatId,
-            `🤖 <b>Sage</b>\n\nYou've reached your daily Sage limit (${quota.limit} questions). Come back tomorrow, or visit the website for your personalised health dashboard.`,
+            `🤖 <b>Sage</b>\n\nYou've reached your daily Sage limit (${quota.limit} questions). Come back tomorrow, or visit the website for your personalised health dashboard.\n\n<a href="${appUrl}">Open website →</a>`,
             "HTML",
             undefined,
             { reply_markup: { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]] } },
@@ -3099,7 +3164,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         );
       } catch (err) {
         console.error("[telegram:sage] Gemini error:", err);
-        if (username) await rollbackSageQuota(username);
+        if (sageUsername) await rollbackSageQuota(sageUsername);
         // Keep conv alive with existing history so user can retry
         setConv(chatId, { step: "sage_chat", sageHistory: priorHistory });
         await sendTelegramMessageFull(
