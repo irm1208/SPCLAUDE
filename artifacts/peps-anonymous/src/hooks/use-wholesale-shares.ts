@@ -177,6 +177,9 @@ export interface WholesaleShareDetail {
   members: WholesaleShareMember[];
   memberCount: number;
   allPaid: boolean;
+  // True when the organiser can manually mark a member's order payment as confirmed.
+  // Available once the share is locked (member orders are materialised).
+  canMarkMemberPayments: boolean;
   // Platform payment the organiser must send after all members pay. Null for non-organisers.
   organiserPayment: WholesaleOrganiserPayment | null;
   // Organiser-set rules + whether a set deadline has already passed.
@@ -408,6 +411,18 @@ export function setWholesaleShareFees(
 ) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/fees`, {
     method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// The organiser manually marks a member's platform order payment as confirmed or unpaid.
+// Used for bank-transfer members who pay the organiser directly.
+export function confirmWholesaleShareMemberPayment(
+  id: string,
+  payload: { username: string; paid: boolean },
+) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/members/mark-payment`, {
+    method: "POST",
     body: JSON.stringify(payload),
   });
 }

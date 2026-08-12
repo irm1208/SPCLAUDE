@@ -28,6 +28,7 @@ import {
   setWholesaleShareSplit,
   setWholesaleShareFees,
   confirmWholesaleShareFee,
+  confirmWholesaleShareMemberPayment,
   lockWholesaleShare,
   cancelWholesaleShare,
   unlockWholesaleShare,
@@ -895,6 +896,14 @@ export default function WholesaleShared() {
     if (!id) return;
     setActionError(""); setBusy(`feepaid:${feeType}:${username}`);
     try { await confirmWholesaleShareFee(id, { username, feeType, paid }); invalidate(id); }
+    catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  const toggleMemberPayment = async (username: string, paid: boolean) => {
+    if (!id) return;
+    setActionError(""); setBusy(`memberpay:${username}`);
+    try { await confirmWholesaleShareMemberPayment(id, { username, paid }); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -2105,6 +2114,71 @@ export default function WholesaleShared() {
     </section>
   ) : null;
 
+  // Organiser: manually mark each member's platform order payment as paid/unpaid.
+  // Shown whenever the organiser can mark payments (locked or submitted share) and at least
+  // one member has a materialised order. Intended for bank-transfer / direct-payment flows.
+  const showMemberPaymentRoster = (share.canMarkMemberPayments ?? false)
+    && share.members.some(m => !!m.orderId);
+
+  const sectionMemberPaymentRoster = showMemberPaymentRoster ? (
+    <section className="space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>
+        Member Payments — Mark Paid
+      </p>
+      <div className="rounded-xl divide-y" style={{ border: "1px solid var(--t-border)" }}>
+        {share.members.filter(m => !!m.orderId).map(m => {
+          const isPaid = m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed";
+          const isBusy = busy === `memberpay:${m.username}`;
+          return (
+            <div key={m.username} className="px-3 py-2.5 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>
+                  @{m.username.replace(/^@/, "")}
+                  {m.isCreator && (
+                    <span className="text-[10px] ml-1.5" style={{ color: "var(--t-muted)" }}>(you)</span>
+                  )}
+                  {m.isRecipient && (
+                    <span className="text-[10px] ml-1.5" style={{ color: "var(--t-muted)" }}>recipient</span>
+                  )}
+                </p>
+                {m.orderCode && (
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
+                    Order {m.orderCode}
+                    {m.paymentStatus && (
+                      <> · <span style={{ color: isPaid ? "#15803d" : "#92400e" }}>
+                        {isPaid ? "Paid" : m.paymentStatus === "pending_confirmation" ? "Pending" : "Unpaid"}
+                      </span></>
+                    )}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => toggleMemberPayment(m.username, !isPaid)}
+                disabled={isBusy}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors"
+                style={isPaid
+                  ? { background: "rgba(34,197,94,0.12)", color: "#15803d", border: "1px solid rgba(34,197,94,0.25)" }
+                  : { background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }
+                }
+              >
+                {isBusy
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : isPaid
+                    ? <><Check className="w-3.5 h-3.5" /> Paid</>
+                    : <><CreditCard className="w-3.5 h-3.5" /> Mark paid</>
+                }
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
+        Use this to confirm payment from members who paid by bank transfer or sent funds directly to you.
+        Once all members are marked paid the order is automatically submitted.
+      </p>
+    </section>
+  ) : null;
+
   // Organiser fees — confirm each member's peer-to-peer fee as paid.
   const sectionFeeRoster = showFeeRoster ? (
     <section className="space-y-2">
@@ -2725,6 +2799,7 @@ export default function WholesaleShared() {
       {!organiserDone && sectionWhatYouOwe}
       {sectionOrganiserFee}
       {sectionOrganiserLocked}
+      {sectionMemberPaymentRoster}
       {sectionFeeRoster}
       {sectionRecipientAddressPrompt}
       {sectionOrderTracking}

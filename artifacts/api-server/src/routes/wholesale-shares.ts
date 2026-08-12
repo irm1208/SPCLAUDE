@@ -389,7 +389,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     maxMembers: share.maxMembers,
     vendorId: share.vendorId ?? null,
     creatorUsername: share.creatorUsername,
-    isCreator: share.creatorUsername.toLowerCase() === currentUsername.toLowerCase(),
+    isCreator: isCreatorViewer,
+    // True when the organiser may manually mark a member's order as paid/unpaid.
+    // Available on locked or submitted shares (orders are materialised).
+    canMarkMemberPayments: isCreatorViewer && (share.status === "locked" || share.status === "submitted"),
     currentUsername,
     isMember: !!me,
     delivery: (() => {
@@ -2199,6 +2202,84 @@ router.post("/wholesale-shares/:id/fees/confirm", requireWholesale, async (req, 
   await db.update(wholesaleShareMembersTable)
     .set({ organiserFeePaid: paid })
     .where(eq(wholesaleShareMembersTable.id, member.id));
+
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
+// ── Organiser: manually mark a member's order payment as confirmed / unpaid ───
+// Used for bank-transfer and direct-payment members — the organiser confirms
+// receipt and the platform treats the order as paid. Organiser-only, locked+.
+
+router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+
+  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+    res.status(403).json({ error: "Only the organiser can manually confirm payments." });
+    return;
+  }
+
+  if (!["locked", "submitted"].includes(share.status)) {
+    res.status(409).json({ error: "Payments can only be confirmed on a locked shared order." });
+    return;
+  }
+
+  const body = (req.body ?? {}) as { username?: unknown; paid?: unknown };
+  const username = String(body.username ?? "").trim();
+  const paid = Boolean(body.paid);
+
+  if (!username) { res.status(400).json({ error: "username is required." }); return; }
+
+  const member = await loadMember(share.id, username);
+  if (!member) { res.status(404).json({ error: "That member is not part of this shared order." }); return; }
+  if (!member.orderId) {
+    res.status(409).json({ error: "No materialised order found for this member." });
+    return;
+  }
+
+  const newPaymentStatus = paid ? "confirmed" : "unpaid";
+  await db.update(ordersTable)
+    .set({
+      paymentStatus: newPaymentStatus,
+      ...(paid ? { paymentConfirmedAt: new Date() } : {}),
+    })
+    .where(eq(ordersTable.id, member.orderId));
+
+  await writeLog("order", "info", "wholesale_share_member_payment_marked",
+    `Organiser @${me} marked payment ${paid ? "confirmed" : "unpaid"} for @${username} in share ${share.id}`,
+    { shareId: share.id, memberUsername: username, paid });
+
+  // If marking paid and share is still locked, check if all members are now paid.
+  // If so, transition the share to "submitted".
+  if (paid && share.status === "locked") {
+    const allMembers = await db
+      .select({ orderId: wholesaleShareMembersTable.orderId })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+
+    const allOrderIds = allMembers.map(m => m.orderId).filter((x): x is string => !!x);
+    if (allOrderIds.length > 0 && allOrderIds.length === allMembers.length) {
+      const memberOrders = await db
+        .select({ paymentStatus: ordersTable.paymentStatus })
+        .from(ordersTable)
+        .where(sql`${ordersTable.id} IN (${sql.join(allOrderIds.map(id => sql`${id}`), sql`, `)})`);
+
+      const everyonePaid = memberOrders.every(o =>
+        o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed",
+      );
+
+      if (everyonePaid) {
+        await db.update(wholesaleSharesTable)
+          .set({ status: "submitted", submittedAt: new Date() })
+          .where(and(
+            eq(wholesaleSharesTable.id, share.id),
+            eq(wholesaleSharesTable.status, "locked"),
+          ));
+      }
+    }
+  }
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
