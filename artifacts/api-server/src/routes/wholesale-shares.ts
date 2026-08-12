@@ -2255,12 +2255,20 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
   // If so, transition the share to "submitted".
   if (paid && share.status === "locked") {
     const allMembers = await db
-      .select({ orderId: wholesaleShareMembersTable.orderId })
+      .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
       .from(wholesaleShareMembersTable)
       .where(eq(wholesaleShareMembersTable.shareId, share.id));
 
-    const allOrderIds = allMembers.map(m => m.orderId).filter((x): x is string => !!x);
-    if (allOrderIds.length > 0 && allOrderIds.length === allMembers.length) {
+    // When the organiser has their own wallet (leadCryptoOptions), their member
+    // order is implicitly confirmed — they keep the collected funds and forward the
+    // combined total to admin via organiser-payment. The DB row stays "unpaid" but
+    // buildShareResponse synthesises it as "confirmed". Exclude their order from the
+    // DB check or the share will never transition to "submitted".
+    const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
+    const membersToCheck = hasOwnWallet ? allMembers.filter(m => !m.isCreator) : allMembers;
+
+    const allOrderIds = membersToCheck.map(m => m.orderId).filter((x): x is string => !!x);
+    if (allOrderIds.length > 0 && allOrderIds.length === membersToCheck.length) {
       const memberOrders = await db
         .select({ paymentStatus: ordersTable.paymentStatus })
         .from(ordersTable)
@@ -2388,6 +2396,37 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
   if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
     res.status(403).json({ error: "Only the organiser can submit this payment." }); return;
   }
+
+  // Self-heal: if the share is still "locked" but all non-organiser member orders are
+  // confirmed (and the organiser has their own wallet so their order is implicitly paid),
+  // transition to "submitted" now. This fixes shares that got stuck because the
+  // mark-payment auto-transition didn't account for the synthesized organiser confirmation.
+  if (share.status === "locked") {
+    const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
+    if (hasOwnWallet) {
+      const allMembers = await db
+        .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+      const nonOrganiserIds = allMembers.filter(m => !m.isCreator).map(m => m.orderId).filter((x): x is string => !!x);
+      const nonOrganiserMembers = allMembers.filter(m => !m.isCreator);
+      if (nonOrganiserIds.length > 0 && nonOrganiserIds.length === nonOrganiserMembers.length) {
+        const orders = await db
+          .select({ paymentStatus: ordersTable.paymentStatus })
+          .from(ordersTable)
+          .where(sql`${ordersTable.id} IN (${sql.join(nonOrganiserIds.map(id => sql`${id}`), sql`, `)})`);
+        if (orders.every(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed")) {
+          await db.update(wholesaleSharesTable)
+            .set({ status: "submitted", submittedAt: new Date() })
+            .where(and(eq(wholesaleSharesTable.id, share.id), eq(wholesaleSharesTable.status, "locked")));
+          // Reload share with updated status
+          const reloaded = await loadShare(share.id);
+          if (reloaded) Object.assign(share, reloaded);
+        }
+      }
+    }
+  }
+
   if (share.status !== "submitted") {
     res.status(409).json({ error: "Payment can only be submitted once all members have paid." }); return;
   }
