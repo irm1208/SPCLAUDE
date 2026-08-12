@@ -215,7 +215,7 @@ async function callOai(
 ): Promise<OaiResponse> {
   const body: Record<string, unknown> = {
     model,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
     messages: oaiMessages,
     stream: false,
   };
@@ -332,7 +332,7 @@ async function streamOai(
 ): Promise<string> {
   const body: Record<string, unknown> = {
     model,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
     messages: oaiMessages,
     stream: true,
   };
