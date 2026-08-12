@@ -1020,6 +1020,12 @@ export default function PeptideDetail() {
     return () => controller.abort();
   }, [peptide?.name]);
 
+  // Must be called unconditionally before any early return (Rules of Hooks).
+  const protocolSlugMap = useMemo<Record<string, string>>(() =>
+    Object.fromEntries(PROTOCOLS.map(p => [p.name, p.slug])),
+    []
+  );
+
   if (!peptide) {
     return (
       <PageLayout>
@@ -1038,11 +1044,6 @@ export default function PeptideDetail() {
   const accent   = isDark ? lightenHex(peptide.color, 100) : peptide.color;
   const level    = peptide.researchLevel ?? "Well Researched";
   const levelCfg = LEVEL_CONFIG[level] ?? LEVEL_CONFIG["Well Researched"];
-
-  const protocolSlugMap = useMemo<Record<string, string>>(() =>
-    Object.fromEntries(PROTOCOLS.map(p => [p.name, p.slug])),
-    []
-  );
 
   const sections = [
     peptide.overview              && { id: "sec-overview",    label: "Overview" },
