@@ -1089,7 +1089,7 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
   }
 
   if (!telegramUsername || typeof telegramUsername !== "string") {
-    res.status(400).json({ error: "Telegram username is required" });
+    res.status(400).json({ error: "Username or email is required" });
     return;
   }
   if (!credential || typeof credential !== "string") {
@@ -1097,10 +1097,32 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
     return;
   }
 
-  const tg = normalizeTg(telegramUsername);
-  if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
-    res.status(400).json({ error: "Invalid Telegram username" });
-    return;
+  // ── Resolve identifier: email address OR telegram username ──────────────────
+  const raw = telegramUsername.trim();
+  const looksLikeEmail = raw.includes("@") && !raw.startsWith("@") && raw.includes(".");
+
+  let tg: string;
+
+  if (looksLikeEmail) {
+    // Look up account by email to get the canonical telegramUsername
+    const [byEmail] = await db
+      .select({ telegramUsername: accountsTable.telegramUsername })
+      .from(accountsTable)
+      .where(eq(accountsTable.email, raw.toLowerCase()));
+
+    if (!byEmail) {
+      // Pad timing to prevent enumeration
+      await bcrypt.hash("notfound", 4);
+      res.status(401).json({ error: "Invalid username or password" });
+      return;
+    }
+    tg = byEmail.telegramUsername;
+  } else {
+    tg = normalizeTg(raw);
+    if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
+      res.status(400).json({ error: "Invalid username" });
+      return;
+    }
   }
 
   // ── IP Rate-limit check (via lookupAttemptsTable) ──────────────────────────
@@ -3022,22 +3044,38 @@ router.patch("/account/health-consent", requireAccount, async (req, res): Promis
 router.post("/account/forgot-password", async (req, res): Promise<void> => {
   const { telegramUsername, method } = req.body as { telegramUsername?: unknown; method?: unknown };
   if (!telegramUsername || typeof telegramUsername !== "string") {
-    res.status(400).json({ error: "Telegram username is required" });
+    res.status(400).json({ error: "Username or email is required" });
     return;
   }
 
   const resetMethod: "telegram" | "email" = method === "email" ? "email" : "telegram";
 
-  const tg = normalizeTg(telegramUsername);
-  if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
-    res.status(400).json({ error: "Invalid Telegram username" });
-    return;
-  }
+  // Resolve identifier — accept either email address or Telegram username
+  const raw = telegramUsername.trim();
+  const looksLikeEmail = raw.includes("@") && !raw.startsWith("@") && raw.includes(".");
 
-  const [account] = await db
-    .select({ telegramChatId: accountsTable.telegramChatId, passwordHash: accountsTable.passwordHash, email: accountsTable.email })
-    .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, tg));
+  let tg: string;
+  let account: { telegramChatId: string | null; passwordHash: string | null; email: string | null } | undefined;
+
+  if (looksLikeEmail) {
+    const [byEmail] = await db
+      .select({ telegramUsername: accountsTable.telegramUsername, telegramChatId: accountsTable.telegramChatId, passwordHash: accountsTable.passwordHash, email: accountsTable.email })
+      .from(accountsTable)
+      .where(eq(accountsTable.email, raw.toLowerCase()));
+    tg = byEmail?.telegramUsername ?? raw;
+    account = byEmail;
+  } else {
+    tg = normalizeTg(raw);
+    if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
+      res.status(400).json({ error: "Invalid username" });
+      return;
+    }
+    const [byTg] = await db
+      .select({ telegramChatId: accountsTable.telegramChatId, passwordHash: accountsTable.passwordHash, email: accountsTable.email })
+      .from(accountsTable)
+      .where(eq(accountsTable.telegramUsername, tg));
+    account = byTg;
+  }
 
   // Always return the same response to prevent username enumeration
   const GENERIC_OK = { ok: true, message: resetMethod === "email"

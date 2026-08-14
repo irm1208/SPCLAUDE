@@ -375,7 +375,7 @@ export default function Login() {
               {step.startsWith("forgot") ? "Reset Password" : tab === "signup" && fromGbOrganiser ? "New GB Organiser Account" : "My Account"}
             </h1>
             <p className="text-xs" style={{ color: T.muted }}>
-              {step.startsWith("forgot") ? "Via Telegram verification" : tab === "signup" && fromGbOrganiser ? "Set up your organiser access" : "Sign in to access your profile"}
+              {step.startsWith("forgot") ? "Reset your password" : tab === "signup" && fromGbOrganiser ? "Set up your organiser access" : "Sign in to access your profile"}
             </p>
           </div>
         </div>
@@ -420,11 +420,20 @@ export default function Login() {
                 exit={{ opacity: 0, x: 10 }} transition={{ duration: 0.15 }} onSubmit={handleLogin} className="space-y-4" autoComplete="off">
 
                 <div>
-                  <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: T.muted }}>Telegram Username</label>
+                  <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: T.muted }}>Username or Email</label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.muted }}>@</span>
-                    <input type="text" value={username} onChange={e => setUsername(e.target.value.replace(/^@/, ""))}
-                      placeholder="yourusername" autoComplete="username" disabled={isLoading}
+                    {username.includes("@") && !username.startsWith("@")
+                      ? <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: T.muted }} />
+                      : <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.muted }}>@</span>
+                    }
+                    <input type="text" value={username}
+                      onChange={e => {
+                        const v = e.target.value;
+                        // Strip leading @ only when not an email address
+                        const isEmail = v.includes("@") && !v.startsWith("@");
+                        setUsername(isEmail ? v : v.replace(/^@/, ""));
+                      }}
+                      placeholder="@username or email" autoComplete="username" disabled={isLoading}
                       className="w-full h-12 pl-8 pr-4 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
                   </div>
@@ -572,11 +581,22 @@ export default function Login() {
                 </p>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: T.muted }}>Telegram Username</label>
+                  <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: T.muted }}>
+                    {forgotMethod === "email" ? "Username or Email" : "Telegram Username"}
+                  </label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.muted }}>@</span>
-                    <input type="text" value={forgotUsername} onChange={e => setForgotUsername(e.target.value.replace(/^@/, ""))}
-                      placeholder="yourusername" autoComplete="username" disabled={forgotLoading}
+                    {forgotMethod === "email" && forgotUsername.includes("@") && !forgotUsername.startsWith("@")
+                      ? <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: T.muted }} />
+                      : <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.muted }}>@</span>
+                    }
+                    <input type="text" value={forgotUsername}
+                      onChange={e => {
+                        const v = e.target.value;
+                        const isEmail = forgotMethod === "email" && v.includes("@") && !v.startsWith("@");
+                        setForgotUsername(isEmail ? v : v.replace(/^@/, ""));
+                      }}
+                      placeholder={forgotMethod === "email" ? "@username or email" : "yourusername"}
+                      autoComplete="username" disabled={forgotLoading}
                       className="w-full h-12 pl-8 pr-4 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
                   </div>
@@ -840,8 +860,8 @@ export default function Login() {
                       <p className="text-[11px]" style={{ color: T.muted }}>Telegram DMs via @SaltPepsBot</p>
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                      style={{ background: "rgba(27,58,122,0.08)", color: "var(--t-blue-deep)" }}>
-                      Optional
+                      style={{ background: "rgba(22,163,74,0.1)", color: "#15803d" }}>
+                      Recommended
                     </span>
                   </div>
                   <div className="p-4 space-y-3" style={{ background: T.surface }}>
@@ -860,7 +880,7 @@ export default function Login() {
                       ))}
                     </div>
                     <p className="text-[11px] leading-relaxed" style={{ color: T.muted }}>
-                      Link your Telegram to get instant updates on all your orders. Takes about 30 seconds — you can also do it later from your account settings.
+                      Linking Telegram is <strong>strongly recommended</strong> — it's how you receive order updates, payment confirmations, and OTP codes. Without it you'll rely on email only.
                     </p>
                   </div>
                 </div>
@@ -931,7 +951,7 @@ export default function Login() {
                       onClick={() => setStep("join-group-buy")}
                       className="w-full h-10 rounded-xl text-xs font-semibold transition-colors"
                       style={{ color: T.muted }}>
-                      Skip for now
+                      I'll connect later from my account
                     </button>
                   </div>
                 )}
