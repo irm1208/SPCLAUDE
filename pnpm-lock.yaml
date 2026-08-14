@@ -107,6 +107,9 @@ importers:
       '@google/genai':
         specifier: workspace:*
         version: link:../../lib/google-genai-shim
+      '@replit/connectors-sdk':
+        specifier: ^0.4.2
+        version: 0.4.2
       '@types/multer':
         specifier: ^2.1.0
         version: 2.1.0
@@ -2309,6 +2312,9 @@ packages:
       react-native:
         optional: true
 
+  '@replit/connectors-sdk@0.4.2':
+    resolution: {integrity: sha512-1FZsc7IWsvtogvTiWJod58cWmdebk5O7Qu5cbe3xp1CVSErmZxKmti5AIgMtKTcuCaFiGQ4JkKWDcPed69PRDg==}
+
   '@replit/vite-plugin-cartographer@0.5.0':
     resolution: {integrity: sha512-U1LKR78LU0F/nQFRVzaFSH2tX189oFUNsut25KQh24bFN0N9OJEkrCMiJfMBtLXGabjUX4aw2OWJ0u8TjBlxkg==}
 
@@ -2913,6 +2919,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -6747,6 +6754,8 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
       - immer
+
+  '@replit/connectors-sdk@0.4.2': {}
 
   '@replit/vite-plugin-cartographer@0.5.0':
     dependencies:

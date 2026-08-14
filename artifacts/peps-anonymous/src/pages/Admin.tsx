@@ -10,6 +10,7 @@ import {
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
   Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus, TrendingUp,
+  Mail, Send,
 } from "lucide-react";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -9886,6 +9887,118 @@ function ScheduledAnnouncementsTab({ secret }: { secret: string }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Email Blast Tab ───────────────────────────────────────────
+function EmailBlastTab({ secret }: { secret: string }) {
+  const [form, setForm] = useState({ subject: "", body: "", targetType: "all" });
+  const [testEmail, setTestEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const sendTest = async () => {
+    if (!testEmail.trim() || !form.subject.trim() || !form.body.trim()) return;
+    setSendingTest(true); setMsg(null);
+    try {
+      const r = await fetch(apiUrl("/admin/email-blast"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ ...form, testEmail: testEmail.trim() }),
+      });
+      const d = await r.json();
+      setMsg(r.ok ? { ok: true, text: `Test sent to ${testEmail.trim()} ✓` } : { ok: false, text: d.error ?? "Failed" });
+    } catch { setMsg({ ok: false, text: "Network error" }); }
+    setSendingTest(false);
+  };
+
+  const sendBlast = async () => {
+    if (!form.subject.trim() || !form.body.trim()) return;
+    if (!window.confirm(`Send this email to all ${form.targetType === "paid" ? "paid members" : "members"} with an email address on file? This cannot be undone.`)) return;
+    setSending(true); setMsg(null);
+    try {
+      const r = await fetch(apiUrl("/admin/email-blast"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify(form),
+      });
+      const d = await r.json();
+      if (r.ok) setMsg({ ok: true, text: `Sent to ${d.sent} of ${d.total} recipients ✓` });
+      else setMsg({ ok: false, text: d.error ?? "Send failed" });
+    } catch { setMsg({ ok: false, text: "Network error" }); }
+    setSending(false);
+    setTimeout(() => setMsg(null), 6000);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-base">Email Blast</h2>
+        {msg && <span className={cn("text-sm font-medium", msg.ok ? "text-green-600" : "text-red-500")}>{msg.text}</span>}
+      </div>
+
+      <Card className="p-4 space-y-4">
+        {/* Audience */}
+        <div className="space-y-1">
+          <Label className="text-xs">Audience</Label>
+          <div className="flex gap-2">
+            {[{ v: "all", label: "All members with email" }, { v: "paid", label: "Paid members only" }].map(o => (
+              <button key={o.v} type="button" onClick={() => setF("targetType", o.v)}
+                className={cn("h-8 px-3 rounded-lg text-xs font-semibold border transition-colors",
+                  form.targetType === o.v ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-input hover:border-primary/50")}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Subject */}
+        <div className="space-y-1">
+          <Label className="text-xs">Subject</Label>
+          <Input value={form.subject} onChange={e => setF("subject", e.target.value)} placeholder="Email subject…" />
+        </div>
+
+        {/* Body */}
+        <div className="space-y-1">
+          <Label className="text-xs">Message body</Label>
+          <textarea
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+            value={form.body} onChange={e => setF("body", e.target.value)} placeholder="Write your message…" />
+          <p className="text-[11px] text-muted-foreground">Plain text — line breaks are preserved. No HTML needed.</p>
+        </div>
+
+        {/* Test send */}
+        <div className="border-t border-border pt-4 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground">Send a test before blasting</p>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="test@example.com"
+              type="email"
+              value={testEmail}
+              onChange={e => { setTestEmail(e.target.value); setMsg(null); }}
+              disabled={sendingTest}
+            />
+            <Button type="button" variant="outline" size="sm" className="gap-1.5 shrink-0"
+              onClick={sendTest} disabled={sendingTest || !testEmail.trim() || !form.subject.trim() || !form.body.trim()}>
+              {sendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              Send test
+            </Button>
+          </div>
+        </div>
+
+        {/* Send blast */}
+        <div className="flex gap-2 pt-1">
+          <Button onClick={sendBlast} disabled={sending || !form.subject.trim() || !form.body.trim()} className="gap-1.5">
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {sending ? "Sending…" : "Send to all"}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -23617,6 +23730,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { id: "notifications", label: "Notifications",    icon: Bell,            keywords: ["push", "telegram", "send message", "notify", "broadcast", "alerts", "notification title", "notification body", "target audience", "all members", "gb participants"] },
       { id: "announcements", label: "Announcements",    icon: MessageSquarePlus, keywords: ["posts", "broadcasts", "news", "updates", "pinned", "publish", "scheduled announcement", "announcement title", "announcement body", "scheduled timestamp", "active members", "paid members"] },
+      { id: "email-blast",   label: "Email Blast",      icon: Mail,              keywords: ["email", "mass email", "email blast", "bulk email", "newsletter", "email all members", "email paid members", "send email"] },
       { id: "tg-templates",  label: "Tg Templates",     icon: MessageSquare,   keywords: ["telegram templates", "message templates", "bot messages", "auto messages", "order confirmation", "payment received", "template tags", "merge fields"] },
       { id: "tglog",         label: "Tg Log",           icon: SendHorizonal,   keywords: ["telegram log", "sent messages", "message history", "delivery log", "outgoing", "incoming", "search by username"] },
       { id: "tickets",       label: "Tickets",          icon: MessageSquare,   keywords: ["tickets", "support", "customer support", "help requests", "open tickets", "closed tickets", "reply", "thread", "unread", "member messages"] },
@@ -26781,6 +26895,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "notifications" && <NotificationsTab secret={secret} />}
           {activeTab === "tg-templates"  && <AdminTelegramTemplates secret={secret} />}
           {activeTab === "announcements" && <ScheduledAnnouncementsTab secret={secret} />}
+          {activeTab === "email-blast"   && <EmailBlastTab secret={secret} />}
           {activeTab === "groupbuy"     && <GroupBuyTab secret={secret} />}
           {activeTab === "feedback"     && <FeedbackTab secret={secret} />}
           {activeTab === "labtests"     && <LabTestsTab secret={secret} />}

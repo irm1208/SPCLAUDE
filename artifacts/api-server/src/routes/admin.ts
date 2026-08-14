@@ -7772,6 +7772,80 @@ router.post("/admin/scheduled-announcements/:id/send", async (req, res): Promise
   res.json({ ok: true, sent, total: recipients.length });
 });
 
+// ── Email Blast ───────────────────────────────────────────────
+// POST /admin/email-blast — send a mass email to all accounts with an email address on file.
+// Optional targetType: "all" (default) or "paid" (accounts with at least one confirmed order).
+router.post("/admin/email-blast", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const { subject, body, targetType = "all", testEmail } = req.body as {
+    subject?: string; body?: string; targetType?: string; testEmail?: string;
+  };
+  if (!subject?.trim() || !body?.trim()) {
+    res.status(400).json({ error: "subject and body are required." }); return;
+  }
+
+  const { sendEmail, massEmailTemplate } = await import("../lib/email.js");
+
+  // Test send — send to a single address and return immediately.
+  if (testEmail?.trim()) {
+    const result = await sendEmail({
+      to: testEmail.trim(),
+      subject: `[TEST] ${subject.trim()}`,
+      html: massEmailTemplate(subject.trim(), body.trim()),
+    });
+    res.json({ ok: result.ok, sent: result.ok ? 1 : 0, error: result.error });
+    return;
+  }
+
+  // Fetch eligible recipients.
+  let rows: { email: string | null }[];
+  if (targetType === "paid") {
+    rows = await db
+      .selectDistinct({ email: accountsTable.email })
+      .from(accountsTable)
+      .innerJoin(ordersTable, eq(ordersTable.telegramUsername, accountsTable.telegramUsername))
+      .where(and(
+        isNotNull(accountsTable.email),
+        eq(ordersTable.paymentStatus, "confirmed"),
+      ));
+  } else {
+    rows = await db
+      .select({ email: accountsTable.email })
+      .from(accountsTable)
+      .where(isNotNull(accountsTable.email));
+  }
+
+  const emails = [...new Set(rows.map(r => r.email).filter((e): e is string => !!e && e.includes("@")))];
+  if (emails.length === 0) {
+    res.json({ ok: true, sent: 0, total: 0, message: "No recipients with email addresses found." }); return;
+  }
+
+  const html = massEmailTemplate(subject.trim(), body.trim());
+  let sent = 0;
+  const errors: string[] = [];
+
+  // Send in small batches to avoid overwhelming the connector.
+  const BATCH = 25;
+  for (let i = 0; i < emails.length; i += BATCH) {
+    const batch = emails.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(to => sendEmail({ to, subject: subject.trim(), html })),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.ok) sent++;
+      else if (r.status === "fulfilled" && !r.value.ok) errors.push(r.value.error ?? "unknown");
+      else if (r.status === "rejected") errors.push("send error");
+    }
+  }
+
+  await writeLog("system", "info", "admin_email_blast",
+    `Admin sent email blast "${subject.trim()}" to ${sent}/${emails.length} recipients`,
+    { subject: subject.trim(), targetType, sent, total: emails.length }).catch(() => {});
+
+  res.json({ ok: true, sent, total: emails.length, errors: errors.slice(0, 10) });
+});
+
 // ── GET /admin/maintenance ────────────────────────────────────
 router.get("/admin/maintenance", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;

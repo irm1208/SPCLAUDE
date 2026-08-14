@@ -137,6 +137,7 @@ export default function Login() {
 
   // Forgot password state
   const [forgotUsername, setForgotUsername] = useState("");
+  const [forgotMethod, setForgotMethod] = useState<"telegram" | "email">("telegram");
   const [forgotCode, setForgotCode] = useState("");
   const [forgotNewPassword, setForgotNewPassword] = useState("");
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
@@ -295,7 +296,7 @@ export default function Login() {
       const res = await fetch("/api/account/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramUsername: forgotUsername.trim() }),
+        body: JSON.stringify({ telegramUsername: forgotUsername.trim(), method: forgotMethod }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to send reset code"); return; }
@@ -337,6 +338,7 @@ export default function Login() {
   const resetForgotFlow = () => {
     setStep("form");
     setForgotUsername("");
+    setForgotMethod("telegram");
     setForgotCode("");
     setForgotNewPassword("");
     setForgotConfirmPassword("");
@@ -539,21 +541,35 @@ export default function Login() {
               </motion.div>
             )}
 
-            {/* ── Forgot Password Step 1: enter username ── */}
+            {/* ── Forgot Password Step 1: enter username + choose method ── */}
             {step === "forgot-step1" && (
               <motion.form key="forgot-1" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.15 }}
                 onSubmit={handleForgotStep1} className="space-y-4" autoComplete="off">
 
-                <div className="rounded-xl px-4 py-3.5" style={{ background: "rgba(27,58,122,0.06)", border: "1px solid rgba(27,58,122,0.15)" }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <MessageCircle className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue-deep)" }} />
-                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Telegram Reset</p>
-                  </div>
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--t-blue-deep)" }}>
-                    We'll send a 6-digit code to your linked Telegram account. Your account must have Telegram linked to use this.
-                  </p>
+                {/* Method picker */}
+                <div className="grid grid-cols-2 gap-2">
+                  {(["telegram", "email"] as const).map(m => {
+                    const active = forgotMethod === m;
+                    return (
+                      <button key={m} type="button" onClick={() => { setForgotMethod(m); setError(""); }}
+                        className="h-12 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                        style={active
+                          ? { background: "var(--t-blue-deep)", color: "#fff", border: "1.5px solid var(--t-blue-deep)" }
+                          : { background: T.surface, color: T.muted, border: `1.5px solid ${T.border}` }
+                        }>
+                        {m === "telegram" ? <MessageCircle className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+                        {m === "telegram" ? "Telegram" : "Email"}
+                      </button>
+                    );
+                  })}
                 </div>
+
+                <p className="text-xs leading-relaxed px-0.5" style={{ color: T.muted }}>
+                  {forgotMethod === "telegram"
+                    ? "We'll send a 6-digit code to your linked Telegram account."
+                    : "We'll send a 6-digit code to the email address on your account."}
+                </p>
 
                 <div>
                   <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: T.muted }}>Telegram Username</label>
@@ -571,7 +587,12 @@ export default function Login() {
                 <button type="submit" disabled={forgotLoading || !forgotUsername.trim()}
                   className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
                   style={{ background: "var(--t-blue-deep)" }}>
-                  {forgotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><MessageCircle className="w-4 h-4" /> Send Code via Telegram</>}
+                  {forgotLoading
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : forgotMethod === "telegram"
+                      ? <><MessageCircle className="w-4 h-4" /> Send Code via Telegram</>
+                      : <><Mail className="w-4 h-4" /> Send Code via Email</>
+                  }
                 </button>
 
                 <button type="button" onClick={resetForgotFlow}
@@ -590,11 +611,15 @@ export default function Login() {
 
                 <div className="rounded-xl px-4 py-3.5" style={{ background: "rgba(22,163,74,0.07)", border: "1px solid rgba(22,163,74,0.18)" }}>
                   <div className="flex items-center gap-2 mb-1">
-                    <MessageCircle className="w-4 h-4 shrink-0 text-green-600" />
+                    {forgotMethod === "email"
+                      ? <Mail className="w-4 h-4 shrink-0 text-green-600" />
+                      : <MessageCircle className="w-4 h-4 shrink-0 text-green-600" />}
                     <p className="text-xs font-bold uppercase tracking-wider text-green-700">Code Sent</p>
                   </div>
                   <p className="text-xs leading-relaxed text-green-700">
-                    Check your Telegram DMs from @SaltPepsBot. Enter the 6-digit code below along with your new password.
+                    {forgotMethod === "email"
+                      ? "Check your email inbox — we've sent a 6-digit code. Enter it below along with your new password."
+                      : "Check your Telegram DMs from @SaltPepsBot. Enter the 6-digit code below along with your new password."}
                   </p>
                 </div>
 

@@ -3016,14 +3016,17 @@ router.patch("/account/health-consent", requireAccount, async (req, res): Promis
 });
 
 // POST /api/account/forgot-password
-// Takes telegramUsername, finds linked Telegram chat ID, sends a 6-digit OTP via DM.
+// Takes telegramUsername + optional method ("telegram"|"email").
+// Sends a 6-digit OTP via Telegram DM (default) or email on file.
 // The OTP hash + expiry are stored on the account row.
 router.post("/account/forgot-password", async (req, res): Promise<void> => {
-  const { telegramUsername } = req.body;
+  const { telegramUsername, method } = req.body as { telegramUsername?: unknown; method?: unknown };
   if (!telegramUsername || typeof telegramUsername !== "string") {
     res.status(400).json({ error: "Telegram username is required" });
     return;
   }
+
+  const resetMethod: "telegram" | "email" = method === "email" ? "email" : "telegram";
 
   const tg = normalizeTg(telegramUsername);
   if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
@@ -3032,12 +3035,14 @@ router.post("/account/forgot-password", async (req, res): Promise<void> => {
   }
 
   const [account] = await db
-    .select({ telegramChatId: accountsTable.telegramChatId, passwordHash: accountsTable.passwordHash })
+    .select({ telegramChatId: accountsTable.telegramChatId, passwordHash: accountsTable.passwordHash, email: accountsTable.email })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, tg));
 
   // Always return the same response to prevent username enumeration
-  const GENERIC_OK = { ok: true, message: "If this account has a linked Telegram, a reset code has been sent." };
+  const GENERIC_OK = { ok: true, message: resetMethod === "email"
+    ? "If this account has an email address on file, a reset code has been sent."
+    : "If this account has a linked Telegram, a reset code has been sent." };
 
   if (!account) {
     await new Promise(r => setTimeout(r, 400)); // constant-time delay
@@ -3045,8 +3050,41 @@ router.post("/account/forgot-password", async (req, res): Promise<void> => {
     return;
   }
 
+  if (resetMethod === "email") {
+    if (!account.email) {
+      res.status(422).json({ error: "No email address is saved on this account. Try the Telegram reset option instead." });
+      return;
+    }
+
+    const code = String(randomInt(100000, 1000000));
+    const codeHash = createHash("sha256").update(code).digest("hex");
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+    await db
+      .update(accountsTable)
+      .set({ resetCode: codeHash, resetCodeExpiresAt: expiresAt })
+      .where(eq(accountsTable.telegramUsername, tg));
+
+    const { sendEmail, passwordResetEmail } = await import("../lib/email.js");
+    await sendEmail({
+      to: account.email,
+      subject: "Your password reset code",
+      html: passwordResetEmail(code),
+    });
+
+    writeLog("login", "info", "password_reset_requested",
+      `Password reset code sent via email for: ${tg}`,
+      { telegramUsername: tg, method: "email" },
+      req.ip,
+    ).catch(() => {});
+
+    res.json(GENERIC_OK);
+    return;
+  }
+
+  // Telegram method
   if (!account.telegramChatId) {
-    res.status(422).json({ error: "This account doesn't have a Telegram linked. Link Telegram in your profile first." });
+    res.status(422).json({ error: "This account doesn't have a Telegram linked. Try the email reset option instead." });
     return;
   }
 
@@ -3066,8 +3104,8 @@ router.post("/account/forgot-password", async (req, res): Promise<void> => {
   );
 
   writeLog("login", "info", "password_reset_requested",
-    `Password reset code sent for: ${tg}`,
-    { telegramUsername: tg },
+    `Password reset code sent via Telegram for: ${tg}`,
+    { telegramUsername: tg, method: "telegram" },
     req.ip,
   ).catch(() => {});
 
