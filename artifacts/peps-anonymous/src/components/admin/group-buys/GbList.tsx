@@ -66,11 +66,21 @@ export function GBList({ secret, onSelect, onNew }: {
 
   useEffect(() => { loadGbs(); }, [loadGbs]);
 
-  const filtered = gbs.filter(gb => {
+  const sorted = [...gbs].sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  const filtered = sorted.filter(gb => {
     const matchSearch = !search || gb.name.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || gb.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  // When showing "all", group by status in a defined order
+  const STATUS_SECTIONS = ["active", "draft", "closed", "archived"] as const;
+  const sections = statusFilter === "all"
+    ? STATUS_SECTIONS.map(s => ({ status: s, items: filtered.filter(gb => gb.status === s) })).filter(s => s.items.length > 0)
+    : null;
 
   const toggleOrders = async (gbId: string) => {
     const next = new Set(openOrders);
@@ -208,7 +218,23 @@ export function GBList({ secret, onSelect, onNew }: {
         </p>
       ) : (
         <div className="space-y-2">
-          {filtered.map(gb => {
+          {(sections
+            ? sections.flatMap(({ status, items }) => [
+                <div key={`section-${status}`} className="flex items-center gap-2 pt-2 first:pt-0">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground capitalize">{status}</span>
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground">{items.length}</span>
+                </div>,
+                ...items.map(gb => renderGbRow(gb)),
+              ])
+            : filtered.map(gb => renderGbRow(gb))
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  function renderGbRow(gb: GroupBuy) {
             const busy = actioning[gb.id];
             const orderCount = (gb as any).orderCount as number ?? 0;
             const isOpen = openOrders.has(gb.id);
@@ -225,9 +251,15 @@ export function GBList({ secret, onSelect, onNew }: {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="font-semibold text-sm truncate">{gb.name}</span>
-                        <StatusBadge status={gb.status} />
+                        {statusFilter !== "all" && <StatusBadge status={gb.status} />}
                         {gb.hiddenFromList && (
                           <span className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-1.5 py-0.5 rounded-full font-medium">hidden</span>
+                        )}
+                        {gb.organiserId && (
+                          <span className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium border border-blue-200 dark:border-blue-700/40 flex items-center gap-1">
+                            <UserCheck className="w-3 h-3" />
+                            {gb.organiserId as string}
+                          </span>
                         )}
                       </div>
                       {gb.closeDate && (
@@ -357,11 +389,7 @@ export function GBList({ secret, onSelect, onNew }: {
                 </AnimatePresence>
               </div>
             );
-          })}
-        </div>
-      )}
-    </div>
-  );
+  }
 }
 
 // ─── Ruleset Editor Panel ─────────────────────────────────────
