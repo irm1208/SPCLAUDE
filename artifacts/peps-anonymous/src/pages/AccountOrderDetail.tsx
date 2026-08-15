@@ -2332,7 +2332,11 @@ export default function AccountOrderDetail() {
                             {order.routingType === "direct" && (
                               <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-blue-20)" }}>
                                 <Home className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
-                                <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>Your order will be shipped directly to your address</p>
+                                <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>
+                                  {order.customShippingRequiresQrCode && !order.customShippingRequiresAddress
+                                    ? "Your order will be dispatched directly to you — you'll receive your collection QR code separately"
+                                    : "Your order will be shipped directly to your address"}
+                                </p>
                               </div>
                             )}
                           </div>
@@ -2341,8 +2345,9 @@ export default function AccountOrderDetail() {
 
                       {/* Delivery Address — sits under the order summary. Additions ride along with
                           the original order, so the address is locked (read-only). Otherwise show the
-                          editable section when the chosen shipping option requires it, for Royal Mail,
-                          or for direct-shipping GB orders. */}
+                          editable section when the chosen shipping option requires an address, or for
+                          direct-shipping GB orders. Never gate on delivery method name (e.g. "royal")
+                          — use the server-resolved customShippingRequiresAddress flag instead. */}
                       {order.additionOfOrderId ? (
                         (order.shippingAddress || order.shippingName) ? (
                           <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
@@ -2359,7 +2364,7 @@ export default function AccountOrderDetail() {
                             </div>
                           </Card>
                         ) : null
-                      ) : (order.customShippingRequiresAddress || order.deliveryMethod?.toLowerCase().includes("royal") || order.directShippingRequested) && (
+                      ) : (order.customShippingRequiresAddress || order.directShippingRequested) && (
                         ["confirmed", "pending_confirmation", "test_confirmed"].includes(order.paymentStatus) ? (
                           <AccountShippingAddressSection
                             orderId={order.id}
