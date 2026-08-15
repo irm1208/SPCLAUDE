@@ -1054,6 +1054,13 @@ router.patch("/account/me", requireAccount, async (req, res): Promise<void> => {
     });
   }
 
+  // Mirror email to accounts table so password-reset lookup stays in sync
+  if (email !== undefined) {
+    await db.update(accountsTable)
+      .set({ email: email.trim().toLowerCase() || null })
+      .where(eq(accountsTable.telegramUsername, tg));
+  }
+
   const [updated] = await db
     .select()
     .from(customersTable)
@@ -1327,6 +1334,13 @@ router.put("/account/profile", requireAccount, async (req, res): Promise<void> =
       phone: phone ?? null,
       address: address ?? null,
     });
+  }
+
+  // Mirror email to accounts table so password-reset lookup stays in sync
+  if (email !== undefined) {
+    await db.update(accountsTable)
+      .set({ email: (email ?? "").trim().toLowerCase() || null })
+      .where(eq(accountsTable.telegramUsername, tg));
   }
 
   const [updated] = await db
