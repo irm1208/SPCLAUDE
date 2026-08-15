@@ -222,6 +222,13 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     { username: tg.replace(/^@/, "") },
   ).catch(() => {});
 
+  // Welcome email (fire-and-forget, non-blocking)
+  if (email && email.includes("@")) {
+    import("../lib/email.js").then(({ sendTemplatedEmail }) =>
+      sendTemplatedEmail("welcome", email.trim().toLowerCase(), { username: tg.replace(/^@/, "") })
+    ).catch(() => {});
+  }
+
   res.status(201).json({ ok: true, telegramUsername: tg });
 });
 
@@ -569,6 +576,22 @@ router.post("/account/join-gb", requireAccount, async (req, res): Promise<void> 
     actorType: "customer",
     metadata: { groupBuyId: gb.id, groupBuyName: gbInfo?.name ?? null, phase: gbInfo?.status ?? null },
   }).catch(() => {});
+
+  // GB joined email (fire-and-forget)
+  ;(async () => {
+    try {
+      const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, tg));
+      if (acct?.email) {
+        const [gbDetail] = await db.select({ invitePin: groupBuysTable.invitePin }).from(groupBuysTable).where(eq(groupBuysTable.id, gb.id));
+        const { sendTemplatedEmail } = await import("../lib/email.js");
+        await sendTemplatedEmail("gb_joined", acct.email, {
+          gb_name: gbInfo?.name ?? "Group Buy",
+          pin: gbDetail?.invitePin ?? "—",
+          customer_name: tg.replace(/^@/, ""),
+        });
+      }
+    } catch {}
+  })().catch(() => {});
 
   res.json({ ok: true, groupBuyId: gb.id });
 });

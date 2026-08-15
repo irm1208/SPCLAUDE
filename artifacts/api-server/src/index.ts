@@ -10,6 +10,7 @@ import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
 import { startWholesaleAccessAutoVerify } from "./lib/wholesale-access-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
+import { startEmailScheduler } from "./lib/email-scheduler";
 import { startDbBackupSchedule } from "./lib/db-backup";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, isNotNull, lt } from "drizzle-orm";
@@ -1036,6 +1037,7 @@ app.listen(port, "0.0.0.0", () => {
   startWholesaleAccessAutoVerify();
   startQiyunleSync();
   startGbLegsSync();
+  startEmailScheduler();
   startDbBackupSchedule();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
 });

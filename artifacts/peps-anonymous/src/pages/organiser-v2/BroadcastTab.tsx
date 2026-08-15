@@ -56,6 +56,13 @@ export default function BroadcastTab({ selectedGbId }: BroadcastTabProps = {}) {
   const [sendError, setSendError] = useState("");
   const [history, setHistory] = useState<SentRecord[]>([]);
 
+  // Email blast state
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailTestAddr, setEmailTestAddr] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailMsg, setEmailMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const [orders, setOrders] = useState<OrganiserOrder[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -316,6 +323,93 @@ export default function BroadcastTab({ selectedGbId }: BroadcastTabProps = {}) {
                 <div className="text-[12px]" style={{ color: "#B54708" }}>No members match your selection</div>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Email blast ──────────────────────────────────────────── */}
+      <div className="rounded-xl p-4 sm:p-5 bg-white" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
+        <h3 className="text-[14px] font-bold mb-0.5" style={{ color: "var(--t-text)" }}>Email Members</h3>
+        <p className="text-[12px] mb-4" style={{ color: "var(--t-subtle)" }}>
+          Send an email to all members of this group buy who have an email address on file.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[12px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Subject</label>
+            <input
+              value={emailSubject}
+              onChange={e => setEmailSubject(e.target.value)}
+              placeholder="e.g. Shipping update for your order"
+              className="w-full px-3 py-2 rounded-lg text-[14px] outline-none"
+              style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "var(--t-surface)" }}
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Message</label>
+            <textarea
+              value={emailBody}
+              onChange={e => setEmailBody(e.target.value)}
+              placeholder="Type your email message here…"
+              rows={6}
+              className="w-full px-3 py-2 rounded-lg text-[14px] outline-none resize-none"
+              style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "var(--t-surface)" }}
+            />
+          </div>
+          {emailMsg && (
+            <div className="flex gap-2 p-2.5 rounded-lg"
+              style={{ background: emailMsg.ok ? "#F0FDF4" : "#FFF5F5", border: `1px solid ${emailMsg.ok ? "#BBF7D0" : "#FED7D7"}` }}>
+              <div className="text-[13px]" style={{ color: emailMsg.ok ? "#16A34A" : "#DC2626" }}>{emailMsg.text}</div>
+            </div>
+          )}
+          <div className="flex gap-2 flex-wrap items-center">
+            <button
+              onClick={async () => {
+                if (!selectedGbId || !emailSubject.trim() || !emailBody.trim() || emailSending) return;
+                setEmailSending(true); setEmailMsg(null);
+                try {
+                  const r = await organiserApi.emailBlast(selectedGbId, { subject: emailSubject.trim(), body: emailBody.trim() });
+                  if (r.ok) {
+                    setEmailMsg({ ok: true, text: `Sent to ${r.sent ?? 0} of ${r.total ?? 0} members with email addresses.` });
+                    setEmailSubject(""); setEmailBody("");
+                  } else {
+                    setEmailMsg({ ok: false, text: r.error ?? "Send failed" });
+                  }
+                } catch { setEmailMsg({ ok: false, text: "Network error" }); }
+                setEmailSending(false);
+              }}
+              disabled={emailSending || !emailSubject.trim() || !emailBody.trim() || !selectedGbId}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[14px] font-bold text-white transition-opacity disabled:opacity-40"
+              style={{ background: "var(--t-blue)" }}
+            >
+              {emailSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Send email blast
+            </button>
+            <div className="flex-1" />
+            <input
+              type="email"
+              value={emailTestAddr}
+              onChange={e => setEmailTestAddr(e.target.value)}
+              placeholder="Test to email…"
+              className="w-44 px-3 py-2 rounded-lg text-[13px] outline-none"
+              style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", background: "var(--t-surface)" }}
+            />
+            <button
+              onClick={async () => {
+                if (!selectedGbId || !emailSubject.trim() || !emailBody.trim() || !emailTestAddr.includes("@") || emailSending) return;
+                setEmailSending(true); setEmailMsg(null);
+                try {
+                  const r = await organiserApi.emailBlast(selectedGbId, { subject: emailSubject.trim(), body: emailBody.trim(), testEmail: emailTestAddr });
+                  setEmailMsg({ ok: r.ok, text: r.ok ? `Test sent to ${emailTestAddr}` : (r.error ?? "Send failed") });
+                } catch { setEmailMsg({ ok: false, text: "Network error" }); }
+                setEmailSending(false);
+              }}
+              disabled={emailSending || !emailSubject.trim() || !emailBody.trim() || !emailTestAddr.includes("@") || !selectedGbId}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold transition-opacity disabled:opacity-40"
+              style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)", background: "var(--t-surface)" }}
+            >
+              {emailSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              Test
+            </button>
           </div>
         </div>
       </div>

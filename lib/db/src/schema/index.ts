@@ -51,3 +51,4 @@ export * from "./gb_testing_contributions";
 export * from "./wholesale_access_requests";
 export * from "./peppys_articles";
 export * from "./organiser_todos";
+export * from "./email_templates";

@@ -247,6 +247,21 @@ async function firePaymentNotifications(
         { code, gb_name: gbContext, username, order_total: orderTotal, delivery, app_url: appUrl, amount_received: amountReceived, payment_method: paymentMethod },
         { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
       ).catch(() => {});
+      // Order confirmed email
+      ;(async () => {
+        try {
+          const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, order.telegramUsername));
+          if (acct?.email) {
+            const { sendTemplatedEmail } = await import("../lib/email.js");
+            await sendTemplatedEmail("order_confirmed", acct.email, {
+              order_id: code,
+              customer_name: username,
+              items_summary: "See the app for full order details.",
+              total: orderTotal,
+            });
+          }
+        } catch {}
+      })().catch(() => {});
       sendAdminFromTemplate("admin_payment_confirmed",
         { code, gb_name: gbContext, username, order_total: orderTotal, delivery, amount_received: amountReceived, payment_method: paymentMethod, txid_line: txidLine, test_info: "" },
       ).catch(() => {});

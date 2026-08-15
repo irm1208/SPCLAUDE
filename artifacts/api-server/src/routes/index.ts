@@ -57,6 +57,7 @@ import gbEntryFeeRouter from "./gb-entry-fee";
 import organiserTodosRouter from "./organiser-todos";
 import organiserTestingRouter from "./organiser-testing";
 import peppysRouter from "./peppys";
+import emailTemplatesRouter from "./email-templates";
 
 const router: IRouter = Router();
 
@@ -147,6 +148,7 @@ router.use(gbEntryFeeRouter);
 router.use(organiserTodosRouter);
 router.use(organiserTestingRouter);
 router.use(peppysRouter);
+router.use(emailTemplatesRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────
 // Proxies GBP→USD/EUR rates so the browser avoids CORS restrictions.

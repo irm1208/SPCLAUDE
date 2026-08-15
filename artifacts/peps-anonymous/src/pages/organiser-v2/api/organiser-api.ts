@@ -419,6 +419,10 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}`,
     { method: "DELETE" },
   ),
+  emailBlast: (groupBuyId: string, body: Record<string, unknown>) => request<{ ok: boolean; sent?: number; total?: number; error?: string }>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/email-blast`,
+    { method: "POST", body },
+  ),
   members: (groupBuyId: string) => request<ApiMember[]>(
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/members`,
   ),

@@ -104,6 +104,23 @@ router.post("/account/tickets", async (req, res): Promise<void> => {
     `Subject: <b>${subject.trim()}</b>\n\n` +
     `${description.trim().slice(0, 300)}${description.trim().length > 300 ? "…" : ""}`;
 
+  // Ticket received confirmation email (fire-and-forget)
+  ;(async () => {
+    try {
+      const { accountsTable } = await import("@workspace/db");
+      const { eq: deq } = await import("drizzle-orm");
+      const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(deq(accountsTable.telegramUsername, username));
+      if (acct?.email) {
+        const { sendTemplatedEmail } = await import("../lib/email.js");
+        await sendTemplatedEmail("ticket_received", acct.email, {
+          ticket_id: ticketId,
+          subject: subject.trim(),
+          category: categoryLabel(category),
+        });
+      }
+    } catch {}
+  })().catch(() => {});
+
   sendAdminTicketNotification(notifText, ticketId).then(({ ok, messageId, chatId }) => {
     if (ok && messageId && chatId) {
       db.insert(ticketTelegramMessagesTable).values({
@@ -555,6 +572,23 @@ router.post("/admin/tickets/:id/messages", async (req, res): Promise<void> => {
     `<a href="${appUrl}/account?s=support&ticket=${id}">View in app →</a>\n` +
     `<i>Or reply directly here in Telegram.</i>`,
   ).catch(() => {});
+
+  // Ticket reply email (fire-and-forget)
+  ;(async () => {
+    try {
+      const { accountsTable } = await import("@workspace/db");
+      const { eq: deq } = await import("drizzle-orm");
+      const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(deq(accountsTable.telegramUsername, ticket.accountUsername));
+      if (acct?.email) {
+        const { sendTemplatedEmail } = await import("../lib/email.js");
+        await sendTemplatedEmail("ticket_reply", acct.email, {
+          ticket_id: id,
+          subject: ticket.subject,
+          reply_preview: body.trim().slice(0, 400) + (body.trim().length > 400 ? "…" : ""),
+        });
+      }
+    } catch {}
+  })().catch(() => {});
 
   res.status(201).json(msg);
 });

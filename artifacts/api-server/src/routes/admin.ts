@@ -6391,6 +6391,20 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
             ],
           },
         ).catch(() => {});
+        // Order shipped email
+        ;(async () => {
+          try {
+            const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, order.telegramUsername));
+            if (acct?.email && tracking) {
+              const { sendTemplatedEmail } = await import("../lib/email.js");
+              await sendTemplatedEmail("order_shipped", acct.email, {
+                order_id: order.code,
+                tracking_number: tracking,
+                tracking_url: `https://t.17track.net/en#nums=${encodeURIComponent(tracking)}`,
+              });
+            }
+          } catch {}
+        })().catch(() => {});
       }
 
       results.push({ code: safeCode, trackingNumber: tracking, ok: true });
