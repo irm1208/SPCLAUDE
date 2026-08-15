@@ -392,6 +392,32 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     sendAdminFromTemplate("admin_organiser_update",
       { organiser_username: "admin", update_type: "GB Status Changed", details: `${gbLabel}: ${existing.status ?? "—"} → ${status}` },
     ).catch(() => {});
+    // GB shipping update email — send to all members with an email on file
+    ;(async () => {
+      try {
+        const { sendTemplatedEmail } = await import("../lib/email.js");
+        const members = await db
+          .select({ telegramUsername: accountGroupBuysTable.telegramUsername })
+          .from(accountGroupBuysTable)
+          .where(eq(accountGroupBuysTable.groupBuyId, id));
+        const usernames = members.map(m => m.telegramUsername.replace(/^@/, ""));
+        if (usernames.length === 0) return;
+        const { inArray, isNotNull } = await import("drizzle-orm");
+        const accounts = await db
+          .select({ email: accountsTable.email })
+          .from(accountsTable)
+          .where(and(inArray(accountsTable.telegramUsername, usernames), isNotNull(accountsTable.email)));
+        await Promise.allSettled(
+          accounts
+            .filter(a => a.email)
+            .map(a => sendTemplatedEmail("gb_shipping_update", a.email!, {
+              gb_name: gbLabel,
+              status,
+              message: `The status has been updated to: ${status}`,
+            }))
+        );
+      } catch {}
+    })().catch(() => {});
   }
 
   writeLog("change", "info", "admin_gb_updated",

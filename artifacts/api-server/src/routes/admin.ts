@@ -1477,6 +1477,21 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
       { code: existing.code, emoji, status: updates.status, gb_name: patchGbContext, tracking: trackingLine, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel, app_url: appUrl },
       { inline_keyboard: [[{ text: "📦 View Order", url: `${appUrl}/account?s=orders` }]] },
     ).catch(() => {});
+    // Order delivered email — fires when status flips to Completed
+    if (updates.status === "Completed") {
+      ;(async () => {
+        try {
+          const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, existing.telegramUsername));
+          if (acct?.email) {
+            const { sendTemplatedEmail } = await import("../lib/email.js");
+            await sendTemplatedEmail("order_delivered", acct.email, {
+              order_id: existing.code,
+              customer_name: existing.telegramUsername.replace(/^@/, ""),
+            });
+          }
+        } catch {}
+      })().catch(() => {});
+    }
     sendAdminFromTemplate("admin_status_update",
       { code: existing.code, emoji, status: updates.status, gb_name: patchGbContext, username: existing.telegramUsername.replace(/^@/, ""), order_total: patchSym + String(patchGrandTotal), delivery: patchDelivery, payment_status: patchPaidLabel },
     ).catch(() => {});
