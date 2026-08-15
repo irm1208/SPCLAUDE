@@ -99,6 +99,13 @@
       "when": 1754438400000,
       "tag": "0018_wholesale_invite_links",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786806507921,
+      "tag": "0019_email_templates",
+      "breakpoints": true
     }
   ]
 }
