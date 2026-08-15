@@ -248,7 +248,6 @@ export function GBList({ secret, onSelect, onNew }: {
             return (
               <div key={gb.id} className={cn(
                 "rounded-xl border border-border bg-white dark:bg-card transition-colors",
-                isHidden && "opacity-70",
               )}>
                 <div className="flex items-center gap-2 pr-2">
                   <button onClick={() => onSelect(gb)}
@@ -293,13 +292,13 @@ export function GBList({ secret, onSelect, onNew }: {
 
                         {/* Public / Hidden */}
                         {isHidden ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-1.5 py-0.5 rounded-md">
-                            <EyeOff className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-600/60 px-2.5 py-1 rounded-full">
+                            <EyeOff className="w-3.5 h-3.5" />
                             Hidden
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
-                            <Eye className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-600/40 px-2.5 py-1 rounded-full">
+                            <Eye className="w-3.5 h-3.5" />
                             Public
                           </span>
                         )}
