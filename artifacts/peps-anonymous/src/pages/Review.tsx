@@ -227,7 +227,9 @@ export default function Review() {
       directShippingRequested: draft.directShippingRequested || undefined,
       directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
       reshipperCode: draft.reshipperCode || undefined,
-      additionOfOrderId: draft.additionOfOrderId ?? undefined,
+      // Wholesale orders can never be additions — guard against a stale draft field
+      // left over from a previous GB top-up flow in the same browser session.
+      additionOfOrderId: isWholesale ? undefined : (draft.additionOfOrderId ?? undefined),
       lineItems: draft.lineItems.map(item => ({
         productId: item.productId,
         productName: item.productName,

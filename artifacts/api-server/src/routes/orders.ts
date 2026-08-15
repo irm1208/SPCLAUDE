@@ -415,8 +415,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   // parent order: it rides along with the parent's shipment, so every shipping
   // charge is forced to 0 and the shipping address is copied (locked) from the
   // parent. Validate the parent belongs to the same customer and group buy.
+  // Wholesale orders can never be additions — ignore a stale draft field silently.
   let additionParent: typeof ordersTable.$inferSelect | null = null;
-  if (clientAdditionOfOrderId != null && clientAdditionOfOrderId !== "") {
+  if (!isWholesaleOrder && clientAdditionOfOrderId != null && clientAdditionOfOrderId !== "") {
     const parentId = String(clientAdditionOfOrderId).slice(0, 64);
     const [parent] = await db.select().from(ordersTable).where(eq(ordersTable.id, parentId));
     if (!parent || parent.deletedAt || !safeEqual(parent.telegramUsername.toLowerCase(), tg)) {
