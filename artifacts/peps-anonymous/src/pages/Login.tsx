@@ -585,7 +585,7 @@ export default function Login() {
                     {forgotMethod === "email" ? "Username or Email" : "Telegram Username"}
                   </label>
                   <div className="relative">
-                    {forgotMethod === "email" && forgotUsername.includes("@") && !forgotUsername.startsWith("@")
+                    {forgotMethod === "email"
                       ? <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: T.muted }} />
                       : <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.muted }}>@</span>
                     }
