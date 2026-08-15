@@ -5,7 +5,7 @@ import {
   Search, Bell, ChevronDown, ChevronRight, Clock, Sun, Moon, PanelLeft, Send, Ticket,
   Wallet, Store, ArrowRight, User, LogOut, X, Award, FlaskConical,
   Droplet, Scale, TrendingUp, Activity, Truck, ShoppingBag, Users, TestTube, LifeBuoy,
-  BookMarked, GraduationCap, Calculator as CalcIcon, Sparkles,
+  BookMarked, GraduationCap, Calculator as CalcIcon, Sparkles, MessageCircle,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
 import { useAccount, useAccountNotifications } from "@/hooks/use-account";
@@ -101,6 +101,7 @@ interface DashboardShellProps {
   activeSection: string;
   title: string;
   username: string;
+  hasTelegram?: boolean;
   credits?: number | null;
   orders: DashOrder[];
   activeCompounds: DashCompound[];
@@ -128,7 +129,7 @@ function timeAgo(iso: string): string {
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
 export function DashboardShell({
-  activeSection, title, username, credits, orders, activeCompounds, groupBuys,
+  activeSection, title, username, hasTelegram, credits, orders, activeCompounds, groupBuys,
   onSection, onLogout, navProps, hideHubNav, children,
 }: DashboardShellProps) {
   const { dark, toggle: toggleTheme } = useThemeStore();
@@ -1052,6 +1053,15 @@ export function DashboardShell({
                               {item.label}
                             </button>
                           ))}
+                          {/* Telegram link status */}
+                          <button
+                            onClick={() => { onSection("telegram"); setMenu(null); }}
+                            className="dh-nav w-full flex items-center gap-3 px-3.5 text-left"
+                            style={{ height: 40, fontSize: 13, fontWeight: 600, color: hasTelegram ? "#16a34a" : "#dc2626" }}
+                          >
+                            <MessageCircle className="w-4 h-4 shrink-0" />
+                            {hasTelegram ? "Telegram linked" : "Connect Telegram"}
+                          </button>
                         </div>
                         {onLogout && (
                           <div className="py-1.5" style={{ borderTop: `1px solid ${T.borderSoft}` }}>

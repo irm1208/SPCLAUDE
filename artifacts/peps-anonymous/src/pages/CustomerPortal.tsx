@@ -7762,6 +7762,7 @@ export default function CustomerPortal() {
       activeSection={id}
       title={title}
       username={username}
+      hasTelegram={!isDiscordOnlyAccount(account?.telegramUsername)}
       credits={account?.credits ?? null}
       orders={orders}
       activeCompounds={activeCompounds}
@@ -8177,6 +8178,7 @@ export default function CustomerPortal() {
         activeSection="orders"
         title="Orders"
         username={username}
+        hasTelegram={!isDiscordOnlyAccount(account?.telegramUsername)}
         credits={account?.credits ?? null}
         orders={orders}
         activeCompounds={activeCompounds}
