@@ -10,7 +10,7 @@ import {
   Bold, Italic, Strikethrough, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, Link2, Link2Off,
   Heading2, Heading3, Undo2, Redo2, Minus, Loader2, Save, Send,
-  Eye, EyeOff, Type, Palette,
+  Eye, EyeOff, Type, Palette, ImagePlus, X, Link as LinkIcon,
 } from "lucide-react";
 import { cn } from "@/components/ui";
 
@@ -64,6 +64,109 @@ function buildPreviewHtml(opts: {
   </table>
 </body>
 </html>`;
+}
+
+// ─── Logo uploader ─────────────────────────────────────────────────────────────
+function LogoUploader({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [showUrl, setShowUrl] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  function readFile(file: File) {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const result = e.target?.result;
+      if (typeof result === "string") onChange(result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) readFile(file);
+  }
+
+  const hasLogo = !!value;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+          Logo <span className="font-normal text-gray-400">(optional)</span>
+        </label>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => setShowUrl(v => !v)}
+            className={cn("flex items-center gap-1 text-[11px] px-2 py-0.5 rounded transition-colors",
+              showUrl ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+            )}>
+            <LinkIcon className="w-3 h-3" /> URL
+          </button>
+          {hasLogo && (
+            <button type="button" onClick={() => onChange("")}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+              <X className="w-3 h-3" /> Remove
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Drop zone / preview */}
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => !hasLogo && fileRef.current?.click()}
+        className={cn(
+          "relative flex items-center justify-center rounded-lg border-2 transition-colors",
+          hasLogo
+            ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-3 h-20"
+            : "border-dashed h-20 cursor-pointer",
+          dragOver
+            ? "border-blue-400 bg-blue-50 dark:bg-blue-900/20"
+            : hasLogo ? "" : "border-gray-300 dark:border-gray-600 hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10",
+        )}>
+        {hasLogo ? (
+          <>
+            <img
+              src={value}
+              alt="Logo preview"
+              className="max-h-14 max-w-[200px] object-contain"
+              onError={() => onChange("")}
+            />
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
+              className="absolute top-1.5 right-1.5 flex items-center gap-1 text-[11px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition-colors">
+              <ImagePlus className="w-3 h-3" /> Change
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col items-center gap-1 text-gray-400 pointer-events-none select-none">
+            <ImagePlus className="w-5 h-5" />
+            <span className="text-xs">Click or drag to upload</span>
+            <span className="text-[11px] text-gray-300 dark:text-gray-600">PNG, JPG, SVG, WebP</span>
+          </div>
+        )}
+      </div>
+
+      {/* Hidden file input */}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
+
+      {/* Optional URL fallback */}
+      {showUrl && (
+        <input
+          value={value.startsWith("data:") ? "" : value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="https://example.com/logo.png"
+          className="mt-2 w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      )}
+    </div>
+  );
 }
 
 // ─── Toolbar button ────────────────────────────────────────────────────────────
@@ -212,7 +315,7 @@ export function EmailTemplatesTab({ secret }: { secret: string }) {
   // ── editor ────────────────────────────────────────────────────────────────
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ link: false }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       TextStyle,
@@ -463,15 +566,10 @@ export function EmailTemplatesTab({ secret }: { secret: string }) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Logo URL <span className="font-normal text-gray-400">(optional)</span></label>
-                <input
-                  value={editing.logoUrl ?? ""}
-                  onChange={e => setEditing(ed => ({ ...ed, logoUrl: e.target.value }))}
-                  className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  placeholder="https://example.com/logo.png"
-                />
-              </div>
+              <LogoUploader
+                value={editing.logoUrl ?? ""}
+                onChange={url => setEditing(ed => ({ ...ed, logoUrl: url }))}
+              />
 
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Footer text <span className="font-normal text-gray-400">(optional)</span></label>
