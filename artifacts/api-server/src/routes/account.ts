@@ -3170,7 +3170,7 @@ router.post("/account/reset-password", async (req, res): Promise<void> => {
   const { telegramUsername, code, newPassword } = req.body;
 
   if (!telegramUsername || typeof telegramUsername !== "string") {
-    res.status(400).json({ error: "Telegram username is required" });
+    res.status(400).json({ error: "Username or email is required" });
     return;
   }
   if (!code || typeof code !== "string") {
@@ -3186,9 +3186,22 @@ router.post("/account/reset-password", async (req, res): Promise<void> => {
     return;
   }
 
-  const tg = normalizeTg(telegramUsername);
+  // Resolve identifier — accept either an email address or a Telegram username
+  const raw = telegramUsername.trim();
+  const isEmail = raw.includes("@") && !raw.startsWith("@") && raw.includes(".");
+  let tg: string | null = null;
+  if (isEmail) {
+    const [found] = await db
+      .select({ telegramUsername: accountsTable.telegramUsername })
+      .from(accountsTable)
+      .where(eq(accountsTable.email, raw.toLowerCase()));
+    tg = found ? normalizeTg(found.telegramUsername) : null;
+  } else {
+    tg = normalizeTg(raw);
+  }
+
   if (!tg) {
-    res.status(400).json({ error: "Invalid Telegram username" });
+    res.status(400).json({ error: "No reset code found. Please request a new one." });
     return;
   }
 
