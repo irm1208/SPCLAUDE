@@ -18,6 +18,9 @@ backup_clean.sql
 *.sql
 exports/
 
+# Local DB backups created by the dev scheduler — large, dev-only
+artifacts/api-server/db-backups/
+
 # Large data import files (already imported into DB)
 attached_assets/*.json
 attached_assets/*.csv

@@ -1,0 +1,31 @@
+# .replitignore — files excluded from the Replit deployment image.
+# These are dev-only paths that bloat the image. The deploy script
+# reinstalls all node_modules via `pnpm install` during the build phase.
+
+# Dev-time uploaded screenshots / debug assets (470 MB)
+attached_assets/
+
+# Database backups created by the dev scheduler — NOT for production (1.3 GB)
+artifacts/api-server/db-backups/
+
+# All node_modules — reinstalled by scripts/deploy.sh (1 GB+)
+node_modules/
+artifacts/*/node_modules/
+
+# Mockup sandbox — dev-only design tool, not part of the production app
+artifacts/mockup-sandbox/
+
+# Git history (1.4 GB)
+.git/
+
+# Replit agent skills / memory / caches (2.5 GB)
+.local/
+
+# Local user config and build caches (1 GB+)
+.config/
+.cache/
+
+# Agent memory and misc dev tooling
+.agents/
+screenshots/
+wget-log.1
