@@ -2320,8 +2320,12 @@ export default function AccountOrderDetail() {
                           </div>
                         )}
 
-                        {/* Routing banners (batch lock + direct only — reshipper card is above) */}
-                        {(order.batchLocked || order.routingType === "direct") && (
+                        {/* Routing banners (batch lock + direct-to-home only — reshipper card is above).
+                            Use directShippingRequested, not routingType: GB orders with custom
+                            shipping options (QR code, PDF label) have routingType="direct" because
+                            there is no reshipper on the leg, but the parcel still goes via the GB
+                            organiser's dispatch — not straight to the member's home address. */}
+                        {(order.batchLocked || order.directShippingRequested) && (
                           <div className="mt-3 space-y-2">
                             {order.batchLocked && (
                               <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)" }}>
@@ -2329,14 +2333,10 @@ export default function AccountOrderDetail() {
                                 <p className="text-xs font-semibold" style={{ color: "light-dark(#475569, #94a3b8)" }}>This order has been locked for batching — shipping details are being finalised</p>
                               </div>
                             )}
-                            {order.routingType === "direct" && (
+                            {order.directShippingRequested && (
                               <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-blue-20)" }}>
                                 <Home className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
-                                <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>
-                                  {order.customShippingRequiresQrCode && !order.customShippingRequiresAddress
-                                    ? "Your order will be dispatched directly to you — you'll receive your collection QR code separately"
-                                    : "Your order will be shipped directly to your address"}
-                                </p>
+                                <p className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>Your order will be shipped directly to your address</p>
                               </div>
                             )}
                           </div>
