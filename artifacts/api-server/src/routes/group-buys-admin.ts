@@ -98,6 +98,13 @@ router.get("/admin/group-buys", async (req, res): Promise<void> => {
     .groupBy(ordersTable.groupBuyId);
   const countMap = new Map(countRows.map(r => [r.groupBuyId, r.count]));
 
+  // Count products per group buy
+  const productCountRows = await db
+    .select({ groupBuyId: groupBuyProductsTable.groupBuyId, count: sql<number>`count(*)::int` })
+    .from(groupBuyProductsTable)
+    .groupBy(groupBuyProductsTable.groupBuyId);
+  const productCountMap = new Map(productCountRows.map(r => [r.groupBuyId, r.count]));
+
   res.json(rows.map((gb: GroupBuy) => ({
     ...gb,
     infoCards: parseInfoCards(gb.infoCards),
@@ -105,6 +112,7 @@ router.get("/admin/group-buys", async (req, res): Promise<void> => {
     adminFeeCountries: parseAdminFeeCountries((gb as Record<string, unknown>).adminFeeCountries as string),
     sharedShippingCountries: parseSharedShippingCountries((gb as Record<string, unknown>).sharedShippingCountries as string),
     orderCount: countMap.get(gb.id) ?? 0,
+    productCount: productCountMap.get(gb.id) ?? 0,
   })));
 });
 

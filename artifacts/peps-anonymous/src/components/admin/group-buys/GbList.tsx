@@ -237,37 +237,83 @@ export function GBList({ secret, onSelect, onNew }: {
   function renderGbRow(gb: GroupBuy) {
             const busy = actioning[gb.id];
             const orderCount = (gb as any).orderCount as number ?? 0;
+            const productCount = (gb as any).productCount as number ?? 0;
             const isOpen = openOrders.has(gb.id);
             const orders = ordersCache[gb.id] ?? [];
             const loadingOrders = ordersLoading[gb.id];
+            const organiser = (gb.organiserId as string | null | undefined) || null;
+            const countries = (gb.allowedCountries as string[] | null | undefined) ?? [];
+            const isHidden = !!gb.hiddenFromList;
+
             return (
               <div key={gb.id} className={cn(
                 "rounded-xl border border-border bg-white dark:bg-card transition-colors",
-                gb.hiddenFromList && "opacity-60",
+                isHidden && "opacity-70",
               )}>
                 <div className="flex items-center gap-2 pr-2">
                   <button onClick={() => onSelect(gb)}
-                    className="flex-1 text-left p-4 flex items-center gap-3 min-w-0 hover:bg-muted/30 rounded-l-xl transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="font-semibold text-sm truncate">{gb.name}</span>
-                        {statusFilter !== "all" && <StatusBadge status={gb.status} />}
-                        {gb.hiddenFromList && (
-                          <span className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-1.5 py-0.5 rounded-full font-medium">hidden</span>
-                        )}
-                        {gb.organiserId && (
-                          <span className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium border border-blue-200 dark:border-blue-700/40 flex items-center gap-1">
-                            <UserCheck className="w-3 h-3" />
-                            {gb.organiserId as string}
+                    className="flex-1 text-left px-4 py-3 flex items-center gap-3 min-w-0 hover:bg-muted/30 rounded-l-xl transition-colors">
+                    <div className="flex-1 min-w-0 space-y-1.5">
+
+                      {/* Row 1: Organiser */}
+                      <div>
+                        <span className={cn(
+                          "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full",
+                          organiser
+                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-700/40"
+                            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",
+                        )}>
+                          <UserCheck className="w-3 h-3" />
+                          {organiser ?? "Admin"}
+                        </span>
+                      </div>
+
+                      {/* Row 2: Title */}
+                      <p className="font-semibold text-sm leading-tight truncate">{gb.name}</p>
+
+                      {/* Row 3: Meta pills */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+
+                        {/* Countries */}
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
+                          <Globe className="w-3 h-3 shrink-0" />
+                          {countries.length === 0
+                            ? "All countries"
+                            : countries.slice(0, 4).join(", ") + (countries.length > 4 ? ` +${countries.length - 4}` : "")}
+                        </span>
+
+                        {/* Products */}
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
+                          <Package className="w-3 h-3 shrink-0" />
+                          {productCount} {productCount === 1 ? "product" : "products"}
+                        </span>
+
+                        {/* Code */}
+                        <CopyIdBadge id={gb.id} />
+
+                        {/* Public / Hidden */}
+                        {isHidden ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-1.5 py-0.5 rounded-md">
+                            <EyeOff className="w-3 h-3" />
+                            Hidden
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
+                            <Eye className="w-3 h-3" />
+                            Public
                           </span>
                         )}
+
+                        {/* Status — always show for clarity */}
+                        <StatusBadge status={gb.status} />
                       </div>
+
+                      {/* Row 4: Close date (secondary) */}
                       {gb.closeDate && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[11px] text-muted-foreground">
                           Closes {new Date(gb.closeDate as string).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
                         </p>
                       )}
-                      <CopyIdBadge id={gb.id} />
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                   </button>
