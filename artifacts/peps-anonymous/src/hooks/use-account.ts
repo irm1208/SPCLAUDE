@@ -199,6 +199,7 @@ export interface GroupBuySummary {
   directShippingPaymentsEnabled?: boolean;
   archived?: boolean;
   telegramImageUrl?: string | null;
+  createdAt?: string | null;
 }
 
 export function useMyGroupBuys(enabled = true) {

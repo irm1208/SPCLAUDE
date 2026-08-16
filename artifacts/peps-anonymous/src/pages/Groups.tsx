@@ -1142,6 +1142,15 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
   );
 }
 
+type GbFilter = "all" | "open" | "closed" | "archived";
+
+const FILTER_LABELS: Record<GbFilter, string> = {
+  all:      "All",
+  open:     "Open",
+  closed:   "Closed",
+  archived: "Archived",
+};
+
 export default function Groups() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
@@ -1150,6 +1159,7 @@ export default function Groups() {
   const [infoGb, setInfoGb] = useState<GroupBuySummary | null>(null);
   const [showJoin, setShowJoin] = useState(false);
   const [labReportProduct, setLabReportProduct] = useState<{ name: string; batchPrefixes: string[] } | null>(null);
+  const [filter, setFilter] = useState<GbFilter>("all");
 
   const handleLogout = async () => {
     await logout.mutateAsync();
@@ -1222,6 +1232,43 @@ export default function Groups() {
       </div>
 
       <main className="flex-1 max-w-md mx-auto w-full px-4 py-5">
+        {/* Filter tabs */}
+        {!gbLoading && groupBuys.length > 0 && (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
+            {(["all", "open", "closed", "archived"] as GbFilter[]).map(f => {
+              const count = f === "all"
+                ? groupBuys.length
+                : f === "open"    ? groupBuys.filter(g => g.status === "active" && !g.archived).length
+                : f === "closed"  ? groupBuys.filter(g => g.status === "closed" && !g.archived).length
+                :                   groupBuys.filter(g => g.archived).length;
+              const active = filter === f;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-semibold transition-all"
+                  style={{
+                    background: active ? "var(--brand-blue)" : "var(--t-surface)",
+                    color: active ? "#fff" : "var(--t-muted)",
+                    border: active ? "1px solid var(--brand-blue)" : "1px solid var(--t-border)",
+                  }}
+                >
+                  {FILTER_LABELS[f]}
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: active ? "rgba(255,255,255,0.2)" : "var(--t-border)",
+                      color: active ? "#fff" : "var(--t-muted)",
+                    }}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {gbLoading && (
           <div className="flex justify-center py-12">
             <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
@@ -1243,22 +1290,45 @@ export default function Groups() {
           </motion.div>
         )}
 
-        {!gbLoading && groupBuys.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            {groupBuys.map((gb, i) => (
-              <GroupBuyCard
-                key={gb.id}
-                gb={gb}
-                index={i}
-                onCta={() => gb.status === "active"
-                  ? setLocation(`/order?gbId=${gb.id}`)
-                  : setLocation("/account?s=orders")
-                }
-                onInfo={() => setInfoGb(gb)}
-              />
-            ))}
-          </div>
-        )}
+        {!gbLoading && groupBuys.length > 0 && (() => {
+          const filtered = groupBuys.filter(gb => {
+            if (filter === "all")      return true;
+            if (filter === "open")     return gb.status === "active" && !gb.archived;
+            if (filter === "closed")   return gb.status === "closed" && !gb.archived;
+            if (filter === "archived") return !!gb.archived;
+            return true;
+          });
+          if (filtered.length === 0) {
+            return (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="rounded-2xl p-8 text-center"
+                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                <p className="text-sm font-semibold mb-1" style={{ color: "var(--t-text)" }}>
+                  No {FILTER_LABELS[filter].toLowerCase()} group buys
+                </p>
+                <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                  Switch to "All" to see everything.
+                </p>
+              </motion.div>
+            );
+          }
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              {filtered.map((gb, i) => (
+                <GroupBuyCard
+                  key={gb.id}
+                  gb={gb}
+                  index={i}
+                  onCta={() => gb.status === "active"
+                    ? setLocation(`/order?gbId=${gb.id}`)
+                    : setLocation("/account?s=orders")
+                  }
+                  onInfo={() => setInfoGb(gb)}
+                />
+              ))}
+            </div>
+          );
+        })()}
 
         <button
           onClick={() => setShowJoin(true)}

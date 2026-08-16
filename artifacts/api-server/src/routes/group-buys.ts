@@ -200,6 +200,7 @@ const GB_SELECT_COLS = {
   directShippingEnabled: groupBuysTable.directShippingEnabled,
   directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled,
   telegramImageUrl: groupBuysTable.telegramImageUrl,
+  createdAt: groupBuysTable.createdAt,
 };
 
 async function getProductCount(gbId: string): Promise<number> {
@@ -285,7 +286,11 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
   // Also apply visibility restrictions — blocked/country-restricted forced GBs are hidden.
   const extraForced = forcedRows.filter(r => !memberIds.has(r.id) && gbVisibleToAccount(r, tg, accountCountryGb));
 
-  const allRows = [...memberRows, ...extraForced];
+  const allRows = [...memberRows, ...extraForced].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt as unknown as string).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt as unknown as string).getTime() : 0;
+    return tb - ta; // newest first
+  });
 
   const result = await Promise.all(
     allRows.map(async gb => {
