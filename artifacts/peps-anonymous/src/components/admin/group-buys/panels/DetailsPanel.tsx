@@ -21,6 +21,7 @@ import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, Shippi
 import { GBForm } from "../GbForm";
 import { Switch, SettingsSection, SettingsRow } from "../shared/settings-ui";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
+import type { AdminReshipperAssignment } from "./ReshippersPanel";
 export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy; onUpdate: (gb: GroupBuy) => void }) {
   const [infoCards, setInfoCards] = useState<InfoCard[]>(gb.infoCards ?? []);
   const [savingCards, setSavingCards] = useState(false);
@@ -192,6 +193,21 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
 
   // Country Legs
   const [togglingCountryLegs, setTogglingCountryLegs] = useState(false);
+  const [reshippersOpen, setReshippersOpen] = useState(false);
+  const [reshippers, setReshippers] = useState<AdminReshipperAssignment[]>([]);
+  const [reshippersLoading, setReshippersLoading] = useState(false);
+
+  const loadReshippers = useCallback(async () => {
+    setReshippersLoading(true);
+    try {
+      const r = await fetch(apiUrl(`/admin/group-buys/${gb.id}/reshippers`), { headers: { "x-admin-secret": secret } });
+      if (r.ok) setReshippers(await r.json());
+    } finally { setReshippersLoading(false); }
+  }, [gb.id, secret]);
+
+  useEffect(() => {
+    if (reshippersOpen) void loadReshippers();
+  }, [reshippersOpen, loadReshippers]);
 
   // Organiser Order Edit
   const [togglingOrganiserOrderEdit, setTogglingOrganiserOrderEdit] = useState(false);
@@ -836,6 +852,47 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
         </p>
         {gb.countryLegsEnabled && (
           <p className="text-xs text-teal-600 font-medium mt-2">Country Legs are enabled — manage them in the "Country Legs" tab above.</p>
+        )}
+        {!gb.countryLegsEnabled && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setReshippersOpen(o => !o)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <UserCheck className="w-3 h-3" />
+              {reshippersOpen ? "Hide" : "View"} assigned reshippers
+              <ChevronDown className={cn("w-3 h-3 transition-transform", reshippersOpen && "rotate-180")} />
+            </button>
+            {reshippersOpen && (
+              <div className="mt-2 space-y-1.5">
+                {reshippersLoading ? (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading...
+                  </div>
+                ) : reshippers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-1">No reshippers assigned to this group buy.</p>
+                ) : (
+                  reshippers.map(r => {
+                    const countries = r.countries && r.countries.length > 0 ? r.countries : [r.country];
+                    return (
+                      <div key={r.id} className="flex items-center flex-wrap gap-1.5 text-xs bg-muted/50 rounded-lg px-2.5 py-1.5">
+                        <UserCheck className="w-3 h-3 text-muted-foreground shrink-0" />
+                        <span className="font-semibold">@{r.reshipperUsername}</span>
+                        <span className="text-muted-foreground">—</span>
+                        {countries.map(c => (
+                          <span key={c} className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase">{c}</span>
+                        ))}
+                        {!r.enabled && (
+                          <span className="ml-auto text-[10px] font-medium text-orange-500">Disabled</span>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
         )}
       </section>
 
