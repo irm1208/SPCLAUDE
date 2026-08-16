@@ -51,11 +51,36 @@ export const COUNTRY_CODE_TO_NAME: Record<string, string> = Object.fromEntries(
 );
 
 /**
+ * Known country code aliases — e.g. "UK" is not a valid ISO-3166-1 alpha-2 code
+ * but is widely used in practice. We canonicalise these to their official code.
+ */
+const CODE_ALIASES: Record<string, string> = {
+  UK: "GB",
+};
+
+/**
  * Normalise a stored country value to an ISO-2 code.
- * Handles both "United Kingdom" → "GB" and "GB" → "GB".
+ * Handles full names ("United Kingdom" → "GB"), official codes ("GB" → "GB"),
+ * and common aliases ("UK" → "GB").
  */
 export function normalizeToCode(value: string): string {
   const t = value.trim();
-  if (t.length === 2) return t.toUpperCase();
-  return COUNTRY_NAME_TO_CODE[t] ?? t.toUpperCase();
+  const upper = t.toUpperCase();
+  // Apply alias map first (e.g. UK → GB)
+  if (CODE_ALIASES[upper]) return CODE_ALIASES[upper];
+  if (t.length === 2) return upper;
+  return COUNTRY_NAME_TO_CODE[t] ?? upper;
+}
+
+/**
+ * Return all codes that should be treated as equivalent to the given code.
+ * Useful when building DB conditions that need to match stored aliases too.
+ * e.g. expandCountryAliases("GB") → ["GB", "UK"]
+ */
+export function expandCountryAliases(code: string): string[] {
+  const canonical = normalizeToCode(code);
+  const aliases = Object.entries(CODE_ALIASES)
+    .filter(([, v]) => v === canonical)
+    .map(([k]) => k);
+  return [canonical, ...aliases];
 }

@@ -59,6 +59,7 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
 import { callSageAI } from "../lib/sage-ai";
 import { logCustomerActivity } from "../lib/activity-log";
+import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib/country-utils";
 
 function escapeHtml(str: string): string {
   return str
@@ -578,7 +579,12 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       .where(inArray(gbReshippersTable.gbId, uniqueGbIds));
     for (const r of reshipperRows) {
       const allCountries = (r.countries && (r.countries as string[]).length > 0) ? (r.countries as string[]) : [r.country];
-      for (const c of allCountries) reshipperMap.set(`${r.gbId}::${c}`, r.reshipperUsername);
+      for (const c of allCountries) {
+        // Store under the canonical code AND any aliases (e.g. both "GB" and "UK")
+        for (const alias of expandCountryAliases(normCountryCode(c))) {
+          reshipperMap.set(`${r.gbId}::${alias}`, r.reshipperUsername);
+        }
+      }
     }
   }
 
@@ -626,7 +632,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     //  • the admin hasn't explicitly cleared the reshipper (reshipperCleared=true)
     const reshipperUsername = o.reshipperUsername
       ?? ((!o.reshipperCleared && o.groupBuyId && o.shippingCountry)
-        ? (reshipperMap.get(`${o.groupBuyId}::${o.shippingCountry}`) ?? null)
+        ? (reshipperMap.get(`${o.groupBuyId}::${normCountryCode(o.shippingCountry)}`) ?? reshipperMap.get(`${o.groupBuyId}::${o.shippingCountry}`) ?? null)
         : null);
     const accountCountry = accountCountryMap.get(o.telegramUsername) ?? null;
     // Shared wholesale orders (orderType "wholesale_shared") are wholesale too, so
