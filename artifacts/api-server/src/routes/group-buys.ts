@@ -109,17 +109,22 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
   const gbIds = rows.map(r => r.id);
   const reshipperRows = gbIds.length > 0
     ? await db
-        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
+        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries })
         .from(gbReshippersTable)
         .where(inArray(gbReshippersTable.gbId, gbIds))
     : [];
 
   // Normalize reshipper countries to ISO codes so comparisons work regardless of
   // how the country was stored (full name "United Kingdom" vs code "GB").
+  // Prefer the multi-country `countries` array when present; fall back to the
+  // legacy single `country` column so older assignments still work.
   const reshipperCountriesByGb = new Map<string, string[]>();
   for (const r of reshipperRows) {
     if (!reshipperCountriesByGb.has(r.gbId)) reshipperCountriesByGb.set(r.gbId, []);
-    reshipperCountriesByGb.get(r.gbId)!.push(normalizeToCode(r.country));
+    const codes = (r.countries && (r.countries as string[]).length > 0)
+      ? (r.countries as string[]).map(normalizeToCode)
+      : [normalizeToCode(r.country)];
+    for (const code of codes) reshipperCountriesByGb.get(r.gbId)!.push(code);
   }
 
   // Also fetch countryLegsEnabled so the join modal knows to show country picker
