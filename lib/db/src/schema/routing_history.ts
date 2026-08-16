@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, serial, index } from "drizzle-orm/pg-core";
 
 /**
  * Audit trail for order routing decisions.
@@ -17,7 +17,9 @@ export const routingHistoryTable = pgTable("routing_history", {
   reason: text("reason"), // optional admin note
   metadata: jsonb("metadata"), // extra context (e.g. bulk operation ID)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("routing_history_order_id_idx").on(t.orderId),
+]);
 
 export type RoutingHistory = typeof routingHistoryTable.$inferSelect;
 export type NewRoutingHistory = typeof routingHistoryTable.$inferInsert;

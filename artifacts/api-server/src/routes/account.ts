@@ -159,7 +159,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     }
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     await db.update(accountsTable)
-      .set({ passwordHash, email: email.trim().toLowerCase(), country: country.trim(), ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}) })
+      .set({ passwordHash, email: email.trim().toLowerCase(), country: normalizeCountryToCode(country.trim()), ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}) })
       .where(eq(accountsTable.telegramUsername, tg));
 
     if (resolvedInviteCode) {
@@ -187,7 +187,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     passwordHash,
     email: email.trim().toLowerCase(),
     accountStatus: "active",
-    country: country.trim(),
+    country: normalizeCountryToCode(country.trim()),
     ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}),
   });
 
@@ -749,11 +749,12 @@ router.put("/account/country", requireAccount, async (req, res): Promise<void> =
     return;
   }
 
+  const normalizedCountry = normalizeCountryToCode(country.trim());
   await db.update(accountsTable)
-    .set({ country: country.trim() })
+    .set({ country: normalizedCountry })
     .where(eq(accountsTable.telegramUsername, tg));
 
-  res.json({ ok: true, country: country.trim() });
+  res.json({ ok: true, country: normalizedCountry });
 });
 
 // PATCH /api/account/address — save structured shipping address fields
@@ -782,7 +783,7 @@ router.patch("/account/address", requireAccount, async (req, res): Promise<void>
   if (addressLine2 !== undefined) update.addressLine2 = addressLine2?.trim() || null;
   if (addressCity !== undefined) update.addressCity = addressCity?.trim() || null;
   if (addressPostcode !== undefined) update.addressPostcode = addressPostcode?.trim() || null;
-  if (country !== undefined) update.country = country?.trim() || null;
+  if (country !== undefined) update.country = country?.trim() ? normalizeCountryToCode(country.trim()) : null;
   if (addressPhone !== undefined) update.addressPhone = addressPhone?.trim() || null;
   if (addressPhonePrefix !== undefined) update.addressPhonePrefix = addressPhonePrefix?.trim() || null;
 

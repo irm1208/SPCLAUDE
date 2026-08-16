@@ -114,10 +114,12 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
         .where(inArray(gbReshippersTable.gbId, gbIds))
     : [];
 
+  // Normalize reshipper countries to ISO codes so comparisons work regardless of
+  // how the country was stored (full name "United Kingdom" vs code "GB").
   const reshipperCountriesByGb = new Map<string, string[]>();
   for (const r of reshipperRows) {
     if (!reshipperCountriesByGb.has(r.gbId)) reshipperCountriesByGb.set(r.gbId, []);
-    reshipperCountriesByGb.get(r.gbId)!.push(r.country);
+    reshipperCountriesByGb.get(r.gbId)!.push(normalizeToCode(r.country));
   }
 
   // Also fetch countryLegsEnabled so the join modal knows to show country picker
@@ -127,8 +129,21 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
     .where(rows.length > 0 ? inArray(groupBuysTable.id, rows.map(r => r.id)) : eq(groupBuysTable.id, "NONE"));
   const countryLegsByGb = new Map(countryLegsEnabledRows.map(r => [r.id, r.countryLegsEnabled]));
 
-  // Filter by country restrictions and blocked accounts
-  const visibleRows = rows.filter(r => gbVisibleToAccount(r, tg, accountCountry));
+  // Filter by country restrictions and blocked accounts, plus reshipper country coverage.
+  const visibleRows = rows.filter(r => {
+    if (!gbVisibleToAccount(r, tg, accountCountry)) return false;
+    // If the GB has reshippers covering specific countries, only show it to users
+    // whose country is covered — unless country legs are enabled (leg controls access).
+    const hasCountryLegs = countryLegsByGb.get(r.id) ?? false;
+    if (!hasCountryLegs && accountCountry) {
+      const reshipperCountries = reshipperCountriesByGb.get(r.id) ?? [];
+      if (reshipperCountries.length > 0) {
+        const acctCode = normalizeToCode(accountCountry);
+        if (!reshipperCountries.includes(acctCode)) return false;
+      }
+    }
+    return true;
+  });
 
   res.json(visibleRows.map(r => {
     const hasCountryLegs = countryLegsByGb.get(r.id) ?? false;
