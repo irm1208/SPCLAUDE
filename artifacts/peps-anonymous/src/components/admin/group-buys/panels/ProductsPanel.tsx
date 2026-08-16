@@ -192,6 +192,11 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
   const [creatingProd, setCreatingProd] = useState(false);
   const [createErr, setCreateErr] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"" | "global" | "private">("");
+  // Multi-select
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMaxInput, setBulkMaxInput] = useState("");
+  const [bulkWorking, setBulkWorking] = useState(false);
   // Currency display: uses the GB's currency by default; toggle to the other
   const gbCurrency = (gb.currency || "GBP").toUpperCase();
   const altCurrency = gbCurrency === "GBP" ? "USD" : "GBP";
@@ -252,7 +257,8 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
   const sorted = [...allProducts]
     .filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) &&
-      (!vendorFilter || p.vendor === vendorFilter)
+      (!vendorFilter || p.vendor === vendorFilter) &&
+      (sourceFilter === "" || (sourceFilter === "global" ? !p.sourceGroupBuyId : !!p.sourceGroupBuyId))
     )
     .sort((a, b) => {
       const aOn = !!gbProductMap[a.id];
@@ -260,6 +266,11 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
       if (aOn !== bOn) return aOn ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
+
+  const visibleIds = sorted.map(p => p.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0;
+  const selectedList = sorted.filter(p => selectedIds.has(p.id));
 
   const convertPrice = (price: number): string => {
     if (displayCurrency === gbCurrency) return price.toFixed(2);
@@ -378,123 +389,239 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
     setSelectingAll(false);
   };
 
+  // ── Bulk operations ───────────────────────────────────────────
+  const bulkEnable = async (ids: string[]) => {
+    const toAdd = ids.filter(id => !gbProductMap[id]);
+    if (!toAdd.length) return;
+    const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}/products`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify({ productIds: toAdd }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setActionErr(d.error ?? "Failed to enable"); }
+    else await load();
+  };
+
+  const bulkDisable = async (ids: string[]) => {
+    const toRemove = ids.filter(id => !!gbProductMap[id]);
+    if (!toRemove.length) return;
+    await Promise.all(toRemove.map(id =>
+      fetch(apiUrl(`/admin/group-buys/${gb.id}/products/${id}`), {
+        method: "DELETE", headers: { "x-admin-secret": secret },
+      })
+    ));
+    await load();
+  };
+
+  const bulkHalfKit = async (ids: string[], enable: boolean) => {
+    await Promise.all(ids.map(id =>
+      fetch(apiUrl(`/admin/half-kit-products/${id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ halfKitEnabled: enable }),
+      })
+    ));
+    await load();
+  };
+
+  const bulkSetMax = async (ids: string[], val: number | null) => {
+    const linked = ids.filter(id => !!gbProductMap[id]);
+    await Promise.all(linked.map(id =>
+      fetch(apiUrl(`/admin/group-buys/${gb.id}/products/${id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ maxPerCustomer: val }),
+      })
+    ));
+    await load();
+  };
+
+  const runBulk = async (fn: () => Promise<void>) => {
+    setBulkWorking(true);
+    setActionErr("");
+    try { await fn(); } catch { setActionErr("Bulk operation failed"); }
+    setBulkWorking(false);
+  };
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
 
-  const activeCount = gbProducts.filter(p => p.active).length;
+  const linkedCount = gbProducts.length;
+  const btnCls = (active: boolean) => cn(
+    "h-8 px-3 rounded-xl text-xs font-semibold border transition-colors",
+    active ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-muted"
+  );
 
   return (
     <div className="space-y-3">
       {showCsvModal && (
-        <CsvImportModal
-          secret={secret}
-          gb={gb}
-          onDone={() => { load(); }}
-          onClose={() => setShowCsvModal(false)}
-        />
+        <CsvImportModal secret={secret} gb={gb} onDone={() => { load(); }} onClose={() => setShowCsvModal(false)} />
       )}
 
+      {/* ── Row 1: search + action buttons ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-
-        {vendors.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setVendorFilter("")}
-              className={cn("h-8 px-3 rounded-xl text-xs font-semibold border transition-colors",
-                vendorFilter === "" ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-muted")}
-            >All</button>
-            {vendors.map(v => (
-              <button
-                key={v}
-                onClick={() => setVendorFilter(vendorFilter === v ? "" : v)}
-                className={cn("h-8 px-3 rounded-xl text-xs font-semibold border transition-colors",
-                  vendorFilter === v ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-muted")}
-              >{v}</button>
-            ))}
-          </div>
-        )}
-
-        {/* Currency toggle */}
-        <button
-          onClick={() => setDisplayCurrency(c => c === gbCurrency ? altCurrency : gbCurrency)}
-          className={cn(
-            "flex items-center gap-1.5 h-10 px-3 rounded-xl border text-xs font-semibold transition-colors",
-            displayCurrency !== gbCurrency
-              ? "bg-amber-50 border-amber-300 text-amber-700"
-              : "bg-background border-border text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <DollarSign className="w-3.5 h-3.5" />
-          {displayCurrency}
+        <button onClick={() => setDisplayCurrency(c => c === gbCurrency ? altCurrency : gbCurrency)}
+          className={cn("flex items-center gap-1.5 h-10 px-3 rounded-xl border text-xs font-semibold transition-colors",
+            displayCurrency !== gbCurrency ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-background border-border text-muted-foreground hover:text-foreground")}>
+          <DollarSign className="w-3.5 h-3.5" />{displayCurrency}
           {displayCurrency !== gbCurrency && <span className="text-[10px] opacity-70">(est.)</span>}
         </button>
-
-        <Button variant="outline" size="sm" className="gap-1.5 h-10" onClick={() => setShowCsvModal(true)}>
-          <Upload className="w-3.5 h-3.5" />CSV
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5 h-10" onClick={() => setShowCreateForm(v => !v)}>
-          <Plus className="w-3.5 h-3.5" />New Product
-        </Button>
-        {(() => {
-          const unlinkedCount = sorted.filter(p => !gbProductMap[p.id]).length;
-          return unlinkedCount > 0 ? (
-            <Button
-              size="sm"
-              className="gap-1.5 h-10 bg-green-600 hover:bg-green-700 text-white"
-              onClick={selectAll}
-              disabled={selectingAll}
-            >
-              {selectingAll
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Check className="w-3.5 h-3.5" />}
-              {selectingAll ? "Adding…" : `Select All (${unlinkedCount})`}
-            </Button>
-          ) : null;
-        })()}
+        <Button variant="outline" size="sm" className="gap-1.5 h-10" onClick={() => setShowCsvModal(true)}><Upload className="w-3.5 h-3.5" />CSV</Button>
+        <Button variant="outline" size="sm" className="gap-1.5 h-10" onClick={() => setShowCreateForm(v => !v)}><Plus className="w-3.5 h-3.5" />New Product</Button>
         <Button variant="outline" size="icon" className="h-10 w-10" onClick={load}><RefreshCw className="w-4 h-4" /></Button>
-        <span className="text-xs text-muted-foreground whitespace-nowrap">{activeCount} linked</span>
+        <span className="text-xs text-muted-foreground whitespace-nowrap">{linkedCount} linked</span>
+      </div>
+
+      {/* ── Row 2: vendor filter ── */}
+      {vendors.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => setVendorFilter("")} className={btnCls(vendorFilter === "")}>All</button>
+          {vendors.map(v => (
+            <button key={v} onClick={() => setVendorFilter(vendorFilter === v ? "" : v)} className={btnCls(vendorFilter === v)}>{v}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Row 3: source filter ── */}
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setSourceFilter("")} className={btnCls(sourceFilter === "")}>All sources</button>
+        <button onClick={() => setSourceFilter(sourceFilter === "global" ? "" : "global")} className={btnCls(sourceFilter === "global")}>
+          🌐 Global (admin-added)
+        </button>
+        <button onClick={() => setSourceFilter(sourceFilter === "private" ? "" : "private")} className={btnCls(sourceFilter === "private")}>
+          🔒 GB-private (organiser-added)
+        </button>
       </div>
 
       {showCreateForm && (
         <div className="border border-border rounded-xl p-4 bg-muted/20 space-y-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New GB-Private Product</p>
           <div className="flex gap-2 flex-wrap">
-            <Input className="flex-1 min-w-36 h-9 text-sm" placeholder="Product name *"
-              value={newProd.name} onChange={e => setNewProd(p => ({ ...p, name: e.target.value }))} />
-            <Input className="w-28 h-9 text-sm" type="number" min="0" step="0.01" placeholder={`Price (${gbCurrency}) *`}
-              value={newProd.price} onChange={e => setNewProd(p => ({ ...p, price: e.target.value }))} />
+            <Input className="flex-1 min-w-36 h-9 text-sm" placeholder="Product name *" value={newProd.name} onChange={e => setNewProd(p => ({ ...p, name: e.target.value }))} />
+            <Input className="w-28 h-9 text-sm" type="number" min="0" step="0.01" placeholder={`Price (${gbCurrency}) *`} value={newProd.price} onChange={e => setNewProd(p => ({ ...p, price: e.target.value }))} />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Input className="w-36 h-9 text-sm" placeholder="Vendor *"
-              value={newProd.vendor} onChange={e => setNewProd(p => ({ ...p, vendor: e.target.value }))} />
-            <Input className="flex-1 h-9 text-sm" placeholder="Category (optional)"
-              value={newProd.category} onChange={e => setNewProd(p => ({ ...p, category: e.target.value }))} />
-            <Button size="sm" className="h-9 gap-1.5" onClick={createGBProduct}
-              disabled={creatingProd || !newProd.name.trim() || !newProd.price || !newProd.vendor.trim()}>
-              {creatingProd ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              Create
+            <Input className="w-36 h-9 text-sm" placeholder="Vendor *" value={newProd.vendor} onChange={e => setNewProd(p => ({ ...p, vendor: e.target.value }))} />
+            <Input className="flex-1 h-9 text-sm" placeholder="Category (optional)" value={newProd.category} onChange={e => setNewProd(p => ({ ...p, category: e.target.value }))} />
+            <Button size="sm" className="h-9 gap-1.5" onClick={createGBProduct} disabled={creatingProd || !newProd.name.trim() || !newProd.price || !newProd.vendor.trim()}>
+              {creatingProd ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}Create
             </Button>
-            <Button size="sm" variant="ghost" className="h-9" onClick={() => { setShowCreateForm(false); setCreateErr(""); setNewProd({ name: "", price: "", vendor: "", category: "" }); }}>
-              <X className="w-3.5 h-3.5" />
-            </Button>
+            <Button size="sm" variant="ghost" className="h-9" onClick={() => { setShowCreateForm(false); setCreateErr(""); setNewProd({ name: "", price: "", vendor: "", category: "" }); }}><X className="w-3.5 h-3.5" /></Button>
           </div>
           {createErr && <p className="text-xs text-red-500">{createErr}</p>}
         </div>
       )}
 
+      {/* ── Bulk actions bar ── */}
+      <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl border bg-muted/30">
+        {/* Select all / deselect */}
+        <button
+          onClick={() => {
+            if (allVisibleSelected) setSelectedIds(new Set());
+            else setSelectedIds(new Set(visibleIds));
+          }}
+          className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-background border-border hover:bg-muted transition-colors"
+        >
+          <input type="checkbox" readOnly checked={allVisibleSelected} className="w-3 h-3 pointer-events-none" />
+          {allVisibleSelected ? "Deselect all" : `Select all (${visibleIds.length})`}
+        </button>
+
+        {someSelected && (
+          <span className="text-[11px] text-muted-foreground">{selectedIds.size} selected</span>
+        )}
+
+        <div className="h-5 w-px bg-border mx-1" />
+
+        {/* Enable / disable all visible */}
+        <button
+          disabled={bulkWorking || selectingAll}
+          onClick={() => runBulk(() => bulkEnable(visibleIds))}
+          className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-green-50 border-green-200 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors"
+        >
+          {bulkWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <ToggleRight className="w-3.5 h-3.5" />}
+          Enable all
+        </button>
+        <button
+          disabled={bulkWorking}
+          onClick={() => runBulk(() => bulkDisable(visibleIds))}
+          className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-red-50 border-red-200 text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
+        >
+          {bulkWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+          Disable all
+        </button>
+
+        {someSelected && (
+          <>
+            <div className="h-5 w-px bg-border mx-1" />
+            {/* Enable / disable selected */}
+            <button
+              disabled={bulkWorking}
+              onClick={() => runBulk(() => bulkEnable(Array.from(selectedIds)))}
+              className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              <ToggleRight className="w-3.5 h-3.5" />Enable selected
+            </button>
+            <button
+              disabled={bulkWorking}
+              onClick={() => runBulk(() => bulkDisable(Array.from(selectedIds)))}
+              className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+            >
+              <ToggleLeft className="w-3.5 h-3.5" />Disable selected
+            </button>
+
+            <div className="h-5 w-px bg-border mx-1" />
+
+            {/* Half-kit */}
+            <button
+              disabled={bulkWorking}
+              onClick={() => runBulk(() => bulkHalfKit(Array.from(selectedIds), true))}
+              className="h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-background border-border hover:bg-muted disabled:opacity-50 transition-colors"
+            >½ Kit ON</button>
+            <button
+              disabled={bulkWorking}
+              onClick={() => runBulk(() => bulkHalfKit(Array.from(selectedIds), false))}
+              className="h-7 px-2.5 rounded-lg text-[11px] font-semibold border bg-background border-border hover:bg-muted disabled:opacity-50 transition-colors"
+            >½ Kit OFF</button>
+
+            <div className="h-5 w-px bg-border mx-1" />
+
+            {/* Bulk max/customer */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">Max/cust:</span>
+              <Input
+                type="number" min="1" step="1" placeholder="∞"
+                value={bulkMaxInput}
+                onChange={e => setBulkMaxInput(e.target.value)}
+                className="w-16 h-7 text-xs"
+              />
+              <button
+                disabled={bulkWorking}
+                onClick={() => {
+                  const val = bulkMaxInput === "" ? null : parseInt(bulkMaxInput);
+                  runBulk(() => bulkSetMax(Array.from(selectedIds), val)).then(() => setBulkMaxInput(""));
+                }}
+                className="h-7 px-2.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {bulkWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : "Set"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
       {actionErr && <p className="text-xs text-red-500 px-1">{actionErr}</p>}
 
-      <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+      <div className="space-y-1 max-h-[55vh] overflow-y-auto pr-1">
         {sorted.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-8">No products found.</p>
         )}
         {sorted.map(product => {
           const linked = gbProductMap[product.id];
           const isOn = !!linked;
-          // Show override price in display currency
+          const isSelected = selectedIds.has(product.id);
           const rawOverride = linked?.priceOverride != null ? (linked.priceOverride as number) : null;
           const overrideDisplay = rawOverride != null
             ? (displayCurrency !== gbCurrency
@@ -504,46 +631,52 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
           const override = pendingOverride[product.id] ?? overrideDisplay;
 
           return (
-            <div key={product.id} className={cn("flex items-center gap-3 p-3 rounded-xl border transition-colors",
-              isOn ? "bg-green-50 border-green-200" : "bg-background border-border hover:bg-muted/30")}>
-              <button
-                type="button"
-                onClick={() => toggle(product)}
-                disabled={toggling === product.id}
-                className="shrink-0"
-              >
+            <div key={product.id} className={cn("flex items-center gap-2 p-3 rounded-xl border transition-colors",
+              isSelected ? "bg-blue-50 border-blue-300" : isOn ? "bg-green-50 border-green-200" : "bg-background border-border hover:bg-muted/30")}>
+
+              {/* Checkbox */}
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => setSelectedIds(prev => {
+                  const next = new Set(prev);
+                  isSelected ? next.delete(product.id) : next.add(product.id);
+                  return next;
+                })}
+                className="w-3.5 h-3.5 shrink-0 cursor-pointer"
+              />
+
+              {/* Enable/disable toggle */}
+              <button type="button" onClick={() => toggle(product)} disabled={toggling === product.id} className="shrink-0">
                 {toggling === product.id
                   ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                   : isOn
                     ? <ToggleRight className="w-5 h-5 text-green-600" />
                     : <ToggleLeft className="w-5 h-5 text-muted-foreground" />}
               </button>
+
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate text-foreground">{product.name}</p>
                 <p className="text-xs text-muted-foreground">
                   Base: {displayCurrency} {convertPrice(product.price)}
                   {product.category && ` · ${product.category}`}
                   {` · ${product.vendor}`}
+                  {product.sourceGroupBuyId && <span className="ml-1 text-[10px] font-semibold text-orange-500">GB-private</span>}
                   {displayCurrency !== gbCurrency && <span className="opacity-60"> (estimated)</span>}
                 </p>
               </div>
+
               {isOn && (
                 <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                   <div className="flex items-center gap-1.5">
                     <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-mono">{displayCurrency}</span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Override"
-                        value={override}
+                      <Input type="number" step="0.01" placeholder="Override" value={override}
                         onChange={e => setPendingOverride(prev => ({ ...prev, [product.id]: e.target.value }))}
-                        className="w-36 h-8 text-xs pl-9"
-                      />
+                        className="w-36 h-8 text-xs pl-9" />
                     </div>
                     {pendingOverride[product.id] !== undefined && (
-                      <button type="button" onClick={() => saveOverride(product.id)}
-                        disabled={savingOverride === product.id}
+                      <button type="button" onClick={() => saveOverride(product.id)} disabled={savingOverride === product.id}
                         className="h-8 px-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50">
                         {savingOverride === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                       </button>
@@ -551,18 +684,12 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">Max/cust</span>
-                    <Input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="∞"
+                    <Input type="number" min="1" step="1" placeholder="∞"
                       value={pendingMaxPerCustomer[product.id] ?? (linked?.maxPerCustomer != null ? String(linked.maxPerCustomer) : "")}
                       onChange={e => setPendingMaxPerCustomer(prev => ({ ...prev, [product.id]: e.target.value }))}
-                      className="w-16 h-8 text-xs"
-                    />
+                      className="w-16 h-8 text-xs" />
                     {pendingMaxPerCustomer[product.id] !== undefined && (
-                      <button type="button" onClick={() => saveMaxPerCustomer(product.id)}
-                        disabled={savingMaxPerCustomer === product.id}
+                      <button type="button" onClick={() => saveMaxPerCustomer(product.id)} disabled={savingMaxPerCustomer === product.id}
                         className="h-8 px-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
                         {savingMaxPerCustomer === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                       </button>
@@ -570,9 +697,8 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
                   </div>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => toggleHalfKit(product.id, product.halfKitEnabled)}
+
+              <button type="button" onClick={() => toggleHalfKit(product.id, product.halfKitEnabled)}
                 disabled={togglingHalfKit === product.id}
                 title={product.halfKitEnabled ? "Half kits enabled — click to disable" : "Half kits disabled — click to enable"}
                 className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-[10px] font-semibold shrink-0 border transition-all"
@@ -580,13 +706,8 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
                   background: product.halfKitEnabled ? "rgba(34,197,94,0.1)" : "rgba(148,163,184,0.08)",
                   borderColor: product.halfKitEnabled ? "rgba(34,197,94,0.3)" : "rgba(148,163,184,0.2)",
                   color: product.halfKitEnabled ? "#16A34A" : "#94A3B8",
-                }}
-              >
-                {togglingHalfKit === product.id
-                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                  : product.halfKitEnabled
-                    ? <ToggleRight className="w-3.5 h-3.5" />
-                    : <ToggleLeft className="w-3.5 h-3.5" />}
+                }}>
+                {togglingHalfKit === product.id ? <Loader2 className="w-3 h-3 animate-spin" /> : product.halfKitEnabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
                 ½ Kit
               </button>
             </div>

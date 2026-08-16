@@ -17,6 +17,7 @@ import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { PricingPreviewModal } from "@/components/PricingPreviewModal";
 import { PriceWatermark } from "@/components/PriceWatermark";
+import { ImageLightbox } from "@/components/ImageLightbox";
 
 const STATUS_DOT: Record<string, string> = {
   draft:    "#94A3B8",
@@ -514,13 +515,13 @@ function JoinModal({ onClose }: { onClose: () => void }) {
       });
       try {
         await attempt();
-        onClose();
+        setLocation(`/order?gbId=${selectedGbId}`);
       } catch (err: unknown) {
         if (err instanceof EntryFeeRequiredError) {
           setEntryFeeModal({
             groupBuyId: selectedGbId,
             fee: err.entryFee,
-            retry: async () => { await attempt(); onClose(); },
+            retry: async () => { await attempt(); setLocation(`/order?gbId=${selectedGbId}`); },
           });
           return;
         }
@@ -549,13 +550,13 @@ function JoinModal({ onClose }: { onClose: () => void }) {
       });
       try {
         await attempt();
-        onClose();
+        setLocation(`/order?gbId=${trimmed}`);
       } catch (err: unknown) {
         if (err instanceof EntryFeeRequiredError) {
           setEntryFeeModal({
             groupBuyId: trimmed,
             fee: err.entryFee,
-            retry: async () => { await attempt(); onClose(); },
+            retry: async () => { await attempt(); setLocation(`/order?gbId=${trimmed}`); },
           });
           return;
         }
@@ -1035,8 +1036,27 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
       />
 
       <div className="relative p-4 flex flex-col" style={{ minHeight: "200px" }}>
-        {/* Close date badge — top right */}
-        {closeDateBadge && (
+        {/* Top-right corner: image thumbnail (above close-date badge if both exist) */}
+        {gb.telegramImageUrl && (
+          <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-1.5">
+            <ImageLightbox
+              src={gb.telegramImageUrl}
+              alt={gb.name}
+              wrapperClassName="w-9 h-9 rounded-xl overflow-hidden relative group"
+              wrapperStyle={{ boxShadow: "0 2px 8px rgba(0,0,0,0.35)" }}
+              thumbnailClassName="w-full h-full object-cover"
+            />
+            {closeDateBadge && (
+              <div className="text-right pointer-events-none">
+                <p className="text-[11px] font-bold text-white leading-tight">{closeDateBadge.dateStr}</p>
+                <p className="text-[9px] font-medium leading-tight mt-0.5" style={{ color: "rgba(255,255,255,0.50)" }}>{closeDateBadge.daysStr}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Close date badge — top right (only when no image) */}
+        {!gb.telegramImageUrl && closeDateBadge && (
           <div className="absolute top-4 right-4 text-right pointer-events-none z-10">
             <p className="text-[11px] font-bold text-white leading-tight">{closeDateBadge.dateStr}</p>
             <p className="text-[9px] font-medium leading-tight mt-0.5" style={{ color: "rgba(255,255,255,0.50)" }}>{closeDateBadge.daysStr}</p>
@@ -1044,7 +1064,7 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
         )}
 
         {/* Icon + label row */}
-        <div className="flex items-center gap-1.5 mb-3" style={{ paddingRight: closeDateBadge ? "52px" : undefined }}>
+        <div className="flex items-center gap-1.5 mb-3" style={{ paddingRight: closeDateBadge || gb.telegramImageUrl ? "52px" : undefined }}>
           <Icon className="w-3.5 h-3.5" style={{ color: palette.accent }} />
           <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: palette.accent }}>
             Group Buy

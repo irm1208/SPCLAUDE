@@ -40,6 +40,7 @@ import {
 } from "recharts";
 import { SteroidPlotter } from "@/components/SteroidPlotter";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { RulesetModal } from "@/components/RulesetModal";
 import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { toast } from "@/hooks/use-toast";
@@ -2372,13 +2373,13 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
       });
       try {
         await attempt();
-        onClose();
+        setLocation(`/order?gbId=${gbId}`);
       } catch (err: unknown) {
         if (err instanceof EntryFeeRequiredError) {
           setEntryFeeModal({
             groupBuyId: gbId,
             fee: err.entryFee,
-            retry: async () => { await attempt(); onClose(); },
+            retry: async () => { await attempt(); setLocation(`/order?gbId=${gbId}`); },
           });
           return;
         }
@@ -2406,13 +2407,13 @@ function JoinModal({ onClose, initialId }: { onClose: () => void; initialId?: st
       });
       try {
         await attempt();
-        onClose();
+        setLocation(`/order?gbId=${trimmed}`);
       } catch (err: unknown) {
         if (err instanceof EntryFeeRequiredError) {
           setEntryFeeModal({
             groupBuyId: trimmed,
             fee: err.entryFee,
-            retry: async () => { await attempt(); onClose(); },
+            retry: async () => { await attempt(); setLocation(`/order?gbId=${trimmed}`); },
           });
           return;
         }
@@ -8634,10 +8635,20 @@ export default function CustomerPortal() {
                 {/* Header: icon tile + eyebrow + pills */}
                 <div className="relative p-5 pb-0 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-                      style={{ background: "rgba(255,255,255,0.14)" }}>
-                      <GBIcon className="w-5 h-5" style={{ color: "#fff" }} />
-                    </div>
+                    {gb.telegramImageUrl ? (
+                      <ImageLightbox
+                        src={gb.telegramImageUrl}
+                        alt={gb.name}
+                        wrapperClassName="w-11 h-11 rounded-2xl overflow-hidden shrink-0 relative group"
+                        wrapperStyle={{ background: "rgba(255,255,255,0.14)" }}
+                        thumbnailClassName="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                        style={{ background: "rgba(255,255,255,0.14)" }}>
+                        <GBIcon className="w-5 h-5" style={{ color: "#fff" }} />
+                      </div>
+                    )}
                     <p className="text-[12px] font-medium truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
                       Group Buy{gb.manufacturer ? ` · ${gb.manufacturer}` : ""}
                     </p>

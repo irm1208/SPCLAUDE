@@ -43,6 +43,7 @@ type RoutingGroup = {
   type: "direct" | "reshipper" | "unrouted" | "legacy";
   reshipperUsername: string | null;
   reshipperHubCountry: string | null;
+  reshipperCountries: string[] | null;
   paymentBlocked: boolean;
   totalOrders: number; totalKits: number;
   missingAddressCount: number; balanceDueCount: number;
@@ -669,17 +670,27 @@ function RoutingGroupCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-sm font-semibold truncate">{groupLabel}</p>
-            {isReshipper && group.reshipperHubCountry && (
-              <span className="text-base leading-none" title={`Hub: ${group.reshipperHubCountry}`}>
-                {countryFlag(group.reshipperHubCountry)}
-              </span>
-            )}
             {group.paymentBlocked && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-0.5">
                 <Ban className="w-2.5 h-2.5" /> Payments blocked
               </span>
             )}
           </div>
+          {/* Assigned countries this reshipper covers */}
+          {isReshipper && group.reshipperCountries && group.reshipperCountries.length > 0 && (
+            <div className="flex flex-wrap items-center gap-0.5 mt-0.5">
+              {group.reshipperCountries.slice(0, 12).map(cc => (
+                <span key={cc} className="text-sm leading-none" title={cc}>
+                  {countryFlag(cc)}
+                </span>
+              ))}
+              {group.reshipperCountries.length > 12 && (
+                <span className="text-[10px] opacity-60 font-medium">
+                  +{group.reshipperCountries.length - 12}
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-[10px] opacity-70 flex-wrap mt-0.5">
             <span className="font-semibold">{group.totalOrders} orders</span>
             <span>·</span>
@@ -701,7 +712,7 @@ function RoutingGroupCard({
               )}
             </div>
           )}
-          {/* Cross-border country breakdown */}
+          {/* Order country breakdown (actual shipping countries of orders in this group) */}
           {isReshipper && group.countryBreakdown.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
               {group.countryBreakdown.slice(0, 4).map(cb => (

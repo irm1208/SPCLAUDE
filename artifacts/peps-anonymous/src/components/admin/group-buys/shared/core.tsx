@@ -640,7 +640,7 @@ export interface GBProduct { id: string; groupBuyId: string; productId: string; 
 export interface DeliveryMethod { id: string; name: string; price: number; active: boolean; sortOrder: number | null }
 export interface GBDeliveryMethod { id: string; groupBuyId: string; deliveryMethodId: string }
 export type Member = { telegramUsername: string; email: string | null; accountStatus: string; hasPassword: boolean; hasTelegram: boolean; joinedAt: string; tags: string[]; allowExtraOrder: boolean }
-export interface Product { id: string; name: string; price: number; category: string | null; mgSize: string | null; stock: number | null; active: boolean; vendor: string | null; halfKitEnabled: boolean }
+export interface Product { id: string; name: string; price: number; category: string | null; mgSize: string | null; stock: number | null; active: boolean; vendor: string | null; halfKitEnabled: boolean; sourceGroupBuyId?: string | null }
 export interface CustomCourier { id: string; name: string; trackingUrlTemplate: string | null; createdAt: string }
 export const GB_STATUS_STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600",

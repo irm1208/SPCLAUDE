@@ -3,8 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { organiserApi, type ApiGroupBuy } from "./api/organiser-api";
 import {
   AlertTriangle, Archive, CalendarDays, Check, CheckCircle2, CircleDot,
-  ClipboardList, Copy, Eye, FileText, Info, KeyRound, Loader2, Plus,
-  Save, Settings, Trash2, Users, X, type LucideIcon,
+  ClipboardList, Copy, Eye, FileText, Image, Info, KeyRound, Loader2, Plus,
+  Save, Settings, Trash2, Upload, Users, X, type LucideIcon,
 } from "lucide-react";
 import "./gb-settings-atlas.css";
 
@@ -31,7 +31,7 @@ interface GbSettingsState {
   infoCards: InfoCard[];
 }
 
-type SettingsSectionId = "identity" | "lifecycle" | "access" | "cards" | "danger";
+type SettingsSectionId = "identity" | "lifecycle" | "access" | "image" | "cards" | "danger";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -62,6 +62,13 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Access & entry fee",
     description: "Join code, visibility and entry fee",
     icon: KeyRound,
+  },
+  {
+    id: "image",
+    label: "Card image",
+    title: "Card image",
+    description: "Photo shown on the group buy card",
+    icon: Image,
   },
   {
     id: "cards",
@@ -237,6 +244,10 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
   const [accessSaved, setAccessSaved] = useState(false);
   const [savingCards, setSavingCards] = useState(false);
   const [cardsSaved, setCardsSaved] = useState(false);
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  const [savingImage, setSavingImage] = useState(false);
+  const [imageSaved, setImageSaved] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -248,7 +259,12 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
     setSettings(null);
     setLoadError(null);
     organiserApi.groupBuy(selectedGbId)
-      .then(groupBuy => { if (!cancelled) setSettings(settingsFromApi(groupBuy)); })
+      .then(groupBuy => {
+        if (!cancelled) {
+          setSettings(settingsFromApi(groupBuy));
+          setCardImageUrl((groupBuy as Record<string, unknown>)["telegramImageUrl"] as string | null ?? null);
+        }
+      })
       .catch(error => { if (!cancelled) setLoadError(error instanceof Error ? error.message : "Failed to load settings"); });
     return () => { cancelled = true; };
   }, [selectedGbId]);
@@ -301,6 +317,34 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
       setTimeout(() => setCodeCopied(false), 2000);
     });
   };
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setImageError("Please select an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setImageError("Image must be under 5 MB."); return; }
+    setImageError(null);
+    const reader = new FileReader();
+    reader.onload = () => setCardImageUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function saveCardImage() {
+    if (!selectedGbId) return;
+    setSavingImage(true);
+    setImageSaved(false);
+    setImageError(null);
+    try {
+      await organiserApi.updateGroupBuy(selectedGbId, { telegramImageUrl: cardImageUrl });
+      await queryClient.invalidateQueries({ queryKey: ["organiser", "group-buys"] });
+      setImageSaved(true);
+      setTimeout(() => setImageSaved(false), 2500);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Failed to save image.");
+    } finally {
+      setSavingImage(false);
+    }
+  }
 
   const addInfoCard = () => patch({ infoCards: [...(settings?.infoCards ?? []), { title: "", body: "" }] });
   const removeInfoCard = (i: number) =>
@@ -617,6 +661,53 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
           saved={accessSaved}
           onClick={() => saveSettings(setSavingAccess, setAccessSaved)}
         />
+            </div>
+          ) : null}
+
+          {activeSection === "image" ? (
+            <div className="gb-settings-atlas__form-stack">
+              <p className="gb-settings-atlas__help">
+                Upload a photo that appears on the group buy card for all members. Displayed as a small thumbnail; click opens the full image. JPEG or PNG, max 5 MB.
+              </p>
+              {cardImageUrl ? (
+                <div className="gb-settings-atlas__field" style={{ position: "relative" }}>
+                  <img
+                    src={cardImageUrl}
+                    alt="Card image preview"
+                    style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 12, display: "block" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCardImageUrl(null)}
+                    className="gb-settings-atlas__icon-button"
+                    aria-label="Remove card image"
+                    title="Remove card image"
+                    style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.55)" }}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                </div>
+              ) : (
+                <label className="gb-settings-atlas__upload-label">
+                  <Upload aria-hidden="true" />
+                  <span>Choose image…</span>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
+                </label>
+              )}
+              {cardImageUrl && (
+                <label className="gb-settings-atlas__upload-label" style={{ marginTop: 0 }}>
+                  <Upload aria-hidden="true" />
+                  <span>Replace image…</span>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
+                </label>
+              )}
+              {imageError && <p style={{ color: "#E53E3E", fontSize: 13 }}>{imageError}</p>}
+              <SaveButton
+                saving={savingImage}
+                saved={imageSaved}
+                onClick={saveCardImage}
+                label="Save Card Image"
+              />
             </div>
           ) : null}
 

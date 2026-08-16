@@ -982,6 +982,35 @@
   }
 }
 
+/* ── Upload label ──────────────────────────────────────────────────────────── */
+.gb-settings-atlas__upload-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--color-border, #E2E8F0);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted, #64748B);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  margin-top: 8px;
+}
+
+.gb-settings-atlas__upload-label:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  border-color: var(--color-text-muted, #64748B);
+}
+
+.gb-settings-atlas__upload-label svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gb-settings-atlas *,
   .gb-settings-atlas *::before,

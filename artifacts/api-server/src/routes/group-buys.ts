@@ -199,6 +199,7 @@ const GB_SELECT_COLS = {
   entryFeeLabel: groupBuysTable.entryFeeLabel,
   directShippingEnabled: groupBuysTable.directShippingEnabled,
   directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled,
+  telegramImageUrl: groupBuysTable.telegramImageUrl,
 };
 
 async function getProductCount(gbId: string): Promise<number> {

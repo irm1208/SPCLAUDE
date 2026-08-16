@@ -9657,10 +9657,19 @@ router.get("/admin/group-buys/:gbId/fulfillment-board", async (req, res): Promis
       else if (key === "unrouted") type = "unrouted";
       else type = "legacy";
 
+      // Countries this reshipper is assigned to cover (multi-country overrides singular hub)
+      const reshipperCountries: string[] | null =
+        (reshipperInfo?.countries && (reshipperInfo.countries as string[]).length > 0)
+          ? (reshipperInfo.countries as string[])
+          : reshipperInfo?.country
+            ? [reshipperInfo.country]
+            : null;
+
       return {
         type,
         reshipperUsername: reshipperUsername === "__unassigned__" ? null : reshipperUsername,
         reshipperHubCountry: reshipperInfo?.country ?? null,
+        reshipperCountries,
         paymentBlocked: reshipperInfo?.paymentBlocked ?? false,
         totalOrders: groupOrds.length,
         totalKits, missingAddressCount, balanceDueCount, countryBreakdown,

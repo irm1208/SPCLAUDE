@@ -55,6 +55,12 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
   const [savingAdminFee, setSavingAdminFee] = useState(false);
   const [savedAdminFee, setSavedAdminFee] = useState(false);
 
+  // Card image
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(gb.telegramImageUrl ?? null);
+  const [savingCardImage, setSavingCardImage] = useState(false);
+  const [savedCardImage, setSavedCardImage] = useState(false);
+  const [cardImageError, setCardImageError] = useState<string | null>(null);
+
   // QR Upload
   const [togglingQrInpost, setTogglingQrInpost] = useState(false);
   const [togglingQrRoyalMail, setTogglingQrRoyalMail] = useState(false);
@@ -190,6 +196,38 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
   // Organiser Order Edit
   const [togglingOrganiserOrderEdit, setTogglingOrganiserOrderEdit] = useState(false);
 
+
+  const handleCardImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setCardImageError("Please select an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setCardImageError("Image must be under 5 MB."); return; }
+    setCardImageError(null);
+    const reader = new FileReader();
+    reader.onload = () => setCardImageUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const saveCardImage = async () => {
+    setSavingCardImage(true);
+    setSavedCardImage(false);
+    setCardImageError(null);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ telegramImageUrl: cardImageUrl }),
+      });
+      if (res.ok) {
+        onUpdate(await res.json());
+        setSavedCardImage(true);
+        setTimeout(() => setSavedCardImage(false), 2000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCardImageError((data as { error?: string }).error ?? "Failed to save image.");
+      }
+    } finally { setSavingCardImage(false); }
+  };
 
   const setStatus = async (newStatus: string) => {
     if (gb.status === newStatus || togglingStatus) return;
@@ -601,6 +639,50 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
           onSave={(updated) => { onUpdate(updated); setFormKey(k => k + 1); }}
           onCancel={() => setFormKey(k => k + 1)}
         />
+      </section>
+
+      {/* Card Image */}
+      <section className="pb-8 border-b border-border space-y-3">
+        <h3 className="font-semibold text-sm">Card Image</h3>
+        <p className="text-xs text-muted-foreground">Shown as a thumbnail on the member-facing GB card. Clicking it opens a lightbox. JPEG or PNG, max 5 MB.</p>
+        {cardImageUrl ? (
+          <div className="relative w-full max-w-xs">
+            <img src={cardImageUrl} alt="Card image preview" className="w-full rounded-xl object-cover" style={{ maxHeight: 180 }} />
+            <button
+              type="button"
+              onClick={() => setCardImageUrl(null)}
+              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center bg-black/60 hover:bg-black/80 transition-colors"
+              title="Remove image"
+            >
+              <X className="w-3.5 h-3.5 text-white" />
+            </button>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 w-fit h-9 px-4 rounded-lg border border-dashed border-border text-xs font-medium cursor-pointer hover:bg-muted transition-colors">
+            <Upload className="w-3.5 h-3.5" />
+            Choose image…
+            <input type="file" accept="image/*" className="sr-only" onChange={handleCardImageFile} />
+          </label>
+        )}
+        {cardImageUrl && (
+          <label className="flex items-center gap-2 w-fit h-8 px-3 rounded-lg border border-dashed border-border text-xs font-medium cursor-pointer hover:bg-muted transition-colors">
+            <Upload className="w-3 h-3" />
+            Replace image…
+            <input type="file" accept="image/*" className="sr-only" onChange={handleCardImageFile} />
+          </label>
+        )}
+        {cardImageError && <p className="text-xs text-red-600">{cardImageError}</p>}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={saveCardImage}
+            disabled={savingCardImage}
+            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {savingCardImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedCardImage ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            {savingCardImage ? "Saving…" : savedCardImage ? "Saved" : "Save Image"}
+          </button>
+        </div>
       </section>
       </div>}
 

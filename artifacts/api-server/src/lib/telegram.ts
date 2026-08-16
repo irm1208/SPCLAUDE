@@ -238,6 +238,19 @@ export async function sendTelegramMessageFull(
   const { token } = await getCredentials();
   if (!token) return { ok: false };
   const ctx: TgLogCtx = logCtx ?? { recipientType: "user" };
+
+  // If we don't have a recipientUsername, resolve it from the chatId so the
+  // log shows a human-readable handle instead of a raw numeric ID.
+  if (!ctx.recipientUsername && chatId && ctx.recipientType === "user") {
+    try {
+      const [acct] = await db
+        .select({ telegramUsername: accountsTable.telegramUsername })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramChatId, chatId));
+      if (acct?.telegramUsername) ctx.recipientUsername = acct.telegramUsername;
+    } catch { /* swallow — logging is best-effort */ }
+  }
+
   try {
     const payload: Record<string, unknown> = {
       chat_id: chatId,

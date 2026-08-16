@@ -768,6 +768,7 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     allowHalfKits, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage,
     orderPageMessage, countryLegsEnabled, qrViewerUsernames, testOrderPin,
     allowEditOrderWhenClosed, allowEditAddressWhenClosed, allowDeleteOrderWhenClosed,
+    telegramImageUrl,
   } = req.body;
 
   // Organisers can change status only within: draft, active, closed (not archived by self — admin can archive)
@@ -910,6 +911,9 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
       if (!/^\d{4}$/.test(pinStr)) { res.status(400).json({ error: "testOrderPin must be exactly 4 numeric digits" }); return; }
       (updates as Record<string, unknown>)["testOrderPin"] = pinStr;
     }
+  }
+  if (telegramImageUrl !== undefined) {
+    (updates as Record<string, unknown>)["telegramImageUrl"] = telegramImageUrl ? String(telegramImageUrl).trim() : null;
   }
 
   if (Object.keys(updates).length === 0) {
