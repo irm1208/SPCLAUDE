@@ -333,47 +333,44 @@ async function offerWholesaleOrderPicker(chatId: string, username: string): Prom
 
   const shareIds = [...new Set(memberShares.map(r => r.shareId))];
 
-  let shares: { id: string; status: string }[] = [];
+  let shares: { id: string; status: string; createdAt: Date }[] = [];
   if (shareIds.length > 0) {
     shares = await db
-      .select({ id: wholesaleSharesTable.id, status: wholesaleSharesTable.status })
+      .select({ id: wholesaleSharesTable.id, status: wholesaleSharesTable.status, createdAt: wholesaleSharesTable.createdAt })
       .from(wholesaleSharesTable)
       .where(inArray(wholesaleSharesTable.id, shareIds))
-      .limit(12);
-  }
-
-  if (shares.length === 0) {
-    clearConv(chatId);
-    await sendTelegramMessageFull(
-      chatId,
-      `🤝 <b>Wholesale Ticket</b>\n\nYou don't have any wholesale orders on your account.\n\nVisit the website to view your wholesale activity.`,
-      "HTML",
-      undefined,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🌐 View website", url: appUrl }],
-            [{ text: "⬅️ Back", callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
-          ],
-        },
-      },
-    );
-    return;
+      .orderBy(desc(wholesaleSharesTable.createdAt))
+      .limit(11);
   }
 
   const STATUS_EMOJI: Record<string, string> = {
     open: "🟢", locked: "🔒", submitted: "📤", delivered: "✅", cancelled: "❌",
   };
 
-  const keyboard = shares.map(s => {
-    const emoji = STATUS_EMOJI[s.status] ?? "🤝";
-    return [{ text: `${emoji} Order #${s.id}`, callback_data: `tc:ws:${s.id}` }];
-  });
+  function shortDate(d: Date): string {
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+
+  const keyboard: { text: string; callback_data: string }[][] = [];
+
+  if (shares.length === 0) {
+    // No orders — still show the general question option
+  } else {
+    for (const s of shares) {
+      const emoji = STATUS_EMOJI[s.status] ?? "🤝";
+      keyboard.push([{ text: `${emoji} ${s.id} · ${shortDate(new Date(s.createdAt))}`, callback_data: `tc:ws:${s.id}` }]);
+    }
+  }
+
+  // Always offer a general wholesale question option
+  keyboard.push([{ text: "💬 General wholesale question", callback_data: "tc:ws:general" }]);
   keyboard.push([{ text: "⬅️ Back", callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }]);
 
   await sendTelegramMessageFull(
     chatId,
-    "🤝 <b>Wholesale</b>\n\nWhich order is this about?",
+    shares.length === 0
+      ? "🤝 <b>Wholesale</b>\n\nYou don't have any wholesale orders on your account yet.\n\nYou can still raise a general question below."
+      : "🤝 <b>Wholesale</b>\n\nWhich order is this about?",
     "HTML",
     undefined,
     { reply_markup: { inline_keyboard: keyboard } },
@@ -1038,9 +1035,24 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           await askForSubject(cbChatId);
         }
 
+      } else if (cbData === "tc:ws:general") {
+        // General wholesale question — no specific order
+        setConv(cbChatId, { step: "awaiting_subject", category: "wholesale" });
+        await askForSubject(cbChatId);
+
       } else if (cbData.startsWith("tc:ws:")) {
         const shareId = cbData.slice("tc:ws:".length);
-        setConv(cbChatId, { step: "awaiting_subject", category: "wholesale", wholesaleShareId: shareId, wholesaleShareName: `Order #${shareId}` });
+        // Look up createdAt so the ticket label is human-readable
+        const [shareRow] = await db
+          .select({ createdAt: wholesaleSharesTable.createdAt })
+          .from(wholesaleSharesTable)
+          .where(eq(wholesaleSharesTable.id, shareId))
+          .limit(1);
+        const shareDateStr = shareRow
+          ? new Date(shareRow.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+          : "";
+        const shareName = shareDateStr ? `${shareId} (${shareDateStr})` : shareId;
+        setConv(cbChatId, { step: "awaiting_subject", category: "wholesale", wholesaleShareId: shareId, wholesaleShareName: shareName });
         await askForSubject(cbChatId);
 
       } else if (cbData.startsWith("tc:gbtype:")) {
@@ -3451,9 +3463,9 @@ router.post("/account/telegram/miniapp-login", async (req, res): Promise<void> =
     return;
   }
 
-  // Reject stale payloads (5 minutes — Mini App initData is short-lived)
+  // Reject stale payloads (1 hour — gives enough time for slow connections/tab restores)
   const authDate = Number(params.get("auth_date"));
-  if (!authDate || Date.now() / 1000 - authDate > 300) {
+  if (!authDate || Date.now() / 1000 - authDate > 3600) {
     res.status(403).json({ error: "initData expired — please reopen from Telegram" });
     return;
   }

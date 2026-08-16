@@ -192,10 +192,29 @@ function TelegramAutoLogin() {
 
   useEffect(() => {
     if (isLoading || isLoggedIn || attempted.current) return;
-    const initData = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData;
+
+    // telegram-web-app.js is loaded synchronously in <head> so initData
+    // is available immediately. If it's still empty, we're not in a Mini App.
+    const tg = (window as { Telegram?: { WebApp?: { initData?: string; initDataUnsafe?: { user?: { username?: string } } } } }).Telegram?.WebApp;
+    const initData = tg?.initData;
     if (!initData) return;
+
     attempted.current = true;
-    autoLogin(initData);
+    autoLogin(initData, {
+      onError: (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // No account linked — redirect to login, pre-filling the TG username
+        // so the user can log in manually or sign up.
+        if (msg.includes("no_account") || msg.includes("No account")) {
+          const tgUsername = tg?.initDataUnsafe?.user?.username;
+          const loginUrl = tgUsername
+            ? `/login?tg=${encodeURIComponent(tgUsername)}`
+            : "/login";
+          window.location.href = loginUrl;
+        }
+        // For expired / invalid — silently fall through to normal login flow
+      },
+    });
   }, [isLoading, isLoggedIn, autoLogin]);
 
   return null;
