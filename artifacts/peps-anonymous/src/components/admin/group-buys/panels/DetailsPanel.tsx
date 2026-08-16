@@ -793,7 +793,42 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
         )}
       </section>
 
-      {/* 7b. Customer order add-ons */}
+      {/* 7b. Reshipper Order Editing */}
+      <section className="pb-8 border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Truck className="w-4 h-4 text-blue-500" />
+            <h3 className="font-semibold text-base tracking-tight">Reshipper Order Editing</h3>
+          </div>
+          <Switch
+            checked={gb.reshipperOrderEditEnabled !== false}
+            onChange={() => patchOrgEditField("reshipperOrderEditEnabled", gb.reshipperOrderEditEnabled !== false)}
+            busy={togglingOrgField === "reshipperOrderEditEnabled"}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Control which order fields reshippers assigned to this GB can edit. Defaults to all on — disable the master switch to block all reshipper editing, or toggle individual fields.
+        </p>
+        {gb.reshipperOrderEditEnabled !== false && (
+          <div className="mt-3 rounded-xl border divide-y" style={{ borderColor: "hsl(var(--border))" }}>
+            {([
+              { field: "reshipperCanEditStatus", label: "Order Status", desc: "Can change order status (Submitted → Processing → Shipped, etc.)", val: gb.reshipperCanEditStatus !== false },
+              { field: "reshipperCanEditTracking", label: "Tracking Number", desc: "Can enter or update the shipping tracking number and QR codes", val: gb.reshipperCanEditTracking !== false },
+              { field: "reshipperCanEditAddress", label: "Shipping Address", desc: "Can update the customer's shipping name and delivery address", val: gb.reshipperCanEditAddress !== false },
+            ] as { field: string; label: string; desc: string; val: boolean }[]).map(({ field, label, desc, val }) => (
+              <div key={field} className="flex items-center justify-between px-3 py-2.5 gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-foreground">{label}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{desc}</p>
+                </div>
+                <Switch checked={val} onChange={() => patchOrgEditField(field, val)} busy={togglingOrgField === field} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 7c. Customer order add-ons */}
       <section className="pb-8 border-b border-border">
         <div className="flex items-center gap-2 mb-2">
           <ShoppingCart className="w-4 h-4 text-blue-500" />

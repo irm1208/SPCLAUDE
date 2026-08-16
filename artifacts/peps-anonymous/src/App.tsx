@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
+import { useAccount, useTelegramAutoLogin } from "@/hooks/use-account";
 
 // Pages
 import Home from "@/pages/Home";
@@ -181,10 +182,30 @@ function Router() {
   );
 }
 
+// Fires once per page load when the Mini App is opened from Telegram.
+// If the user doesn't have a session yet, it silently logs them in using
+// the signed initData Telegram provides — no password or action needed.
+function TelegramAutoLogin() {
+  const { isLoggedIn, isLoading } = useAccount();
+  const { mutate: autoLogin } = useTelegramAutoLogin();
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (isLoading || isLoggedIn || attempted.current) return;
+    const initData = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData;
+    if (!initData) return;
+    attempted.current = true;
+    autoLogin(initData);
+  }, [isLoading, isLoggedIn, autoLogin]);
+
+  return null;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <TelegramAutoLogin />
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />

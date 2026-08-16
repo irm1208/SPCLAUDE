@@ -698,6 +698,24 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   const assignment = await verifyReshipperAssignment(req, res, gbId);
   if (!assignment) return;
 
+  // Load GB to check per-field reshipper permissions
+  const [gbPerms] = await db
+    .select({
+      reshipperOrderEditEnabled: groupBuysTable.reshipperOrderEditEnabled,
+      reshipperCanEditStatus: groupBuysTable.reshipperCanEditStatus,
+      reshipperCanEditTracking: groupBuysTable.reshipperCanEditTracking,
+      reshipperCanEditAddress: groupBuysTable.reshipperCanEditAddress,
+    })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, gbId));
+
+  if (!gbPerms) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  if (gbPerms.reshipperOrderEditEnabled === false) {
+    res.status(403).json({ error: "Order editing has been disabled for reshippers on this group buy" });
+    return;
+  }
+
   const [existing] = await db
     .select({ id: ordersTable.id, status: ordersTable.status })
     .from(ordersTable)
@@ -707,7 +725,7 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
 
   // Reshippers may only update: shipping address/name/city/postcode, order status
   // transitions, tracking number, and QR codes. Payment status, admin messages, and pricing
-  // remain admin/organiser-only.
+  // remain admin/organiser-only. Each field group is gated by its GB-level permission flag.
   const { shippingName, shippingAddress, shippingCity, shippingPostcode, status, trackingNumber, trackingNumbers, inpostQrCode, royalMailQrCode } = req.body;
 
   // Uses the real codebase status values: Draft → Submitted → Processing → Shipped → Completed/Cancelled
@@ -722,33 +740,37 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
 
   const updates: Record<string, unknown> = {};
 
-  if (shippingName !== undefined) updates.shippingName = shippingName ? String(shippingName).trim() : null;
-  if (shippingAddress !== undefined) updates.shippingAddress = shippingAddress ? String(shippingAddress).trim() : null;
-  if (shippingCity !== undefined) updates.shippingCity = shippingCity ? String(shippingCity).trim() : null;
-  if (shippingPostcode !== undefined) updates.shippingPostcode = shippingPostcode ? String(shippingPostcode).trim() : null;
-  if (trackingNumbers !== undefined) {
-    const cleaned = Array.isArray(trackingNumbers)
-      ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
-      : [];
-    updates.trackingNumbers = cleaned.length ? cleaned : null;
-    updates.trackingNumber = cleaned[0] ?? null;
-  } else if (trackingNumber !== undefined) {
-    updates.trackingNumber = trackingNumber ? String(trackingNumber).trim() : null;
+  if (gbPerms.reshipperCanEditAddress !== false) {
+    if (shippingName !== undefined) updates.shippingName = shippingName ? String(shippingName).trim() : null;
+    if (shippingAddress !== undefined) updates.shippingAddress = shippingAddress ? String(shippingAddress).trim() : null;
+    if (shippingCity !== undefined) updates.shippingCity = shippingCity ? String(shippingCity).trim() : null;
+    if (shippingPostcode !== undefined) updates.shippingPostcode = shippingPostcode ? String(shippingPostcode).trim() : null;
   }
-  for (const [field, value] of [["inpostQrCode", inpostQrCode], ["royalMailQrCode", royalMailQrCode]] as const) {
-    if (value !== undefined) {
-      if (value === null) {
-        updates[field] = null;
-      } else if (typeof value === "string") {
-        if (!/^data:(image\/(png|jpeg|gif|webp)|application\/pdf);base64,/.test(value)) {
-          res.status(400).json({ error: `${field}: file must be a PNG, JPEG, or PDF` }); return;
+  if (gbPerms.reshipperCanEditTracking !== false) {
+    if (trackingNumbers !== undefined) {
+      const cleaned = Array.isArray(trackingNumbers)
+        ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
+        : [];
+      updates.trackingNumbers = cleaned.length ? cleaned : null;
+      updates.trackingNumber = cleaned[0] ?? null;
+    } else if (trackingNumber !== undefined) {
+      updates.trackingNumber = trackingNumber ? String(trackingNumber).trim() : null;
+    }
+    for (const [field, value] of [["inpostQrCode", inpostQrCode], ["royalMailQrCode", royalMailQrCode]] as const) {
+      if (value !== undefined) {
+        if (value === null) {
+          updates[field] = null;
+        } else if (typeof value === "string") {
+          if (!/^data:(image\/(png|jpeg|gif|webp)|application\/pdf);base64,/.test(value)) {
+            res.status(400).json({ error: `${field}: file must be a PNG, JPEG, or PDF` }); return;
+          }
+          if (value.length > 14_000_000) { res.status(400).json({ error: `${field}: file too large (max 10 MB)` }); return; }
+          updates[field] = value;
         }
-        if (value.length > 14_000_000) { res.status(400).json({ error: `${field}: file too large (max 10 MB)` }); return; }
-        updates[field] = value;
       }
     }
   }
-  if (status !== undefined) {
+  if (gbPerms.reshipperCanEditStatus !== false && status !== undefined) {
     const allowed = ALLOWED_STATUS_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(status)) {
       res.status(400).json({ error: `Cannot transition order from ${existing.status} to ${status}` });

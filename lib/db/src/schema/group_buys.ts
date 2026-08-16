@@ -115,6 +115,11 @@ export const groupBuysTable = pgTable("group_buys", {
   organiserCanEditQuantities: boolean("organiser_can_edit_quantities").notNull().default(false),
   organiserCanMarkOos: boolean("organiser_can_mark_oos").notNull().default(true),
   organiserCanDeleteOrders: boolean("organiser_can_delete_orders").notNull().default(false),
+  // ── Reshipper Order Editing permissions ──────────────────────────────────────
+  reshipperOrderEditEnabled: boolean("reshipper_order_edit_enabled").notNull().default(true),
+  reshipperCanEditStatus: boolean("reshipper_can_edit_status").notNull().default(true),
+  reshipperCanEditTracking: boolean("reshipper_can_edit_tracking").notNull().default(true),
+  reshipperCanEditAddress: boolean("reshipper_can_edit_address").notNull().default(true),
   organiserRules: jsonb("organiser_rules").$type<{ id: string; text: string; enabled: boolean; format: string }[]>(),
   qrViewerUsernames: jsonb("qr_viewer_usernames").$type<string[]>(),
   legViewerAccess: jsonb("leg_viewer_access").$type<{ username: string; legIds: string[] }[]>(),

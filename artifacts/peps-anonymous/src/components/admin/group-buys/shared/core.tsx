@@ -74,6 +74,10 @@ export type GroupBuy = Record<string, unknown> & {
   organiserCanEditQuantities?: boolean;
   organiserCanMarkOos?: boolean;
   organiserCanDeleteOrders?: boolean;
+  reshipperOrderEditEnabled?: boolean;
+  reshipperCanEditStatus?: boolean;
+  reshipperCanEditTracking?: boolean;
+  reshipperCanEditAddress?: boolean;
   allowOrderAddons?: boolean;
   allowEditOrderWhenClosed?: boolean;
   allowEditAddressWhenClosed?: boolean;

@@ -977,6 +977,10 @@ async function runStartupMigrations(): Promise<void> {
     // by Drizzle migration 0018_wholesale_invite_links — not here.
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS telegram_image_url text`);
     await db.execute(sql`ALTER TABLE gb_reshippers ADD COLUMN IF NOT EXISTS countries jsonb`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_order_edit_enabled boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_status boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_tracking boolean NOT NULL DEFAULT true`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_address boolean NOT NULL DEFAULT true`);
     console.log("[startup:migrations] Schema sync complete");
   } catch (err) {
     console.error("[startup:migrations] Warning — could not apply startup migrations:", err);

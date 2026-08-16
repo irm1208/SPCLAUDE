@@ -345,6 +345,10 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (body.organiserCanEditQuantities !== undefined) updates.organiserCanEditQuantities = Boolean(body.organiserCanEditQuantities);
   if (body.organiserCanMarkOos !== undefined) updates.organiserCanMarkOos = Boolean(body.organiserCanMarkOos);
   if (body.organiserCanDeleteOrders !== undefined) updates.organiserCanDeleteOrders = Boolean(body.organiserCanDeleteOrders);
+  if (body.reshipperOrderEditEnabled !== undefined) updates.reshipperOrderEditEnabled = Boolean(body.reshipperOrderEditEnabled);
+  if (body.reshipperCanEditStatus !== undefined) updates.reshipperCanEditStatus = Boolean(body.reshipperCanEditStatus);
+  if (body.reshipperCanEditTracking !== undefined) updates.reshipperCanEditTracking = Boolean(body.reshipperCanEditTracking);
+  if (body.reshipperCanEditAddress !== undefined) updates.reshipperCanEditAddress = Boolean(body.reshipperCanEditAddress);
   if (body.showStockView !== undefined) updates.showStockView = Boolean(body.showStockView);
   if (body.allowOrderAddons !== undefined) updates.allowOrderAddons = Boolean(body.allowOrderAddons);
   if (body.allowEditOrderWhenClosed !== undefined) updates.allowEditOrderWhenClosed = Boolean(body.allowEditOrderWhenClosed);

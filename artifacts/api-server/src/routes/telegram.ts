@@ -4,7 +4,7 @@ import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessage
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
-import { requireAccount } from "../middleware/account-auth";
+import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
 import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
@@ -3399,6 +3399,108 @@ router.post("/account/telegram/link-init", requireAccount, async (req, res): Pro
     deepLink: botUsername ? `https://t.me/${botUsername}?start=${code}` : null,
     instruction: `Send /link ${code} to the bot`,
   });
+});
+
+// ── POST /api/account/telegram/miniapp-login — auto-login from Mini App initData ──
+// Called by the frontend on mount when window.Telegram.WebApp.initData is present.
+// Validates the signed payload from Telegram, looks up the account by telegramChatId,
+// and issues a session cookie — no password required.
+router.post("/account/telegram/miniapp-login", async (req, res): Promise<void> => {
+  const { initData } = req.body as { initData?: string };
+
+  if (!initData || typeof initData !== "string") {
+    res.status(400).json({ error: "initData required" });
+    return;
+  }
+
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    res.status(503).json({ error: "Bot not configured" });
+    return;
+  }
+
+  // Parse initData as URLSearchParams
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(initData);
+  } catch {
+    res.status(400).json({ error: "Invalid initData format" });
+    return;
+  }
+
+  const hash = params.get("hash");
+  if (!hash) {
+    res.status(400).json({ error: "Invalid initData: missing hash" });
+    return;
+  }
+
+  // Build data_check_string: all params except hash, sorted alphabetically, joined with \n
+  params.delete("hash");
+  const dataCheckString = Array.from(params.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+
+  // Mini App key derivation differs from Login Widget:
+  // secretKey = HMAC-SHA256("WebAppData", botToken)  (not SHA256(botToken))
+  const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
+  const expectedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+  if (expectedHash !== hash) {
+    res.status(403).json({ error: "Invalid initData signature" });
+    return;
+  }
+
+  // Reject stale payloads (5 minutes — Mini App initData is short-lived)
+  const authDate = Number(params.get("auth_date"));
+  if (!authDate || Date.now() / 1000 - authDate > 300) {
+    res.status(403).json({ error: "initData expired — please reopen from Telegram" });
+    return;
+  }
+
+  // Extract Telegram user object
+  const userStr = params.get("user");
+  if (!userStr) {
+    res.status(400).json({ error: "No user in initData" });
+    return;
+  }
+  let tgUser: { id: number; username?: string };
+  try {
+    tgUser = JSON.parse(userStr);
+  } catch {
+    res.status(400).json({ error: "Invalid user in initData" });
+    return;
+  }
+  if (!tgUser?.id) {
+    res.status(400).json({ error: "No user ID in initData" });
+    return;
+  }
+
+  // Look up account by numeric Telegram chat/user ID
+  const [account] = await db
+    .select({ telegramUsername: accountsTable.telegramUsername, accountStatus: accountsTable.accountStatus })
+    .from(accountsTable)
+    .where(eq(accountsTable.telegramChatId, String(tgUser.id)));
+
+  if (!account) {
+    // No account linked to this Telegram ID — tell frontend to show normal login
+    res.status(404).json({ error: "no_account", message: "No account linked to this Telegram. Please log in manually." });
+    return;
+  }
+
+  if (account.accountStatus !== "active") {
+    res.status(403).json({ error: "Account suspended" });
+    return;
+  }
+
+  issueAccountCookie(res, account.telegramUsername);
+
+  writeLog("login", "info", "telegram_miniapp_login",
+    `Mini App auto-login: ${account.telegramUsername} (tgId=${tgUser.id})`,
+    { telegramUsername: account.telegramUsername, telegramId: tgUser.id },
+  ).catch(() => {});
+
+  res.json({ ok: true, telegramUsername: account.telegramUsername });
 });
 
 // ── POST /api/account/telegram/widget-auth — verify Telegram Login Widget payload ─

@@ -64,6 +64,30 @@ export function useAccount(): UseAccountResult {
   };
 }
 
+// ── Telegram Mini App auto-login ──────────────────────────────────────────────
+// Fires once on mount (from App.tsx) when window.Telegram.WebApp.initData is
+// present and the user is not yet authenticated.
+export function useTelegramAutoLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (initData: string) => {
+      const res = await fetch("/api/account/telegram/miniapp-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Auto-login failed");
+      return data as { ok: boolean; telegramUsername: string };
+    },
+    onSuccess: () => {
+      qc.clear();
+      qc.invalidateQueries({ queryKey: ["account", "me"] });
+    },
+  });
+}
+
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({

@@ -240,35 +240,87 @@ export function GBForm({ secret, initial, hideStatus, onSave, onCancel }: {
           <strong>Allowed:</strong> only these countries can order (leave empty = all countries allowed).<br />
           <strong>Excluded:</strong> these countries are blocked from ordering.
         </p>
-        {(["allowedCountries", "excludedCountries"] as const).map(field => (
-          <div key={field} className="space-y-1.5">
-            <Label className="text-sm font-medium">{field === "allowedCountries" ? "Allowed Countries" : "Excluded Countries"}</Label>
-            {form[field].length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-1">
-                {form[field].map(c => (
-                  <span key={c} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                    style={{ background: field === "allowedCountries" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: field === "allowedCountries" ? "#16a34a" : "#dc2626" }}>
-                    {COUNTRY_LIST.find(x => x.code === c.toUpperCase() || x.name === c)?.name ?? c}
-                    <button type="button" className="hover:opacity-70"
-                      onClick={() => setForm(p => ({ ...p, [field]: p[field].filter(x => x !== c) }))}>×</button>
-                  </span>
-                ))}
+        {(["allowedCountries", "excludedCountries"] as const).map(field => {
+          const euCodes = EU_COUNTRIES.map(c => c.code);
+          const hasEu = euCodes.every(c => form[field].includes(c));
+          const hasAnyEu = euCodes.some(c => form[field].includes(c));
+          const isAllowed = field === "allowedCountries";
+          const chipBg = isAllowed ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)";
+          const chipColor = isAllowed ? "#16a34a" : "#dc2626";
+          const addCodes = (codes: string[]) =>
+            setForm(p => ({ ...p, [field]: [...p[field], ...codes.filter(c => !p[field].includes(c))] }));
+          const removeCodes = (codes: string[]) =>
+            setForm(p => ({ ...p, [field]: p[field].filter(c => !codes.includes(c)) }));
+          return (
+            <div key={field} className="space-y-1.5">
+              <Label className="text-sm font-medium">{isAllowed ? "Allowed Countries" : "Excluded Countries"}</Label>
+
+              {/* Quick-action buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                {!hasEu && (
+                  <button type="button"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    onClick={() => addCodes(euCodes)}>
+                    🇪🇺 Add all EU
+                  </button>
+                )}
+                {hasAnyEu && (
+                  <button type="button"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                    onClick={() => removeCodes(euCodes)}>
+                    Remove EU
+                  </button>
+                )}
+                {!form[field].includes("GB") || !form[field].includes("UK") ? (
+                  <button type="button"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors"
+                    onClick={() => addCodes(["GB", "UK"])}>
+                    🇬🇧 Add GB + UK
+                  </button>
+                ) : (
+                  <button type="button"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-colors"
+                    onClick={() => removeCodes(["GB", "UK"])}>
+                    Remove GB + UK
+                  </button>
+                )}
               </div>
-            )}
-            <select
-              className="w-full h-9 rounded-xl border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              value=""
-              onChange={e => {
-                const val = e.target.value;
-                if (!val) return;
-                setForm(p => ({ ...p, [field]: p[field].includes(val) ? p[field] : [...p[field], val] }));
-                e.target.value = "";
-              }}>
-              <option value="">— Add a country —</option>
-              {COUNTRY_LIST.filter(c => !form[field].map(v => v.length === 2 ? v.toUpperCase() : (COUNTRY_LIST.find(x => x.name === v)?.code ?? v)).includes(c.code)).map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
-            </select>
-          </div>
-        ))}
+
+              {/* Selected country chips */}
+              {form[field].length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {form[field].map(c => (
+                    <span key={c} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: chipBg, color: chipColor }}>
+                      {COUNTRY_LIST.find(x => x.code === c.toUpperCase() || x.name === c)?.name ?? c}
+                      {" "}({c})
+                      <button type="button" className="hover:opacity-70"
+                        onClick={() => setForm(p => ({ ...p, [field]: p[field].filter(x => x !== c) }))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Single-country dropdown */}
+              <select
+                className="w-full h-9 rounded-xl border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value=""
+                onChange={e => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  setForm(p => ({ ...p, [field]: p[field].includes(val) ? p[field] : [...p[field], val] }));
+                  e.target.value = "";
+                }}>
+                <option value="">— Add a country —</option>
+                {COUNTRY_LIST.filter(c => !form[field].includes(c.code)).map(c => (
+                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
+                ))}
+                {/* UK alias — always show if not already added */}
+                {!form[field].includes("UK") && <option value="UK">United Kingdom (UK alias)</option>}
+              </select>
+            </div>
+          );
+        })}
       </div>
 
       {/* Blocked Accounts */}
