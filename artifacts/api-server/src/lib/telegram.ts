@@ -278,6 +278,67 @@ export async function sendTelegramMessage(
   return ok;
 }
 
+/**
+ * Send a photo to a Telegram chat. Accepts either a public HTTPS URL or a
+ * base64 data URL (data:<mime>;base64,<data>). The caption and inline keyboard
+ * are optional. Falls back silently to sendTelegramMessageFull if the photo
+ * send fails so the user still sees the text.
+ */
+export async function sendTelegramPhoto(
+  chatId: string,
+  photoUrlOrBase64: string,
+  caption: string,
+  parseMode: "HTML" | "Markdown" | "" = "HTML",
+  extraPayload?: Record<string, unknown>,
+): Promise<{ ok: boolean; messageId?: number }> {
+  const { token } = await getCredentials();
+  if (!token) return { ok: false };
+
+  const isDataUrl = photoUrlOrBase64.startsWith("data:");
+
+  try {
+    if (isDataUrl) {
+      const match = photoUrlOrBase64.match(/^data:([^;]+);base64,(.+)$/s);
+      if (!match) return { ok: false };
+      const [, mimeType, b64] = match;
+      const buffer = Buffer.from(b64, "base64");
+      const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+
+      const form = new FormData();
+      form.append("chat_id", chatId);
+      form.append("photo", new Blob([buffer], { type: mimeType }), `photo.${ext}`);
+      form.append("caption", caption);
+      if (parseMode) form.append("parse_mode", parseMode);
+      if (extraPayload?.reply_markup) form.append("reply_markup", JSON.stringify(extraPayload.reply_markup));
+
+      const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json() as { ok: boolean; result?: { message_id?: number } };
+      return { ok: data.ok, messageId: data.result?.message_id };
+    } else {
+      const payload: Record<string, unknown> = {
+        chat_id: chatId,
+        photo: photoUrlOrBase64,
+        caption,
+        ...extraPayload,
+      };
+      if (parseMode) payload.parse_mode = parseMode;
+      const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json() as { ok: boolean; result?: { message_id?: number } };
+      return { ok: data.ok, messageId: data.result?.message_id };
+    }
+  } catch (err) {
+    console.error("[telegram] sendPhoto error:", err);
+    return { ok: false };
+  }
+}
+
 export async function sendAdminMessage(text: string): Promise<boolean> {
   const { chatId } = await getCredentials();
   // Fire Discord webhook in parallel (best-effort)

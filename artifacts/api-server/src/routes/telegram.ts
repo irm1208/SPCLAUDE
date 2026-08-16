@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable, wholesaleChatTelegramMessagesTable } from "@workspace/db";
+import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable, wholesaleChatTelegramMessagesTable, wholesaleSharesTable, wholesaleShareMembersTable } from "@workspace/db";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
-import { sendTelegramMessage, sendTelegramMessageFull, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
+import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
 import { translateZh } from "../lib/translate-zh";
@@ -188,11 +188,13 @@ interface SageHistoryEntry {
 }
 
 interface TicketConv {
-  step: "awaiting_category" | "awaiting_gbtype" | "awaiting_gb" | "awaiting_subject" | "awaiting_body" | "labs_search" | "sage_chat";
+  step: "awaiting_category" | "awaiting_gbtype" | "awaiting_gb" | "awaiting_gbsubtype" | "awaiting_ws" | "awaiting_subject" | "awaiting_body" | "labs_search" | "sage_chat";
   category?: string;
   issueType?: string;
   groupBuyId?: string;
   groupBuyName?: string;
+  wholesaleShareId?: string;
+  wholesaleShareName?: string;
   subject?: string;
   sageHistory?: SageHistoryEntry[];
   ts: number;
@@ -317,6 +319,67 @@ async function offerGroupBuyPicker(chatId: string, username: string): Promise<vo
   );
 }
 
+async function offerWholesaleOrderPicker(chatId: string, username: string): Promise<void> {
+  setConv(chatId, { step: "awaiting_ws", category: "wholesale" });
+
+  const appUrl = (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(/\/+$/, "");
+
+  // Fetch shares where the user is a member OR the creator
+  const memberShares = await db
+    .select({ shareId: wholesaleShareMembersTable.shareId })
+    .from(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.username, username))
+    .limit(15);
+
+  const shareIds = [...new Set(memberShares.map(r => r.shareId))];
+
+  let shares: { id: string; status: string }[] = [];
+  if (shareIds.length > 0) {
+    shares = await db
+      .select({ id: wholesaleSharesTable.id, status: wholesaleSharesTable.status })
+      .from(wholesaleSharesTable)
+      .where(inArray(wholesaleSharesTable.id, shareIds))
+      .limit(12);
+  }
+
+  if (shares.length === 0) {
+    clearConv(chatId);
+    await sendTelegramMessageFull(
+      chatId,
+      `🤝 <b>Wholesale Ticket</b>\n\nYou don't have any wholesale orders on your account.\n\nVisit the website to view your wholesale activity.`,
+      "HTML",
+      undefined,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🌐 View website", url: appUrl }],
+            [{ text: "⬅️ Back", callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
+          ],
+        },
+      },
+    );
+    return;
+  }
+
+  const STATUS_EMOJI: Record<string, string> = {
+    open: "🟢", locked: "🔒", submitted: "📤", delivered: "✅", cancelled: "❌",
+  };
+
+  const keyboard = shares.map(s => {
+    const emoji = STATUS_EMOJI[s.status] ?? "🤝";
+    return [{ text: `${emoji} Order #${s.id}`, callback_data: `tc:ws:${s.id}` }];
+  });
+  keyboard.push([{ text: "⬅️ Back", callback_data: "tc:back:category" }, { text: "🏠 Menu", callback_data: "mn:menu" }]);
+
+  await sendTelegramMessageFull(
+    chatId,
+    "🤝 <b>Wholesale</b>\n\nWhich order is this about?",
+    "HTML",
+    undefined,
+    { reply_markup: { inline_keyboard: keyboard } },
+  );
+}
+
 async function askForSubject(chatId: string): Promise<void> {
   await sendTelegramMessageFull(
     chatId,
@@ -370,7 +433,7 @@ async function finaliseTicket(
   });
 
   const catLabel = CATEGORY_LABELS[category] ?? category;
-  const gbLabel  = conv.groupBuyName ? ` — ${conv.groupBuyName}` : "";
+  const gbLabel  = conv.groupBuyName ? ` — ${conv.groupBuyName}` : conv.wholesaleShareName ? ` — ${conv.wholesaleShareName}` : "";
 
   const confirmResult = await sendTelegramMessageFull(
     chatId,
@@ -793,7 +856,6 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
     ],
     [
       { text: "🧪 Lab Reports",       callback_data: "mn:labs" },
-      { text: "🤖 Ask Sage",          callback_data: "mn:sage" },
     ],
     [
       { text: "🔔 Notifications",     callback_data: "mn:notif" },
@@ -953,6 +1015,12 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           const conv = getConv(cbChatId);
           await offerGroupBuyPicker(cbChatId, username);
           if (conv?.issueType) setConv(cbChatId, { ...getConv(cbChatId)!, issueType: conv.issueType });
+        } else if (dest === "ws") {
+          await offerWholesaleOrderPicker(cbChatId, username);
+        } else if (dest === "gb") {
+          const conv = getConv(cbChatId);
+          await offerGroupBuyPicker(cbChatId, username);
+          if (conv?.issueType) setConv(cbChatId, { ...getConv(cbChatId)!, issueType: conv.issueType });
         }
 
       } else if (cbData.startsWith("tc:cat:")) {
@@ -963,10 +1031,17 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
         if (category === "group_buy") {
           await askGroupBuyIssueType(cbChatId);
+        } else if (category === "wholesale") {
+          await offerWholesaleOrderPicker(cbChatId, username);
         } else {
           setConv(cbChatId, { step: "awaiting_subject", category });
           await askForSubject(cbChatId);
         }
+
+      } else if (cbData.startsWith("tc:ws:")) {
+        const shareId = cbData.slice("tc:ws:".length);
+        setConv(cbChatId, { step: "awaiting_subject", category: "wholesale", wholesaleShareId: shareId, wholesaleShareName: `Order #${shareId}` });
+        await askForSubject(cbChatId);
 
       } else if (cbData.startsWith("tc:gbtype:")) {
         const issueType = cbData.slice("tc:gbtype:".length);
@@ -982,7 +1057,33 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           [gbId],
         );
         const gbName = result.rows[0]?.name ?? gbId;
-        setConv(cbChatId, { step: "awaiting_subject", category: "group_buy", issueType: conv?.issueType, groupBuyId: gbId, groupBuyName: gbName });
+        setConv(cbChatId, { step: "awaiting_gbsubtype", category: "group_buy", issueType: conv?.issueType, groupBuyId: gbId, groupBuyName: gbName });
+        await sendTelegramMessageFull(
+          cbChatId,
+          `🌍 <b>${gbName}</b>\n\nWhat is this about?`,
+          "HTML",
+          undefined,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "📦 Order", callback_data: `tc:gbsub:order:${gbId}` }],
+                [{ text: "💬 Other", callback_data: `tc:gbsub:other:${gbId}` }],
+                [{ text: "⬅️ Back", callback_data: "tc:back:gb" }, { text: "🏠 Menu", callback_data: "mn:menu" }],
+              ],
+            },
+          },
+        );
+
+      } else if (cbData.startsWith("tc:gbsub:")) {
+        // format: tc:gbsub:<subtype>:<gbId>
+        const rest = cbData.slice("tc:gbsub:".length);
+        const colonIdx = rest.indexOf(":");
+        const subtype = rest.slice(0, colonIdx);   // "order" | "other"
+        const gbId    = rest.slice(colonIdx + 1);
+        const conv    = getConv(cbChatId);
+        const gbName  = conv?.groupBuyName ?? gbId;
+        const issueType = subtype === "order" ? "order_issue" : "general_support";
+        setConv(cbChatId, { step: "awaiting_subject", category: "group_buy", issueType, groupBuyId: gbId, groupBuyName: gbName });
         await askForSubject(cbChatId);
       }
 
@@ -2256,16 +2357,15 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           return `${emoji} <b>${gb.name}</b>`;
         }).filter(Boolean);
 
-        const keyboard: { text: string; url?: string; callback_data?: string }[][] = (memberships.map(m => {
+        const keyboard: { text: string; url?: string; web_app?: { url: string }; callback_data?: string }[][] = (memberships.map(m => {
           const gb = gbMap.get(m.groupBuyId);
           if (!gb) return null;
           const canOrder = gb.status === "open";
-          const url = canOrder
-            ? `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}`
-            : `${appUrl}/account`;
-          const label = canOrder ? `🛒 Order — ${gb.name}` : gb.name;
-          return [{ text: label, url }];
-        }).filter(Boolean) as { text: string; url: string }[][]);
+          if (canOrder) {
+            return [{ text: `🟢 ${gb.name}`, web_app: { url: `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}` } }];
+          }
+          return [{ text: gb.name, url: `${appUrl}/account` }];
+        }).filter(Boolean) as { text: string; url?: string; web_app?: { url: string } }[][]);
         keyboard.push([{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]);
 
         const { template: gbsHeaderTpl } = await getTemplate("bot_gbs_header");
@@ -2280,7 +2380,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       // ── 🛒 Active Group Buys (public, open) ─────────────────────────────────
       if (action === "active_gbs") {
         const activeGbs = await db
-          .select({ id: groupBuysTable.id, name: groupBuysTable.name, closeDate: groupBuysTable.closeDate, description: groupBuysTable.description })
+          .select({ id: groupBuysTable.id, name: groupBuysTable.name, closeDate: groupBuysTable.closeDate, description: groupBuysTable.description, telegramImageUrl: groupBuysTable.telegramImageUrl })
           .from(groupBuysTable)
           .where(and(
             eq(groupBuysTable.status, "active"),
@@ -2310,11 +2410,14 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           const closeStr = gb.closeDate
             ? ` · closes ${new Date(gb.closeDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
             : "";
-          return `🛒 <b>${gb.name}</b>${closeStr}`;
+          return `🟢 <b>${gb.name}</b>${closeStr}`;
         });
 
-        const gbKeyboard: { text: string; url?: string; callback_data?: string }[][] = activeGbs.map(gb => [
-          { text: `🛒 Order — ${gb.name}`, url: `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}` },
+        const gbKeyboard: { text: string; url?: string; web_app?: { url: string }; callback_data?: string }[][] = activeGbs.map(gb => [
+          // If the GB has an image, go to a detail card first; otherwise open order directly
+          gb.telegramImageUrl
+            ? { text: `🟢 ${gb.name}`, callback_data: `mn:gb_detail:${gb.id}` }
+            : { text: `🟢 ${gb.name}`, web_app: { url: `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}` } },
         ]);
         gbKeyboard.push([{ text: "🌐 All group buys", url: `${appUrl}` }]);
         gbKeyboard.push([{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]);
@@ -2326,6 +2429,42 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           undefined,
           { reply_markup: { inline_keyboard: gbKeyboard } },
         );
+        res.json({ ok: true }); return;
+      }
+
+      // ── 🖼️ GB detail card (with image) ──────────────────────────────────────
+      if (action.startsWith("gb_detail:")) {
+        const gbId = action.slice("gb_detail:".length);
+        const [gb] = await db
+          .select({ id: groupBuysTable.id, name: groupBuysTable.name, description: groupBuysTable.description, closeDate: groupBuysTable.closeDate, telegramImageUrl: groupBuysTable.telegramImageUrl })
+          .from(groupBuysTable)
+          .where(eq(groupBuysTable.id, gbId))
+          .limit(1);
+
+        if (!gb) { res.json({ ok: true }); return; }
+
+        const closeStr = gb.closeDate
+          ? `\n📅 Closes ${new Date(gb.closeDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`
+          : "";
+        const desc = gb.description ? `\n\n${gb.description.slice(0, 500)}` : "";
+        const caption = `🟢 <b>${gb.name}</b>${closeStr}${desc}`;
+
+        const detailKeyboard = {
+          inline_keyboard: [
+            [{ text: "🛒 Order now", web_app: { url: `${appUrl}/order?gbId=${encodeURIComponent(gb.id)}` } }],
+            [{ text: "⬅️ Back", callback_data: "mn:active_gbs" }],
+          ],
+        };
+
+        if (gb.telegramImageUrl) {
+          const photoResult = await sendTelegramPhoto(cbChatId, gb.telegramImageUrl, caption, "HTML", { reply_markup: detailKeyboard });
+          if (!photoResult.ok) {
+            // Fallback to text if photo fails
+            await sendTelegramMessageFull(cbChatId, caption, "HTML", undefined, { reply_markup: detailKeyboard });
+          }
+        } else {
+          await sendTelegramMessageFull(cbChatId, caption, "HTML", undefined, { reply_markup: detailKeyboard });
+        }
         res.json({ ok: true }); return;
       }
 

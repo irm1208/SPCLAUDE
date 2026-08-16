@@ -63,6 +63,7 @@ export type GroupBuy = Record<string, unknown> & {
   qrUploadRoyalMailEnabled?: boolean;
   qrUploadMessage?: string | null;
   orderPageMessage?: string | null;
+  telegramImageUrl?: string | null;
   countryLegsEnabled?: boolean;
   organiserOrderEditEnabled?: boolean;
   organiserCanEditStatus?: boolean;

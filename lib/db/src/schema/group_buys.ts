@@ -101,6 +101,7 @@ export const groupBuysTable = pgTable("group_buys", {
   qrUploadCouriers: jsonb("qr_upload_couriers").$type<string[]>(),
   orderPageMessage: text("order_page_message"),
   paymentBanner: text("payment_banner"),
+  telegramImageUrl: text("telegram_image_url"),
   reshipperInviteCode: text("reshipper_invite_code").unique(),
   countryLegsEnabled: boolean("country_legs_enabled").notNull().default(false),
   allowReshipperCode: boolean("allow_reshipper_code").notNull().default(false),

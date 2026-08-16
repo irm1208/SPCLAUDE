@@ -54,6 +54,10 @@ export function GBList({ secret, onSelect, onNew }: {
   const [openOrders, setOpenOrders] = useState<Set<string>>(new Set());
   const [ordersCache, setOrdersCache] = useState<Record<string, GbOrderSummary[]>>({});
   const [ordersLoading, setOrdersLoading] = useState<Record<string, boolean>>({});
+  const [tgImgSaving, setTgImgSaving] = useState<string | null>(null);
+  const [tgImgMsg, setTgImgMsg] = useState<Record<string, string>>({});
+  const tgImgInputRef = useRef<HTMLInputElement>(null);
+  const tgImgTargetRef = useRef<string | null>(null);
 
   const loadGbs = useCallback(() => {
     setLoading(true);
@@ -125,6 +129,34 @@ export function GBList({ secret, onSelect, onNew }: {
     }
   };
 
+  const saveTgImage = async (gbId: string, dataUrl: string | null) => {
+    setTgImgSaving(gbId);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gbId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ telegramImageUrl: dataUrl }),
+      });
+      if (!res.ok) { setTgImgMsg(m => ({ ...m, [gbId]: "Save failed" })); return; }
+      const updated = await res.json();
+      setGbs(prev => prev.map(g => g.id === gbId ? { ...g, ...updated } : g));
+      setTgImgMsg(m => ({ ...m, [gbId]: dataUrl ? "Saved!" : "Removed" }));
+      setTimeout(() => setTgImgMsg(m => { const n = { ...m }; delete n[gbId]; return n; }), 2500);
+    } finally {
+      setTgImgSaving(null);
+    }
+  };
+
+  const handleTgImgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const gbId = tgImgTargetRef.current;
+    if (!file || !gbId) return;
+    const reader = new FileReader();
+    reader.onload = () => { saveTgImage(gbId, reader.result as string); };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const deleteGb = async (gb: GroupBuy) => {
     setActioning(prev => ({ ...prev, [gb.id]: "delete" }));
     setConfirmDelete(null);
@@ -146,6 +178,14 @@ export function GBList({ secret, onSelect, onNew }: {
 
   return (
     <div className="space-y-4">
+      {/* Hidden file input for Telegram image upload */}
+      <input
+        ref={tgImgInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleTgImgFileChange}
+      />
       {actionError && (
         <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/10 px-4 py-3 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
@@ -389,6 +429,49 @@ export function GBList({ secret, onSelect, onNew }: {
                         : <Trash2 className="w-4 h-4" />}
                     </button>
                   </div>
+                </div>
+
+                {/* Telegram image row */}
+                <div className="border-t border-border px-4 py-2 flex items-center gap-3">
+                  <span className="text-[11px] font-semibold text-muted-foreground shrink-0">📷 Telegram image</span>
+                  {gb.telegramImageUrl ? (
+                    <>
+                      <img
+                        src={gb.telegramImageUrl as string}
+                        alt="Telegram banner"
+                        className="w-10 h-10 rounded object-cover border border-border shrink-0"
+                      />
+                      <div className="flex items-center gap-2 ml-auto">
+                        {tgImgMsg[gb.id] && <span className="text-[11px] text-green-600 font-medium">{tgImgMsg[gb.id]}</span>}
+                        <button
+                          onClick={() => { tgImgTargetRef.current = gb.id; tgImgInputRef.current?.click(); }}
+                          disabled={tgImgSaving === gb.id}
+                          className="text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
+                        >
+                          {tgImgSaving === gb.id ? "Saving…" : "Change"}
+                        </button>
+                        <button
+                          onClick={() => saveTgImage(gb.id, null)}
+                          disabled={tgImgSaving === gb.id}
+                          className="text-[11px] font-semibold text-destructive hover:underline disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 ml-auto">
+                      {tgImgMsg[gb.id] && <span className="text-[11px] text-green-600 font-medium">{tgImgMsg[gb.id]}</span>}
+                      <span className="text-[11px] text-muted-foreground">None set</span>
+                      <button
+                        onClick={() => { tgImgTargetRef.current = gb.id; tgImgInputRef.current?.click(); }}
+                        disabled={tgImgSaving === gb.id}
+                        className="text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
+                      >
+                        {tgImgSaving === gb.id ? "Saving…" : "Upload"}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <AnimatePresence>

@@ -326,6 +326,7 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (qrUploadMessage !== undefined) updates.qrUploadMessage = qrUploadMessage ? String(qrUploadMessage).trim() : null;
   if (orderPageMessage !== undefined) updates.orderPageMessage = orderPageMessage ? String(orderPageMessage).trim() : null;
   if (req.body.paymentBanner !== undefined) updates.paymentBanner = req.body.paymentBanner ? String(req.body.paymentBanner).trim() : null;
+  if (req.body.telegramImageUrl !== undefined) updates.telegramImageUrl = req.body.telegramImageUrl ? String(req.body.telegramImageUrl).trim() : null;
   if (countryLegsEnabled !== undefined) updates.countryLegsEnabled = Boolean(countryLegsEnabled);
   if (vendorShippingEnabled !== undefined) updates.vendorShippingEnabled = Boolean(vendorShippingEnabled);
   if (vendorShippingMessage !== undefined) updates.vendorShippingMessage = vendorShippingMessage ? String(vendorShippingMessage).trim() : null;
