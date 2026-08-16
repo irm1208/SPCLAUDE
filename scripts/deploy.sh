@@ -44,6 +44,18 @@ async function run() {
            FOREIGN KEY (account_username) REFERENCES public.accounts(telegram_username) ON DELETE CASCADE ON UPDATE CASCADE;
        END IF;
      END \$\$\`,
+    // Rename organiser_todos FK to match drizzle-generated name
+    \`DO \$\$ BEGIN
+       IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'organiser_todos_group_buy_id_group_buys_id_fk') THEN
+         ALTER TABLE organiser_todos DROP CONSTRAINT organiser_todos_group_buy_id_group_buys_id_fk;
+       END IF;
+     END \$\$\`,
+    \`DO \$\$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'organiser_todos_group_buy_id_fkey') THEN
+         ALTER TABLE organiser_todos ADD CONSTRAINT organiser_todos_group_buy_id_fkey
+           FOREIGN KEY (group_buy_id) REFERENCES public.group_buys(id) ON DELETE CASCADE ON UPDATE NO ACTION;
+       END IF;
+     END \$\$\`,
   ];
   for (const sql of migrations) {
     console.log('[migrate]', sql.split('\\n')[0].trim());
