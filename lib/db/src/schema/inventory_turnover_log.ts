@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, integer, timestamp, index } from "drizzle-orm/pg-core";
 
 export const inventoryTurnoverLogTable = pgTable("inventory_turnover_log", {
   id: serial("id").primaryKey(),
@@ -11,7 +11,9 @@ export const inventoryTurnoverLogTable = pgTable("inventory_turnover_log", {
   prevStock: integer("prev_stock"),
   restockedTo: integer("restocked_to"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("idx_turnover_log_code").on(t.qiyunleCode),
+]);
 
 export type InventoryTurnoverLog = typeof inventoryTurnoverLogTable.$inferSelect;
 export type NewInventoryTurnoverLog = typeof inventoryTurnoverLogTable.$inferInsert;
