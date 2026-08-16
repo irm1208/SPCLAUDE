@@ -10,6 +10,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, getAccountHandle, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
+import { COUNTRY_LIST } from "@/data/countries";
 import { RulesetModal } from "@/components/RulesetModal";
 import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
 import { PageLayout } from "@/components/PageLayout";
@@ -457,15 +458,25 @@ function JoinModal({ onClose }: { onClose: () => void }) {
     selectedGbId && activeGbs.find(g => g.id === selectedGbId)?.countryLegsEnabled ? selectedGbId : null
   );
 
-  const userCountry = account?.country ?? null;
+  const rawUserCountry = account?.country ?? null;
+  // Keep raw value for display ("No open group buys for X")
+  const userCountry = rawUserCountry;
+  // Normalise to ISO code for comparison against reshipperCountries (ISO codes from server).
+  // account.country may be stored as a full name ("United Kingdom") or a code ("GB").
+  const userCountryCode = rawUserCountry
+    ? (COUNTRY_LIST.find(c => c.name.toLowerCase() === rawUserCountry.trim().toLowerCase())?.code?.toUpperCase()
+      ?? COUNTRY_LIST.find(c => c.code.toLowerCase() === rawUserCountry.trim().toLowerCase())?.code?.toUpperCase()
+      ?? rawUserCountry.trim().toUpperCase())
+    : null;
 
   // Filter GBs: if a GB has reshippers assigned, only show it when the user's country matches.
   // Exception: if country legs are enabled, skip this check — the leg itself controls access.
+  // Reshipper countries from the API are normalised ISO codes; compare uppercased on both sides.
   const visibleGbs = activeGbs.filter(gb => {
     if (gb.reshipperCountries.length === 0) return true;
-    if (!userCountry) return true;
+    if (!rawUserCountry) return true;
     if (gb.countryLegsEnabled) return true;
-    return gb.reshipperCountries.includes(userCountry);
+    return gb.reshipperCountries.some(c => c.toUpperCase() === userCountryCode);
   });
 
   const selectedGb = visibleGbs.find(g => g.id === selectedGbId) ?? null;
