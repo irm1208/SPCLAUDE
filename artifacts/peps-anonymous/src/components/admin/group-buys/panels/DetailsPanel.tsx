@@ -201,11 +201,25 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { setCardImageError("Please select an image file."); return; }
-    if (file.size > 5 * 1024 * 1024) { setCardImageError("Image must be under 5 MB."); return; }
+    if (file.size > 10 * 1024 * 1024) { setCardImageError("Image must be under 10 MB."); return; }
     setCardImageError(null);
-    const reader = new FileReader();
-    reader.onload = () => setCardImageUrl(reader.result as string);
-    reader.readAsDataURL(file);
+    // Compress via canvas before storing in state — avoids crashes from multi-MB base64 strings
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX = 1200;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { setCardImageError("Canvas unavailable — try a different browser."); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      setCardImageUrl(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); setCardImageError("Could not read image file."); };
+    img.src = objectUrl;
   };
 
   const saveCardImage = async () => {

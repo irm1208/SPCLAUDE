@@ -151,10 +151,23 @@ export function GBList({ secret, onSelect, onNew }: {
     const file = e.target.files?.[0];
     const gbId = tgImgTargetRef.current;
     if (!file || !gbId) return;
-    const reader = new FileReader();
-    reader.onload = () => { saveTgImage(gbId, reader.result as string); };
-    reader.readAsDataURL(file);
     e.target.value = "";
+    // Compress via canvas before sending — avoids large base64 payloads
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX = 1200;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      saveTgImage(gbId, canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.src = objectUrl;
   };
 
   const deleteGb = async (gb: GroupBuy) => {
