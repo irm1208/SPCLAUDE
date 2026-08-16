@@ -7596,7 +7596,15 @@ export default function CustomerPortal() {
         line2: account.addressLine2 ?? "",
         city: account.addressCity ?? "",
         postcode: account.addressPostcode ?? "",
-        country: account.addressCountry ?? account.country ?? "",
+        country: (() => {
+          const raw = account.addressCountry ?? account.country ?? "";
+          if (!raw) return "";
+          // Stored value may be an ISO code ("GB") after server normalisation — resolve to
+          // full name so the <select> (which uses option value={c.name}) shows the right entry.
+          return COUNTRY_LIST.find(c => c.code.toUpperCase() === raw.toUpperCase())?.name
+            ?? COUNTRY_LIST.find(c => c.name.toLowerCase() === raw.toLowerCase())?.name
+            ?? raw;
+        })(),
         phone: (account as Record<string, unknown>).addressPhone as string ?? "",
         phonePrefix: (account as Record<string, unknown>).addressPhonePrefix as string ?? "+44",
       });
