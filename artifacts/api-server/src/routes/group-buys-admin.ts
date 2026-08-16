@@ -2000,9 +2000,10 @@ router.post("/admin/group-buys/:id/reshippers", async (req, res): Promise<void> 
   if (!requireAdmin(req, res)) return;
   const { id } = req.params;
 
-  const { reshipperUsername, country, paymentTarget, enabledPaymentMethods } = req.body as {
+  const { reshipperUsername, country, countries, paymentTarget, enabledPaymentMethods } = req.body as {
     reshipperUsername?: string;
     country?: string;
+    countries?: string[];
     paymentTarget?: string;
     enabledPaymentMethods?: Record<string, boolean>;
   };
@@ -2011,8 +2012,14 @@ router.post("/admin/group-buys/:id/reshippers", async (req, res): Promise<void> 
     res.status(400).json({ error: "reshipperUsername is required" });
     return;
   }
-  if (!country || typeof country !== "string") {
-    res.status(400).json({ error: "country is required" });
+
+  // Accept either a `countries` array or a single `country`. At least one is required.
+  const resolvedCountries: string[] | null = Array.isArray(countries) && countries.length > 0
+    ? countries.map(c => String(c).trim().toUpperCase()).filter(Boolean)
+    : null;
+  const primaryCountry = resolvedCountries?.[0] ?? (country?.trim() ?? "");
+  if (!primaryCountry) {
+    res.status(400).json({ error: "country or countries is required" });
     return;
   }
 
@@ -2040,7 +2047,8 @@ router.post("/admin/group-buys/:id/reshippers", async (req, res): Promise<void> 
         id: randomUUID(),
         gbId: id,
         reshipperUsername: reshipperUsername.trim(),
-        country: country.trim(),
+        country: primaryCountry,
+        countries: resolvedCountries,
         paymentTarget: resolvedTarget,
         enabledPaymentMethods: enabledPaymentMethods ?? {},
       })
@@ -2069,7 +2077,7 @@ router.patch("/admin/group-buys/:id/reshippers/:username", async (req, res): Pro
 
   if (!assignment) { res.status(404).json({ error: "Reshipper assignment not found" }); return; }
 
-  const { enabled, paymentTarget, enabledPaymentMethods, reshipperFeeEnabled, reshipperFeeType, reshipperFeeAmount, allowPayments, allowVendorShippingSplit } = req.body as {
+  const { enabled, paymentTarget, enabledPaymentMethods, reshipperFeeEnabled, reshipperFeeType, reshipperFeeAmount, allowPayments, allowVendorShippingSplit, countries: patchCountries } = req.body as {
     enabled?: boolean;
     paymentTarget?: string;
     enabledPaymentMethods?: Record<string, boolean>;
@@ -2078,6 +2086,7 @@ router.patch("/admin/group-buys/:id/reshippers/:username", async (req, res): Pro
     reshipperFeeAmount?: string | null;
     allowPayments?: boolean;
     allowVendorShippingSplit?: boolean;
+    countries?: string[] | null;
   };
 
   const VALID_PAYMENT_TARGETS = ["reshipper", "admin"] as const;
@@ -2097,6 +2106,15 @@ router.patch("/admin/group-buys/:id/reshippers/:username", async (req, res): Pro
   if (reshipperFeeAmount !== undefined) updates.reshipperFeeAmount = reshipperFeeAmount ? String(reshipperFeeAmount) : null;
   if (allowPayments !== undefined) updates.allowPayments = Boolean(allowPayments);
   if (allowVendorShippingSplit !== undefined) updates.allowVendorShippingSplit = Boolean(allowVendorShippingSplit);
+  if (patchCountries !== undefined) {
+    if (patchCountries === null || patchCountries.length === 0) {
+      updates.countries = null;
+    } else {
+      const cleaned = patchCountries.map(c => String(c).trim().toUpperCase()).filter(Boolean);
+      updates.countries = cleaned;
+      updates.country = cleaned[0]; // keep primary country in sync
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No fields to update" });

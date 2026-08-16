@@ -24,6 +24,7 @@ export type AdminReshipperAssignment = {
   gbId: string;
   reshipperUsername: string;
   country: string;
+  countries: string[] | null;
   paymentTarget: string;
   enabled: boolean;
   enabledPaymentMethods: Record<string, boolean> | null;
@@ -50,7 +51,8 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
-  const [newCountry, setNewCountry] = useState("");
+  const [newCountries, setNewCountries] = useState<string[]>([]);
+  const [newCountryPick, setNewCountryPick] = useState(""); // picker for adding one country at a time
   const [newPaymentTarget, setNewPaymentTarget] = useState<"reshipper" | "admin">("reshipper");
   const [newPaymentMethods, setNewPaymentMethods] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
@@ -86,7 +88,7 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
     e.preventDefault();
     setAddError(null);
     if (!newUsername) { setAddError("Select a reshipper"); return; }
-    if (!newCountry) { setAddError("Select a country"); return; }
+    if (newCountries.length === 0) { setAddError("Add at least one country"); return; }
     setAdding(true);
     try {
       const r = await fetch(apiUrl(`/admin/group-buys/${gbId}/reshippers`), {
@@ -94,15 +96,29 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({
           reshipperUsername: newUsername,
-          country: newCountry,
+          countries: newCountries,
+          country: newCountries[0],
           paymentTarget: newPaymentTarget,
           enabledPaymentMethods: newPaymentMethods,
         }),
       });
       if (!r.ok) { const d = await r.json(); setAddError(d.error || "Failed to add"); return; }
-      setNewUsername(""); setNewCountry(""); setNewPaymentTarget("reshipper"); setNewPaymentMethods({}); setAddOpen(false);
+      setNewUsername(""); setNewCountries([]); setNewCountryPick(""); setNewPaymentTarget("reshipper"); setNewPaymentMethods({}); setAddOpen(false);
       void load();
     } finally { setAdding(false); }
+  };
+
+  const addNewCountry = (code: string) => {
+    if (!code || newCountries.includes(code)) return;
+    setNewCountries(prev => [...prev, code]);
+    setNewCountryPick("");
+  };
+
+  const removeNewCountry = (code: string) => setNewCountries(prev => prev.filter(c => c !== code));
+
+  const addAllEu = () => {
+    const euCodes = EU_COUNTRIES.map(c => c.code);
+    setNewCountries(prev => [...new Set([...prev, ...euCodes])]);
   };
 
   const patchAssignment = async (a: AdminReshipperAssignment, body: Record<string, unknown>) => {
@@ -126,7 +142,8 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
   };
 
   const handleRemove = async (a: AdminReshipperAssignment) => {
-    if (!confirm(`Remove @${a.reshipperUsername} from ${a.country}?`)) return;
+    const displayCountries = (a.countries && a.countries.length > 0 ? a.countries : [a.country]).join(", ");
+    if (!confirm(`Remove @${a.reshipperUsername} from ${displayCountries}?`)) return;
     setRemovingId(a.id);
     setActionError(null);
     try {
@@ -166,10 +183,21 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
           <div key={a.id} className={cn("rounded-xl border p-3 space-y-2.5", a.enabled ? "border-border" : "border-border bg-muted/30 opacity-70")}>
             {/* Header row */}
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
                 <UserCheck className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span className="text-sm font-semibold truncate">@{a.reshipperUsername}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-mono uppercase shrink-0">{a.country}</span>
+                {/* Show all countries — blue for EU, grey for others */}
+                {(a.countries && a.countries.length > 0 ? a.countries : [a.country]).map(c => {
+                  const isEu = EU_COUNTRIES.some(e => e.code === c);
+                  return (
+                    <span key={c} className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase shrink-0", isEu ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground")}>
+                      {c}
+                    </span>
+                  );
+                })}
+                {(a.countries && a.countries.length > 1) && (
+                  <span className="text-[10px] text-muted-foreground">({a.countries.length} countries)</span>
+                )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
@@ -260,17 +288,63 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
             </select>
           </div>
           <div>
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1 block">Country</label>
-            <select
-              className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:outline-none"
-              value={newCountry}
-              onChange={e => setNewCountry(e.target.value)}
-            >
-              <option value="">Select a country…</option>
-              {COUNTRY_LIST.map(c => (
-                <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
-              ))}
-            </select>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1 block">Countries</label>
+            {/* Quick-add EU */}
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={addAllEu}
+                className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 transition-colors"
+              >
+                🇪🇺 Add all EU ({EU_COUNTRIES.length})
+              </button>
+              {newCountries.some(c => EU_COUNTRIES.some(e => e.code === c)) && (
+                <button
+                  type="button"
+                  onClick={() => setNewCountries(prev => prev.filter(c => !EU_COUNTRIES.some(e => e.code === c)))}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 text-red-700 font-semibold hover:bg-red-100 transition-colors"
+                >
+                  Remove EU
+                </button>
+              )}
+            </div>
+            {/* Individual country picker */}
+            <div className="flex gap-1.5 mb-2">
+              <select
+                className="flex-1 rounded-lg border border-input bg-background px-2 py-1.5 text-sm focus:outline-none"
+                value={newCountryPick}
+                onChange={e => setNewCountryPick(e.target.value)}
+              >
+                <option value="">Add a country…</option>
+                {COUNTRY_LIST.filter(c => !newCountries.includes(c.code)).map(c => (
+                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => addNewCountry(newCountryPick)}
+                disabled={!newCountryPick}
+                className="px-3 py-1 rounded-lg border border-input bg-muted text-xs font-semibold hover:bg-muted/70 disabled:opacity-40 transition-colors"
+              >
+                Add
+              </button>
+            </div>
+            {/* Selected country chips */}
+            {newCountries.length > 0 ? (
+              <div className="flex flex-wrap gap-1 p-2 rounded-lg bg-muted/40 border border-border min-h-[36px]">
+                {newCountries.map(c => {
+                  const isEu = EU_COUNTRIES.some(e => e.code === c);
+                  return (
+                    <span key={c} className={cn("inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded font-mono", isEu ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground")}>
+                      {c}
+                      <button type="button" onClick={() => removeNewCountry(c)} className="ml-0.5 text-[10px] hover:text-red-500 transition-colors leading-none">✕</button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic">No countries selected</p>
+            )}
           </div>
           <div>
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1 block">Payment Target</label>
@@ -312,7 +386,7 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
               {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               Assign
             </Button>
-            <Button size="sm" type="button" variant="ghost" onClick={() => { setAddOpen(false); setAddError(null); setNewPaymentMethods({}); }}>Cancel</Button>
+            <Button size="sm" type="button" variant="ghost" onClick={() => { setAddOpen(false); setAddError(null); setNewCountries([]); setNewCountryPick(""); setNewPaymentMethods({}); }}>Cancel</Button>
           </div>
         </form>
       ) : (

@@ -179,6 +179,7 @@ export const gbReshippersTable = pgTable("gb_reshippers", {
   gbId: text("gb_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
   reshipperUsername: text("reshipper_username").notNull().references(() => accountsTable.telegramUsername, { onDelete: "cascade", onUpdate: "cascade" }),
   country: text("country").notNull(),
+  countries: jsonb("countries").$type<string[]>(), // multi-country coverage (overrides country when set)
   enabledPaymentMethods: jsonb("enabled_payment_methods").$type<{
     usdtEnabled?: boolean;
     revolutEnabled?: boolean;

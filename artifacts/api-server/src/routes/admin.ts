@@ -464,7 +464,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     );
   } else if (reshipper) {
     const assignments = await db
-      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
+      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries })
       .from(gbReshippersTable)
       .where(eq(gbReshippersTable.reshipperUsername, reshipper));
 
@@ -480,10 +480,14 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
         .where(inArray(gbCountryLegsTable.gbId, uniqueGbIds));
       const legMap = new Map(countryLegs.map(l => [`${l.gbId}::${l.countryCode}`, l.id]));
 
-      const pairConditions = assignments.map(a => {
-        const legId = legMap.get(`${a.gbId}::${a.country}`);
-        if (legId) return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.countryLegId, legId));
-        return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.reshipperUsername, reshipper));
+      // Expand multi-country assignments: one condition per country in the list
+      const pairConditions = assignments.flatMap(a => {
+        const allCountries = (a.countries && (a.countries as string[]).length > 0) ? (a.countries as string[]) : [a.country];
+        return allCountries.map(c => {
+          const legId = legMap.get(`${a.gbId}::${c}`);
+          if (legId) return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.countryLegId, legId));
+          return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.reshipperUsername, reshipper));
+        });
       });
 
       const legConditions = pairConditions.length === 1 ? pairConditions[0]! : or(...pairConditions as [any, any]);
@@ -501,15 +505,16 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
   // GB+country pair that has a reshipper assigned via the gbReshippers table
   if (hasReshipperMode) {
     const gbReshipperPairs = await db
-      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
+      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries })
       .from(gbReshippersTable);
     const directHasReshipper = isNotNull(ordersTable.reshipperUsername);
     if (gbReshipperPairs.length === 0) {
       conditions.push(directHasReshipper);
     } else {
-      const gbPairConds = gbReshipperPairs.map(p =>
-        and(eq(ordersTable.groupBuyId, p.gbId), eq(ordersTable.shippingCountry, p.country))
-      );
+      const gbPairConds = gbReshipperPairs.flatMap(p => {
+        const allCountries = (p.countries && (p.countries as string[]).length > 0) ? (p.countries as string[]) : [p.country];
+        return allCountries.map(c => and(eq(ordersTable.groupBuyId, p.gbId), eq(ordersTable.shippingCountry, c)));
+      });
       conditions.push(or(directHasReshipper, ...gbPairConds as [any, any, ...any[]]));
     }
   }
@@ -568,10 +573,13 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
   if (gbCountryPairs.length > 0) {
     const uniqueGbIds = [...new Set(gbCountryPairs.map(p => p.gbId))];
     const reshipperRows = await db
-      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, reshipperUsername: gbReshippersTable.reshipperUsername })
+      .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries, reshipperUsername: gbReshippersTable.reshipperUsername })
       .from(gbReshippersTable)
       .where(inArray(gbReshippersTable.gbId, uniqueGbIds));
-    for (const r of reshipperRows) reshipperMap.set(`${r.gbId}::${r.country}`, r.reshipperUsername);
+    for (const r of reshipperRows) {
+      const allCountries = (r.countries && (r.countries as string[]).length > 0) ? (r.countries as string[]) : [r.country];
+      for (const c of allCountries) reshipperMap.set(`${r.gbId}::${c}`, r.reshipperUsername);
+    }
   }
 
   // Shared-wholesale metadata: map each order's sharedOrderId -> lead (creator) + recipient
@@ -781,7 +789,7 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
     }
     if (reshipper) {
       const assignments = await db
-        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
+        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries })
         .from(gbReshippersTable)
         .where(eq(gbReshippersTable.reshipperUsername, reshipper));
       const directAssign = eq(ordersTable.reshipperUsername, reshipper);
@@ -794,10 +802,13 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
           .from(gbCountryLegsTable)
           .where(inArray(gbCountryLegsTable.gbId, uniqueGbIds));
         const legMap = new Map(countryLegs.map(l => [`${l.gbId}::${l.countryCode}`, l.id]));
-        const pairConditions = assignments.map(a => {
-          const legId = legMap.get(`${a.gbId}::${a.country}`);
-          if (legId) return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.countryLegId, legId));
-          return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.reshipperUsername, reshipper));
+        const pairConditions = assignments.flatMap(a => {
+          const allCountries = (a.countries && (a.countries as string[]).length > 0) ? (a.countries as string[]) : [a.country];
+          return allCountries.map(c => {
+            const legId = legMap.get(`${a.gbId}::${c}`);
+            if (legId) return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.countryLegId, legId));
+            return and(eq(ordersTable.groupBuyId, a.gbId), eq(ordersTable.reshipperUsername, reshipper));
+          });
         });
         const legConditions = pairConditions.length === 1 ? pairConditions[0]! : or(...pairConditions as [any, any]);
         conditions.push(or(legConditions, directAssign));
@@ -3837,9 +3848,13 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   if (routingTypeParam && routingTypeParam !== "all") {
     if (routingTypeParam === "reshipper") {
       const gbReshipperPairs = await db
-        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country })
+        .select({ gbId: gbReshippersTable.gbId, country: gbReshippersTable.country, countries: gbReshippersTable.countries })
         .from(gbReshippersTable);
-      const gbPairSet = new Set(gbReshipperPairs.map(p => `${p.gbId}::${p.country}`));
+      const gbPairSet = new Set<string>();
+      for (const p of gbReshipperPairs) {
+        const allCountries = (p.countries && (p.countries as string[]).length > 0) ? (p.countries as string[]) : [p.country];
+        for (const c of allCountries) gbPairSet.add(`${p.gbId}::${c}`);
+      }
       allOrders = allOrders.filter(o =>
         o.routingType === "reshipper" ||
         o.reshipperUsername != null ||
