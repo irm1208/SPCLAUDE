@@ -788,6 +788,7 @@ export async function extractBatchNumbersFromImages(
     const contentParts = await toClaudeContentParts(imageParts);
     if (contentParts.length === 0) return [];
     const text = (await callSageAI({
+      system: JSON_EXTRACTION_SYSTEM,
       messages: [{
         role: "user",
         content: [...contentParts, { type: "text", text: BATCH_NUMBERS_PROMPT }],
@@ -821,12 +822,18 @@ export async function extractBatchNumbersFromImages(
 
 export type LabFilePart = { inlineData: { mimeType: string; data: string } };
 
+const JSON_EXTRACTION_SYSTEM =
+  "You are a JSON extraction tool. " +
+  "You MUST respond with ONLY a valid JSON object — no preamble, no explanation, no 'I am', no 'I'm', no markdown, no code fences. " +
+  "Output ONLY the raw JSON object starting with '{' and ending with '}'. Any other output will break the pipeline.";
+
 async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
   if (parts.length === 0) return null;
   try {
     const contentParts = await toClaudeContentParts(parts);
     if (contentParts.length === 0) return null;
     const text = (await callSageAI({
+      system: JSON_EXTRACTION_SYSTEM,
       messages: [{
         role: "user",
         content: [...contentParts, { type: "text", text: EXTRACT_PROMPT }],
