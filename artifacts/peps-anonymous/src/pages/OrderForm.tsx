@@ -1602,9 +1602,9 @@ export default function OrderForm() {
                   style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)" }}>
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
                   <div className="flex flex-col gap-1">
-                    {gbFull && gbMaxKitsTotal != null && (
+                    {gbFull && (
                       <p className="text-sm font-medium" style={{ color: "#fca5a5" }}>
-                        This group buy has reached its kit limit of <strong>{gbMaxKitsTotal}</strong> — ordering is now closed.
+                        This group buy has reached its kit limit — ordering is now closed.
                       </p>
                     )}
                     {perCustomerExceeded && gbMaxKitsPerCustomer != null && (
