@@ -796,6 +796,7 @@ export async function extractBatchNumbersFromImages(
       maxTokens: 512,
       temperature: 0.1,
       enableWebSearch: false,
+      jsonMode: true,
     })).trim();
     if (!text) return [];
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -841,6 +842,7 @@ async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoADa
       maxTokens: 1024,
       temperature: 0.1,
       enableWebSearch: false,
+      jsonMode: true,
     })).trim();
     if (!text) return null;
     const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
