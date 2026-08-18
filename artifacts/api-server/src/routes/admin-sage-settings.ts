@@ -610,14 +610,25 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
     }
   }
 
+  const effectiveBaseUrl = typeof baseUrl === "string" ? baseUrl.trim() || undefined : undefined;
+
+  // When an explicit authToken is supplied, always use that.
+  // Otherwise, if the caller is targeting the fallback URL (cn.zhihuiai.top),
+  // automatically use SAGE_PROXY_FALLBACK_API_KEY so the test actually reaches
+  // that endpoint with the right credentials instead of the primary key.
+  let effectiveApiKey = typeof authToken === "string" ? authToken.trim() || undefined : undefined;
+  if (!effectiveApiKey && effectiveBaseUrl?.includes("zhihuiai")) {
+    effectiveApiKey = process.env.SAGE_PROXY_FALLBACK_API_KEY || undefined;
+  }
+
   try {
     const reply = await callSageAI({
       system: systemPrompt,
       messages,
       maxTokens: 1024,
       model: chosenModel || undefined,
-      apiKey: typeof authToken === "string" ? authToken.trim() || undefined : undefined,
-      baseUrl: typeof baseUrl === "string" ? baseUrl.trim() || undefined : undefined,
+      apiKey: effectiveApiKey,
+      baseUrl: effectiveBaseUrl,
     });
     res.json({
       reply: reply || "(empty response)",

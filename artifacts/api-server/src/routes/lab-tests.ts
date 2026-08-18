@@ -175,11 +175,26 @@ export const UTHER_BATCH_CODES: Record<string, string> = {
  * Resolves the canonical peptide name for a lab test.
  * For Uther products with a known batch code, always use the lookup table name
  * rather than whatever was AI-extracted.
+ *
+ * Matching strategy:
+ *   1. Exact match on the full batch code (e.g. "TE10" → "Tesamorelin 10mg")
+ *   2. Longest-prefix match, so "TE10-0722" also resolves to "Tesamorelin 10mg"
  */
 function resolveUtherName(supplier: string, batchCode: string | null | undefined, fallback: string): string {
   if (supplier.toLowerCase() === "uther" && batchCode) {
-    const canonical = UTHER_BATCH_CODES[batchCode.trim().toUpperCase()];
-    if (canonical) return canonical;
+    const upper = batchCode.trim().toUpperCase();
+    // 1. Exact match
+    if (UTHER_BATCH_CODES[upper]) return UTHER_BATCH_CODES[upper];
+    // 2. Longest prefix match (e.g. "TE10-0722" → key "TE10")
+    let best: string | null = null;
+    let bestLen = 0;
+    for (const key of Object.keys(UTHER_BATCH_CODES)) {
+      if (upper.startsWith(key) && key.length > bestLen) {
+        best = UTHER_BATCH_CODES[key];
+        bestLen = key.length;
+      }
+    }
+    if (best) return best;
   }
   return fallback;
 }
@@ -1732,10 +1747,13 @@ router.post("/admin/lab-tests/extract-all", async (req, res) => {
             if (Array.isArray(extracted.blendComponents) && extracted.blendComponents.length > 0) {
               updates.blendComponents = JSON.stringify(extracted.blendComponents);
             }
-            // Uther name normalisation
+            // Uther name normalisation — update peptideName whenever the resolved
+            // name differs from what is currently stored (even if resolveUtherName
+            // just returns the AI-extracted name unchanged, it may still be better
+            // than "Unknown" which was saved when extraction previously failed).
             const exBatch = updates.batchCode ?? test.batchCode;
             const resolvedBatchName = resolveUtherName(test.supplier, exBatch, extracted.compoundName ?? test.peptideName);
-            if (resolvedBatchName !== (extracted.compoundName ?? test.peptideName)) updates.peptideName = resolvedBatchName;
+            if (resolvedBatchName !== test.peptideName) updates.peptideName = resolvedBatchName;
 
             await db.update(labTestsTable).set(updates).where(eq(labTestsTable.id, test.id));
             batchJob.succeeded++;
