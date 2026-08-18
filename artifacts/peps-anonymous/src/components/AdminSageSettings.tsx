@@ -22,7 +22,13 @@ interface ChatMessage {
   role: "user" | "bot";
   text: string;
   error?: boolean;
+  endpoint?: string; // which proxy was used, shown as a label on bot replies
 }
+
+const PROXY_PRESETS = [
+  { label: "nuoda", url: "https://api.nuoda.vip", color: "#2563eb" },
+  { label: "zhihuiai", url: "https://cn.zhihuiai.top", color: "#7c3aed" },
+] as const;
 
 function familyOf(model: string): string {
   const m = model.toLowerCase();
@@ -77,6 +83,9 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
   const [promptResetting, setPromptResetting] = useState(false);
   const [promptError, setPromptError] = useState("");
   const [showDefaultPrompt, setShowDefaultPrompt] = useState(false);
+
+  // Which proxy endpoint to use for test chat (null = use saved proxyBaseUrl / server default)
+  const [testEndpoint, setTestEndpoint] = useState<string | null>(null);
 
   // Personal proxy credentials — stored only in this browser's localStorage, never sent
   // to the server except as part of this admin's own test-chat requests below.
@@ -323,6 +332,10 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
       text: m.text,
     }));
 
+    // testEndpoint overrides proxyBaseUrl when set via the preset buttons
+    const effectiveBaseUrl = testEndpoint ?? (proxyBaseUrl.trim() || undefined);
+    const presetLabel = PROXY_PRESETS.find(p => p.url === testEndpoint)?.label;
+
     try {
       const res = await fetch(apiUrl("/admin/sage-settings/test"), {
         method: "POST",
@@ -332,17 +345,17 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
           model: testModel,
           history,
           ...(authToken.trim() ? { authToken: authToken.trim() } : {}),
-          ...(proxyBaseUrl.trim() ? { baseUrl: proxyBaseUrl.trim() } : {}),
+          ...(effectiveBaseUrl ? { baseUrl: effectiveBaseUrl } : {}),
         }),
       });
       const data = await res.json() as { reply?: string; error?: string };
       if (!res.ok || data.error) {
-        setChatMessages(prev => [...prev, { role: "bot", text: data.error ?? "Request failed.", error: true }]);
+        setChatMessages(prev => [...prev, { role: "bot", text: data.error ?? "Request failed.", error: true, endpoint: presetLabel }]);
       } else {
-        setChatMessages(prev => [...prev, { role: "bot", text: data.reply ?? "" }]);
+        setChatMessages(prev => [...prev, { role: "bot", text: data.reply ?? "", endpoint: presetLabel }]);
       }
     } catch {
-      setChatMessages(prev => [...prev, { role: "bot", text: "Network error — check the server.", error: true }]);
+      setChatMessages(prev => [...prev, { role: "bot", text: "Network error — check the server.", error: true, endpoint: presetLabel }]);
     } finally {
       setChatLoading(false);
     }
@@ -704,6 +717,37 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
               </button>
             )}
           </div>
+          {/* Endpoint preset buttons */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] shrink-0" style={{ color: "var(--adm-muted)" }}>Endpoint:</span>
+            <button
+              type="button"
+              onClick={() => { setTestEndpoint(null); setChatMessages([]); }}
+              className="text-[11px] px-2 py-0.5 rounded-md font-semibold border transition-colors"
+              style={{
+                background: testEndpoint === null ? "rgba(242,73,8,0.12)" : "transparent",
+                borderColor: testEndpoint === null ? "#F24908" : "var(--adm-border)",
+                color: testEndpoint === null ? "#F24908" : "var(--adm-muted)",
+              }}
+            >
+              default
+            </button>
+            {PROXY_PRESETS.map(p => (
+              <button
+                key={p.url}
+                type="button"
+                onClick={() => { setTestEndpoint(p.url); setChatMessages([]); }}
+                className="text-[11px] px-2 py-0.5 rounded-md font-semibold border transition-colors"
+                style={{
+                  background: testEndpoint === p.url ? `${p.color}22` : "transparent",
+                  borderColor: testEndpoint === p.url ? p.color : "var(--adm-border)",
+                  color: testEndpoint === p.url ? p.color : "var(--adm-muted)",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <select
             value={testModel}
             onChange={e => setTestModel(e.target.value)}
@@ -729,7 +773,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
             </div>
           )}
           {chatMessages.map((m, i) => (
-            <div key={i} className="flex" style={{ justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+            <div key={i} className="flex flex-col" style={{ alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
               <div
                 className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
                 style={{
@@ -741,6 +785,14 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
               >
                 {m.text}
               </div>
+              {m.role === "bot" && m.endpoint && (() => {
+                const preset = PROXY_PRESETS.find(p => p.label === m.endpoint);
+                return (
+                  <span className="text-[10px] mt-0.5 px-1" style={{ color: preset?.color ?? "var(--adm-muted)" }}>
+                    via {m.endpoint}
+                  </span>
+                );
+              })()}
             </div>
           ))}
           {chatLoading && (
