@@ -1349,7 +1349,7 @@ export default function OrderForm() {
               )}
             </div>
 
-            <div className="space-y-3 relative">
+            <div className={`space-y-3 relative${gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal ? " opacity-40 pointer-events-none select-none" : ""}`}>
               <PriceWatermark username={getAccountHandle(account)} variant="dark" />
               <AnimatePresence initial={false}>
                 {draft.lineItems.map((item) => (
@@ -1573,13 +1573,14 @@ export default function OrderForm() {
             <button
               type="button"
               onClick={draft.addLineItem}
-              className="w-full h-11 mt-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-white/5"
+              disabled={!!(gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal)}
+              className="w-full h-11 mt-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               style={{
                 border: "1px dashed rgba(255,255,255,0.3)",
                 color: "rgba(255,255,255,0.9)",
                 background: "transparent",
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.5)"; }}
+              onMouseEnter={(e) => { if (!(e.currentTarget as HTMLButtonElement).disabled) (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.5)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.3)"; }}
             >
               <Plus className="w-4 h-4" /> Add another product
@@ -1587,19 +1588,25 @@ export default function OrderForm() {
 
             {/* Real-time kit limit warnings */}
             {gbId && (() => {
+              const gbFull = gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal;
               const totalNewKits = draft.lineItems.reduce((sum, item) => sum + item.quantity, 0);
               const perCustomerExceeded = gbMaxKitsPerCustomer != null &&
                 (gbKitsOrderedByUser + totalNewKits) > gbMaxKitsPerCustomer;
-              const totalExceeded = gbMaxKitsTotal != null &&
+              const totalExceeded = !gbFull && gbMaxKitsTotal != null &&
                 (gbKitsOrderedTotal + totalNewKits) > gbMaxKitsTotal;
 
-              if (!perCustomerExceeded && !totalExceeded) return null;
+              if (!gbFull && !perCustomerExceeded && !totalExceeded) return null;
 
               return (
                 <div className="mt-3 rounded-xl px-4 py-3 flex items-start gap-2.5"
                   style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)" }}>
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
                   <div className="flex flex-col gap-1">
+                    {gbFull && gbMaxKitsTotal != null && (
+                      <p className="text-sm font-medium" style={{ color: "#fca5a5" }}>
+                        This group buy has reached its kit limit of <strong>{gbMaxKitsTotal}</strong> — ordering is now closed.
+                      </p>
+                    )}
                     {perCustomerExceeded && gbMaxKitsPerCustomer != null && (
                       <p className="text-sm font-medium" style={{ color: "#fca5a5" }}>
                         You can order at most <strong>{gbMaxKitsPerCustomer}</strong> kit{gbMaxKitsPerCustomer !== 1 ? "s" : ""} from this group buy.
@@ -2133,16 +2140,26 @@ export default function OrderForm() {
         </section>
 
         {/* ── Review Order button ────────────────────────────────────────────── */}
-        <div className="pt-2 pb-4">
-          <button
-            onClick={handleReview}
-            disabled={isPreview}
-            className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
-            style={{ background: "var(--t-blue-deep)" }}
-          >
-            {isPreview ? (<>Ordering disabled in preview <Eye className="w-4 h-4" /></>) : (<>Review Order <ArrowRight className="w-4 h-4" /></>)}
-          </button>
-        </div>
+        {(() => {
+          const gbFull = !!(gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal);
+          const totalNewKits = draft.lineItems.reduce((sum, item) => sum + item.quantity, 0);
+          const kitLimitBlocked = gbFull || (gbMaxKitsTotal != null && (gbKitsOrderedTotal + totalNewKits) > gbMaxKitsTotal) || (gbMaxKitsPerCustomer != null && (gbKitsOrderedByUser + totalNewKits) > gbMaxKitsPerCustomer);
+          return (
+            <div className="pt-2 pb-4">
+              <button
+                onClick={handleReview}
+                disabled={isPreview || kitLimitBlocked}
+                className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-black/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
+                style={{ background: "var(--t-blue-deep)" }}
+              >
+                {isPreview ? (<>Ordering disabled in preview <Eye className="w-4 h-4" /></>)
+                  : gbFull ? (<>Kit limit reached — ordering closed <AlertTriangle className="w-4 h-4" /></>)
+                  : kitLimitBlocked ? (<>Reduce quantity to continue <AlertTriangle className="w-4 h-4" /></>)
+                  : (<>Review Order <ArrowRight className="w-4 h-4" /></>)}
+              </button>
+            </div>
+          );
+        })()}
 
       </main>
       {/* Stock levels modal */}
