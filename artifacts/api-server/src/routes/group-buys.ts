@@ -15,7 +15,7 @@ import {
   gbWaitlistTable,
   siteConfigTable,
 } from "@workspace/db";
-import { eq, and, asc, desc, not, sql, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, not, sql, inArray, isNull } from "drizzle-orm";
 import { requireAccount, getJwtSecret } from "../middleware/account-auth";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
@@ -257,17 +257,21 @@ async function getUserKitCount(gbId: string, tg: string): Promise<number> {
     .where(and(
       eq(ordersTable.groupBuyId, gbId),
       eq(ordersTable.telegramUsername, tg),
+      isNull(ordersTable.deletedAt),
     ));
   return parseFloat(row?.total ?? "0");
 }
 
-// Helper: count total kits ordered for a given GB across all users
+// Helper: count total kits ordered for a given GB across all users (excludes deleted orders)
 async function getTotalKitCount(gbId: string): Promise<number> {
   const [row] = await db
     .select({ total: sql<string>`coalesce(sum(cast(${orderLineItemsTable.quantity} as numeric)), 0)` })
     .from(orderLineItemsTable)
     .innerJoin(ordersTable, eq(orderLineItemsTable.orderId, ordersTable.id))
-    .where(eq(ordersTable.groupBuyId, gbId));
+    .where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+    ));
   return parseFloat(row?.total ?? "0");
 }
 
