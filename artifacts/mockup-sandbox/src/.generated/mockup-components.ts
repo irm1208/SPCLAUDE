@@ -467,9 +467,9 @@ export const modules: ModuleMap = {
   "./components/mockups/success-page/Terminal.tsx": () => import("../components/mockups/success-page/Terminal.tsx"),
   "./components/mockups/success-page/Ticket.tsx": () => import("../components/mockups/success-page/Ticket.tsx"),
   "./components/mockups/success-page/Zen.tsx": () => import("../components/mockups/success-page/Zen.tsx"),
+  "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
+  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx"),
   "./components/mockups/temporal-home/DeltaHome.tsx": () => import("../components/mockups/temporal-home/DeltaHome.tsx"),
   "./components/mockups/temporal-home/ProtocolPosition.tsx": () => import("../components/mockups/temporal-home/ProtocolPosition.tsx"),
-  "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx"),
-  "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
-  "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx")
+  "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx")
 };
