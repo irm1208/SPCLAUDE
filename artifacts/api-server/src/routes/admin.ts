@@ -45,6 +45,8 @@ import {
   fs3SubmissionsTable,
   organiserAuditLogTable,
   wholesaleAccessRequestsTable,
+  approvedWalletHistoryTable,
+  paymentAuditResultsTable,
 } from "@workspace/db";
 import { eq, inArray, notInArray, desc, asc, and, sql, or, ilike, like, gte, lte, isNotNull, isNull, lt, gt } from "drizzle-orm";
 import { GoogleGenAI } from "../lib/google-genai";
@@ -60,6 +62,18 @@ import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh
 import { callSageAI } from "../lib/sage-ai";
 import { logCustomerActivity } from "../lib/activity-log";
 import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib/country-utils";
+import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from "./payments";
+import { verifyTransaction } from "../lib/payment-verify";
+import {
+  hasExpectedAuditAmount,
+  normaliseWalletAddress,
+  paymentAuditScopeForOrder,
+  PAYMENT_AUDIT_SCOPES,
+  PAYMENT_AUDIT_STATUSES,
+  transactionKind,
+  walletHistoryForPayment,
+  type PaymentAuditScope,
+} from "../lib/payment-audit";
 
 function escapeHtml(str: string): string {
   return str
@@ -7165,6 +7179,421 @@ router.delete("/admin/orders/:orderId/notes/:noteId", async (req, res): Promise<
     eq(orderNotesTable.id, req.params.noteId),
     eq(orderNotesTable.orderId, req.params.orderId),
   ));
+  res.json({ ok: true });
+});
+
+// ── Read-only crypto payment audit ─────────────────────────────
+// This workspace intentionally does not call any of the order-payment
+// confirmation helpers. It persists a snapshot of on-chain evidence only.
+type AuditReferenceSource = "payment" | "test" | "balance";
+
+function auditReferences(order: any): Array<{ txHash: string; source: AuditReferenceSource }> {
+  const refs: Array<{ txHash: string; source: AuditReferenceSource }> = [];
+  const add = (raw: unknown, source: AuditReferenceSource) => {
+    if (typeof raw !== "string" || !raw.trim()) return;
+    const txHash = raw.trim();
+    if (!refs.some(ref => ref.txHash === txHash && ref.source === source)) refs.push({ txHash, source });
+  };
+  add(order.paymentTxHash, "payment");
+  for (const hash of Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []) add(hash, "payment");
+  add(order.testPaymentTxHash, "test");
+  add(order.balanceTxHash, "balance");
+  return refs;
+}
+
+function auditMoney(value: unknown): number | null {
+  const amount = parseFloat(String(value ?? ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function auditItemFrom(order: any, reference: { txHash: string; source: AuditReferenceSource }, latest?: any) {
+  const scope = paymentAuditScopeForOrder(order);
+  return {
+    id: order.id,
+    code: order.code,
+    username: order.telegramUsername,
+    scope,
+    paymentStatus: order.paymentStatus,
+    txHash: reference.txHash,
+    txKind: transactionKind(reference.txHash),
+    reference: reference.source,
+    network: latest?.network ?? order.paymentCryptoNetwork ?? null,
+    currency: latest?.currency ?? order.paymentCryptoCurrency ?? null,
+    expectedAmount: latest?.expectedAmount != null ? parseFloat(String(latest.expectedAmount)) : null,
+    expectedWallet: latest?.expectedWallet ?? null,
+    createdAt: order.createdAt,
+    latestAudit: latest ? {
+      status: latest.status,
+      recipientAddress: latest.recipientAddress,
+      receivedAmount: latest.receivedAmount != null ? parseFloat(String(latest.receivedAmount)) : null,
+      confirmations: latest.confirmations,
+      reason: latest.reason,
+      checkedAt: latest.checkedAt,
+    } : undefined,
+  };
+}
+
+const PAYMENT_AUDIT_ORDER_COLUMNS = {
+  id: ordersTable.id,
+  code: ordersTable.code,
+  telegramUsername: ordersTable.telegramUsername,
+  paymentStatus: ordersTable.paymentStatus,
+  paymentTxHash: ordersTable.paymentTxHash,
+  paymentTxHashes: ordersTable.paymentTxHashes,
+  testPaymentTxHash: ordersTable.testPaymentTxHash,
+  paymentTestAmount: ordersTable.paymentTestAmount,
+  balanceTxHash: ordersTable.balanceTxHash,
+  amountDue: ordersTable.amountDue,
+  paymentUsdAmount: ordersTable.paymentUsdAmount,
+  grandTotal: ordersTable.grandTotal,
+  paymentCryptoCurrency: ordersTable.paymentCryptoCurrency,
+  paymentCryptoRate: ordersTable.paymentCryptoRate,
+  paymentCryptoNetwork: ordersTable.paymentCryptoNetwork,
+  creditsApplied: ordersTable.creditsApplied,
+  groupBuyId: ordersTable.groupBuyId,
+  orderType: ordersTable.orderType,
+  shippingCountry: ordersTable.shippingCountry,
+  sharedOrderId: ordersTable.sharedOrderId,
+  createdAt: ordersTable.createdAt,
+};
+
+async function auditOrderReference(order: any, txHash: string, source?: AuditReferenceSource) {
+  const reference = auditReferences(order).find(ref => ref.txHash === txHash && (!source || ref.source === source));
+  if (!reference) throw new Error("That transaction reference is not recorded on this order.");
+
+  const txKind = transactionKind(txHash);
+  const scope = paymentAuditScopeForOrder(order);
+  const checkedAt = new Date();
+  let network = order.paymentCryptoNetwork ?? null;
+  let currency = order.paymentCryptoCurrency ?? null;
+  let expectedAmount: number | null = null;
+  let expectedWallet: string | null = null;
+  let recipientAddress: string | null = null;
+  let receivedAmount: number | null = null;
+  let confirmations: number | null = null;
+  let status: typeof PAYMENT_AUDIT_STATUSES[number] = "review";
+  let reason = "";
+
+  if (txKind !== "crypto") {
+    status = "not_chain";
+    reason = txKind === "fiat"
+      ? "Fiat reference — not directly blockchain-verifiable."
+      : "AnonPay reference — not directly blockchain-verifiable.";
+  } else {
+    const effective = await resolveEffectiveOrderCrypto({
+      groupBuyId: order.groupBuyId,
+      orderType: order.orderType,
+      shippingCountry: order.shippingCountry,
+      sharedOrderId: order.sharedOrderId,
+      paymentCryptoCurrency: order.paymentCryptoCurrency,
+      paymentCryptoNetwork: order.paymentCryptoNetwork,
+    });
+    network = effective.network;
+    currency = effective.currency;
+
+    let lockedUsd: number | null;
+    if (reference.source === "test") {
+      lockedUsd = auditMoney(order.paymentTestAmount);
+    } else if (reference.source === "balance") {
+      lockedUsd = auditMoney(order.amountDue);
+    } else {
+      // This mirrors the live verifier without its state-changing stale-lock reset:
+      // use the locked fiat value only when it is within 3% of today's order total,
+      // then subtract stored credits and a previously confirmed test payment.
+      const currentUsd = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
+      const lockedTotal = auditMoney(order.paymentUsdAmount);
+      const lockIsStale = lockedTotal != null && Math.abs(lockedTotal - currentUsd) > currentUsd * 0.03;
+      const totalUsd = lockedTotal != null && !lockIsStale ? lockedTotal : currentUsd;
+      const credits = auditMoney(order.creditsApplied) ?? 0;
+      const testAmount = order.paymentStatus === "test_confirmed" ? (auditMoney(order.paymentTestAmount) ?? 0) : 0;
+      lockedUsd = Math.max(0, totalUsd - credits - testAmount);
+    }
+    const rate = lockedUsd != null
+      ? await resolveLockedUsdPerCoin(order, effective.currency, false)
+      : null;
+    expectedAmount = lockedUsd != null && rate != null && rate > 0 ? lockedUsd / rate : null;
+
+    if (expectedAmount == null) {
+      reason = reference.source === "balance"
+        ? "This balance reference has no remaining amount recorded to compare."
+        : "The locked payment amount or exchange rate is unavailable; manual review required.";
+    } else {
+      const walletEntries = await db.select().from(approvedWalletHistoryTable);
+      const applicableWallets = walletHistoryForPayment(
+        walletEntries,
+        scope,
+        effective.network,
+        new Date(order.createdAt),
+      );
+      if (applicableWallets.length === 0) {
+        reason = "No approved wallet-history entry applies to this order date and payment rail; manual review required.";
+      } else {
+        expectedWallet = applicableWallets[0].address;
+        // Multiple dated/all-scope history entries can legitimately apply. Check
+        // each approved address before deciding a transaction went elsewhere.
+        const verifications = await Promise.all(applicableWallets.map(wallet => verifyTransaction(
+          txHash, wallet.address, expectedAmount, effective.currency, effective.network,
+        )));
+        const verification = verifications.find(result => result.verified) ?? verifications[0];
+        const observedTransfers = verifications.flatMap(result => result.observedTransfers ?? (
+          result.recipientAddress != null && result.amountUsdt != null
+            ? [{ recipientAddress: result.recipientAddress, amount: result.amountUsdt }]
+            : []
+        )).filter((transfer, index, all) =>
+          all.findIndex(other =>
+            normaliseWalletAddress(other.recipientAddress) === normaliseWalletAddress(transfer.recipientAddress)
+            && other.amount === transfer.amount,
+          ) === index,
+        );
+        const approvedTransfer = observedTransfers.find(transfer => applicableWallets.some(entry =>
+          normaliseWalletAddress(entry.address) === normaliseWalletAddress(transfer.recipientAddress),
+        ));
+        recipientAddress = approvedTransfer?.recipientAddress ?? verification.recipientAddress ?? null;
+        receivedAmount = approvedTransfer?.amount ?? verification.amountUsdt ?? null;
+        confirmations = verification.blockConfirmations ?? null;
+
+        const recipientIsApproved = approvedTransfer != null;
+        if (verification.verified || (
+          recipientIsApproved &&
+          receivedAmount != null &&
+          hasExpectedAuditAmount(receivedAmount, expectedAmount)
+        )) {
+          status = "verified";
+          reason = "Confirmed on-chain against the approved historical wallet.";
+        } else if (observedTransfers.length > 0 && !recipientIsApproved) {
+          status = "wrong_wallet";
+          reason = "Transaction was sent to a wallet that is not approved for this order's date, scope, and network.";
+        } else if (receivedAmount != null && !hasExpectedAuditAmount(receivedAmount, expectedAmount)) {
+          status = "underpaid";
+          reason = `Observed amount ${receivedAmount} ${effective.currency} does not meet the locked expected amount ${expectedAmount.toFixed(8)} ${effective.currency}.`;
+        } else {
+          reason = verification.reason;
+        }
+      }
+    }
+  }
+
+  const [audit] = await db
+    .insert(paymentAuditResultsTable)
+    .values({
+      id: randomUUID(),
+      orderId: order.id,
+      txHash,
+      referenceSource: reference.source,
+      txKind,
+      status,
+      network,
+      currency,
+      expectedAmount: expectedAmount?.toFixed(10) ?? null,
+      expectedWallet,
+      recipientAddress,
+      receivedAmount: receivedAmount?.toFixed(10) ?? null,
+      confirmations,
+      reason,
+      checkedAt,
+    })
+    .onConflictDoUpdate({
+      target: [paymentAuditResultsTable.orderId, paymentAuditResultsTable.txHash, paymentAuditResultsTable.referenceSource],
+      set: {
+        referenceSource: reference.source,
+        txKind,
+        status,
+        network,
+        currency,
+        expectedAmount: expectedAmount?.toFixed(10) ?? null,
+        expectedWallet,
+        recipientAddress,
+        receivedAmount: receivedAmount?.toFixed(10) ?? null,
+        confirmations,
+        reason,
+        checkedAt,
+      },
+    })
+    .returning();
+
+  return auditItemFrom(order, reference, audit);
+}
+
+async function listPaymentAuditItems() {
+  const orders = await db
+    .select(PAYMENT_AUDIT_ORDER_COLUMNS)
+    .from(ordersTable)
+    .where(isNull(ordersTable.deletedAt))
+    // Explicit projection avoids large order payloads. Do not cap this query:
+    // pagination is applied after transaction references are expanded so older
+    // stored references remain searchable and auditable.
+    .orderBy(desc(ordersTable.createdAt));
+  const orderIds = orders.map(order => order.id);
+  const latestByReference = new Map<string, any>();
+  if (orderIds.length > 0) {
+    const audits = await db
+      .select()
+      .from(paymentAuditResultsTable)
+      .where(inArray(paymentAuditResultsTable.orderId, orderIds));
+    for (const audit of audits) latestByReference.set(`${audit.orderId}:${audit.txHash}:${audit.referenceSource}`, audit);
+  }
+  return orders.flatMap(order => auditReferences(order).map(reference =>
+    auditItemFrom(order, reference, latestByReference.get(`${order.id}:${reference.txHash}:${reference.source}`)),
+  ));
+}
+
+router.get("/admin/payment-audit", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const scope = String(req.query.scope ?? "all") as PaymentAuditScope;
+  const status = String(req.query.status ?? "all");
+  const search = String(req.query.search ?? "").trim().toLowerCase();
+  const requestedLimit = Number(req.query.limit ?? 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(Math.floor(requestedLimit), 250)) : 100;
+  if (!(PAYMENT_AUDIT_SCOPES as readonly string[]).includes(scope)) {
+    res.status(400).json({ error: "Invalid audit scope." });
+    return;
+  }
+  if (status !== "all" && !(PAYMENT_AUDIT_STATUSES as readonly string[]).includes(status)) {
+    res.status(400).json({ error: "Invalid audit status." });
+    return;
+  }
+
+  const items = (await listPaymentAuditItems()).filter(item => {
+    const itemStatus = item.latestAudit?.status ?? (item.txKind === "crypto" ? "review" : "not_chain");
+    const scopeMatches = scope === "all" || item.scope === scope;
+    const statusMatches = status === "all" || itemStatus === status;
+    const searchMatches = !search ||
+      item.txHash.toLowerCase().includes(search) ||
+      item.username.toLowerCase().includes(search) ||
+      item.code.toLowerCase().includes(search);
+    return scopeMatches && statusMatches && searchMatches;
+  });
+  res.json({ items: items.slice(0, limit), total: items.length });
+});
+
+router.post("/admin/payment-audit/check", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const orderId = typeof req.body?.orderId === "string" ? req.body.orderId.trim() : "";
+  const txHash = typeof req.body?.txHash === "string" ? req.body.txHash.trim() : "";
+  const source = typeof req.body?.source === "string" ? req.body.source as AuditReferenceSource : undefined;
+  if (!orderId || !txHash || (source != null && !["payment", "test", "balance"].includes(source))) {
+    res.status(400).json({ error: "orderId and txHash are required." });
+    return;
+  }
+  const [order] = await db
+    .select(PAYMENT_AUDIT_ORDER_COLUMNS)
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.deletedAt)));
+  if (!order) {
+    res.status(404).json({ error: "Order not found." });
+    return;
+  }
+  try {
+    res.json({ item: await auditOrderReference(order, txHash, source) });
+  } catch (error) {
+    console.error("[admin/payment-audit/check]", error);
+    res.status(502).json({ error: error instanceof Error ? error.message : "The chain check could not be completed. Please retry." });
+  }
+});
+
+router.post("/admin/payment-audit/check-batch", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const scope = String(req.body?.scope ?? "all") as PaymentAuditScope;
+  const search = typeof req.body?.search === "string" ? req.body.search.trim().toLowerCase() : "";
+  const requestedLimit = Number(req.body?.limit ?? 25);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(Math.floor(requestedLimit), 25)) : 25;
+  if (!(PAYMENT_AUDIT_SCOPES as readonly string[]).includes(scope)) {
+    res.status(400).json({ error: "Invalid audit scope." });
+    return;
+  }
+
+  const status = String(req.body?.status ?? "all");
+  if (status !== "all" && !(PAYMENT_AUDIT_STATUSES as readonly string[]).includes(status)) {
+    res.status(400).json({ error: "Invalid audit status." });
+    return;
+  }
+  const candidates = (await listPaymentAuditItems())
+    .filter(item => (scope === "all" || item.scope === scope) &&
+      (status === "all" || (item.latestAudit?.status ?? (item.txKind === "crypto" ? "review" : "not_chain")) === status) && (!search ||
+      item.txHash.toLowerCase().includes(search) ||
+      item.username.toLowerCase().includes(search) ||
+      item.code.toLowerCase().includes(search)))
+    .slice(0, limit);
+  const ordersById = new Map<string, any>();
+  const orderIds = [...new Set(candidates.map(item => item.id))];
+  if (orderIds.length > 0) {
+    const orders = await db
+      .select(PAYMENT_AUDIT_ORDER_COLUMNS)
+      .from(ordersTable)
+      .where(inArray(ordersTable.id, orderIds));
+    for (const order of orders) ordersById.set(order.id, order);
+  }
+
+  const items = [];
+  for (const candidate of candidates) {
+    const order = ordersById.get(candidate.id);
+    if (!order) continue;
+    try {
+      items.push(await auditOrderReference(order, candidate.txHash, candidate.reference));
+    } catch (error) {
+      items.push({
+        ...candidate,
+        latestAudit: {
+          status: "review",
+          recipientAddress: null,
+          receivedAmount: null,
+          confirmations: null,
+          reason: error instanceof Error ? `Check failed: ${error.message}` : "Check failed. Please retry.",
+          checkedAt: new Date(),
+        },
+      });
+    }
+  }
+  res.json({ items, total: candidates.length });
+});
+
+router.get("/admin/payment-audit/wallet-history", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const entries = await db
+    .select()
+    .from(approvedWalletHistoryTable)
+    .orderBy(desc(approvedWalletHistoryTable.effectiveFrom), desc(approvedWalletHistoryTable.createdAt));
+  res.json({ entries });
+});
+
+router.post("/admin/payment-audit/wallet-history", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const scope = String(req.body?.scope ?? "all") as PaymentAuditScope;
+  const network = typeof req.body?.network === "string" ? req.body.network.trim() : "";
+  const address = typeof req.body?.address === "string" ? req.body.address.trim() : "";
+  const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 500) || null : null;
+  const effectiveFrom = new Date(String(req.body?.effectiveFrom ?? ""));
+  const untilRaw = req.body?.effectiveUntil;
+  const effectiveUntil = untilRaw ? new Date(String(untilRaw)) : null;
+  if (
+    !(PAYMENT_AUDIT_SCOPES as readonly string[]).includes(scope) ||
+    !network ||
+    !address ||
+    Number.isNaN(effectiveFrom.getTime()) ||
+    (effectiveUntil && Number.isNaN(effectiveUntil.getTime())) ||
+    (effectiveUntil && effectiveUntil.getTime() < effectiveFrom.getTime())
+  ) {
+    res.status(400).json({ error: "Provide a valid scope, network, wallet address, and effective date range." });
+    return;
+  }
+  const [entry] = await db
+    .insert(approvedWalletHistoryTable)
+    .values({
+      id: randomUUID(),
+      scope,
+      network,
+      address,
+      effectiveFrom,
+      effectiveUntil,
+      note,
+    })
+    .returning();
+  res.status(201).json({ entry });
+});
+
+router.delete("/admin/payment-audit/wallet-history/:id", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  await db.delete(approvedWalletHistoryTable).where(eq(approvedWalletHistoryTable.id, req.params.id));
   res.json({ ok: true });
 });
 

@@ -29,6 +29,7 @@ import AdminAiChatbot from "@/components/AdminAiChatbot";
 import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminDispatch } from "@/components/AdminDispatch";
+import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
@@ -15208,6 +15209,7 @@ const ALL_TABS_META = [
   { id: "shipping", label: "Shipping", icon: Truck },
   { id: "intlshipping", label: "Intl Shipping", icon: Globe },
   { id: "payments", label: "Payments", icon: CreditCard },
+  { id: "payment-audit", label: "Payment Audit", icon: ShieldCheck },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
   { id: "pnl", label: "P&L", icon: TrendingUp },
@@ -26891,6 +26893,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "shipping"     && <ShippingTab secret={secret} />}
           {activeTab === "intlshipping" && <IntlShippingTab secret={secret} />}
           {activeTab === "payments"     && <PaymentsTab secret={secret} />}
+          {activeTab === "payment-audit" && <PaymentAuditTab secret={secret} />}
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
           {activeTab === "fs3"          && <Fs3Tab secret={secret} />}

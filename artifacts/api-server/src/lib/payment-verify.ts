@@ -75,9 +75,33 @@ export const BSC_RPC_ENDPOINTS = [
   "https://bsc-mainnet.public.blastapi.io",
 ];
 
+export type ObservedTransfer = { recipientAddress: string; amount: number };
+
 export type VerifyResult =
-  | { verified: true; amountUsdt: number; blockConfirmations: number }
-  | { verified: false; reason: string; pending?: boolean; manual?: boolean };
+  | {
+      verified: true;
+      amountUsdt: number;
+      blockConfirmations: number;
+      /** Recipient observed from the confirmed on-chain transfer. */
+      recipientAddress?: string;
+      observedTransfers?: ObservedTransfer[];
+    }
+  | {
+      verified: false;
+      reason: string;
+      pending?: boolean;
+      manual?: boolean;
+      /**
+       * Evidence is returned whenever the chain transaction was readable, even
+       * when it could not be accepted for the order. This keeps verification
+       * behaviour unchanged while allowing the read-only admin audit to show
+       * where the funds actually went.
+       */
+      recipientAddress?: string;
+      amountUsdt?: number;
+      blockConfirmations?: number;
+      observedTransfers?: ObservedTransfer[];
+    };
 
 // New chain contracts
 export const ARB_USDT_CONTRACT  = "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9";
@@ -204,17 +228,19 @@ export async function verifyErc20Transfer(
   }
 
   const wallet = walletAddress.toLowerCase();
+  const observedTransfers: ObservedTransfer[] = [];
   for (const log of receipt.logs as any[]) {
     if (log.address?.toLowerCase() !== contractAddress) continue;
     if (!Array.isArray(log.topics) || log.topics[0] !== TRANSFER_TOPIC) continue;
     if (log.topics.length < 3) continue;
 
     const recipient = "0x" + log.topics[2].slice(26).toLowerCase();
-    if (recipient !== wallet) continue;
-
     let rawAmount: bigint;
     try { rawAmount = BigInt(log.data); } catch { continue; }
     const amount = Number(rawAmount) / Math.pow(10, tokenDecimals);
+    observedTransfers.push({ recipientAddress: recipient, amount });
+    if (recipient !== wallet) continue;
+
     const tolerance = expectedAmount * tolerancePct;
     // Accept: within underpay tolerance AND no more than 2% over
     if (amount >= expectedAmount - Math.max(tolerance, 0.02) && amount <= expectedAmount * 1.02) {
@@ -226,12 +252,14 @@ export async function verifyErc20Transfer(
         const txBlock = parseInt(txBlockHex, 16);
         blockConfirmations = Math.max(1, current - txBlock + 1);
       } catch { }
-      return { verified: true, amountUsdt: amount, blockConfirmations };
+      return { verified: true, amountUsdt: amount, blockConfirmations, recipientAddress: recipient, observedTransfers };
     }
   }
   return {
     verified: false,
     reason: "No token transfer to the wallet matching the expected amount was found in this transaction.",
+    ...(observedTransfers[0] ? { recipientAddress: observedTransfers[0].recipientAddress, amountUsdt: observedTransfers[0].amount } : {}),
+    observedTransfers,
   };
 }
 
@@ -260,19 +288,25 @@ export async function verifyNativeEthTransfer(
   if (!tx) return { verified: false, reason: "Transaction not found on Ethereum." };
 
   const toAddr = (tx.to ?? "").toLowerCase();
-  if (toAddr !== walletAddress.toLowerCase()) {
-    return { verified: false, reason: "Transaction recipient does not match the payment wallet address." };
-  }
-
   const valueWei = BigInt(tx.value ?? "0x0");
   const amountEth = Number(valueWei) / 1e18;
+  if (toAddr !== walletAddress.toLowerCase()) {
+    return {
+      verified: false,
+      reason: "Transaction recipient does not match the payment wallet address.",
+      recipientAddress: toAddr || undefined,
+      amountUsdt: amountEth,
+      observedTransfers: toAddr ? [{ recipientAddress: toAddr, amount: amountEth }] : [],
+    };
+  }
+
   const tolerance = expectedAmount * tolerancePct;
   // Accept: within underpay tolerance AND no more than 2% over
   if (amountEth < expectedAmount - Math.max(tolerance, 1e-9)) {
-    return { verified: false, reason: `ETH amount received (${amountEth.toFixed(6)}) is less than expected (${expectedAmount.toFixed(6)}).` };
+    return { verified: false, reason: `ETH amount received (${amountEth.toFixed(6)}) is less than expected (${expectedAmount.toFixed(6)}).`, recipientAddress: toAddr, amountUsdt: amountEth, observedTransfers: [{ recipientAddress: toAddr, amount: amountEth }] };
   }
   if (amountEth > expectedAmount * 1.02) {
-    return { verified: false, reason: `ETH amount received (${amountEth.toFixed(6)}) is more than 2% over the expected amount (${expectedAmount.toFixed(6)}). Please contact support.` };
+    return { verified: false, reason: `ETH amount received (${amountEth.toFixed(6)}) is more than 2% over the expected amount (${expectedAmount.toFixed(6)}). Please contact support.`, recipientAddress: toAddr, amountUsdt: amountEth, observedTransfers: [{ recipientAddress: toAddr, amount: amountEth }] };
   }
 
   let blockConfirmations = 1;
@@ -284,7 +318,7 @@ export async function verifyNativeEthTransfer(
     blockConfirmations = Math.max(1, current - txBlock + 1);
   } catch { }
 
-  return { verified: true, amountUsdt: amountEth, blockConfirmations };
+  return { verified: true, amountUsdt: amountEth, blockConfirmations, recipientAddress: toAddr, observedTransfers: [{ recipientAddress: toAddr, amount: amountEth }] };
 }
 
 export async function verifyBtcPayment(
@@ -313,9 +347,16 @@ export async function verifyBtcPayment(
     return { verified: false, pending: true, reason: "Bitcoin transaction not yet confirmed — please wait for at least 1 block confirmation." };
   }
 
+  const observedTransfers: ObservedTransfer[] = (data.vout ?? [])
+    .map((out: any) => ({ recipientAddress: out.scriptpubkey_address, amount: (out.value ?? 0) / 1e8 }))
+    .filter((transfer: ObservedTransfer) => Boolean(transfer.recipientAddress) && transfer.amount > 0);
+  let observedOutput: { recipientAddress: string; amountUsdt: number } | undefined;
   for (const out of data.vout ?? []) {
-    if (out.scriptpubkey_address !== walletAddress) continue;
     const btcAmount = (out.value ?? 0) / 1e8;
+    if (out.scriptpubkey_address && btcAmount > 0) {
+      observedOutput ??= { recipientAddress: out.scriptpubkey_address, amountUsdt: btcAmount };
+    }
+    if (out.scriptpubkey_address !== walletAddress) continue;
     const tolerance = expectedAmount * tolerancePct;
     // Accept: within underpay tolerance AND no more than 2% over
     if (btcAmount >= expectedAmount - Math.max(tolerance, 1e-8) && btcAmount <= expectedAmount * 1.02) {
@@ -327,12 +368,14 @@ export async function verifyBtcPayment(
           blockConfirmations = Math.max(1, tipHeight - data.status.block_height + 1);
         }
       } catch { }
-      return { verified: true, amountUsdt: btcAmount, blockConfirmations };
+      return { verified: true, amountUsdt: btcAmount, blockConfirmations, recipientAddress: out.scriptpubkey_address, observedTransfers };
     }
   }
   return {
     verified: false,
     reason: `No BTC output to the expected wallet found — amount sent may be less than the required amount (${expectedAmount.toFixed(8)} BTC).`,
+    ...observedOutput,
+    observedTransfers,
   };
 }
 
@@ -371,22 +414,26 @@ async function verifySolanaTokenTransfer(
   }
   const pre: any[] = txData.meta?.preTokenBalances ?? [];
   const post: any[] = txData.meta?.postTokenBalances ?? [];
+  const observedTransfers: ObservedTransfer[] = [];
+  let observedTransfer: { recipientAddress: string; amountUsdt: number } | undefined;
   for (const postBal of post) {
     if (postBal.mint !== mintAddress) continue;
-    if (postBal.owner !== walletAddress) continue;
     const preBal = pre.find((p: any) => p.accountIndex === postBal.accountIndex && p.mint === mintAddress);
     const preAmt = preBal ? parseFloat(preBal.uiTokenAmount?.uiAmount ?? "0") : 0;
     const postAmt = parseFloat(postBal.uiTokenAmount?.uiAmount ?? "0");
     const received = postAmt - preAmt;
     if (received <= 0) continue;
+    observedTransfers.push({ recipientAddress: postBal.owner ?? "", amount: received });
+    observedTransfer ??= { recipientAddress: postBal.owner ?? "", amountUsdt: received };
+    if (postBal.owner !== walletAddress) continue;
     const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
     if (received >= minAccepted) {
-      return { verified: true, amountUsdt: received, blockConfirmations: 1 };
+      return { verified: true, amountUsdt: received, blockConfirmations: 1, recipientAddress: postBal.owner, observedTransfers };
     }
     const shortfall = parseFloat((expectedAmount - received).toFixed(2));
-    return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.` };
+      return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.`, recipientAddress: postBal.owner, amountUsdt: received, observedTransfers };
   }
-  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.` };
+  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.`, ...observedTransfer, observedTransfers };
 }
 
 async function verifyTronUsdtTransfer(
@@ -410,23 +457,28 @@ async function verifyTronUsdtTransfer(
     return { verified: false, pending: true, reason: "Tron transaction not yet confirmed. Please wait for on-chain confirmation." };
   }
   const transfers: any[] = data.trc20TransferInfo ?? [];
+  const observedTransfers: ObservedTransfer[] = [];
+  let observedTransfer: { recipientAddress: string; amountUsdt: number } | undefined;
   for (const t of transfers) {
     const contract = (t.contract_address ?? t.contractAddress ?? "").toLowerCase();
     if (contract !== TRON_USDT_CONTRACT.toLowerCase()) continue;
     const to = (t.to_address ?? t.to ?? "");
-    if (to !== walletAddress) continue;
     const decimals = parseInt(t.decimals ?? "6", 10);
     const amount = parseInt(t.amount ?? "0", 10) / Math.pow(10, decimals);
+    if (amount <= 0) continue;
+    observedTransfers.push({ recipientAddress: to, amount });
+    observedTransfer ??= { recipientAddress: to, amountUsdt: amount };
+    if (to !== walletAddress) continue;
     const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
     if (amount >= minAccepted && amount > 0) {
-      return { verified: true, amountUsdt: amount, blockConfirmations: 1 };
+      return { verified: true, amountUsdt: amount, blockConfirmations: 1, recipientAddress: to, observedTransfers };
     }
     if (amount > 0) {
       const shortfall = parseFloat((expectedAmount - amount).toFixed(2));
-      return { verified: false, reason: `Underpayment: ${amount.toFixed(2)} USDT received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} USDT.` };
+      return { verified: false, reason: `Underpayment: ${amount.toFixed(2)} USDT received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} USDT.`, recipientAddress: to, amountUsdt: amount, observedTransfers };
     }
   }
-  return { verified: false, reason: "No USDT TRC-20 transfer to the expected wallet found in this Tron transaction." };
+  return { verified: false, reason: "No USDT TRC-20 transfer to the expected wallet found in this Tron transaction.", ...observedTransfer, observedTransfers };
 }
 
 export async function verifyTransaction(
