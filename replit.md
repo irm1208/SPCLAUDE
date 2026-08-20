@@ -4,12 +4,22 @@ Salt&Peps is a mobile-first peptide product ordering website functioning as a mu
 
 ## Run & Operate
 
-To run the application, use the following commands:
-- **Build**: `npm run build` (builds frontend and API server)
-- **Run**: `npm start` (starts API server, serving frontend; performs `drizzle-kit push --force` at startup)
+Replit's **Start application** workflow runs `bash start.sh`. It starts the API
+server on port 8080, the Vite frontend on an internal port, and exposes the web
+preview on port 5000.
+
+To run the project from the workspace:
+- **Install dependencies**: `pnpm install --frozen-lockfile`
+- **Run**: `bash start.sh`
+- **Build**: `pnpm build` (builds frontend and API server)
 - **Typecheck**: `pnpm typecheck`
 - **Codegen**: `pnpm --filter @workspace/api-spec run codegen` (generates API client and Zod schemas)
 - **DB Push**: `pnpm --filter @workspace/db run push` or `push-force`
+
+The connected development database must already contain the project's schema.
+`DB Push` changes that persistent database, so review and intentionally run it
+when setting up a fresh or empty database; restart **Start application**
+afterward so the app can seed and use the new tables.
 
 **Required Environment Variables**:
 - `DATABASE_URL`: PostgreSQL connection string
