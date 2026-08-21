@@ -1304,6 +1304,8 @@ router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Pr
 // PUT /api/wholesale-shares/:id/settings — organiser sets order limits & rules
 // (max people, min/max kits per person, max total kits, a lock deadline, and an
 // allowed-country list). All fields are optional; null/empty clears that rule.
+// An authenticated admin override may amend a locked share without reopening it;
+// already materialised member orders keep their locked money snapshots.
 router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -1312,7 +1314,11 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
     res.status(403).json({ error: "Only the organiser can change the order rules." });
     return;
   }
-  if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
+  const canAdminEditLocked = req.sharedOrderAdminOverride === true && share.status === "locked";
+  if (share.status !== "open" && !canAdminEditLocked) {
+    res.status(409).json({ error: "This shared order must be open to change its rules." });
+    return;
+  }
 
   const body = (req.body ?? {}) as Record<string, unknown>;
 
@@ -1438,7 +1444,9 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))
         .for("update");
-      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+      if (!locked || (locked.status !== "open" && !(req.sharedOrderAdminOverride === true && locked.status === "locked"))) {
+        throw FEES_CONFLICT;
+      }
 
       await tx.update(wholesaleSharesTable)
         .set({
@@ -1475,7 +1483,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
       }
     });
   } catch (e) {
-    if (e === FEES_CONFLICT) { res.status(409).json({ error: "This shared order is no longer open." }); return; }
+    if (e === FEES_CONFLICT) { res.status(409).json({ error: "This shared order cannot be changed in its current status." }); return; }
     throw e;
   }
 
@@ -2047,8 +2055,9 @@ router.post("/wholesale-shares/:id/cancel", requireWholesaleOrAdmin, async (req,
 });
 
 // PUT /api/wholesale-shares/:id/fees — organiser sets the optional organiser fee.
-// Custom per-participant organiser fee (paid directly to the organiser). Editable
-// only while the share is open. The current recipient is always exempt (forced to
+// Custom per-participant organiser fee (paid directly to the organiser). Organisers
+// can edit it while open; an authenticated admin override can edit while locked
+// without reopening the share. The current recipient is always exempt (forced to
 // 0). Paid SEPARATELY, never in the order total.
 router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
@@ -2058,7 +2067,8 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
     res.status(403).json({ error: "Only the organiser can set fees." });
     return;
   }
-  if (share.status !== "open") {
+  const canAdminEditLocked = req.sharedOrderAdminOverride === true && share.status === "locked";
+  if (share.status !== "open" && !canAdminEditLocked) {
     res.status(409).json({ error: "Fees can only be changed while the shared order is open." });
     return;
   }
@@ -2118,10 +2128,10 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
   const fees = Array.isArray(body.fees) ? body.fees : [];
 
   // All fee writes happen inside one transaction that first row-locks the share
-  // and re-asserts "open". A concurrent lock/cancel either lost the race (we win
+  // and re-asserts an editable status. A concurrent lock/cancel either lost the race (we win
   // and it 409s on its own conditional update) or won it (we see the new status
   // here and roll everything back), so fees can never be written to a non-open
-  // share. When a fee amount changes we also clear the matching paid flag, so a
+  // share. The admin override is deliberately limited to locked shares. When a fee amount changes we also clear the matching paid flag, so a
   // previously-confirmed fee can't stay "paid" after the organiser edits it.
   try {
     await db.transaction(async (tx) => {
@@ -2130,7 +2140,9 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))
         .for("update");
-      if (!locked || locked.status !== "open") throw FEES_CONFLICT;
+      if (!locked || (locked.status !== "open" && !(req.sharedOrderAdminOverride === true && locked.status === "locked"))) {
+        throw FEES_CONFLICT;
+      }
 
       if (Object.keys(shareUpdates).length > 0) {
         await tx.update(wholesaleSharesTable).set(shareUpdates).where(eq(wholesaleSharesTable.id, share.id));
@@ -2160,7 +2172,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
     });
   } catch (e) {
     if (e === FEES_CONFLICT) {
-      res.status(409).json({ error: "Fees can only be changed while the shared order is open." });
+      res.status(409).json({ error: "Fees cannot be changed in this shared order's current status." });
       return;
     }
     throw e;

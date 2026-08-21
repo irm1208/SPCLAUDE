@@ -2067,17 +2067,6 @@ export default function WholesaleShared() {
     </div>
   ) : null;
 
-  // Organiser fee — its own section.
-  const sectionOrganiserFee = (share.isCreator && isOpen) ? (
-    <section className="space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Fee</p>
-      <div className="rounded-xl p-4" style={card}>
-        {organiserFeeBlock}
-      </div>
-    </section>
-  ) : null;
-
-
   // Locked: organiser can still unlock / cancel if a member never pays.
   const sectionOrganiserLocked = showOrganiserLocked ? (
     <section className="space-y-2">
@@ -2744,7 +2733,7 @@ export default function WholesaleShared() {
       {setupSteps.map((sid, i) => {
         const done = setupStepDone(sid);
         const active = sid === activeSetupStep;
-        const title = sid === "items" ? "Add your items" : "Shipping split & organiser fee";
+        const title = sid === "items" ? "Add your items" : "Shipping split & delivery";
         const badgeStyle = done
           ? { background: "rgba(34,197,94,0.15)", color: "#15803d" }
           : active
@@ -2770,7 +2759,6 @@ export default function WholesaleShared() {
                 {sid === "items" ? sectionMyItems : (
                   <>
                     {orgSplitBlock}
-                    {organiserFeeBlock}
                     <button
                       onClick={dismissSetup}
                       className="w-full h-11 rounded-xl text-sm font-bold"
@@ -2808,7 +2796,6 @@ export default function WholesaleShared() {
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
       {sectionOrganiserPayment}
       {!organiserDone && sectionWhatYouOwe}
-      {sectionOrganiserFee}
       {sectionOrganiserLocked}
       {sectionMemberPaymentRoster}
       {sectionRecipientAddressPrompt}

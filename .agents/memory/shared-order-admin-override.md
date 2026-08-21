@@ -15,4 +15,5 @@ orders or clobber a concurrent status transition.
 **How to apply:** validate the admin secret first, then establish the share creator as
 the workflow actor only for the requested share. Keep the client-side confirmation
 warning for every mutation and preserve the existing open/locked/submitted/cancelled
-constraints.
+constraints. Admin-only rule and peer-to-peer fee edits may be allowed while locked
+without reopening, but must never rewrite materialised customer order totals.

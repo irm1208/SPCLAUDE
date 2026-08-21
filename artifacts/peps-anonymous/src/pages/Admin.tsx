@@ -19947,6 +19947,7 @@ type AdminShareMember = {
   username: string; isCreator: boolean;
   items: { productId: string; productName: string; quantity: number; unitPrice: number }[];
   kits: number; subtotal: number; tip: number; shippingShare: number | null;
+  organiserFee: number; organiserFeePaid: boolean; isRecipient: boolean;
   orderId: string | null; orderCode: string | null; orderStatus: string | null;
   paymentStatus: string | null; hasDeliveryAddress: boolean;
 };
@@ -20802,6 +20803,8 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirmingOrgPay, setConfirmingOrgPay] = useState<string | null>(null);
   const [adminAction, setAdminAction] = useState<string | null>(null);
+  const [settingsEditor, setSettingsEditor] = useState<{ shareId: string; values: Record<string, string> } | null>(null);
+  const [memberFeeDrafts, setMemberFeeDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -20870,19 +20873,39 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     }
   };
 
-  const editSettings = async (detail: AdminShareDetail) => {
-    const current = detail.settings;
-    const entered = window.prompt(
-      "Edit shared-order settings as JSON. Leave a field null to clear it. Changes use the same validation and fee safeguards as the organiser workflow.",
-      JSON.stringify(current, null, 2),
-    );
-    if (entered == null) return;
-    try {
-      const values = JSON.parse(entered);
-      await runAdminAction(detail.id, "save shared-order settings", `/wholesale-shares/${detail.id}/settings`, "PUT", values);
-    } catch {
-      alert("Settings must be valid JSON.");
-    }
+  const openSettingsEditor = (detail: AdminShareDetail) => {
+    const s = detail.settings;
+    setSettingsEditor({
+      shareId: detail.id,
+      values: {
+        maxMembers: s.maxMembers?.toString() ?? "",
+        minKitsPerMember: s.minKitsPerMember?.toString() ?? "",
+        maxKitsPerMember: s.maxKitsPerMember?.toString() ?? "",
+        maxTotalKits: s.maxTotalKits?.toString() ?? "",
+        maxPackages: s.maxPackages?.toString() ?? "",
+        organiserFlatFee: s.organiserFlatFee?.toString() ?? "",
+        feePerKit: s.feePerKit?.toString() ?? "",
+        lockDeadline: s.lockDeadline ? new Date(s.lockDeadline).toISOString().slice(0, 16) : "",
+        allowedCountries: s.allowedCountries?.join(", ") ?? "",
+      },
+    });
+  };
+
+  const saveSettings = async (detail: AdminShareDetail) => {
+    if (!settingsEditor || settingsEditor.shareId !== detail.id) return;
+    const v = settingsEditor.values;
+    await runAdminAction(detail.id, "save shared-order limits, rules, and fees", `/wholesale-shares/${detail.id}/settings`, "PUT", {
+      maxMembers: v.maxMembers || null,
+      minKitsPerMember: v.minKitsPerMember || null,
+      maxKitsPerMember: v.maxKitsPerMember || null,
+      maxTotalKits: v.maxTotalKits || null,
+      maxPackages: v.maxPackages || null,
+      organiserFlatFee: v.organiserFlatFee || null,
+      feePerKit: v.feePerKit || null,
+      lockDeadline: v.lockDeadline || null,
+      allowedCountries: v.allowedCountries.split(",").map(country => country.trim()).filter(Boolean),
+    });
+    setSettingsEditor(null);
   };
 
   const FILTERS: { id: typeof statusFilter; label: string }[] = [
@@ -20971,18 +20994,50 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                       <div className="space-y-3 mt-3">
                         <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.35)" }}>
                           <div className="font-semibold" style={{ color: "#dc2626" }}>Admin override controls</div>
-                          <p style={{ color: "var(--adm-muted)" }}>Every action asks for confirmation and uses the same protected backend workflow as the organiser.</p>
+                          <p style={{ color: "var(--adm-muted)" }}>Every action asks for confirmation and uses the same protected backend workflow as the organiser. Admins can amend locked-order rules without reopening the order.</p>
                           <div className="flex flex-wrap gap-2">
-                            <button onClick={() => editSettings(detail)} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-accent)", color: "#fff" }}>Edit all settings</button>
+                            <button onClick={() => openSettingsEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-accent)", color: "#fff" }}>{settingsEditor?.shareId === detail.id ? "Editing settings below" : "Edit all settings"}</button>
                             <button onClick={() => runAdminAction(row.id, detail.publicGroup.isPublic ? "make order private" : "publish shared order", `/wholesale-shares/${row.id}/publish`, "PUT", detail.publicGroup.isPublic ? { public: false } : { public: true, country: detail.publicGroup.country, maxMembers: detail.settings.maxMembers, maxTotalKits: detail.settings.maxTotalKits, maxPackages: detail.settings.maxPackages, organiserFlatFee: detail.settings.organiserFlatFee })} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{detail.publicGroup.isPublic ? "Make private" : "Publish"}</button>
                             {detail.status === "open" && <button onClick={() => runAdminAction(row.id, "lock shared order", `/wholesale-shares/${row.id}/lock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Lock</button>}
                             {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reopen shared order", `/wholesale-shares/${row.id}/unlock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#d97706" }}>Reopen</button>}
                             {["open", "locked"].includes(detail.status) && <button onClick={() => runAdminAction(row.id, "cancel shared order", `/wholesale-shares/${row.id}/cancel`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#dc2626" }}>Cancel order</button>}
                           </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1" style={{ color: "var(--adm-muted)" }}>
-                            <span>People: {detail.settings.maxMembers ?? "No cap"}</span><span>Kits: {detail.settings.minKitsPerMember ?? "—"}–{detail.settings.maxKitsPerMember ?? "—"}</span><span>Total cap: {detail.settings.maxTotalKits ?? "None"}</span><span>Packages: {detail.settings.maxPackages ?? "—"}</span>
-                            <span>Flat fee: {detail.settings.organiserFlatFee ?? 0}</span><span>Kit fee: {detail.settings.feePerKit ?? 0}</span><span>Deadline: {detail.settings.lockDeadline ? new Date(detail.settings.lockDeadline).toLocaleString() : "None"}</span><span>Countries: {detail.settings.allowedCountries?.join(", ") ?? "All"}</span>
+                          <div className="pt-1">
+                            <div className="font-semibold mb-1.5" style={{ color: "var(--adm-text)" }}>Order limits &amp; rules</div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" style={{ color: "var(--adm-muted)" }}>
+                              <span><b>Max people:</b> {detail.settings.maxMembers ?? "No limit"}</span><span><b>Kits/person:</b> {detail.settings.minKitsPerMember ?? "—"}–{detail.settings.maxKitsPerMember ?? "No max"}</span><span><b>Total kits:</b> {detail.settings.maxTotalKits ?? "No limit"}</span><span><b>Max packages:</b> {detail.settings.maxPackages ?? "No limit"}</span>
+                              <span><b>Fee/person:</b> {money(detail.settings.organiserFlatFee ?? 0)}</span><span><b>Fee/kit:</b> {money(detail.settings.feePerKit ?? 0)}</span><span><b>Auto-lock:</b> {detail.settings.lockDeadline ? new Date(detail.settings.lockDeadline).toLocaleString() : "Not set"}</span><span><b>Countries:</b> {detail.settings.allowedCountries?.join(", ") ?? "All"}</span>
+                            </div>
                           </div>
+                          {settingsEditor?.shareId === detail.id && (
+                            <div className="mt-3 pt-3 space-y-3 border-t" style={{ borderColor: "rgba(239,68,68,0.28)" }}>
+                              <div className="font-semibold" style={{ color: "var(--adm-text)" }}>Edit order limits &amp; rules</div>
+                              <p style={{ color: "var(--adm-muted)" }}>Leave an optional limit blank for no limit. Fee per kit is only applied when an order is locked; editing it later does not alter already-created member orders.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                {[
+                                  ["maxMembers", "Max people"], ["minKitsPerMember", "Min kits / person"], ["maxKitsPerMember", "Max kits / person"], ["maxTotalKits", "Max kits total"],
+                                  ["maxPackages", "Max packages"], ["organiserFlatFee", "Fee / person ($)"], ["feePerKit", "Fee / kit ($)"],
+                                ].map(([key, label]) => (
+                                  <label key={key} className="space-y-1">
+                                    <span className="font-medium" style={{ color: "var(--adm-muted)" }}>{label}</span>
+                                    <input type="number" min="0" step={key === "organiserFlatFee" || key === "feePerKit" ? "0.01" : "1"} value={settingsEditor.values[key]} onChange={event => setSettingsEditor(current => current ? { ...current, values: { ...current.values, [key]: event.target.value } } : current)} className="w-full rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                  </label>
+                                ))}
+                                <label className="space-y-1">
+                                  <span className="font-medium" style={{ color: "var(--adm-muted)" }}>Auto-lock deadline</span>
+                                  <input type="datetime-local" value={settingsEditor.values.lockDeadline} onChange={event => setSettingsEditor(current => current ? { ...current, values: { ...current.values, lockDeadline: event.target.value } } : current)} className="w-full rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                </label>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="font-medium" style={{ color: "var(--adm-muted)" }}>Allowed countries (comma-separated)</span>
+                                <input value={settingsEditor.values.allowedCountries} onChange={event => setSettingsEditor(current => current ? { ...current, values: { ...current.values, allowedCountries: event.target.value } } : current)} className="w-full rounded border px-2 py-1.5 text-xs" placeholder="Leave blank for all countries" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                              </label>
+                              <div className="flex gap-2">
+                                <button onClick={() => void saveSettings(detail)} disabled={!!adminAction} className="px-3 py-1.5 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "var(--adm-accent)" }}>Save settings</button>
+                                <button onClick={() => setSettingsEditor(null)} disabled={!!adminAction} className="px-3 py-1.5 rounded-md font-semibold disabled:opacity-40" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Discard</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         {/* Delivery address */}
                         <div className="rounded-lg p-3 text-xs" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
@@ -21058,6 +21113,29 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                                 </div>
                               ) : (
                                 <div className="mt-2 text-xs" style={{ color: "var(--adm-muted)" }}>No items.</div>
+                              )}
+                              {!m.isRecipient && ["open", "locked"].includes(detail.status) && (
+                                <div className="mt-2 pt-2 border-t flex flex-wrap items-end gap-2 text-[11px]" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
+                                  <label className="flex-1 min-w-36 space-y-1">
+                                    <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Additional fee for this member</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={memberFeeDrafts[`${row.id}:${m.username}`] ?? m.organiserFee.toString()}
+                                      onChange={event => setMemberFeeDrafts(current => ({ ...current, [`${row.id}:${m.username}`]: event.target.value }))}
+                                      className="w-full rounded border px-2 py-1.5 text-xs"
+                                      style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}
+                                    />
+                                  </label>
+                                  <button
+                                    onClick={() => void runAdminAction(row.id, `save the additional fee for @${m.username}`, `/wholesale-shares/${row.id}/fees`, "PUT", { fees: [{ username: m.username, organiserFee: memberFeeDrafts[`${row.id}:${m.username}`] ?? m.organiserFee }] })}
+                                    disabled={!!adminAction}
+                                    className="px-2.5 py-1.5 rounded-md font-semibold text-white disabled:opacity-40"
+                                    style={{ background: "var(--adm-accent)" }}
+                                  >Save fee</button>
+                                  <span className="basis-full">Paid separately to the organiser; it does not change the member’s customer-order total. {m.organiserFeePaid ? "Marked paid." : "Not marked paid."}</span>
+                                </div>
                               )}
                               <div className="mt-2 pt-2 border-t flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]" style={{ borderColor: "var(--adm-border)", color: "var(--adm-muted)" }}>
                                 <span>{m.kits} kit{m.kits === 1 ? "" : "s"}</span>
