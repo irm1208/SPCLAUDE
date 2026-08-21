@@ -163,6 +163,7 @@ export default function WholesaleShared() {
   const [orgPayInfo, setOrgPayInfo] = useState("");
   const [leadRevolut, setLeadRevolut] = useState("");
   const [leadPaypal, setLeadPaypal] = useState("");
+  const [leadAnonPayWallet, setLeadAnonPayWallet] = useState("");
   const [leadCryptoOptions, setLeadCryptoOptions] = useState<LeadCryptoOption[]>([]);
   const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({});
   const [feesDirty, setFeesDirty] = useState(false);
@@ -364,6 +365,7 @@ export default function WholesaleShared() {
     setOrgPayInfo(share.fees?.organiserPaymentInfo ?? "");
     setLeadRevolut(share.fees?.leadRevolutHandle ?? "");
     setLeadPaypal(share.fees?.leadPaypalEmail ?? "");
+    setLeadAnonPayWallet(share.fees?.leadAnonPayWallet ?? "");
     setLeadCryptoOptions(share.fees?.leadCryptoOptions ?? []);
     const seeded: Record<string, string> = {};
     for (const m of share.members) {
@@ -882,6 +884,7 @@ export default function WholesaleShared() {
         organiserPaymentInfo: orgPayInfo.trim(),
         leadRevolutHandle: leadRevolut.trim(),
         leadPaypalEmail: leadPaypal.trim(),
+        leadAnonPayWallet: leadAnonPayWallet.trim(),
         leadCryptoOptions,
         fees,
       });
@@ -2041,6 +2044,55 @@ export default function WholesaleShared() {
     </ExpandableCard>
   ) : null;
 
+  const paymentsConfigured = Boolean(
+    leadRevolut.trim() ||
+    leadPaypal.trim() ||
+    leadAnonPayWallet.trim() ||
+    leadCryptoOptions.some(option => option.walletAddress.trim()) ||
+    orgPayInfo.trim(),
+  );
+  const sectionPayments = (share.isCreator && isOpen) ? (
+    <ExpandableCard
+      key={paymentsConfigured ? "payments-set" : "payments-empty"}
+      title="Payments"
+      icon={<CreditCard className="w-4 h-4" style={{ color: "var(--t-blue)" }} />}
+      summary={paymentsConfigured ? "Configured" : "Not set"}
+      defaultOpen={!paymentsConfigured}
+    >
+      <div className="space-y-4">
+        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+          Add the payment destinations members can use to pay you directly. These details do not change order totals or platform payment routing.
+        </p>
+        <PaymentMethodEditor
+          revolut={leadRevolut}
+          onRevolutChange={setLeadRevolut}
+          paypal={leadPaypal}
+          onPaypalChange={setLeadPaypal}
+          anonPayWallet={leadAnonPayWallet}
+          onAnonPayWalletChange={setLeadAnonPayWallet}
+          cryptoOptions={leadCryptoOptions}
+          onCryptoChange={setLeadCryptoOptions}
+          notes={orgPayInfo}
+          onNotesChange={setOrgPayInfo}
+          onAnyChange={() => setFeesDirty(true)}
+          field={field}
+        />
+        <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+          Supported crypto: USDT and USDC (ERC-20, Arbitrum One, Polygon and Solana), USDT (TRC-20), BTC (Bitcoin Mainnet), and ETH (Ethereum).
+        </p>
+        <button
+          onClick={saveFees}
+          disabled={busy === "fees" || !feesDirty}
+          className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
+          style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
+        >
+          {busy === "fees" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+          Save payment details
+        </button>
+      </div>
+    </ExpandableCard>
+  ) : null;
+
   // Shipping & delivery — its own section (shipping split + recipient picker).
   // Opens automatically until a delivery member + address are set.
   const sectionShippingDelivery = (share.isCreator && isOpen) ? (
@@ -2788,6 +2840,7 @@ export default function WholesaleShared() {
     <>
       {!organiserDone && !myPaid && sectionHowItWorks}
       {sectionOrderLimits}
+      {sectionPayments}
       {sectionShipmentStatus}
       {showOrganiserOpen && id && <ShareInviteLinkCard shareId={id} />}
       {sectionShippingDelivery}

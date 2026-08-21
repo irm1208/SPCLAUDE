@@ -132,6 +132,8 @@ interface PaymentMethodEditorProps {
   onRevolutChange: (v: string) => void;
   paypal: string;
   onPaypalChange: (v: string) => void;
+  anonPayWallet: string;
+  onAnonPayWalletChange: (v: string) => void;
   cryptoOptions: LeadCryptoOption[];
   onCryptoChange: (v: LeadCryptoOption[]) => void;
   notes: string;
@@ -143,6 +145,7 @@ interface PaymentMethodEditorProps {
 export function PaymentMethodEditor({
   revolut, onRevolutChange,
   paypal, onPaypalChange,
+  anonPayWallet, onAnonPayWalletChange,
   cryptoOptions, onCryptoChange,
   notes, onNotesChange,
   onAnyChange,
@@ -191,6 +194,20 @@ export function PaymentMethodEditor({
           placeholder="you@example.com"
           maxLength={200}
           className="w-full h-10 px-3 rounded-lg border text-sm outline-none"
+          style={field}
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>
+          AnonPay wallet address
+        </label>
+        <input
+          value={anonPayWallet}
+          onChange={e => { onAnonPayWalletChange(e.target.value); mark(); }}
+          placeholder="Wallet address for AnonPay"
+          maxLength={200}
+          className="w-full h-10 px-3 rounded-lg border text-sm font-mono outline-none"
           style={field}
         />
       </div>
@@ -245,12 +262,13 @@ interface PaymentMethodDisplayProps {
   organiserUsername: string;
   revolut: string | null;
   paypal: string | null;
+  anonPayWallet: string | null;
   cryptoOptions: LeadCryptoOption[];
   notes: string | null;
 }
 
-export function PaymentMethodDisplay({ organiserUsername, revolut, paypal, cryptoOptions, notes }: PaymentMethodDisplayProps) {
-  const hasAny = !!revolut || !!paypal || cryptoOptions.length > 0 || !!notes;
+export function PaymentMethodDisplay({ organiserUsername, revolut, paypal, anonPayWallet, cryptoOptions, notes }: PaymentMethodDisplayProps) {
+  const hasAny = !!revolut || !!paypal || !!anonPayWallet || cryptoOptions.length > 0 || !!notes;
 
   if (!hasAny) {
     return (
@@ -268,6 +286,7 @@ export function PaymentMethodDisplay({ organiserUsername, revolut, paypal, crypt
       <div className="space-y-2">
         {revolut && <CopyField label="Revolut" value={revolut} />}
         {paypal && <CopyField label="PayPal" value={paypal} />}
+        {anonPayWallet && <CopyField label="AnonPay wallet" value={anonPayWallet} />}
         {cryptoOptions.map((opt, i) => (
           <CopyField key={i} label={`${opt.currency} · ${opt.network}`} value={opt.walletAddress} />
         ))}

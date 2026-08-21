@@ -87,6 +87,7 @@ export function WhatYouOwe({ share, me, onPayOrder }: WhatYouOweProps) {
                     organiserUsername={share.fees.organiserUsername}
                     revolut={share.fees.leadRevolutHandle}
                     paypal={share.fees.leadPaypalEmail}
+                    anonPayWallet={share.fees.leadAnonPayWallet}
                     cryptoOptions={share.fees.leadCryptoOptions}
                     notes={share.fees.organiserPaymentInfo}
                   />

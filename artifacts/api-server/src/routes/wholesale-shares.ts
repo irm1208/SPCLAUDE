@@ -467,6 +467,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       organiserPaymentInfo: share.organiserPaymentInfo ?? null,
       leadRevolutHandle: share.leadRevolutHandle ?? null,
       leadPaypalEmail: share.leadPaypalEmail ?? null,
+      leadAnonPayWallet: share.leadAnonPayWallet ?? null,
       leadCryptoOptions: share.leadCryptoOptions ?? [],
       organiserFeeTotal,
       active: organiserFeeTotal > 0,
@@ -2077,6 +2078,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
     organiserPaymentInfo?: unknown;
     leadRevolutHandle?: unknown;
     leadPaypalEmail?: unknown;
+    leadAnonPayWallet?: unknown;
     leadCryptoOptions?: unknown;
     fees?: Array<{ username?: unknown; organiserFee?: unknown }>;
   };
@@ -2119,6 +2121,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
   if (body.organiserPaymentInfo !== undefined) shareUpdates.organiserPaymentInfo = cleanInfo(body.organiserPaymentInfo);
   if (body.leadRevolutHandle !== undefined) shareUpdates.leadRevolutHandle = cleanHandle(body.leadRevolutHandle);
   if (body.leadPaypalEmail !== undefined) shareUpdates.leadPaypalEmail = cleanHandle(body.leadPaypalEmail);
+  if (body.leadAnonPayWallet !== undefined) shareUpdates.leadAnonPayWallet = cleanHandle(body.leadAnonPayWallet);
   if (body.leadCryptoOptions !== undefined) {
     const opts = cleanCryptoOptions(body.leadCryptoOptions);
     if (opts !== null) shareUpdates.leadCryptoOptions = opts;

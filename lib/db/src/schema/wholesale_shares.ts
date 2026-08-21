@@ -79,6 +79,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // Displayed to members so they know exactly where to send the organiser fee.
   leadRevolutHandle: text("lead_revolut_handle"),
   leadPaypalEmail: text("lead_paypal_email"),
+  leadAnonPayWallet: text("lead_anonpay_wallet"),
   leadCryptoOptions: jsonb("lead_crypto_options").$type<Array<{ currency: string; network: string; walletAddress: string }>>(),
   // ── Main parcel tracking (vendor → recipient) cache ─────────────────────────
   // Admin sets ONE tracking number for the whole shared order, written to every

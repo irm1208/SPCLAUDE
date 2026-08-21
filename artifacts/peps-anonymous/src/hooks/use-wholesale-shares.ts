@@ -69,6 +69,7 @@ export interface WholesaleShareFees {
   organiserPaymentInfo: string | null;
   leadRevolutHandle: string | null;
   leadPaypalEmail: string | null;
+  leadAnonPayWallet: string | null;
   leadCryptoOptions: LeadCryptoOption[];
   organiserFeeTotal: number;
   active: boolean;
@@ -405,6 +406,7 @@ export function setWholesaleShareFees(
     organiserPaymentInfo?: string;
     leadRevolutHandle?: string;
     leadPaypalEmail?: string;
+    leadAnonPayWallet?: string;
     leadCryptoOptions?: LeadCryptoOption[];
     fees: WholesaleFeeInput[];
   },
