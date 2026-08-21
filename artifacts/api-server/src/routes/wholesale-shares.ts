@@ -34,6 +34,8 @@ import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
+import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
+import { notifyUser } from "../lib/telegram";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -222,7 +224,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   let shippingRegion: string | null = null;
   let estimateCalculable = false;
 
-  if (vendor && share.shippingCountry) {
+  if (share.shippingOverride != null) {
+    shippingEstimate = Number(share.shippingOverride);
+    estimateCalculable = true;
+  } else if (vendor && share.shippingCountry) {
     const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry);
     if (picked) {
       shippingRegion = picked.region.name;
@@ -289,6 +294,8 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       subtotal: memberSubtotal(items),
       tip: Number(m.tip ?? 0),
       shippingShare,
+      adminAdjustmentFee: Number(m.adminAdjustmentFee ?? 0),
+      adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
       // Optional organiser fee (paid separately, NOT to admin/vendor).
       organiserFee,
       organiserFeePaid: organiserFee > 0 ? (m.organiserFeePaid ?? false) : false,
@@ -432,7 +439,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     estimateCalculable,
     combinedKits,
     combinedSubtotal,
-    totalVendorShipping: share.totalVendorShipping != null ? Number(share.totalVendorShipping) : null,
+    totalVendorShipping: share.totalVendorShipping != null
+      ? Number(share.totalVendorShipping)
+      : (share.shippingOverride != null ? Number(share.shippingOverride) : null),
     totalKits: share.totalKits != null ? Number(share.totalKits) : null,
     // True once a set deadline has passed (UI shows "deadline passed, waiting on…").
     deadlinePassed: share.lockDeadline ? (share.lockDeadline as Date).getTime() <= Date.now() : false,
@@ -1793,7 +1802,8 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
   if (share.maxTotalKits && share.maxTotalKits > 0 && combinedKits > share.maxTotalKits) {
     return { ok: false, status: 400, error: `The combined order (${combinedKits} kits) is over the ${share.maxTotalKits}-kit total limit — reduce items before locking.` };
   }
-  const totalShipping = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
+  const calculatedShipping = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
+  const totalShipping = share.shippingOverride != null ? Number(share.shippingOverride) : calculatedShipping;
   if (totalShipping === null) {
     return { ok: false, status: 400, error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." };
   }
@@ -1816,7 +1826,8 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
         const kitFeesAmount = shareKitFeePerKit > 0
           ? Number((memberKitCount * shareKitFeePerKit).toFixed(2))
           : 0;
-        const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount).toFixed(2));
+        const adminAdjustmentFee = Number(m.adminAdjustmentFee ?? 0);
+        const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount + adminAdjustmentFee).toFixed(2));
         const orderId = randomUUID();
         const code = String(codeBase + i);
         const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
@@ -1831,6 +1842,8 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
           productSubtotal: subtotal.toFixed(2),
           tip: tip.toFixed(2),
           kitFees: kitFeesAmount.toFixed(2),
+          adminAdjustmentFee: adminAdjustmentFee.toFixed(2),
+          adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
           grandTotal: grandTotal.toFixed(2),
           status: "Submitted",
           paymentStatus: "unpaid",
@@ -2401,7 +2414,235 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
     return;
   }
   // Pass an admin-neutral username: every isYou=false, no canEditAddress.
-  res.json(await buildShareResponse(share, ""));
+  const products = await db
+    .select({ id: productsTable.id, name: productsTable.name, price: productsTable.price, wholesalePrice: productsTable.wholesalePrice })
+    .from(productsTable)
+    .where(and(eq(productsTable.active, true), eq(productsTable.wholesaleEnabled, true), isNull(productsTable.sourceGroupBuyId)))
+    .orderBy(productsTable.name);
+  res.json({
+    ...await buildShareResponse(share, ""),
+    availableProducts: products.map(product => ({
+      id: product.id,
+      name: product.name,
+      unitPrice: Number(product.wholesalePrice ?? product.price),
+    })),
+  });
+});
+
+const ADMIN_ADJUSTMENT_CONFLICT = Symbol("ADMIN_ADJUSTMENT_CONFLICT");
+
+// PUT /api/admin/wholesale-shares/:id/adjustments
+// Correct a member's items, the total vendor shipping fee, or an admin-required
+// fee. This deliberately permits a locked share only while every materialised
+// order is still unpaid; confirmed or pending payments must never have their
+// money owed rewritten by an admin override.
+router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const shareId = String(req.params.id);
+  const body = (req.body ?? {}) as {
+    memberUsername?: unknown;
+    items?: Array<{ productId?: unknown; quantity?: unknown }>;
+    totalVendorShipping?: unknown;
+    additionalFee?: unknown;
+    feeMessage?: unknown;
+  };
+  const memberUsername = typeof body.memberUsername === "string" ? body.memberUsername.replace(/^@/, "").trim() : "";
+  if (!memberUsername) { res.status(400).json({ error: "Choose the member whose items or fee you are adjusting." }); return; }
+  if (body.items !== undefined && !Array.isArray(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
+
+  const shippingInput = body.totalVendorShipping === undefined ? undefined : Number(body.totalVendorShipping);
+  if (shippingInput !== undefined && (!Number.isFinite(shippingInput) || shippingInput < 0 || shippingInput > 100000)) {
+    res.status(400).json({ error: "Vendor shipping must be between $0 and $100,000." }); return;
+  }
+  const feeInput = body.additionalFee === undefined ? undefined : Number(body.additionalFee);
+  const feeMessage = typeof body.feeMessage === "string" ? body.feeMessage.trim().slice(0, 1000) : "";
+  if (feeInput !== undefined && (!Number.isFinite(feeInput) || feeInput < 0 || feeInput > 100000)) {
+    res.status(400).json({ error: "Additional fee must be between $0 and $100,000." }); return;
+  }
+  if (feeInput !== undefined && feeInput > 0 && !feeMessage) {
+    res.status(400).json({ error: "Write an explanation before adding a required fee." }); return;
+  }
+
+  let notification: { username: string; fee: number; message: string; total: number } | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const [share] = await tx.select().from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, shareId)).for("update");
+      if (!share || (share.status !== "open" && share.status !== "locked")) throw ADMIN_ADJUSTMENT_CONFLICT;
+
+      const members = await tx.select().from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id)).for("update");
+      const target = members.find(member => member.username.replace(/^@/, "").toLowerCase() === memberUsername.toLowerCase());
+      if (!target) { throw new Error("That member is not part of this shared order."); }
+
+      const orderIds = members.map(member => member.orderId).filter((id): id is string => !!id);
+      const orders = orderIds.length > 0
+        ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
+        : [];
+      const orderById = new Map(orders.map(order => [order.id, order]));
+      if (share.status === "locked" && (
+        orders.length !== members.length ||
+        orders.some(order => order.paymentStatus !== "unpaid")
+      )) {
+        throw new Error("Locked shared orders can only be adjusted while every member order is unpaid.");
+      }
+
+      let targetItems = target.items ?? [];
+      if (Array.isArray(body.items)) {
+        const products = await tx.select({
+          id: productsTable.id, name: productsTable.name, price: productsTable.price, wholesalePrice: productsTable.wholesalePrice,
+        }).from(productsTable).where(and(
+          eq(productsTable.active, true),
+          eq(productsTable.wholesaleEnabled, true),
+          isNull(productsTable.sourceGroupBuyId),
+        ));
+        const productById = new Map(products.map(product => [product.id, product]));
+        const clean: WholesaleShareItem[] = [];
+        for (const raw of body.items) {
+          const productId = typeof raw?.productId === "string" ? raw.productId : "";
+          const quantity = Math.round(Number(raw?.quantity));
+          if (!productId || !Number.isFinite(quantity) || quantity <= 0) continue;
+          if (quantity > 1000) throw new Error("Item quantity is too large.");
+          const product = productById.get(productId);
+          if (!product) throw new Error("One of the selected products is not available for wholesale.");
+          clean.push({
+            productId,
+            productName: product.name,
+            quantity,
+            unitPrice: Number(product.wholesalePrice ?? product.price),
+          });
+        }
+        targetItems = clean;
+      }
+
+      const updatedMembers = members.map(member => member.id === target.id
+        ? {
+            ...member,
+            items: targetItems,
+            adminAdjustmentFee: feeInput ?? Number(member.adminAdjustmentFee ?? 0),
+            adminAdjustmentMessage: feeInput === undefined
+              ? member.adminAdjustmentMessage
+              : feeInput > 0 ? feeMessage : null,
+          }
+        : member,
+      );
+      const targetKits = memberKits(targetItems);
+      if (share.maxKitsPerMember && targetKits > share.maxKitsPerMember) {
+        throw new Error(`This shared order allows at most ${share.maxKitsPerMember} kits per person.`);
+      }
+      const combinedKits = updatedMembers.reduce((total, member) => total + memberKits(member.items ?? []), 0);
+      if (share.maxTotalKits && combinedKits > share.maxTotalKits) {
+        throw new Error(`This shared order allows at most ${share.maxTotalKits} kits in total.`);
+      }
+
+      let totalShipping = shippingInput;
+      if (totalShipping === undefined) {
+        if (share.shippingOverride != null) totalShipping = Number(share.shippingOverride);
+        else if (share.status === "locked" && share.totalVendorShipping != null) totalShipping = Number(share.totalVendorShipping);
+        else {
+          const vendor = await getActiveWholesaleVendor();
+          const picked = vendor && share.shippingCountry
+            ? pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry)
+            : null;
+          totalShipping = picked ? calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits) : null;
+          if (totalShipping === null) throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
+        }
+      }
+
+      const calculations = calculateSharedOrderAdjustment({
+        members: updatedMembers.map(member => ({
+          id: member.id,
+          items: member.items ?? [],
+          tip: Number(member.tip ?? 0),
+          adjustmentFee: Number(member.adminAdjustmentFee ?? 0),
+          adjustmentMessage: member.adminAdjustmentMessage,
+          kitFees: member.orderId ? Number(orderById.get(member.orderId)?.kitFees ?? 0) : Number((memberKits(member.items ?? []) * Number(share.feePerKit ?? 0)).toFixed(2)),
+        })),
+        splitMode: (share.splitMode as WholesaleShareSplitMode) ?? "even",
+        totalShipping,
+      });
+      const calculationById = new Map(calculations.map(calculation => [calculation.id, calculation]));
+
+      for (const member of updatedMembers) {
+        const calculation = calculationById.get(member.id)!;
+        await tx.update(wholesaleShareMembersTable).set({
+          items: member.items ?? [],
+          shippingShare: calculation.shippingShare.toFixed(2),
+          adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0).toFixed(2),
+          adminAdjustmentMessage: member.adminAdjustmentMessage ?? null,
+        }).where(eq(wholesaleShareMembersTable.id, member.id));
+
+        if (share.status === "locked" && member.orderId) {
+          const order = orderById.get(member.orderId)!;
+          if (member.id === target.id && Array.isArray(body.items)) {
+            await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, order.id));
+            if ((member.items ?? []).length > 0) {
+              await tx.insert(orderLineItemsTable).values((member.items ?? []).map(item => ({
+                id: randomUUID(),
+                orderId: order.id,
+                productId: item.productId,
+                productName: item.productName,
+                quantity: Number(item.quantity).toFixed(2),
+                unitPrice: Number(item.unitPrice).toFixed(2),
+                lineTotal: (Number(item.quantity) * Number(item.unitPrice)).toFixed(2),
+              })));
+            }
+          }
+          await tx.update(ordersTable).set({
+            productSubtotal: calculation.subtotal.toFixed(2),
+            vendorShipping: calculation.shippingShare.toFixed(2),
+            adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0).toFixed(2),
+            adminAdjustmentMessage: member.adminAdjustmentMessage ?? null,
+            grandTotal: calculation.grandTotal.toFixed(2),
+            paymentUsdAmount: null,
+          }).where(and(eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, "unpaid")));
+        }
+      }
+
+      await tx.update(wholesaleSharesTable).set({
+        shippingOverride: shippingInput === undefined ? share.shippingOverride : totalShipping.toFixed(2),
+        totalVendorShipping: share.status === "locked" ? totalShipping.toFixed(2) : share.totalVendorShipping,
+        totalKits: share.status === "locked" ? combinedKits.toFixed(2) : share.totalKits,
+      }).where(eq(wholesaleSharesTable.id, share.id));
+
+      if (feeInput !== undefined && feeInput > 0) {
+        const total = calculationById.get(target.id)!.grandTotal;
+        notification = { username: target.username, fee: feeInput, message: feeMessage, total };
+      }
+    });
+  } catch (error) {
+    if (error === ADMIN_ADJUSTMENT_CONFLICT) {
+      res.status(409).json({ error: "This shared order must be open or locked before it can be adjusted." }); return;
+    }
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to apply the shared-order adjustment." }); return;
+  }
+
+  await writeLog("order", "warn", "wholesale_share_admin_adjusted",
+    `Admin adjusted shared order ${shareId}`, {
+      shareId,
+      member: memberUsername,
+      changedItems: Array.isArray(body.items),
+      vendorShipping: shippingInput ?? null,
+      additionalFee: feeInput ?? null,
+      feeMessage: feeInput && feeInput > 0 ? feeMessage : null,
+    }, req.ip);
+
+  if (notification) {
+    const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
+    const message = [
+      `<b>Shared order ${escHtml(shareId)} updated</b>`,
+      `A required fee of <b>$${notification.fee.toFixed(2)}</b> was added to your order.`,
+      "",
+      escHtml(notification.message),
+      "",
+      `Your revised amount due is <b>$${notification.total.toFixed(2)}</b>.`,
+      `<a href="${escHtml(appUrl)}/wholesale/shared/${encodeURIComponent(shareId)}">View shared order</a>`,
+    ].join("\n");
+    await notifyUser(notification.username, "payment", message).catch(() => {});
+  }
+
+  const updated = await loadShare(shareId);
+  res.json(await buildShareResponse(updated!, ""));
 });
 
 // ── Organiser → platform payment ──────────────────────────────────────────────

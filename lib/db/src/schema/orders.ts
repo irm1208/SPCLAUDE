@@ -93,6 +93,10 @@ export const ordersTable = pgTable("orders", {
   couponDiscount: numeric("coupon_discount", { precision: 10, scale: 2 }).notNull().default("0"),
   adminFee: numeric("admin_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   adminFeeLabel: text("admin_fee_label"),
+  // Required adjustment applied by a shared-order admin after a customer order
+  // has been materialised. It is deliberately separate from configured admin fees.
+  adminAdjustmentFee: numeric("admin_adjustment_fee", { precision: 10, scale: 2 }).notNull().default("0"),
+  adminAdjustmentMessage: text("admin_adjustment_message"),
   kitFees: numeric("kit_fees", { precision: 10, scale: 2 }).notNull().default("0"),
   creditsApplied: integer("credits_applied").notNull().default(0),
   directShippingRequested: boolean("direct_shipping_requested").notNull().default(false), // customer requested direct home address delivery

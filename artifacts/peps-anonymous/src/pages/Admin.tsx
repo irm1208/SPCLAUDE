@@ -19947,6 +19947,7 @@ type AdminShareMember = {
   username: string; isCreator: boolean;
   items: { productId: string; productName: string; quantity: number; unitPrice: number }[];
   kits: number; subtotal: number; tip: number; shippingShare: number | null;
+  adminAdjustmentFee: number; adminAdjustmentMessage: string | null;
   organiserFee: number; organiserFeePaid: boolean; isRecipient: boolean;
   orderId: string | null; orderCode: string | null; orderStatus: string | null;
   paymentStatus: string | null; hasDeliveryAddress: boolean;
@@ -19973,6 +19974,12 @@ type AdminShareDetail = {
     feePerKit: number | null; lockDeadline: string | null; allowedCountries: string[] | null;
   };
   publicGroup: { isPublic: boolean; country: string | null };
+  availableProducts: { id: string; name: string; unitPrice: number }[];
+};
+type AdminShareAdjustmentDraft = {
+  shareId: string; memberUsername: string;
+  items: { productId: string; quantity: number }[];
+  shipping: string; fee: string; feeMessage: string; addProductId: string;
 };
 
 function ShareStatusBadge({ status }: { status: string }) {
@@ -20805,6 +20812,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [adminAction, setAdminAction] = useState<string | null>(null);
   const [settingsEditor, setSettingsEditor] = useState<{ shareId: string; values: Record<string, string> } | null>(null);
   const [memberFeeDrafts, setMemberFeeDrafts] = useState<Record<string, string>>({});
+  const [adjustmentEditor, setAdjustmentEditor] = useState<AdminShareAdjustmentDraft | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -20908,6 +20916,54 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     setSettingsEditor(null);
   };
 
+  const openAdjustmentEditor = (detail: AdminShareDetail, member = detail.members[0]) => {
+    if (!member) return;
+    setAdjustmentEditor({
+      shareId: detail.id,
+      memberUsername: member.username,
+      items: member.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
+      shipping: detail.totalVendorShipping?.toString() ?? "",
+      fee: member.adminAdjustmentFee > 0 ? member.adminAdjustmentFee.toString() : "",
+      feeMessage: member.adminAdjustmentMessage ?? "",
+      addProductId: "",
+    });
+  };
+
+  const saveAdjustment = async (detail: AdminShareDetail) => {
+    if (!adjustmentEditor || adjustmentEditor.shareId !== detail.id) return;
+    const editor = adjustmentEditor;
+    const warning = [
+      "ADMIN ADJUSTMENT — CONFIRM CAREFULLY",
+      "",
+      "This rewrites member items, vendor-shipping allocations, and money due.",
+      "Locked orders can only be adjusted while every member order is unpaid.",
+      editor.fee ? "The member will receive a bot notification with your fee message." : "",
+      "",
+      "Continue?",
+    ].filter(Boolean).join("\n");
+    if (!window.confirm(warning)) return;
+    setAdminAction(`${detail.id}:adjustment`);
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/adjustments`), {
+        method: "PUT",
+        headers: { "x-admin-secret": secret, "content-type": "application/json" },
+        body: JSON.stringify({
+          memberUsername: editor.memberUsername,
+          items: editor.items,
+          totalVendorShipping: editor.shipping === "" ? undefined : editor.shipping,
+          additionalFee: editor.fee === "" ? undefined : editor.fee,
+          feeMessage: editor.feeMessage,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { alert((result as { error?: string }).error ?? "Could not apply the adjustment."); return; }
+      setAdjustmentEditor(null);
+      await refreshDetail(detail.id);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
   const FILTERS: { id: typeof statusFilter; label: string }[] = [
     { id: "made", label: "Made" },
     { id: "open", label: "Open" },
@@ -20997,6 +21053,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           <p style={{ color: "var(--adm-muted)" }}>Every action asks for confirmation and uses the same protected backend workflow as the organiser. Admins can amend locked-order rules without reopening the order.</p>
                           <div className="flex flex-wrap gap-2">
                             <button onClick={() => openSettingsEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-accent)", color: "#fff" }}>{settingsEditor?.shareId === detail.id ? "Editing settings below" : "Edit all settings"}</button>
+                            <button onClick={() => openAdjustmentEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "#b91c1c", color: "#fff" }}>Adjust items &amp; shipping</button>
                             <button onClick={() => runAdminAction(row.id, detail.publicGroup.isPublic ? "make order private" : "publish shared order", `/wholesale-shares/${row.id}/publish`, "PUT", detail.publicGroup.isPublic ? { public: false } : { public: true, country: detail.publicGroup.country, maxMembers: detail.settings.maxMembers, maxTotalKits: detail.settings.maxTotalKits, maxPackages: detail.settings.maxPackages, organiserFlatFee: detail.settings.organiserFlatFee })} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{detail.publicGroup.isPublic ? "Make private" : "Publish"}</button>
                             {detail.status === "open" && <button onClick={() => runAdminAction(row.id, "lock shared order", `/wholesale-shares/${row.id}/lock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Lock</button>}
                             {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reopen shared order", `/wholesale-shares/${row.id}/unlock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#d97706" }}>Reopen</button>}
@@ -21039,6 +21096,74 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                             </div>
                           )}
                         </div>
+                        {adjustmentEditor?.shareId === detail.id && (() => {
+                          const editor = adjustmentEditor;
+                          const selectedMember = detail.members.find(member => member.username === editor.memberUsername) ?? detail.members[0];
+                          const availableProducts = detail.availableProducts ?? [];
+                          const itemName = (productId: string) => availableProducts.find(product => product.id === productId)?.name ?? "Unavailable product";
+                          return (
+                            <div className="rounded-lg p-3 text-xs space-y-3" style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.35)" }}>
+                              <div>
+                                <div className="font-semibold" style={{ color: "#b91c1c" }}>Adjust items, shipping &amp; required fee</div>
+                                <p className="mt-1" style={{ color: "var(--adm-muted)" }}>This updates every member’s shipping allocation. A locked order can only be changed while every materialised member order is unpaid.</p>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Member</span>
+                                <select value={editor.memberUsername} onChange={event => {
+                                  const member = detail.members.find(candidate => candidate.username === event.target.value);
+                                  if (!member) return;
+                                  setAdjustmentEditor(current => current ? {
+                                    ...current,
+                                    memberUsername: member.username,
+                                    items: member.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
+                                    fee: member.adminAdjustmentFee > 0 ? member.adminAdjustmentFee.toString() : "",
+                                    feeMessage: member.adminAdjustmentMessage ?? "",
+                                  } : current);
+                                }} className="w-full rounded border px-2 py-1.5" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}>
+                                  {detail.members.map(member => <option key={member.username} value={member.username}>@{member.username}</option>)}
+                                </select>
+                              </label>
+                              <div className="space-y-1.5">
+                                <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Items for @{selectedMember?.username}</span>
+                                {editor.items.map((item, index) => (
+                                  <div key={`${item.productId}:${index}`} className="flex items-center gap-2">
+                                    <span className="flex-1 truncate" style={{ color: "var(--adm-muted)" }}>{itemName(item.productId)}</span>
+                                    <input type="number" min="1" step="1" value={item.quantity} onChange={event => setAdjustmentEditor(current => current ? {
+                                      ...current,
+                                      items: current.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, quantity: Number(event.target.value) || 1 } : entry),
+                                    } : current)} className="w-20 rounded border px-2 py-1.5" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                    <button onClick={() => setAdjustmentEditor(current => current ? { ...current, items: current.items.filter((_, entryIndex) => entryIndex !== index) } : current)} className="p-1" style={{ color: "#dc2626" }} title="Remove item"><Trash2 className="w-4 h-4" /></button>
+                                  </div>
+                                ))}
+                                <div className="flex gap-2">
+                                  <select value={editor.addProductId} onChange={event => setAdjustmentEditor(current => current ? { ...current, addProductId: event.target.value } : current)} className="min-w-0 flex-1 rounded border px-2 py-1.5" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}>
+                                    <option value="">Add wholesale product…</option>
+                                    {availableProducts.filter(product => !editor.items.some(item => item.productId === product.id)).map(product => <option key={product.id} value={product.id}>{product.name} · {money(product.unitPrice)}</option>)}
+                                  </select>
+                                  <button disabled={!editor.addProductId} onClick={() => setAdjustmentEditor(current => current && current.addProductId ? { ...current, items: [...current.items, { productId: current.addProductId, quantity: 1 }], addProductId: "" } : current)} className="px-2.5 rounded font-semibold text-white disabled:opacity-40" style={{ background: "var(--adm-accent)" }}><Plus className="w-4 h-4" /></button>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <label className="space-y-1">
+                                  <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Total vendor shipping ($)</span>
+                                  <input type="number" min="0" step="0.01" value={editor.shipping} onChange={event => setAdjustmentEditor(current => current ? { ...current, shipping: event.target.value } : current)} placeholder="Auto-calculate" className="w-full rounded border px-2 py-1.5" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                </label>
+                                <label className="space-y-1">
+                                  <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Additional required fee ($)</span>
+                                  <input type="number" min="0" step="0.01" value={editor.fee} onChange={event => setAdjustmentEditor(current => current ? { ...current, fee: event.target.value } : current)} placeholder="None" className="w-full rounded border px-2 py-1.5" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                </label>
+                              </div>
+                              <label className="block space-y-1">
+                                <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Fee message {editor.fee ? "(required)" : "(optional)"}</span>
+                                <textarea value={editor.feeMessage} maxLength={1000} rows={3} onChange={event => setAdjustmentEditor(current => current ? { ...current, feeMessage: event.target.value } : current)} placeholder="Explain why this fee is required. This text is sent through the bot." className="w-full rounded border px-2 py-1.5 resize-y" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                              </label>
+                              <div className="flex gap-2">
+                                <button onClick={() => void saveAdjustment(detail)} disabled={!!adminAction || (Number(editor.fee) > 0 && !editor.feeMessage.trim())} className="px-3 py-1.5 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#b91c1c" }}>{adminAction === `${detail.id}:adjustment` ? "Saving…" : "Confirm & save adjustment"}</button>
+                                <button onClick={() => setAdjustmentEditor(null)} disabled={!!adminAction} className="px-3 py-1.5 rounded-md font-semibold disabled:opacity-40" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Discard</button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* Delivery address */}
                         <div className="rounded-lg p-3 text-xs" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
                           <div className="flex items-center gap-1.5 font-semibold mb-1" style={{ color: "var(--adm-text)" }}>
@@ -21142,7 +21267,8 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                                 <span>Subtotal {money(m.subtotal)}</span>
                                 {m.tip > 0 && <span>Tip {money(m.tip)}</span>}
                                 {m.shippingShare != null && <span>Shipping {money(m.shippingShare)}</span>}
-                                <span className="ml-auto" style={{ color: "var(--adm-text)", fontWeight: 600 }}>Total {money(m.subtotal + m.tip + (m.shippingShare ?? 0))}</span>
+                                {m.adminAdjustmentFee > 0 && <span>Admin adjustment {money(m.adminAdjustmentFee)}</span>}
+                                <span className="ml-auto" style={{ color: "var(--adm-text)", fontWeight: 600 }}>Total {money(m.subtotal + m.tip + (m.shippingShare ?? 0) + m.adminAdjustmentFee)}</span>
                               </div>
                             </div>
                           ))}

@@ -69,6 +69,9 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   shippingCountry: text("shipping_country"),
   // Snapshots captured at lock for stable display
   totalVendorShipping: numeric("total_vendor_shipping", { precision: 10, scale: 2 }),
+  // Admin-set total vendor shipping override. When present it is used for open
+  // previews and becomes the locked shipping snapshot.
+  shippingOverride: numeric("shipping_override", { precision: 10, scale: 2 }),
   totalKits: numeric("total_kits", { precision: 10, scale: 2 }),
   // ── Optional organiser fee (paid separately, NOT to admin) ──────────────────
   // The organiser can charge each participant a custom organiser fee (paid directly
@@ -135,6 +138,10 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   // (effective fee treated as 0). Tracks a "paid" flag confirmed by the organiser.
   organiserFee: numeric("organiser_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   organiserFeePaid: boolean("organiser_fee_paid").notNull().default(false),
+  // Admin-only required adjustment, kept separate from items, shipping and
+  // organiser peer-to-peer fees so it can be explained and audited.
+  adminAdjustmentFee: numeric("admin_adjustment_fee", { precision: 10, scale: 2 }).notNull().default("0"),
+  adminAdjustmentMessage: text("admin_adjustment_message"),
   // ── Onward shipping address (where this member wants their items forwarded) ───
   // Each participant may enter their OWN onward address. It is private: only the
   // chosen parcel recipient (delivery member) and the member themselves can read it
