@@ -98,6 +98,9 @@ export const ordersTable = pgTable("orders", {
   adminAdjustmentFee: numeric("admin_adjustment_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   adminAdjustmentMessage: text("admin_adjustment_message"),
   kitFees: numeric("kit_fees", { precision: 10, scale: 2 }).notNull().default("0"),
+  // Organiser fee resolved from the shared-order member and included in this
+  // materialised order's payment total.
+  organiserFee: numeric("organiser_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   creditsApplied: integer("credits_applied").notNull().default(0),
   directShippingRequested: boolean("direct_shipping_requested").notNull().default(false), // customer requested direct home address delivery
   directShippingCost: numeric("direct_shipping_cost", { precision: 10, scale: 2 }), // calculated wholesale shipping cost for direct home delivery

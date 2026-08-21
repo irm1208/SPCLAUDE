@@ -18,6 +18,22 @@ describe("shared-order admin adjustments", () => {
     ]);
   });
 
+  it("includes the materialised organiser fee in each member total", () => {
+    const result = calculateSharedOrderAdjustment({
+      members: [
+        { id: "a", items: [{ quantity: 1, unitPrice: 30 }], tip: 0, adjustmentFee: 0, organiserFee: 10 },
+        { id: "b", items: [{ quantity: 1, unitPrice: 30 }], tip: 0, adjustmentFee: 0, organiserFee: 0 },
+      ],
+      splitMode: "even",
+      totalShipping: 10,
+    });
+
+    expect(result).toEqual([
+      { id: "a", subtotal: 30, shippingShare: 5, grandTotal: 45 },
+      { id: "b", subtotal: 30, shippingShare: 5, grandTotal: 35 },
+    ]);
+  });
+
   it("rejects an unexplained required fee", () => {
     expect(() => calculateSharedOrderAdjustment({
       members: [{ id: "a", items: [], tip: 0, adjustmentFee: 4, adjustmentMessage: "" }],

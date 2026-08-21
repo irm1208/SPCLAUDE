@@ -12,6 +12,7 @@ export type AdminAdjustmentMember = {
   adjustmentFee: number;
   adjustmentMessage?: string | null;
   kitFees?: number;
+  organiserFee?: number;
 };
 
 export function calculateSharedOrderAdjustment(input: {
@@ -45,7 +46,8 @@ export function calculateSharedOrderAdjustment(input: {
     const shippingShare = Number((shippingShares[index] ?? 0).toFixed(2));
     const grandTotal = Number((
       subtotal + shippingShare + (Number(member.tip) || 0) +
-      (Number(member.kitFees) || 0) + member.adjustmentFee
+      (Number(member.kitFees) || 0) + member.adjustmentFee +
+      (Number(member.organiserFee) || 0)
     ).toFixed(2));
     return { id: member.id, subtotal, shippingShare, grandTotal };
   });
