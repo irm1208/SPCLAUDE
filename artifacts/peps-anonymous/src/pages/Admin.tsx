@@ -23837,6 +23837,7 @@ const SIDEBAR_SECTIONS = [
     label: "Wholesale",
     items: [
       { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
+      { id: "wholesale-shares", label: "Shared Orders",     icon: Users,        keywords: ["shared orders", "shared order", "open shared order", "wholesale share", "combined wholesale", "shared members", "shared delivery", "shared order settings", "lock shared order", "shared parcel"] },
       { id: "wholesale-access", label: "Access Requests",  icon: Lock,         keywords: ["wholesale access", "access requests", "pay in", "enable wholesale", "disable wholesale", "applications", "wholesale toggle", "open applications", "close applications"] },
       { id: "wholesale-tracking", label: "Tracking",          icon: Truck,        keywords: ["wholesale tracking", "shared order tracking", "main parcel", "onward tracking", "tracking status", "tracking events", "delivery status", "shared parcel", "dispatch tracking"] },
       { id: "dispatch",         label: "Dispatch",          icon: PackageCheck, keywords: ["dispatch", "packing slips", "shipped items", "ready to ship", "group buy shipped", "parcels shipped", "vendor parcel", "dispatch status", "ready for dispatch", "waiting orders", "reshipper dispatch", "shipped qty"] },
