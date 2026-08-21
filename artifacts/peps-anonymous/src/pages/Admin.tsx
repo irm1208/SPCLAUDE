@@ -19966,6 +19966,12 @@ type AdminShareDetail = {
   totalVendorShipping: number | null; totalKits: number | null; allPaid: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
   organiserPayment: AdminShareOrganiserPayment | null;
+  settings: {
+    maxMembers: number | null; minKitsPerMember: number | null; maxKitsPerMember: number | null;
+    maxTotalKits: number | null; maxPackages: number | null; organiserFlatFee: number | null;
+    feePerKit: number | null; lockDeadline: string | null; allowedCountries: string[] | null;
+  };
+  publicGroup: { isPublic: boolean; country: string | null };
 };
 
 function ShareStatusBadge({ status }: { status: string }) {
@@ -20795,6 +20801,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [detailById, setDetailById] = useState<Record<string, AdminShareDetail>>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirmingOrgPay, setConfirmingOrgPay] = useState<string | null>(null);
+  const [adminAction, setAdminAction] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -20834,6 +20841,47 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
     } finally {
       setConfirmingOrgPay(null);
+    }
+  };
+
+  const refreshDetail = async (shareId: string) => {
+    const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
+    if (r.ok) {
+      const d = await r.json() as AdminShareDetail;
+      setDetailById(prev => ({ ...prev, [shareId]: d }));
+    }
+  };
+
+  const runAdminAction = async (shareId: string, label: string, path: string, method: string, body?: unknown) => {
+    if (!window.confirm(`ADMIN OVERRIDE: ${label}\n\nThis changes a live shared order and may affect members, payments, shipping, or refunds. Continue only after checking the order details.`)) return;
+    setAdminAction(`${shareId}:${label}`);
+    try {
+      const r = await fetch(apiUrl(path), {
+        method,
+        headers: { "x-admin-secret": secret, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { alert((d as { error?: string }).error ?? `Could not ${label.toLowerCase()}.`); return; }
+      setDetailById(prev => ({ ...prev, [shareId]: d as AdminShareDetail }));
+      await refreshDetail(shareId);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
+  const editSettings = async (detail: AdminShareDetail) => {
+    const current = detail.settings;
+    const entered = window.prompt(
+      "Edit shared-order settings as JSON. Leave a field null to clear it. Changes use the same validation and fee safeguards as the organiser workflow.",
+      JSON.stringify(current, null, 2),
+    );
+    if (entered == null) return;
+    try {
+      const values = JSON.parse(entered);
+      await runAdminAction(detail.id, "save shared-order settings", `/wholesale-shares/${detail.id}/settings`, "PUT", values);
+    } catch {
+      alert("Settings must be valid JSON.");
     }
   };
 
@@ -20921,6 +20969,21 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                       </div>
                     ) : (
                       <div className="space-y-3 mt-3">
+                        <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.35)" }}>
+                          <div className="font-semibold" style={{ color: "#dc2626" }}>Admin override controls</div>
+                          <p style={{ color: "var(--adm-muted)" }}>Every action asks for confirmation and uses the same protected backend workflow as the organiser.</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={() => editSettings(detail)} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-accent)", color: "#fff" }}>Edit all settings</button>
+                            <button onClick={() => runAdminAction(row.id, detail.publicGroup.isPublic ? "make order private" : "publish shared order", `/wholesale-shares/${row.id}/publish`, "PUT", detail.publicGroup.isPublic ? { public: false } : { public: true, country: detail.publicGroup.country, maxMembers: detail.settings.maxMembers, maxTotalKits: detail.settings.maxTotalKits, maxPackages: detail.settings.maxPackages, organiserFlatFee: detail.settings.organiserFlatFee })} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{detail.publicGroup.isPublic ? "Make private" : "Publish"}</button>
+                            {detail.status === "open" && <button onClick={() => runAdminAction(row.id, "lock shared order", `/wholesale-shares/${row.id}/lock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Lock</button>}
+                            {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reopen shared order", `/wholesale-shares/${row.id}/unlock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#d97706" }}>Reopen</button>}
+                            {["open", "locked"].includes(detail.status) && <button onClick={() => runAdminAction(row.id, "cancel shared order", `/wholesale-shares/${row.id}/cancel`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#dc2626" }}>Cancel order</button>}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1" style={{ color: "var(--adm-muted)" }}>
+                            <span>People: {detail.settings.maxMembers ?? "No cap"}</span><span>Kits: {detail.settings.minKitsPerMember ?? "—"}–{detail.settings.maxKitsPerMember ?? "—"}</span><span>Total cap: {detail.settings.maxTotalKits ?? "None"}</span><span>Packages: {detail.settings.maxPackages ?? "—"}</span>
+                            <span>Flat fee: {detail.settings.organiserFlatFee ?? 0}</span><span>Kit fee: {detail.settings.feePerKit ?? 0}</span><span>Deadline: {detail.settings.lockDeadline ? new Date(detail.settings.lockDeadline).toLocaleString() : "None"}</span><span>Countries: {detail.settings.allowedCountries?.join(", ") ?? "All"}</span>
+                          </div>
+                        </div>
                         {/* Delivery address */}
                         <div className="rounded-lg p-3 text-xs" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)" }}>
                           <div className="flex items-center gap-1.5 font-semibold mb-1" style={{ color: "var(--adm-text)" }}>
@@ -20942,6 +21005,24 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           ) : (
                             <div style={{ color: "var(--adm-muted)" }}>No delivery address set yet.</div>
                           )}
+                          {detail.status === "open" && (
+                            <label className="mt-3 flex items-center gap-2" style={{ color: "var(--adm-muted)" }}>
+                              <span className="font-semibold">Change recipient</span>
+                              <select
+                                value={detail.delivery.username ?? ""}
+                                disabled={!!adminAction}
+                                onChange={event => {
+                                  const username = event.target.value;
+                                  if (username) void runAdminAction(row.id, `change parcel recipient to @${username}`, `/wholesale-shares/${row.id}/delivery`, "PUT", { deliveryUsername: username });
+                                }}
+                                className="rounded border px-2 py-1 text-xs"
+                                style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}
+                              >
+                                <option value="">Choose a member…</option>
+                                {detail.members.map(member => <option key={member.username} value={member.username}>@{member.username}</option>)}
+                              </select>
+                            </label>
+                          )}
                         </div>
 
                         {/* Member orders, stacked */}
@@ -20957,6 +21038,14 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                                 <SharePayBadge status={m.paymentStatus} hasOrder={!!m.orderId} />
                                 {m.orderCode && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>order #{m.orderCode}</span>}
                                 {m.orderStatus && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>· {m.orderStatus}</span>}
+                                {!m.isCreator && detail.status === "open" && (
+                                  <button
+                                    onClick={() => runAdminAction(row.id, `remove @${m.username} from the shared order`, `/wholesale-shares/${row.id}/remove-member`, "POST", { username: m.username })}
+                                    disabled={!!adminAction}
+                                    className="ml-auto px-2 py-0.5 rounded text-[11px] font-semibold disabled:opacity-40"
+                                    style={{ color: "#dc2626", border: "1px solid rgba(220,38,38,0.35)" }}
+                                  >Remove member</button>
+                                )}
                               </div>
                               {m.items.length > 0 ? (
                                 <div className="mt-2 space-y-0.5 text-xs" style={{ color: "var(--adm-muted)" }}>

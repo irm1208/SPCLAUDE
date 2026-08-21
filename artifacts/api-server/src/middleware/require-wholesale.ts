@@ -3,12 +3,17 @@ import { db } from "@workspace/db";
 import { accountsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
+import { requireAdmin } from "./require-admin";
+import { wholesaleSharesTable } from "@workspace/db";
+import { writeLog } from "../lib/audit-log";
 
 declare global {
   namespace Express {
     interface Request {
       // Set by requireWholesale once the caller is confirmed to be a wholesale member.
       wholesale?: { telegramUsername: string };
+      /** Set only after the admin secret is validated for a share-management action. */
+      sharedOrderAdminOverride?: boolean;
     }
   }
 }
@@ -53,5 +58,44 @@ export async function requireWholesale(req: Request, res: Response, next: NextFu
   }
 
   req.wholesale = { telegramUsername: username };
+  next();
+}
+
+/**
+ * Lets the protected admin workspace invoke the existing creator workflows for
+ * one shared order. The handlers still run their normal transactional status,
+ * payment, delivery, and fee safeguards; this middleware only establishes the
+ * creator identity after the admin secret is verified.
+ */
+export async function requireWholesaleOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (typeof req.headers["x-admin-secret"] !== "string") {
+    await requireWholesale(req, res, next);
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+
+  const shareId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+  if (!shareId) {
+    res.status(400).json({ error: "Shared order ID is required." });
+    return;
+  }
+  const [share] = await db
+    .select({ creatorUsername: wholesaleSharesTable.creatorUsername })
+    .from(wholesaleSharesTable)
+    .where(eq(wholesaleSharesTable.id, shareId));
+  if (!share) {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  req.wholesale = { telegramUsername: share.creatorUsername };
+  req.sharedOrderAdminOverride = true;
+  void writeLog(
+    "admin",
+    "warn",
+    "shared_order_admin_override",
+    `Admin override for shared order ${shareId}: ${req.method} ${req.path}`,
+    { shareId, method: req.method, path: req.path, creatorUsername: share.creatorUsername },
+    req.ip,
+  );
   next();
 }

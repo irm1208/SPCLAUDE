@@ -16,7 +16,7 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { requireWholesale } from "../middleware/require-wholesale";
+import { requireWholesale, requireWholesaleOrAdmin } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
 import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
 import bcrypt from "bcryptjs";
@@ -957,7 +957,7 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
 });
 
 // PUT /api/wholesale-shares/:id/delivery — creator sets the delivery member + address
-router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res): Promise<void> => {
+router.put("/wholesale-shares/:id/delivery", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1015,7 +1015,7 @@ router.put("/wholesale-shares/:id/delivery", requireWholesale, async (req, res):
 // the organiser picks WHO receives the parcel but can never type an address for
 // someone else (the original anti-spoofing rule still holds for everyone but the
 // recipient themselves).
-router.put("/wholesale-shares/:id/delivery-address", requireWholesale, async (req, res): Promise<void> => {
+router.put("/wholesale-shares/:id/delivery-address", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1304,7 +1304,7 @@ router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Pr
 // PUT /api/wholesale-shares/:id/settings — organiser sets order limits & rules
 // (max people, min/max kits per person, max total kits, a lock deadline, and an
 // allowed-country list). All fields are optional; null/empty clears that rule.
-router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res): Promise<void> => {
+router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1494,7 +1494,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesale, async (req, res):
 // the recipient and the organiser themselves) and onto each future joiner. On the
 // first publish (false → true transition) we best-effort announce the group to the
 // configured public Telegram topic.
-router.put("/wholesale-shares/:id/publish", requireWholesale, async (req, res): Promise<void> => {
+router.put("/wholesale-shares/:id/publish", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1645,7 +1645,7 @@ router.put("/wholesale-shares/:id/publish", requireWholesale, async (req, res): 
 
 // POST /api/wholesale-shares/:id/remove-member — organiser removes a member from an
 // open shared order. The organiser/creator can't be removed (use Cancel instead).
-router.post("/wholesale-shares/:id/remove-member", requireWholesale, async (req, res): Promise<void> => {
+router.post("/wholesale-shares/:id/remove-member", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1885,7 +1885,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
   return { ok: true };
 }
 
-router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Promise<void> => {
+router.post("/wholesale-shares/:id/lock", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1904,7 +1904,7 @@ router.post("/wholesale-shares/:id/lock", requireWholesale, async (req, res): Pr
 // nobody has paid: the materialised member orders are deleted (their draft items
 // live on the member rows, so editing simply resumes). If anyone has already paid,
 // unlocking is blocked — cancel (which flags refunds) is the right tool then.
-router.post("/wholesale-shares/:id/unlock", requireWholesale, async (req, res): Promise<void> => {
+router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1982,7 +1982,7 @@ router.post("/wholesale-shares/:id/unlock", requireWholesale, async (req, res): 
 // POST /api/wholesale-shares/:id/cancel — creator cancels an open OR locked share
 // (e.g. a member never pays after locking), releasing everyone. A share that has
 // already been submitted to the vendor can no longer be cancelled here.
-router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): Promise<void> => {
+router.post("/wholesale-shares/:id/cancel", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -2050,7 +2050,7 @@ router.post("/wholesale-shares/:id/cancel", requireWholesale, async (req, res): 
 // Custom per-participant organiser fee (paid directly to the organiser). Editable
 // only while the share is open. The current recipient is always exempt (forced to
 // 0). Paid SEPARATELY, never in the order total.
-router.put("/wholesale-shares/:id/fees", requireWholesale, async (req, res): Promise<void> => {
+router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
