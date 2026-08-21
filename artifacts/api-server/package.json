@@ -8,7 +8,8 @@
     "build": "pnpm --filter @workspace/db run push-force && tsx ./build.ts",
     "build:compile": "tsx ./build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:payment-audit": "node scripts/payment-audit-e2e.mjs"
   },
   "dependencies": {
     "@google/genai": "workspace:*",
