@@ -19950,6 +19950,8 @@ type AdminShareMember = {
   adminAdjustmentFee: number; adminAdjustmentMessage: string | null;
   organiserFee: number; organiserFeePaid: boolean; isRecipient: boolean;
   orderId: string | null; orderCode: string | null; orderStatus: string | null;
+  orderGrandTotal: number | null; orderOrganiserFee: number | null;
+  amountDue: number; balancePaymentStatus: string | null;
   paymentStatus: string | null; hasDeliveryAddress: boolean;
 };
 type AdminShareOrganiserPayment = {
@@ -21054,6 +21056,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           <div className="flex flex-wrap gap-2">
                             <button onClick={() => openSettingsEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-accent)", color: "#fff" }}>{settingsEditor?.shareId === detail.id ? "Editing settings below" : "Edit all settings"}</button>
                             <button onClick={() => openAdjustmentEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "#b91c1c", color: "#fff" }}>Adjust items &amp; shipping</button>
+                            {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reconcile included organiser fees", `/admin/wholesale-shares/${row.id}/reconcile-organiser-fees`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#7c3aed" }}>Reconcile included fees</button>}
                             <button onClick={() => runAdminAction(row.id, detail.publicGroup.isPublic ? "make order private" : "publish shared order", `/wholesale-shares/${row.id}/publish`, "PUT", detail.publicGroup.isPublic ? { public: false } : { public: true, country: detail.publicGroup.country, maxMembers: detail.settings.maxMembers, maxTotalKits: detail.settings.maxTotalKits, maxPackages: detail.settings.maxPackages, organiserFlatFee: detail.settings.organiserFlatFee })} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{detail.publicGroup.isPublic ? "Make private" : "Publish"}</button>
                             {detail.status === "open" && <button onClick={() => runAdminAction(row.id, "lock shared order", `/wholesale-shares/${row.id}/lock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Lock</button>}
                             {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reopen shared order", `/wholesale-shares/${row.id}/unlock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#d97706" }}>Reopen</button>}

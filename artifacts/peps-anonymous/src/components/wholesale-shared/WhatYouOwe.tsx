@@ -1,7 +1,5 @@
-import { useState } from "react";
-import { ChevronDown, CreditCard, CheckCircle2 } from "lucide-react";
+import { CreditCard, CheckCircle2 } from "lucide-react";
 import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
-import { PaymentMethodDisplay } from "./payment-fields";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -11,19 +9,16 @@ interface WhatYouOweProps {
   onPayOrder: () => void;
 }
 
-// One combined money card for the current member: their vendor order (paid via the
-// order page) plus any peer-to-peer organiser fee (paid directly to the organiser).
-// Uses only server-resolved amounts — never re-derives a
-// fee. Recipients are already exempt server-side (their fee amounts arrive as 0).
+// One platform order payment for the current member. Once locked, every value comes
+// from the materialised order snapshot; recipients already arrive with a $0 fee.
 export function WhatYouOwe({ share, me, onPayOrder }: WhatYouOweProps) {
-  const [expanded, setExpanded] = useState<"organiser" | null>(null);
+  const itemAndShipping = me.subtotal + me.tip + (me.shippingShare ?? 0);
+  const organiserDue = me.orderOrganiserFee ?? me.organiserFee;
+  const total = me.orderGrandTotal ?? itemAndShipping + organiserDue;
 
-  const orderDue = me.subtotal + me.tip + (me.shippingShare ?? 0);
-  const organiserDue = me.organiserFee;
-  const total = orderDue + organiserDue;
-
-  const orderPaid = me.paymentStatus === "confirmed";
-  const canPay = !orderPaid && !!me.orderId && share.status !== "cancelled";
+  const orderPaid = me.paymentStatus === "confirmed" || me.paymentStatus === "test_confirmed";
+  const outstandingBalance = me.amountDue > 0 && me.balancePaymentStatus !== "confirmed";
+  const canPay = (!orderPaid || outstandingBalance) && !!me.orderId && share.status !== "cancelled";
 
   const card = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
 
@@ -37,72 +32,41 @@ export function WhatYouOwe({ share, me, onPayOrder }: WhatYouOweProps) {
         </div>
 
         <div className="rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-          {/* Vendor order — paid through the order page */}
+          {/* One materialised order payment, with fee shown as an itemised line. */}
           <div className="px-3 py-3 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Your items &amp; shipping</p>
+                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Your order</p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
                   {money(me.subtotal)} items{me.tip > 0 ? ` · ${money(me.tip)} tip` : ""}{me.shippingShare != null ? ` · ${money(me.shippingShare)} shipping` : ""}
+                  {organiserDue > 0 ? ` · ${money(organiserDue)} organiser fee` : ""}
                   {me.orderCode ? ` · order #${me.orderCode}` : ""}
                 </p>
               </div>
-              <span className="text-sm font-bold shrink-0" style={{ color: "var(--t-text)" }}>{money(orderDue)}</span>
+              <span className="text-sm font-bold shrink-0" style={{ color: "var(--t-text)" }}>{money(total)}</span>
             </div>
+            {organiserDue > 0 && <div className="flex justify-between text-xs" style={{ color: "var(--t-muted)" }}><span>Organiser fee</span><span>{money(organiserDue)}</span></div>}
+            {outstandingBalance && <div className="flex justify-between text-xs font-semibold" style={{ color: "#b45309" }}><span>Outstanding balance</span><span>{money(me.amountDue)}</span></div>}
             {orderPaid ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 h-7 rounded-lg" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
                 <CheckCircle2 className="w-3 h-3" /> Paid
               </span>
-            ) : canPay ? (
+            ) : null}
+            {canPay ? (
               <button
                 onClick={onPayOrder}
                 className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-bold text-white"
                 style={{ background: "var(--t-blue)" }}
               >
-                <CreditCard className="w-4 h-4" /> Pay now
+                <CreditCard className="w-4 h-4" /> {outstandingBalance ? "Pay balance" : "Pay now"}
               </button>
-            ) : (
+            ) : !orderPaid ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 h-7 rounded-lg" style={{ background: "rgba(234,179,8,0.12)", color: "#a16207" }}>
                 Awaiting order
               </span>
-            )}
+            ) : null}
           </div>
-
-          {/* Organiser fee — peer-to-peer, paid directly to the organiser */}
-          {organiserDue > 0 && (
-            <div className="px-3 py-2.5 space-y-2">
-              <button type="button" onClick={() => setExpanded(e => (e === "organiser" ? null : "organiser"))} className="w-full flex items-center justify-between gap-3 text-left">
-                <span className="text-sm font-medium" style={{ color: "var(--t-text)" }}>Organiser fee</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{money(organiserDue)}</span>
-                  {me.organiserFeePaid
-                    ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>Paid</span>
-                    : <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(234,179,8,0.12)", color: "#a16207" }}>Unpaid</span>}
-                  <ChevronDown className="w-4 h-4 transition-transform" style={{ color: "var(--t-muted)", transform: expanded === "organiser" ? "rotate(180deg)" : "none" }} />
-                </span>
-              </button>
-              {expanded === "organiser" && (
-                <div className="rounded-lg p-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                  <PaymentMethodDisplay
-                    organiserUsername={share.fees.organiserUsername}
-                    revolut={share.fees.leadRevolutHandle}
-                    paypal={share.fees.leadPaypalEmail}
-                    anonPayWallet={share.fees.leadAnonPayWallet}
-                    cryptoOptions={share.fees.leadCryptoOptions}
-                    notes={share.fees.organiserPaymentInfo}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
         </div>
-
-        {organiserDue > 0 && (
-          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-            Your order is paid through the order page. The organiser fee is settled directly with the organiser above.
-          </p>
-        )}
       </div>
     </section>
   );

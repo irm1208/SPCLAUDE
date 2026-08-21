@@ -22,12 +22,16 @@ export interface WholesaleShareMember {
   subtotal: number;
   tip: number;
   shippingShare: number | null;
-  // Optional organiser fee (paid separately, not part of the order total).
+  // Organiser fee is materialised into the member order total once locked.
   organiserFee: number;
   organiserFeePaid: boolean;
   orderId: string | null;
   orderCode: string | null;
   orderStatus: string | null;
+  orderGrandTotal: number | null;
+  orderOrganiserFee: number | null;
+  amountDue: number;
+  balancePaymentStatus: string | null;
   paymentStatus: string | null;
   hasDeliveryAddress: boolean;
   // The organiser may remove this member while the order is open (never the creator).

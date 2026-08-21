@@ -35,6 +35,7 @@ import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram"
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
+import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
 import { notifyUser } from "../lib/telegram";
 
 function escHtml(s: string): string {
@@ -128,6 +129,7 @@ const LOCK_CONFLICT = Symbol("share_lock_conflict");
 // Thrown inside the fee-update transaction when the share is no longer "open"
 // (a concurrent lock/cancel won the race), so fee writes roll back and we 409.
 const FEES_CONFLICT = Symbol("share_fees_conflict");
+const ORGANISER_FEE_RECONCILIATION_CONFLICT = Symbol("organiser_fee_reconciliation_conflict");
 
 // Thrown inside the unlock transaction when a concurrent cancel/submit already
 // moved the share off "locked", so we abort with 409 instead of reopening it.
@@ -191,6 +193,91 @@ function memberSubtotal(items: WholesaleShareItem[]): number {
 
 type ShareRow = typeof wholesaleSharesTable.$inferSelect;
 type MemberRow = typeof wholesaleShareMembersTable.$inferSelect;
+
+const isOrderPaid = (paymentStatus: string | null | undefined): boolean =>
+  paymentStatus === "confirmed" || paymentStatus === "test_confirmed";
+
+function effectiveOrganiserFee(
+  share: ShareRow,
+  member: Pick<MemberRow, "username" | "organiserFee">,
+): number {
+  const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
+  if (recipientLower !== null && member.username.toLowerCase() === recipientLower) return 0;
+  return Number(member.organiserFee ?? 0);
+}
+
+type OrganiserFeeReconciliationSummary = {
+  memberCount: number;
+  updatedOrders: number;
+  balanceDueAdded: number;
+};
+
+async function reconcileLockedShareOrganiserFees(
+  tx: any,
+  share: ShareRow,
+): Promise<OrganiserFeeReconciliationSummary> {
+  if (share.status !== "locked") throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+
+  const members: MemberRow[] = await tx
+    .select()
+    .from(wholesaleShareMembersTable)
+    .where(eq(wholesaleShareMembersTable.shareId, share.id))
+    .for("update");
+  const orderIds = members.map(member => member.orderId).filter((id): id is string => !!id);
+  if (orderIds.length !== members.length) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+
+  const orders: Array<typeof ordersTable.$inferSelect> = orderIds.length > 0
+    ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
+    : [];
+  const orderById = new Map<string, typeof ordersTable.$inferSelect>(orders.map(order => [order.id, order]));
+  if (orderById.size !== members.length) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+
+  let updatedOrders = 0;
+  let balanceDueAdded = 0;
+
+  for (const member of members) {
+    const order = orderById.get(member.orderId!);
+    if (!order) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+
+    const organiserFee = effectiveOrganiserFee(share, member);
+    const update = buildOrganiserFeeOrderUpdate({
+      oldFee: Number(order.organiserFee ?? 0),
+      newFee: organiserFee,
+      grandTotal: Number(order.grandTotal ?? 0),
+      amountDue: Number(order.amountDue ?? 0),
+      paymentStatus: isOrderPaid(order.paymentStatus) ? "confirmed" : order.paymentStatus,
+    });
+
+    await tx.update(wholesaleShareMembersTable)
+      .set({
+        organiserFee: organiserFee.toFixed(2),
+        organiserFeePaid: organiserFee > 0 ? (member.organiserFeePaid ?? false) : false,
+      })
+      .where(eq(wholesaleShareMembersTable.id, member.id));
+
+    if (!update.changed) continue;
+
+    const orderUpdate: Partial<typeof ordersTable.$inferInsert> = {
+      organiserFee: update.organiserFee.toFixed(2),
+      grandTotal: update.grandTotal.toFixed(2),
+      amountDue: update.amountDue.toFixed(2),
+    };
+    if (update.resetPaymentLock) {
+      orderUpdate.paymentUsdAmount = null;
+    }
+    if (update.resetBalancePayment) {
+      orderUpdate.balancePaymentStatus = "unpaid";
+      orderUpdate.balanceScreenshot = null;
+      orderUpdate.balanceTxHash = null;
+      orderUpdate.balanceConfirmedAt = null;
+      balanceDueAdded = Number((balanceDueAdded + (update.amountDue - Number(order.amountDue ?? 0))).toFixed(2));
+    }
+    await tx.update(ordersTable).set(orderUpdate).where(eq(ordersTable.id, order.id));
+    updatedOrders += 1;
+  }
+
+  return { memberCount: members.length, updatedOrders, balanceDueAdded };
+}
 
 // Build the full client-facing share payload, computing a live shipping estimate
 // and split preview while the share is open, and reading snapshots once locked.
@@ -269,7 +356,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       : (shippingEstimate !== null ? liveShares[idx] : null);
     const mLower = m.username.toLowerCase();
     const isRecipient = recipientLower != null && mLower === recipientLower;
-    const organiserFee = isRecipient ? 0 : Number(m.organiserFee ?? 0);
+    const organiserFee = isLocked && order
+      ? Number(order.organiserFee ?? 0)
+      : (isRecipient ? 0 : Number(m.organiserFee ?? 0));
     // Onward shipping address privacy: each member enters their OWN onward address
     // (where the recipient should forward their items). It is visible ONLY to the
     // chosen parcel recipient and to the member themselves — never the organiser or
@@ -296,12 +385,16 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       shippingShare,
       adminAdjustmentFee: Number(m.adminAdjustmentFee ?? 0),
       adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
-      // Optional organiser fee (paid separately, NOT to admin/vendor).
+      // Fee materialised into the member order once the shared order is locked.
       organiserFee,
       organiserFeePaid: organiserFee > 0 ? (m.organiserFeePaid ?? false) : false,
       orderId: m.orderId ?? null,
       orderCode: order?.code ?? null,
       orderStatus: order?.status ?? null,
+      orderGrandTotal: order ? Number(order.grandTotal ?? 0) : null,
+      orderOrganiserFee: order ? Number(order.organiserFee ?? 0) : null,
+      amountDue: order ? Number(order.amountDue ?? 0) : 0,
+      balancePaymentStatus: order?.balancePaymentStatus ?? null,
       // When the organiser uses their own wallet, their personal order is bundled
       // into the platform payment they forward to admin — treat it as confirmed so
       // no separate Pay step is shown and everyonePaid fires correctly.
@@ -471,7 +564,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       country: (share.allowedCountries && share.allowedCountries.length > 0) ? share.allowedCountries[0] : null,
       canManage: share.status === "open" && isCreatorViewer,
     },
-    // ── Optional organiser fee (paid directly to the organiser/creator) ────────
+    // ── Organiser fee configuration and payment destination ────────────────────
     fees: {
       organiserPaymentInfo: share.organiserPaymentInfo ?? null,
       leadRevolutHandle: share.leadRevolutHandle ?? null,
@@ -494,7 +587,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     // the admin wallet. When no organiser wallet is set, members already pay the admin
     // directly and no forwarding step is needed.
     // Amount = sum of all members' product subtotals + total vendor shipping.
-    // Tips and organiser peer-to-peer fees are excluded (organiser keeps them).
+    // Tips and organiser fees are retained by the organiser and are not forwarded.
     organiserPayment: await (async () => {
       const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && share.leadCryptoOptions.length > 0;
       if (!isCreatorViewer || !hasOwnWallet) return null;
@@ -1827,7 +1920,8 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
           ? Number((memberKitCount * shareKitFeePerKit).toFixed(2))
           : 0;
         const adminAdjustmentFee = Number(m.adminAdjustmentFee ?? 0);
-        const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount + adminAdjustmentFee).toFixed(2));
+        const organiserFee = effectiveOrganiserFee(share, m);
+        const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount + adminAdjustmentFee + organiserFee).toFixed(2));
         const orderId = randomUUID();
         const code = String(codeBase + i);
         const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
@@ -1844,6 +1938,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
           kitFees: kitFeesAmount.toFixed(2),
           adminAdjustmentFee: adminAdjustmentFee.toFixed(2),
           adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
+          organiserFee: organiserFee.toFixed(2),
           grandTotal: grandTotal.toFixed(2),
           status: "Submitted",
           paymentStatus: "unpaid",
@@ -2069,10 +2164,11 @@ router.post("/wholesale-shares/:id/cancel", requireWholesaleOrAdmin, async (req,
 });
 
 // PUT /api/wholesale-shares/:id/fees — organiser sets the optional organiser fee.
-// Custom per-participant organiser fee (paid directly to the organiser). Organisers
-// can edit it while open; an authenticated admin override can edit while locked
-// without reopening the share. The current recipient is always exempt (forced to
-// 0). Paid SEPARATELY, never in the order total.
+// Custom per-participant organiser fee. Organisers can edit it while open; an
+// authenticated admin override can edit while locked without reopening the share.
+// The current recipient is always exempt (forced to 0). Locked changes reconcile
+// the materialised order total, and confirmed orders receive only the delta as a
+// normal outstanding balance.
 router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -2152,7 +2248,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
   try {
     await db.transaction(async (tx) => {
       const [locked] = await tx
-        .select({ status: wholesaleSharesTable.status })
+        .select()
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))
         .for("update");
@@ -2169,6 +2265,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
         .from(wholesaleShareMembersTable)
         .where(eq(wholesaleShareMembersTable.shareId, share.id));
       const memberByLower = new Map(members.map(m => [m.username.toLowerCase(), m]));
+      let changedLockedFee = false;
 
       for (const f of fees) {
         const uname = String(f.username ?? "").toLowerCase();
@@ -2180,10 +2277,17 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
         const set: Partial<typeof wholesaleShareMembersTable.$inferInsert> = {
           organiserFee: organiserFee.toFixed(2),
         };
-        if (organiserFee !== prevOrganiserFee) set.organiserFeePaid = false;
+        if (organiserFee !== prevOrganiserFee) {
+          set.organiserFeePaid = false;
+          changedLockedFee = changedLockedFee || locked.status === "locked";
+        }
         await tx.update(wholesaleShareMembersTable)
           .set(set)
           .where(eq(wholesaleShareMembersTable.id, member.id));
+      }
+
+      if (changedLockedFee) {
+        await reconcileLockedShareOrganiserFees(tx, locked);
       }
     });
   } catch (e) {
@@ -2332,9 +2436,6 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
 // status, the organiser (creator) highlighted, and the delivery address.
 // Guarded by the admin secret (X-Admin-Secret header). "made" = locked or
 // submitted (member orders have been materialised).
-const isOrderPaid = (ps: string | null | undefined): boolean =>
-  ps === "confirmed" || ps === "test_confirmed";
-
 router.get("/admin/wholesale-shares", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
@@ -2426,6 +2527,68 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
       name: product.name,
       unitPrice: Number(product.wholesalePrice ?? product.price),
     })),
+  });
+});
+
+router.post("/admin/wholesale-shares/:id/reconcile-organiser-fees", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const shareId = String(req.params.id);
+  const outcome = await db.transaction(async (tx) => {
+    const [share] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, shareId))
+      .for("update");
+    if (!share) return { kind: "missing" as const };
+    if (share.status !== "locked") return { kind: "not_locked" as const, status: share.status };
+    return {
+      kind: "reconciled" as const,
+      summary: await reconcileLockedShareOrganiserFees(tx, share),
+    };
+  });
+
+  if (outcome.kind === "missing") {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  if (outcome.kind === "not_locked") {
+    res.status(409).json({ error: `Only locked shared orders can be reconciled (this order is ${outcome.status}).` });
+    return;
+  }
+
+  await writeLog("order", "info", "wholesale_share_organiser_fees_reconciled",
+    `Admin reconciled organiser fees in shared order ${shareId}`,
+    { shareId, ...outcome.summary }, req.ip);
+  const updated = await loadShare(shareId);
+  res.json({ ...await buildShareResponse(updated!, ""), reconciliation: outcome.summary });
+});
+
+router.post("/admin/wholesale-shares/reconcile-organiser-fees", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const lockedShares = await db
+    .select({ id: wholesaleSharesTable.id })
+    .from(wholesaleSharesTable)
+    .where(eq(wholesaleSharesTable.status, "locked"));
+
+  const reconciled: Array<{ shareId: string } & OrganiserFeeReconciliationSummary> = [];
+  for (const { id } of lockedShares) {
+    const outcome = await db.transaction(async (tx) => {
+      const [share] = await tx.select().from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, id))
+        .for("update");
+      if (!share || share.status !== "locked") return null;
+      return reconcileLockedShareOrganiserFees(tx, share);
+    });
+    if (!outcome) continue;
+    reconciled.push({ shareId: id, ...outcome });
+    await writeLog("order", "info", "wholesale_share_organiser_fees_reconciled",
+      `Admin reconciled organiser fees in shared order ${id}`,
+      { shareId: id, ...outcome, source: "all_locked" }, req.ip);
+  }
+
+  res.json({
+    shares: reconciled,
+    reconciledShares: reconciled.length,
+    updatedOrders: reconciled.reduce((total, item) => total + item.updatedOrders, 0),
+    balanceDueAdded: Number(reconciled.reduce((total, item) => total + item.balanceDueAdded, 0).toFixed(2)),
   });
 });
 
@@ -2557,6 +2720,9 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
           adjustmentFee: Number(member.adminAdjustmentFee ?? 0),
           adjustmentMessage: member.adminAdjustmentMessage,
           kitFees: member.orderId ? Number(orderById.get(member.orderId)?.kitFees ?? 0) : Number((memberKits(member.items ?? []) * Number(share.feePerKit ?? 0)).toFixed(2)),
+          organiserFee: member.orderId
+            ? Number(orderById.get(member.orderId)?.organiserFee ?? 0)
+            : effectiveOrganiserFee(share, member),
         })),
         splitMode: (share.splitMode as WholesaleShareSplitMode) ?? "even",
         totalShipping,
