@@ -1,0 +1,61 @@
+<style>
+  .rules-demo { color:#172033; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+  .rules-demo .intro { margin-bottom:18px; }
+  .rules-demo .intro p { color:#657189; margin:6px 0 0; }
+  .rules-demo .options-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+  .rules-demo .option { background:#fff; border:1px solid #d9e0ea; border-radius:14px; overflow:hidden; box-shadow:0 8px 24px #1b2a4212; cursor:pointer; transition:.15s ease; }
+  .rules-demo .option:hover { transform:translateY(-2px); border-color:#5476db; }
+  .rules-demo .option.selected { border:2px solid #4169d5; }
+  .rules-demo .option-head { padding:14px 16px; border-bottom:1px solid #edf0f5; display:flex; align-items:center; gap:10px; }
+  .rules-demo .letter { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:#eef2ff; color:#4169d5; font-weight:800; font-size:12px; }
+  .rules-demo h3 { margin:0; font-size:15px; }
+  .rules-demo .option-desc { color:#657189; font-size:12px; margin:3px 0 0; line-height:1.35; }
+  .rules-demo .preview { padding:14px 16px 16px; background:#fbfcfe; }
+  .rules-demo .section { border:1px solid #e3e8f0; border-radius:9px; background:#fff; padding:10px; margin-bottom:9px; }
+  .rules-demo .section:last-child { margin-bottom:0; }
+  .rules-demo .section-title { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#4169d5; font-weight:800; margin-bottom:7px; }
+  .rules-demo .row { display:flex; justify-content:space-between; gap:10px; font-size:11px; padding:3px 0; color:#657189; }
+  .rules-demo .row b { color:#27344b; font-weight:650; text-align:right; }
+  .rules-demo .accordion { display:flex; justify-content:space-between; align-items:center; padding:10px 11px; border:1px solid #e3e8f0; border-radius:8px; margin-bottom:7px; background:#fff; font-size:12px; font-weight:750; }
+  .rules-demo .accordion.open { border-color:#b9c8f8; border-radius:8px 8px 0 0; margin-bottom:0; color:#4169d5; }
+  .rules-demo .accordion-body { padding:9px 11px; border:1px solid #b9c8f8; border-top:0; border-radius:0 0 8px 8px; margin-bottom:7px; background:#f8faff; }
+  .rules-demo .two-col { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .rules-demo .mini-card { border:1px solid #e3e8f0; border-radius:8px; background:#fff; padding:10px; }
+  .rules-demo .mini-card h4 { margin:0 0 7px; font-size:11px; color:#4169d5; }
+  @media (max-width:900px) { .rules-demo .options-grid { grid-template-columns:1fr; } }
+</style>
+<div class="rules-demo">
+  <div class="intro">
+    <h2>Order limits &amp; rules</h2>
+    <p>Which structure would make the admin panel easiest to scan and edit?</p>
+  </div>
+  <div class="options-grid">
+    <div class="option" data-choice="grouped" onclick="toggleSelect(this)">
+      <div class="option-head"><div class="letter">A</div><div><h3>Grouped sections</h3><div class="option-desc">Everything visible, organized by meaning.</div></div></div>
+      <div class="preview">
+        <div class="section"><div class="section-title">Membership</div><div class="row"><span>Max people</span><b>20</b></div><div class="row"><span>Allowed countries</span><b>UK, EU</b></div></div>
+        <div class="section"><div class="section-title">Kit limits</div><div class="row"><span>Kits per person</span><b>1–10</b></div><div class="row"><span>Total kits</span><b>100</b></div><div class="row"><span>Max packages</span><b>4</b></div></div>
+        <div class="section"><div class="section-title">Fees &amp; timing</div><div class="row"><span>Fee / person</span><b>$5.00</b></div><div class="row"><span>Auto-lock</span><b>Not set</b></div></div>
+      </div>
+    </div>
+    <div class="option" data-choice="accordion" onclick="toggleSelect(this)">
+      <div class="option-head"><div class="letter">B</div><div><h3>Accordion sections</h3><div class="option-desc">Compact by default, expand only what you need.</div></div></div>
+      <div class="preview">
+        <div class="accordion open">Membership &amp; countries <span>⌃</span></div>
+        <div class="accordion-body"><div class="row"><span>Max people</span><b>20</b></div><div class="row"><span>Allowed countries</span><b>UK, EU</b></div></div>
+        <div class="accordion">Kit limits <span>⌄</span></div>
+        <div class="accordion">Fees &amp; timing <span>⌄</span></div>
+      </div>
+    </div>
+    <div class="option" data-choice="two-column" onclick="toggleSelect(this)">
+      <div class="option-head"><div class="letter">C</div><div><h3>Two-column scan</h3><div class="option-desc">Fast comparison with minimal vertical space.</div></div></div>
+      <div class="preview">
+        <div class="two-col">
+          <div class="mini-card"><h4>Capacity</h4><div class="row"><span>Max people</span><b>20</b></div><div class="row"><span>Total kits</span><b>100</b></div><div class="row"><span>Packages</span><b>4</b></div></div>
+          <div class="mini-card"><h4>Per-member</h4><div class="row"><span>Kits</span><b>1–10</b></div><div class="row"><span>Fee</span><b>$5.00</b></div><div class="row"><span>Countries</span><b>UK, EU</b></div></div>
+        </div>
+        <div class="section" style="margin-top:8px"><div class="section-title">Timing</div><div class="row"><span>Auto-lock</span><b>Not set</b></div></div>
+      </div>
+    </div>
+  </div>
+</div>
