@@ -92,3 +92,4 @@
 - [Dashboard logo asset reuse](dashboard-logo-asset-reuse.md) — when matching dashboard branding, reuse its exact icon rail, SaltPepsMark, and /brand wordmark asset; never rebuild the lockup with styled text.
 - [Email template system](email-template-system.md) — DB-driven templates in email_templates table; sendTemplatedEmail() is the canonical send path; dynamic import pattern for all route hooks; requireOrganiser is Express middleware (not a guard), use it as router.post("/path", requireOrganiser, handler).
 - [Shared-order admin override](shared-order-admin-override.md) — admin controls must reuse creator workflows after admin-secret validation, never bypass transactional order safeguards with direct writes.
+- [Locked-order payment protection](locked-order-payment-protection.md) — every post-lock reconciliation must protect all non-unpaid orders from decreases or payment-lock resets.

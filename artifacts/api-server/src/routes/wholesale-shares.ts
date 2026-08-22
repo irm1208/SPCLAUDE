@@ -36,6 +36,7 @@ import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
+import { buildSharedOrderMemberRemovalPlan } from "../lib/shared-order-member-removal";
 import { notifyUser } from "../lib/telegram";
 
 function escHtml(s: string): string {
@@ -245,7 +246,7 @@ async function reconcileLockedShareOrganiserFees(
       newFee: organiserFee,
       grandTotal: Number(order.grandTotal ?? 0),
       amountDue: Number(order.amountDue ?? 0),
-      paymentStatus: isOrderPaid(order.paymentStatus) ? "confirmed" : order.paymentStatus,
+      paymentStatus: order.paymentStatus,
     });
 
     await tx.update(wholesaleShareMembersTable)
@@ -1819,6 +1820,217 @@ router.post("/wholesale-shares/:id/remove-member", requireWholesaleOrAdmin, asyn
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
+});
+
+// POST /api/admin/wholesale-shares/:id/remove-members — admins may remove one or
+// more members from a locked share without reopening it. Removed orders are
+// cancelled and soft-deleted so payment history remains available for review.
+router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const shareId = String(req.params.id);
+  const body = (req.body ?? {}) as { usernames?: unknown; replacementDeliveryUsername?: unknown };
+  if (!Array.isArray(body.usernames)) {
+    res.status(400).json({ error: "usernames must be an array." });
+    return;
+  }
+  const usernames = body.usernames
+    .filter((username): username is string => typeof username === "string")
+    .map(username => username.trim().slice(0, 120))
+    .filter(Boolean);
+  const requestedReplacement = typeof body.replacementDeliveryUsername === "string"
+    ? body.replacementDeliveryUsername.replace(/^@/, "").trim().slice(0, 120)
+    : "";
+
+  const outcome = await db.transaction(async (tx) => {
+    const [share] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, shareId))
+      .for("update");
+    if (!share) return { kind: "missing" as const };
+    if (share.status !== "locked") return { kind: "not_locked" as const, status: share.status };
+    if (share.totalVendorShipping == null || !Number.isFinite(Number(share.totalVendorShipping))) {
+      return { kind: "invalid" as const, error: "This locked shared order has no usable vendor-shipping snapshot." };
+    }
+
+    const members: MemberRow[] = await tx.select().from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id))
+      .for("update");
+    const orderIds = members.map(member => member.orderId).filter((id): id is string => !!id);
+    const orders = orderIds.length > 0
+      ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
+      : [];
+
+    let plan;
+    try {
+      plan = buildSharedOrderMemberRemovalPlan({
+        members: members.map(member => ({
+          id: member.id,
+          username: member.username,
+          isCreator: member.isCreator,
+          orderId: member.orderId,
+          items: (member.items ?? []).map(item => ({ quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) })),
+          tip: Number(member.tip ?? 0),
+          shippingShare: member.shippingShare == null ? null : Number(member.shippingShare),
+          organiserFee: Number(member.organiserFee ?? 0),
+          adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0),
+          adminAdjustmentMessage: member.adminAdjustmentMessage,
+        })),
+        orders: orders.map(order => ({
+          id: order.id,
+          paymentStatus: order.paymentStatus,
+          vendorShipping: Number(order.vendorShipping ?? 0),
+          grandTotal: Number(order.grandTotal ?? 0),
+          amountDue: Number(order.amountDue ?? 0),
+          kitFees: Number(order.kitFees ?? 0),
+          organiserFee: Number(order.organiserFee ?? 0),
+        })),
+        usernames,
+        splitMode: (share.splitMode as WholesaleShareSplitMode) ?? "even",
+        totalShipping: Number(share.totalVendorShipping),
+      });
+    } catch (error) {
+      return { kind: "invalid" as const, error: error instanceof Error ? error.message : "The selected members can't be removed." };
+    }
+
+    const removedRecipient = !!share.deliveryUsername && plan.removedMembers.some(member =>
+      member.username.toLowerCase() === share.deliveryUsername!.toLowerCase(),
+    );
+    const replacementMember = requestedReplacement
+      ? plan.retainedMembers.find(member => member.username.replace(/^@/, "").toLowerCase() === requestedReplacement.toLowerCase())
+      : undefined;
+    if (removedRecipient && !replacementMember) {
+      return {
+        kind: "invalid" as const,
+        error: "Choose a remaining member with a saved delivery address to replace the removed parcel recipient.",
+      };
+    }
+
+    let replacementAddress: Awaited<ReturnType<typeof deliveryAddressFor>> = null;
+    if (replacementMember) {
+      replacementAddress = await deliveryAddressFor(replacementMember.username);
+      if (!replacementAddress?.phone) {
+        return {
+          kind: "invalid" as const,
+          error: `@${replacementMember.username} needs a saved delivery address and phone number before becoming the parcel recipient.`,
+        };
+      }
+    }
+
+    const now = new Date();
+    const orderById = new Map(orders.map(order => [order.id, order]));
+    const newTotalKits = plan.retainedMembers.reduce((total, member) =>
+      total + member.items.reduce((memberTotal, item) => memberTotal + (Number(item.quantity) || 0), 0), 0,
+    );
+    const deliveryUpdates = replacementMember && replacementAddress
+      ? {
+          deliveryUsername: replacementMember.username,
+          shippingName: replacementAddress.name,
+          shippingPhone: replacementAddress.phone,
+          shippingEmail: replacementAddress.email,
+          shippingAddress: replacementAddress.address,
+          shippingCountry: replacementAddress.country,
+        }
+      : {};
+
+    const guarded = await tx.update(wholesaleSharesTable).set({
+      ...deliveryUpdates,
+      totalKits: newTotalKits.toFixed(2),
+      updatedAt: now,
+    }).where(and(
+      eq(wholesaleSharesTable.id, share.id),
+      eq(wholesaleSharesTable.status, "locked"),
+    )).returning({ id: wholesaleSharesTable.id });
+    if (guarded.length === 0) return { kind: "not_locked" as const, status: "changed" };
+
+    for (const removed of plan.removedOrders) {
+      await tx.update(ordersTable).set({
+        status: "Cancelled",
+        deletedAt: now,
+        deletedBy: "admin",
+        refundStatus: removed.requiresPaymentReview ? "review_required" : null,
+        refundReason: removed.requiresPaymentReview
+          ? `Removed from locked shared order ${share.id}; payment/refund review required.`
+          : null,
+      }).where(eq(ordersTable.id, removed.orderId));
+    }
+
+    for (const update of plan.retainedOrderUpdates) {
+      const order = orderById.get(update.orderId)!;
+      const needsBalanceReset = update.paymentProtected && update.amountDue > Number(order.amountDue ?? 0);
+      await tx.update(wholesaleShareMembersTable).set({
+        shippingShare: update.shippingShare.toFixed(2),
+      }).where(eq(wholesaleShareMembersTable.id, update.memberId));
+
+      await tx.update(ordersTable).set({
+        vendorShipping: update.vendorShipping.toFixed(2),
+        grandTotal: update.grandTotal.toFixed(2),
+        amountDue: update.amountDue.toFixed(2),
+        ...(update.paymentProtected ? {} : { paymentUsdAmount: null }),
+        ...(needsBalanceReset ? {
+          balancePaymentStatus: "unpaid",
+          balanceScreenshot: null,
+          balanceTxHash: null,
+          balanceConfirmedAt: null,
+        } : {}),
+        ...deliveryUpdates,
+      }).where(eq(ordersTable.id, update.orderId));
+    }
+
+    await tx.delete(wholesaleShareMembersTable)
+      .where(inArray(wholesaleShareMembersTable.id, plan.removedMembers.map(member => member.id)));
+
+    // Changing the recipient changes the organiser-fee exemption. Reconcile after
+    // the removed members are gone so only active orders are considered.
+    const feeReconciliation = replacementMember
+      ? await reconcileLockedShareOrganiserFees(tx, {
+          ...share,
+          ...deliveryUpdates,
+          totalKits: newTotalKits.toFixed(2),
+        })
+      : null;
+
+    return {
+      kind: "removed" as const,
+      removedUsernames: plan.removedMembers.map(member => member.username),
+      paymentReviewUsernames: plan.removedMembers
+        .filter(member => plan.removedOrders.find(order => order.orderId === member.orderId)?.requiresPaymentReview)
+        .map(member => member.username),
+      retainedMembers: plan.retainedMembers.length,
+      feeReconciliation,
+    };
+  });
+
+  if (outcome.kind === "missing") {
+    res.status(404).json({ error: "Shared order not found." });
+    return;
+  }
+  if (outcome.kind === "not_locked") {
+    res.status(409).json({ error: `Only locked shared orders can have members removed (this order is ${outcome.status}).` });
+    return;
+  }
+  if (outcome.kind === "invalid") {
+    res.status(400).json({ error: outcome.error });
+    return;
+  }
+
+  await writeLog("order", "warn", "wholesale_share_members_removed",
+    `Admin removed ${outcome.removedUsernames.join(", ")} from locked wholesale share ${shareId}`,
+    {
+      shareId,
+      removedUsernames: outcome.removedUsernames,
+      paymentReviewUsernames: outcome.paymentReviewUsernames,
+      retainedMembers: outcome.retainedMembers,
+      feeReconciliation: outcome.feeReconciliation,
+    }, req.ip);
+
+  const updated = await loadShare(shareId);
+  res.json({
+    ...await buildShareResponse(updated!, ""),
+    removal: {
+      removedUsernames: outcome.removedUsernames,
+      paymentReviewUsernames: outcome.paymentReviewUsernames,
+      retainedMembers: outcome.retainedMembers,
+    },
+  });
 });
 
 // ── Shared lock service ────────────────────────────────────────────────────────

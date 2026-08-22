@@ -34,18 +34,22 @@ export function buildOrganiserFeeOrderUpdate({
   }
 
   const delta = roundCents(newFee - oldFee);
-  const nextGrandTotal = roundCents(grandTotal + delta);
   const changed = delta !== 0;
-  const wasConfirmed = paymentStatus === "confirmed";
+  // Once any payment attempt has started, retain the original payable amount and
+  // lock. Later adjustments may add an outstanding balance, but never reduce the
+  // recorded order or reopen the original payment.
+  const paymentProtected = paymentStatus !== "unpaid";
+  const positiveDelta = Math.max(0, delta);
+  const nextGrandTotal = roundCents(grandTotal + (paymentProtected ? positiveDelta : delta));
 
   return {
     changed,
     organiserFee: roundCents(newFee),
     grandTotal: nextGrandTotal,
-    amountDue: wasConfirmed
-      ? roundCents(amountDue + Math.max(0, delta))
+    amountDue: paymentProtected
+      ? roundCents(amountDue + positiveDelta)
       : roundCents(amountDue),
-    resetPaymentLock: !wasConfirmed && changed,
-    resetBalancePayment: wasConfirmed && delta > 0,
+    resetPaymentLock: !paymentProtected && changed,
+    resetBalancePayment: paymentProtected && positiveDelta > 0,
   };
 }

@@ -20815,6 +20815,8 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [settingsEditor, setSettingsEditor] = useState<{ shareId: string; values: Record<string, string> } | null>(null);
   const [memberFeeDrafts, setMemberFeeDrafts] = useState<Record<string, string>>({});
   const [adjustmentEditor, setAdjustmentEditor] = useState<AdminShareAdjustmentDraft | null>(null);
+  const [removalSelections, setRemovalSelections] = useState<Record<string, string[]>>({});
+  const [deliveryReplacements, setDeliveryReplacements] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -20878,6 +20880,72 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       if (!r.ok) { alert((d as { error?: string }).error ?? `Could not ${label.toLowerCase()}.`); return; }
       setDetailById(prev => ({ ...prev, [shareId]: d as AdminShareDetail }));
       await refreshDetail(shareId);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
+  const toggleLockedMemberRemoval = (shareId: string, username: string) => {
+    setRemovalSelections(current => {
+      const selected = current[shareId] ?? [];
+      return {
+        ...current,
+        [shareId]: selected.includes(username)
+          ? selected.filter(candidate => candidate !== username)
+          : [...selected, username],
+      };
+    });
+  };
+
+  const removeSelectedLockedMembers = async (detail: AdminShareDetail) => {
+    const usernames = removalSelections[detail.id] ?? [];
+    if (usernames.length === 0) {
+      alert("Choose at least one member to remove.");
+      return;
+    }
+    const selectedMembers = detail.members.filter(member => usernames.includes(member.username));
+    const recipientSelected = selectedMembers.some(member => member.isRecipient);
+    const replacementDeliveryUsername = deliveryReplacements[detail.id] ?? "";
+    if (recipientSelected && !replacementDeliveryUsername) {
+      alert("Choose a replacement parcel recipient before removing the current recipient.");
+      return;
+    }
+
+    const paymentReview = selectedMembers.filter(member => member.paymentStatus && member.paymentStatus !== "unpaid");
+    const warning = [
+      "ADMIN BULK REMOVAL — CONFIRM CAREFULLY",
+      "",
+      `Remove ${selectedMembers.map(member => `@${member.username}`).join(", ")} from this locked shared order?`,
+      "Their materialised orders will be cancelled and removed from the active roster.",
+      "Unpaid orders are removed without a refund.",
+      paymentReview.length
+        ? `Payment history for ${paymentReview.map(member => `@${member.username} (${member.paymentStatus})`).join(", ")} is kept and marked for manual payment/refund review. No refund is issued automatically.`
+        : "",
+      recipientSelected ? `The parcel recipient will become @${replacementDeliveryUsername}.` : "",
+      "",
+      "Remaining member shipping and payable totals will be recalculated once.",
+      "Continue?",
+    ].filter(Boolean).join("\n");
+    if (!window.confirm(warning)) return;
+
+    setAdminAction(`${detail.id}:bulk-removal`);
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/remove-members`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret, "content-type": "application/json" },
+        body: JSON.stringify({
+          usernames,
+          ...(recipientSelected ? { replacementDeliveryUsername } : {}),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert((result as { error?: string }).error ?? "Could not remove the selected members.");
+        return;
+      }
+      setRemovalSelections(current => ({ ...current, [detail.id]: [] }));
+      setDeliveryReplacements(current => ({ ...current, [detail.id]: "" }));
+      await refreshDetail(detail.id);
     } finally {
       setAdminAction(null);
     }
@@ -21221,6 +21289,18 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                                 <SharePayBadge status={m.paymentStatus} hasOrder={!!m.orderId} />
                                 {m.orderCode && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>order #{m.orderCode}</span>}
                                 {m.orderStatus && <span className="text-[11px]" style={{ color: "var(--adm-muted)" }}>· {m.orderStatus}</span>}
+                                {detail.status === "locked" && !m.isCreator && (
+                                  <label className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer" style={{ color: "#dc2626" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={(removalSelections[detail.id] ?? []).includes(m.username)}
+                                      onChange={() => toggleLockedMemberRemoval(detail.id, m.username)}
+                                      disabled={!!adminAction}
+                                      className="accent-red-600"
+                                    />
+                                    Select to remove
+                                  </label>
+                                )}
                                 {!m.isCreator && detail.status === "open" && (
                                   <button
                                     onClick={() => runAdminAction(row.id, `remove @${m.username} from the shared order`, `/wholesale-shares/${row.id}/remove-member`, "POST", { username: m.username })}
@@ -21276,6 +21356,62 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                             </div>
                           ))}
                         </div>
+
+                        {detail.status === "locked" && (() => {
+                          const selectedUsernames = removalSelections[detail.id] ?? [];
+                          const selectedMembers = detail.members.filter(member => selectedUsernames.includes(member.username));
+                          const recipientSelected = selectedMembers.some(member => member.isRecipient);
+                          const replacementOptions = detail.members.filter(member =>
+                            !selectedUsernames.includes(member.username) && member.hasDeliveryAddress,
+                          );
+                          const replacement = deliveryReplacements[detail.id] ?? "";
+                          return (
+                            <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "rgba(220,38,38,0.05)", border: "1px solid rgba(220,38,38,0.35)" }}>
+                              <div className="font-semibold" style={{ color: "#b91c1c" }}>Remove members from this locked order</div>
+                              <p style={{ color: "var(--adm-muted)" }}>
+                                Select one or more members above. Their orders are cancelled and removed from the active roster; payment records are kept for manual review. At least two members must remain.
+                              </p>
+                              {recipientSelected && (
+                                <label className="block space-y-1">
+                                  <span className="font-semibold" style={{ color: "var(--adm-text)" }}>Replacement parcel recipient</span>
+                                  <select
+                                    value={replacement}
+                                    onChange={event => setDeliveryReplacements(current => ({ ...current, [detail.id]: event.target.value }))}
+                                    disabled={!!adminAction}
+                                    className="w-full rounded border px-2 py-1.5 text-xs"
+                                    style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}
+                                  >
+                                    <option value="">Choose a remaining member with a saved address…</option>
+                                    {replacementOptions.map(member => <option key={member.username} value={member.username}>@{member.username}</option>)}
+                                  </select>
+                                </label>
+                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => void removeSelectedLockedMembers(detail)}
+                                  disabled={selectedMembers.length === 0 || !!adminAction || (recipientSelected && !replacement)}
+                                  className="px-3 py-1.5 rounded-md font-semibold text-white disabled:opacity-40"
+                                  style={{ background: "#b91c1c" }}
+                                >
+                                  {adminAction === `${detail.id}:bulk-removal`
+                                    ? "Removing…"
+                                    : `Remove ${selectedMembers.length || ""} selected member${selectedMembers.length === 1 ? "" : "s"}`}
+                                </button>
+                                {selectedMembers.length > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      setRemovalSelections(current => ({ ...current, [detail.id]: [] }));
+                                      setDeliveryReplacements(current => ({ ...current, [detail.id]: "" }));
+                                    }}
+                                    disabled={!!adminAction}
+                                    className="px-3 py-1.5 rounded-md font-semibold disabled:opacity-40"
+                                    style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}
+                                  >Clear selection</button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Combined totals */}
                         <div className="rounded-lg p-3 text-xs flex flex-wrap gap-x-4 gap-y-1" style={{ background: "var(--adm-bg)", border: "1px solid var(--adm-border)", color: "var(--adm-muted)" }}>
