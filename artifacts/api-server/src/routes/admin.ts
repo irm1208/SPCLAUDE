@@ -9031,7 +9031,7 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
       // Auto-confirm if credits now fully cover the order.
       // Use Math.ceil so a $30.99 order correctly requires ≥31 credits (not 30).
       if (Math.ceil(parseFloat(String(targetOrder.grandTotal))) <= newCreditsApplied && targetOrder.paymentStatus !== "confirmed") {
-        await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00" }).where(eq(ordersTable.id, orderId));
+        await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() }).where(eq(ordersTable.id, orderId));
         maybeSubmitSharedOrder(orderId).catch(() => {});
       }
     }

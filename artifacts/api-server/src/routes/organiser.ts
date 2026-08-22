@@ -2928,7 +2928,7 @@ router.post("/organiser/group-buys/:gbId/orders/:orderId/confirm-payment", requi
 
   await db
     .update(ordersTable)
-    .set({ paymentStatus: "confirmed", paymentRejectionReason: null, paymentConfirmedAt: new Date(), amountDue: "0.00" })
+    .set({ paymentStatus: "confirmed", paymentRejectionReason: null, paymentConfirmedAt: new Date() })
     .where(eq(ordersTable.id, orderId));
 
   writeLog("change", "info", "payment_confirmed", `Organiser @${username} confirmed payment for order #${order.code}`, { orderId, gbId, username }).catch(() => {});

@@ -211,7 +211,9 @@ async function checkAnonPay(order: PendingOrder): Promise<void> {
 
   await db
     .update(ordersTable)
-    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00", paymentTxHash: newTxHash })
+    // amountDue is an independent post-payment balance. Preserve any balance
+    // added while this primary payment was awaiting auto-verification.
+    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
     .where(eq(ordersTable.id, order.id));
 
   console.log(`[order-auto-verify] AnonPay confirmed — order ${order.code}`);
@@ -314,7 +316,9 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
 
   await db
     .update(ordersTable)
-    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00" })
+    // amountDue is an independent post-payment balance. Preserve any balance
+    // added while this primary payment was awaiting auto-verification.
+    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
     .where(eq(ordersTable.id, order.id));
 
   console.log(`[order-auto-verify] Crypto confirmed — order ${order.code} ($${result.amountUsdt} ${currency})`);

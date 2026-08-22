@@ -1709,7 +1709,9 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
 
   const [updated] = await db
     .update(ordersTable)
-    .set({ paymentStatus: "confirmed", paymentTxHash: cleanHash, paymentConfirmedAt: new Date(), amountDue: "0.00" })
+    // amountDue is an independent post-payment balance. Do not erase one that
+    // was added after this primary payment was initiated.
+    .set({ paymentStatus: "confirmed", paymentTxHash: cleanHash, paymentConfirmedAt: new Date() })
     .where(eq(ordersTable.id, req.params.id))
     .returning();
 
@@ -1996,7 +1998,9 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
         : `anonpay:${paymentId}`;
       await db
         .update(ordersTable)
-        .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), amountDue: "0.00", paymentTxHash: newTxHash })
+        // amountDue is an independent post-payment balance. Do not erase one
+        // that was added after this primary payment was initiated.
+        .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
         .where(eq(ordersTable.id, req.params.id));
       paymentStatus = "confirmed";
 

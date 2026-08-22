@@ -37,6 +37,7 @@ import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organise
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
 import { buildSharedOrderMemberRemovalPlan } from "../lib/shared-order-member-removal";
+import { buildSharedOrderReopenPlan } from "../lib/shared-order-reopen";
 import { notifyUser } from "../lib/telegram";
 
 function escHtml(s: string): string {
@@ -135,9 +136,10 @@ const ORGANISER_FEE_RECONCILIATION_CONFLICT = Symbol("organiser_fee_reconciliati
 // Thrown inside the unlock transaction when a concurrent cancel/submit already
 // moved the share off "locked", so we abort with 409 instead of reopening it.
 const UNLOCK_CONFLICT = Symbol("share_unlock_conflict");
-// Thrown when unlock is attempted but a member has already started/finished paying
-// — the organiser should cancel (which flags refunds) instead of dropping the order.
-const UNLOCK_HAS_PAID = Symbol("share_unlock_has_paid");
+// Thrown when reopening and re-locking would lower a payment-started member's
+// total. Those payments are immutable; a positive difference becomes amount due.
+const LOCK_PROTECTED_TOTAL_DECREASE = Symbol("share_lock_protected_total_decrease");
+const LOCK_PROTECTED_BALANCE_CONFLICT = Symbol("share_lock_protected_balance_conflict");
 
 // Server-authoritative delivery address. The organiser only chooses WHICH member
 // receives the parcel — the address itself is read from that member's own saved
@@ -887,48 +889,56 @@ router.post("/wholesale-shares/:id/messages", requireWholesale, async (req, res)
 // POST /api/wholesale-shares/:id/join — join an open shared order (wholesale members only)
 router.post("/wholesale-shares/:id/join", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const share = await loadShare(String(req.params.id));
-  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
-  if (share.status !== "open") { res.status(409).json({ error: "This shared order is no longer open to join." }); return; }
+  const outcome = await db.transaction(async (tx) => {
+    const [share] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, String(req.params.id)))
+      .for("update");
+    if (!share) return { kind: "missing" as const };
+    if (share.status !== "open") return { kind: "closed" as const };
 
-  const existing = await loadMember(share.id, me);
-  if (existing) { res.json(await buildShareResponse(share, me)); return; }
+    const [existing] = await tx.select({ id: wholesaleShareMembersTable.id })
+      .from(wholesaleShareMembersTable)
+      .where(and(
+        eq(wholesaleShareMembersTable.shareId, share.id),
+        eq(wholesaleShareMembersTable.username, me),
+      ));
+    if (existing) return { kind: "existing" as const, shareId: share.id };
 
-  const [{ c }] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(wholesaleShareMembersTable)
-    .where(eq(wholesaleShareMembersTable.shareId, share.id));
-  if (share.maxMembers != null && c >= share.maxMembers) {
-    res.status(409).json({ error: `This shared order is full (max ${share.maxMembers} members).` });
-    return;
-  }
+    const [{ c }] = await tx
+      .select({ c: sql<number>`count(*)::int` })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    if (share.maxMembers != null && c >= share.maxMembers) {
+      return { kind: "full" as const, maxMembers: share.maxMembers };
+    }
 
-  // Public groups can carry a flat per-person organiser fee. Resolve it onto the
-  // joining member now (store the resolved amount, mirroring how fees are stored
-  // elsewhere). The recipient is exempt — but a fresh joiner is never the recipient,
-  // and buildShareResponse forces the recipient's fee to 0 anyway.
-  const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
-    ? Number(share.organiserFlatFee).toFixed(2)
-    : "0";
-
-  try {
-    await db.insert(wholesaleShareMembersTable).values({
-      id: randomUUID(),
-      shareId: share.id,
-      username: me,
-      isCreator: false,
-      items: [],
-      tip: "0",
-      organiserFee: joinOrganiserFee,
-    });
-  } catch {
-    // Unique (shareId, username) — already joined via a race; fall through to response.
-  }
+    const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
+      ? Number(share.organiserFlatFee).toFixed(2)
+      : "0";
+    try {
+      await tx.insert(wholesaleShareMembersTable).values({
+        id: randomUUID(),
+        shareId: share.id,
+        username: me,
+        isCreator: false,
+        items: [],
+        tip: "0",
+        organiserFee: joinOrganiserFee,
+      });
+    } catch {
+      return { kind: "existing" as const, shareId: share.id };
+    }
+    return { kind: "joined" as const, shareId: share.id };
+  });
+  if (outcome.kind === "missing") { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (outcome.kind === "closed") { res.status(409).json({ error: "This shared order is no longer open to join." }); return; }
+  if (outcome.kind === "full") { res.status(409).json({ error: `This shared order is full (max ${outcome.maxMembers} members).` }); return; }
 
   await writeLog("order", "info", "wholesale_share_joined",
-    `${me} joined wholesale share ${share.id}`, { shareId: share.id, username: me }, req.ip);
+    `${me} joined wholesale share ${outcome.shareId}`, { shareId: outcome.shareId, username: me }, req.ip);
 
-  res.json(await buildShareResponse(share, me));
+  const share = await loadShare(outcome.shareId);
+  res.json(await buildShareResponse(share!, me));
 });
 
 // POST /api/wholesale-shares/:id/leave — non-creator member leaves an open share
@@ -966,8 +976,16 @@ router.post("/wholesale-shares/:id/leave", requireWholesale, async (req, res): P
       ));
   }
 
-  await db.delete(wholesaleShareMembersTable)
-    .where(eq(wholesaleShareMembersTable.id, member.id));
+  const left = await db.delete(wholesaleShareMembersTable)
+    .where(and(
+      eq(wholesaleShareMembersTable.id, member.id),
+      sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
+    ))
+    .returning({ id: wholesaleShareMembersTable.id });
+  if (left.length === 0) {
+    res.status(409).json({ error: "This shared order is locked — you can no longer leave. Contact the organiser." });
+    return;
+  }
 
   await writeLog("order", "info", "wholesale_share_left",
     `${me} left wholesale share ${share.id}`, { shareId: share.id, username: me }, req.ip);
@@ -983,6 +1001,22 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
   if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked — items can no longer be changed." }); return; }
   const member = await loadMember(share.id, me);
   if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  const organiserUsesOwnWallet = member.isCreator
+    && Array.isArray(share.leadCryptoOptions)
+    && (share.leadCryptoOptions as unknown[]).length > 0;
+  if (organiserUsesOwnWallet) {
+    res.status(409).json({ error: "Your order is handled through the organiser payment and is fixed while the shared order is reopened." });
+    return;
+  }
+  if (member.orderId) {
+    const [memberOrder] = await db.select({ paymentStatus: ordersTable.paymentStatus })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, member.orderId));
+    if (memberOrder && memberOrder.paymentStatus !== "unpaid") {
+      res.status(409).json({ error: "Your payment has already started, so this order is fixed while the shared order is reopened." });
+      return;
+    }
+  }
 
   const body = (req.body ?? {}) as { items?: Array<{ productId?: unknown; quantity?: unknown }>; tip?: unknown };
   if (!Array.isArray(body.items)) { res.status(400).json({ error: "items must be an array" }); return; }
@@ -1050,6 +1084,11 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     .where(and(
       eq(wholesaleShareMembersTable.id, member.id),
       sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
+      sql`(${member.orderId} IS NULL OR EXISTS (
+        SELECT 1 FROM ${ordersTable}
+        WHERE ${ordersTable.id} = ${member.orderId}
+          AND ${ordersTable.paymentStatus} = 'unpaid'
+      ))`,
     ))
     .returning({ id: wholesaleShareMembersTable.id });
   if (itemsUpdated.length === 0) {
@@ -2113,17 +2152,68 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
     return { ok: false, status: 400, error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." };
   }
 
-  const weights = members.map(m => memberKits(m.items ?? []));
-  const shares = splitShipping(totalShipping, weights, (share.splitMode as WholesaleShareSplitMode) ?? "even");
-
   // ── Materialise orders atomically ──
   const codeBase = await nextOrderCodeBase();
   try {
     await db.transaction(async (tx) => {
+      const [lockedShare] = await tx.select()
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      // Every lock input is taken from the preflight share snapshot. If any
+      // setting, delivery field, fee or shipping configuration changed before
+      // this transaction obtained its row lock, abort and let the caller retry
+      // against the fresh state rather than materialising stale totals.
+      if (!lockedShare || lockedShare.status !== "open" || JSON.stringify(lockedShare) !== JSON.stringify(share)) {
+        throw LOCK_CONFLICT;
+      }
+      const lockedMembers: MemberRow[] = await tx.select()
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, share.id))
+        .for("update");
+      const memberSnapshots = new Map(members.map(member => [member.id, JSON.stringify(member)]));
+      const snapshotMatches = lockedMembers.length === members.length
+        && lockedMembers.every(member => JSON.stringify(member) === memberSnapshots.get(member.id));
+      if (!snapshotMatches) throw LOCK_CONFLICT;
+
+      const existingOrderIds = members.map(member => member.orderId).filter((id): id is string => !!id);
+      const existingOrders: Array<typeof ordersTable.$inferSelect> = existingOrderIds.length > 0
+        ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, existingOrderIds)).for("update")
+        : [];
+      const existingOrderById = new Map(existingOrders.map(order => [order.id, order]));
+      const reopenPlan = buildSharedOrderReopenPlan(
+        members.map(member => ({ id: member.id, orderId: member.orderId })),
+        existingOrders.map(order => ({ id: order.id, paymentStatus: order.paymentStatus })),
+      );
+      const preservedOrderIds = new Set(reopenPlan.preserveOrderIds);
+      const frozenShipping = members.reduce((total, member) => {
+        const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
+        return total + (order && preservedOrderIds.has(order.id) ? Number(order.vendorShipping ?? 0) : 0);
+      }, 0);
+      const mutableMembers = members.filter(member => {
+        const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
+        return !order || !preservedOrderIds.has(order.id);
+      });
+      const remainingShipping = Number((totalShipping - frozenShipping).toFixed(2));
+      if (remainingShipping < 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
+      const mutableShares = splitShipping(
+        remainingShipping,
+        mutableMembers.map(member => memberKits(member.items ?? [])),
+        (share.splitMode as WholesaleShareSplitMode) ?? "even",
+      );
+      const shippingByMemberId = new Map<string, number>();
+      for (const member of members) {
+        const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
+        if (order && preservedOrderIds.has(order.id)) {
+          shippingByMemberId.set(member.id, Number(order.vendorShipping ?? 0));
+        }
+      }
+      mutableMembers.forEach((member, index) => shippingByMemberId.set(member.id, mutableShares[index] ?? 0));
+
       for (let i = 0; i < members.length; i++) {
         const m = members[i];
         const items = m.items ?? [];
-        const shippingShare = shares[i] ?? 0;
+        const shippingShare = shippingByMemberId.get(m.id) ?? 0;
         const tip = Number(m.tip ?? 0);
         const subtotal = memberSubtotal(items);
         const memberKitCount = memberKits(items);
@@ -2134,6 +2224,74 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
         const adminAdjustmentFee = Number(m.adminAdjustmentFee ?? 0);
         const organiserFee = effectiveOrganiserFee(share, m);
         const grandTotal = Number((subtotal + shippingShare + tip + kitFeesAmount + adminAdjustmentFee + organiserFee).toFixed(2));
+        const existingOrder = m.orderId ? existingOrderById.get(m.orderId) : undefined;
+
+        if (existingOrder && preservedOrderIds.has(existingOrder.id)) {
+          const existingTotal = Number(existingOrder.grandTotal ?? 0);
+          if (grandTotal < existingTotal) throw LOCK_PROTECTED_TOTAL_DECREASE;
+          const additionalBalance = Number((grandTotal - existingTotal).toFixed(2));
+          // The original payment stays locked. A positive difference becomes an
+          // independent balance due, following the existing post-payment
+          // adjustment lifecycle.
+          if (additionalBalance > 0) {
+            const hasExistingBalance = Number(existingOrder.amountDue ?? 0) > 0
+              || !!existingOrder.balancePaymentStatus
+              || !!existingOrder.balanceScreenshot
+              || !!existingOrder.balanceTxHash
+              || !!existingOrder.balanceConfirmedAt;
+            if (hasExistingBalance) {
+              throw LOCK_PROTECTED_BALANCE_CONFLICT;
+            }
+            await tx.update(ordersTable).set({
+              grandTotal: grandTotal.toFixed(2),
+              amountDue: additionalBalance.toFixed(2),
+              balancePaymentStatus: "unpaid",
+            }).where(eq(ordersTable.id, existingOrder.id));
+          }
+          await tx.update(wholesaleShareMembersTable)
+            .set({ shippingShare: Number(existingOrder.vendorShipping ?? 0).toFixed(2) })
+            .where(eq(wholesaleShareMembersTable.id, m.id));
+          continue;
+        }
+
+        if (existingOrder) {
+          await tx.update(ordersTable).set({
+            deliveryMethod: "Vendor Shipping",
+            deliveryPrice: "0",
+            vendorShipping: shippingShare.toFixed(2),
+            productSubtotal: subtotal.toFixed(2),
+            tip: tip.toFixed(2),
+            kitFees: kitFeesAmount.toFixed(2),
+            adminAdjustmentFee: adminAdjustmentFee.toFixed(2),
+            adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
+            organiserFee: organiserFee.toFixed(2),
+            grandTotal: grandTotal.toFixed(2),
+            paymentUsdAmount: null,
+            shippingName: share.shippingName,
+            shippingPhone: share.shippingPhone,
+            shippingEmail: share.shippingEmail,
+            shippingAddress: share.shippingAddress,
+            shippingCountry: share.shippingCountry,
+            notes: `Shared wholesale order ${share.id} — delivery to ${share.deliveryUsername} (${picked.region.name})`,
+          }).where(and(eq(ordersTable.id, existingOrder.id), eq(ordersTable.paymentStatus, "unpaid")));
+          await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, existingOrder.id));
+          if (items.length > 0) {
+            await tx.insert(orderLineItemsTable).values(items.map(it => ({
+              id: randomUUID(),
+              orderId: existingOrder.id,
+              productId: it.productId,
+              productName: it.productName,
+              quantity: Number(it.quantity).toFixed(2),
+              unitPrice: Number(it.unitPrice).toFixed(2),
+              lineTotal: (Number(it.quantity) * Number(it.unitPrice)).toFixed(2),
+            })));
+          }
+          await tx.update(wholesaleShareMembersTable)
+            .set({ shippingShare: shippingShare.toFixed(2) })
+            .where(eq(wholesaleShareMembersTable.id, m.id));
+          continue;
+        }
+
         const orderId = randomUUID();
         const code = String(codeBase + i);
         const memberTg = m.username.startsWith("@") ? m.username.toLowerCase() : `@${m.username.toLowerCase()}`;
@@ -2204,6 +2362,20 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
     if (e === LOCK_CONFLICT) {
       return { ok: false, status: 409, error: "This shared order is no longer open and can't be locked." };
     }
+    if (e === LOCK_PROTECTED_TOTAL_DECREASE) {
+      return {
+        ok: false,
+        status: 409,
+        error: "Re-locking would reduce a member's payment-started order. Keep the shared order open or adjust the new order mix.",
+      };
+    }
+    if (e === LOCK_PROTECTED_BALANCE_CONFLICT) {
+      return {
+        ok: false,
+        status: 409,
+        error: "A member has a balance payment in progress or confirmed. Re-locking cannot replace that balance; ask an admin to resolve it first.",
+      };
+    }
     throw e;
   }
 
@@ -2229,10 +2401,9 @@ router.post("/wholesale-shares/:id/lock", requireWholesaleOrAdmin, async (req, r
 });
 
 // POST /api/wholesale-shares/:id/unlock — creator reverts a locked share back to
-// "open" so items/delivery can be edited again, then re-locked. Only allowed while
-// nobody has paid: the materialised member orders are deleted (their draft items
-// live on the member rows, so editing simply resumes). If anyone has already paid,
-// unlocking is blocked — cancel (which flags refunds) is the right tool then.
+// "open" so unpaid members can edit and more members can join. Every materialised
+// order stays attached: a later lock updates unpaid orders in place and preserves
+// payment-started orders as immutable payment records.
 router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
@@ -2246,14 +2417,21 @@ router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req,
     return;
   }
 
-  let removedOrders = 0;
+  let preservedOrders = 0;
   try {
-    removedOrders = await db.transaction(async (tx) => {
+    preservedOrders = await db.transaction(async (tx) => {
       const members = await tx
         .select()
         .from(wholesaleShareMembersTable)
-        .where(eq(wholesaleShareMembersTable.shareId, share.id));
+        .where(eq(wholesaleShareMembersTable.shareId, share.id))
+        .for("update");
       const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
+      if (orderIds.length > 0) {
+        await tx.select({ id: ordersTable.id })
+          .from(ordersTable)
+          .where(inArray(ordersTable.id, orderIds))
+          .for("update");
+      }
 
       // CONDITIONAL parent transition gated on status='locked' so a concurrent
       // cancel/auto-submit can't be clobbered — if it already moved on, abort 409.
@@ -2265,34 +2443,9 @@ router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req,
         ))
         .returning({ id: wholesaleSharesTable.id });
       if (reopened.length === 0) throw UNLOCK_CONFLICT;
-
-      // Atomically delete ONLY the still-pristine ("unpaid") member orders. Gating
-      // the DELETE on payment_status closes the check-then-delete race: if a member
-      // started or finished paying — even concurrently (pending_confirmation,
-      // confirmed, test_ready, test_confirmed, …) — that row won't match, the deleted
-      // count falls short, and we throw to roll the whole unlock back (reopen too).
-      // Dependent line items / messages / dispatch images cascade on delete. Member
-      // draft items live on the member rows (untouched by lock), so editing resumes.
-      if (orderIds.length > 0) {
-        const deleted = await tx.delete(ordersTable)
-          .where(and(
-            inArray(ordersTable.id, orderIds),
-            eq(ordersTable.paymentStatus, "unpaid"),
-          ))
-          .returning({ id: ordersTable.id });
-        if (deleted.length !== orderIds.length) throw UNLOCK_HAS_PAID;
-      }
-      await tx.update(wholesaleShareMembersTable)
-        .set({ orderId: null, shippingShare: null })
-        .where(eq(wholesaleShareMembersTable.shareId, share.id));
-
       return orderIds.length;
     });
   } catch (e) {
-    if (e === UNLOCK_HAS_PAID) {
-      res.status(409).json({ error: "A member has already started paying, so this order can't be unlocked. Cancel it instead if changes are needed." });
-      return;
-    }
     if (e === UNLOCK_CONFLICT) {
       res.status(409).json({ error: "This shared order can no longer be unlocked." });
       return;
@@ -2301,8 +2454,8 @@ router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req,
   }
 
   await writeLog("order", "info", "wholesale_share_unlocked",
-    `Wholesale share ${share.id} unlocked by ${me} — ${removedOrders} member orders removed, reopened for edits`,
-    { shareId: share.id, removedOrders }, req.ip);
+    `Wholesale share ${share.id} unlocked by ${me} — ${preservedOrders} member orders preserved, reopened for edits`,
+    { shareId: share.id, preservedOrders }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));

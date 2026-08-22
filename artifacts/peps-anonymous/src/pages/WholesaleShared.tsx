@@ -576,7 +576,8 @@ export default function WholesaleShared() {
   if (!share) return null;
 
   const isOpen = share.status === "open";
-  const canEditItems = isOpen && share.isMember;
+  const myPaymentStarted = !!myMember?.paymentStatus && myMember.paymentStatus !== "unpaid";
+  const canEditItems = isOpen && share.isMember && !myPaymentStarted;
   const paidCount = share.members.filter(m => m.paymentStatus === "confirmed").length;
 
   // Lock readiness hints (creator, while open)
@@ -921,7 +922,7 @@ export default function WholesaleShared() {
 
   const doUnlock = async () => {
     if (!id) return;
-    if (!window.confirm("Unlock this order so members can change items and delivery again? Each member's order is removed until you lock again. You can't unlock once a member has started paying.")) return;
+    if (!window.confirm("Reopen this order so unpaid members can change items and new members can join? Existing orders and payment records stay in place. Members whose payment has started keep their order unchanged.")) return;
     setActionError(""); setBusy("unlock");
     try { await unlockWholesaleShare(id); invalidate(id); }
     catch (e) { setActionError((e as Error).message); }
@@ -2119,7 +2120,7 @@ export default function WholesaleShared() {
     </div>
   ) : null;
 
-  // Locked: organiser can still unlock / cancel if a member never pays.
+  // Locked: organiser can reopen to add members or adjust unpaid orders, or cancel.
   const sectionOrganiserLocked = showOrganiserLocked ? (
     <section className="space-y-2">
       <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Organiser Controls</p>
@@ -2137,7 +2138,7 @@ export default function WholesaleShared() {
           Unlock to make changes
         </button>
         <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-          Reopens the order so members can edit items and delivery again. Each member's order is removed until you lock again. Not available once a member has started paying.
+          Reopens the order so unpaid members can edit items and new members can join. Existing orders stay in place; members whose payment has started keep their order unchanged.
         </p>
         <button
           onClick={doCancel}
