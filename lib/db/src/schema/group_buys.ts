@@ -323,7 +323,7 @@ export type GbEntryFeePaymentStatus = typeof GB_ENTRY_FEE_PAYMENT_STATUSES[numbe
 
 export const gbEntryFeePaymentsTable = pgTable("gb_entry_fee_payments", {
   id: text("id").primaryKey(),
-  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
+  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id),
   // Plain text — mirrors organiserId/pool_participants.accountId (no FK, avoids circular dep on accounts.ts).
   accountId: text("account_id").notNull(),
   status: text("status").notNull().default("pending"),

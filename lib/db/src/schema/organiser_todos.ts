@@ -9,7 +9,7 @@ export interface OrganiserTodoSubtask {
 
 export const organiserTodosTable = pgTable("organiser_todos", {
   id: text("id").primaryKey(),
-  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
+  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id),
   organiserId: text("organiser_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
