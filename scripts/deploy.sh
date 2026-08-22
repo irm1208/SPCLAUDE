@@ -30,7 +30,7 @@ async function run() {
     \`DO \$\$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'gb_entry_fee_payments_group_buy_id_fkey') THEN
          ALTER TABLE gb_entry_fee_payments ADD CONSTRAINT gb_entry_fee_payments_group_buy_id_fkey
-           FOREIGN KEY (group_buy_id) REFERENCES public.group_buys(id) ON DELETE CASCADE ON UPDATE NO ACTION;
+           FOREIGN KEY (group_buy_id) REFERENCES public.group_buys(id) ON DELETE NO ACTION ON UPDATE NO ACTION;
        END IF;
      END \$\$\`,
     \`DO \$\$ BEGIN
@@ -41,7 +41,7 @@ async function run() {
     \`DO \$\$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wholesale_access_requests_account_username_fkey') THEN
          ALTER TABLE wholesale_access_requests ADD CONSTRAINT wholesale_access_requests_account_username_fkey
-           FOREIGN KEY (account_username) REFERENCES public.accounts(telegram_username) ON DELETE CASCADE ON UPDATE CASCADE;
+           FOREIGN KEY (account_username) REFERENCES public.accounts(telegram_username) ON DELETE NO ACTION ON UPDATE NO ACTION;
        END IF;
      END \$\$\`,
     // Rename organiser_todos FK to match drizzle-generated name
@@ -53,7 +53,7 @@ async function run() {
     \`DO \$\$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'organiser_todos_group_buy_id_fkey') THEN
          ALTER TABLE organiser_todos ADD CONSTRAINT organiser_todos_group_buy_id_fkey
-           FOREIGN KEY (group_buy_id) REFERENCES public.group_buys(id) ON DELETE CASCADE ON UPDATE NO ACTION;
+           FOREIGN KEY (group_buy_id) REFERENCES public.group_buys(id) ON DELETE NO ACTION ON UPDATE NO ACTION;
        END IF;
      END \$\$\`,
   ];
