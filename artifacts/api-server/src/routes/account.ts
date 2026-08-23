@@ -1588,6 +1588,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       grandTotal: parseFloat(String(order.grandTotal)),
       amountDue: parseFloat(String((order as any).amountDue ?? "0")),
       productSubtotal: parseFloat(String(order.productSubtotal)),
+      organiserFee: parseFloat(String(order.organiserFee ?? "0")),
       testingContribution: parseFloat(String(order.testingContribution ?? "0")),
       testVote: order.testVote ?? null,
       deliveryMethod: order.deliveryMethod,
