@@ -25,6 +25,9 @@ the vendor/admin order calculation.
 - For an existing unpaid order, reconcile a historically omitted organiser fee upward
   from the materialised base total. Preserve any independently recorded extra amount.
   Never mutate confirmed, test-confirmed, or pending-payment orders during this repair.
+- Publishing the code does not run this historical backfill. After a production release,
+  invoke the admin organiser-fee reconciliation and verify the affected unpaid totals in
+  production before treating the incident as resolved.
 - Fees are editable only while share `status === "open"`. The `PUT /fees` write must be
   transactional: row-lock the share (`.for("update")`) and re-assert `open` inside the
   tx, throwing a conflict sentinel → 409, so a concurrent lock/cancel can't be followed
