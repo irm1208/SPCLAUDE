@@ -1761,13 +1761,14 @@ export default function WholesaleShared() {
     </div>
   );
 
-  // Optional organiser fee — custom per-member charge paid directly to the organiser.
+  // Optional organiser fee — added to each applicable member's shared-order total
+  // when the organiser locks the group. The designated parcel recipient is exempt.
   const organiserFeeBlock = (
     <div className="space-y-3">
       <div>
         <label className="block text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Organiser fee (optional)</label>
         <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-          Charge each member a custom organiser fee, paid directly to you. It's settled separately between members — never added to anyone's order total. The recipient is exempt.
+          Charge each member a custom organiser fee. It is included in their shared-order total when you lock the group. The recipient is exempt.
         </p>
       </div>
 

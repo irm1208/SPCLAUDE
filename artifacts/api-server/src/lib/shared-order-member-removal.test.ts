@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildSharedOrderMemberRemovalPlan } from "./shared-order-member-removal";
+import {
+  buildSharedOrderMemberRemovalPlan,
+  findProtectedRecipientOrganiserFeeChanges,
+} from "./shared-order-member-removal";
 
 const member = (overrides: Partial<Parameters<typeof buildSharedOrderMemberRemovalPlan>[0]["members"][number]> = {}) => ({
   id: "member-a",
@@ -134,4 +137,25 @@ describe("shared-order member removal", () => {
       { orderId: "order-paid", paymentStatus: "confirmed", requiresPaymentReview: true },
     ]);
   });
+
+  it("allows an unpaid member to become the parcel recipient", () => {
+    expect(findProtectedRecipientOrganiserFeeChanges({
+      previousRecipientUsername: "alice",
+      nextRecipientUsername: "bob",
+      members: [member({ username: "bob", organiserFee: 10, orderId: "order-bob" })],
+      orders: [order({ id: "order-bob", paymentStatus: "unpaid", organiserFee: 10 })],
+    })).toEqual([]);
+  });
+
+  it.each(["confirmed", "test_confirmed", "pending_confirmation"])(
+    "blocks a %s member from becoming the parcel recipient when it would remove their organiser fee",
+    paymentStatus => {
+      expect(findProtectedRecipientOrganiserFeeChanges({
+        previousRecipientUsername: "alice",
+        nextRecipientUsername: "bob",
+        members: [member({ username: "bob", organiserFee: 10, orderId: "order-bob" })],
+        orders: [order({ id: "order-bob", paymentStatus, organiserFee: 10 })],
+      })).toEqual(["bob"]);
+    },
+  );
 });

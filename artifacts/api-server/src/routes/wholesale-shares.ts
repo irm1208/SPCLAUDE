@@ -36,7 +36,10 @@ import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
-import { buildSharedOrderMemberRemovalPlan } from "../lib/shared-order-member-removal";
+import {
+  buildSharedOrderMemberRemovalPlan,
+  findProtectedRecipientOrganiserFeeChanges,
+} from "../lib/shared-order-member-removal";
 import { buildSharedOrderReopenPlan } from "../lib/shared-order-reopen";
 import { notifyUser } from "../lib/telegram";
 
@@ -243,10 +246,18 @@ async function reconcileLockedShareOrganiserFees(
     if (!order) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
 
     const organiserFee = effectiveOrganiserFee(share, member);
+    const baseGrandTotal = Number((
+      Number(order.productSubtotal ?? 0)
+      + Number(order.vendorShipping ?? 0)
+      + Number(order.tip ?? 0)
+      + Number(order.kitFees ?? 0)
+      + Number(order.adminAdjustmentFee ?? 0)
+    ).toFixed(2));
     const update = buildOrganiserFeeOrderUpdate({
       oldFee: Number(order.organiserFee ?? 0),
       newFee: organiserFee,
       grandTotal: Number(order.grandTotal ?? 0),
+      baseGrandTotal,
       amountDue: Number(order.amountDue ?? 0),
       paymentStatus: order.paymentStatus,
     });
@@ -1974,6 +1985,21 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
           shippingCountry: replacementAddress.country,
         }
       : {};
+
+    const protectedRecipientFeeChanges = replacementMember
+      ? findProtectedRecipientOrganiserFeeChanges({
+          previousRecipientUsername: share.deliveryUsername,
+          nextRecipientUsername: replacementMember.username,
+          members: plan.retainedMembers,
+          orders,
+        })
+      : [];
+    if (protectedRecipientFeeChanges.length > 0) {
+      return {
+        kind: "invalid" as const,
+        error: `Can't change the parcel recipient because @${protectedRecipientFeeChanges.join(", @")} has a payment-started order whose organiser fee would change. Resolve that payment first.`,
+      };
+    }
 
     const guarded = await tx.update(wholesaleSharesTable).set({
       ...deliveryUpdates,

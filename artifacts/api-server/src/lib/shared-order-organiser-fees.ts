@@ -4,6 +4,8 @@ export interface OrganiserFeeOrderInput {
   oldFee: number;
   newFee: number;
   grandTotal: number;
+  /** The materialised order total before its organiser fee is applied. */
+  baseGrandTotal?: number;
   amountDue: number;
   paymentStatus: OrganiserFeePaymentStatus;
 }
@@ -23,6 +25,7 @@ export function buildOrganiserFeeOrderUpdate({
   oldFee,
   newFee,
   grandTotal,
+  baseGrandTotal,
   amountDue,
   paymentStatus,
 }: OrganiserFeeOrderInput): OrganiserFeeOrderUpdate {
@@ -32,24 +35,41 @@ export function buildOrganiserFeeOrderUpdate({
   if (!Number.isFinite(newFee) || newFee < 0) {
     throw new Error("Organiser fee must be a non-negative amount.");
   }
+  if (baseGrandTotal !== undefined && (!Number.isFinite(baseGrandTotal) || baseGrandTotal < 0)) {
+    throw new Error("Order total before organiser fee must be a non-negative amount.");
+  }
 
   const delta = roundCents(newFee - oldFee);
-  const changed = delta !== 0;
   // Once any payment attempt has started, retain the original payable amount and
-  // lock. Later adjustments may add an outstanding balance, but never reduce the
-  // recorded order or reopen the original payment.
+  // lock. The unpaid-order reconciliation must not rewrite any payment-started
+  // order, even if its configured fee changes later.
   const paymentProtected = paymentStatus !== "unpaid";
-  const positiveDelta = Math.max(0, delta);
-  const nextGrandTotal = roundCents(grandTotal + (paymentProtected ? positiveDelta : delta));
+  if (paymentProtected) {
+    return {
+      changed: false,
+      organiserFee: roundCents(oldFee),
+      grandTotal: roundCents(grandTotal),
+      amountDue: roundCents(amountDue),
+      resetPaymentLock: false,
+      resetBalancePayment: false,
+    };
+  }
+
+  const nextGrandTotal = baseGrandTotal === undefined
+    ? roundCents(grandTotal + delta)
+    : roundCents(
+      baseGrandTotal
+      + newFee
+      + Math.max(0, roundCents(grandTotal) - roundCents(baseGrandTotal + oldFee)),
+    );
+  const changed = delta !== 0 || roundCents(grandTotal) !== nextGrandTotal;
 
   return {
     changed,
     organiserFee: roundCents(newFee),
     grandTotal: nextGrandTotal,
-    amountDue: paymentProtected
-      ? roundCents(amountDue + positiveDelta)
-      : roundCents(amountDue),
-    resetPaymentLock: !paymentProtected && changed,
-    resetBalancePayment: paymentProtected && positiveDelta > 0,
+    amountDue: roundCents(amountDue),
+    resetPaymentLock: changed,
+    resetBalancePayment: false,
   };
 }

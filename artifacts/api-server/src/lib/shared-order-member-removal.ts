@@ -45,6 +45,33 @@ export type SharedOrderMemberRemovalPlan = {
 
 const roundCents = (value: number) => Number(value.toFixed(2));
 
+const normalizedUsername = (username: string | null | undefined) =>
+  username?.replace(/^@/, "").trim().toLowerCase() ?? "";
+
+export function findProtectedRecipientOrganiserFeeChanges(input: {
+  previousRecipientUsername: string | null | undefined;
+  nextRecipientUsername: string | null | undefined;
+  members: MemberRemovalMember[];
+  orders: MemberRemovalOrder[];
+}): string[] {
+  const previousRecipient = normalizedUsername(input.previousRecipientUsername);
+  const nextRecipient = normalizedUsername(input.nextRecipientUsername);
+  if (previousRecipient === nextRecipient) return [];
+
+  const orderById = new Map(input.orders.map(order => [order.id, order]));
+  return input.members.flatMap(member => {
+    const order = member.orderId ? orderById.get(member.orderId) : undefined;
+    if (!order || order.paymentStatus === "unpaid") return [];
+
+    const nextFee = normalizedUsername(member.username) === nextRecipient
+      ? 0
+      : Number(member.organiserFee ?? 0);
+    return roundCents(Number(order.organiserFee ?? 0)) === roundCents(nextFee)
+      ? []
+      : [member.username];
+  });
+}
+
 export function buildSharedOrderMemberRemovalPlan(input: {
   members: MemberRemovalMember[];
   orders: MemberRemovalOrder[];

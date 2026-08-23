@@ -9,4 +9,14 @@ describe("shared wholesale item-save payment guard", () => {
     expect(routeSource).toContain(": sql`TRUE`");
     expect(routeSource).not.toContain("sql`(${member.orderId} IS NULL OR EXISTS (");
   });
+
+  it("guards protected organiser-fee changes before a locked recipient replacement writes", () => {
+    const guard = routeSource.indexOf("const protectedRecipientFeeChanges = replacementMember");
+    const lockedShareWrite = routeSource.indexOf("const guarded = await tx.update(wholesaleSharesTable)");
+
+    expect(guard).toBeGreaterThan(-1);
+    expect(lockedShareWrite).toBeGreaterThan(guard);
+    expect(routeSource).toContain("findProtectedRecipientOrganiserFeeChanges");
+    expect(routeSource).toContain("payment-started order whose organiser fee would change");
+  });
 });
