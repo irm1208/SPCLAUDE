@@ -1870,9 +1870,10 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   // the share member row at lock time. A stale materialised order (e.g. one edited via
   // the generic order form before shared-order edits were blocked) can have that split
   // dropped from vendor_shipping/grand_total. Reconcile it back from the snapshot so the
-  // displayed and payable total always matches the share. Only touch unpaid orders.
+  // displayed and payable total always matches the share. Never mutate payment-started
+  // orders while serving a read; the historical repair is explicitly unpaid-only.
   if (order.orderType === "wholesale_shared" && order.sharedOrderId &&
-      !["confirmed", "test_confirmed"].includes(order.paymentStatus)) {
+      order.paymentStatus === "unpaid") {
     const [member] = await db
       .select({ shippingShare: wholesaleShareMembersTable.shippingShare })
       .from(wholesaleShareMembersTable)
@@ -1884,9 +1885,14 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
       const snapshotShipping = Number(member.shippingShare);
       const subtotal = parseFloat(String(order.productSubtotal ?? "0"));
       const tip = parseFloat(String(order.tip ?? "0"));
-      const expectedTotal = Number((subtotal + snapshotShipping + tip).toFixed(2));
       const currentShipping = parseFloat(String(order.vendorShipping ?? "0"));
       const currentTotal = parseFloat(String(order.grandTotal ?? "0"));
+      const kitFees = parseFloat(String(order.kitFees ?? "0"));
+      const adminAdjustmentFee = parseFloat(String(order.adminAdjustmentFee ?? "0"));
+      const organiserFee = parseFloat(String(order.organiserFee ?? "0"));
+      const currentKnownTotal = subtotal + currentShipping + tip + kitFees + adminAdjustmentFee + organiserFee;
+      const independentExtra = Math.max(0, currentTotal - currentKnownTotal);
+      const expectedTotal = Number((subtotal + snapshotShipping + tip + kitFees + adminAdjustmentFee + organiserFee + independentExtra).toFixed(2));
       if (Math.abs(currentShipping - snapshotShipping) > 0.001 || Math.abs(currentTotal - expectedTotal) > 0.001) {
         // Gate the write on unpaid status too (not just the initial read) so a payment
         // confirmed between read and write can't be mutated. Clear any locked crypto

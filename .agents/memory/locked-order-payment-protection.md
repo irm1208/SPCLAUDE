@@ -7,4 +7,4 @@ For a locked shared order, treat every order whose payment status is not `unpaid
 
 **Why:** A payment attempt can already be in flight before confirmation. Treating only confirmed payments as protected lets a later fee, recipient, or shipping reconciliation invalidate an amount a customer is actively paying.
 
-**How to apply:** Use the same non-unpaid predicate in every total-affecting pass, including secondary fee/exemption reconciliation after a member-removal plan. Preserve the existing total for negative changes and add only positive differences to `amountDue`. Primary-payment confirmation paths must not zero `amountDue`, because it is an independent post-payment balance.
+**How to apply:** Use the same non-unpaid predicate in every total-affecting pass, including secondary fee/exemption reconciliation after a member-removal plan and read-route self-healing. When recalculating a shared total, include its materialised organiser fee and preserve independent extras. Primary-payment confirmation paths must not zero `amountDue`, because it is an independent post-payment balance.
