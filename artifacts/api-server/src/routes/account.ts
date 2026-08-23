@@ -1792,6 +1792,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     vendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
     productSubtotal: parseFloat(String(order.productSubtotal)),
     tip: parseFloat(String(order.tip ?? "0")),
+    organiserFee: parseFloat(String(order.organiserFee ?? "0")),
     testingContribution: parseFloat(String(order.testingContribution ?? "0")),
     testVote: order.testVote ?? null,
     grandTotal: parseFloat(String(order.grandTotal)),

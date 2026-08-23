@@ -138,6 +138,7 @@ interface Order {
   directShippingCost?: number | null;
   adminFee?: number | null;
   adminFeeLabel?: string | null;
+  organiserFee?: number | null;
   routingType?: string | null;
   batchLocked?: boolean;
   isWholesale?: boolean;
@@ -3262,6 +3263,12 @@ function OrdersTab({ secret }: { secret: string }) {
                                 {removingAdminFee[order.id] ? "…" : "Remove"}
                               </button>
                             </div>
+                          </div>
+                        )}
+                        {(order.organiserFee ?? 0) > 0 && (
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>Organiser fee</span>
+                            <span>{fmtC(order.organiserFee!, order.currency)}</span>
                           </div>
                         )}
                         {(order.directShippingCost ?? 0) > 0 && !order.directShippingRequested && (

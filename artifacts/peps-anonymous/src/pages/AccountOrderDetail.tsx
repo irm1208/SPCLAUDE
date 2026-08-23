@@ -118,6 +118,7 @@ interface OrderDetail {
   vendorShipping: number;
   productSubtotal: number;
   tip: number;
+  organiserFee?: number;
   testingContribution: number;
   testVote: string | null;
   grandTotal: number;
@@ -2248,6 +2249,11 @@ export default function AccountOrderDetail() {
                           {order.deliveryPrice > 0 && (
                             <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
                               <span>Delivery</span><span>{fmtC(order.deliveryPrice, order.currency)}</span>
+                            </div>
+                          )}
+                          {(order.organiserFee ?? 0) > 0 && (
+                            <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
+                              <span>Organiser fee</span><span>{fmtC(order.organiserFee!, order.currency)}</span>
                             </div>
                           )}
                           {order.directShippingRequested && (order.directShippingCost ?? 0) > 0 ? (
