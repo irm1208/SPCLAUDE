@@ -95,3 +95,4 @@
 - [Locked-order payment protection](locked-order-payment-protection.md) — every post-lock reconciliation must protect all non-unpaid orders from decreases or payment-lock resets.
 - [Orderless reopened-member item guard](orderless-reopened-member-item-guard.md) — never interpolate a nullable order ID into `$n IS NULL`; use a constant SQL gate for orderless members.
 - [Deployment foreign-key action drift](deployment-foreign-key-action-drift.md) — direct deploy SQL can override Drizzle FK actions; keep it aligned with the schema or migration previews remain stale.
+- [Shared-order organiser wallet edit access](shared-order-organiser-wallet-edit-access.md) — a configured lead wallet is a member payment destination, not proof the organiser has paid or cannot add items while open.

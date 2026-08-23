@@ -409,10 +409,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderOrganiserFee: order ? Number(order.organiserFee ?? 0) : null,
       amountDue: order ? Number(order.amountDue ?? 0) : 0,
       balancePaymentStatus: order?.balancePaymentStatus ?? null,
-      // When the organiser uses their own wallet, their personal order is bundled
-      // into the platform payment they forward to admin — treat it as confirmed so
-      // no separate Pay step is shown and everyonePaid fires correctly.
-      paymentStatus: (m.isCreator && hasOwnWallet) ? "confirmed" : (order?.paymentStatus ?? null),
+      // Once locked, an organiser using their own wallet has their personal order
+      // bundled into the platform payment they forward to admin. While open they
+      // must remain unpaid so they can add and save their own products.
+      paymentStatus: (m.isCreator && hasOwnWallet && isLocked) ? "confirmed" : (order?.paymentStatus ?? null),
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
       // The organiser may remove any non-creator member while the order is open.
       canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
@@ -1012,13 +1012,6 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
   if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked — items can no longer be changed." }); return; }
   const member = await loadMember(share.id, me);
   if (!member) { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
-  const organiserUsesOwnWallet = member.isCreator
-    && Array.isArray(share.leadCryptoOptions)
-    && (share.leadCryptoOptions as unknown[]).length > 0;
-  if (organiserUsesOwnWallet) {
-    res.status(409).json({ error: "Your order is handled through the organiser payment and is fixed while the shared order is reopened." });
-    return;
-  }
   if (member.orderId) {
     const [memberOrder] = await db.select({ paymentStatus: ordersTable.paymentStatus })
       .from(ordersTable)
