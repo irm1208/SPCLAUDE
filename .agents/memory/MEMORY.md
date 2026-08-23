@@ -93,4 +93,5 @@
 - [Email template system](email-template-system.md) — DB-driven templates in email_templates table; sendTemplatedEmail() is the canonical send path; dynamic import pattern for all route hooks; requireOrganiser is Express middleware (not a guard), use it as router.post("/path", requireOrganiser, handler).
 - [Shared-order admin override](shared-order-admin-override.md) — admin controls must reuse creator workflows after admin-secret validation, never bypass transactional order safeguards with direct writes.
 - [Locked-order payment protection](locked-order-payment-protection.md) — every post-lock reconciliation must protect all non-unpaid orders from decreases or payment-lock resets.
+- [Orderless reopened-member item guard](orderless-reopened-member-item-guard.md) — never interpolate a nullable order ID into `$n IS NULL`; use a constant SQL gate for orderless members.
 - [Deployment foreign-key action drift](deployment-foreign-key-action-drift.md) — direct deploy SQL can override Drizzle FK actions; keep it aligned with the schema or migration previews remain stale.

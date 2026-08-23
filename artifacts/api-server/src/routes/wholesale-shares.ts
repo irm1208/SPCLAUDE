@@ -1079,16 +1079,21 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
 
   // Gate the write on the parent share STILL being open in the same statement, so a
   // concurrent lock/cancel can't slip items in after the order is materialised.
+  // `NULL IS NULL` leaves PostgreSQL unable to infer the placeholder type, so
+  // orderless members use a constant gate instead of interpolating a nullable ID.
+  const paymentEditGate = member.orderId
+    ? sql`EXISTS (
+      SELECT 1 FROM ${ordersTable}
+      WHERE ${ordersTable.id} = ${member.orderId}
+        AND ${ordersTable.paymentStatus} = 'unpaid'
+    )`
+    : sql`TRUE`;
   const itemsUpdated = await db.update(wholesaleShareMembersTable)
     .set({ items: cleanItems, tip: tip.toFixed(2) })
     .where(and(
       eq(wholesaleShareMembersTable.id, member.id),
       sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
-      sql`(${member.orderId} IS NULL OR EXISTS (
-        SELECT 1 FROM ${ordersTable}
-        WHERE ${ordersTable.id} = ${member.orderId}
-          AND ${ordersTable.paymentStatus} = 'unpaid'
-      ))`,
+      paymentEditGate,
     ))
     .returning({ id: wholesaleShareMembersTable.id });
   if (itemsUpdated.length === 0) {
