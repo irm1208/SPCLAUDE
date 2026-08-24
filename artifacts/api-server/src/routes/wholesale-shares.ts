@@ -361,6 +361,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   // so treat their member slot as implicitly paid (no Pay button, counts as confirmed
   // for everyonePaid / allPaid tracking).
   const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
+  const isCreatorViewer = share.creatorUsername.toLowerCase() === currentLower;
 
   const memberPayloads = members.map((m, idx) => {
     const items = m.items ?? [];
@@ -413,6 +414,25 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       // bundled into the platform payment they forward to admin. While open they
       // must remain unpaid so they can add and save their own products.
       paymentStatus: (m.isCreator && hasOwnWallet && isLocked) ? "confirmed" : (order?.paymentStatus ?? null),
+      // Member transaction references are payment-sensitive. The organiser needs them
+      // to reconcile the group's two-stage payments; other members must never receive
+      // another member's transaction identifiers in this response.
+      paymentTransactions: isCreatorViewer && order ? {
+        test: order.testPaymentTxHash ? {
+          id: order.testPaymentTxHash,
+          amount: order.paymentTestAmount != null ? Number(order.paymentTestAmount) : null,
+          currency: order.paymentCryptoCurrency ?? null,
+        } : null,
+        remaining: order.paymentTxHash ? {
+          id: order.paymentTxHash,
+          amount: order.paymentUsdAmount != null
+            ? Number(order.paymentUsdAmount)
+            : order.testPaymentTxHash && order.paymentTestAmount != null
+              ? Number((Number(order.grandTotal) - Number(order.paymentTestAmount)).toFixed(2))
+              : Number(order.grandTotal),
+          currency: order.paymentCryptoCurrency ?? null,
+        } : null,
+      } : null,
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
       // The organiser may remove any non-creator member while the order is open.
       canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
@@ -454,7 +474,6 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   });
 
   const organiserFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.organiserFee, 0).toFixed(2));
-  const isCreatorViewer = share.creatorUsername.toLowerCase() === currentLower;
 
   const allPaid = isLocked
     && memberPayloads.length > 0

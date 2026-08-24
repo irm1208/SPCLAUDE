@@ -2229,6 +2229,44 @@ export default function WholesaleShared() {
                     {m.orderCode ? `Order ${m.orderCode} · ` : ""}
                     {isPaid ? "Paid" : isPending ? "Pending confirmation" : "Unpaid"}
                   </p>
+                  {m.paymentTransactions && (
+                    <div className="mt-2 space-y-2">
+                      <div className="rounded-lg px-2.5 py-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold" style={{ color: "#d97706" }}>Test payment transaction ID</p>
+                          {m.paymentTransactions.test?.amount != null && (
+                            <span className="text-[10px] font-semibold shrink-0" style={{ color: "#b45309" }}>
+                              Received {m.paymentTransactions.test.amount.toFixed(2)} {m.paymentTransactions.test.currency ?? "USD"}
+                            </span>
+                          )}
+                        </div>
+                        {m.paymentTransactions.test ? (
+                          <p className="mt-1 text-[10px] font-mono break-all select-all" style={{ color: "var(--t-text)" }}>
+                            {m.paymentTransactions.test.id}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[10px]" style={{ color: "var(--t-muted)" }}>Not submitted</p>
+                        )}
+                      </div>
+                      <div className="rounded-lg px-2.5 py-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold" style={{ color: "var(--t-text)" }}>Remaining payment transaction ID</p>
+                          {m.paymentTransactions.remaining?.amount != null && (
+                            <span className="text-[10px] font-semibold shrink-0" style={{ color: "#15803d" }}>
+                              Received {m.paymentTransactions.remaining.amount.toFixed(2)} {m.paymentTransactions.remaining.currency ?? "USD"}
+                            </span>
+                          )}
+                        </div>
+                        {m.paymentTransactions.remaining ? (
+                          <p className="mt-1 text-[10px] font-mono break-all select-all" style={{ color: "var(--t-text)" }}>
+                            {m.paymentTransactions.remaining.id}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[10px]" style={{ color: "var(--t-muted)" }}>Not submitted</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <button

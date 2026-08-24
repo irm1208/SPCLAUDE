@@ -33,6 +33,11 @@ export interface WholesaleShareMember {
   amountDue: number;
   balancePaymentStatus: string | null;
   paymentStatus: string | null;
+  // Present only when the current viewer is this shared order's organiser.
+  paymentTransactions: {
+    test: { id: string; amount: number | null; currency: string | null } | null;
+    remaining: { id: string; amount: number | null; currency: string | null } | null;
+  } | null;
   hasDeliveryAddress: boolean;
   // The organiser may remove this member while the order is open (never the creator).
   canRemove: boolean;
