@@ -115,6 +115,8 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
                 {m.kits > 0 ? `${m.kits} kit${m.kits === 1 ? "" : "s"} · ${money(m.subtotal)}` : "No items yet"}
                 {m.tip > 0 && ` · tip ${money(m.tip)}`}
                 {m.shippingShare != null && ` · ship ${money(m.shippingShare)}`}
+                 {m.orderOrganiserFee != null && ` · organiser fee ${money(m.orderOrganiserFee)}`}
+                 {m.orderGrandTotal != null && ` · total ${money(m.orderGrandTotal)}`}
                 {m.orderCode && ` · order #${m.orderCode}`}
               </p>
             </div>

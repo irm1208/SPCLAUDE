@@ -26,4 +26,10 @@ describe("shared wholesale organiser member payment transactions", () => {
     expect(pageSource).toContain("Received");
     expect(pageSource).toContain("m.paymentTransactions");
   });
+
+  it("renders shipping, organiser fee, and final total in each member summary", () => {
+    expect(pageSource).toContain("ship ${money(m.shippingShare)}");
+    expect(pageSource).toContain("organiser fee ${money(m.orderOrganiserFee)}");
+    expect(pageSource).toContain("total ${money(m.orderGrandTotal)}");
+  });
 });
