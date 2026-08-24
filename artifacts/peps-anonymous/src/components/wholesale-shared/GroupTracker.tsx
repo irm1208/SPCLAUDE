@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, CheckCircle2, Clock, CreditCard, Crown, Loader2, MapPin, Trash2, Truck } from "lucide-react";
-import type { WholesaleShareDetail } from "@/hooks/use-wholesale-shares";
+import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
 import { PriceWatermark } from "@/components/PriceWatermark";
 
 interface GroupTrackerProps {
@@ -44,6 +44,41 @@ function Chip({ ok, label, neutralLabel, icon }: { ok: boolean; label: string; n
       {ok ? <Check className="w-3 h-3" /> : icon}
       {ok ? label : neutralLabel}
     </span>
+  );
+}
+
+function PaymentTransactionDetails({
+  transactions,
+}: {
+  transactions: NonNullable<WholesaleShareMember["paymentTransactions"]>;
+}) {
+  const stages = [
+    { label: "Test payment transaction ID", transaction: transactions.test, color: "#b45309" },
+    { label: "Remaining payment transaction ID", transaction: transactions.remaining, color: "#15803d" },
+  ];
+
+  return (
+    <div className="grid gap-2 pt-1 sm:grid-cols-2">
+      {stages.map(({ label, transaction, color }) => (
+        <div key={label} className="rounded-lg px-2.5 py-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-bold" style={{ color }}>{label}</p>
+            {transaction?.amount != null && (
+              <span className="text-[10px] font-semibold shrink-0" style={{ color }}>
+                Received {transaction.amount.toFixed(2)} {transaction.currency ?? "USD"}
+              </span>
+            )}
+          </div>
+          {transaction ? (
+            <p className="mt-1 text-[10px] font-mono break-all select-all" style={{ color: "var(--t-text)" }}>
+              {transaction.id}
+            </p>
+          ) : (
+            <p className="mt-1 text-[10px]" style={{ color: "var(--t-muted)" }}>Not submitted</p>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -112,6 +147,9 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
             )}
             {!isOpen && <PayChip paymentStatus={m.paymentStatus} />}
           </div>
+           {share.isCreator && m.paymentTransactions && (
+             <PaymentTransactionDetails transactions={m.paymentTransactions} />
+           )}
           {showItems && m.items.length > 0 && (
             <ul className="space-y-1 pt-2 mt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
               {m.items.map((it, i) => (
