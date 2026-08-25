@@ -18589,7 +18589,7 @@ function AiPasteMode({ secret }: { secret: string }) {
             Paste any format — vendor dispatch messages, address blocks, item lists, 17track links. AI will extract each shipment and match it to an order.
           </p>
           <p className="text-[11px] text-blue-700 mt-1">
-            Telegram exports are supported: each <span className="font-mono">[DD/MM/YYYY HH:mm] -</span> line starts a new message, and tracking can appear anywhere inside it.
+            Telegram exports are supported: each <span className="font-mono">[DD/MM/YYYY HH:mm] Sender:</span> or <span className="font-mono">[DD/MM/YYYY HH:mm] -</span> line starts a new message, and tracking can appear anywhere inside it.
           </p>
         </div>
         <textarea

@@ -1,5 +1,5 @@
 const TELEGRAM_MESSAGE_START =
-  /^\s*(\[\d{1,2}\/\d{1,2}\/\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\])\s*-\s*/gm;
+  /^[ \t]*(\[\d{1,2}\/\d{1,2}\/\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\])[ \t]*(?:-[ \t]*|[^\r\n:]*:[ \t]*)?/gm;
 
 /**
  * Adds explicit boundaries to Telegram exports before they are sent to the

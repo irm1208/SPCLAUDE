@@ -151,6 +151,7 @@ function isEndpointRetriable(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message;
   if (/proxy error (5\d\d)/.test(msg)) return true;
+  if (/proxy error 401/.test(msg) && /invalid token|invalid api key|unauthorized|authentication/i.test(msg)) return true;
   if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT")) return true;
   return false;
 }
