@@ -129,6 +129,9 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   // Draft items + tip held here while the share is open; materialised into a real order at lock.
   items: jsonb("items").$type<WholesaleShareItem[]>().notNull().default([]),
   tip: numeric("tip", { precision: 10, scale: 2 }).notNull().default("0"),
+  // A member explicitly accepts their current draft before the organiser locks the
+  // shared order. Any subsequent draft edit clears this commitment.
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   // The materialised order created at lock; null while the share is still open.
   orderId: text("order_id"),
   // Per-member vendor-shipping share computed at lock (snapshot for display).

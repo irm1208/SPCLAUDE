@@ -144,6 +144,7 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             <Chip ok={m.kits > 0} label="Items added" neutralLabel="No items yet" />
+            {isOpen && <Chip ok={m.isConfirmed} label="Ready to pay" neutralLabel="Awaiting confirmation" icon={<Clock className="w-3 h-3" />} />}
             {m.isRecipient && (
               <Chip ok={addressSet} label="Address set" neutralLabel="Address pending" icon={<MapPin className="w-3 h-3" />} />
             )}

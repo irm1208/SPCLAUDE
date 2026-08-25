@@ -426,6 +426,7 @@ async function runStartupMigrations(): Promise<void> {
         is_creator boolean NOT NULL DEFAULT false,
         items jsonb NOT NULL DEFAULT '[]'::jsonb,
         tip numeric(10,2) NOT NULL DEFAULT 0,
+        confirmed_at timestamptz,
         order_id text,
         shipping_share numeric(10,2),
         joined_at timestamptz NOT NULL DEFAULT now(),
@@ -857,6 +858,8 @@ async function runStartupMigrations(): Promise<void> {
     // wholesale_share_members — organiser fee per participant (paid peer-to-peer)
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee_paid boolean NOT NULL DEFAULT false`);
+    // wholesale_share_members — member commitment to their current pre-lock draft
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS confirmed_at timestamptz`);
     // wholesale_share_members — onward shipping address fields (recipient's delivery details)
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_name text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_phone text`);

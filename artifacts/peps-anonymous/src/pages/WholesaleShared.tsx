@@ -20,6 +20,7 @@ import {
   useWholesaleShare,
   joinWholesaleShare,
   leaveWholesaleShare,
+  confirmWholesaleShare,
   setWholesaleShareItems,
   setWholesaleShareDelivery,
   setWholesaleShareDeliveryAddress,
@@ -582,9 +583,10 @@ export default function WholesaleShared() {
 
   // Lock readiness hints (creator, while open)
   const everyoneHasItems = share.members.length > 0 && share.members.every(m => m.kits > 0);
+  const everyoneConfirmed = share.members.length > 0 && share.members.every(m => m.isConfirmed);
   const deliverySet = !!share.delivery.username && !!share.delivery.address && !!share.delivery.country && !!share.delivery.name && !!share.delivery.phone;
   const shippingCalculable = deliverySet && share.estimateCalculable;
-  const canLock = isOpen && share.members.length >= 2 && everyoneHasItems && deliverySet && shippingCalculable;
+  const canLock = isOpen && share.members.length >= 2 && everyoneHasItems && everyoneConfirmed && deliverySet && shippingCalculable;
 
   // Stage drives which cards show / auto-expand; role flags gate the
   // organiser/recipient sections. Every underlying control keeps its own
@@ -920,6 +922,14 @@ export default function WholesaleShared() {
     finally { setBusy(null); }
   };
 
+  const doConfirm = async () => {
+    if (!id) return;
+    setActionError(""); setBusy("confirm");
+    try { await confirmWholesaleShare(id); invalidate(id); }
+    catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
   const doUnlock = async () => {
     if (!id) return;
     if (!window.confirm("Reopen this order so unpaid members can change items and new members can join? Existing orders and payment records stay in place. Members whose payment has started keep their order unchanged.")) return;
@@ -1110,11 +1120,43 @@ export default function WholesaleShared() {
     </button>
   ) : null;
 
+  const confirmationAction = isOpen && myMember ? (
+    <div className="rounded-xl px-3.5 py-3 flex flex-wrap items-center justify-between gap-3" style={{
+      background: myMember.isConfirmed ? "rgba(34,197,94,0.10)" : "var(--t-surface2)",
+      border: `1px solid ${myMember.isConfirmed ? "rgba(34,197,94,0.25)" : "var(--t-border)"}`,
+    }}>
+      <div className="min-w-0">
+        <p className="text-sm font-bold" style={{ color: myMember.isConfirmed ? "#15803d" : "var(--t-text)" }}>
+          {myMember.isConfirmed ? "Order confirmed" : "Confirm your order"}
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
+          {myMember.isConfirmed
+            ? "You’re marked ready to pay. Editing your items will require you to confirm again."
+            : myMember.kits > 0
+              ? "Confirm your current items and that you’re ready to pay once the order locks."
+              : "Add at least one item before you can confirm."}
+        </p>
+      </div>
+      {!myMember.isConfirmed && (
+        <button
+          onClick={doConfirm}
+          disabled={!myMember.canConfirm || busy === "confirm"}
+          className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+          style={{ background: "var(--t-blue)" }}
+        >
+          {busy === "confirm" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          Confirm ready
+        </button>
+      )}
+    </div>
+  ) : null;
+
   // Lock checklist + actions — lives inside the Group & order details card.
   const lockChecklistBlock = (
     <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "var(--t-border)" }}>
       <Checklist ok={share.members.length >= 2} text="At least 2 members" />
       <Checklist ok={everyoneHasItems} text="Every member has added items" />
+      <Checklist ok={everyoneConfirmed} text="Every member has confirmed they’re ready to pay" />
       <Checklist ok={deliverySet} text="Delivery member & address set" />
       <Checklist ok={shippingCalculable} text={deliverySet ? "Shipping can be calculated for this destination" : "Shipping calculable (set delivery first)"} />
       <div className="flex gap-2 pt-1">
@@ -1156,9 +1198,12 @@ export default function WholesaleShared() {
         onRemoveMember={showOrganiserOpen ? removeMember : undefined}
         removingUsername={busy?.startsWith("remove:") ? busy.slice(7) : null}
       />
+      {confirmationAction && (
+        <div className="mt-3">{confirmationAction}</div>
+      )}
       {showOrganiserOpen && share.members.some(m => m.canRemove) && (
         <p className="text-[11px] mt-2" style={{ color: "var(--t-muted)" }}>
-          Removing a member deletes their items from this order. If they were the delivery recipient, you'll need to pick a new one.
+          You can remove members who have not confirmed. Removing a member deletes their items; if they were the delivery recipient, you'll need to pick a new one.
         </p>
       )}
       <div className="mt-4 pt-4 border-t space-y-2.5" style={{ borderColor: "var(--t-border)" }}>
@@ -2830,6 +2875,9 @@ export default function WholesaleShared() {
 
       {groupTrackerCard}
 
+      {confirmationAction && (
+        <div className="pt-1">{confirmationAction}</div>
+      )}
       {leaveButton && (
         <div className="flex justify-center pt-1">
           {leaveButton}

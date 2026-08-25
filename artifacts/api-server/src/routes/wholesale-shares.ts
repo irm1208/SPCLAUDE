@@ -143,6 +143,8 @@ const UNLOCK_CONFLICT = Symbol("share_unlock_conflict");
 // total. Those payments are immutable; a positive difference becomes amount due.
 const LOCK_PROTECTED_TOTAL_DECREASE = Symbol("share_lock_protected_total_decrease");
 const LOCK_PROTECTED_BALANCE_CONFLICT = Symbol("share_lock_protected_balance_conflict");
+const LOCK_UNCONFIRMED_MEMBERS = Symbol("share_lock_unconfirmed_members");
+const MEMBER_ALREADY_CONFIRMED = Symbol("share_member_already_confirmed");
 
 // Server-authoritative delivery address. The organiser only chooses WHICH member
 // receives the parcel — the address itself is read from that member's own saved
@@ -397,6 +399,9 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       kits: memberKits(items),
       subtotal: memberSubtotal(items),
       tip: Number(m.tip ?? 0),
+      confirmedAt: m.confirmedAt ? (m.confirmedAt as Date).toISOString() : null,
+      isConfirmed: m.confirmedAt != null,
+      canConfirm: share.status === "open" && isOwn && memberKits(items) > 0,
       shippingShare,
       adminAdjustmentFee: Number(m.adminAdjustmentFee ?? 0),
       adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
@@ -434,8 +439,12 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
         } : null,
       } : null,
       hasDeliveryAddress: addressOk.has(m.username.toLowerCase()),
-      // The organiser may remove any non-creator member while the order is open.
-      canRemove: share.status === "open" && share.creatorUsername.toLowerCase() === currentLower && !m.isCreator,
+      // The organiser may remove only an unconfirmed non-creator member while the
+      // order is open. A confirmed member has committed to their current draft.
+      canRemove: share.status === "open"
+        && share.creatorUsername.toLowerCase() === currentLower
+        && !m.isCreator
+        && !m.confirmedAt,
       // Onward shipping address — exists flag for everyone; full address only for
       // the recipient or the member themselves. The recipient (not the parcel
       // receiver) never needs an onward address, so only non-recipients may edit one.
@@ -1023,6 +1032,50 @@ router.post("/wholesale-shares/:id/leave", requireWholesale, async (req, res): P
   res.json({ ok: true });
 });
 
+// POST /api/wholesale-shares/:id/confirm — a member confirms their current draft
+// and readiness to pay. The organiser cannot lock until every current member has
+// confirmed. Any later item/tip save clears this timestamp.
+router.post("/wholesale-shares/:id/confirm", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const share = await loadShare(String(req.params.id));
+  if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
+
+  const outcome = await db.transaction(async (tx) => {
+    const [lockedShare] = await tx.select()
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, share.id))
+      .for("update");
+    if (!lockedShare) return { kind: "missing" as const };
+    if (lockedShare.status !== "open") return { kind: "closed" as const };
+
+    const [member] = await tx.select()
+      .from(wholesaleShareMembersTable)
+      .where(and(
+        eq(wholesaleShareMembersTable.shareId, lockedShare.id),
+        sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`,
+      ))
+      .for("update");
+    if (!member) return { kind: "not_member" as const };
+    if (memberKits(member.items ?? []) < 1) return { kind: "empty" as const };
+
+    await tx.update(wholesaleShareMembersTable)
+      .set({ confirmedAt: new Date() })
+      .where(eq(wholesaleShareMembersTable.id, member.id));
+    return { kind: "confirmed" as const };
+  });
+
+  if (outcome.kind === "missing") { res.status(404).json({ error: "Shared order not found" }); return; }
+  if (outcome.kind === "closed") { res.status(409).json({ error: "This shared order is locked — confirmations are closed." }); return; }
+  if (outcome.kind === "not_member") { res.status(403).json({ error: "You are not a member of this shared order." }); return; }
+  if (outcome.kind === "empty") { res.status(400).json({ error: "Add at least one item before confirming your order." }); return; }
+
+  await writeLog("order", "info", "wholesale_share_member_confirmed",
+    `${me} confirmed their draft for wholesale share ${share.id}`,
+    { shareId: share.id, username: me }, req.ip);
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, me));
+});
+
 // PUT /api/wholesale-shares/:id/items — set the current member's items + tip
 router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
@@ -1112,7 +1165,7 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     )`
     : sql`TRUE`;
   const itemsUpdated = await db.update(wholesaleShareMembersTable)
-    .set({ items: cleanItems, tip: tip.toFixed(2) })
+    .set({ items: cleanItems, tip: tip.toFixed(2), confirmedAt: null })
     .where(and(
       eq(wholesaleShareMembersTable.id, member.id),
       sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
@@ -1168,6 +1221,9 @@ router.put("/wholesale-shares/:id/delivery", requireWholesaleOrAdmin, async (req
       .where(and(
         eq(wholesaleSharesTable.id, share.id),
         eq(wholesaleSharesTable.status, "open"),
+        sql`EXISTS (SELECT 1 FROM ${wholesaleShareMembersTable}
+          WHERE ${wholesaleShareMembersTable.shareId} = ${share.id}
+            AND lower(${wholesaleShareMembersTable.username}) = ${deliveryMember.username.toLowerCase()})`,
       ))
       .returning({ id: wholesaleSharesTable.id });
     if (changed.length === 0) {
@@ -1841,49 +1897,72 @@ router.post("/wholesale-shares/:id/remove-member", requireWholesaleOrAdmin, asyn
     res.status(400).json({ error: "The organiser can't be removed. Use Cancel to end the order." });
     return;
   }
-  const member = await loadMember(share.id, username);
-  if (!member) { res.status(404).json({ error: "That member isn't part of this shared order." }); return; }
+  let removedUsername: string;
+  try {
+    removedUsername = await db.transaction(async (tx) => {
+      // Re-read under the share row lock. Delivery selection and locking both
+      // update this parent row, so this serializes their view with removal.
+      const [lockedShare] = await tx.select()
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!lockedShare) throw LOCK_CONFLICT;
+      if (lockedShare.status !== "open") throw LOCK_CONFLICT;
+      if (lockedShare.creatorUsername.toLowerCase() !== me.toLowerCase()) throw LOCK_CONFLICT;
 
-  // If the removed member was the chosen delivery recipient, clear the delivery
-  // snapshot — otherwise the parcel would route to someone no longer in the order.
-  // This mirrors the /leave handler and the receiver-change path in PUT /delivery.
-  const wasDelivery = !!share.deliveryUsername
-    && share.deliveryUsername.toLowerCase() === member.username.toLowerCase();
+      const [lockedMember] = await tx.select()
+        .from(wholesaleShareMembersTable)
+        .where(and(
+          eq(wholesaleShareMembersTable.shareId, lockedShare.id),
+          sql`lower(${wholesaleShareMembersTable.username}) = ${username.toLowerCase()}`,
+        ))
+        .for("update");
+      if (!lockedMember) throw new Error("MEMBER_NOT_FOUND");
+      if (lockedMember.isCreator) throw new Error("CREATOR_MEMBER");
+      if (lockedMember.confirmedAt) throw MEMBER_ALREADY_CONFIRMED;
 
-  // All writes run in one transaction, gated on the parent share STILL being open, so
-  // a concurrent lock/cancel can't leave a half-removed member or a recipient cleared
-  // on an already-locked order.
-  let conflict = false;
-  await db.transaction(async (tx) => {
-    const guard = await tx.update(wholesaleSharesTable)
-      .set(wasDelivery
-        ? {
-            deliveryUsername: null,
-            shippingName: null,
-            shippingPhone: null,
-            shippingEmail: null,
-            shippingAddress: null,
-            shippingCountry: null,
-          }
-        : { updatedAt: new Date() })
-      .where(and(
-        eq(wholesaleSharesTable.id, share.id),
-        eq(wholesaleSharesTable.status, "open"),
-      ))
-      .returning({ id: wholesaleSharesTable.id });
-    if (guard.length === 0) { conflict = true; return; }
+      const wasDelivery = !!lockedShare.deliveryUsername
+        && lockedShare.deliveryUsername.toLowerCase() === lockedMember.username.toLowerCase();
+      await tx.delete(wholesaleShareMembersTable)
+        .where(and(
+          eq(wholesaleShareMembersTable.id, lockedMember.id),
+          isNull(wholesaleShareMembersTable.confirmedAt),
+        ));
 
-    await tx.delete(wholesaleShareMembersTable)
-      .where(eq(wholesaleShareMembersTable.id, member.id));
-  });
-  if (conflict) {
+      await tx.update(wholesaleSharesTable)
+        .set(wasDelivery
+          ? {
+              deliveryUsername: null,
+              shippingName: null,
+              shippingPhone: null,
+              shippingEmail: null,
+              shippingAddress: null,
+              shippingCountry: null,
+            }
+          : { updatedAt: new Date() })
+        .where(eq(wholesaleSharesTable.id, lockedShare.id));
+      return lockedMember.username;
+    });
+  } catch (e) {
+    if (e === MEMBER_ALREADY_CONFIRMED) {
+      res.status(409).json({ error: "A confirmed member can't be removed. They need to edit their draft first." });
+      return;
+    }
+    if (e instanceof Error && e.message === "MEMBER_NOT_FOUND") {
+      res.status(404).json({ error: "That member isn't part of this shared order." });
+      return;
+    }
+    if (e instanceof Error && e.message === "CREATOR_MEMBER") {
+      res.status(400).json({ error: "The organiser can't be removed. Use Cancel to end the order." });
+      return;
+    }
     res.status(409).json({ error: "This shared order is no longer open." });
     return;
   }
 
   await writeLog("order", "info", "wholesale_share_member_removed",
-    `${me} removed ${member.username} from wholesale share ${share.id}`,
-    { shareId: share.id, removed: member.username, by: me }, req.ip);
+    `${me} removed ${removedUsername} from wholesale share ${share.id}`,
+    { shareId: share.id, removed: removedUsername, by: me }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -2147,6 +2226,9 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
   if (members.length < 2) {
     return { ok: false, status: 400, error: "A shared order needs at least 2 members before it can be locked." };
   }
+  if (members.some(m => m.confirmedAt == null)) {
+    return { ok: false, status: 400, error: "Every member must confirm their order before it can be locked." };
+  }
   if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName || !share.shippingPhone) {
     return { ok: false, status: 400, error: "Set the delivery member and their full shipping address (including a contact phone) before locking." };
   }
@@ -2216,6 +2298,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
         .from(wholesaleShareMembersTable)
         .where(eq(wholesaleShareMembersTable.shareId, share.id))
         .for("update");
+      if (lockedMembers.some(m => m.confirmedAt == null)) throw LOCK_UNCONFIRMED_MEMBERS;
       const memberSnapshots = new Map(members.map(member => [member.id, JSON.stringify(member)]));
       const snapshotMatches = lockedMembers.length === members.length
         && lockedMembers.every(member => JSON.stringify(member) === memberSnapshots.get(member.id));
@@ -2407,6 +2490,9 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
     if (e === LOCK_CONFLICT) {
       return { ok: false, status: 409, error: "This shared order is no longer open and can't be locked." };
     }
+    if (e === LOCK_UNCONFIRMED_MEMBERS) {
+      return { ok: false, status: 400, error: "Every member must confirm their order before it can be locked." };
+    }
     if (e === LOCK_PROTECTED_TOTAL_DECREASE) {
       return {
         ok: false,
@@ -2488,6 +2574,11 @@ router.post("/wholesale-shares/:id/unlock", requireWholesaleOrAdmin, async (req,
         ))
         .returning({ id: wholesaleSharesTable.id });
       if (reopened.length === 0) throw UNLOCK_CONFLICT;
+      // A reopened share starts a fresh lock cycle. Previous confirmations applied
+      // to the old lock attempt, so every member must explicitly confirm again.
+      await tx.update(wholesaleShareMembersTable)
+        .set({ confirmedAt: null })
+        .where(eq(wholesaleShareMembersTable.shareId, share.id));
       return orderIds.length;
     });
   } catch (e) {
@@ -3156,6 +3247,9 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
           shippingShare: calculation.shippingShare.toFixed(2),
           adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0).toFixed(2),
           adminAdjustmentMessage: member.adminAdjustmentMessage ?? null,
+          // Item changes alter a member's draft, so an earlier ready-to-pay
+          // confirmation cannot authorize the adjusted draft.
+          confirmedAt: share.status === "open" && member.id === target.id && Array.isArray(body.items) ? null : member.confirmedAt,
         }).where(eq(wholesaleShareMembersTable.id, member.id));
 
         if (share.status === "locked" && member.orderId) {

@@ -21,6 +21,9 @@ export interface WholesaleShareMember {
   kits: number;
   subtotal: number;
   tip: number;
+  confirmedAt: string | null;
+  isConfirmed: boolean;
+  canConfirm: boolean;
   shippingShare: number | null;
   // Organiser fee is materialised into the member order total once locked.
   organiserFee: number;
@@ -327,6 +330,10 @@ export function joinWholesaleShare(id: string) {
 
 export function leaveWholesaleShare(id: string) {
   return request<{ ok: boolean }>(`/api/wholesale-shares/${id}/leave`, { method: "POST" });
+}
+
+export function confirmWholesaleShare(id: string) {
+  return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/confirm`, { method: "POST" });
 }
 
 export function setWholesaleShareItems(
