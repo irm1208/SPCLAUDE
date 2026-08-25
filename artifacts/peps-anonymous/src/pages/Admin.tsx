@@ -18411,7 +18411,12 @@ function AccountsTab({ secret }: { secret: string }) {
 }
 
 // ─── Bulk Shipment Tab ────────────────────────────────────────
-interface BulkTrackingLine { code: string; trackingNumber: string; items?: { name: string; qty: number }[] }
+interface BulkTrackingLine {
+  code: string;
+  trackingNumber: string;
+  trackingNumbers?: string[];
+  items?: { name: string; qty: number }[];
+}
 interface BulkTrackingResult { code: string; trackingNumber: string; ok: boolean; error?: string }
 
 function parseCsvLines(raw: string): BulkTrackingLine[] {
@@ -18429,7 +18434,7 @@ interface AiMatchResult   {
   orderId: string; orderCode: string; telegramUsername: string;
   shippingName: string | null; shippingPostcode: string | null;
   shippingCountry: string | null; shippingAddress: string | null;
-  currentTrackingNumber: string | null; grandTotal: string; groupBuyId: string | null;
+  currentTrackingNumber: string | null; grandTotal: string; groupBuyId: string | null; status?: string;
   lineItems: { productName: string; quantity: string }[];
   score: number; confidence: "high" | "medium" | "low" | "none";
   matchReasons: string[];
@@ -18472,12 +18477,14 @@ function AiPasteMode({ secret }: { secret: string }) {
   const [parsed, setParsed] = useState<AiParseResponse | null>(null);
   // Which shipments are checked (included in apply)
   const [included, setIncluded] = useState<Record<string, boolean>>({});
-  // Per-shipment tracking number overrides
-  const [trackingOverride, setTrackingOverride] = useState<Record<string, string>>({});
+  // Per-shipment tracking number overrides, retaining every number extracted
+  // from the dispatch message rather than only the primary one.
+  const [trackingOverrides, setTrackingOverrides] = useState<Record<string, string[]>>({});
   // Per-shipment order code overrides (in case admin wants to reassign)
   const [codeOverride, setCodeOverride] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
   const [applyResults, setApplyResults] = useState<BulkTrackingResult[] | null>(null);
+  const [appliedShipmentIds, setAppliedShipmentIds] = useState<Record<string, boolean>>({});
 
   const handleParse = async () => {
     if (!raw.trim()) return;
@@ -18498,8 +18505,9 @@ function AiPasteMode({ secret }: { secret: string }) {
         init[s.id] = s.match !== null && s.match.confidence !== "none";
       }
       setIncluded(init);
-      setTrackingOverride({});
+      setTrackingOverrides({});
       setCodeOverride({});
+      setAppliedShipmentIds({});
     } catch { setParseError("Network error — please try again"); }
     finally { setParsing(false); }
   };
@@ -18511,8 +18519,15 @@ function AiPasteMode({ secret }: { secret: string }) {
       if (!included[s.id]) continue;
       const code = (codeOverride[s.id] ?? s.match?.orderCode ?? "").trim();
       if (!code) continue;
-      const tracking = (trackingOverride[s.id] ?? s.trackingNumbers[0] ?? "").trim();
-      lines.push({ code, trackingNumber: tracking, items: s.items.length > 0 ? s.items : undefined });
+      const trackingNumbers = (trackingOverrides[s.id] ?? s.trackingNumbers)
+        .map(number => number.trim())
+        .filter(Boolean);
+      lines.push({
+        code,
+        trackingNumber: trackingNumbers[0] ?? "",
+        trackingNumbers: trackingNumbers,
+        items: s.items.length > 0 ? s.items : undefined,
+      });
     }
     if (!lines.length) return;
     setApplying(true); setApplyResults(null);
@@ -18522,8 +18537,42 @@ function AiPasteMode({ secret }: { secret: string }) {
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({ lines }),
       });
-      const d = await r.json();
-      setApplyResults(d.results ?? []);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setApplyResults([{ code: "—", trackingNumber: "", ok: false, error: d.error ?? `Apply failed (${r.status})` }]);
+        return;
+      }
+      if (!Array.isArray(d.results)) {
+        setApplyResults([{ code: "—", trackingNumber: "", ok: false, error: "Invalid apply response" }]);
+        return;
+      }
+      const results = d.results as BulkTrackingResult[];
+      setApplyResults(results);
+      const successfulCodes = new Set(results.filter(result => result.ok).map(result => result.code));
+      if (successfulCodes.size > 0) {
+        const applied = Object.fromEntries(
+          parsed.shipments
+            .filter(shipment => successfulCodes.has((codeOverride[shipment.id] ?? shipment.match?.orderCode ?? "").trim()))
+            .map(shipment => [shipment.id, true]),
+        );
+        setAppliedShipmentIds(previous => ({ ...previous, ...applied }));
+        setParsed(previous => previous && ({
+          ...previous,
+          shipments: previous.shipments.map(shipment => {
+            const code = (codeOverride[shipment.id] ?? shipment.match?.orderCode ?? "").trim();
+            const trackingNumbers = (trackingOverrides[shipment.id] ?? shipment.trackingNumbers)
+              .map(number => number.trim())
+              .filter(Boolean);
+            return successfulCodes.has(code) && shipment.match
+              ? {
+                ...shipment,
+                trackingNumbers,
+                match: { ...shipment.match, currentTrackingNumber: trackingNumbers[0] ?? null, status: "Shipped" },
+              }
+              : shipment;
+          }),
+        }));
+      }
     } catch { setApplyResults([{ code: "—", trackingNumber: "", ok: false, error: "Network error" }]); }
     finally { setApplying(false); }
   };
@@ -18538,6 +18587,9 @@ function AiPasteMode({ secret }: { secret: string }) {
           <p className="text-xs font-semibold text-foreground">Paste Tracking Info</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Paste any format — vendor dispatch messages, address blocks, item lists, 17track links. AI will extract each shipment and match it to an order.
+          </p>
+          <p className="text-[11px] text-blue-700 mt-1">
+            Telegram exports are supported: each <span className="font-mono">[DD/MM/YYYY HH:mm] -</span> line starts a new message, and tracking can appear anywhere inside it.
           </p>
         </div>
         <textarea
@@ -18590,7 +18642,7 @@ function AiPasteMode({ secret }: { secret: string }) {
 
           {parsed.shipments.map(s => {
             const isOn = !!included[s.id];
-            const trackVal = trackingOverride[s.id] ?? s.trackingNumbers[0] ?? "";
+            const trackingValues = trackingOverrides[s.id] ?? (s.trackingNumbers.length ? s.trackingNumbers : [""]);
             const codeVal = codeOverride[s.id] ?? s.match?.orderCode ?? "";
             return (
               <div
@@ -18618,10 +18670,10 @@ function AiPasteMode({ secret }: { secret: string }) {
 
                     {/* Tracking numbers */}
                     <div className="flex flex-wrap gap-1.5">
-                      {s.trackingNumbers.map((tn, i) => (
+                      {trackingValues.filter(Boolean).map((tn, i) => (
                         <span key={i} className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700">{tn}</span>
                       ))}
-                      {s.trackingNumbers.length === 0 && <span className="text-[11px] text-amber-600 italic">No tracking number extracted</span>}
+                      {trackingValues.every(number => !number) && <span className="text-[11px] text-amber-600 italic">No tracking number extracted</span>}
                     </div>
 
                     {/* Parsed address */}
@@ -18654,6 +18706,14 @@ function AiPasteMode({ secret }: { secret: string }) {
                       <div className="flex items-center gap-2 flex-wrap text-xs">
                         <span className="font-mono font-bold text-foreground">{s.match.orderCode}</span>
                         <span className="text-muted-foreground">{s.match.telegramUsername}</span>
+                        <span
+                          className="px-1.5 py-0.5 rounded text-[10px]"
+                          style={appliedShipmentIds[s.id]
+                            ? { background: "rgba(34,197,94,0.12)", color: "#16a34a" }
+                            : { background: "rgba(148,163,184,0.12)", color: "#64748b" }}
+                        >
+                          {appliedShipmentIds[s.id] ? "Shipped" : s.match.status ?? "Processing"}
+                        </span>
                         {s.match.shippingName && <span className="text-muted-foreground">· {s.match.shippingName}</span>}
                         {s.match.shippingPostcode && <span className="font-mono text-muted-foreground">{s.match.shippingPostcode}</span>}
                         {s.match.shippingCountry && <span className="text-muted-foreground">{s.match.shippingCountry}</span>}
@@ -18690,15 +18750,23 @@ function AiPasteMode({ secret }: { secret: string }) {
                           className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
                         />
                       </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Tracking Number (primary)</label>
-                        <input
-                          value={trackVal}
-                          onChange={e => setTrackingOverride(prev => ({ ...prev, [s.id]: e.target.value }))}
-                          placeholder={s.trackingNumbers[0] ?? "Enter tracking number…"}
-                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
-                        />
-                      </div>
+                      {trackingValues.map((trackingNumber, index) => (
+                        <div key={`${s.id}-${index}`}>
+                          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                            Tracking Number {index + 1}{index === 0 ? " (primary)" : ""}
+                          </label>
+                          <input
+                            value={trackingNumber}
+                            onChange={e => setTrackingOverrides(prev => {
+                              const next = [...trackingValues];
+                              next[index] = e.target.value;
+                              return { ...prev, [s.id]: next };
+                            })}
+                            placeholder={s.trackingNumbers[index] ?? "Enter tracking number…"}
+                            className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                          />
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -18806,7 +18874,11 @@ function BulkShipmentTab({ secret }: { secret: string }) {
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({ lines: preview }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResults([{ code: "—", trackingNumber: "", ok: false, error: data.error ?? `Apply failed (${res.status})` }]);
+        return;
+      }
       setResults(data.results ?? []);
       if (data.succeeded > 0) { setCsv(""); setPreview([]); }
     } catch {

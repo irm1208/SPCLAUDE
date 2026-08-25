@@ -64,6 +64,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib/country-utils";
 import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from "./payments";
 import { verifyTransaction } from "../lib/payment-verify";
+import { formatTelegramExportForAi } from "../lib/telegram-export-parser";
 import {
   hasExpectedAuditAmount,
   normaliseWalletAddress,
@@ -1137,6 +1138,10 @@ router.post("/admin/orders", async (req, res): Promise<void> => {
 });
 
 // ─── PATCH /api/admin/orders/:id ─────────────────────────────
+// Register this specific route before the generic :id route below. Express matches
+// routes in declaration order, so otherwise "bulk-tracking" is treated as an order ID.
+router.patch("/admin/orders/bulk-tracking", bulkTrackingHandler);
+
 // Update status, vendorShipping, trackingNumber, adminNotes independently
 router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
@@ -6136,12 +6141,15 @@ Return a JSON array (no markdown, no code fences, pure JSON). Each element must 
 Rules:
 - Extract tracking numbers from URLs: "17track.net/en#nums=ABC123" → "ABC123", "royalmail.com/：HD355877507GB" → "HD355877507GB"
 - If multiple tracking numbers appear for one shipment, include all in trackingNumbers array.
+- The input may be a Telegram export. Every line matching "[DD/MM/YYYY HH:mm] -" starts a new Telegram message. Treat that timestamp as a message boundary, not shipment data.
+- A tracking number may be at the top or bottom of a timestamped message. Inspect the complete message and collect every tracking number.
+- Consecutive timestamped messages may describe the same shipment; correlate them using the label, recipient, address, phone, and items instead of creating a shipment for every timestamp.
 - Normalise postcodes: strip all spaces and convert to uppercase.
 - qty should be a positive integer; default 1 if not stated.
 - Include ALL shipments you find.
 - Return ONLY the JSON array, nothing else.`;
 
-  const userMessage = `Extract all shipments from this text:\n\n${rawText.slice(0, 60_000)}`;
+  const userMessage = `Extract all shipments from this text. If it is a Telegram export, use the explicit message blocks and chronology to correlate messages:\n\n${formatTelegramExportForAi(rawText.slice(0, 60_000))}`;
 
   type ParsedShipment = {
     label: string;
@@ -6380,38 +6388,71 @@ Rules:
 });
 
 // ─── PATCH /api/admin/orders/bulk-tracking ────────────────────
-// Accepts CSV lines (ORDER_CODE,TRACKING_NUMBER) and applies tracking + marks Shipped.
-router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<void> => {
+// Accepts CSV lines (ORDER_CODE,TRACKING_NUMBER) and AI-paste lines with every
+// tracking number extracted for a shipment.
+async function bulkTrackingHandler(req: any, res: any): Promise<void> {
   if (!requireAdmin(req, res)) return;
   const { lines } = req.body;
   if (!Array.isArray(lines) || lines.length === 0) {
     res.status(400).json({ error: "lines array required" }); return;
   }
 
+  const normalizeTrackingNumbers = (submitted: unknown, legacyPrimary: unknown): string[] => {
+    const candidates = Array.isArray(submitted)
+      ? submitted
+      : legacyPrimary == null ? [] : [legacyPrimary];
+    return [...new Set(
+      candidates
+        .filter((value): value is string => typeof value === "string")
+        .map(value => value.trim().slice(0, 200))
+        .filter(Boolean),
+    )].slice(0, 20);
+  };
+
   const results: { code: string; trackingNumber: string; ok: boolean; error?: string }[] = [];
 
-  for (const { code, trackingNumber, items } of lines) {
+  for (const { code, trackingNumber, trackingNumbers: submittedTrackingNumbers, items } of lines) {
     const safeCode = String(code ?? "").trim();
-    const tracking = String(trackingNumber ?? "").trim();
-    if (!safeCode) { results.push({ code: safeCode, trackingNumber: tracking, ok: false, error: "Empty code" }); continue; }
+    const trackingNumbers = normalizeTrackingNumbers(submittedTrackingNumbers, trackingNumber);
+    const primaryTracking = trackingNumbers[0] ?? "";
+    if (!safeCode) { results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: "Empty code" }); continue; }
 
     try {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, safeCode));
-      if (!order) { results.push({ code: safeCode, trackingNumber: tracking, ok: false, error: "Order not found" }); continue; }
+      if (!order) { results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: "Order not found" }); continue; }
 
-      // Merge shipped items for this tracking number into the existing map
-      const updateFields: Record<string, unknown> = { trackingNumber: tracking || null, status: "Shipped", updatedAt: new Date() };
-      if (tracking && Array.isArray(items) && items.length > 0) {
+      const existingTrackingNumbers = normalizeTrackingNumbers(
+        order.trackingNumbers,
+        order.trackingNumber,
+      );
+      const trackingChanged = trackingNumbers.length !== existingTrackingNumbers.length
+        || trackingNumbers.some((value, index) => value !== existingTrackingNumbers[index]);
+      const needsUpdate = order.status !== "Shipped" || trackingChanged;
+
+      // All tracking numbers identify this shipment, so each one retains the
+      // extracted item list when the customer views parcel contents.
+      const updateFields: Record<string, unknown> = {
+        trackingNumber: primaryTracking || null,
+        trackingNumbers: trackingNumbers.length ? trackingNumbers : null,
+        status: "Shipped",
+        updatedAt: new Date(),
+      };
+      if (trackingNumbers.length > 0 && Array.isArray(items) && items.length > 0) {
         const existing: Record<string, Array<{name: string; qty: number}>> =
           (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? {};
-        updateFields.trackingShippedItems = { ...existing, [tracking]: items };
+        updateFields.trackingShippedItems = {
+          ...existing,
+          ...Object.fromEntries(trackingNumbers.map(number => [number, items])),
+        };
       }
 
-      await db.update(ordersTable)
-        .set(updateFields as any)
-        .where(eq(ordersTable.code, safeCode));
+      if (needsUpdate) {
+        await db.update(ordersTable)
+          .set(updateFields as any)
+          .where(eq(ordersTable.code, safeCode));
+      }
 
-      if (tracking) {
+      if (primaryTracking && needsUpdate) {
         const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
 
         let btGbName = "";
@@ -6431,12 +6472,12 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
         const btPaidLabel = order.paymentStatus === "confirmed" ? "Paid" : "Unpaid";
 
         notifyUserFromTemplate(order.telegramUsername, "status", "customer_order_shipped",
-          { code: order.code, gb_name: btGbContext, tracking, username: order.telegramUsername.replace(/^@/, ""), order_total: String(order.grandTotal), delivery: order.deliveryMethod, payment_status: btPaidLabel, app_url: appUrl },
+          { code: order.code, gb_name: btGbContext, tracking: primaryTracking, username: order.telegramUsername.replace(/^@/, ""), order_total: String(order.grandTotal), delivery: order.deliveryMethod, payment_status: btPaidLabel, app_url: appUrl },
           {
             inline_keyboard: [
               [
                 { text: "📦 View Order", url: `${appUrl}/account?s=orders` },
-                { text: "🚚 Track →", url: `https://t.17track.net/en#nums=${encodeURIComponent(tracking)}` },
+                { text: "🚚 Track →", url: `https://t.17track.net/en#nums=${trackingNumbers.map(encodeURIComponent).join(",")}` },
               ],
             ],
           },
@@ -6445,28 +6486,28 @@ router.patch("/admin/orders/bulk-tracking", async (req: any, res: any): Promise<
         ;(async () => {
           try {
             const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, order.telegramUsername));
-            if (acct?.email && tracking) {
+            if (acct?.email && primaryTracking) {
               const { sendTemplatedEmail } = await import("../lib/email.js");
               await sendTemplatedEmail("order_shipped", acct.email, {
                 order_id: order.code,
-                tracking_number: tracking,
-                tracking_url: `https://t.17track.net/en#nums=${encodeURIComponent(tracking)}`,
+                tracking_number: primaryTracking,
+                tracking_url: `https://t.17track.net/en#nums=${trackingNumbers.map(encodeURIComponent).join(",")}`,
               });
             }
           } catch {}
         })().catch(() => {});
       }
 
-      results.push({ code: safeCode, trackingNumber: tracking, ok: true });
+      results.push({ code: safeCode, trackingNumber: primaryTracking, ok: true });
     } catch (err: any) {
-      results.push({ code: safeCode, trackingNumber: tracking, ok: false, error: err?.message ?? "Unknown error" });
+      results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: err?.message ?? "Unknown error" });
     }
   }
 
   const succeeded = results.filter(r => r.ok).length;
   const failed = results.filter(r => !r.ok).length;
   res.json({ succeeded, failed, results });
-});
+}
 
 // ─── POST /api/admin/group-buys/:gbId/orders/bulk-add-product ────────────────
 // Add a product to multiple orders in one go. Skips orders that already contain
