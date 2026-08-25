@@ -24,7 +24,7 @@ import {
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { verifyTransaction } from "./payment-verify";
 import { registerScheduler } from "./scheduler-registry";
-import { notifyUserFromTemplate } from "./telegram";
+import { notifyUser } from "./telegram";
 import { writeLog } from "./audit-log";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -86,7 +86,7 @@ async function confirmOrganiserPayment(shareId: string, organiserUsername: strin
       ),
     );
 
-  notifyUserFromTemplate(
+  notifyUser(
     organiserUsername,
     "payment",
     `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${shareId}</code> has been verified on-chain and confirmed.\n\nYour order is now being processed.`,

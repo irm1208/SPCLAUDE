@@ -1699,12 +1699,19 @@ router.post("/admin/orders/:id/convert-to-wholesale", async (req, res): Promise<
     }
   }
 
-  await writeLog({
-    actor: getAdminUsername(req),
-    action: "order.convert_to_wholesale",
-    target: existing.id,
-    details: { accountUpdated, previousGroupBuyId: existing.groupBuyId },
-  });
+  await writeLog(
+    "change",
+    "info",
+    "order.convert_to_wholesale",
+    `Admin converted order ${existing.id} to wholesale`,
+    {
+      actor: getAdminUsername(res),
+      target: existing.id,
+      accountUpdated,
+      previousGroupBuyId: existing.groupBuyId,
+    },
+    req.ip,
+  );
 
   res.json({ ok: true, accountUpdated });
 });
@@ -4321,7 +4328,7 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
     const itemsByOrder = new Map<string, { productName: string; quantity: number }[]>();
     for (const li of lineItems) {
       if (!itemsByOrder.has(li.orderId)) itemsByOrder.set(li.orderId, []);
-      itemsByOrder.get(li.orderId)!.push({ productName: li.productName, quantity: li.quantity });
+      itemsByOrder.get(li.orderId)!.push({ productName: li.productName, quantity: Number(li.quantity) });
     }
 
     // Fetch cost prices for P&L
@@ -7373,7 +7380,7 @@ async function auditOrderReference(order: any, txHash: string, source?: AuditRef
         // Multiple dated/all-scope history entries can legitimately apply. Check
         // each approved address before deciding a transaction went elsewhere.
         const verifications = await Promise.all(applicableWallets.map(wallet => verifyTransaction(
-          txHash, wallet.address, expectedAmount, effective.currency, effective.network,
+          txHash, wallet.address, expectedAmount!, effective.currency, effective.network,
         )));
         const verification = verifications.find(result => result.verified) ?? verifications[0];
         const observedTransfers = verifications.flatMap(result => result.observedTransfers ?? (
@@ -8359,7 +8366,7 @@ router.post("/admin/email-blast", async (req, res): Promise<void> => {
     }
   }
 
-  await writeLog("system", "info", "admin_email_blast",
+  await writeLog("change", "info", "admin_email_blast",
     `Admin sent email blast "${subject.trim()}" to ${sent}/${emails.length} recipients`,
     { subject: subject.trim(), targetType, sent, total: emails.length }).catch(() => {});
 

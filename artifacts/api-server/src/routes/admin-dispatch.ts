@@ -800,7 +800,7 @@ Rules:
 
     const resp = await ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: prompt,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
     const text = (resp.text ?? "").replace(/```json\s*|```/g, "").trim();

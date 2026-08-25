@@ -1926,6 +1926,16 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
       ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
       : [];
 
+    const removalOrders = orders.map(order => ({
+      id: order.id,
+      paymentStatus: order.paymentStatus,
+      vendorShipping: Number(order.vendorShipping ?? 0),
+      grandTotal: Number(order.grandTotal ?? 0),
+      amountDue: Number(order.amountDue ?? 0),
+      kitFees: Number(order.kitFees ?? 0),
+      organiserFee: Number(order.organiserFee ?? 0),
+    }));
+
     let plan;
     try {
       plan = buildSharedOrderMemberRemovalPlan({
@@ -1941,15 +1951,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
           adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0),
           adminAdjustmentMessage: member.adminAdjustmentMessage,
         })),
-        orders: orders.map(order => ({
-          id: order.id,
-          paymentStatus: order.paymentStatus,
-          vendorShipping: Number(order.vendorShipping ?? 0),
-          grandTotal: Number(order.grandTotal ?? 0),
-          amountDue: Number(order.amountDue ?? 0),
-          kitFees: Number(order.kitFees ?? 0),
-          organiserFee: Number(order.organiserFee ?? 0),
-        })),
+        orders: removalOrders,
         usernames,
         splitMode: (share.splitMode as WholesaleShareSplitMode) ?? "even",
         totalShipping: Number(share.totalVendorShipping),
@@ -2003,7 +2005,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
           previousRecipientUsername: share.deliveryUsername,
           nextRecipientUsername: replacementMember.username,
           members: plan.retainedMembers,
-          orders,
+          orders: removalOrders,
         })
       : [];
     if (protectedRecipientFeeChanges.length > 0) {
@@ -3106,8 +3108,10 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         throw new Error(`This shared order allows at most ${share.maxTotalKits} kits in total.`);
       }
 
-      let totalShipping = shippingInput;
-      if (totalShipping === undefined) {
+      let totalShipping: number;
+      if (shippingInput !== undefined) {
+        totalShipping = shippingInput;
+      } else {
         if (share.shippingOverride != null) totalShipping = Number(share.shippingOverride);
         else if (share.status === "locked" && share.totalVendorShipping != null) totalShipping = Number(share.totalVendorShipping);
         else {
@@ -3115,8 +3119,16 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
           const picked = vendor && share.shippingCountry
             ? pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry)
             : null;
-          totalShipping = picked ? calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits) : null;
-          if (totalShipping === null) throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
+          if (!picked) throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
+          const calculatedShipping = calcTotalShipping(
+            vendor as unknown as ShippingVendor,
+            picked.region,
+            combinedKits,
+          );
+          if (calculatedShipping == null) {
+            throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
+          }
+          totalShipping = calculatedShipping;
         }
       }
 
@@ -3201,18 +3213,19 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
       feeMessage: feeInput && feeInput > 0 ? feeMessage : null,
     }, req.ip);
 
-  if (notification) {
+  const notificationPayload = notification as { username: string; fee: number; message: string; total: number } | null;
+  if (notificationPayload) {
     const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
     const message = [
       `<b>Shared order ${escHtml(shareId)} updated</b>`,
-      `A required fee of <b>$${notification.fee.toFixed(2)}</b> was added to your order.`,
+      `A required fee of <b>$${notificationPayload.fee.toFixed(2)}</b> was added to your order.`,
       "",
-      escHtml(notification.message),
+      escHtml(notificationPayload.message),
       "",
-      `Your revised amount due is <b>$${notification.total.toFixed(2)}</b>.`,
+      `Your revised amount due is <b>$${notificationPayload.total.toFixed(2)}</b>.`,
       `<a href="${escHtml(appUrl)}/wholesale/shared/${encodeURIComponent(shareId)}">View shared order</a>`,
     ].join("\n");
-    await notifyUser(notification.username, "payment", message).catch(() => {});
+    await notifyUser(notificationPayload.username, "payment", message).catch(() => {});
   }
 
   const updated = await loadShare(shareId);
@@ -3225,7 +3238,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
 // Flips organiserPaymentStatus from "unpaid" → "pending" and notifies admin.
 router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const share = await loadShare(req.params.id);
+  const share = await loadShare(String(req.params["id"]));
   if (!share) { res.status(404).json({ error: "Shared order not found." }); return; }
 
   if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, siteConfigTable, gbParcelOptinsTable, gbParcelsTable, groupBuysTable, accountGroupBuysTable, ordersTable, orderLineItemsTable, labTestsTable, gbCountryLegsTable, gbReshippersTable, feedbackTable, wholesaleChatTelegramMessagesTable, wholesaleSharesTable, wholesaleShareMembersTable } from "@workspace/db";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
-import { eq, and, inArray, sql, desc, or, ilike, isNull } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, or, ilike, isNull, isNotNull, notInArray } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
 import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
 import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
@@ -14,6 +14,7 @@ import { GoogleGenAI } from "../lib/google-genai";
 import { callSageAI } from "../lib/sage-ai";
 
 const router: IRouter = Router();
+const appUrl = (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(/\/+$/, "");
 
 // ── In-memory "consumed token" cache ─────────────────────────────────────────
 const _usedTokens = new Map<string, number>();

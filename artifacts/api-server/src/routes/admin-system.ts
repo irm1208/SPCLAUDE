@@ -181,12 +181,13 @@ router.get("/admin/audit-feed", async (req: Request, res: Response): Promise<voi
   }
   if (q) {
     const like = `%${q}%`;
-    filters.push(or(
+    const searchFilter = or(
       ilike(customerActivityLogsTable.telegramUsername, like),
       ilike(customerActivityLogsTable.eventType, like),
       ilike(customerActivityLogsTable.entityId, like),
       ilike(customerActivityLogsTable.actorUsername, like),
-    ));
+    );
+    if (searchFilter) filters.push(searchFilter);
   }
 
   const where = filters.length ? and(...filters) : undefined;

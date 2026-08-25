@@ -118,7 +118,7 @@ router.post("/admin/email-templates/:key/preview", async (req, res): Promise<voi
 
 router.post("/organiser/group-buys/:gbId/email-blast", requireOrganiser, async (req, res): Promise<void> => {
   const organiserUsername: string = req.organiser!.telegramUsername;
-  const { gbId } = req.params;
+  const gbId = String(req.params["gbId"]);
   const { subject, body, testEmail } = req.body as { subject?: string; body?: string; testEmail?: string };
 
   if (!subject?.trim()) { res.status(400).json({ error: "Subject is required" }); return; }
@@ -146,11 +146,11 @@ router.post("/organiser/group-buys/:gbId/email-blast", requireOrganiser, async (
 
   // Fetch all GB member usernames
   const members = await db
-    .select({ telegramUsername: accountGroupBuysTable.telegramUsername })
+    .select({ accountId: accountGroupBuysTable.accountId })
     .from(accountGroupBuysTable)
     .where(eq(accountGroupBuysTable.groupBuyId, gbId));
 
-  const usernames = members.map(m => m.telegramUsername.replace(/^@/, ""));
+  const usernames = members.map(m => m.accountId.replace(/^@/, ""));
   if (usernames.length === 0) { res.json({ ok: true, sent: 0, total: 0 }); return; }
 
   // Get emails from accounts and customers tables
@@ -169,7 +169,7 @@ router.post("/organiser/group-buys/:gbId/email-blast", requireOrganiser, async (
     if (c.email) emailMap.set(c.username.replace(/^@/, ""), c.email);
   }
   for (const a of accountEmails) {
-    if (a.email) emailMap.set(a.telegramUsername.replace(/^@/, ""), a.email);
+    if (a.email) emailMap.set(a.username.replace(/^@/, ""), a.email);
   }
 
   const emails = [...new Set([...emailMap.values()])].filter(e => e.includes("@"));

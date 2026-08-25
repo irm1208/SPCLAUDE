@@ -410,10 +410,10 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
       try {
         const { sendTemplatedEmail } = await import("../lib/email.js");
         const members = await db
-          .select({ telegramUsername: accountGroupBuysTable.telegramUsername })
+          .select({ accountId: accountGroupBuysTable.accountId })
           .from(accountGroupBuysTable)
           .where(eq(accountGroupBuysTable.groupBuyId, id));
-        const usernames = members.map(m => m.telegramUsername.replace(/^@/, ""));
+        const usernames = members.map(m => m.accountId.replace(/^@/, ""));
         if (usernames.length === 0) return;
         const { inArray, isNotNull } = await import("drizzle-orm");
         const accounts = await db
@@ -444,7 +444,7 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
 // ── GET /admin/group-buys/:id/entry-fee-payments — list all entry fee payments for a GB ───
 router.get("/admin/group-buys/:id/entry-fee-payments", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { id } = req.params;
+  const id = String(req.params["id"]);
   const rows = await db
     .select()
     .from(gbEntryFeePaymentsTable)
@@ -1233,8 +1233,8 @@ router.get("/admin/group-buys/:id/member-countries", async (req, res): Promise<v
   const members = await db
     .select({ country: accountsTable.country })
     .from(accountGroupBuysTable)
-    .innerJoin(accountsTable, eq(accountGroupBuysTable.accountId, accountsTable.id))
-    .where(eq(accountGroupBuysTable.gbId, id));
+    .innerJoin(accountsTable, eq(accountGroupBuysTable.accountId, accountsTable.telegramUsername))
+    .where(eq(accountGroupBuysTable.groupBuyId, id));
   const countries = [...new Set(members.map((m) => m.country).filter(Boolean) as string[])].sort();
   res.json(countries);
 });
@@ -1269,8 +1269,8 @@ async function applyOrderFilters(
     const members = await db
       .select({ telegramUsername: accountsTable.telegramUsername })
       .from(accountGroupBuysTable)
-      .innerJoin(accountsTable, eq(accountGroupBuysTable.accountId, accountsTable.id))
-      .where(and(eq(accountGroupBuysTable.gbId, gbId), eq(accountsTable.country, accountCountry)));
+    .innerJoin(accountsTable, eq(accountGroupBuysTable.accountId, accountsTable.telegramUsername))
+    .where(and(eq(accountGroupBuysTable.groupBuyId, gbId), eq(accountsTable.country, accountCountry)));
     const tgSet = new Set(members.map((m) => m.telegramUsername?.toLowerCase()).filter(Boolean) as string[]);
     orders = orders.filter((o) => tgSet.has((o.telegramUsername ?? "").toLowerCase()));
   }

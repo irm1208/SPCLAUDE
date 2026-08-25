@@ -1072,6 +1072,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     await db.insert(couponRedemptionsTable).values({
       id: randomUUID(),
       couponId: resolvedCouponId,
+      couponCode: appliedCouponCode,
       orderId,
       telegramUsername: tg,
       discountApplied: couponDiscount.toFixed(2),
@@ -1451,7 +1452,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
 
 // ── PATCH /api/orders/:orderId/pin — customer changes their own PIN ──
 router.patch("/orders/:orderId/pin", async (req, res): Promise<void> => {
-  const { orderId } = req.params;
+  const orderId = String(req.params["orderId"]);
   const { telegramUsername, currentPin, newPin } = req.body;
 
   if (!telegramUsername || typeof telegramUsername !== "string" ||
@@ -1501,7 +1502,7 @@ router.patch("/orders/:orderId/pin", async (req, res): Promise<void> => {
 // ── POST /api/orders/:orderId/inpost-qr — customer uploads InPost QR code ──
 // Authenticated with telegramUsername + PIN (multipart/form-data)
 router.post("/orders/:orderId/inpost-qr", qrUploadMiddleware, async (req, res): Promise<void> => {
-  const { orderId } = req.params;
+  const orderId = String(req.params["orderId"]);
   const telegramUsername = String(req.body?.telegramUsername ?? "");
   const pin = String(req.body?.pin ?? "");
   if (!telegramUsername || !pin) {
@@ -1521,7 +1522,7 @@ router.post("/orders/:orderId/inpost-qr", qrUploadMiddleware, async (req, res): 
 // ── POST /api/orders/:orderId/royal-mail-qr — customer uploads Royal Mail QR code ──
 // Authenticated with telegramUsername + PIN (multipart/form-data)
 router.post("/orders/:orderId/royal-mail-qr", qrUploadMiddleware, async (req, res): Promise<void> => {
-  const { orderId } = req.params;
+  const orderId = String(req.params["orderId"]);
   const telegramUsername = String(req.body?.telegramUsername ?? "");
   const pin = String(req.body?.pin ?? "");
   if (!telegramUsername || !pin) {
@@ -1540,7 +1541,7 @@ router.post("/orders/:orderId/royal-mail-qr", qrUploadMiddleware, async (req, re
 
 // ── POST /api/orders/:orderId/qr-upload — generic courier QR upload (telegram+PIN auth) ──
 router.post("/orders/:orderId/qr-upload", qrUploadMiddleware, async (req, res): Promise<void> => {
-  const { orderId } = req.params;
+  const orderId = String(req.params["orderId"]);
   const telegramUsername = String(req.body?.telegramUsername ?? "");
   const pin = String(req.body?.pin ?? "");
   const courierId = String(req.body?.courierId ?? "");

@@ -90,7 +90,7 @@ export async function requireWholesaleOrAdmin(req: Request, res: Response, next:
   req.wholesale = { telegramUsername: share.creatorUsername };
   req.sharedOrderAdminOverride = true;
   void writeLog(
-    "admin",
+    "change",
     "warn",
     "shared_order_admin_override",
     `Admin override for shared order ${shareId}: ${req.method} ${req.path}`,

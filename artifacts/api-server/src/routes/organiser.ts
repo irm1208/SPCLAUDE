@@ -2848,7 +2848,7 @@ router.delete("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, a
 
   notifyUser(
     order.telegramUsername,
-    "order",
+    "status",
     `🗑 <b>Your order has been removed</b>\n\nYour order <b>${order.code}</b> in <b>${escapeHtml(gb.name ?? gbId)}</b> was deleted by the group buy organiser.\n\nIf you think this was a mistake, please contact the organiser directly.`,
   ).catch(() => {});
 
@@ -4360,7 +4360,7 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
         `<b>Your new total: ${sym}${o.newGrandTotal.toFixed(2)}</b>\n` +
         dueLine +
         `\n${tail}`;
-      notifyUser(o.telegramUsername, "shipping_added", text).catch(() => {});
+      notifyUser(o.telegramUsername, "status", text).catch(() => {});
     }
   }
 
@@ -4377,7 +4377,7 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
 // Returns soft-deleted orders for this GB within the 2-day restore window.
 // Scoped to orders belonging to the requesting organiser's own GB.
 router.get("/organiser/group-buys/:gbId/orders/trash", requireOrganiser, async (req, res): Promise<void> => {
-  const { gbId } = req.params;
+  const gbId = String(req.params["gbId"]);
 
   // Verify organiser owns (or has admin-organiser access to) this GB
   const [gb] = await db

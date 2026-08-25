@@ -2257,7 +2257,11 @@ router.patch("/account/orders/:id/direct-shipping", requireAccount, async (req, 
             .from(orderLineItemsTable)
             .where(eq(orderLineItemsTable.orderId, id));
           const totalKits = lineItems.reduce((s, li) => s + parseFloat(String(li.quantity)), 0);
-          directShippingCost = calcDirectShippingCost(vendor, legCountryName, totalKits);
+          directShippingCost = calcDirectShippingCost(
+            vendor,
+            legCountryName ?? order.shippingCountry ?? "",
+            totalKits,
+          );
         }
       } catch { /* ignore malformed config */ }
     }
@@ -3446,7 +3450,7 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
   const memberQtyMap = new Map<string, number>();
   for (const li of lineItems) {
     const key = li.productName.trim().toLowerCase();
-    memberQtyMap.set(key, (memberQtyMap.get(key) ?? 0) + (li.quantity ?? 1));
+    memberQtyMap.set(key, (memberQtyMap.get(key) ?? 0) + Number(li.quantity ?? 1));
   }
 
   console.log(`[parcels-debug/acct] tg=${tg} gbId=${gbId} paidOrders=${paidOrders.length} isDirect=${isDirect} hasExplicit=${hasExplicitReshipperAssignment} assignedReshippers=[${[...assignedReshippers].join(",")}] allReshippers=[${[...allGbReshipperNames].join(",")}]`);
@@ -3569,8 +3573,8 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
     await db.delete(accountsTable).where(usernameMatch(accountsTable.telegramUsername));
 
     // ── Step 5: Revoke session ────────────────────────────────────────────────
-    const jti = extractJtiFromCookie(req);
-    if (jti) await revokeToken(jti);
+    const tokenInfo = extractJtiFromCookie(req);
+    if (tokenInfo) await revokeToken(tokenInfo.jti, tokenInfo.expiresAt);
     res.clearCookie("account_token", { path: "/" });
 
     await writeLog("change", "info", "self_delete_account",

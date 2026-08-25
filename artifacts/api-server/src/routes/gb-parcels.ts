@@ -3792,7 +3792,7 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
         carrier: "",
         maskedTrackingNumber: num,          // show real number — this is their personal shipment
         status,
-        items: lineItems.map(li => ({ name: li.productName, qty: li.quantity })),
+        items: lineItems.map(li => ({ name: li.productName, qty: Number(li.quantity) })),
         events: [],
         trackingUrl: `https://t.17track.net/en#nums=${encodeURIComponent(num)}`,
         lastChecked: null,

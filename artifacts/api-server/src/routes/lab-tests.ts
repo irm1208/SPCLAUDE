@@ -731,7 +731,7 @@ router.get("/lab-tests/coa-proxy", async (req, res) => {
 // ── GET /api/lab-tests/:id/preview — structured preview info ──────────────────
 router.get("/lab-tests/:id/preview", async (req, res) => {
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     if (!Number.isFinite(id) || id <= 0) {
       res.status(400).json({ error: "Invalid ID" });
       return;
@@ -1557,7 +1557,7 @@ router.put("/admin/lab-tests/:id", async (req, res) => {
 router.post("/admin/lab-tests/:id/upload-cert", upload.single("file"), async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     if (!Number.isFinite(id) || id <= 0) { res.status(400).json({ error: "Invalid ID" }); return; }
     if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
     const blob = await prepareCertificateBase64(req.file.buffer, req.file.mimetype);

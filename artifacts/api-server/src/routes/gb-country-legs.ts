@@ -12,6 +12,7 @@ import {
   groupBuysTable,
   gbReshippersTable,
   accountGroupBuysTable,
+  accountsTable,
   ordersTable,
   orderLineItemsTable,
 } from "@workspace/db";
@@ -615,7 +616,7 @@ router.post("/admin/group-buys/:gbId/bill-vendor-shipping-balance", async (req, 
         `<b>Vendor shipping:</b> ${sym}${vendorShipping.toFixed(2)}\n` +
         `<b>Outstanding balance:</b> ${sym}${newAmountDue.toFixed(2)}\n\n` +
         `Please log in to your account and submit the outstanding payment to complete your order.`;
-      notified = await notifyUser(order.telegramUsername, "vendor_shipping_billed", text).then(() => true).catch(() => false);
+      notified = await notifyUser(order.telegramUsername, "status", text).then(() => true).catch(() => false);
     }
 
     breakdown.push({ orderId: order.id, username: order.telegramUsername, vendorShipping, newAmountDue, notified });

@@ -24,7 +24,7 @@ import {
 import { and, eq, isNotNull, or } from "drizzle-orm";
 import { verifyTransaction } from "./payment-verify";
 import { registerScheduler } from "./scheduler-registry";
-import { notifyUserFromTemplate } from "./telegram";
+import { notifyUser } from "./telegram";
 import { writeLog } from "./audit-log";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -83,7 +83,7 @@ export async function confirmWholesaleAccess(requestId: number): Promise<void> {
     .set({ status: "confirmed", confirmedAt: new Date(), adminUsername: "auto-verify" })
     .where(eq(wholesaleAccessRequestsTable.id, requestId));
 
-  notifyUserFromTemplate(
+  notifyUser(
     acct.telegramUsername,
     "profile",
     `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${req.amountUsd}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`,
