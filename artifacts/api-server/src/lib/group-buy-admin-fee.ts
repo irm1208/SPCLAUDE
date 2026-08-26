@@ -13,6 +13,7 @@ export type GroupBuyAdminFeeInput = {
   label: string | null | undefined;
   countryOverrides: unknown;
   shippingCountry: string | null | undefined;
+  fallbackCountry?: string | null | undefined;
   productSubtotal: number;
 };
 
@@ -43,14 +44,14 @@ export function parseGroupBuyAdminFeeCountries(value: unknown): GroupBuyAdminFee
 }
 
 export function resolveGroupBuyAdminFee(input: GroupBuyAdminFeeInput): ResolvedGroupBuyAdminFee {
-  if (!input.enabled) return { amount: 0, label: null };
-
-  const shippingCountry = input.shippingCountry?.trim();
+  const shippingCountry = input.shippingCountry?.trim() || input.fallbackCountry?.trim();
   const matchingOverride = shippingCountry
     ? parseGroupBuyAdminFeeCountries(input.countryOverrides).find(
         entry => normalizeToCode(entry.country) === normalizeToCode(shippingCountry),
       )
     : undefined;
+  if (!matchingOverride && !input.enabled) return { amount: 0, label: null };
+
   const configuredAmount = matchingOverride?.amount ?? Math.max(0, Number(input.baseAmount) || 0);
   const amount = input.feeType === "percent"
     ? Number(((Math.max(0, input.productSubtotal) * configuredAmount) / 100).toFixed(2))

@@ -547,6 +547,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   let gbAdminFeeRaw: number | null = null;
   let gbAdminFeeCountries: unknown = null;
   let gbKitFees = 0;
+  let memberDeliveryCountry: string | null = null;
 
   // Validate group buy membership if a groupBuyId is provided
   if (normalizedGroupBuyId) {
@@ -558,7 +559,11 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
 
     const [membership] = await db
-      .select({ id: accountGroupBuysTable.id, allowExtraOrder: accountGroupBuysTable.allowExtraOrder })
+      .select({
+        id: accountGroupBuysTable.id,
+        allowExtraOrder: accountGroupBuysTable.allowExtraOrder,
+        countryLegId: accountGroupBuysTable.countryLegId,
+      })
       .from(accountGroupBuysTable)
       .where(and(
         eq(accountGroupBuysTable.accountId, sessionUsername.toLowerCase()),
@@ -568,6 +573,24 @@ router.post("/orders", async (req, res): Promise<void> => {
     if (!membership) {
       res.status(403).json({ error: "You are not a member of this group buy" });
       return;
+    }
+
+    if (membership.countryLegId) {
+      const [memberLeg] = await db
+        .select({
+          countryCode: gbCountryLegsTable.countryCode,
+          countryName: gbCountryLegsTable.countryName,
+        })
+        .from(gbCountryLegsTable)
+        .where(eq(gbCountryLegsTable.id, membership.countryLegId));
+      memberDeliveryCountry = memberLeg?.countryName ?? memberLeg?.countryCode ?? null;
+    }
+    if (!memberDeliveryCountry) {
+      const [memberAccount] = await db
+        .select({ country: accountsTable.country })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, tg));
+      memberDeliveryCountry = memberAccount?.country?.trim() || null;
     }
 
     // Also confirm the GB is active and check testingEnabled + kit limits
@@ -686,13 +709,11 @@ router.post("/orders", async (req, res): Promise<void> => {
 
     // Capture admin fee config while gb is in scope. The concrete fee amount is
     // resolved below, once the product subtotal is known (needed for percentage fees).
-    if (gb.adminFeeEnabled) {
-      gbAdminFeeEnabled = true;
-      gbAdminFeeType = gb.adminFeeType === "percent" ? "percent" : "fixed";
-      gbAdminFeeRaw = gb.adminFeeAmount != null ? parseFloat(String(gb.adminFeeAmount)) : 0;
-      gbAdminFeeLabel = gb.adminFeeLabel ?? null;
-      gbAdminFeeCountries = gb.adminFeeCountries;
-    }
+    gbAdminFeeEnabled = gb.adminFeeEnabled === true;
+    gbAdminFeeType = gb.adminFeeType === "percent" ? "percent" : "fixed";
+    gbAdminFeeRaw = gb.adminFeeAmount != null ? parseFloat(String(gb.adminFeeAmount)) : 0;
+    gbAdminFeeLabel = gb.adminFeeLabel ?? null;
+    gbAdminFeeCountries = gb.adminFeeCountries;
 
     // ── Kit fees (feePerKit × quantity per product) ───────────────────────────
     if (clientLineItems.length > 0) {
@@ -793,7 +814,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     gbAdminFee = 0;
     gbAdminFeeLabel = null;
     gbKitFees = 0;
-  } else if (gbAdminFeeEnabled) {
+  } else if (normalizedGroupBuyId) {
     const resolvedAdminFee = resolveGroupBuyAdminFee({
       enabled: gbAdminFeeEnabled,
       feeType: gbAdminFeeType,
@@ -801,6 +822,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       label: gbAdminFeeLabel,
       countryOverrides: gbAdminFeeCountries,
       shippingCountry: clientShippingCountry,
+      fallbackCountry: memberDeliveryCountry,
       productSubtotal,
     });
     gbAdminFee = resolvedAdminFee.amount;
@@ -844,8 +866,13 @@ router.post("/orders", async (req, res): Promise<void> => {
   const pin = clientPin && /^\d{4}$/.test(String(clientPin)) ? String(clientPin) : "0000";
 
   // Auto-assign reshipper: look up gb_reshippers for this GB + country
-  const normalizedShippingCountry = clientShippingCountry && typeof clientShippingCountry === "string"
-    ? clientShippingCountry.trim().slice(0, 100)
+  const effectiveShippingCountry = (
+    clientShippingCountry && typeof clientShippingCountry === "string"
+      ? clientShippingCountry
+      : memberDeliveryCountry
+  );
+  const normalizedShippingCountry = effectiveShippingCountry
+    ? effectiveShippingCountry.trim().slice(0, 100)
     : null;
   let autoReshipperUsername: string | null = null;
 

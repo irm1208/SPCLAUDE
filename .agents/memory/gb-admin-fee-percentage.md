@@ -57,3 +57,12 @@ organiser backfills must all use this same resolution rule.
 **Why:** storing and displaying the country configuration is insufficient if
 the customer group-buy projection, order query, or backfill omits it; each layer
 then silently reverts to the base fee.
+
+**Country-only activation rule:** an enabled country row is active even when
+`adminFeeEnabled` is false; that flag controls only the default/base fee. Normal
+GB checkout has no shipping-country field, so resolve country from the assigned
+country leg or account and persist it on the order.
+
+**Why:** Fee by Country is an independently enabled configuration. Requiring the
+base-fee toggle made valid country rows silently resolve to zero, while relying
+only on the checkout field failed for every non-direct group-buy delivery.

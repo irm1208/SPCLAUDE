@@ -15,6 +15,9 @@ describe("country-specific group-buy admin fee routes", () => {
     expect(createRoute).toContain("adminFeeCountries: groupBuysTable.adminFeeCountries");
     expect(createRoute).toContain("resolveGroupBuyAdminFee({");
     expect(createRoute).toContain("shippingCountry: clientShippingCountry");
+    expect(createRoute).toContain("fallbackCountry: memberDeliveryCountry");
+    expect(createRoute).toContain("countryLegId: accountGroupBuysTable.countryLegId");
+    expect(createRoute).toContain("gbAdminFeeCountries = gb.adminFeeCountries");
   });
 
   it("recomputes an existing percentage fee using the order delivery country", () => {
@@ -36,6 +39,8 @@ describe("country-specific group-buy admin fee routes", () => {
 
     expect(route).toContain("shippingCountry: ordersTable.shippingCountry");
     expect(route).toContain("resolveGroupBuyAdminFee({");
+    expect(route).toContain("hasEnabledBaseFee");
+    expect(route).toContain("hasEnabledCountryFee");
   });
 
   it("persists country overrides when an admin creates a group buy", () => {

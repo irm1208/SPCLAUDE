@@ -13,6 +13,7 @@ export type ReviewAdminFeeInput = {
   label: string | null | undefined;
   countryOverrides: unknown;
   shippingCountry: string | null | undefined;
+  fallbackCountry?: string | null | undefined;
   productSubtotal: number;
 };
 
@@ -25,8 +26,6 @@ function normalizeCountry(value: string): string {
 }
 
 export function resolveReviewAdminFee(input: ReviewAdminFeeInput): { amount: number; label: string | null } {
-  if (!input.enabled) return { amount: 0, label: null };
-
   const overrides = Array.isArray(input.countryOverrides)
     ? input.countryOverrides.filter((entry): entry is CountryOverride => {
         if (!entry || typeof entry !== "object") return false;
@@ -37,10 +36,12 @@ export function resolveReviewAdminFee(input: ReviewAdminFeeInput): { amount: num
           && Number(candidate["amount"]) >= 0;
       })
     : [];
-  const shippingCountry = input.shippingCountry?.trim();
+  const shippingCountry = input.shippingCountry?.trim() || input.fallbackCountry?.trim();
   const matchingOverride = shippingCountry
     ? overrides.find(entry => normalizeCountry(entry.country) === normalizeCountry(shippingCountry))
     : undefined;
+  if (!matchingOverride && !input.enabled) return { amount: 0, label: null };
+
   const configuredAmount = matchingOverride
     ? Number(matchingOverride.amount)
     : Math.max(0, Number(input.baseAmount) || 0);

@@ -8,7 +8,7 @@ import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
-import { useMyGroupBuys, useAccount, useAccountOrders, useLogout } from "@/hooks/use-account";
+import { useMyGroupBuys, useAccount, useAccountOrders, useCountryLegs, useLogout } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
 import { useState, useEffect, type ReactNode } from "react";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
@@ -89,6 +89,12 @@ export default function Review() {
 
   const { data: myGroupBuys } = useMyGroupBuys();
   const activeGb = draft.groupBuyId ? myGroupBuys?.find(g => g.id === draft.groupBuyId) : null;
+  const { data: countryLegs = [] } = useCountryLegs(
+    activeGb?.countryLegsEnabled && draft.groupBuyId ? draft.groupBuyId : null,
+  );
+  const activeCountryLeg = activeGb?.countryLegId
+    ? countryLegs.find(leg => leg.id === activeGb.countryLegId)
+    : null;
   const gbCurrency = activeGb?.currency ?? null;
   const hideOrderFormPrices = (activeGb?.status === "closed") && (activeGb?.hidePricesOnOrderForm ?? false);
   const formatPrice = (amount: number) => {
@@ -115,7 +121,11 @@ export default function Review() {
   const productSubtotal = parseFloat(
     draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
   );
-  const adminFeeIsPercent = !!(activeGb?.adminFeeEnabled && activeGb?.adminFeeType === "percent");
+  const hasEnabledCountryAdminFee = activeGb?.adminFeeCountries?.some(entry => entry.enabled) ?? false;
+  const adminFeeIsPercent = !!(
+    activeGb?.adminFeeType === "percent"
+    && (activeGb.adminFeeEnabled || hasEnabledCountryAdminFee)
+  );
   // Percentage fees are recomputed against the product subtotal for new orders, and for existing
   // orders only when they already carry a fee — matching the backend, which never adds a fee to an
   // order that never had one. This keeps the displayed total in sync with what gets saved.
@@ -127,6 +137,7 @@ export default function Review() {
     label: activeGb?.adminFeeLabel,
     countryOverrides: activeGb?.adminFeeCountries,
     shippingCountry: draft.shippingCountry,
+    fallbackCountry: activeCountryLeg?.countryName ?? account?.country,
     productSubtotal,
   });
   const adminFeeAmount = draft.directShippingRequested || isTopUp

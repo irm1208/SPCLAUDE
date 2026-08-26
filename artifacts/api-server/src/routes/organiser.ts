@@ -955,7 +955,9 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
   const countryOverrides = parseGroupBuyAdminFeeCountries(gb.adminFeeCountries);
-  if (!gb.adminFeeEnabled || (Number(gb.adminFeeAmount) <= 0 && !countryOverrides.some(entry => entry.amount > 0))) {
+  const hasEnabledBaseFee = gb.adminFeeEnabled && Number(gb.adminFeeAmount) > 0;
+  const hasEnabledCountryFee = countryOverrides.some(entry => entry.amount > 0);
+  if (!hasEnabledBaseFee && !hasEnabledCountryFee) {
     res.status(400).json({ error: "Admin fee is not enabled or no positive fee is configured" });
     return;
   }
