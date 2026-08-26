@@ -214,6 +214,7 @@ const GB_SELECT_COLS = {
   adminFeeType: groupBuysTable.adminFeeType,
   adminFeeAmount: groupBuysTable.adminFeeAmount,
   adminFeeLabel: groupBuysTable.adminFeeLabel,
+  adminFeeCountries: groupBuysTable.adminFeeCountries,
   entryFeeEnabled: groupBuysTable.entryFeeEnabled,
   entryFeeAmount: groupBuysTable.entryFeeAmount,
   entryFeeLabel: groupBuysTable.entryFeeLabel,

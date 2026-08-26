@@ -46,3 +46,14 @@ order's totals, grep the file for other `newGrandTotal =` / `newProductSubtotal
 percent + "never add a fee that wasn't already there" rule, and make sure the
 resolved fee is both included in the total AND persisted back to
 `orders.admin_fee`/`admin_fee_label` (not just reflected in `grandTotal`).
+
+**Country override rule:** enabled `adminFeeCountries` entries override the base
+fee per member order using that order's delivery country. Match country names,
+ISO codes, and the `UK` alias; fall back to the base fee when no enabled entry
+matches. A percentage override is still applied to that member's product
+subtotal. Customer review, order creation, percentage edits, and both admin and
+organiser backfills must all use this same resolution rule.
+
+**Why:** storing and displaying the country configuration is insufficient if
+the customer group-buy projection, order query, or backfill omits it; each layer
+then silently reverts to the base fee.

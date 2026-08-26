@@ -196,6 +196,7 @@ export interface GroupBuySummary {
   adminFeeType?: string | null;
   adminFeeAmount?: number | null;
   adminFeeLabel?: string | null;
+  adminFeeCountries?: Array<{ country: string; amount: number; enabled: boolean }> | null;
   directShippingPaymentsEnabled?: boolean;
   archived?: boolean;
   telegramImageUrl?: string | null;

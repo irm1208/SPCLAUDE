@@ -14,6 +14,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
+import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 
 function ReviewShell({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -114,22 +115,29 @@ export default function Review() {
   const productSubtotal = parseFloat(
     draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
   );
-  const adminFeeIsPercent = !!(activeGb?.adminFeeEnabled && activeGb?.adminFeeType === "percent" && activeGb?.adminFeeAmount != null);
+  const adminFeeIsPercent = !!(activeGb?.adminFeeEnabled && activeGb?.adminFeeType === "percent");
   // Percentage fees are recomputed against the product subtotal for new orders, and for existing
   // orders only when they already carry a fee — matching the backend, which never adds a fee to an
   // order that never had one. This keeps the displayed total in sync with what gets saved.
   const recomputePercentFee = adminFeeIsPercent && (isNewOrder || (draft.adminFee ?? 0) > 0);
+  const resolvedConfiguredAdminFee = resolveReviewAdminFee({
+    enabled: activeGb?.adminFeeEnabled,
+    feeType: activeGb?.adminFeeType,
+    baseAmount: activeGb?.adminFeeAmount,
+    label: activeGb?.adminFeeLabel,
+    countryOverrides: activeGb?.adminFeeCountries,
+    shippingCountry: draft.shippingCountry,
+    productSubtotal,
+  });
   const adminFeeAmount = draft.directShippingRequested || isTopUp
     ? 0
-    : recomputePercentFee
-      ? parseFloat(((productSubtotal * (activeGb!.adminFeeAmount as number)) / 100).toFixed(2))
-      : isNewOrder
-        ? ((activeGb?.adminFeeEnabled && activeGb?.adminFeeAmount != null) ? activeGb.adminFeeAmount : 0)
-        : (draft.adminFee ?? 0);
+    : isNewOrder || recomputePercentFee
+      ? resolvedConfiguredAdminFee.amount
+      : (draft.adminFee ?? 0);
   const adminFeeLabel = recomputePercentFee
-    ? (activeGb?.adminFeeLabel ?? null)
+    ? resolvedConfiguredAdminFee.label
     : isNewOrder
-      ? (activeGb?.adminFeeLabel ?? null)
+      ? resolvedConfiguredAdminFee.label
       : (draft.adminFeeLabel ?? null);
   // Additions (top-ups) ride along with the parent's shipment — the server always saves
   // vendor shipping as 0, so it must never be shown, marked TBD, or added to any total here.

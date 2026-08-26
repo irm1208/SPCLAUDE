@@ -28,6 +28,7 @@ import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTempla
 import { createAlert } from "../lib/create-alert";
 import { writeLog } from "../lib/audit-log";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
+import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 
 function shortId(len = 5): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -149,7 +150,7 @@ router.get("/admin/group-buys/:id/orders-summary", async (req, res): Promise<voi
 router.post("/admin/group-buys", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, entryFeeEnabled, entryFeeAmount, entryFeeLabel } = req.body;
+  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel } = req.body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     res.status(400).json({ error: "name is required" });
@@ -214,8 +215,10 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     excludedCountries: Array.isArray(excludedCountries) ? excludedCountries : undefined,
     blockedAccounts: Array.isArray(blockedAccounts) ? blockedAccounts : undefined,
     adminFeeEnabled: adminFeeEnabled != null ? Boolean(adminFeeEnabled) : false,
+    adminFeeType: adminFeeType === "percent" ? "percent" : "fixed",
     adminFeeAmount: adminFeeAmount != null && adminFeeAmount !== "" ? parseFloat(String(adminFeeAmount)).toFixed(2) as any : undefined,
     adminFeeLabel: adminFeeLabel ? String(adminFeeLabel).trim() : undefined,
+    adminFeeCountries: Array.isArray(adminFeeCountries) ? JSON.stringify(adminFeeCountries) : undefined,
     entryFeeEnabled: entryFeeEnabled != null ? Boolean(entryFeeEnabled) : false,
     entryFeeAmount: entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) as any : undefined,
     entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
@@ -230,7 +233,7 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     { organiser_username: "admin", update_type: "New Group Buy Created", details: `${gb.name} — Status: ${gb.status ?? "draft"}` },
   ).catch(() => {});
 
-  res.status(201).json({ ...gb, infoCards: parseInfoCards(gb.infoCards), shippingOptions: parseShippingOptions(gb.shippingOptions), adminFeeCountries: [] });
+  res.status(201).json({ ...gb, infoCards: parseInfoCards(gb.infoCards), shippingOptions: parseShippingOptions(gb.shippingOptions), adminFeeCountries: parseAdminFeeCountries(gb.adminFeeCountries) });
 });
 
 // ── PATCH /admin/group-buys/:id — update GB ───────────────────
@@ -2278,39 +2281,58 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
       adminFeeType: groupBuysTable.adminFeeType,
       adminFeeAmount: groupBuysTable.adminFeeAmount,
       adminFeeLabel: groupBuysTable.adminFeeLabel,
+      adminFeeCountries: groupBuysTable.adminFeeCountries,
     })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, gbId));
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
-  if (!gb.adminFeeEnabled || gb.adminFeeAmount == null) {
-    res.status(400).json({ error: "Admin fee is not enabled or amount not set for this group buy" });
+  const countryOverrides = parseGroupBuyAdminFeeCountries(gb.adminFeeCountries);
+  if (!gb.adminFeeEnabled || (Number(gb.adminFeeAmount) <= 0 && !countryOverrides.some(entry => entry.amount > 0))) {
+    res.status(400).json({ error: "Admin fee is not enabled or no positive fee is configured for this group buy" });
     return;
   }
 
-  const feeAmount = parseFloat(String(gb.adminFeeAmount));
-  if (feeAmount <= 0) { res.status(400).json({ error: "Admin fee amount must be greater than 0" }); return; }
-  const isPercent = gb.adminFeeType === "percent";
+  const eligibleOrders = await db
+    .select({
+      id: ordersTable.id,
+      shippingCountry: ordersTable.shippingCountry,
+      productSubtotal: ordersTable.productSubtotal,
+    })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+      sql`COALESCE(${ordersTable.adminFee}, 0) = 0`,
+      sql`${ordersTable.directShippingRequested} IS NOT TRUE`,
+    ));
 
-  // Per-order fee: a percentage of that order's product subtotal, or a flat amount.
-  const feeExpr = isPercent
-    ? sql`ROUND(product_subtotal * ${feeAmount}::numeric / 100, 2)`
-    : sql`${feeAmount}::numeric`;
-
-  const result = await db.execute(sql`
-    UPDATE orders
-    SET
-      admin_fee       = ${feeExpr},
-      admin_fee_label = ${gb.adminFeeLabel ?? null},
-      grand_total     = grand_total + ${feeExpr}
-    WHERE
-      group_buy_id = ${gbId}
-      AND deleted_at IS NULL
-      AND (admin_fee IS NULL OR admin_fee = 0)
-      AND (direct_shipping_requested IS NOT TRUE)
-  `);
-
-  const updated = (result as { rowCount?: number }).rowCount ?? 0;
+  let updated = 0;
+  for (const order of eligibleOrders) {
+    const resolved = resolveGroupBuyAdminFee({
+      enabled: gb.adminFeeEnabled,
+      feeType: gb.adminFeeType,
+      baseAmount: gb.adminFeeAmount,
+      label: gb.adminFeeLabel,
+      countryOverrides: gb.adminFeeCountries,
+      shippingCountry: order.shippingCountry,
+      productSubtotal: Number(order.productSubtotal) || 0,
+    });
+    if (resolved.amount <= 0) continue;
+    const changed = await db
+      .update(ordersTable)
+      .set({
+        adminFee: resolved.amount.toFixed(2),
+        adminFeeLabel: resolved.label,
+        grandTotal: sql`${ordersTable.grandTotal} + ${resolved.amount}`,
+      })
+      .where(and(
+        eq(ordersTable.id, order.id),
+        sql`COALESCE(${ordersTable.adminFee}, 0) = 0`,
+      ))
+      .returning({ id: ordersTable.id });
+    updated += changed.length;
+  }
   res.json({ ok: true, updated });
 });
 

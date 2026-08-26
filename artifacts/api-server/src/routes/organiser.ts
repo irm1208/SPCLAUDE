@@ -29,6 +29,7 @@ import { GoogleGenAI } from "../lib/google-genai";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 import { callSageAI, type ContentPart } from "../lib/sage-ai";
 import { toClaudeContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
+import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -947,41 +948,58 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
       adminFeeType: groupBuysTable.adminFeeType,
       adminFeeAmount: groupBuysTable.adminFeeAmount,
       adminFeeLabel: groupBuysTable.adminFeeLabel,
+      adminFeeCountries: groupBuysTable.adminFeeCountries,
     })
     .from(groupBuysTable)
     .where(gbOwner(req, id));
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
-  if (!gb.adminFeeEnabled || gb.adminFeeAmount == null) {
-    res.status(400).json({ error: "Admin fee is not enabled or amount not set" });
+  const countryOverrides = parseGroupBuyAdminFeeCountries(gb.adminFeeCountries);
+  if (!gb.adminFeeEnabled || (Number(gb.adminFeeAmount) <= 0 && !countryOverrides.some(entry => entry.amount > 0))) {
+    res.status(400).json({ error: "Admin fee is not enabled or no positive fee is configured" });
     return;
   }
 
-  const feeAmount = parseFloat(String(gb.adminFeeAmount));
-  if (feeAmount <= 0) { res.status(400).json({ error: "Admin fee amount must be greater than 0" }); return; }
-  const isPercent = gb.adminFeeType === "percent";
+  const eligibleOrders = await db
+    .select({
+      id: ordersTable.id,
+      shippingCountry: ordersTable.shippingCountry,
+      productSubtotal: ordersTable.productSubtotal,
+    })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.groupBuyId, id),
+      isNull(ordersTable.deletedAt),
+      sql`COALESCE(${ordersTable.adminFee}, 0) = 0`,
+      sql`${ordersTable.directShippingRequested} IS NOT TRUE`,
+    ));
 
-  // Per-order fee: a percentage of that order's product subtotal, or a flat amount.
-  const feeExpr = isPercent
-    ? sql`ROUND(product_subtotal * ${feeAmount}::numeric / 100, 2)`
-    : sql`${feeAmount}::numeric`;
-
-  // Update non-deleted, non-direct-to-home orders on this GB that don't already have the fee applied.
-  // Direct-to-home orders are excluded — the admin/reshipping fee doesn't apply to them.
-  const result = await db.execute(sql`
-    UPDATE orders
-    SET
-      admin_fee = ${feeExpr},
-      admin_fee_label = ${gb.adminFeeLabel ?? null},
-      grand_total = grand_total + ${feeExpr}
-    WHERE
-      group_buy_id = ${id}
-      AND deleted_at IS NULL
-      AND (admin_fee IS NULL OR admin_fee = 0)
-      AND (direct_shipping_requested IS NOT TRUE)
-  `);
-
-  const updated = (result as { rowCount?: number }).rowCount ?? 0;
+  let updated = 0;
+  for (const order of eligibleOrders) {
+    const resolved = resolveGroupBuyAdminFee({
+      enabled: gb.adminFeeEnabled,
+      feeType: gb.adminFeeType,
+      baseAmount: gb.adminFeeAmount,
+      label: gb.adminFeeLabel,
+      countryOverrides: gb.adminFeeCountries,
+      shippingCountry: order.shippingCountry,
+      productSubtotal: Number(order.productSubtotal) || 0,
+    });
+    if (resolved.amount <= 0) continue;
+    const changed = await db
+      .update(ordersTable)
+      .set({
+        adminFee: resolved.amount.toFixed(2),
+        adminFeeLabel: resolved.label,
+        grandTotal: sql`${ordersTable.grandTotal} + ${resolved.amount}`,
+      })
+      .where(and(
+        eq(ordersTable.id, order.id),
+        sql`COALESCE(${ordersTable.adminFee}, 0) = 0`,
+      ))
+      .returning({ id: ordersTable.id });
+    updated += changed.length;
+  }
   res.json({ ok: true, updated });
 });
 

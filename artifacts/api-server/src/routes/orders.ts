@@ -33,6 +33,7 @@ import { getJwtSecret } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
 import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
+import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
 // Wholesale shipping is priced by kit-count tiers per destination region, so it must
@@ -544,6 +545,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   let gbAdminFeeEnabled = false;
   let gbAdminFeeType = "fixed";
   let gbAdminFeeRaw: number | null = null;
+  let gbAdminFeeCountries: unknown = null;
   let gbKitFees = 0;
 
   // Validate group buy membership if a groupBuyId is provided
@@ -582,6 +584,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         adminFeeType: groupBuysTable.adminFeeType,
         adminFeeAmount: groupBuysTable.adminFeeAmount,
         adminFeeLabel: groupBuysTable.adminFeeLabel,
+        adminFeeCountries: groupBuysTable.adminFeeCountries,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, normalizedGroupBuyId));
@@ -683,11 +686,12 @@ router.post("/orders", async (req, res): Promise<void> => {
 
     // Capture admin fee config while gb is in scope. The concrete fee amount is
     // resolved below, once the product subtotal is known (needed for percentage fees).
-    if (gb.adminFeeEnabled && gb.adminFeeAmount != null) {
+    if (gb.adminFeeEnabled) {
       gbAdminFeeEnabled = true;
       gbAdminFeeType = gb.adminFeeType === "percent" ? "percent" : "fixed";
-      gbAdminFeeRaw = parseFloat(String(gb.adminFeeAmount));
+      gbAdminFeeRaw = gb.adminFeeAmount != null ? parseFloat(String(gb.adminFeeAmount)) : 0;
       gbAdminFeeLabel = gb.adminFeeLabel ?? null;
+      gbAdminFeeCountries = gb.adminFeeCountries;
     }
 
     // ── Kit fees (feePerKit × quantity per product) ───────────────────────────
@@ -789,11 +793,18 @@ router.post("/orders", async (req, res): Promise<void> => {
     gbAdminFee = 0;
     gbAdminFeeLabel = null;
     gbKitFees = 0;
-  } else if (gbAdminFeeEnabled && gbAdminFeeRaw != null) {
-    gbAdminFee = gbAdminFeeType === "percent"
-      ? Number(((productSubtotal * gbAdminFeeRaw) / 100).toFixed(2))
-      : gbAdminFeeRaw;
-    gbAdminFeeLabel = gbAdminFee > 0 ? gbAdminFeeLabel : null;
+  } else if (gbAdminFeeEnabled) {
+    const resolvedAdminFee = resolveGroupBuyAdminFee({
+      enabled: gbAdminFeeEnabled,
+      feeType: gbAdminFeeType,
+      baseAmount: gbAdminFeeRaw,
+      label: gbAdminFeeLabel,
+      countryOverrides: gbAdminFeeCountries,
+      shippingCountry: clientShippingCountry,
+      productSubtotal,
+    });
+    gbAdminFee = resolvedAdminFee.amount;
+    gbAdminFeeLabel = resolvedAdminFee.label;
   }
 
   // ── Coupon validation ────────────────────────────────────────────────────────
@@ -1862,12 +1873,22 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
         adminFeeType: groupBuysTable.adminFeeType,
         adminFeeAmount: groupBuysTable.adminFeeAmount,
         adminFeeLabel: groupBuysTable.adminFeeLabel,
+        adminFeeCountries: groupBuysTable.adminFeeCountries,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
-    if (gbFee?.adminFeeEnabled && gbFee.adminFeeType === "percent" && gbFee.adminFeeAmount != null) {
-      resolvedAdminFee = Number(((productSubtotal * parseFloat(String(gbFee.adminFeeAmount))) / 100).toFixed(2));
-      recomputedAdminFeeLabel = resolvedAdminFee > 0 ? (gbFee.adminFeeLabel ?? null) : null;
+    if (gbFee?.adminFeeEnabled && gbFee.adminFeeType === "percent") {
+      const resolved = resolveGroupBuyAdminFee({
+        enabled: gbFee.adminFeeEnabled,
+        feeType: gbFee.adminFeeType,
+        baseAmount: gbFee.adminFeeAmount,
+        label: gbFee.adminFeeLabel,
+        countryOverrides: gbFee.adminFeeCountries,
+        shippingCountry: clientShippingCountry ?? order.shippingCountry,
+        productSubtotal,
+      });
+      resolvedAdminFee = resolved.amount;
+      recomputedAdminFeeLabel = resolved.label;
     }
   }
   const grandTotal = Number(Math.max(0, baseUpdateTotal + resolvedAdminFee).toFixed(2));
