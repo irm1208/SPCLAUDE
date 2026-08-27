@@ -20,6 +20,16 @@ describe("country-specific group-buy admin fee routes", () => {
     expect(createRoute).toContain("gbAdminFeeCountries = gb.adminFeeCountries");
   });
 
+  it("uses the authenticated account username when resolving the fallback country", () => {
+    const createStart = ordersSource.indexOf('router.post("/orders"');
+    const createEnd = ordersSource.indexOf('router.get("/orders/');
+    const createRoute = ordersSource.slice(createStart, createEnd);
+
+    expect(createRoute).toContain(
+      "eq(accountsTable.telegramUsername, sessionUsername.toLowerCase())",
+    );
+  });
+
   it("recomputes an existing percentage fee using the order delivery country", () => {
     const editStart = ordersSource.indexOf('router.put("/orders/:orderId"');
     const editEnd = ordersSource.indexOf('router.post("/orders/:orderId/shipping-address"');
@@ -38,6 +48,8 @@ describe("country-specific group-buy admin fee routes", () => {
     const route = source.slice(start, source.indexOf("\n});", start) + 4);
 
     expect(route).toContain("shippingCountry: ordersTable.shippingCountry");
+    expect(route).toContain("accountCountry: accountsTable.country");
+    expect(route).toContain("fallbackCountry: order.accountCountry");
     expect(route).toContain("resolveGroupBuyAdminFee({");
     expect(route).toContain("hasEnabledBaseFee");
     expect(route).toContain("hasEnabledCountryFee");

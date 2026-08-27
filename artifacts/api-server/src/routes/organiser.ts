@@ -966,9 +966,14 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
     .select({
       id: ordersTable.id,
       shippingCountry: ordersTable.shippingCountry,
+      accountCountry: accountsTable.country,
       productSubtotal: ordersTable.productSubtotal,
     })
     .from(ordersTable)
+    .leftJoin(
+      accountsTable,
+      sql`lower(ltrim(${accountsTable.telegramUsername}, '@')) = lower(ltrim(${ordersTable.telegramUsername}, '@'))`,
+    )
     .where(and(
       eq(ordersTable.groupBuyId, id),
       isNull(ordersTable.deletedAt),
@@ -985,6 +990,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
       label: gb.adminFeeLabel,
       countryOverrides: gb.adminFeeCountries,
       shippingCountry: order.shippingCountry,
+      fallbackCountry: order.accountCountry,
       productSubtotal: Number(order.productSubtotal) || 0,
     });
     if (resolved.amount <= 0) continue;

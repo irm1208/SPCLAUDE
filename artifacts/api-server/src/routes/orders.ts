@@ -589,7 +589,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       const [memberAccount] = await db
         .select({ country: accountsTable.country })
         .from(accountsTable)
-        .where(eq(accountsTable.telegramUsername, tg));
+        .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()));
       memberDeliveryCountry = memberAccount?.country?.trim() || null;
     }
 

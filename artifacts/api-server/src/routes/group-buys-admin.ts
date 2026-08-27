@@ -2299,9 +2299,14 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
     .select({
       id: ordersTable.id,
       shippingCountry: ordersTable.shippingCountry,
+      accountCountry: accountsTable.country,
       productSubtotal: ordersTable.productSubtotal,
     })
     .from(ordersTable)
+    .leftJoin(
+      accountsTable,
+      sql`lower(ltrim(${accountsTable.telegramUsername}, '@')) = lower(ltrim(${ordersTable.telegramUsername}, '@'))`,
+    )
     .where(and(
       eq(ordersTable.groupBuyId, gbId),
       isNull(ordersTable.deletedAt),
@@ -2318,6 +2323,7 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
       label: gb.adminFeeLabel,
       countryOverrides: gb.adminFeeCountries,
       shippingCountry: order.shippingCountry,
+      fallbackCountry: order.accountCountry,
       productSubtotal: Number(order.productSubtotal) || 0,
     });
     if (resolved.amount <= 0) continue;
