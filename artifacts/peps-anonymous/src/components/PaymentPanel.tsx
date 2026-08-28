@@ -596,7 +596,7 @@ export default function PaymentPanel({
         // test_confirmed), allow the global wallet fallback so the user can
         // complete a payment that was initiated before fiat methods were added.
         const isInProgress = initStatus === "test_ready" || initStatus === "test_confirmed";
-        const rawWallet = (gbOrder && !isInProgress)
+        const rawWallet = ((gbOrder || !!d.requiresExplicitPaymentMethods) && !isInProgress)
           ? (d.cryptoWalletAddress || null)
           : (d.cryptoWalletAddress || d.walletAddress || null);
         // Validate address format for the configured currency/network.

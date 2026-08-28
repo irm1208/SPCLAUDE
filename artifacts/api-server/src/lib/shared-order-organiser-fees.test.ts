@@ -118,6 +118,50 @@ describe("shared-order organiser fee reconciliation", () => {
     },
   );
 
+  it("adds a missing fee to a payment-started order as a new balance", () => {
+    expect(buildOrganiserFeeOrderUpdate({
+      oldFee: 0,
+      newFee: 10,
+      grandTotal: 218.4,
+      baseGrandTotal: 218.4,
+      amountDue: 0,
+      paymentStatus: "confirmed",
+      allowPaymentProtectedFeeIncrease: true,
+    })).toEqual({
+      changed: true,
+      organiserFee: 10,
+      grandTotal: 228.4,
+      amountDue: 10,
+      resetPaymentLock: false,
+      resetBalancePayment: true,
+    });
+  });
+
+  it("refuses to add a fee when a payment-started total already has an unexplained excess", () => {
+    expect(() => buildOrganiserFeeOrderUpdate({
+      oldFee: 0,
+      newFee: 10,
+      grandTotal: 228.4,
+      baseGrandTotal: 218.4,
+      amountDue: 0,
+      paymentStatus: "confirmed",
+      allowPaymentProtectedFeeIncrease: true,
+    })).toThrow("does not match its recorded components");
+  });
+
+  it("refuses to overwrite an existing balance payment lifecycle", () => {
+    expect(() => buildOrganiserFeeOrderUpdate({
+      oldFee: 0,
+      newFee: 10,
+      grandTotal: 218.4,
+      baseGrandTotal: 218.4,
+      amountDue: 0,
+      paymentStatus: "confirmed",
+      allowPaymentProtectedFeeIncrease: true,
+      hasExistingBalancePayment: true,
+    })).toThrow("already has a balance payment");
+  });
+
   it("leaves a payment-protected order unchanged when a fee is removed", () => {
     expect(buildOrganiserFeeOrderUpdate({
       oldFee: 10,

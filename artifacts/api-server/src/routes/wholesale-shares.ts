@@ -220,31 +220,40 @@ type OrganiserFeeReconciliationSummary = {
   balanceDueAdded: number;
 };
 
-async function reconcileLockedShareOrganiserFees(
+async function reconcileShareOrganiserFees(
   tx: any,
   share: ShareRow,
 ): Promise<OrganiserFeeReconciliationSummary> {
-  if (share.status !== "locked") throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  if (share.status !== "open" && share.status !== "locked") {
+    throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  }
 
   const members: MemberRow[] = await tx
     .select()
     .from(wholesaleShareMembersTable)
     .where(eq(wholesaleShareMembersTable.shareId, share.id))
     .for("update");
-  const orderIds = members.map(member => member.orderId).filter((id): id is string => !!id);
-  if (orderIds.length !== members.length) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  const materialisedMembers = members.filter(
+    (member): member is MemberRow & { orderId: string } => !!member.orderId,
+  );
+  const orderIds = materialisedMembers.map(member => member.orderId);
+  if (share.status === "locked" && orderIds.length !== members.length) {
+    throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  }
 
   const orders: Array<typeof ordersTable.$inferSelect> = orderIds.length > 0
     ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
     : [];
   const orderById = new Map<string, typeof ordersTable.$inferSelect>(orders.map(order => [order.id, order]));
-  if (orderById.size !== members.length) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  if (orderById.size !== materialisedMembers.length) {
+    throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
+  }
 
   let updatedOrders = 0;
   let balanceDueAdded = 0;
 
-  for (const member of members) {
-    const order = orderById.get(member.orderId!);
+  for (const member of materialisedMembers) {
+    const order = orderById.get(member.orderId);
     if (!order) throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
 
     const organiserFee = effectiveOrganiserFee(share, member);
@@ -262,6 +271,13 @@ async function reconcileLockedShareOrganiserFees(
       baseGrandTotal,
       amountDue: Number(order.amountDue ?? 0),
       paymentStatus: order.paymentStatus,
+      allowPaymentProtectedFeeIncrease: true,
+      hasExistingBalancePayment: !!(
+        order.balancePaymentStatus
+        || order.balanceScreenshot
+        || order.balanceTxHash
+        || order.balanceConfirmedAt
+      ),
     });
 
     await tx.update(wholesaleShareMembersTable)
@@ -2144,7 +2160,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
     // Changing the recipient changes the organiser-fee exemption. Reconcile after
     // the removed members are gone so only active orders are considered.
     const feeReconciliation = replacementMember
-      ? await reconcileLockedShareOrganiserFees(tx, {
+      ? await reconcileShareOrganiserFees(tx, {
           ...share,
           ...deliveryUpdates,
           totalKits: newTotalKits.toFixed(2),
@@ -2371,6 +2387,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
               throw LOCK_PROTECTED_BALANCE_CONFLICT;
             }
             await tx.update(ordersTable).set({
+              organiserFee: organiserFee.toFixed(2),
               grandTotal: grandTotal.toFixed(2),
               amountDue: additionalBalance.toFixed(2),
               balancePaymentStatus: "unpaid",
@@ -2766,7 +2783,7 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
         .from(wholesaleShareMembersTable)
         .where(eq(wholesaleShareMembersTable.shareId, share.id));
       const memberByLower = new Map(members.map(m => [m.username.toLowerCase(), m]));
-      let changedLockedFee = false;
+       let hasMaterialisedMember = false;
 
       for (const f of fees) {
         const uname = String(f.username ?? "").toLowerCase();
@@ -2780,15 +2797,19 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
         };
         if (organiserFee !== prevOrganiserFee) {
           set.organiserFeePaid = false;
-          changedLockedFee = changedLockedFee || locked.status === "locked";
         }
+         hasMaterialisedMember = hasMaterialisedMember || !!member.orderId;
         await tx.update(wholesaleShareMembersTable)
           .set(set)
           .where(eq(wholesaleShareMembersTable.id, member.id));
       }
 
-      if (changedLockedFee) {
-        await reconcileLockedShareOrganiserFees(tx, locked);
+       // Reconcile every materialised order whenever the organiser saves this
+       // section, not only when the submitted fee values differ. Matching
+       // snapshots are a no-op; an older inconsistent snapshot is repaired
+       // without requiring the organiser to change the fee again.
+       if (hasMaterialisedMember) {
+        await reconcileShareOrganiserFees(tx, locked);
       }
     });
   } catch (e) {
@@ -3039,10 +3060,12 @@ router.post("/admin/wholesale-shares/:id/reconcile-organiser-fees", async (req, 
       .where(eq(wholesaleSharesTable.id, shareId))
       .for("update");
     if (!share) return { kind: "missing" as const };
-    if (share.status !== "locked") return { kind: "not_locked" as const, status: share.status };
+    if (share.status !== "open" && share.status !== "locked") {
+      return { kind: "not_reconcilable" as const, status: share.status };
+    }
     return {
       kind: "reconciled" as const,
-      summary: await reconcileLockedShareOrganiserFees(tx, share),
+      summary: await reconcileShareOrganiserFees(tx, share),
     };
   });
 
@@ -3050,8 +3073,8 @@ router.post("/admin/wholesale-shares/:id/reconcile-organiser-fees", async (req, 
     res.status(404).json({ error: "Shared order not found" });
     return;
   }
-  if (outcome.kind === "not_locked") {
-    res.status(409).json({ error: `Only locked shared orders can be reconciled (this order is ${outcome.status}).` });
+  if (outcome.kind === "not_reconcilable") {
+    res.status(409).json({ error: `Only open or locked shared orders can be reconciled (this order is ${outcome.status}).` });
     return;
   }
 
@@ -3076,7 +3099,7 @@ router.post("/admin/wholesale-shares/reconcile-organiser-fees", async (req, res)
         .where(eq(wholesaleSharesTable.id, id))
         .for("update");
       if (!share || share.status !== "locked") return null;
-      return reconcileLockedShareOrganiserFees(tx, share);
+      return reconcileShareOrganiserFees(tx, share);
     });
     if (!outcome) continue;
     reconciled.push({ shareId: id, ...outcome });

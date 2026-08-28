@@ -8,6 +8,10 @@ export interface OrganiserFeeOrderInput {
   baseGrandTotal?: number;
   amountDue: number;
   paymentStatus: OrganiserFeePaymentStatus;
+  /** Repair a missing/increased fee without changing the already-started payment. */
+  allowPaymentProtectedFeeIncrease?: boolean;
+  /** Existing balance state must never be overwritten by fee reconciliation. */
+  hasExistingBalancePayment?: boolean;
 }
 
 export interface OrganiserFeeOrderUpdate {
@@ -28,6 +32,8 @@ export function buildOrganiserFeeOrderUpdate({
   baseGrandTotal,
   amountDue,
   paymentStatus,
+  allowPaymentProtectedFeeIncrease = false,
+  hasExistingBalancePayment = false,
 }: OrganiserFeeOrderInput): OrganiserFeeOrderUpdate {
   if (!Number.isFinite(oldFee) || oldFee < 0) {
     throw new Error("Existing organiser fee must be a non-negative amount.");
@@ -45,6 +51,26 @@ export function buildOrganiserFeeOrderUpdate({
   // order, even if its configured fee changes later.
   const paymentProtected = paymentStatus !== "unpaid";
   if (paymentProtected) {
+    if (allowPaymentProtectedFeeIncrease && delta > 0) {
+      if (roundCents(amountDue) > 0 || hasExistingBalancePayment) {
+        throw new Error("Payment-started order already has a balance payment.");
+      }
+      if (
+        baseGrandTotal === undefined
+        || roundCents(grandTotal) !== roundCents(baseGrandTotal + oldFee)
+      ) {
+        throw new Error("Payment-started order total does not match its recorded components.");
+      }
+      const nextGrandTotal = roundCents(grandTotal + delta);
+      return {
+        changed: true,
+        organiserFee: roundCents(newFee),
+        grandTotal: nextGrandTotal,
+        amountDue: roundCents(amountDue + (nextGrandTotal - roundCents(grandTotal))),
+        resetPaymentLock: false,
+        resetBalancePayment: true,
+      };
+    }
     return {
       changed: false,
       organiserFee: roundCents(oldFee),

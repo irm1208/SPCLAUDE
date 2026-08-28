@@ -54,12 +54,6 @@ async function resolveOrderCrypto(order: {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
 
-  const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
-  if (!paymentRoutingEnabled) {
-    const walletAddress = await getConfig("walletAddress");
-    return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
-  }
-
   // Wholesale shared: use organiser's leadCryptoOptions, matching the persisted currency+network if set
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
     const [share] = await db
@@ -78,9 +72,11 @@ async function resolveOrderCrypto(order: {
       }
       return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network };
     }
-    // Organiser hasn't set options — fall back to wholesale admin wallets
-    const wsWallet = await getConfig("wholesale_usdt_wallet");
-    if (wsWallet) return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
+    return { walletAddress: null, currency: defaultCurrency, network: defaultNetwork };
+  }
+
+  const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+  if (!paymentRoutingEnabled) {
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }

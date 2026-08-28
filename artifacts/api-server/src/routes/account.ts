@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
+import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
@@ -17,6 +17,7 @@ import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verif
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
+import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -2697,12 +2698,28 @@ router.post("/account/orders/:id/balance-init-anonpay", requireAccount, async (r
     return;
   }
 
-  // Resolve AnonPay config (GB overrides global)
+  // Resolve AnonPay config (GB/shared organiser overrides global)
   let anonPayEnabled = (await getSiteConfig("anonPayEnabled")) === "true";
   let anonPayWallet  = await getSiteConfig("anonPayWallet");
   let anonPayTicker  = await getSiteConfig("anonPayTicker");
   let anonPayNetwork = await getSiteConfig("anonPayNetwork");
-  if (order.groupBuyId) {
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db
+      .select({
+        creatorUsername: wholesaleSharesTable.creatorUsername,
+        leadRevolutHandle: wholesaleSharesTable.leadRevolutHandle,
+        leadPaypalEmail: wholesaleSharesTable.leadPaypalEmail,
+        leadAnonPayWallet: wholesaleSharesTable.leadAnonPayWallet,
+        leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions,
+      })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const methods = resolveSharedOrderPaymentMethods(share, { anonPayTicker, anonPayNetwork });
+    anonPayEnabled = methods.anonPayEnabled;
+    anonPayWallet = methods.anonPayWallet;
+    anonPayTicker = methods.anonPayTicker;
+    anonPayNetwork = methods.anonPayNetwork;
+  } else if (order.groupBuyId) {
     const [gb] = await db.select({ organiserPayments: groupBuysTable.organiserPayments }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
     const op: OrganiserPayments | null = gb?.organiserPayments as OrganiserPayments | null;
     if (op?.anonPayWallet)  anonPayWallet  = op.anonPayWallet;

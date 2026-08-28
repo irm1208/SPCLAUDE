@@ -11,6 +11,7 @@ import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
+import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -337,11 +338,8 @@ export async function resolveOrderCrypto(
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
   const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
-  if (!paymentRoutingEnabled) {
-    const walletAddress = await getConfig("walletAddress");
-    return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
-  }
-  // Wholesale shared orders: use the organiser's leadCryptoOptions if set, else fall back to wholesale admin wallets
+  // Shared wholesale is peer-to-peer. An omitted organiser wallet disables crypto;
+  // it must never route the member to a wholesale/global admin wallet.
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
     const [share] = await db
       .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
@@ -351,10 +349,9 @@ export async function resolveOrderCrypto(
     if (opts.length > 0) {
       return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network };
     }
-    const wsWallet = await getConfig("wholesale_usdt_wallet");
-    if (wsWallet) return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
-    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet");
-    if (wsUsdcWallet) return { walletAddress: wsUsdcWallet, currency: "USDC", network: defaultNetwork };
+    return { walletAddress: null, currency: defaultCurrency, network: defaultNetwork };
+  }
+  if (!paymentRoutingEnabled) {
     const walletAddress = await getConfig("walletAddress");
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
@@ -474,6 +471,7 @@ export async function getOrderCryptoOptions(
     if (opts.length > 0) {
       return { walletAddress: opts[0].walletAddress, currency: opts[0].currency, network: opts[0].network, options: opts };
     }
+    return { walletAddress: null, currency: "USDT", network: "ERC-20", options: [] };
   }
 
   if (!order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared") {
@@ -1034,6 +1032,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   let anonPayTicker: string | null = globalAnonPayTicker;
   let anonPayNetwork: string | null = globalAnonPayNetwork;
   let isGroupBuyOrder = false;
+  let requiresExplicitPaymentMethods = false;
   let collectedBy: { type: "admin" | "organiser" | "reshipper"; username?: string } = { type: "admin" };
 
   const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
@@ -1088,34 +1087,30 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
             anonPayEnabled = false;
           }
         }
-      } else if (order.orderType === "wholesale_shared" && order.sharedOrderId && paymentRoutingEnabled) {
+      } else if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
         const [share] = await db
-          .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions, creatorUsername: wholesaleSharesTable.creatorUsername })
+          .select({
+            creatorUsername: wholesaleSharesTable.creatorUsername,
+            leadRevolutHandle: wholesaleSharesTable.leadRevolutHandle,
+            leadPaypalEmail: wholesaleSharesTable.leadPaypalEmail,
+            leadAnonPayWallet: wholesaleSharesTable.leadAnonPayWallet,
+            leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions,
+          })
           .from(wholesaleSharesTable)
           .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
-        const leadOpts = (share?.leadCryptoOptions ?? []) as Array<{ currency: string; network: string; walletAddress: string }>;
-        if (leadOpts.length > 0) {
-          availableCryptoOptions = leadOpts;
-          cryptoWalletAddress    = leadOpts[0].walletAddress;
-          cryptoCurrency         = leadOpts[0].currency;
-          cryptoNetwork          = leadOpts[0].network;
-          collectedBy = { type: "organiser", username: share!.creatorUsername };
-        } else {
-          // Organiser hasn't set options — fall back to wholesale admin wallets
-          const [wsUsdtWallet, wsUsdcErc20Wallet] = await Promise.all([
-            getConfig("wholesale_usdt_wallet"),
-            getConfig("wholesale_usdc_erc20_wallet"),
-          ]);
-          const wsCryptoOpts: { currency: string; network: string; walletAddress: string }[] = [];
-          if (wsUsdtWallet)      wsCryptoOpts.push({ currency: "USDT", network: "ERC-20", walletAddress: wsUsdtWallet });
-          if (wsUsdcErc20Wallet) wsCryptoOpts.push({ currency: "USDC", network: "ERC-20", walletAddress: wsUsdcErc20Wallet });
-          if (wsCryptoOpts.length > 0) {
-            availableCryptoOptions = wsCryptoOpts;
-            cryptoWalletAddress    = wsCryptoOpts[0].walletAddress;
-            cryptoCurrency         = wsCryptoOpts[0].currency;
-            cryptoNetwork          = wsCryptoOpts[0].network;
-          }
-        }
+        const methods = resolveSharedOrderPaymentMethods(share, { anonPayTicker: globalAnonPayTicker, anonPayNetwork: globalAnonPayNetwork });
+        requiresExplicitPaymentMethods = true;
+        revolutHandle = methods.revolutHandle;
+        paypalHandle = methods.paypalHandle;
+        anonPayEnabled = methods.anonPayEnabled;
+        anonPayWallet = methods.anonPayWallet;
+        anonPayTicker = methods.anonPayTicker;
+        anonPayNetwork = methods.anonPayNetwork;
+        availableCryptoOptions = methods.availableCryptoOptions;
+        cryptoWalletAddress = methods.cryptoWalletAddress;
+        cryptoCurrency = methods.cryptoCurrency;
+        cryptoNetwork = methods.cryptoNetwork;
+        collectedBy = methods.collectedBy;
       } else if (order.groupBuyId && paymentRoutingEnabled) {
         isGroupBuyOrder = true;
         const [gb] = await db
@@ -1267,6 +1262,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
     paymentsEnabled,
     walletAddress,
     isGroupBuyOrder,
+    requiresExplicitPaymentMethods,
     revolutHandle,
     paypalHandle,
     orderCode,
@@ -1779,14 +1775,30 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
     if (!paymentsEnabled) { res.status(403).json({ error: "Payments are not currently enabled" }); return; }
   }
 
-  // Resolve AnonPay config (GB overrides global)
+  // Resolve AnonPay config (GB/shared organiser overrides global)
   let globalAnonPayEnabled = (await getConfig("anonPayEnabled")) === "true";
   let anonPayWallet = await getConfig("anonPayWallet");
   let anonPayTicker = await getConfig("anonPayTicker");
   let anonPayNetwork = await getConfig("anonPayNetwork");
   let anonPayEnabled: boolean = globalAnonPayEnabled;
 
-  if (order.groupBuyId) {
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db
+      .select({
+        creatorUsername: wholesaleSharesTable.creatorUsername,
+        leadRevolutHandle: wholesaleSharesTable.leadRevolutHandle,
+        leadPaypalEmail: wholesaleSharesTable.leadPaypalEmail,
+        leadAnonPayWallet: wholesaleSharesTable.leadAnonPayWallet,
+        leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions,
+      })
+      .from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    const methods = resolveSharedOrderPaymentMethods(share, { anonPayTicker, anonPayNetwork });
+    anonPayEnabled = methods.anonPayEnabled;
+    anonPayWallet = methods.anonPayWallet;
+    anonPayTicker = methods.anonPayTicker;
+    anonPayNetwork = methods.anonPayNetwork;
+  } else if (order.groupBuyId) {
     const [gb] = await db.select({ organiserPayments: groupBuysTable.organiserPayments }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
     const op: OrganiserPayments | null = gb?.organiserPayments as OrganiserPayments | null;
     if (op?.anonPayWallet)  anonPayWallet  = op.anonPayWallet;
