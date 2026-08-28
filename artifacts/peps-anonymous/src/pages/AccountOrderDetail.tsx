@@ -842,6 +842,7 @@ function AccountQrSection({
   orderId,
   uploadEndpoint,
   label,
+  uploadKind = "qr",
   existingQr,
   customMessage,
   onUploaded,
@@ -849,6 +850,7 @@ function AccountQrSection({
   orderId: string;
   uploadEndpoint: string;
   label: string;
+  uploadKind?: "qr" | "label";
   existingQr: string | null;
   customMessage?: string;
   onUploaded: (qr: string) => void;
@@ -857,12 +859,16 @@ function AccountQrSection({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(existingQr);
+  const isLabelUpload = uploadKind === "label";
 
   const handleFile = async (file: File) => {
     setError(null);
     const isImage = file.type.startsWith("image/");
+    const isAllowedImage = isLabelUpload
+      ? ["image/png", "image/jpeg", "image/jpg"].includes(file.type)
+      : isImage;
     const isPdf = file.type === "application/pdf";
-    if (!isImage && !isPdf) {
+    if (!isAllowedImage && !isPdf) {
       setError("Please select a PNG, JPEG, or PDF file.");
       return;
     }
@@ -910,21 +916,29 @@ function AccountQrSection({
     <Card className="p-5 rounded-lg shadow-none" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface)", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}>
       <div className="flex items-center gap-3 mb-4">
         <div className="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0">
-          <QrCode className="w-4 h-4 text-violet-700 dark:text-violet-300" />
+          {isLabelUpload
+            ? <FileText className="w-4 h-4 text-violet-700 dark:text-violet-300" />
+            : <QrCode className="w-4 h-4 text-violet-700 dark:text-violet-300" />}
         </div>
         <div>
           <p className="font-semibold text-sm" style={{ color: "var(--t-text)" }}>{label}</p>
           <p className="text-xs" style={{ color: "var(--t-muted)" }}>
             {previewSrc
               ? "Your file is saved."
-              : "Upload your QR code or label"}
+              : isLabelUpload
+                ? "Upload your label"
+                : "Upload your QR code or label"}
           </p>
         </div>
       </div>
 
       {!previewSrc && (
         <p className="text-xs mb-3 leading-relaxed whitespace-pre-line" style={{ color: "var(--t-muted)" }}>
-          {customMessage ?? "Once the organiser confirms your order is ready to ship, upload your QR code here."}
+          {customMessage ?? (
+            isLabelUpload
+              ? "Once the organiser confirms your order is ready to ship, upload your PDF label here."
+              : "Once the organiser confirms your order is ready to ship, upload your QR code here."
+          )}
         </p>
       )}
 
@@ -967,7 +981,9 @@ function AccountQrSection({
             ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading…</>
             : previewSrc
             ? <><ImagePlus className="w-4 h-4" />Replace File</>
-            : <><Upload className="w-4 h-4" />Upload QR Code &amp; Label</>
+            : isLabelUpload
+              ? <><Upload className="w-4 h-4" />Upload PDF Label</>
+              : <><Upload className="w-4 h-4" />Upload QR Code &amp; Label</>
           }
         </Button>
         {previewSrc && (
@@ -2769,15 +2785,15 @@ export default function AccountOrderDetail() {
                     )
                   )}
 
-                  {/* Royal Mail QR Code upload */}
+                  {/* Royal Mail PDF label upload */}
                   {order.groupBuyQrUploadRoyalMailEnabled && !order.directShippingRequested && (
                     order.paymentStatus === "confirmed" ? (
                       <AccountQrSection
                         orderId={order.id}
                         uploadEndpoint="royal-mail-qr"
-                        label="Royal Mail QR Code"
+                        uploadKind="label"
+                        label="Royal Mail PDF Label Upload"
                         existingQr={order.royalMailQrCode ?? null}
-                        customMessage={order.groupBuyQrUploadMessage ?? undefined}
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, royalMailQrCode: qr } : prev)}
                       />
                     ) : (
@@ -2787,7 +2803,7 @@ export default function AccountOrderDetail() {
                             <Lock className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
                           </div>
                           <div>
-                            <p className="text-sm font-semibold" style={{ color: "var(--t-subtle)" }}>Royal Mail QR Code</p>
+                            <p className="text-sm font-semibold" style={{ color: "var(--t-subtle)" }}>Royal Mail PDF Label Upload</p>
                             <p className="text-xs" style={{ color: "var(--t-muted)" }}>Available after payment is completed</p>
                           </div>
                         </div>
