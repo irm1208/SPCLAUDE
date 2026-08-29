@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Loader2, QrCode, Search, ChevronDown, ChevronUp, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Loader2, QrCode, Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
+// @ts-ignore — Vite resolves the bundled PDF.js worker URL at build time.
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 interface QrOrder {
   id: string;
@@ -82,26 +84,45 @@ function isPdf(src: string) {
     || /^data:[^,]+;base64,JVBE/i.test(src);
 }
 
-function dataToPdfBlobUrl(src: string): string {
-  if (!src.startsWith("data:")) return src;
-
+function dataUrlToBytes(src: string): Uint8Array {
   const comma = src.indexOf(",");
   if (comma === -1) throw new Error("Invalid PDF data URL");
 
   const metadata = src.slice(0, comma);
   const payload = src.slice(comma + 1);
   if (!metadata.toLowerCase().includes(";base64")) {
-    return URL.createObjectURL(new Blob([decodeURIComponent(payload)], { type: "application/pdf" }));
+    return new TextEncoder().encode(decodeURIComponent(payload));
   }
 
   const raw = atob(payload);
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  return bytes;
+}
+
+async function sourceToPdfBytes(src: string): Promise<Uint8Array> {
+  if (src.startsWith("data:")) return dataUrlToBytes(src);
+  const response = await fetch(src, { credentials: "include" });
+  if (!response.ok) throw new Error(`Could not load PDF (${response.status})`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function dataToPdfBlobUrl(src: string): string {
+  if (!src.startsWith("data:")) return src;
+  const bytes = dataUrlToBytes(src);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return URL.createObjectURL(new Blob([buffer], { type: "application/pdf" }));
 }
 
 function PdfPreview({ src, label, username }: { src: string; label: string; username: string }) {
   const [pdfSrc, setPdfSrc] = useState<string | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageCount, setPageCount] = useState(0);
+  const [rendering, setRendering] = useState(true);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let blobUrl: string | null = null;
@@ -116,23 +137,128 @@ function PdfPreview({ src, label, username }: { src: string; label: string; user
     };
   }, [src]);
 
+  useEffect(() => {
+    setPageNumber(1);
+  }, [src]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loadingTask: { destroy: () => Promise<void> } | null = null;
+    let renderTask: { cancel: () => void; promise: Promise<void> } | null = null;
+
+    async function renderPage() {
+      setRendering(true);
+      setRenderError(null);
+      try {
+        const [pdfjsLib, bytes] = await Promise.all([
+          import("pdfjs-dist"),
+          sourceToPdfBytes(src),
+        ]);
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        const task = pdfjsLib.getDocument({ data: bytes });
+        loadingTask = task;
+        const pdf = await task.promise;
+        if (cancelled) return;
+
+        setPageCount(pdf.numPages);
+        const safePageNumber = Math.min(pageNumber, pdf.numPages);
+        if (safePageNumber !== pageNumber) {
+          setPageNumber(safePageNumber);
+          return;
+        }
+
+        const page = await pdf.getPage(safePageNumber);
+        if (cancelled) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) throw new Error("PDF preview canvas is unavailable");
+
+        const baseViewport = page.getViewport({ scale: 1 });
+        const availableWidth = Math.max(280, previewRef.current?.clientWidth ?? 640);
+        const displayScale = Math.min(availableWidth / baseViewport.width, 1.75);
+        const viewport = page.getViewport({ scale: displayScale });
+        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+        renderTask = page.render({
+          canvas,
+          viewport,
+          transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+        });
+        await renderTask.promise;
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[GbQrCodesPanel] PDF preview failed", error);
+          setRenderError("The inline preview could not be rendered. You can still open or save the PDF below.");
+        }
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    }
+
+    renderPage();
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+      void loadingTask?.destroy();
+    };
+  }, [src, pageNumber]);
+
   const filename = `${label.toLowerCase().replace(/\s+/g, "-")}-qr-${stripAt(username)}.pdf`;
 
   return (
     <div className="w-full max-w-2xl space-y-2">
-      {pdfSrc ? (
-        <iframe
-          src={pdfSrc}
-          title={`${label} PDF for @${stripAt(username)}`}
-          className="w-full rounded-xl bg-white"
-          style={{ height: "min(64vh, 560px)", border: "1px solid rgba(27,58,122,0.15)" }}
-        />
-      ) : (
-        <div
-          className="flex items-center justify-center rounded-xl"
-          style={{ height: 180, background: "rgba(27,58,122,0.04)", border: "1px solid rgba(27,58,122,0.12)" }}
-        >
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: NAVY }} />
+      <div
+        ref={previewRef}
+        className="relative flex min-h-[220px] w-full items-start justify-center overflow-auto rounded-xl bg-white"
+        style={{ maxHeight: "68vh", border: "1px solid rgba(27,58,122,0.15)" }}
+      >
+        {renderError ? (
+          <div className="flex min-h-[220px] max-w-md items-center justify-center p-6 text-center">
+            <p className="text-sm" style={{ color: "#64748B" }}>{renderError}</p>
+          </div>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            aria-label={`${label} PDF preview for @${stripAt(username)}`}
+            className="block max-w-full"
+          />
+        )}
+        {rendering && !renderError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: NAVY }} />
+          </div>
+        )}
+      </div>
+      {pageCount > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPageNumber(page => Math.max(1, page - 1))}
+            disabled={pageNumber <= 1 || rendering}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+            style={{ color: NAVY, border: "1px solid rgba(27,58,122,0.18)" }}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Previous
+          </button>
+          <span className="text-xs font-semibold" style={{ color: "#64748B" }}>
+            Page {pageNumber} of {pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPageNumber(page => Math.min(pageCount, page + 1))}
+            disabled={pageNumber >= pageCount || rendering}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+            style={{ color: NAVY, border: "1px solid rgba(27,58,122,0.18)" }}
+          >
+            Next
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
       <div className="flex flex-wrap justify-center gap-2">
