@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Loader2, QrCode, Search, ChevronDown, ChevronUp, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw } from "lucide-react";
+import { Loader2, QrCode, Search, ChevronDown, ChevronUp, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
 
 interface QrOrder {
   id: string;
@@ -78,7 +78,86 @@ function ImageModal({ src, label, username, onClose }: { src: string; label: str
 }
 
 function isPdf(src: string) {
-  return src.startsWith("data:application/pdf") || src.startsWith("data:application/octet-stream");
+  return /^data:application\/(?:pdf|octet-stream)/i.test(src)
+    || /^data:[^,]+;base64,JVBE/i.test(src);
+}
+
+function dataToPdfBlobUrl(src: string): string {
+  if (!src.startsWith("data:")) return src;
+
+  const comma = src.indexOf(",");
+  if (comma === -1) throw new Error("Invalid PDF data URL");
+
+  const metadata = src.slice(0, comma);
+  const payload = src.slice(comma + 1);
+  if (!metadata.toLowerCase().includes(";base64")) {
+    return URL.createObjectURL(new Blob([decodeURIComponent(payload)], { type: "application/pdf" }));
+  }
+
+  const raw = atob(payload);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+}
+
+function PdfPreview({ src, label, username }: { src: string; label: string; username: string }) {
+  const [pdfSrc, setPdfSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let blobUrl: string | null = null;
+    try {
+      blobUrl = dataToPdfBlobUrl(src);
+      setPdfSrc(blobUrl);
+    } catch {
+      setPdfSrc(src);
+    }
+    return () => {
+      if (blobUrl?.startsWith("blob:")) URL.revokeObjectURL(blobUrl);
+    };
+  }, [src]);
+
+  const filename = `${label.toLowerCase().replace(/\s+/g, "-")}-qr-${stripAt(username)}.pdf`;
+
+  return (
+    <div className="w-full max-w-2xl space-y-2">
+      {pdfSrc ? (
+        <iframe
+          src={pdfSrc}
+          title={`${label} PDF for @${stripAt(username)}`}
+          className="w-full rounded-xl bg-white"
+          style={{ height: "min(64vh, 560px)", border: "1px solid rgba(27,58,122,0.15)" }}
+        />
+      ) : (
+        <div
+          className="flex items-center justify-center rounded-xl"
+          style={{ height: 180, background: "rgba(27,58,122,0.04)", border: "1px solid rgba(27,58,122,0.12)" }}
+        >
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: NAVY }} />
+        </div>
+      )}
+      <div className="flex flex-wrap justify-center gap-2">
+        <a
+          href={pdfSrc ?? src}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white"
+          style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          Open PDF
+        </a>
+        <a
+          href={pdfSrc ?? src}
+          download={filename}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold"
+          style={{ background: "rgba(27,58,122,0.08)", border: "1px solid rgba(27,58,122,0.18)", color: NAVY }}
+        >
+          <Download className="w-3.5 h-3.5" />
+          Save PDF
+        </a>
+      </div>
+    </div>
+  );
 }
 
 function QrImage({ src, label, username }: { src: string; label: string; username: string }) {
@@ -86,17 +165,9 @@ function QrImage({ src, label, username }: { src: string; label: string; usernam
 
   if (isPdf(src)) {
     return (
-      <div className="flex flex-col items-center gap-2">
+      <div className="flex w-full flex-col items-center gap-2">
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#94A3B8" }}>{label}</p>
-        <a
-          href={src}
-          download={`${label.toLowerCase().replace(/\s+/g, "-")}-qr-${stripAt(username)}.pdf`}
-          className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80"
-          style={{ background: "rgba(27,58,122,0.08)", color: NAVY, border: `1px solid rgba(27,58,122,0.15)` }}
-        >
-          <QrCode className="w-4 h-4 shrink-0" />
-          Download {label} QR (PDF)
-        </a>
+        <PdfPreview src={src} label={label} username={username} />
       </div>
     );
   }
@@ -418,7 +489,7 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         </div>
         <button
           type="button"
-          onClick={load}
+          onClick={() => load()}
           disabled={loading}
           className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
           style={{ background: "rgba(27,58,122,0.07)" }}
