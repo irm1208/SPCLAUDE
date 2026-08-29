@@ -26,4 +26,23 @@ describe("Sage AI endpoint fallback", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("retries with the configured fallback when the primary endpoint times out", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new DOMException("The operation was aborted due to timeout", "TimeoutError"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: "Recovered through CN" }, finish_reason: "stop" }],
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(callSageAI({
+      messages: [{ role: "user", content: "Hello Sage" }],
+      model: "test-model",
+      apiKey: "primary-token",
+      enableWebSearch: false,
+    })).resolves.toBe("Recovered through CN");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("cn.zhihuiai.top");
+  });
 });

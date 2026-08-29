@@ -2069,7 +2069,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   res.flushHeaders();
   const sseWrite = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-  // Step 4: Call Gemini — roll back the reserved slot if it fails
+  // Step 4: Call Sage AI — roll back the reserved slot if it fails
   let responseText: string;
   let responseChips: string[] = [];
   let responseSources: DiscussSource[] = [];
@@ -2104,7 +2104,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
     responseSources = result.sources;
     responseCharts = result.charts;
   } catch (err) {
-    console.error("[discuss] Gemini error:", err);
+    console.error("[discuss] Sage AI error:", err);
     await db
       .update(accountsTable)
       .set({ discussCount: sql`GREATEST(${accountsTable.discussCount} - 1, 0)` })
