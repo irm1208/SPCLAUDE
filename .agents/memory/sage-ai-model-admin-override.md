@@ -23,7 +23,7 @@ The Sage health chatbot's active model is stored in `site_config` under the key 
 
 **How to apply:** if the allowlist validation logic is ever refactored, keep custom-model lookups case-insensitive and deduped against the hardcoded list (an admin can't shadow/duplicate a hardcoded name); removing a custom model that is currently the active/saved model must fall back to the configured fallback model, never leave a dangling reference.
 
-**Provider/model rule:** Sage uses Nuoda as primary and Zhihuiai/CN as endpoint fallback; both must use `gpt-5.5`. Do not restore or infer Claude defaults from legacy names, comments, or old environment values.
+**Provider/model rule:** Sage uses Zhihuiai/CN as primary and Nuoda as endpoint fallback; both must use `gpt-5.5`. Do not restore or infer Claude defaults from legacy names, comments, or old environment values.
 
 **Why:** the user explicitly confirmed GPT-5.5 is the intended model on both providers. Stale Claude environment/default values caused diagnostics to report and test the wrong model even while the database setting was correct.
 

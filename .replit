@@ -67,8 +67,9 @@ APP_URL = "https://saltandpeps.co.uk"
 AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 SAGE_PROXY_MODEL = "gpt-5.5"
 RESEND_FROM_EMAIL = "support@saltandpeps.co.uk"
-SAGE_PROXY_BASE_URL = "https://api.nuoda.vip"
+SAGE_PROXY_BASE_URL = "https://cn.zhihuiai.top"
 SAGE_PROXY_FALLBACK_MODEL = "gpt-5.5"
+SAGE_PROXY_FALLBACK_BASE_URL = "https://api.nuoda.vip"
 
 
 [userenv.production]

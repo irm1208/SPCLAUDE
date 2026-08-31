@@ -359,7 +359,7 @@ router.get("/admin/sage-settings", async (req: Request, res: Response): Promise<
     availableModels: [...SAGE_AVAILABLE_MODELS, ...customModels],
     customModels,
     webSearchEnabled,
-    serverKeyConfigured: !!process.env.SAGE_PROXY_API_KEY,
+    serverKeyConfigured: !!process.env.SAGE_PROXY_FALLBACK_API_KEY,
     systemPromptTemplate,
     defaultSystemPromptTemplate: DEFAULT_SAGE_SYSTEM_PROMPT_TEMPLATE,
     isSystemPromptCustomised: systemPromptTemplate !== DEFAULT_SAGE_SYSTEM_PROMPT_TEMPLATE,
@@ -596,12 +596,14 @@ router.post("/admin/sage-settings/test", async (req: Request, res: Response): Pr
   const effectiveBaseUrl = typeof baseUrl === "string" ? baseUrl.trim() || undefined : undefined;
 
   // When an explicit authToken is supplied, always use that.
-  // Otherwise, if the caller is targeting the fallback URL (cn.zhihuiai.top),
-  // automatically use SAGE_PROXY_FALLBACK_API_KEY so the test actually reaches
-  // that endpoint with the right credentials instead of the primary key.
+  // Otherwise select the credential paired with the requested provider.
+  // The environment variable names are retained for compatibility even though
+  // Zhihuiai is now primary and Nuoda is the backup.
   let effectiveApiKey = typeof authToken === "string" ? authToken.trim() || undefined : undefined;
   if (!effectiveApiKey && effectiveBaseUrl?.includes("zhihuiai")) {
     effectiveApiKey = process.env.SAGE_PROXY_FALLBACK_API_KEY || undefined;
+  } else if (!effectiveApiKey && effectiveBaseUrl?.includes("nuoda")) {
+    effectiveApiKey = process.env.SAGE_PROXY_API_KEY || undefined;
   }
 
   try {

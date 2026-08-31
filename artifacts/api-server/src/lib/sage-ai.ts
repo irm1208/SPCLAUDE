@@ -1,10 +1,10 @@
 /**
  * Lightweight shim calling an OpenAI-compatible AI proxy.
  * Configured via env vars:
- *   SAGE_PROXY_API_KEY          – API key for the primary proxy
- *   SAGE_PROXY_BASE_URL         – primary base URL (default: https://api.nuoda.vip)
- *   SAGE_PROXY_FALLBACK_API_KEY – API key for the fallback proxy
- *   SAGE_PROXY_FALLBACK_BASE_URL– fallback base URL (default: https://cn.zhihuiai.top)
+ *   SAGE_PROXY_FALLBACK_API_KEY – Zhihuiai key (primary; legacy variable name)
+ *   SAGE_PROXY_BASE_URL         – primary base URL (default: https://cn.zhihuiai.top)
+ *   SAGE_PROXY_API_KEY          – Nuoda key (backup; legacy variable name)
+ *   SAGE_PROXY_FALLBACK_BASE_URL– backup base URL (default: https://api.nuoda.vip)
  *   SAGE_PROXY_MODEL            – primary model (default: gpt-5.5)
  *   SAGE_PROXY_FALLBACK_MODEL   – fallback model (default: gpt-5.5)
  *
@@ -18,9 +18,10 @@ import { searchWebForSage, searchPubMed, fetchUrlContent } from "./web-search";
 
 export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 
-const BASE_URL             = (process.env.SAGE_PROXY_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
-const FALLBACK_BASE_URL    = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
-const FALLBACK_API_KEY_ENV = "SAGE_PROXY_FALLBACK_API_KEY";
+const BASE_URL             = (process.env.SAGE_PROXY_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
+const FALLBACK_BASE_URL    = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
+const PRIMARY_API_KEY_ENV  = "SAGE_PROXY_FALLBACK_API_KEY";
+const FALLBACK_API_KEY_ENV = "SAGE_PROXY_API_KEY";
 const DEFAULT_MODEL        = process.env.SAGE_PROXY_MODEL ?? "gpt-5.5";
 const FALLBACK_MODEL       = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "gpt-5.5";
 
@@ -494,8 +495,8 @@ export async function callSageAIStreamWithTools({
   baseUrl: baseUrlOverride, temperature, onToken, onStatus,
 }: SageAIParams & { onToken: (text: string) => void; onStatus?: (msg: string) => void }): Promise<string> {
   if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
-  const apiKey     = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
-  if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const apiKey     = apiKeyOverride?.trim() || process.env[PRIMARY_API_KEY_ENV];
+  if (!apiKey) throw new Error(`${PRIMARY_API_KEY_ENV} is not set`);
   const baseUrl    = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
   const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;
@@ -543,8 +544,8 @@ export async function callSageAIStream({
   baseUrl: baseUrlOverride, temperature, onToken,
 }: SageAIParams & { onToken: (text: string) => void }): Promise<string> {
   if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
-  const apiKey      = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
-  if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const apiKey      = apiKeyOverride?.trim() || process.env[PRIMARY_API_KEY_ENV];
+  if (!apiKey) throw new Error(`${PRIMARY_API_KEY_ENV} is not set`);
   const baseUrl     = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
   const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;
@@ -583,8 +584,8 @@ export async function callSageAI({
   baseUrl: baseUrlOverride, enableWebSearch = true, temperature, jsonMode,
 }: SageAIParams): Promise<string> {
   if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
-  const apiKey      = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
-  if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
+  const apiKey      = apiKeyOverride?.trim() || process.env[PRIMARY_API_KEY_ENV];
+  if (!apiKey) throw new Error(`${PRIMARY_API_KEY_ENV} is not set`);
   const baseUrl     = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
   const fallbackUrl = baseUrlOverride?.trim() ? null : FALLBACK_BASE_URL;
   const fallbackKey = process.env[FALLBACK_API_KEY_ENV] || apiKey;

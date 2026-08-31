@@ -625,7 +625,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
             <p className="text-[11px] mt-1" style={{ color: "var(--adm-muted)" }}>
               Optional. Stored only in this browser's local storage — never saved on the server or shared with
               other admins. When set, they're sent along with your own test messages below (equivalent to the
-              server's <code>SAGE_PROXY_API_KEY</code> / <code>SAGE_PROXY_BASE_URL</code>), letting you test with
+              server's configured Sage provider credentials), letting you test with
               your personal Anthropic-compatible credentials without touching the shared server config.
             </p>
           </div>
