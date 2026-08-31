@@ -4,7 +4,7 @@ import { siteConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
-import { callSageAI, getActiveSageModel, getSageFallbackModel, SAGE_MODEL_CONFIG_KEY, type SageMessage } from "../lib/sage-ai";
+import { callSageAI, getActiveSageModel, getSageFallbackModel, isSageModelAllowed, SAGE_MODEL_CONFIG_KEY, type SageMessage } from "../lib/sage-ai";
 import { searchWebForSage } from "../lib/web-search";
 import type { Request, Response } from "express";
 
@@ -22,29 +22,6 @@ export const SAGE_AVAILABLE_MODELS = [
   "qwen-coder-turbo-0919",
   "qwen-coder-turbo-latest",
   "qwen3-coder-plus",
-  "claude-3-5-haiku-20241022",
-  "claude-3-7-sonnet-20250219",
-  "claude-3-7-sonnet-20250219-thinking",
-  "claude-haiku-4-5-20251001",
-  "claude-haiku-4-5-20251001-thinking",
-  "claude-opus-4-1-20250805",
-  "claude-opus-4-1-20250805-thinking",
-  "claude-opus-4-20250514",
-  "claude-opus-4-20250514-thinking",
-  "claude-opus-4-5-20251101",
-  "claude-opus-4-5-20251101-thinking",
-  "claude-opus-4-6",
-  "claude-opus-4-6-thinking",
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-opus-4-8-thinking",
-  "claude-sonnet-4-20250514",
-  "claude-sonnet-4-20250514-thinking",
-  "claude-sonnet-4-5-20250929",
-  "claude-sonnet-4-5-20250929-thinking",
-  "claude-sonnet-4-6",
-  "claude-sonnet-4-6-thinking",
-  "claude-sonnet-5",
   "deepseek-v4-flash",
   "deepseek-v4-pro",
   "glm-4.6",
@@ -128,7 +105,9 @@ async function getCustomModels(): Promise<string[]> {
   if (!row?.value) return [];
   try {
     const parsed = JSON.parse(row.value);
-    return Array.isArray(parsed) ? parsed.filter((m): m is string => typeof m === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((m): m is string => typeof m === "string" && isSageModelAllowed(m))
+      : [];
   } catch {
     return [];
   }
@@ -402,6 +381,10 @@ router.post("/admin/sage-settings/models", async (req: Request, res: Response): 
   }
   if (trimmed.length > MAX_MODEL_NAME_LENGTH) {
     res.status(400).json({ error: "Model name is too long" });
+    return;
+  }
+  if (!isSageModelAllowed(trimmed)) {
+    res.status(400).json({ error: "That model provider is not supported by Sage" });
     return;
   }
 

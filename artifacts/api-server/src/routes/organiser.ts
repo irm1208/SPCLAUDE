@@ -28,7 +28,7 @@ import { notifyUser, notifyUserFromTemplate, sendTelegramMessage, sendAdminFromT
 import { GoogleGenAI } from "../lib/google-genai";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 import { callSageAI, type ContentPart } from "../lib/sage-ai";
-import { toClaudeContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
+import { toSageContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 
 const router: IRouter = Router();
@@ -1933,7 +1933,7 @@ Rules:
       }
       const rawBase64 = fileBase64!.replace(/^data:[^;]+;base64,/, "");
       const filePart: LabFilePart = { inlineData: { mimeType: mimeType!, data: rawBase64 } };
-      const imageParts = await toClaudeContentParts([filePart]);
+      const imageParts = await toSageContentParts([filePart]);
       if (imageParts.length === 0) {
         res.status(502).json({ error: "Failed to process the uploaded file for extraction" });
         return;

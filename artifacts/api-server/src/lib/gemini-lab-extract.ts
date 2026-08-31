@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 /**
  * Rasterizes the first page of a PDF to a PNG using poppler's `pdftoppm`.
  *
- * The Sage/Claude proxy does not support Anthropic's native `document`
+ * The Sage proxy does not support native PDF `document`
  * content block (verified empirically: the model reports "no document
  * attached" even though the block is present in the request body). Real
  * PDFs only reach this pipeline via Uzorak's Google-Drive `report_url`
@@ -38,8 +38,8 @@ async function rasterizePdfFirstPage(pdfBuffer: Buffer): Promise<{ mimeType: str
   }
 }
 
-/** Converts an in-memory image/PDF part into an Anthropic-format content block for the Sage/Claude proxy. */
-export async function toClaudeContentParts(parts: LabFilePart[]): Promise<ContentPart[]> {
+/** Converts an in-memory image/PDF part into image content for the Sage proxy. */
+export async function toSageContentParts(parts: LabFilePart[]): Promise<ContentPart[]> {
   const out: ContentPart[] = [];
   for (const { inlineData: { mimeType, data } } of parts) {
     if (mimeType === "application/pdf") {
@@ -204,7 +204,7 @@ async function fetchUzorakOrder(publicId: string): Promise<Record<string, unknow
 
 /**
  * Given an already-fetched Uzorak order, try to return a downloadable file
- * (snapshot JPEG or Google Drive PDF) for Claude.
+ * (snapshot JPEG or Google Drive PDF) for Sage.
  * Returns null when no file is available (e.g. snapshot_base64 is null and
  * no report_url exists — common when the LCMS cert is rendered client-side).
  */
@@ -248,7 +248,7 @@ async function resolveUzorakFile(
 }
 
 /**
- * Parse a Uzorak Supabase order directly into ExtractedCoAData without Claude.
+ * Parse a Uzorak Supabase order directly into ExtractedCoAData without AI.
  * Used as a fallback when no image/PDF is available (common: LCMS certs are
  * generated client-side from structured data not exposed by the public API).
  * Sets confidence:"medium" since actual measured values (purity %, HPLC mass)
@@ -334,20 +334,20 @@ function parseUzorakOrder(
 /**
  * Full Uzorak extraction pipeline:
  *  1. Fetch order from Supabase.
- *  2. If a snapshot or Drive PDF is available → send to Claude.
- *  3. Otherwise → parse structured metadata directly (no Claude call, confidence:"medium").
+ *  2. If a snapshot or Drive PDF is available → send to Sage.
+ *  3. Otherwise → parse structured metadata directly (no AI call, confidence:"medium").
  */
 async function extractUzorakCoAData(publicId: string): Promise<ExtractedCoAData | null> {
   const order = await fetchUzorakOrder(publicId);
   if (!order) return null;
 
-  // Attempt Claude vision extraction if a file is available
+  // Attempt Sage vision extraction if a file is available
   const file = await resolveUzorakFile(order);
   if (file) {
-    console.log("[lab-extract] Uzorak: running Claude extraction on file for", publicId);
-    const claudeResult = await runClaudeExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
-    if (claudeResult) return claudeResult;
-    console.warn("[lab-extract] Uzorak: Claude extraction failed, falling back to metadata for", publicId);
+    console.log("[lab-extract] Uzorak: running Sage extraction on file for", publicId);
+    const sageResult = await runSageExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
+    if (sageResult) return sageResult;
+    console.warn("[lab-extract] Uzorak: Sage extraction failed, falling back to metadata for", publicId);
   } else {
     console.log("[lab-extract] Uzorak: no file available, parsing metadata for", publicId);
   }
@@ -394,7 +394,7 @@ export async function downloadLabFile(url: string): Promise<{ data: string; mime
 
     // Only override ambiguous octet-stream responses using the URL extension.
     // Never override an explicit server MIME type (e.g. text/html → pdf would
-    // silently send HTML to Claude as if it were a PDF document).
+    // silently send HTML to Sage as if it were a PDF document).
     if (mimeType === "application/octet-stream") {
       if (url.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
       if (/\.(png)$/i.test(url)) mimeType = "image/png";
@@ -636,7 +636,7 @@ export async function fetchLabPageImages(pageUrl: string): Promise<string[]> {
   return [];
 }
 
-// ── Claude extraction — universal (all labs, all URL types) ──────────────────
+// ── Sage extraction — universal (all labs, all URL types) ────────────────────
 
 export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<ExtractedCoAData | null> {
   // ── Uzorak: intercept before generic flow ────────────────────────────────────
@@ -663,17 +663,17 @@ export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<Extract
   pageUrl = resolveCanonicalLabUrl(pageUrl);
   const urlType = detectLabUrlType(pageUrl);
 
-  // For direct PDF or image URLs, download the file and send inline to Claude
+  // For direct PDF or image URLs, download the file and send it to Sage
   if (urlType === "pdf" || urlType === "image") {
     const file = await downloadLabFile(pageUrl);
     if (!file) {
       console.warn("[lab-extract] Could not download file:", pageUrl);
       return null;
     }
-    return runClaudeExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
+    return runSageExtraction([{ inlineData: { mimeType: file.mimeType, data: file.data } }]);
   }
 
-  // Website URL — scrape images then send to Claude
+  // Website URL — scrape images then send them to Sage
   const imageUrls = await resolvePreviewInfo(pageUrl).then(p => p.type === "image" ? p.images : []);
   if (imageUrls.length === 0) {
     console.warn("[lab-extract] No images found for URL:", pageUrl);
@@ -687,10 +687,10 @@ export async function extractCoADataFromAnyUrl(pageUrl: string): Promise<Extract
   }
 
   if (imageParts.length === 0) return null;
-  return runClaudeExtraction(imageParts);
+  return runSageExtraction(imageParts);
 }
 
-// ── Claude extraction — from raw buffer (PDF/image upload) ───────────────────
+// ── Sage extraction — from raw buffer (PDF/image upload) ─────────────────────
 
 /**
  * Extract CoA data from an in-memory buffer (e.g. a user-uploaded PDF).
@@ -706,7 +706,7 @@ export async function extractCoADataFromBuffer(buf: Buffer, mimeType: string): P
     return null;
   }
   const data = buf.toString("base64");
-  return runClaudeExtraction([{ inlineData: { mimeType, data } }]);
+  return runSageExtraction([{ inlineData: { mimeType, data } }]);
 }
 
 /**
@@ -731,10 +731,10 @@ export async function extractCoADataFromBuffers(
     parts.push({ inlineData: { mimeType: f.mimeType, data: f.buf.toString("base64") } });
   }
   if (parts.length === 0) return null;
-  return runClaudeExtraction(parts);
+  return runSageExtraction(parts);
 }
 
-// ── Claude extraction — Janoshik legacy (unchanged behaviour) ─────────────────
+// ── Sage extraction — Janoshik legacy (unchanged behaviour) ──────────────────
 
 export async function extractCoAData(pageUrl: string): Promise<ExtractedCoAData | null> {
   if (!isAllowedUrl(pageUrl)) {
@@ -773,7 +773,7 @@ Rules:
 - If you find no batch codes, return: []`;
 
 /**
- * Extract all unique batch/lot numbers from one or more uploaded images using Claude vision.
+ * Extract all unique batch/lot numbers from one or more uploaded images using Sage vision.
  * Deduplicates case-insensitively across all images in the batch.
  */
 export async function extractBatchNumbersFromImages(
@@ -785,7 +785,7 @@ export async function extractBatchNumbersFromImages(
     .map(f => ({ inlineData: { mimeType: f.mimeType, data: f.data.toString("base64") } }));
   if (imageParts.length === 0) return [];
   try {
-    const contentParts = await toClaudeContentParts(imageParts);
+    const contentParts = await toSageContentParts(imageParts);
     if (contentParts.length === 0) return [];
     const text = (await callSageAI({
       system: JSON_EXTRACTION_SYSTEM,
@@ -799,8 +799,7 @@ export async function extractBatchNumbersFromImages(
       jsonMode: true,
     })).trim();
     if (!text) return [];
-    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseSageJsonResponse(text);
     if (!Array.isArray(parsed)) return [];
     // Deduplicate case-insensitively, preserving first-seen casing
     const seen = new Set<string>();
@@ -819,7 +818,7 @@ export async function extractBatchNumbersFromImages(
   }
 }
 
-// ── Shared Claude (Sage proxy) caller ────────────────────────────────────────
+// ── Shared Sage proxy caller ──────────────────────────────────────────────────
 
 export type LabFilePart = { inlineData: { mimeType: string; data: string } };
 
@@ -828,10 +827,29 @@ const JSON_EXTRACTION_SYSTEM =
   "You MUST respond with ONLY a valid JSON object — no preamble, no explanation, no 'I am', no 'I'm', no markdown, no code fences. " +
   "Output ONLY the raw JSON object starting with '{' and ending with '}'. Any other output will break the pipeline.";
 
-async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
+export function parseSageJsonResponse(text: string): unknown {
+  const cleaned = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (originalError) {
+    const starts = [cleaned.indexOf("{"), cleaned.indexOf("[")].filter(index => index >= 0);
+    if (starts.length === 0) throw originalError;
+    const start = Math.min(...starts);
+    const end = cleaned[start] === "{" ? cleaned.lastIndexOf("}") : cleaned.lastIndexOf("]");
+    if (end <= start) throw originalError;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
+async function runSageExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData | null> {
   if (parts.length === 0) return null;
   try {
-    const contentParts = await toClaudeContentParts(parts);
+    const contentParts = await toSageContentParts(parts);
     if (contentParts.length === 0) return null;
     const text = (await callSageAI({
       system: JSON_EXTRACTION_SYSTEM,
@@ -845,8 +863,7 @@ async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoADa
       jsonMode: true,
     })).trim();
     if (!text) return null;
-    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseSageJsonResponse(text) as Record<string, unknown>;
     // Parse blend_components: expect [{name, mg, unit?, purity_pct?}] or null
     let blendComponents: Array<{ name: string; mg: number; unit?: string; purityPct?: number }> | null = null;
     if (Array.isArray(parsed.blend_components) && parsed.blend_components.length > 0) {
@@ -867,11 +884,20 @@ async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoADa
         .filter((c: { name: string; mg: number }) => c.name && isFinite(c.mg));
       if (items.length > 0) blendComponents = items;
     }
+    const testType = typeof parsed.test_type === "string" && TEST_TYPES.includes(parsed.test_type)
+      ? parsed.test_type
+      : null;
+    const productCategory = typeof parsed.product_category === "string" && PRODUCT_CATEGORIES.includes(parsed.product_category)
+      ? parsed.product_category
+      : null;
+    const confidence = parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
+      ? parsed.confidence
+      : "low";
     return {
-      purityPct: parsed.purity_pct != null ? parseFloat(parsed.purity_pct) : null,
-      mgAmount: parsed.mg_amount != null ? parseFloat(parsed.mg_amount) : null,
+      purityPct: parsed.purity_pct != null ? parseFloat(String(parsed.purity_pct)) : null,
+      mgAmount: parsed.mg_amount != null ? parseFloat(String(parsed.mg_amount)) : null,
       massUnit: (parsed.mass_unit === "IU" || parsed.mass_unit === "iu") ? "IU" : "mg",
-      endotoxinEuMg: parsed.endotoxin_eu_mg != null ? parseFloat(parsed.endotoxin_eu_mg) : null,
+      endotoxinEuMg: parsed.endotoxin_eu_mg != null ? parseFloat(String(parsed.endotoxin_eu_mg)) : null,
       sterilityPass: parsed.sterility_pass != null ? Boolean(parsed.sterility_pass) : null,
       heavyMetalAs: parsed.heavy_metal_as ? String(parsed.heavy_metal_as).trim() : null,
       heavyMetalCd: parsed.heavy_metal_cd ? String(parsed.heavy_metal_cd).trim() : null,
@@ -879,10 +905,10 @@ async function runClaudeExtraction(parts: LabFilePart[]): Promise<ExtractedCoADa
       heavyMetalHg: parsed.heavy_metal_hg ? String(parsed.heavy_metal_hg).trim() : null,
       batchCode: parsed.batch_code ? String(parsed.batch_code).trim() : null,
       testDate: parsed.test_date ? String(parsed.test_date).trim() : null,
-      testType: TEST_TYPES.includes(parsed.test_type) ? parsed.test_type : null,
-      productCategory: PRODUCT_CATEGORIES.includes(parsed.product_category) ? parsed.product_category : null,
+      testType,
+      productCategory,
       compoundName: parsed.compound_name ? String(parsed.compound_name).trim() : null,
-      confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
+      confidence,
       rawText: parsed.raw_text ? String(parsed.raw_text).slice(0, 200) : null,
       blendComponents,
     };

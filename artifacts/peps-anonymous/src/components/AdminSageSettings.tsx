@@ -32,7 +32,6 @@ const PROXY_PRESETS = [
 
 function familyOf(model: string): string {
   const m = model.toLowerCase();
-  if (m.startsWith("claude")) return "Claude";
   if (m.startsWith("gpt")) return "GPT";
   if (m.startsWith("qwen") || m.startsWith("qwq")) return "Qwen";
   if (m.startsWith("glm")) return "GLM";
@@ -42,7 +41,7 @@ function familyOf(model: string): string {
 }
 
 function groupModels(models: string[], customModels: string[] = []): Array<{ family: string; models: string[] }> {
-  const order = ["Claude", "GPT", "Qwen", "GLM", "Kimi", "DeepSeek", "Custom", "Other"];
+  const order = ["GPT", "Qwen", "GLM", "Kimi", "DeepSeek", "Custom", "Other"];
   const customSet = new Set(customModels);
   const map = new Map<string, string[]>();
   for (const m of models) {
@@ -459,7 +458,7 @@ export default function AdminSageSettings({ secret }: { secret: string }) {
               value={customModelInput}
               onChange={e => { setCustomModelInput(e.target.value); if (customModelError) setCustomModelError(""); }}
               onKeyDown={handleCustomModelKey}
-              placeholder="e.g. claude-opus-4-9"
+              placeholder="e.g. gpt-5.5"
               autoComplete="off"
               className="flex-1 h-9 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-orange-400/50 font-mono"
               style={{ background: "var(--adm-content)", border: "1px solid var(--adm-border)", color: "var(--adm-text)" }}

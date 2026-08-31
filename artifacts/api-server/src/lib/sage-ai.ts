@@ -5,8 +5,8 @@
  *   SAGE_PROXY_BASE_URL         – primary base URL (default: https://api.nuoda.vip)
  *   SAGE_PROXY_FALLBACK_API_KEY – API key for the fallback proxy
  *   SAGE_PROXY_FALLBACK_BASE_URL– fallback base URL (default: https://cn.zhihuiai.top)
- *   SAGE_PROXY_MODEL            – primary model (default: claude-opus-4-7)
- *   SAGE_PROXY_FALLBACK_MODEL   – fallback model when primary has no tokens
+ *   SAGE_PROXY_MODEL            – primary model (default: gpt-5.5)
+ *   SAGE_PROXY_FALLBACK_MODEL   – fallback model (default: gpt-5.5)
  *
  * `callSageAI` also accepts per-call `apiKey`/`baseUrl` overrides (admin test-chat panel).
  */
@@ -21,8 +21,12 @@ export const SAGE_MODEL_CONFIG_KEY = "sage_ai_model";
 const BASE_URL             = (process.env.SAGE_PROXY_BASE_URL ?? "https://api.nuoda.vip").replace(/\/$/, "");
 const FALLBACK_BASE_URL    = (process.env.SAGE_PROXY_FALLBACK_BASE_URL ?? "https://cn.zhihuiai.top").replace(/\/$/, "");
 const FALLBACK_API_KEY_ENV = "SAGE_PROXY_FALLBACK_API_KEY";
-const DEFAULT_MODEL        = process.env.SAGE_PROXY_MODEL ?? "claude-opus-4-7";
-const FALLBACK_MODEL       = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "claude-sonnet-4-5-20250929";
+const DEFAULT_MODEL        = process.env.SAGE_PROXY_MODEL ?? "gpt-5.5";
+const FALLBACK_MODEL       = process.env.SAGE_PROXY_FALLBACK_MODEL ?? "gpt-5.5";
+
+export function isSageModelAllowed(model: string): boolean {
+  return !model.trim().toLowerCase().startsWith("claude");
+}
 
 // ─── Public types (kept identical for callers) ────────────────────────────────
 
@@ -58,21 +62,30 @@ interface OaiToolCall {
   function: { name: string; arguments: string };
 }
 
+type OaiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 type OaiMessage =
   | { role: "system";    content: string }
-  | { role: "user";      content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: OaiToolCall[] }
+  | { role: "user";      content: string | OaiContentPart[] }
+  | { role: "assistant"; content: string | OaiContentPart[] | null; tool_calls?: OaiToolCall[] }
   | { role: "tool";      tool_call_id: string; content: string };
 
-/** Convert a SageMessage (which may have Anthropic content parts) to an OpenAI message. */
+/** Convert Sage content parts to the OpenAI-compatible text/image format. */
 function toOaiMsg(m: SageMessage): OaiMessage {
   if (typeof m.content === "string") return { role: m.role, content: m.content };
-  // Collapse content parts — extract text, ignore tool_use/tool_result (those are internal)
-  const text = (m.content as ContentPart[])
-    .filter((p): p is TextContentPart => p.type === "text")
-    .map(p => p.text)
-    .join("\n");
-  return { role: m.role, content: text };
+  const content = (m.content as ContentPart[]).flatMap<OaiContentPart>(part => {
+    if (part.type === "text") return [{ type: "text", text: part.text }];
+    if (part.type === "image") {
+      return [{
+        type: "image_url",
+        image_url: { url: `data:${part.source.media_type};base64,${part.source.data}` },
+      }];
+    }
+    return [];
+  });
+  return { role: m.role, content };
 }
 
 /** Prepend system message and convert caller messages to OpenAI format. */
@@ -139,7 +152,7 @@ const SAGE_TOOLS_OAI = [WEB_SEARCH_TOOL_OAI, FETCH_URL_TOOL_OAI];
 export async function getActiveSageModel(): Promise<string> {
   try {
     const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, SAGE_MODEL_CONFIG_KEY));
-    if (row?.value?.trim()) return row.value.trim();
+    if (row?.value?.trim() && isSageModelAllowed(row.value)) return row.value.trim();
   } catch { /* fall through */ }
   return DEFAULT_MODEL;
 }
@@ -480,6 +493,7 @@ export async function callSageAIStreamWithTools({
   system, messages, maxTokens = 1200, model, apiKey: apiKeyOverride,
   baseUrl: baseUrlOverride, temperature, onToken, onStatus,
 }: SageAIParams & { onToken: (text: string) => void; onStatus?: (msg: string) => void }): Promise<string> {
+  if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
   const apiKey     = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl    = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
@@ -528,6 +542,7 @@ export async function callSageAIStream({
   system, messages, maxTokens = 1200, model, apiKey: apiKeyOverride,
   baseUrl: baseUrlOverride, temperature, onToken,
 }: SageAIParams & { onToken: (text: string) => void }): Promise<string> {
+  if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
   const apiKey      = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl     = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
@@ -567,6 +582,7 @@ export async function callSageAI({
   system, messages, maxTokens = 8192, model, apiKey: apiKeyOverride,
   baseUrl: baseUrlOverride, enableWebSearch = true, temperature, jsonMode,
 }: SageAIParams): Promise<string> {
+  if (model && !isSageModelAllowed(model)) throw new Error("Unsupported Sage AI model");
   const apiKey      = apiKeyOverride?.trim() || process.env.SAGE_PROXY_API_KEY;
   if (!apiKey) throw new Error("SAGE_PROXY_API_KEY is not set");
   const baseUrl     = (baseUrlOverride?.trim() || BASE_URL).replace(/\/$/, "");
