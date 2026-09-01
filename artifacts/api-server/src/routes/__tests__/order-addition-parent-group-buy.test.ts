@@ -11,4 +11,14 @@ describe("order addition group-buy authority", () => {
       'error: "Addition must belong to the same group buy as the original order"',
     );
   });
+
+  it("merges a validated addition into the parent before normal order insertion", () => {
+    const mergeBranch = routeSource.indexOf("if (additionParent) {");
+    const normalInsert = routeSource.indexOf(".insert(ordersTable)");
+
+    expect(mergeBranch).toBeGreaterThan(-1);
+    expect(routeSource).toContain("mergedIntoExistingOrder: true");
+    expect(mergeBranch).toBeLessThan(normalInsert);
+    expect(routeSource).not.toContain("additionOfOrderId: additionParent.id");
+  });
 });

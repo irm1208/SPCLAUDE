@@ -11,6 +11,7 @@ import {
   customersTable,
   accountGroupBuysTable,
   accountsTable,
+  productsTable,
   groupBuysTable,
   groupBuyProductsTable,
   gbTestingRoundsTable,
@@ -33,6 +34,7 @@ import { getJwtSecret } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
 import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
+import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
@@ -419,6 +421,15 @@ router.post("/orders", async (req, res): Promise<void> => {
   // Wholesale orders can never be additions — ignore a stale draft field silently.
   let additionParent: typeof ordersTable.$inferSelect | null = null;
   if (!isWholesaleOrder && clientAdditionOfOrderId != null && clientAdditionOfOrderId !== "") {
+    const sessionUsername = getAccountFromCookie(req);
+    if (!sessionUsername) {
+      res.status(401).json({ error: "Authentication required to add items to an existing order" });
+      return;
+    }
+    if (!safeEqual(sessionUsername.replace(/^@/, "").toLowerCase(), tg.replace(/^@/, "").toLowerCase())) {
+      res.status(403).json({ error: "You can only add items to your own order" });
+      return;
+    }
     const parentId = String(clientAdditionOfOrderId).slice(0, 64);
     const [parent] = await db.select().from(ordersTable).where(eq(ordersTable.id, parentId));
     if (!parent || parent.deletedAt || !safeEqual(parent.telegramUsername.toLowerCase(), tg)) {
@@ -616,6 +627,32 @@ router.post("/orders", async (req, res): Promise<void> => {
     if (!gb || (gb.status !== "active" && !gb.allowExtraOrders && !membership.allowExtraOrder)) {
       res.status(403).json({ error: "This group buy is not currently accepting orders" });
       return;
+    }
+
+    const canonicalProducts = await db
+      .select({
+        productId: productsTable.id,
+        productName: productsTable.name,
+        price: productsTable.price,
+        priceOverride: groupBuyProductsTable.priceOverride,
+      })
+      .from(groupBuyProductsTable)
+      .innerJoin(productsTable, eq(groupBuyProductsTable.productId, productsTable.id))
+      .where(and(
+        eq(groupBuyProductsTable.groupBuyId, normalizedGroupBuyId),
+        eq(groupBuyProductsTable.active, true),
+        eq(productsTable.active, true),
+        inArray(groupBuyProductsTable.productId, productIds),
+      ));
+    const canonicalById = new Map(canonicalProducts.map(product => [product.productId, product]));
+    if (canonicalById.size !== productIds.length) {
+      res.status(400).json({ error: "One or more products are not available in this group buy" });
+      return;
+    }
+    for (const item of clientLineItems) {
+      const canonical = canonicalById.get(item.productId)!;
+      item.productName = canonical.productName;
+      item.unitPrice = parseFloat(String(canonical.priceOverride ?? canonical.price));
     }
 
     // Enforce contribution rules: only allowed when GB has testing enabled, and must be exactly $15
@@ -860,6 +897,230 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const grandTotal = Number(Math.max(0, baseGrandTotal + gbAdminFee + gbKitFees - couponDiscount).toFixed(2));
 
+  if (additionParent) {
+    const sessionUsername = getAccountFromCookie(req);
+    const mergeOutcome = await db.transaction(async (tx) => {
+      const [lockedParent] = await tx
+        .select()
+        .from(ordersTable)
+        .where(eq(ordersTable.id, additionParent.id))
+        .for("update");
+
+      if (
+        !lockedParent
+        || lockedParent.deletedAt
+        || !safeEqual(lockedParent.telegramUsername.toLowerCase(), tg)
+        || lockedParent.paymentStatus !== "confirmed"
+        || lockedParent.status === "Cancelled"
+        || lockedParent.additionOfOrderId
+        || lockedParent.orderType === "wholesale"
+        || lockedParent.orderType === "wholesale_shared"
+        || ["verifying", "pending_confirmation"].includes(lockedParent.balancePaymentStatus ?? "")
+      ) {
+        return { error: "The original paid order changed. Please refresh and try again." } as const;
+      }
+
+      if ((lockedParent.groupBuyId ?? null) !== normalizedGroupBuyId) {
+        return { error: "The original order is no longer part of this group buy." } as const;
+      }
+
+      const existingItems = await tx
+        .select()
+        .from(orderLineItemsTable)
+        .where(eq(orderLineItemsTable.orderId, lockedParent.id));
+
+      const mergedItems = [...existingItems];
+      for (const item of clientLineItems as Array<{
+        productId: string;
+        productName: string;
+        quantity: number;
+        unitPrice: number;
+      }>) {
+        const quantity = parseFloat(String(item.quantity));
+        const unitPrice = parseFloat(String(item.unitPrice));
+        const matchingItem = mergedItems.find(existing =>
+          existing.productId === item.productId
+          && Math.abs(parseFloat(String(existing.unitPrice)) - unitPrice) < 0.001
+        );
+
+        if (matchingItem) {
+          const mergedQuantity = Number((parseFloat(String(matchingItem.quantity)) + quantity).toFixed(2));
+          const mergedLineTotal = Number((mergedQuantity * unitPrice).toFixed(2));
+          const [updatedItem] = await tx
+            .update(orderLineItemsTable)
+            .set({
+              quantity: mergedQuantity.toFixed(2),
+              lineTotal: mergedLineTotal.toFixed(2),
+            })
+            .where(eq(orderLineItemsTable.id, matchingItem.id))
+            .returning();
+          Object.assign(matchingItem, updatedItem);
+        } else {
+          const [insertedItem] = await tx
+            .insert(orderLineItemsTable)
+            .values({
+              id: randomUUID(),
+              orderId: lockedParent.id,
+              productId: item.productId,
+              productName: String(item.productName).trim().slice(0, MAX_PRODUCT_NAME_LENGTH),
+              quantity: quantity.toFixed(2),
+              unitPrice: unitPrice.toFixed(2),
+              lineTotal: (quantity * unitPrice).toFixed(2),
+            })
+            .returning();
+          mergedItems.push(insertedItem);
+        }
+      }
+
+      let appliedCredits = 0;
+      if (
+        sessionUsername
+        && typeof clientCreditsApplied === "number"
+        && clientCreditsApplied > 0
+      ) {
+        const [account] = await tx
+          .select({ credits: accountsTable.credits })
+          .from(accountsTable)
+          .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()))
+          .for("update");
+        if (account?.credits) {
+          appliedCredits = Math.min(
+            account.credits,
+            Math.round(clientCreditsApplied),
+            Math.floor(grandTotal),
+          );
+          if (appliedCredits > 0) {
+            await tx
+              .update(accountsTable)
+              .set({ credits: account.credits - appliedCredits })
+              .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()));
+            await tx.insert(creditTransactionsTable).values({
+              accountUsername: sessionUsername.toLowerCase(),
+              amount: -appliedCredits,
+              reason: `Credits applied to order #${lockedParent.code}`,
+              orderId: lockedParent.id,
+              adminUsername: null,
+              createdAt: new Date(),
+            });
+          }
+        }
+      }
+
+      const addedAmountDue = Number(Math.max(0, grandTotal - appliedCredits).toFixed(2));
+      const totals = calculateAdditionMerge({
+        parentProductSubtotal: parseFloat(String(lockedParent.productSubtotal ?? "0")),
+        parentGrandTotal: parseFloat(String(lockedParent.grandTotal ?? "0")),
+        parentAmountDue: parseFloat(String(lockedParent.amountDue ?? "0")),
+        parentTip: parseFloat(String(lockedParent.tip ?? "0")),
+        parentTestingContribution: parseFloat(String(lockedParent.testingContribution ?? "0")),
+        addedProductSubtotal: productSubtotal,
+        addedTotal: grandTotal,
+        addedAmountDue,
+        addedTip: tip,
+        addedTestingContribution: normalizedContribution,
+      });
+
+      const [updatedParent] = await tx
+        .update(ordersTable)
+        .set({
+          productSubtotal: totals.productSubtotal.toFixed(2),
+          grandTotal: totals.grandTotal.toFixed(2),
+          amountDue: totals.amountDue.toFixed(2),
+          tip: totals.tip.toFixed(2),
+          testingContribution: totals.testingContribution.toFixed(2),
+          couponCode: lockedParent.couponCode ?? appliedCouponCode,
+          couponDiscount: (
+            parseFloat(String(lockedParent.couponDiscount ?? "0")) + couponDiscount
+          ).toFixed(2),
+          creditsApplied: (lockedParent.creditsApplied ?? 0) + appliedCredits,
+          balancePaymentStatus: totals.amountDue > 0 ? "unpaid" : null,
+          balanceTxHash: null,
+          balanceScreenshot: null,
+          balanceConfirmedAt: null,
+        })
+        .where(eq(ordersTable.id, lockedParent.id))
+        .returning();
+
+      if (resolvedCouponId && appliedCouponCode) {
+        await tx.insert(couponRedemptionsTable).values({
+          id: randomUUID(),
+          couponId: resolvedCouponId,
+          couponCode: appliedCouponCode,
+          orderId: lockedParent.id,
+          telegramUsername: tg,
+          discountApplied: couponDiscount.toFixed(2),
+        });
+        await tx
+          .update(couponCodesTable)
+          .set({ usageCount: sql`${couponCodesTable.usageCount} + 1` })
+          .where(eq(couponCodesTable.id, resolvedCouponId));
+      }
+
+      return {
+        updatedParent,
+        mergedItems,
+        addedAmountDue,
+        appliedCredits,
+      } as const;
+    });
+
+    if ("error" in mergeOutcome) {
+      res.status(409).json({ error: mergeOutcome.error });
+      return;
+    }
+
+    const formatted = formatOrderResponse(
+      mergeOutcome.updatedParent as unknown as Record<string, unknown>,
+      mergeOutcome.mergedItems as unknown as Record<string, unknown>[],
+    );
+    const response = {
+      ...formatted,
+      amountDue: parseFloat(String(mergeOutcome.updatedParent.amountDue ?? "0")),
+      balancePaymentStatus: mergeOutcome.updatedParent.balancePaymentStatus ?? null,
+      mergedIntoExistingOrder: true,
+    };
+
+    pushToGoogleSheets(formatted).catch(() => {});
+    writeLog(
+      "order",
+      "info",
+      "order_addition_merged",
+      `Items added to paid order ${mergeOutcome.updatedParent.code} (${tg}); balance due ${mergeOutcome.addedAmountDue.toFixed(2)}`,
+      {
+        orderId: mergeOutcome.updatedParent.id,
+        code: mergeOutcome.updatedParent.code,
+        telegramUsername: tg,
+        addedAmount: mergeOutcome.addedAmountDue.toFixed(2),
+      },
+      req.ip ?? undefined,
+    ).catch(() => {});
+    logCustomerActivity({
+      telegramUsername: tg,
+      eventCategory: "order",
+      eventType: "order.addition_merged",
+      entityId: mergeOutcome.updatedParent.id,
+      actorType: "customer",
+      metadata: {
+        code: mergeOutcome.updatedParent.code,
+        addedAmount: mergeOutcome.addedAmountDue.toFixed(2),
+        groupBuyId: normalizedGroupBuyId,
+      },
+    }).catch(err => console.error("[orders] order.addition_merged log failed:", err));
+    createAlert(
+      "order",
+      "high",
+      "Items Added to Order",
+      `Order #${mergeOutcome.updatedParent.code} updated by ${tg} — balance ${mergeOutcome.addedAmountDue.toFixed(2)}`,
+      {
+        linkUrl: `#orders:${mergeOutcome.updatedParent.id}`,
+        relatedEntityId: mergeOutcome.updatedParent.id,
+      },
+    ).catch(() => {});
+
+    res.json(response);
+    return;
+  }
+
   const orderId = randomUUID();
   const code = await generateCode();
 
@@ -1065,27 +1326,6 @@ router.post("/orders", async (req, res): Promise<void> => {
       directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null
         ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
         : null,
-      // Additions (top-ups) ride along with the parent's shipment: lock the marker,
-      // copy the parent's shipping + routing fields, and force every fee to 0.
-      ...(additionParent ? {
-        additionOfOrderId: additionParent.id,
-        deliveryPrice: "0.00",
-        vendorShipping: "0.00",
-        adminFee: "0.00",
-        adminFeeLabel: null,
-        directShippingRequested: additionParent.directShippingRequested ?? false,
-        directShippingCost: null,
-        shippingName: additionParent.shippingName ?? null,
-        shippingPhone: additionParent.shippingPhone ?? null,
-        shippingEmail: additionParent.shippingEmail ?? null,
-        shippingAddress: additionParent.shippingAddress ?? null,
-        shippingCountry: additionParent.shippingCountry ?? null,
-        shippingCity: additionParent.shippingCity ?? null,
-        shippingPostcode: additionParent.shippingPostcode ?? null,
-        countryLegId: additionParent.countryLegId ?? null,
-        reshipperUsername: additionParent.reshipperUsername ?? null,
-        routingType: additionParent.routingType ?? null,
-      } : {}),
     })
     .returning();
 

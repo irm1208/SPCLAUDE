@@ -1,46 +1,33 @@
 ---
 name: Order additions / top-ups
-description: The invariant an "addition" (top-up) order must hold, and why it must be server-authoritative.
+description: Paid-order additions merge into the parent and charge only the incremental balance.
 ---
 
 # Order additions (top-ups)
 
-An "addition" (top-up) is a separate order a customer places after a paid order to
-tack extra items onto the same shipment. It is linked to its parent by a persisted
-marker column on the order row (`additionOfOrderId`, non-null = addition).
+An addition (top-up) appends items to an existing paid order. It must not create a
+second active order or consume a second order code.
 
 ## The invariant
-An addition must PERMANENTLY inherit its **group buy from the validated parent order**,
-have **free shipping** (all shipping-type charges 0/null:
-delivery, vendor shipping, GB admin fee, direct-shipping cost) **and a locked shipping
-address equal to the parent's**. It is only allowed on a parent that is already paid
-(`paymentStatus === "confirmed"`, the same state the UI gates the "Place Another Order"
-button on) and that shares the parent's customer + group buy and is not itself an
-addition / not wholesale.
+The server must lock and revalidate the paid parent, append/combine canonical catalog
+items, increase its gross totals, and add only the incremental unpaid amount to
+`amountDue`. The original order code and confirmed primary-payment state stay unchanged.
+Shipping, address, routing, and original payment metadata stay unchanged.
 
-**Why:** The state was originally client-only (an `isTopUp` flag). Nothing was
-persisted, so re-opening the addition let it recompute delivery and re-enter the
-address — free items to a brand-new address. The fix is to make the marker the source
-of truth and re-derive the invariant on the server every time.
+**Why:** Separate child orders made customers see a second order/payment flow and
+allowed stale browser state to choose the wrong group buy. Merging preserves the
+single-order model while still collecting the new balance.
 
 ## How to apply
-The invariant is cross-cutting: EVERY path that can read or mutate the order must agree,
-or one path leaks the abuse vector back. That means create, edit, the dedicated
-address-change endpoint (reject for additions), the review/receipt totals, and the
-address display all independently honor "free shipping + locked parent address."
-Never trust the client-sent group-buy ID, prices, or address for an addition — derive
-them from the validated parent server-side. Downstream membership, product, limit, fee,
-and routing checks must run against that parent-derived group buy.
+Require an authenticated session whose normalized username matches the parent owner.
+Never trust client group-buy IDs, product names, or prices: derive the group buy from
+the parent and resolve active products and prices from the server catalog. Perform the
+line-item and total update in one transaction with a row lock.
 
-**Why:** persisted browser drafts can carry a stale or missing group-buy ID. Rejecting
-that mismatch blocks a valid parent-linked add-on; accepting the client ID instead risks
-cross-group-buy products. Parent authority fixes both while preserving normal validation.
+Balance-confirmation writes must compare the amount/session they verified before
+setting `amountDue` to zero. A stale crypto or AnonPay confirmation must return a
+conflict if an addition changed the balance during external verification.
 
-**Why this matters more than the individual edits:** a future change that adds a new
-write path or a new total/line-item display will silently reintroduce the bug unless it
-re-applies the invariant. Treat the marker as a contract, not a one-off patch.
-
-## Plumbing note
-`OrderResponse` in openapi.yaml is intentionally a subset; the frontend reads extra
-fields like the addition marker via `(order as any).X`. Do NOT expand OpenAPI/codegen
-just to surface a read-only marker.
+**How to apply:** Any new add-on entry point must use this same merge path and navigate
+to the parent order's balance-payment UI. Historical child additions may be soft-deleted
+after a guarded merge, but never hard-deleted.

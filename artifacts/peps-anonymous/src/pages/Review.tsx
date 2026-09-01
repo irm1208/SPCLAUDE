@@ -15,6 +15,7 @@ import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
+import { resolveOrderSubmitDestination } from "./order-submit-destination";
 
 function ReviewShell({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -263,6 +264,9 @@ export default function Review() {
 
     const onSuccess = (data: {
       code: string; id?: string;
+      mergedIntoExistingOrder?: boolean;
+      amountDue?: number;
+      balancePaymentStatus?: string | null;
       deliveryPrice?: number; vendorShipping?: number; productSubtotal?: number;
       tip?: number; testingContribution?: number; grandTotal?: number;
       creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
@@ -270,6 +274,11 @@ export default function Review() {
       lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
     }) => {
       const oid = data.id ?? existingOrderId ?? "";
+      if (data.mergedIntoExistingOrder) {
+        draft.clearDraft();
+        setLocation(resolveOrderSubmitDestination(data, existingOrderId));
+        return;
+      }
       // Prefer the totals the SERVER computed and persisted over the client's pre-submission
       // estimate. The server independently recomputes wholesale shipping tiers, percentage-based
       // admin fees, etc. on every edit — if we trust the local draft numbers instead, the payment
@@ -324,7 +333,7 @@ export default function Review() {
           body: JSON.stringify({ draft: null }),
         }).catch(() => {});
       }
-      setLocation(`/success?code=${data.code}&action=${existingOrderId ? "updated" : "created"}&oid=${oid}`);
+      setLocation(resolveOrderSubmitDestination(data, existingOrderId));
     };
 
     if (existingOrderId) {
@@ -654,7 +663,7 @@ export default function Review() {
               {isPending ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <><CheckCircle className="w-4 h-4" /> {draft.orderId ? "Update Order" : "Place Order"}</>
+                <><CheckCircle className="w-4 h-4" /> {isTopUp ? "Add to Order" : draft.orderId ? "Update Order" : "Place Order"}</>
               )}
             </button>
           </div>

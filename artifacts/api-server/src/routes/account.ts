@@ -2659,9 +2659,18 @@ router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res):
     return;
   }
 
-  await db.update(ordersTable)
+  const confirmedRows = await db.update(ordersTable)
     .set({ balanceTxHash: cleanHash, balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00" } as any)
-    .where(eq(ordersTable.id, id));
+    .where(and(
+      eq(ordersTable.id, id),
+      eq(ordersTable.amountDue, amountDueRaw.toFixed(2)),
+      or(isNull(ordersTable.balancePaymentStatus), eq(ordersTable.balancePaymentStatus, "unpaid")),
+    ))
+    .returning({ id: ordersTable.id });
+  if (confirmedRows.length === 0) {
+    res.status(409).json({ error: "The outstanding balance changed while payment was being verified. Please refresh before trying again." });
+    return;
+  }
 
   writeLog("payment", "info", "balance_payment_confirmed", `Balance payment confirmed for order ${order.code} — ${result.amountUsdt} ${currency}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountUsdt: result.amountUsdt, amountDue: amountDueRaw, currency, network, reason: "balance payment confirmed" }, req.ip).catch(() => {});
   await logCustomerActivity({
@@ -2827,7 +2836,19 @@ router.get("/account/orders/:id/balance-anonpay-status", requireAccount, async (
       const newBalanceTxHash = trocOutgoingHash
         ? `anonpay:${paymentId}|${trocOutgoingHash}`
         : `anonpay:${paymentId}`;
-      await db.update(ordersTable).set({ balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00", balanceTxHash: newBalanceTxHash } as any).where(eq(ordersTable.id, id));
+      const confirmedRows = await db.update(ordersTable)
+        .set({ balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00", balanceTxHash: newBalanceTxHash } as any)
+        .where(and(
+          eq(ordersTable.id, id),
+          eq(ordersTable.amountDue, String((order as any).amountDue)),
+          eq((ordersTable as any).balanceTxHash, tx),
+          eq((ordersTable as any).balancePaymentStatus, "pending_confirmation"),
+        ))
+        .returning({ id: ordersTable.id });
+      if (confirmedRows.length === 0) {
+        res.status(409).json({ error: "The outstanding balance changed while payment was being confirmed. Please refresh." });
+        return;
+      }
       balancePaymentStatus = "confirmed";
       await logCustomerActivity({
         telegramUsername: order.telegramUsername,
