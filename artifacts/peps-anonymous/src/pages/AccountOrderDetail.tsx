@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertCircle, Lock, Plus, Trash2, X, Copy, Check,
   QrCode, Upload, Download, ImagePlus, MapPin, ScanLine, TestTube, Clock, Coins,
   ChevronDown, Pencil, FileText, PackageCheck, ReceiptText, Info,
-  Home, ExternalLink, Megaphone,
+  Home, ExternalLink, Megaphone, CreditCard, ShieldCheck, WalletCards,
 } from "lucide-react";
 import { Card, Button, Label, Input, cn } from "@/components/ui";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -23,6 +23,7 @@ import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-url";
+import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -1052,19 +1053,27 @@ function BalancePayDetail({
   note,
   copied,
   onCopy,
+  compactGrid = false,
 }: {
   rows: { label: string; value: string; copyValue?: string; mono?: boolean }[];
   note?: string;
   copied: string;
   onCopy: (label: string, value: string) => void;
+  compactGrid?: boolean;
 }) {
   return (
-    <div className="rounded-xl mb-3" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+    <div className={cn("rounded-xl mb-2 overflow-hidden", compactGrid && "grid grid-cols-2")} style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
       {rows.map((r, i) => (
         <div
           key={r.label}
-          className="flex items-center justify-between gap-2 px-3 py-2"
-          style={{ borderTop: i === 0 ? "none" : "1px solid var(--t-border)" }}
+          className={cn(
+            "flex items-center justify-between gap-2 px-3 py-1.5",
+            compactGrid && rows.length % 2 === 1 && i === rows.length - 1 && "col-span-2",
+          )}
+          style={{
+            borderTop: i < (compactGrid ? 2 : 1) ? "none" : "1px solid var(--t-border)",
+            borderLeft: compactGrid && i % 2 === 1 ? "1px solid var(--t-border)" : "none",
+          }}
         >
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: "var(--t-subtle)" }}>{r.label}</p>
@@ -1090,7 +1099,7 @@ function BalancePayDetail({
       ))}
       {note && (
         <div
-          className="px-3 py-2 text-[11px]"
+          className={cn("px-3 py-1.5 text-[10px]", compactGrid && "col-span-2")}
           style={{ borderTop: "1px solid var(--t-border)", background: "rgba(245,158,11,0.06)", color: "var(--t-muted)" }}
         >
           {note}
@@ -1119,6 +1128,8 @@ function BalanceDueCard({
   onUploaded: () => void;
   onBalanceStatusChange: (status: string, txHash?: string | null) => void;
 }) {
+  const { dark: isDark } = useThemeStore();
+  const balanceTheme = getBalancePaymentCardTheme(isDark);
   const fileRef = useRef<HTMLInputElement>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -1375,35 +1386,57 @@ function BalanceDueCard({
 
   return (
     <div
-      className="rounded-lg p-4 mt-3"
-      style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}
+      className={`rounded-[24px] ${balanceTheme.shellPadding} mt-3 overflow-hidden transition-colors`}
+      style={{
+        background: balanceTheme.card,
+        border: `1px solid ${balanceTheme.border}`,
+        boxShadow: balanceTheme.shadow,
+      }}
     >
-      <div className="flex items-start gap-3">
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: "rgba(245,158,11,0.18)" }}
-        >
-          <AlertCircle className="w-4 h-4" style={{ color: "#F59E0B" }} />
+      <div className="flex items-start justify-between gap-3 px-1 pb-3">
+        <div className="min-w-0">
+          <p className="hidden sm:block text-[10px] font-extrabold uppercase tracking-[0.18em]" style={{ color: balanceTheme.muted }}>
+            Order balance
+          </p>
+          <p className="text-base sm:text-lg font-black tracking-[-0.03em] sm:mt-1" style={{ color: balanceTheme.heading }}>
+            Complete your payment
+          </p>
+          <p className="hidden sm:block text-[11px] mt-1" style={{ color: balanceTheme.muted }}>
+            Extra charges were added after your initial payment.
+          </p>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold" style={{ color: "#F59E0B" }}>
-            You owe {fmtC(amountDue, currency)}
-          </p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
-            Extra charges (e.g. international shipping) were added after your initial payment. Pick a payment method below, send the amount to the organiser, then upload a screenshot of the payment so they can confirm.
-          </p>
+        <span
+          className="rounded-full px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] shrink-0"
+          style={{ background: balanceTheme.statusBg, color: balanceTheme.statusText }}
+        >
+          Due now
+        </span>
+      </div>
+
+      <div className={`rounded-2xl ${balanceTheme.panelPadding}`} style={{ background: balanceTheme.panel, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)" }}>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: "#adc0d0" }}>Outstanding balance</p>
+          <WalletCards className="w-5 h-5" style={{ color: "#9bcbff" }} />
+        </div>
+        <div className="mt-2 text-2xl sm:text-3xl font-black tracking-[-0.05em] text-white">
+          {fmtC(amountDue, currency)}
+        </div>
+        <div className="hidden sm:flex mt-3 items-center gap-2 text-[10px]" style={{ color: "#c1d0dc" }}>
+          <ShieldCheck className="w-3.5 h-3.5" style={{ color: "#9bcbff" }} />
+          Secure payment · existing order unchanged
         </div>
       </div>
 
       {payInfo && (
-        <div className="mt-3 pt-3 border-t" style={{ borderColor: "rgba(245,158,11,0.2)" }}>
+        <div className="mt-4">
           {(() => {
-            const methods: { key: PayMethod; label: string; available: boolean }[] = [
-              { key: "crypto",  label: payInfo.cryptoCurrency ? payInfo.cryptoCurrency : "Crypto", available: !!payInfo.cryptoWalletAddress },
-              { key: "revolut", label: "Revolut",  available: !!payInfo.revolutHandle },
-              { key: "paypal",  label: "PayPal",   available: !!payInfo.paypalHandle },
-              { key: "anonpay", label: "AnonPay",  available: payInfo.anonPayEnabled },
-            ].filter(m => m.available);
+            const methodOptions: { key: PayMethod; label: string; detail: string; available: boolean }[] = [
+              { key: "crypto", label: payInfo.cryptoCurrency ? `${payInfo.cryptoCurrency} cryptocurrency` : "Cryptocurrency", detail: "Pay from your preferred wallet", available: !!payInfo.cryptoWalletAddress },
+              { key: "revolut", label: "Revolut", detail: "Send a direct Revolut transfer", available: !!payInfo.revolutHandle },
+              { key: "paypal", label: "PayPal", detail: "Send a PayPal transfer", available: !!payInfo.paypalHandle },
+              { key: "anonpay", label: BALANCE_PAYMENT_METHOD_COPY.anonpay.label, detail: BALANCE_PAYMENT_METHOD_COPY.anonpay.detail, available: payInfo.anonPayEnabled },
+            ];
+            const methods = methodOptions.filter(m => m.available);
 
             if (methods.length === 0) {
               return (
@@ -1415,23 +1448,43 @@ function BalanceDueCard({
 
             return (
               <>
-                <p className="text-[11px] font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Pay using</p>
-                <div className="flex flex-wrap gap-1.5 mb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-extrabold" style={{ color: balanceTheme.heading }}>Choose a payment method</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: balanceTheme.muted }}>Required</p>
+                </div>
+                <div className="space-y-1.5 mb-3">
                   {methods.map(m => {
                     const active = selectedMethod === m.key;
+                    const MethodIcon = m.key === "crypto" || m.key === "anonpay" ? WalletCards : CreditCard;
                     return (
                       <button
                         key={m.key}
                         type="button"
                         onClick={() => setSelectedMethod(m.key)}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                        aria-pressed={active}
+                        className={`w-full flex items-center gap-3 rounded-2xl ${balanceTheme.methodPadding} text-left transition-all`}
                         style={{
-                          background: active ? "#F59E0B" : "var(--t-surface)",
-                          color: active ? "#0a0a0a" : "var(--t-muted)",
-                          border: `1px solid ${active ? "#F59E0B" : "var(--t-border)"}`,
+                          background: active ? balanceTheme.selected : balanceTheme.unselected,
+                          border: `1px solid ${active ? balanceTheme.selectedBorder : balanceTheme.border}`,
+                          boxShadow: active ? "0 5px 14px rgba(45,107,204,0.16)" : "none",
                         }}
                       >
-                        {m.label}
+                        <span
+                          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: active ? balanceTheme.accent : balanceTheme.iconMuted, color: active ? "#fff" : balanceTheme.iconText }}
+                        >
+                          <MethodIcon className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-extrabold" style={{ color: balanceTheme.heading }}>{m.label}</span>
+                          <span className="hidden sm:block text-[11px] mt-0.5" style={{ color: balanceTheme.muted }}>{m.detail}</span>
+                        </span>
+                        <span
+                          className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: active ? balanceTheme.accent : "transparent", border: `1.5px solid ${active ? balanceTheme.selectedBorder : balanceTheme.border}` }}
+                        >
+                          {active && <Check className="w-3 h-3 text-white" />}
+                        </span>
                       </button>
                     );
                   })}
@@ -1445,8 +1498,8 @@ function BalanceDueCard({
                   return (
                   <>
                     {payInfo.availableCryptoOptions.length > 1 && (
-                      <div className="mb-3">
-                        <p className="text-[11px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Pay with</p>
+                      <div className="mb-2">
+                        <p className="text-[10px] font-semibold mb-1 uppercase tracking-wide" style={{ color: balanceTheme.muted }}>Pay with</p>
                         <div className="flex flex-wrap gap-1.5">
                           {payInfo.availableCryptoOptions.map(opt => {
                             const cur = opt.currency.toUpperCase();
@@ -1456,11 +1509,11 @@ function BalanceDueCard({
                                 key={cur}
                                 type="button"
                                 onClick={() => { setSelectedCrypto(cur); setVerifyMsg(null); }}
-                                className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                                className="text-xs font-bold px-2.5 py-1 rounded-lg transition-colors"
                                 style={{
-                                  background: active ? "#F59E0B" : "var(--t-surface)",
-                                  color: active ? "#0a0a0a" : "var(--t-muted)",
-                                  border: `1px solid ${active ? "#F59E0B" : "var(--t-border)"}`,
+                                  background: active ? balanceTheme.selected : balanceTheme.unselected,
+                                  color: active ? balanceTheme.heading : balanceTheme.muted,
+                                  border: `1px solid ${active ? balanceTheme.selectedBorder : balanceTheme.border}`,
                                 }}
                               >
                                 {cur}
@@ -1479,9 +1532,10 @@ function BalanceDueCard({
                       note={`Only send ${activeCrypto} on the ${activeNetwork} network. Other chains = lost funds.`}
                       copied={copied}
                       onCopy={copy}
+                      compactGrid
                     />
                     {!balanceConfirmed && (
-                      <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Paste your transaction hash</p>
                         <Input
                           value={txHash}
@@ -1496,7 +1550,7 @@ function BalanceDueCard({
                           onClick={submitTxHash}
                           disabled={verifying || !txHash.trim()}
                           className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60"
-                          style={{ background: "#F59E0B", color: "#0a0a0a" }}
+                          style={{ background: balanceTheme.cta, color: "#fff", boxShadow: "0 7px 18px rgba(27,58,122,0.20)" }}
                         >
                           {verifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                           {verifying ? "Verifying on-chain…" : "Submit & verify"}
@@ -1553,8 +1607,8 @@ function BalanceDueCard({
                         type="button"
                         onClick={initAnonPay}
                         disabled={anonInitLoading}
-                        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60"
-                        style={{ background: "#F59E0B", color: "#0a0a0a" }}
+                        className="w-full min-h-12 flex items-center justify-center gap-2 text-sm font-extrabold px-4 py-3 rounded-2xl disabled:opacity-60 transition-all hover:brightness-105"
+                        style={{ background: balanceTheme.cta, color: "#fff", boxShadow: "0 8px 18px rgba(27,58,122,0.22)" }}
                       >
                         {anonInitLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                         {anonInitLoading ? "Starting AnonPay session…" : "Pay with AnonPay"}
@@ -1562,32 +1616,32 @@ function BalanceDueCard({
                     )}
                     {anonPaymentUrl && !balanceConfirmed && (
                       <div
-                        className="rounded-2xl p-4 space-y-3"
+                        className="rounded-2xl p-3 space-y-2"
                         style={{
-                          background: "linear-gradient(145deg, color-mix(in srgb, #fff7e6 92%, var(--t-surface)) 0%, color-mix(in srgb, #ffedd5 68%, var(--t-surface)) 100%)",
-                          border: "1px solid rgba(245,158,11,0.32)",
-                          boxShadow: "0 10px 28px rgba(120,72,16,0.08)",
+                          background: isDark ? "#152337" : "#f7faff",
+                          border: `1px solid ${balanceTheme.selectedBorder}`,
+                          boxShadow: "0 10px 28px rgba(27,58,122,0.10)",
                         }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#334155", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: balanceTheme.accent, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.14)" }}>
                             <span className="text-white font-black text-[9px] tracking-tight">AP</span>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-extrabold" style={{ color: "#1f2937" }}>Pay with AnonPay</p>
-                            <p className="text-[11px]" style={{ color: "#64748b" }}>
+                            <p className="text-sm font-extrabold" style={{ color: balanceTheme.heading }}>Pay with AnonPay</p>
+                            <p className="text-[11px]" style={{ color: balanceTheme.muted }}>
                               {payInfo.anonPayTicker?.toUpperCase() || "Crypto"} via Trocador
                             </p>
                           </div>
                           <div className="ml-auto text-right shrink-0">
-                            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#9a6b18" }}>Amount due</p>
-                            <p className="text-sm font-black" style={{ color: "#1f2937" }}>{fmtC(amountDue, currency)}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: balanceTheme.muted }}>Amount due</p>
+                            <p className="text-sm font-black" style={{ color: balanceTheme.heading }}>{fmtC(amountDue, currency)}</p>
                           </div>
                         </div>
 
-                        <div className="rounded-xl p-3 flex items-start gap-2" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(245,158,11,0.22)" }}>
-                          <Info className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#d97706" }} />
-                          <p className="text-[11px] leading-relaxed" style={{ color: "#5f5547" }}>
+                        <div className="rounded-xl p-2.5 flex items-start gap-2" style={{ background: balanceTheme.accentSoft, border: `1px solid ${balanceTheme.border}` }}>
+                          <Info className="w-4 h-4 mt-0.5 shrink-0" style={{ color: balanceTheme.accent }} />
+                          <p className="text-[11px] leading-relaxed" style={{ color: balanceTheme.muted }}>
                             Open the secure Trocador page, pay with your preferred cryptocurrency, then return here to confirm you initiated the payment.
                           </p>
                         </div>
@@ -1597,12 +1651,12 @@ function BalanceDueCard({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="w-full min-h-11 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-extrabold text-white transition-all hover:brightness-105 active:scale-[0.99]"
-                          style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", boxShadow: "0 7px 18px rgba(245,158,11,0.24)" }}
+                          style={{ background: balanceTheme.cta, boxShadow: "0 7px 18px rgba(27,58,122,0.24)" }}
                         >
                           <ExternalLink className="w-4 h-4" />
                           Open AnonPay payment page
                         </a>
-                        <p className="text-[10px] text-center" style={{ color: "#8a7a66" }}>Opens securely on trocador.app in a new tab</p>
+                        <p className="text-[10px] text-center" style={{ color: balanceTheme.note }}>Opens securely on trocador.app in a new tab</p>
 
                         {!balancePending && (
                           <button
@@ -1610,7 +1664,7 @@ function BalanceDueCard({
                             onClick={confirmAnonPayInitiation}
                             disabled={anonConfirming}
                             className="w-full min-h-11 flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-60 transition-all active:scale-[0.99]"
-                            style={{ background: "#F59E0B", color: "#111827", border: "1px solid #d97706" }}
+                            style={{ background: balanceTheme.selected, color: balanceTheme.heading, border: `1px solid ${balanceTheme.selectedBorder}` }}
                           >
                             {anonConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                             {anonConfirming ? "Confirming…" : "I've initiated the payment"}
@@ -1645,15 +1699,15 @@ function BalanceDueCard({
       {!balanceConfirmed && balancePending && !isAnonPaySession && (
         <div
           className="mt-3 pt-3 border-t flex items-center gap-2"
-          style={{ borderColor: "rgba(245,158,11,0.3)" }}
+          style={{ borderColor: balanceTheme.selectedBorder }}
         >
-          <Loader2 className="w-4 h-4 shrink-0 animate-spin" style={{ color: "#F59E0B" }} />
+          <Loader2 className="w-4 h-4 shrink-0 animate-spin" style={{ color: balanceTheme.accent }} />
           <span className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Submitted — waiting for organiser to confirm.</span>
         </div>
       )}
 
       {!balanceConfirmed && (selectedMethod === "revolut" || selectedMethod === "paypal") && (
-      <div className="mt-3 pt-3 border-t" style={{ borderColor: "rgba(245,158,11,0.2)" }}>
+      <div className="mt-3 pt-3 border-t" style={{ borderColor: balanceTheme.border }}>
         {done && !dataUrl ? (
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
@@ -1675,7 +1729,7 @@ function BalanceDueCard({
                 type="button"
                 onClick={() => { setDone(false); fileRef.current?.click(); }}
                 className="text-xs font-semibold px-2.5 py-1 rounded-lg"
-                style={{ background: "rgba(245,158,11,0.18)", color: "#F59E0B", border: "1px solid rgba(245,158,11,0.35)" }}
+                style={{ background: balanceTheme.selected, color: balanceTheme.accent, border: `1px solid ${balanceTheme.selectedBorder}` }}
               >
                 Replace
               </button>
@@ -1695,7 +1749,7 @@ function BalanceDueCard({
                 type="button"
                 onClick={() => fileRef.current?.click()}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
-                style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B", border: "1px dashed rgba(245,158,11,0.5)" }}
+                style={{ background: balanceTheme.accentSoft, color: balanceTheme.accent, border: `1px dashed ${balanceTheme.selectedBorder}` }}
               >
                 <ImagePlus className="w-3.5 h-3.5" />
                 Upload payment screenshot (JPG / PNG, max 15 MB)
@@ -1728,7 +1782,7 @@ function BalanceDueCard({
                     onClick={submit}
                     disabled={uploading}
                     className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                    style={{ background: "#F59E0B", color: "#0a0a0a" }}
+                    style={{ background: balanceTheme.cta, color: "#fff" }}
                   >
                     {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     {uploading ? "Uploading…" : "Submit proof"}
@@ -1747,7 +1801,7 @@ function BalanceDueCard({
               onClick={() => confirmFiat(selectedMethod as "revolut" | "paypal")}
               disabled={fiatConfirming}
               className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60"
-              style={{ background: "#F59E0B", color: "#0a0a0a" }}
+              style={{ background: balanceTheme.cta, color: "#fff" }}
             >
               {fiatConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
               {fiatConfirming ? "Submitting…" : `I've sent the payment via ${selectedMethod === "revolut" ? "Revolut" : "PayPal"}`}
