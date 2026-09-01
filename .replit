@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "python-3.12"]
+modules = ["nodejs-20", "web", "python-3.12", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 packages = ["wget", "parallel-full"]
@@ -104,7 +104,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "bash start.sh"
+args = "bash /home/runner/workspace/start.sh"
 waitForPort = 5000
 
 [[workflows.workflow]]
