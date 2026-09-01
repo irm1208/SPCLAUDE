@@ -24,6 +24,7 @@ import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-url";
 import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
+import { getOrderPaymentSummary } from "./order-payment-summary";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -1964,6 +1965,12 @@ export default function AccountOrderDetail() {
   const [creditsError, setCreditsError] = useState<string | null>(null);
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
+  const paymentSummary = getOrderPaymentSummary({
+    grandTotal: order?.grandTotal ?? 0,
+    amountDue: order?.amountDue ?? 0,
+    paymentStatus: order?.paymentStatus ?? "unpaid",
+    balancePaymentStatus: order?.balancePaymentStatus ?? null,
+  });
   // Direct-shipping orders have their own tracking number on the order — don't show GB parcel tracking
   const isDirectOrder = order?.routingType === "direct" ||
     (order?.routingType !== "reshipper" && order?.directShippingRequested === true);
@@ -2263,7 +2270,7 @@ export default function AccountOrderDetail() {
                   })()}
 
                   {/* Payment confirmed card — shown directly under the fulfilment box when paid */}
-                  {order.id && order.paymentStatus === "confirmed" && (
+                  {order.id && order.paymentStatus === "confirmed" && paymentSummary.showFullyPaidPanel && (
                     <PaymentPanel
                       orderId={order.id}
                       orderPin={order.pin ?? undefined}
@@ -2278,6 +2285,23 @@ export default function AccountOrderDetail() {
                       paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
                     />
+                  )}
+                  {order.id && order.paymentStatus === "confirmed" && paymentSummary.hasOutstandingAddOn && (
+                    <div
+                      className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
+                      style={{ background: "var(--t-blue-08)", border: "1px solid var(--t-blue-20)" }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{paymentSummary.statusLabel}</p>
+                          <p className="text-xs" style={{ color: "var(--t-muted)" }}>The pending add-on is not included in this paid amount.</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-extrabold shrink-0" style={{ color: "var(--t-blue)" }}>
+                        {fmtC(paymentSummary.paidAmount, order.currency)}
+                      </span>
+                    </div>
                   )}
 
                   {/* ===== Two-column layout (reference style) ===== */}
@@ -2390,9 +2414,11 @@ export default function AccountOrderDetail() {
                             </div>
                           )}
                           <div className="flex items-center justify-between rounded-lg px-4 py-3 mt-2" style={{ background: "var(--warm-ink)", border: "1px solid var(--warm-ink)", boxShadow: "0 10px 24px -14px rgba(26,43,86,0.55)" }}>
-                            <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{(order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
+                            <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{paymentSummary.hasOutstandingAddOn ? "Original order paid" : (order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
                             <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
-                              {order.currency === "GBP"
+                              {paymentSummary.hasOutstandingAddOn
+                                ? fmtC(paymentSummary.paidAmount, order.currency)
+                                : order.currency === "GBP"
                                 ? fmtC(order.grandTotal, order.currency)
                                 : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
                             </span>
@@ -2402,7 +2428,7 @@ export default function AccountOrderDetail() {
                               className="flex justify-between font-bold border-t pt-2 mt-1"
                               style={{ color: "#F59E0B", borderColor: "rgba(245,158,11,0.25)" }}
                             >
-                              <span>Outstanding Balance</span>
+                              <span>Pending add-on — payment outstanding</span>
                               <span>{fmtC(order.amountDue!, order.currency)}</span>
                             </div>
                           )}

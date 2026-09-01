@@ -12,6 +12,7 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { shouldRefreshPrimaryPaymentLock } from "../lib/order-payment-lock-integrity";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -1328,9 +1329,13 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   // still within 3% of the current total.
   const currentUsd = await toUsdIfGbp(parseFloat(String(order.grandTotal)), order.groupBuyId ?? null);
   const lockedUsd = order.paymentUsdAmount != null ? parseFloat(String(order.paymentUsdAmount)) : null;
-  const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentUsd) > currentUsd * 0.03;
+  const lockIsStale = shouldRefreshPrimaryPaymentLock(
+    order.paymentStatus ?? "unpaid",
+    lockedUsd,
+    currentUsd,
+  );
   const usdAmount = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentUsd;
-  if (lockedUsd == null || lockIsStale) {
+  if (shouldRefreshPrimaryPaymentLock(order.paymentStatus ?? "unpaid", lockedUsd, currentUsd)) {
     await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(eq(ordersTable.id, order.id));
   }
 

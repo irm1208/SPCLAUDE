@@ -602,28 +602,9 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS allow_order_addons boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS payment_banner text`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_kits integer`);
-    // Backfill: confirmed orders that had vendor shipping added post-payment but amount_due was never set.
-    // Set amount_due = vendor_shipping ONLY when there is a recorded payment amount that does NOT cover
-    // the current grand total (i.e. VS was genuinely added after the customer paid).
-    // One-time cleanup: zero out amount_due on orders that were incorrectly flagged by the old
-    // backfill logic (which did not check whether the recorded payment covered the grand total).
-    // Safe to run repeatedly — only touches orders where the balance is demonstrably wrong:
-    //   (a) no recorded payment amount (manually confirmed by admin — assume fully paid), OR
-    //   (b) recorded payment covers the current grand total within 4% crypto-rounding tolerance.
-    // Does NOT touch orders where balance_payment_status is 'confirmed' (customer paid the balance)
-    // or 'waived' (admin already cleared it deliberately).
-    await db.execute(sql`
-      UPDATE orders
-      SET amount_due = 0, balance_payment_status = NULL
-      WHERE amount_due > 0
-        AND deleted_at IS NULL
-        AND (balance_payment_status IS NULL OR balance_payment_status NOT IN ('confirmed', 'waived'))
-        AND (
-          payment_usd_amount IS NULL
-          OR payment_usd_amount = 0
-          OR payment_usd_amount >= grand_total * 0.96
-        )
-    `);
+    // amount_due is authoritative payment state. Never rewrite it during startup:
+    // it may represent a newly merged add-on that was created after the primary
+    // order payment was confirmed.
     // Forward-only backfill: confirmed orders where VS was genuinely added after payment
     // (recorded payment amount falls short of grand total). Only fires when amount_due is still 0
     // so the cleanup above won't re-flag orders it just corrected.

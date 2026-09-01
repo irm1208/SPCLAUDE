@@ -25,6 +25,14 @@ Replit's Publish flow diffs the DEV database against the PRODUCTION database. If
 
 **How to apply:** Whenever the Publish flow shows a DROP COLUMN warning, do NOT approve it blindly. Check whether the column is legitimately removed from the Drizzle schema. If the schema still has the column, the dev DB is just behind — add the column to dev DB via `executeSql` then cancel and re-publish.
 
+## Never reconcile live payment balances at startup
+
+`amount_due` is authoritative transaction state. Startup migrations may add its column, but must never recalculate or clear existing values from `payment_usd_amount`, `grand_total`, vendor shipping, or primary payment status.
+
+**Why:** Primary-payment UI can legitimately retain or refresh a payment lock while a later add-on creates an independent outstanding balance. A repeated startup cleanup treated the enlarged total as already covered and erased an unpaid add-on on every restart.
+
+**How to apply:** Keep payment-state backfills versioned and one-time. Runtime startup may perform idempotent schema DDL, but settlement must happen only in explicit balance-confirmation or waiver flows.
+
 ## Fix checklist for "Failed query" 500 on lab/blood endpoints
 
 1. Check deployment logs for `Failed query: select ... from "table_name"` 
