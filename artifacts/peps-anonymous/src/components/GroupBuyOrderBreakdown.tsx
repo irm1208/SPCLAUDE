@@ -58,10 +58,12 @@ function paymentLabel(status: string) {
 export function GroupBuyOrderBreakdown({
   endpoint,
   currency,
+  headers,
   onOpenOrder,
 }: {
   endpoint: string;
   currency: string;
+  headers?: HeadersInit;
   onOpenOrder?: (orderId: string, orderCode: string) => void;
 }) {
   const [data, setData] = useState<BreakdownResponse>(EMPTY_RESPONSE);
@@ -88,7 +90,7 @@ export function GroupBuyOrderBreakdown({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${endpoint}${query ? `?${query}` : ""}`, { credentials: "include" });
+      const response = await fetch(`${endpoint}${query ? `?${query}` : ""}`, { credentials: "include", headers });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not load the breakdown");
       setData(payload);
