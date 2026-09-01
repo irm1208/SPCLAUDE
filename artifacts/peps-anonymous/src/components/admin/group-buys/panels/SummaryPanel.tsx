@@ -19,6 +19,7 @@ import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
+import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 export function GbCoverageSection({ secret, gbId }: { secret: string; gbId: string }) {
   type CoverageItem = { productName: string; stock: number | null; mappingCount: number; orderedQty: number };
   const [items, setItems] = useState<CoverageItem[]>([]);
@@ -350,6 +351,11 @@ export function SummarySubTab({ secret, gb }: { secret: string; gb: GroupBuy }) 
       )}
       {rows.length === 0 && <div className="text-center py-16 text-xs text-muted-foreground">No orders found for this filter.</div>}
       <GbCoverageSection secret={secret} gbId={gb.id} />
+      <GroupBuyOrderBreakdown
+        endpoint={apiUrl(`/admin/group-buys/${gb.id}/order-breakdown`)}
+        currency={gb.currency ?? "GBP"}
+        headers={{ "x-admin-secret": secret }}
+      />
     </div>
   );
 }

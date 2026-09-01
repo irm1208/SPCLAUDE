@@ -9477,26 +9477,6 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         )}
       </div>
 
-      <GroupBuyOrderBreakdown
-        endpoint={`/api/organiser/group-buys/${gb.id}/order-breakdown`}
-        currency={gb.currency}
-        onOpenOrder={(orderId, orderCode) => {
-          setFilter("all");
-          setPaymentMethodFilter("all");
-          setCountryFilter("all");
-          setCountryLegFilter("all");
-          setDateFrom("");
-          setDateTo("");
-          setPayDateFrom("");
-          setPayDateTo("");
-          setSearch(orderCode);
-          setPage(1);
-          window.setTimeout(() => {
-            document.getElementById(`organiser-order-${orderId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 100);
-        }}
-      />
-
       {balanceProofUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-zoom-out"
@@ -10847,6 +10827,10 @@ export function SummaryTab({ gb }: { gb: OrganiserGB }) {
         </>
       )}
       {rows.length === 0 && <div className="text-center py-16 text-[12px]" style={{ color: "var(--t-muted)" }}>No orders found for this filter</div>}
+      <GroupBuyOrderBreakdown
+        endpoint={`/api/organiser/group-buys/${gb.id}/order-breakdown`}
+        currency={gb.currency}
+      />
     </div>
   );
 }

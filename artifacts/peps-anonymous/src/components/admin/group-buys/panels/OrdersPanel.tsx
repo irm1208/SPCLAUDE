@@ -20,7 +20,6 @@ import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
-import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 export interface GbOrder {
   id: string;
   code: string;
@@ -1639,11 +1638,6 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
           })}
         </div>
       )}
-      <GroupBuyOrderBreakdown
-        endpoint={apiUrl(`/admin/group-buys/${gb.id}/order-breakdown`)}
-        currency={gb.currency}
-        headers={{ "x-admin-secret": secret }}
-      />
     </div>
   );
 }
