@@ -5,8 +5,12 @@
 # Dev-time uploaded screenshots / debug assets (470 MB)
 attached_assets/
 
-# Database backups created by the dev scheduler — NOT for production (1.3 GB)
+# Database backups created by the dev scheduler — NOT for production (can exceed tens of GB)
 artifacts/api-server/db-backups/
+db-backups/
+
+# Manual database dumps / exports — retained in the workspace, never shipped
+*.sql
 
 # All node_modules — reinstalled by scripts/deploy.sh (1 GB+)
 node_modules/
@@ -17,6 +21,7 @@ artifacts/mockup-sandbox/
 
 # Git history (1.4 GB)
 .git/
+.worktrees/
 
 # Replit agent skills / memory / caches (2.5 GB)
 .local/
@@ -27,5 +32,6 @@ artifacts/mockup-sandbox/
 
 # Agent memory and misc dev tooling
 .agents/
+.superpowers/
 screenshots/
 wget-log.1
