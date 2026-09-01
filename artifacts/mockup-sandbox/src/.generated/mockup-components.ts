@@ -9,6 +9,7 @@ export const modules: ModuleMap = {
   "./components/mockups/admin-product-form/Terminal.tsx": () => import("../components/mockups/admin-product-form/Terminal.tsx"),
   "./components/mockups/admin-product-form/WarmStudio.tsx": () => import("../components/mockups/admin-product-form/WarmStudio.tsx"),
   "./components/mockups/admin-rules/RulesLayoutOptions.tsx": () => import("../components/mockups/admin-rules/RulesLayoutOptions.tsx"),
+  "./components/mockups/balance-anonpay/Current.tsx": () => import("../components/mockups/balance-anonpay/Current.tsx"),
   "./components/mockups/coa-cards/ChromoPanel.tsx": () => import("../components/mockups/coa-cards/ChromoPanel.tsx"),
   "./components/mockups/coa-cards/ClinicalGrade.tsx": () => import("../components/mockups/coa-cards/ClinicalGrade.tsx"),
   "./components/mockups/coa-cards/CoaAsgard.tsx": () => import("../components/mockups/coa-cards/CoaAsgard.tsx"),
