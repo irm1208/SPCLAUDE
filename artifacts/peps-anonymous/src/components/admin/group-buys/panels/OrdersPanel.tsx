@@ -525,11 +525,6 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
 
   return (
     <div className="space-y-3">
-      <GroupBuyOrderBreakdown
-        endpoint={apiUrl(`/admin/group-buys/${gb.id}/order-breakdown`)}
-        currency={gb.currency}
-        headers={{ "x-admin-secret": secret }}
-      />
       {/* ── Primary toolbar ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 relative min-w-48">
@@ -1644,6 +1639,11 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
           })}
         </div>
       )}
+      <GroupBuyOrderBreakdown
+        endpoint={apiUrl(`/admin/group-buys/${gb.id}/order-breakdown`)}
+        currency={gb.currency}
+        headers={{ "x-admin-secret": secret }}
+      />
     </div>
   );
 }

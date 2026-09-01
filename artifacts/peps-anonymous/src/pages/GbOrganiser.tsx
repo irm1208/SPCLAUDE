@@ -7821,25 +7821,6 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       </AnimatePresence>
 
       <PendingConfirmationsPanel gb={gb} onResolved={loadOrders} />
-      <GroupBuyOrderBreakdown
-        endpoint={`/api/organiser/group-buys/${gb.id}/order-breakdown`}
-        currency={gb.currency}
-        onOpenOrder={(orderId, orderCode) => {
-          setFilter("all");
-          setPaymentMethodFilter("all");
-          setCountryFilter("all");
-          setCountryLegFilter("all");
-          setDateFrom("");
-          setDateTo("");
-          setPayDateFrom("");
-          setPayDateTo("");
-          setSearch(orderCode);
-          setPage(1);
-          window.setTimeout(() => {
-            document.getElementById(`organiser-order-${orderId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 100);
-        }}
-      />
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Orders — {gb.name}</h2>
@@ -9495,6 +9476,26 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           </div>
         )}
       </div>
+
+      <GroupBuyOrderBreakdown
+        endpoint={`/api/organiser/group-buys/${gb.id}/order-breakdown`}
+        currency={gb.currency}
+        onOpenOrder={(orderId, orderCode) => {
+          setFilter("all");
+          setPaymentMethodFilter("all");
+          setCountryFilter("all");
+          setCountryLegFilter("all");
+          setDateFrom("");
+          setDateTo("");
+          setPayDateFrom("");
+          setPayDateTo("");
+          setSearch(orderCode);
+          setPage(1);
+          window.setTimeout(() => {
+            document.getElementById(`organiser-order-${orderId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 100);
+        }}
+      />
 
       {balanceProofUrl && (
         <div
