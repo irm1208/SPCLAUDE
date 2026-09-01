@@ -100,3 +100,4 @@
 - [Shared-order payment transaction privacy](shared-order-payment-transaction-privacy.md) — member transaction IDs and received amounts belong only in organiser-gated responses, never merely hidden in UI.
 - [Shared-order payment routing](shared-order-payment-routing.md) — shared wholesale methods are organiser-only; absent organiser wallets disable methods and never fall back to admin/global destinations.
 - [Shared-order confirmation commitment](shared-order-confirmation-commitment.md) — confirmation binds a current draft; mutations and reopening invalidate it, while lock/removal must serialize it.
+- [AnonPay pages cannot be embedded](anonpay-no-iframe.md) — Trocador sends X-Frame-Options: DENY; launch AnonPay as a top-level page and restore only genuinely pending sessions.

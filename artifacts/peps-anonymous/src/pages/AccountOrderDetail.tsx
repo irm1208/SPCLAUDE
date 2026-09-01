@@ -22,6 +22,7 @@ import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import PaymentPanel from "@/components/PaymentPanel";
 import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
+import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-url";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -1131,16 +1132,11 @@ function BalanceDueCard({
   const [verifying, setVerifying] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState<{ kind: "ok" | "err" | "pending" | "underpaid"; text: string; shortfall?: number; amountPaid?: number; currency?: string } | null>(null);
 
-  // AnonPay state — hydrate iframe from any persisted session ID so the user
-  // sees their in-flight payment after a reload/navigation.
-  const initialAnonIframe = (() => {
-    const prefix = "anonpay:";
-    if (!balanceTxHash?.startsWith(prefix)) return null;
-    const sessionId = balanceTxHash.slice(prefix.length);
-    if (!sessionId) return null;
-    return `https://trocador.app/en/anonpay/${encodeURIComponent(sessionId)}?embed=1`;
-  })();
-  const [anonIframe, setAnonIframe] = useState<string | null>(initialAnonIframe);
+  // Trocador now sends X-Frame-Options: DENY. Restore only a genuinely pending
+  // session and open it as a top-level page rather than attempting an iframe.
+  const [anonPaymentUrl, setAnonPaymentUrl] = useState<string | null>(
+    getBalanceAnonPayUrl(balanceTxHash, balancePaymentStatus),
+  );
   const [anonInitLoading, setAnonInitLoading] = useState(false);
   const [anonConfirming, setAnonConfirming] = useState(false);
   const [anonStatus, setAnonStatus] = useState<string>("");
@@ -1296,8 +1292,8 @@ function BalanceDueCard({
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         setAnonErr((d as { error?: string }).error || "Could not start AnonPay session.");
-      } else if (d.iframeUrl) {
-        setAnonIframe(d.iframeUrl);
+      } else if (d.paymentId) {
+        setAnonPaymentUrl(buildBalanceAnonPayUrl(String(d.paymentId)));
       }
     } catch {
       setAnonErr("Network error. Please try again.");
@@ -1552,7 +1548,7 @@ function BalanceDueCard({
                 )}
                 {selectedMethod === "anonpay" && payInfo.anonPayEnabled && (
                   <div className="space-y-2">
-                    {!anonIframe && !balanceConfirmed && !balancePending && (
+                    {!anonPaymentUrl && !balanceConfirmed && !balancePending && (
                       <button
                         type="button"
                         onClick={initAnonPay}
@@ -1564,24 +1560,57 @@ function BalanceDueCard({
                         {anonInitLoading ? "Starting AnonPay session…" : "Pay with AnonPay"}
                       </button>
                     )}
-                    {anonIframe && !balanceConfirmed && (
-                      <>
-                        <div className="rounded-xl overflow-hidden" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-                          <iframe
-                            src={anonIframe}
-                            title="AnonPay"
-                            className="w-full"
-                            style={{ height: 520, border: "none" }}
-                            allow="clipboard-write"
-                          />
+                    {anonPaymentUrl && !balanceConfirmed && (
+                      <div
+                        className="rounded-2xl p-4 space-y-3"
+                        style={{
+                          background: "linear-gradient(145deg, color-mix(in srgb, #fff7e6 92%, var(--t-surface)) 0%, color-mix(in srgb, #ffedd5 68%, var(--t-surface)) 100%)",
+                          border: "1px solid rgba(245,158,11,0.32)",
+                          boxShadow: "0 10px 28px rgba(120,72,16,0.08)",
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#334155", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}>
+                            <span className="text-white font-black text-[9px] tracking-tight">AP</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-extrabold" style={{ color: "#1f2937" }}>Pay with AnonPay</p>
+                            <p className="text-[11px]" style={{ color: "#64748b" }}>
+                              {payInfo.anonPayTicker?.toUpperCase() || "Crypto"} via Trocador
+                            </p>
+                          </div>
+                          <div className="ml-auto text-right shrink-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#9a6b18" }}>Amount due</p>
+                            <p className="text-sm font-black" style={{ color: "#1f2937" }}>{fmtC(amountDue, currency)}</p>
+                          </div>
                         </div>
+
+                        <div className="rounded-xl p-3 flex items-start gap-2" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(245,158,11,0.22)" }}>
+                          <Info className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#d97706" }} />
+                          <p className="text-[11px] leading-relaxed" style={{ color: "#5f5547" }}>
+                            Open the secure Trocador page, pay with your preferred cryptocurrency, then return here to confirm you initiated the payment.
+                          </p>
+                        </div>
+
+                        <a
+                          href={anonPaymentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full min-h-11 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-extrabold text-white transition-all hover:brightness-105 active:scale-[0.99]"
+                          style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", boxShadow: "0 7px 18px rgba(245,158,11,0.24)" }}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          Open AnonPay payment page
+                        </a>
+                        <p className="text-[10px] text-center" style={{ color: "#8a7a66" }}>Opens securely on trocador.app in a new tab</p>
+
                         {!balancePending && (
                           <button
                             type="button"
                             onClick={confirmAnonPayInitiation}
                             disabled={anonConfirming}
-                            className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60"
-                            style={{ background: "#F59E0B", color: "#0a0a0a" }}
+                            className="w-full min-h-11 flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-60 transition-all active:scale-[0.99]"
+                            style={{ background: "#F59E0B", color: "#111827", border: "1px solid #d97706" }}
                           >
                             {anonConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                             {anonConfirming ? "Confirming…" : "I've initiated the payment"}
@@ -1592,7 +1621,7 @@ function BalanceDueCard({
                             Waiting for AnonPay to confirm{anonStatus ? ` — current status: ${anonStatus}` : "…"}
                           </p>
                         )}
-                      </>
+                      </div>
                     )}
                     {anonErr && <p className="text-xs" style={{ color: "#F87171" }}>{anonErr}</p>}
                   </div>
