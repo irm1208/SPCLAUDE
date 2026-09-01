@@ -10,7 +10,8 @@ tack extra items onto the same shipment. It is linked to its parent by a persist
 marker column on the order row (`additionOfOrderId`, non-null = addition).
 
 ## The invariant
-An addition must PERMANENTLY have **free shipping** (all shipping-type charges 0/null:
+An addition must PERMANENTLY inherit its **group buy from the validated parent order**,
+have **free shipping** (all shipping-type charges 0/null:
 delivery, vendor shipping, GB admin fee, direct-shipping cost) **and a locked shipping
 address equal to the parent's**. It is only allowed on a parent that is already paid
 (`paymentStatus === "confirmed"`, the same state the UI gates the "Place Another Order"
@@ -27,7 +28,13 @@ The invariant is cross-cutting: EVERY path that can read or mutate the order mus
 or one path leaks the abuse vector back. That means create, edit, the dedicated
 address-change endpoint (reject for additions), the review/receipt totals, and the
 address display all independently honor "free shipping + locked parent address."
-Never trust client-sent prices/address for an addition — override server-side.
+Never trust the client-sent group-buy ID, prices, or address for an addition — derive
+them from the validated parent server-side. Downstream membership, product, limit, fee,
+and routing checks must run against that parent-derived group buy.
+
+**Why:** persisted browser drafts can carry a stale or missing group-buy ID. Rejecting
+that mismatch blocks a valid parent-linked add-on; accepting the client ID instead risks
+cross-group-buy products. Parent authority fixes both while preserving normal validation.
 
 **Why this matters more than the individual edits:** a future change that adds a new
 write path or a new total/line-item display will silently reintroduce the bug unless it

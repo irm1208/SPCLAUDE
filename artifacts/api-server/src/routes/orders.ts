@@ -407,7 +407,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   // Resolve normalizedGroupBuyId early so we can fall back to GB shipping options below
-  const normalizedGroupBuyId = clientGroupBuyId && typeof clientGroupBuyId === "string"
+  let normalizedGroupBuyId = clientGroupBuyId && typeof clientGroupBuyId === "string"
     ? clientGroupBuyId.trim().slice(0, 64)
     : null;
 
@@ -441,10 +441,11 @@ router.post("/orders", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Wholesale orders do not support additions" });
       return;
     }
-    if ((parent.groupBuyId ?? null) !== normalizedGroupBuyId) {
-      res.status(400).json({ error: "Addition must belong to the same group buy as the original order" });
-      return;
-    }
+    // The validated parent is the authority for an addition's group-buy context.
+    // Do not reject a valid add-on because persisted browser draft state supplied a
+    // stale or missing groupBuyId. All downstream membership, product, limit, fee,
+    // and routing checks now run against the parent's group buy instead.
+    normalizedGroupBuyId = parent.groupBuyId ?? null;
     additionParent = parent;
   }
 
