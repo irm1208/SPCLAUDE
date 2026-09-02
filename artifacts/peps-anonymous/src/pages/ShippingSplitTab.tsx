@@ -39,6 +39,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   const [singleVialEnabled, setSingleVialEnabled] = useState(false);
   const [singleVialProductIds, setSingleVialProductIds] = useState<string[]>([]);
   const [excludedProductIds, setExcludedProductIds] = useState<string[]>([]);
+  const [showExcludedProducts, setShowExcludedProducts] = useState(false);
   const [shippingSettingsSaving, setShippingSettingsSaving] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
 
@@ -190,29 +191,45 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
           <label className="space-y-1"><span className="text-xs font-semibold">Payment</span><select className={`${inputClass} w-full`} value={payment} onChange={e => setPayment(e.target.value)}><option value="all">All</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></label>
         </div>
         <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "color-mix(in srgb, #D97706 35%, var(--t-border))", background: "color-mix(in srgb, #D97706 7%, var(--t-surface))" }}>
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
+          <button
+            type="button"
+            className="flex w-full items-start justify-between gap-3 text-left"
+            onClick={() => setShowExcludedProducts(current => !current)}
+            aria-expanded={showExcludedProducts}
+            aria-controls="vendor-shipping-included-products"
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${showExcludedProducts ? "rotate-180" : ""}`} aria-hidden="true" />
+              <div>
               <p className="text-sm font-bold">Products with vendor shipping included</p>
               <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Tick products whose price already includes supplier shipping. Their kits receive no allocation and are removed from the included-kit totals.</p>
+              </div>
             </div>
-            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>{shippingSettingsSaving ? "Saving…" : "Saved per Group Buy"}</span>
-          </div>
-          {allProductOptions.length === 0 ? (
-            <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No products are present in these Group Buy orders.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {allProductOptions.map(product => {
-                const checked = activeExcludedProductIds.has(product.id);
-                return (
-                  <label key={product.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer" style={{ borderColor: checked ? "#D97706" : "var(--t-border)", background: checked ? "color-mix(in srgb, #D97706 10%, var(--t-surface))" : "var(--t-surface)" }}>
-                    <input type="checkbox" checked={checked} disabled={shippingSettingsSaving} onChange={e => void toggleExcludedProduct(product.id, e.target.checked)} />
-                    <span className="min-w-0 flex-1 truncate font-semibold">{product.name}</span>
-                    <span className="shrink-0 tabular-nums" style={{ color: "var(--t-subtle)" }}>{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
-                  </label>
-                );
-              })}
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>{shippingSettingsSaving ? "Saving…" : "Saved per Group Buy"}</span>
+              {activeExcludedProductIds.size > 0 ? <span className="text-[11px] font-semibold" style={{ color: "#B45309" }}>{activeExcludedProductIds.size} selected</span> : null}
             </div>
-          )}
+          </button>
+          {showExcludedProducts ? (
+            <div id="vendor-shipping-included-products" className="space-y-3">
+              {allProductOptions.length === 0 ? (
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No products are present in these Group Buy orders.</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {allProductOptions.map(product => {
+                    const checked = activeExcludedProductIds.has(product.id);
+                    return (
+                      <label key={product.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer" style={{ borderColor: checked ? "#D97706" : "var(--t-border)", background: checked ? "color-mix(in srgb, #D97706 10%, var(--t-surface))" : "var(--t-surface)" }}>
+                        <input type="checkbox" checked={checked} disabled={shippingSettingsSaving} onChange={e => void toggleExcludedProduct(product.id, e.target.checked)} />
+                        <span className="min-w-0 flex-1 truncate font-semibold">{product.name}</span>
+                        <span className="shrink-0 tabular-nums" style={{ color: "var(--t-subtle)" }}>{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
         <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
           <label className="flex items-start gap-3 cursor-pointer">
