@@ -26,6 +26,7 @@ export function calculateShippingShortfall(target: number, assigned: number): nu
 
 export type ShippingSplitLineItem = {
   productId?: string | null;
+  productName?: string;
   quantity: number | string;
 };
 
@@ -43,8 +44,46 @@ export type ShippingSplitOrder = {
   lineItems?: ShippingSplitLineItem[];
 };
 
-function orderQuantity(order: ShippingSplitOrder): number {
-  return totalOrderQuantity(order.lineItems);
+export function includedOrderQuantity(
+  order: ShippingSplitOrder,
+  excludedProductIds: ReadonlySet<string> = new Set(),
+): number {
+  return (order.lineItems ?? []).reduce(
+    (sum, item) => sum + (
+      item.productId && excludedProductIds.has(item.productId)
+        ? 0
+        : Math.max(0, normalizeShippingAmount(item.quantity))
+    ),
+    0,
+  );
+}
+
+export type ProductQuantitySummary = {
+  productId: string;
+  productName: string;
+  quantity: number;
+};
+
+export function summarizeProductQuantities(
+  orders: ShippingSplitOrder[],
+  excludedProductIds: ReadonlySet<string> = new Set(),
+): ProductQuantitySummary[] {
+  const products = new Map<string, ProductQuantitySummary>();
+
+  for (const order of orders) {
+    for (const item of order.lineItems ?? []) {
+      if (!item.productId || excludedProductIds.has(item.productId)) continue;
+      const quantity = Math.max(0, normalizeShippingAmount(item.quantity));
+      const current = products.get(item.productId);
+      products.set(item.productId, {
+        productId: item.productId,
+        productName: item.productName || item.productId,
+        quantity: (current?.quantity ?? 0) + quantity,
+      });
+    }
+  }
+
+  return [...products.values()].sort((a, b) => a.productName.localeCompare(b.productName));
 }
 
 export type ShippingCalculationBreakdown = {
@@ -64,11 +103,14 @@ export function getShippingCalculationBreakdown(
   order: ShippingSplitOrder,
   normalOrderAmount: number,
   singleVialProductIds: ReadonlySet<string>,
+  excludedProductIds: ReadonlySet<string> = new Set(),
 ): ShippingCalculationBreakdown {
-  const totalQuantity = orderQuantity(order);
+  const totalQuantity = includedOrderQuantity(order, excludedProductIds);
   const vialQuantity = (order.lineItems ?? []).reduce(
     (sum, item) => sum + (
-      item.productId && singleVialProductIds.has(item.productId)
+      item.productId &&
+      !excludedProductIds.has(item.productId) &&
+      singleVialProductIds.has(item.productId)
         ? Math.max(0, normalizeShippingAmount(item.quantity))
         : 0
     ),
@@ -115,24 +157,34 @@ function allocateNormally(
   total: number,
   equalPct: number,
   orders: ShippingSplitOrder[],
+  excludedProductIds: ReadonlySet<string> = new Set(),
 ): Record<string, number> {
   if (orders.length === 0) return {};
+  const eligibleOrders = orders.filter(order => includedOrderQuantity(order, excludedProductIds) > 0);
+  if (eligibleOrders.length === 0) {
+    return Object.fromEntries(orders.map(order => [order.id, 0]));
+  }
   const weightedPct = 100 - equalPct;
   const totalCents = Math.round(total * 100);
-  const totalQuantity = orders.reduce((sum, order) => sum + orderQuantity(order), 0);
+  const totalQuantity = eligibleOrders.reduce(
+    (sum, order) => sum + includedOrderQuantity(order, excludedProductIds),
+    0,
+  );
   let assignedCents = 0;
 
-  return Object.fromEntries(orders.map((order, index) => {
-    const equalShare = (equalPct / 100) / orders.length;
+  const eligibleAllocation = Object.fromEntries(eligibleOrders.map((order, index) => {
+    const equalShare = (equalPct / 100) / eligibleOrders.length;
     const weightedShare = totalQuantity > 0
-      ? (weightedPct / 100) * orderQuantity(order) / totalQuantity
+      ? (weightedPct / 100) * includedOrderQuantity(order, excludedProductIds) / totalQuantity
       : 0;
-    const cents = index === orders.length - 1
+    const cents = index === eligibleOrders.length - 1
       ? totalCents - assignedCents
       : Math.round(totalCents * (equalShare + weightedShare));
     assignedCents += cents;
     return [order.id, cents / 100];
   }));
+
+  return Object.fromEntries(orders.map(order => [order.id, eligibleAllocation[order.id] ?? 0]));
 }
 
 export function allocateShippingSplit(
@@ -140,16 +192,20 @@ export function allocateShippingSplit(
   equalPct: number,
   orders: ShippingSplitOrder[],
   singleVialProductIds: ReadonlySet<string> = new Set(),
+  excludedProductIds: ReadonlySet<string> = new Set(),
 ): Record<string, number> {
-  const normalAllocation = allocateNormally(total, equalPct, orders);
+  const normalAllocation = allocateNormally(total, equalPct, orders, excludedProductIds);
   if (singleVialProductIds.size === 0) return normalAllocation;
 
   const vialOrders: ShippingSplitOrder[] = [];
   const regularOrders: ShippingSplitOrder[] = [];
 
   for (const order of orders) {
+    if (includedOrderQuantity(order, excludedProductIds) <= 0) continue;
     const hasSelectedVial = (order.lineItems ?? []).some(
-      item => item.productId && singleVialProductIds.has(item.productId),
+      item => item.productId &&
+        !excludedProductIds.has(item.productId) &&
+        singleVialProductIds.has(item.productId),
     );
     (hasSelectedVial ? vialOrders : regularOrders).push(order);
   }
@@ -164,6 +220,7 @@ export function allocateShippingSplit(
       order,
       normalAllocation[order.id] ?? 0,
       singleVialProductIds,
+      excludedProductIds,
     );
     const cents = Math.round(breakdown.adjustedOrderAmount * 100);
     adjusted[order.id] = breakdown.adjustedOrderAmount;
@@ -171,7 +228,16 @@ export function allocateShippingSplit(
   }
 
   const remainingCents = Math.max(0, Math.round(total * 100) - vialAssignedCents);
-  const regularAllocation = allocateNormally(remainingCents / 100, equalPct, regularOrders);
+  const regularAllocation = allocateNormally(
+    remainingCents / 100,
+    equalPct,
+    regularOrders,
+    excludedProductIds,
+  );
 
-  return { ...adjusted, ...regularAllocation };
+  return {
+    ...Object.fromEntries(orders.map(order => [order.id, 0])),
+    ...adjusted,
+    ...regularAllocation,
+  };
 }

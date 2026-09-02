@@ -2169,6 +2169,64 @@ router.post("/organiser/lab-tests/bulk-janoshik", requireOrganiser, async (req, 
 
 // ─── Orders + P&L Routes ───────────────────────────────────────────────────────
 
+// GET /api/organiser/group-buys/:id/shipping-settings — persisted Shipping Split product settings
+router.get("/organiser/group-buys/:id/shipping-settings", requireOrganiser, async (req, res): Promise<void> => {
+  const id = String(req.params["id"]);
+  const [gb] = await db
+    .select({
+      id: groupBuysTable.id,
+      vendorShippingExcludedProductIds: groupBuysTable.vendorShippingExcludedProductIds,
+    })
+    .from(groupBuysTable)
+    .where(gbOwner(req, id));
+
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  const excludedProductIds = Array.isArray(gb.vendorShippingExcludedProductIds)
+    ? gb.vendorShippingExcludedProductIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  res.json({ excludedProductIds });
+});
+
+// PUT /api/organiser/group-buys/:id/shipping-settings — save products whose prices already include vendor shipping
+router.put("/organiser/group-buys/:id/shipping-settings", requireOrganiser, async (req, res): Promise<void> => {
+  const id = String(req.params["id"]);
+  const [gb] = await db
+    .select({ id: groupBuysTable.id })
+    .from(groupBuysTable)
+    .where(gbOwner(req, id));
+
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  const rawProductIds = (req.body as { excludedProductIds?: unknown }).excludedProductIds;
+  if (!Array.isArray(rawProductIds) || rawProductIds.some(value => typeof value !== "string" || value.trim().length === 0)) {
+    res.status(400).json({ error: "excludedProductIds must be an array of product IDs" });
+    return;
+  }
+
+  const productIds = [...new Set(rawProductIds.map(value => String(value).trim()))];
+  if (productIds.length > 0) {
+    const matchingProducts = await db
+      .select({ productId: groupBuyProductsTable.productId })
+      .from(groupBuyProductsTable)
+      .where(and(
+        eq(groupBuyProductsTable.groupBuyId, id),
+        inArray(groupBuyProductsTable.productId, productIds),
+      ));
+    if (matchingProducts.length !== productIds.length) {
+      res.status(400).json({ error: "Every excluded product must belong to this group buy" });
+      return;
+    }
+  }
+
+  await db
+    .update(groupBuysTable)
+    .set({ vendorShippingExcludedProductIds: productIds })
+    .where(gbOwner(req, id));
+
+  res.json({ excludedProductIds: productIds });
+});
+
 // GET /api/organiser/group-buys/:id/orders — list orders for own GB
 router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;

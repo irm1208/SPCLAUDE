@@ -6,6 +6,7 @@ import {
   calculateShippingShortfall,
   getShippingCalculationBreakdown,
   normalizeShippingAmount,
+  summarizeProductQuantities,
   totalOrderQuantity,
 } from "./shipping-split-model.ts";
 
@@ -126,4 +127,76 @@ test("getShippingCalculationBreakdown keeps normal products at their regular rat
     adjustedVialAmount: 1.5,
     adjustedOrderAmount: 16.5,
   });
+});
+
+test("allocateShippingSplit excludes selected product quantities from the weighted split", () => {
+  assert.deepEqual(allocateShippingSplit(100, 0, [
+    {
+      id: "mixed-order",
+      lineItems: [
+        { productId: "included-kit", quantity: 1 },
+        { productId: "shipping-included", quantity: 5 },
+      ],
+    },
+    { id: "included-order", lineItems: [{ productId: "included-kit", quantity: 3 }] },
+  ], new Set(), new Set(["shipping-included"])), {
+    "mixed-order": 25,
+    "included-order": 75,
+  });
+});
+
+test("allocateShippingSplit gives excluded-only orders zero and reallocates to included orders", () => {
+  assert.deepEqual(allocateShippingSplit(100, 100, [
+    { id: "excluded-order", lineItems: [{ productId: "shipping-included", quantity: 5 }] },
+    { id: "included-order", lineItems: [{ productId: "included-kit", quantity: 5 }] },
+  ], new Set(), new Set(["shipping-included"])), {
+    "excluded-order": 0,
+    "included-order": 100,
+  });
+});
+
+test("allocateShippingSplit divides the equal portion across included orders only", () => {
+  assert.deepEqual(allocateShippingSplit(100, 100, [
+    { id: "excluded-order", lineItems: [{ productId: "shipping-included", quantity: 5 }] },
+    { id: "included-a", lineItems: [{ productId: "kit-a", quantity: 1 }] },
+    { id: "included-b", lineItems: [{ productId: "kit-b", quantity: 9 }] },
+  ], new Set(), new Set(["shipping-included"])), {
+    "excluded-order": 0,
+    "included-a": 50,
+    "included-b": 50,
+  });
+});
+
+test("allocateShippingSplit ignores single-vial selections for excluded products", () => {
+  assert.deepEqual(allocateShippingSplit(100, 0, [
+    {
+      id: "mixed-order",
+      lineItems: [
+        { productId: "shipping-included", quantity: 1 },
+        { productId: "kit-a", quantity: 1 },
+      ],
+    },
+    { id: "included-order", lineItems: [{ productId: "kit-a", quantity: 1 }] },
+  ], new Set(["shipping-included"]), new Set(["shipping-included"])), {
+    "mixed-order": 50,
+    "included-order": 50,
+  });
+});
+
+test("summarizeProductQuantities reports only included product kits", () => {
+  assert.deepEqual(summarizeProductQuantities([
+    {
+      id: "order-a",
+      lineItems: [
+        { productId: "kit-a", productName: "Kit A", quantity: 2 },
+        { productId: "shipping-included", productName: "Included Shipping", quantity: 4 },
+      ],
+    },
+    {
+      id: "order-b",
+      lineItems: [{ productId: "kit-a", productName: "Kit A", quantity: 3 }],
+    },
+  ], new Set(["shipping-included"])), [
+    { productId: "kit-a", productName: "Kit A", quantity: 5 },
+  ]);
 });

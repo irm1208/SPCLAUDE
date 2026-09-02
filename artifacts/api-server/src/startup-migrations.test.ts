@@ -11,3 +11,11 @@ describe("account dashboard startup migrations", () => {
     );
   });
 });
+
+describe("group-buy shipping product exclusion migrations", () => {
+  it("adds the persisted excluded-product list with an empty-array default", () => {
+    expect(startupSource).toMatch(
+      /ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_excluded_product_ids jsonb NOT NULL DEFAULT '\[\]'::jsonb/,
+    );
+  });
+});

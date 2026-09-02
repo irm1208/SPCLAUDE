@@ -5,7 +5,9 @@ import {
   calculateShippingDifference,
   calculateShippingShortfall,
   getShippingCalculationBreakdown,
+  includedOrderQuantity,
   normalizeShippingAmount,
+  summarizeProductQuantities,
   totalOrderQuantity,
 } from "./shipping-split-model";
 
@@ -36,16 +38,23 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [singleVialEnabled, setSingleVialEnabled] = useState(false);
   const [singleVialProductIds, setSingleVialProductIds] = useState<string[]>([]);
+  const [excludedProductIds, setExcludedProductIds] = useState<string[]>([]);
+  const [shippingSettingsSaving, setShippingSettingsSaving] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
 
   const load = async () => {
     setLoading(true); setError("");
     try {
-      const response = await fetch(`/api/organiser/group-buys/${groupBuy.id}/orders`, { credentials: "include" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to load orders");
-      setOrders(data);
-      setIncluded(Object.fromEntries(data.map((order: ShippingOrder) => [order.id, true])));
+      const [ordersResponse, settingsResponse] = await Promise.all([
+        fetch(`/api/organiser/group-buys/${groupBuy.id}/orders`, { credentials: "include" }),
+        fetch(`/api/organiser/group-buys/${groupBuy.id}/shipping-settings`, { credentials: "include" }),
+      ]);
+      const [ordersData, settingsData] = await Promise.all([ordersResponse.json(), settingsResponse.json()]);
+      if (!ordersResponse.ok) throw new Error(ordersData.error || "Failed to load orders");
+      if (!settingsResponse.ok) throw new Error(settingsData.error || "Failed to load shipping settings");
+      setOrders(ordersData);
+      setExcludedProductIds(Array.isArray(settingsData.excludedProductIds) ? settingsData.excludedProductIds : []);
+      setIncluded(Object.fromEntries(ordersData.map((order: ShippingOrder) => [order.id, true])));
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to load orders"); }
     finally { setLoading(false); }
   };
@@ -59,17 +68,26 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
       : order.paymentStatus === "unpaid"))
   ), [orders, payment, status]);
   const selected = filtered.filter(order => included[order.id] !== false);
-  const productOptions = useMemo(() => {
-    const products = new Map<string, string>();
-    for (const order of orders) {
-      for (const item of order.lineItems ?? []) {
-        if (item.productId) products.set(item.productId, item.productName || item.productId);
-      }
-    }
-    return [...products.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const allProductOptions = useMemo(() => {
+    return summarizeProductQuantities(orders).map(product => ({
+      id: product.productId,
+      name: product.productName,
+      quantity: product.quantity,
+    }));
   }, [orders]);
+  const excludedProductsKey = excludedProductIds.slice().sort().join("|");
+  const activeExcludedProductIds = useMemo(
+    () => new Set(excludedProductIds),
+    [excludedProductsKey],
+  );
+  const productOptions = useMemo(
+    () => allProductOptions.filter(product => !activeExcludedProductIds.has(product.id)),
+    [allProductOptions, activeExcludedProductIds],
+  );
+  const includedProductSummary = useMemo(
+    () => summarizeProductQuantities(selected, activeExcludedProductIds),
+    [selected, activeExcludedProductIds],
+  );
   const selectedOrdersKey = selected.map(order => `${order.id}:${(order.lineItems ?? []).map(item => `${item.productId ?? ""}:${item.quantity}`).join(",")}`).join("|");
   const selectedVialProductsKey = singleVialProductIds.slice().sort().join("|");
   const activeSingleVialProductIds = useMemo(
@@ -77,8 +95,8 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
     [singleVialEnabled, selectedVialProductsKey],
   );
   const normalAllocations = useMemo(
-    () => allocateShippingSplit(Number(total) || 0, equalPct, selected),
-    [total, equalPct, status, payment, selectedOrdersKey],
+    () => allocateShippingSplit(Number(total) || 0, equalPct, selected, new Set(), activeExcludedProductIds),
+    [total, equalPct, status, payment, selectedOrdersKey, activeExcludedProductIds],
   );
   const automaticAllocations = useMemo(
     () => allocateShippingSplit(
@@ -86,13 +104,41 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
       equalPct,
       selected,
       activeSingleVialProductIds,
+      activeExcludedProductIds,
     ),
-    [total, equalPct, status, payment, selectedOrdersKey, activeSingleVialProductIds],
+    [total, equalPct, status, payment, selectedOrdersKey, activeSingleVialProductIds, activeExcludedProductIds],
   );
 
   useEffect(() => {
     setAmounts(Object.fromEntries(Object.entries(automaticAllocations).map(([id, amount]) => [id, amount.toFixed(2)])));
   }, [automaticAllocations]);
+
+  const toggleExcludedProduct = async (productId: string, checked: boolean) => {
+    const previous = excludedProductIds;
+    const next = checked
+      ? [...new Set([...excludedProductIds, productId])]
+      : excludedProductIds.filter(id => id !== productId);
+    setExcludedProductIds(next);
+    if (checked) setSingleVialProductIds(current => current.filter(id => id !== productId));
+    setShippingSettingsSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/organiser/group-buys/${groupBuy.id}/shipping-settings`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ excludedProductIds: next }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to save shipping settings");
+      setExcludedProductIds(Array.isArray(data.excludedProductIds) ? data.excludedProductIds : []);
+    } catch (err) {
+      setExcludedProductIds(previous);
+      setError(err instanceof Error ? err.message : "Failed to save shipping settings");
+    } finally {
+      setShippingSettingsSaving(false);
+    }
+  };
 
   const assignedTotal = selected.reduce((sum, order) => sum + (Number(amounts[order.id]) || 0), 0);
   const targetTotal = Number(total) || 0;
@@ -143,6 +189,31 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
           <label className="space-y-1"><span className="text-xs font-semibold">Order status</span><select className={`${inputClass} w-full`} value={status} onChange={e => setStatus(e.target.value)}>{["Submitted","Processing","Shipped","Completed"].map(value => <option key={value}>{value}</option>)}</select></label>
           <label className="space-y-1"><span className="text-xs font-semibold">Payment</span><select className={`${inputClass} w-full`} value={payment} onChange={e => setPayment(e.target.value)}><option value="all">All</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></label>
         </div>
+        <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "color-mix(in srgb, #D97706 35%, var(--t-border))", background: "color-mix(in srgb, #D97706 7%, var(--t-surface))" }}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold">Products with vendor shipping included</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Tick products whose price already includes supplier shipping. Their kits receive no allocation and are removed from the included-kit totals.</p>
+            </div>
+            <span className="text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>{shippingSettingsSaving ? "Saving…" : "Saved per Group Buy"}</span>
+          </div>
+          {allProductOptions.length === 0 ? (
+            <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No products are present in these Group Buy orders.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {allProductOptions.map(product => {
+                const checked = activeExcludedProductIds.has(product.id);
+                return (
+                  <label key={product.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer" style={{ borderColor: checked ? "#D97706" : "var(--t-border)", background: checked ? "color-mix(in srgb, #D97706 10%, var(--t-surface))" : "var(--t-surface)" }}>
+                    <input type="checkbox" checked={checked} disabled={shippingSettingsSaving} onChange={e => void toggleExcludedProduct(product.id, e.target.checked)} />
+                    <span className="min-w-0 flex-1 truncate font-semibold">{product.name}</span>
+                    <span className="shrink-0 tabular-nums" style={{ color: "var(--t-subtle)" }}>{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
           <label className="flex items-start gap-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={singleVialEnabled} onChange={e => setSingleVialEnabled(e.target.checked)} />
@@ -170,6 +241,29 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
             </div>
           ) : null}
         </div>
+        <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold">Included kit quantities</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Only products contributing to the current filtered split.</p>
+            </div>
+            <span className="rounded-full px-2.5 py-1 text-xs font-bold tabular-nums" style={{ background: "var(--t-surface)", color: "var(--t-text)" }}>
+              {includedProductSummary.reduce((sum, product) => sum + product.quantity, 0)} kits total
+            </span>
+          </div>
+          {includedProductSummary.length === 0 ? (
+            <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No included product kits match the current order filters.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {includedProductSummary.map(product => (
+                <div key={product.productId} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+                  <span className="min-w-0 truncate font-semibold">{product.productName}</span>
+                  <span className="shrink-0 font-bold tabular-nums">{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex items-center justify-between rounded-lg px-3 py-2 text-sm" style={{ background: "var(--t-surface2)" }}>
           <span>{selected.length} orders selected · {equalPct}% equal / {100 - equalPct}% by quantity</span>
           <span className="font-bold" style={{ color: totalsMatch ? "#16A34A" : "#DC2626" }}>{assignedTotal.toFixed(2)} / {targetTotal.toFixed(2)}</span>
@@ -185,6 +279,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
                 order,
                 normalAllocations[order.id] ?? 0,
                 activeSingleVialProductIds,
+                activeExcludedProductIds,
               );
               const expanded = expandedOrderIds.includes(order.id);
               const detailedMoney = (value: number) => value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
@@ -195,7 +290,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
                     <button type="button" onClick={() => setExpandedOrderIds(current => current.includes(order.id) ? current.filter(id => id !== order.id) : [...current, order.id])} aria-expanded={expanded} aria-label={`${expanded ? "Hide" : "Show"} shipping calculation for ${order.telegramUsername.replace(/^@+/, "")}`} className="mt-0.5 w-6 h-6 shrink-0 rounded-md border flex items-center justify-center" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
                     </button>
-                    <div className="min-w-0"><p className="font-semibold text-sm truncate">{order.telegramUsername.replace(/^@+/, "")}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · Qty {totalOrderQuantity(order.lineItems)} · {order.paymentStatus.replaceAll("_", " ")}{hasSingleVialProduct ? " · single-vial adjusted" : ""}</p></div>
+                    <div className="min-w-0"><p className="font-semibold text-sm truncate">{order.telegramUsername.replace(/^@+/, "")}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · Included qty {includedOrderQuantity(order, activeExcludedProductIds)}{includedOrderQuantity(order, activeExcludedProductIds) !== totalOrderQuantity(order.lineItems) ? ` / ${totalOrderQuantity(order.lineItems)} total` : ""} · {order.paymentStatus.replaceAll("_", " ")}{hasSingleVialProduct ? " · single-vial adjusted" : ""}</p></div>
                   </div>
                   <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</span>
                   <label className="flex flex-col items-end gap-1">
@@ -214,7 +309,8 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
                         <div className="flex flex-wrap gap-2">
                           {(order.lineItems ?? []).map((item, index) => {
                             const isSingleVial = Boolean(item.productId && activeSingleVialProductIds.has(item.productId));
-                            return <span key={`${item.productId ?? item.productName ?? "item"}-${index}`} className="rounded-md border px-2 py-1" style={{ borderColor: isSingleVial ? "var(--t-blue)" : "var(--t-border)", background: "var(--t-surface)" }}>{item.productName || "Product"} × {item.quantity}{isSingleVial ? " · single vial" : ""}</span>;
+                            const isExcluded = Boolean(item.productId && activeExcludedProductIds.has(item.productId));
+                            return <span key={`${item.productId ?? item.productName ?? "item"}-${index}`} className="rounded-md border px-2 py-1" style={{ borderColor: isExcluded ? "#D97706" : isSingleVial ? "var(--t-blue)" : "var(--t-border)", background: "var(--t-surface)" }}>{item.productName || "Product"} × {item.quantity}{isExcluded ? " · shipping included" : isSingleVial ? " · single vial" : ""}</span>;
                           })}
                         </div>
                       </div>
