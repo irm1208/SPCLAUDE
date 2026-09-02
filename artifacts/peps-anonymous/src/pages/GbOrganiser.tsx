@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, ChevronDown, ChevronUp,
   AlertCircle, Globe, Lock, SendHorizonal, Truck,
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
-  MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield,
+  MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield, Calculator,
   ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
 } from "lucide-react";
 import ShippingSplitTab from "./ShippingSplitTab";
