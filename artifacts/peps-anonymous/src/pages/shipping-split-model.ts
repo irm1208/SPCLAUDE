@@ -23,16 +23,22 @@ export type ShippingSplitLineItem = {
   quantity: number | string;
 };
 
+export function totalOrderQuantity(
+  lineItems: Array<{ quantity: number | string }> | undefined,
+): number {
+  return lineItems?.reduce(
+    (sum, item) => sum + Math.max(0, normalizeShippingAmount(item.quantity)),
+    0,
+  ) ?? 0;
+}
+
 export type ShippingSplitOrder = {
   id: string;
   lineItems?: ShippingSplitLineItem[];
 };
 
 function orderQuantity(order: ShippingSplitOrder): number {
-  return (order.lineItems ?? []).reduce(
-    (sum, item) => sum + Math.max(0, normalizeShippingAmount(item.quantity)),
-    0,
-  );
+  return totalOrderQuantity(order.lineItems);
 }
 
 function allocateNormally(

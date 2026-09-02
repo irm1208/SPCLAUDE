@@ -5,6 +5,7 @@ import {
   calculateShippingDifference,
   calculateShippingShortfall,
   normalizeShippingAmount,
+  totalOrderQuantity,
 } from "./shipping-split-model.ts";
 
 test("normalizeShippingAmount converts database decimal strings into numbers", () => {
@@ -79,4 +80,12 @@ test("allocateShippingSplit supports multiple selected single-vial products", ()
     "vial-order": 3,
     "kit-order": 57,
   });
+});
+
+test("totalOrderQuantity sums all line-item quantities", () => {
+  assert.equal(totalOrderQuantity([
+    { quantity: 2 },
+    { quantity: "3" },
+  ]), 5);
+  assert.equal(totalOrderQuantity(undefined), 0);
 });
