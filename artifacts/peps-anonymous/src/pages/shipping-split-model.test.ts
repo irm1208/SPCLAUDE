@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  allocateShippingSplit,
   calculateShippingDifference,
   calculateShippingShortfall,
   normalizeShippingAmount,
@@ -24,4 +25,58 @@ test("calculateShippingDifference shows the per-order split shortfall", () => {
 test("calculateShippingShortfall shows the remaining or excess split total", () => {
   assert.equal(calculateShippingShortfall(100, 92.5), 7.5);
   assert.equal(calculateShippingShortfall(100, 103.25), -3.25);
+});
+
+test("allocateShippingSplit preserves the normal split when single-vial mode is off", () => {
+  assert.deepEqual(allocateShippingSplit(100, 50, [
+    { id: "a", lineItems: [{ productId: "kit", quantity: 1 }] },
+    { id: "b", lineItems: [{ productId: "kit", quantity: 3 }] },
+  ]), {
+    a: 37.5,
+    b: 62.5,
+  });
+});
+
+test("allocateShippingSplit divides a vial-only order's normal allocation by ten and rebalances the remainder", () => {
+  assert.deepEqual(allocateShippingSplit(60, 100, [
+    { id: "vial-order", lineItems: [{ productId: "vial-a", quantity: 5 }] },
+    { id: "kit-order", lineItems: [{ productId: "kit", quantity: 5 }] },
+  ], new Set(["vial-a"])), {
+    "vial-order": 3,
+    "kit-order": 57,
+  });
+});
+
+test("allocateShippingSplit discounts only selected vial products in a mixed order", () => {
+  assert.deepEqual(allocateShippingSplit(90, 100, [
+    {
+      id: "mixed-order",
+      lineItems: [
+        { productId: "vial-a", quantity: 5 },
+        { productId: "kit", quantity: 5 },
+      ],
+    },
+    { id: "kit-order-a", lineItems: [{ productId: "kit", quantity: 2 }] },
+    { id: "kit-order-b", lineItems: [{ productId: "kit", quantity: 8 }] },
+  ], new Set(["vial-a"])), {
+    "mixed-order": 16.5,
+    "kit-order-a": 36.75,
+    "kit-order-b": 36.75,
+  });
+});
+
+test("allocateShippingSplit supports multiple selected single-vial products", () => {
+  assert.deepEqual(allocateShippingSplit(60, 100, [
+    {
+      id: "vial-order",
+      lineItems: [
+        { productId: "vial-a", quantity: 2 },
+        { productId: "vial-b", quantity: 3 },
+      ],
+    },
+    { id: "kit-order", lineItems: [{ productId: "kit", quantity: 5 }] },
+  ], new Set(["vial-a", "vial-b"])), {
+    "vial-order": 3,
+    "kit-order": 57,
+  });
 });
