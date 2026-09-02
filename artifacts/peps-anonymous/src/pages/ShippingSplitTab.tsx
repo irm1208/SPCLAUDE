@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, RefreshCw, Truck } from "lucide-react";
+import { normalizeShippingAmount } from "./shipping-split-model";
 
 type ShippingOrder = {
   id: string;
@@ -9,7 +10,7 @@ type ShippingOrder = {
   paymentStatus: string;
   shippingCountry?: string | null;
   grandTotal: number;
-  vendorShipping?: number;
+  vendorShipping?: number | string;
   amountDue?: number;
   lineItems?: Array<{ quantity: number }>;
 };
@@ -122,7 +123,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
           <div key={order.id} className="grid grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_120px_140px] gap-3 items-center p-3 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
             <input type="checkbox" checked={included[order.id] !== false} onChange={e => setIncluded(current => ({ ...current, [order.id]: e.target.checked }))} />
             <div className="min-w-0"><p className="font-semibold text-sm truncate">@{order.telegramUsername}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · {order.shippingCountry || "Country not set"} · {order.paymentStatus.replaceAll("_", " ")}</p></div>
-            <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {(order.vendorShipping ?? 0).toFixed(2)}</span>
+            <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</span>
             <label className="flex items-center gap-2"><span className="text-xs">{groupBuy.currency ?? "GBP"}</span><input className={`${inputClass} w-24 text-right`} type="number" min="0" step="0.01" disabled={included[order.id] === false} value={amounts[order.id] ?? "0.00"} onChange={e => setAmounts(current => ({ ...current, [order.id]: e.target.value }))} /></label>
           </div>
         ))}
