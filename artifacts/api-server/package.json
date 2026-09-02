@@ -9,6 +9,7 @@
     "build:compile": "tsx ./build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "migrate:db-backups": "tsx scripts/migrate-db-backups-to-google-drive.ts",
     "test:e2e:payment-audit": "node scripts/payment-audit-e2e.mjs"
   },
   "dependencies": {

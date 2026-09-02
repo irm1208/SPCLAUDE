@@ -3,8 +3,8 @@ name: Google Drive database backups
 description: Production backup destination, lifecycle, and scheduling rules that prevent database and project-storage contention.
 ---
 
-Production database backups must stream through gzip into a temporary `/tmp` file, upload to the dedicated Google Drive backup folder, and delete the temporary file only after Drive confirms the upload. Development servers do not run scheduled backups. Production waits 10 minutes after startup, and a PostgreSQL advisory lock prevents multiple instances from backing up simultaneously.
+Production database backups use `pg_dump --no-owner --no-privileges`, are named `S&PBACKUP-YYYY-MM-DD_HH-MM-SS.SQL`, and are stored uncompressed in the dedicated Google Drive backup folder indefinitely. Development servers do not run scheduled backups. Production waits 10 minutes after startup, and a PostgreSQL advisory lock prevents multiple instances from backing up simultaneously.
 
 **Why:** immediate full dumps during application startup took nearly six minutes, pushed normal API requests into 30–289 second waits, and accumulated tens of gigabytes inside the project.
 
-**How to apply:** preserve the upload-before-delete ordering, the advisory lock, delayed production schedule, and remote retention limit. On upload failure, retain the temporary compressed file for diagnosis rather than reporting a successful backup.
+**How to apply:** preserve upload-before-delete, exact remote-size verification, the advisory lock, and delayed production schedule. The connector WAF blocks raw SQL bodies, so gzip only the HTTP transport envelope; Drive must decode it and store exact plain SQL bytes, then delete the envelope. Never prune Drive backups automatically. On failure, retain the source SQL.

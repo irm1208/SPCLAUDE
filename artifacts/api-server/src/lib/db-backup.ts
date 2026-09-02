@@ -8,9 +8,7 @@
 
 import { spawn } from "child_process";
 import { promisify } from "util";
-import { createGzip } from "zlib";
 import { mkdir, readdir, unlink, stat, createWriteStream } from "fs";
-import { open } from "fs/promises";
 import { pipeline } from "stream/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -19,24 +17,17 @@ import {
   buildDriveBackupFileName,
   uploadBackupToGoogleDrive,
 } from "./google-drive-backup";
+import { buildPgDumpArgs } from "./db-backup-command";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
 const INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with application startup.
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
-const BACKUP_FILE_SUFFIX = ".sql.gz";
+const BACKUP_FILE_PREFIX = "S&PBACKUP-";
+const BACKUP_FILE_SUFFIX = ".SQL";
 
 let backupInProgress = false;
-
-/** Produces a filesystem-safe UTC timestamp string, e.g. 2026-08-05_14-30-00 */
-function utcTimestamp(): string {
-  return new Date()
-    .toISOString()
-    .replace("T", "_")
-    .replace(/:/g, "-")
-    .split(".")[0];
-}
 
 /** Deletes temporary backup files whose last-modified time is older than KEEP_DAYS days. */
 async function pruneOldBackups(): Promise<void> {
@@ -50,7 +41,7 @@ async function pruneOldBackups(): Promise<void> {
   const cutoffMs = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
 
   for (const file of files) {
-    if (!file.startsWith("salt-and-peps-db-") || !file.endsWith(BACKUP_FILE_SUFFIX)) continue;
+    if (!file.startsWith(BACKUP_FILE_PREFIX) || !file.endsWith(BACKUP_FILE_SUFFIX)) continue;
     const filePath = join(BACKUP_DIR, file);
     try {
       const { mtimeMs } = await promisify(stat)(filePath);
@@ -64,13 +55,13 @@ async function pruneOldBackups(): Promise<void> {
   }
 }
 
-async function createCompressedDump(outputPath: string): Promise<void> {
+async function createPlainDump(outputPath: string): Promise<void> {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) throw new Error("DATABASE_URL not set");
 
   const pgDump = spawn(
     "pg_dump",
-    ["--no-owner", "--no-privileges", dbUrl],
+    buildPgDumpArgs(dbUrl),
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   const stderr: Buffer[] = [];
@@ -83,7 +74,7 @@ async function createCompressedDump(outputPath: string): Promise<void> {
 
   try {
     await Promise.all([
-      pipeline(pgDump.stdout, createGzip(), createWriteStream(outputPath)),
+      pipeline(pgDump.stdout, createWriteStream(outputPath)),
       exitCode.then((code) => {
         if (code !== 0) {
           const detail = Buffer.concat(stderr).toString("utf8").trim();
@@ -120,7 +111,7 @@ async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
   }
 }
 
-/** Runs a single compressed dump, uploads it, and prunes temporary failures. */
+/** Runs a single plain SQL dump, uploads it, and prunes temporary failures. */
 export async function runDbBackup(): Promise<void> {
   if (backupInProgress) {
     console.log("[db-backup] A backup is already in progress — skipping");
@@ -138,12 +129,12 @@ export async function runDbBackup(): Promise<void> {
       const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
-        await createCompressedDump(outputPath);
+        await createPlainDump(outputPath);
         const { size } = await promisify(stat)(outputPath);
-        console.log(`[db-backup] Compressed dump ready (${size} bytes): ${fileName}`);
-        const fileId = await uploadBackupToGoogleDrive(outputPath, fileName);
+        console.log(`[db-backup] Plain SQL dump ready (${size} bytes): ${fileName}`);
+        const uploaded = await uploadBackupToGoogleDrive(outputPath, fileName);
         await promisify(unlink)(outputPath);
-        console.log(`[db-backup] Uploaded ${fileName} to Google Drive (file ${fileId})`);
+        console.log(`[db-backup] Uploaded ${fileName} to Google Drive (file ${uploaded.id})`);
       } catch (err) {
         console.error("[db-backup] Backup/upload failed; temporary file retained:", err);
       } finally {
@@ -166,7 +157,7 @@ export function startDbBackupSchedule(): void {
     return;
   }
   console.log(
-    "[db-backup] Schedule started — first run in 10 min, then every 12 h (Google Drive, keeping 14 remote backups)",
+    "[db-backup] Schedule started — first run in 10 min, then every 12 h (plain SQL in Google Drive, retained indefinitely)",
   );
   setTimeout(() => void runDbBackup(), FIRST_BACKUP_DELAY_MS);
   setInterval(runDbBackup, INTERVAL_MS);
