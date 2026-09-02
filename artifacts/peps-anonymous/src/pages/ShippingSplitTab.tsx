@@ -222,7 +222,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
                         <div className="rounded-lg border p-3 space-y-1" style={{ borderColor: "color-mix(in srgb, var(--t-blue) 35%, var(--t-border))", background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))" }}>
                           <p className="font-bold">How the single-vial price is worked out</p>
                           <p>Each selected vial counts as one-tenth of a full kit for shipping.</p>
-                          <p>{calculation.normalVialAmount.toFixed(2)} normal shipping for the selected vial portion ÷ {calculation.vialQuantity} ordered vial{calculation.vialQuantity === 1 ? "" : "s"} = {detailedMoney(calculation.perKitAmount)} per full-kit unit</p>
+                          <p>{calculation.normalVialAmount.toFixed(2)} normal shipping for the selected vial portion ÷ {calculation.vialQuantity} kit{calculation.vialQuantity === 1 ? "" : "s"} = {detailedMoney(calculation.perKitAmount)} per full-kit unit</p>
                           <p>{detailedMoney(calculation.perKitAmount)} per full-kit unit ÷ 10 = {detailedMoney(calculation.perVialAmount)} per vial</p>
                           <p>{detailedMoney(calculation.perVialAmount)} per vial × {calculation.vialQuantity} vial{calculation.vialQuantity === 1 ? "" : "s"} = <strong>{calculation.adjustedVialAmount.toFixed(2)}</strong></p>
                           {calculation.regularProductAmount > 0 ? <p>Normal products in this order stay at {calculation.regularProductAmount.toFixed(2)}.</p> : null}
