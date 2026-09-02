@@ -13,6 +13,7 @@ import {
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield,
   ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
 } from "lucide-react";
+import ShippingSplitTab from "./ShippingSplitTab";
 import { PageLayout } from "@/components/PageLayout";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
@@ -6342,7 +6343,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
         </button>
       </SectionCard>
 
-      <SectionCard>
+      {false && <SectionCard>
         <ToggleRow
           label="Shipping Split"
           hint="Split vendor shipping cost across orders in this group buy"
@@ -6460,7 +6461,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
             )}
           </div>
         )}
-      </SectionCard>
+      </SectionCard>}
 
 
       <SectionCard>
@@ -12977,13 +12978,14 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "orders" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
   { id: "edit", label: "Edit GB", icon: Pencil, gbRequired: true },
   { id: "products", label: "Products", icon: Package, gbRequired: true },
   { id: "shipping", label: "Ship & Pay", icon: CreditCard, gbRequired: true },
+  { id: "shippingsplit", label: "Shipping Split", icon: Calculator, gbRequired: true },
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
   { id: "parcels", label: "Parcels", icon: Truck, gbRequired: true },
@@ -13008,7 +13010,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   archived: { color: "#6B7280", bg: "rgba(107,114,128,0.12)", label: "Archived" },
 };
 
-const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "orders", "qrcodes"];
+const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "qrcodes"];
 const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
@@ -13289,6 +13291,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
         {activeTab === "products" && selectedGb && <ProductsTab gb={selectedGb} />}
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
+        {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}

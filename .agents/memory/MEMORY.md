@@ -101,3 +101,5 @@
 - [Shared-order payment routing](shared-order-payment-routing.md) — shared wholesale methods are organiser-only; absent organiser wallets disable methods and never fall back to admin/global destinations.
 - [Shared-order confirmation commitment](shared-order-confirmation-commitment.md) — confirmation binds a current draft; mutations and reopening invalidate it, while lock/removal must serialize it.
 - [AnonPay pages cannot be embedded](anonpay-no-iframe.md) — Trocador sends X-Frame-Options: DENY; launch AnonPay as a top-level page and restore only genuinely pending sessions.
+- [GB vendor-shipping payment integrity](gb-vendor-shipping-payment-integrity.md) — paid-order shipping increases become amountDue; decreases and edits during balance verification are blocked.
+- [Wholesale access split payment verification](wholesale-access-split-payment-verification.md) — verify the test tx before storing it; final sync and scheduled checks must verify fee minus verified test amount.

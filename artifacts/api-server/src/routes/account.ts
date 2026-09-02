@@ -17,6 +17,7 @@ import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verif
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
+import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
@@ -3909,11 +3910,37 @@ router.post("/account/wholesale-access/submit-test", requireAccount, async (req:
       .limit(1);
     if (!existing) { res.status(404).json({ error: "No pending request found" }); return; }
 
+    const currency = (existing.paymentCryptoCurrency ?? "USDT").toUpperCase();
+    const network = existing.paymentCryptoNetwork ?? "ERC-20";
+    const options = await getAdminCryptoOptions();
+    const opt =
+      options.find(o => o.currency.toUpperCase() === currency && o.network.toLowerCase() === network.toLowerCase()) ??
+      options.find(o => o.currency.toUpperCase() === currency) ??
+      options[0];
+    if (!opt?.walletAddress || !existing.paymentTestAmount) {
+      res.status(409).json({ error: "Payment details are not configured. Please refresh and try again." });
+      return;
+    }
+
+    const result = await verifyTransaction(
+      txHash.trim(),
+      opt.walletAddress,
+      existing.paymentTestAmount,
+      currency,
+      network,
+      0.01,
+    );
+    if (!result.verified) {
+      const failed = result as { verified: false; reason: string; pending?: boolean };
+      res.json({ verified: false, pending: failed.pending ?? false, reason: failed.reason });
+      return;
+    }
+
     await db.update(wholesaleAccessRequestsTable)
       .set({ testPaymentTxHash: txHash.trim() })
       .where(eq(wholesaleAccessRequestsTable.id, existing.id));
 
-    res.json({ verified: true });
+    res.json({ verified: true, blockConfirmations: result.blockConfirmations });
   } catch (err: any) {
     console.error("[POST /account/wholesale-access/submit-test]", err);
     res.status(500).json({ error: "Internal error" });
@@ -3967,8 +3994,16 @@ router.post("/account/wholesale-access/pay", requireAccount, async (req: any, re
       return;
     }
 
+    // The test payment is part of the access fee, so the final transaction only
+    // needs to cover the remainder displayed by PaymentPanel.
+    const outstandingAmount = getWholesaleAccessOutstandingAmount(existing);
+    if (outstandingAmount <= 0) {
+      res.status(409).json({ error: "There is no outstanding access fee to verify." });
+      return;
+    }
+
     // Verify on-chain synchronously so the user gets an instant result.
-    const result = await verifyTransaction(txHash.trim(), opt.walletAddress, existing.amountUsd, currency, network, 0.01);
+    const result = await verifyTransaction(txHash.trim(), opt.walletAddress, outstandingAmount, currency, network, 0.01);
 
     if (!result.verified) {
       const r = result as { verified: false; reason: string; pending?: boolean; manual?: boolean };
