@@ -24,6 +24,7 @@ import {
 import { and, eq, isNotNull, or } from "drizzle-orm";
 import { verifyTransaction } from "./payment-verify";
 import { registerScheduler } from "./scheduler-registry";
+import { getWholesaleAccessOutstandingAmount } from "./wholesale-access-payment";
 import { notifyUser } from "./telegram";
 import { writeLog } from "./audit-log";
 
@@ -103,6 +104,8 @@ export async function confirmWholesaleAccess(requestId: number): Promise<void> {
 async function checkRequest(row: {
   id: number;
   paymentTxHash: string | null;
+  testPaymentTxHash: string | null;
+  paymentTestAmount: number | null;
   paymentCryptoCurrency: string | null;
   paymentCryptoNetwork: string | null;
   amountUsd: number;
@@ -127,9 +130,14 @@ async function checkRequest(row: {
     return;
   }
 
-  console.log(`[wholesale-access-auto-verify] Checking request ${row.id} — $${row.amountUsd} ${currency} on ${network} tx=${txHash.slice(0, 12)}…`);
+  const outstandingAmount = getWholesaleAccessOutstandingAmount(row);
+  if (outstandingAmount <= 0) {
+    console.warn(`[wholesale-access-auto-verify] Invalid outstanding amount for request ${row.id}`);
+    return;
+  }
+  console.log(`[wholesale-access-auto-verify] Checking request ${row.id} — $${outstandingAmount} ${currency} on ${network} tx=${txHash.slice(0, 12)}…`);
 
-  const result = await verifyTransaction(txHash, opt.walletAddress, row.amountUsd, currency, network, 0.01);
+  const result = await verifyTransaction(txHash, opt.walletAddress, outstandingAmount, currency, network, 0.01);
   if (!result.verified) {
     const r = result as { verified: false; reason: string; pending?: boolean };
     console.log(`[wholesale-access-auto-verify] Not verified — request ${row.id}: ${r.reason}${r.pending ? " (pending)" : ""}`);
@@ -145,6 +153,8 @@ async function runWholesaleAccessAutoVerify(): Promise<void> {
       .select({
         id: wholesaleAccessRequestsTable.id,
         paymentTxHash: wholesaleAccessRequestsTable.paymentTxHash,
+        testPaymentTxHash: wholesaleAccessRequestsTable.testPaymentTxHash,
+        paymentTestAmount: wholesaleAccessRequestsTable.paymentTestAmount,
         paymentCryptoCurrency: wholesaleAccessRequestsTable.paymentCryptoCurrency,
         paymentCryptoNetwork: wholesaleAccessRequestsTable.paymentCryptoNetwork,
         amountUsd: wholesaleAccessRequestsTable.amountUsd,
@@ -181,6 +191,8 @@ export function triggerWholesaleAccessCheck(requestId: number): void {
   db.select({
     id: wholesaleAccessRequestsTable.id,
     paymentTxHash: wholesaleAccessRequestsTable.paymentTxHash,
+    testPaymentTxHash: wholesaleAccessRequestsTable.testPaymentTxHash,
+    paymentTestAmount: wholesaleAccessRequestsTable.paymentTestAmount,
     paymentCryptoCurrency: wholesaleAccessRequestsTable.paymentCryptoCurrency,
     paymentCryptoNetwork: wholesaleAccessRequestsTable.paymentCryptoNetwork,
     amountUsd: wholesaleAccessRequestsTable.amountUsd,

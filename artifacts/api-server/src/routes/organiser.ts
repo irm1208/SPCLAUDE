@@ -30,6 +30,11 @@ import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-f
 import { callSageAI, type ContentPart } from "../lib/sage-ai";
 import { toSageContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
+import {
+  allocateShipping,
+  reconcileShippingAdjustment,
+  ShippingAdjustmentError,
+} from "../lib/group-buy-shipping-adjustment";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -2215,6 +2220,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
       paymentConfirmedAt: ordersTable.paymentConfirmedAt,
       orderType: ordersTable.orderType,
       amountDue: ordersTable.amountDue,
+      vendorShipping: ordersTable.vendorShipping,
       balanceScreenshot: ordersTable.balanceScreenshot,
       balanceTxHash: (ordersTable as any).balanceTxHash,
       balancePaymentStatus: (ordersTable as any).balancePaymentStatus,
@@ -3795,7 +3801,21 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
 
-  const { totalShipping, equalPct = 80, weightedPct = 20, statusFilter = "Submitted", paymentStatusFilter = "all" } = req.body;
+  const {
+    totalShipping,
+    equalPct = 80,
+    weightedPct = 20,
+    statusFilter = "Submitted",
+    paymentStatusFilter = "all",
+    assignments,
+  } = req.body as {
+    totalShipping: unknown;
+    equalPct?: unknown;
+    weightedPct?: unknown;
+    statusFilter?: string;
+    paymentStatusFilter?: string;
+    assignments?: Array<{ orderId: string; amount: number }>;
+  };
 
   const shipping = parseFloat(String(totalShipping));
   if (isNaN(shipping) || shipping < 0) {
@@ -3843,44 +3863,106 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
     orderQtyMap.set(li.orderId, cur + parseFloat(String(li.quantity)));
   }
 
-  const totalQty = Array.from(orderQtyMap.values()).reduce((s, q) => s + q, 0);
-  const orderCount = orders.length;
-  const equalAmount = (ep / 100) * shipping;
-  const weightedAmount = (wp / 100) * shipping;
-
-  const updates: Array<{ orderId: string; vendorShipping: number; newGrandTotal: number; username: string; resolvedAdminFee: number; resolvedAdminFeeLabel: string | null }> = [];
-
-  for (const order of orders) {
-    const orderQty = orderQtyMap.get(order.id) ?? 0;
-    const equalShare = equalAmount / orderCount;
-    const weightedShare = totalQty > 0 ? weightedAmount * (orderQty / totalQty) : 0;
-    const vendorShipping = parseFloat((equalShare + weightedShare).toFixed(2));
-
-    const productSubtotal = parseFloat(String(order.productSubtotal));
-    const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
-    const tip = parseFloat(String(order.tip ?? "0"));
-    const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
-    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
-    const newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
-
-    updates.push({ orderId: order.id, vendorShipping, newGrandTotal, username: order.telegramUsername, resolvedAdminFee, resolvedAdminFeeLabel });
+  let allocationMap: Map<string, number>;
+  if (assignments !== undefined) {
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      res.status(400).json({ error: "At least one shipping assignment is required" });
+      return;
+    }
+    const validOrderIds = new Set(orders.map(order => order.id));
+    const seen = new Set<string>();
+    for (const assignment of assignments) {
+      if (!validOrderIds.has(assignment.orderId) || seen.has(assignment.orderId) || !Number.isFinite(Number(assignment.amount)) || Number(assignment.amount) < 0) {
+        res.status(400).json({ error: "Shipping assignments must contain unique matching order IDs and non-negative amounts" });
+        return;
+      }
+      seen.add(assignment.orderId);
+    }
+    const assignedTotal = assignments.reduce((sum, assignment) => sum + Math.round(Number(assignment.amount) * 100), 0);
+    if (assignedTotal !== Math.round(shipping * 100)) {
+      res.status(400).json({ error: "Manual shipping assignments must equal totalShipping" });
+      return;
+    }
+    allocationMap = new Map(assignments.map(assignment => [assignment.orderId, Number(assignment.amount)]));
+  } else {
+    allocationMap = new Map(allocateShipping(
+      shipping,
+      ep,
+      wp,
+      orders.map(order => ({ orderId: order.id, quantity: orderQtyMap.get(order.id) ?? 0 })),
+    ).map(allocation => [allocation.orderId, allocation.amount]));
   }
 
-  for (const u of updates) {
-    await db
-      .update(ordersTable)
-      .set({
+  const targetOrders = assignments === undefined ? orders : orders.filter(order => allocationMap.has(order.id));
+  const updates: Array<{
+    orderId: string;
+    vendorShipping: number;
+    newGrandTotal: number;
+    newAmountDue: number;
+    balancePaymentStatus: string | null;
+    clearPrimaryPaymentLock: boolean;
+    username: string;
+    resolvedAdminFee: number;
+    resolvedAdminFeeLabel: string | null;
+  }> = [];
+
+  try {
+    for (const order of targetOrders) {
+      const vendorShipping = allocationMap.get(order.id) ?? 0;
+
+      const productSubtotal = parseFloat(String(order.productSubtotal));
+      const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
+      const tip = parseFloat(String(order.tip ?? "0"));
+      const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
+      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+      const newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
+      const payment = reconcileShippingAdjustment({
+        paymentStatus: order.paymentStatus,
+        balancePaymentStatus: (order as any).balancePaymentStatus,
+        currentGrandTotal: parseFloat(String(order.grandTotal ?? "0")),
+        currentVendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
+        currentAmountDue: parseFloat(String((order as any).amountDue ?? "0")),
+        newGrandTotal,
+        newVendorShipping: vendorShipping,
+      });
+
+      updates.push({
+        orderId: order.id,
+        vendorShipping,
+        newGrandTotal,
+        newAmountDue: payment.amountDue,
+        balancePaymentStatus: payment.balancePaymentStatus,
+        clearPrimaryPaymentLock: payment.clearPrimaryPaymentLock,
+        username: order.telegramUsername,
+        resolvedAdminFee,
+        resolvedAdminFeeLabel,
+      });
+    }
+  } catch (error) {
+    if (error instanceof ShippingAdjustmentError) {
+      res.status(409).json({ error: error.message, code: error.code });
+      return;
+    }
+    throw error;
+  }
+
+  await db.transaction(async tx => {
+    for (const u of updates) {
+      await tx.update(ordersTable).set({
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
+        amountDue: u.newAmountDue.toFixed(2) as any,
+        balancePaymentStatus: u.balancePaymentStatus as any,
+        ...(u.clearPrimaryPaymentLock ? { paymentUsdAmount: null } : {}),
         adminFee: u.resolvedAdminFee.toFixed(2) as any,
         adminFeeLabel: u.resolvedAdminFeeLabel as any,
-      })
-      .where(eq(ordersTable.id, u.orderId));
-  }
+      }).where(and(eq(ordersTable.id, u.orderId), eq(ordersTable.groupBuyId, id)));
+    }
+  });
 
   res.json({
-    message: `$${shipping.toFixed(2)} split across ${orders.length} order(s) — ${ep}% equal / ${wp}% by quantity`,
-    updatedCount: orders.length,
+    message: `${assignments ? "Manual shipping" : `$${shipping.toFixed(2)} split`} applied to ${targetOrders.length} order(s)`,
+    updatedCount: targetOrders.length,
     totalShipping: shipping,
     breakdown: updates.map((u) => ({
       orderId: u.orderId,

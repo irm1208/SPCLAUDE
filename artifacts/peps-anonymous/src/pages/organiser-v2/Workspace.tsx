@@ -33,6 +33,7 @@ import OrganiserShell from "./OrganiserShell";
 import OrganiserTopbar from "./OrganiserTopbar";
 import OrganiserMobileNavigation from "./OrganiserMobileNavigation";
 import WorkspaceScreen from "./WorkspaceScreen";
+import ShippingSplitTab from "../ShippingSplitTab";
 import { createApiOrganiserRepositories } from "./domain/repositories";
 import { OrganiserRepositoryProvider } from "./domain/repository-context";
 import { mergeMemberDirectory } from "./domain/member";
@@ -212,6 +213,8 @@ export default function Workspace({
     <LiveOrganiserCountryLegsTab gb={apiGroupBuy} />
   ) : active === "shipping" ? (
     <LiveShippingPayTab gb={apiGroupBuy} onUpdated={onGroupBuyUpdated} />
+  ) : active === "shipping-split" ? (
+    <ShippingSplitTab groupBuy={apiGroupBuy} />
   ) : active === "pnl" ? (
     <LivePnlTab gb={apiGroupBuy} />
   ) : active === "labtests" ? (

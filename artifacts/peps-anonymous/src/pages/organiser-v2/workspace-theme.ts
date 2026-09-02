@@ -22,6 +22,7 @@ export const WORKSPACE_PAGE_TREATMENT = {
   reshippers: "logistics",
   legs: "logistics",
   shipping: "logistics",
+  "shipping-split": "logistics",
   pnl: "insight",
   labtests: "insight",
   testinggroups: "insight",

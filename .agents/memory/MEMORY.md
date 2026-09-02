@@ -102,3 +102,5 @@
 - [Shared-order confirmation commitment](shared-order-confirmation-commitment.md) — confirmation binds a current draft; mutations and reopening invalidate it, while lock/removal must serialize it.
 - [AnonPay pages cannot be embedded](anonpay-no-iframe.md) — Trocador sends X-Frame-Options: DENY; launch AnonPay as a top-level page and restore only genuinely pending sessions.
 - [Publish image size and local backups](publish-image-size-backups.md) — `.gitignore` does not keep local SQL/backups out of Repl layers; mirror dev-only bulk in `.replitignore`.
+- [GB vendor-shipping payment integrity](gb-vendor-shipping-payment-integrity.md) — paid-order shipping increases become amountDue; decreases and edits during balance verification are blocked.
+- [Wholesale access split payment verification](wholesale-access-split-payment-verification.md) — verify the test tx before storing it; final sync and scheduled checks must verify fee minus verified test amount.

@@ -16,7 +16,7 @@ export type WorkspaceTabId =
   | "overview"
   | "members"
   | "orders" | "broadcast"
-  | "parcels" | "dispatch" | "qrcodes" | "reshippers" | "legs" | "shipping"
+  | "parcels" | "dispatch" | "qrcodes" | "reshippers" | "legs" | "shipping" | "shipping-split"
   | "pnl" | "labtests" | "testinggroups" | "tickets" | "todos"
   | "settings" | "products" | "rules" | "summary";
 
@@ -77,6 +77,7 @@ export const WORKSPACE_GROUPS: WorkspaceGroup[] = [
       { id: "reshippers", label: "Package Forwarders", icon: Users, description: "People who forward parcels to other countries" },
       { id: "legs", label: "International Routes", icon: Globe, description: "Multi-hop shipping routes for international delivery" },
       { id: "shipping", label: "Shipping Rates", icon: ClipboardList, description: "Delivery costs by country" },
+      { id: "shipping-split", label: "Shipping Split", icon: BarChart3, description: "Split and adjust vendor shipping by member" },
     ],
   },
   {
@@ -155,6 +156,10 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
     title: "Shipping rates",
     description: "Configure delivery methods, countries, and prices.",
     primaryAction: "Add rate",
+  },
+  "shipping-split": {
+    title: "Shipping split",
+    description: "Allocate vendor shipping costs and adjust individual members.",
   },
   pnl: {
     title: "Profit & loss",
