@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Info, Loader2, RefreshCw, Truck } from "lucide-react";
+import { Check, ChevronDown, Info, Loader2, RefreshCw, Truck } from "lucide-react";
 import {
   allocateShippingSplit,
   calculateShippingDifference,
   calculateShippingShortfall,
+  getShippingCalculationBreakdown,
   normalizeShippingAmount,
   totalOrderQuantity,
 } from "./shipping-split-model";
@@ -35,6 +36,7 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [singleVialEnabled, setSingleVialEnabled] = useState(false);
   const [singleVialProductIds, setSingleVialProductIds] = useState<string[]>([]);
+  const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
 
   const load = async () => {
     setLoading(true); setError("");
@@ -70,16 +72,27 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   }, [orders]);
   const selectedOrdersKey = selected.map(order => `${order.id}:${(order.lineItems ?? []).map(item => `${item.productId ?? ""}:${item.quantity}`).join(",")}`).join("|");
   const selectedVialProductsKey = singleVialProductIds.slice().sort().join("|");
-
-  useEffect(() => {
-    const automatic = allocateShippingSplit(
+  const activeSingleVialProductIds = useMemo(
+    () => singleVialEnabled ? new Set(singleVialProductIds) : new Set<string>(),
+    [singleVialEnabled, selectedVialProductsKey],
+  );
+  const normalAllocations = useMemo(
+    () => allocateShippingSplit(Number(total) || 0, equalPct, selected),
+    [total, equalPct, status, payment, selectedOrdersKey],
+  );
+  const automaticAllocations = useMemo(
+    () => allocateShippingSplit(
       Number(total) || 0,
       equalPct,
       selected,
-      singleVialEnabled ? new Set(singleVialProductIds) : new Set(),
-    );
-    setAmounts(Object.fromEntries(Object.entries(automatic).map(([id, amount]) => [id, amount.toFixed(2)])));
-  }, [total, equalPct, status, payment, selectedOrdersKey, singleVialEnabled, selectedVialProductsKey]);
+      activeSingleVialProductIds,
+    ),
+    [total, equalPct, status, payment, selectedOrdersKey, activeSingleVialProductIds],
+  );
+
+  useEffect(() => {
+    setAmounts(Object.fromEntries(Object.entries(automaticAllocations).map(([id, amount]) => [id, amount.toFixed(2)])));
+  }, [automaticAllocations]);
 
   const assignedTotal = selected.reduce((sum, order) => sum + (Number(amounts[order.id]) || 0), 0);
   const targetTotal = Number(total) || 0;
@@ -167,16 +180,59 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
           <>
             {filtered.map(order => {
               const shippingDifference = calculateShippingDifference(order.vendorShipping, amounts[order.id]);
-              const hasSingleVialProduct = singleVialEnabled && (order.lineItems ?? []).some(item => item.productId && singleVialProductIds.includes(item.productId));
+              const hasSingleVialProduct = (order.lineItems ?? []).some(item => item.productId && activeSingleVialProductIds.has(item.productId));
+              const calculation = getShippingCalculationBreakdown(
+                order,
+                normalAllocations[order.id] ?? 0,
+                activeSingleVialProductIds,
+              );
+              const expanded = expandedOrderIds.includes(order.id);
+              const currency = groupBuy.currency ?? "GBP";
+              const detailedMoney = (value: number) => value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
               return (
                 <div key={order.id} className="grid grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_120px_140px] gap-3 items-center p-3 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
                   <input type="checkbox" checked={included[order.id] !== false} onChange={e => setIncluded(current => ({ ...current, [order.id]: e.target.checked }))} />
-                  <div className="min-w-0"><p className="font-semibold text-sm truncate">{order.telegramUsername.replace(/^@+/, "")}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · Qty {totalOrderQuantity(order.lineItems)} · {order.paymentStatus.replaceAll("_", " ")}{hasSingleVialProduct ? " · single-vial adjusted" : ""}</p></div>
+                  <div className="min-w-0 flex items-start gap-2">
+                    <button type="button" onClick={() => setExpandedOrderIds(current => current.includes(order.id) ? current.filter(id => id !== order.id) : [...current, order.id])} aria-expanded={expanded} aria-label={`${expanded ? "Hide" : "Show"} shipping calculation for ${order.telegramUsername.replace(/^@+/, "")}`} className="mt-0.5 w-6 h-6 shrink-0 rounded-md border flex items-center justify-center" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                    </button>
+                    <div className="min-w-0"><p className="font-semibold text-sm truncate">{order.telegramUsername.replace(/^@+/, "")}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · Qty {totalOrderQuantity(order.lineItems)} · {order.paymentStatus.replaceAll("_", " ")}{hasSingleVialProduct ? " · single-vial adjusted" : ""}</p></div>
+                  </div>
                   <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</span>
                   <label className="flex flex-col items-end gap-1">
                     <span className="flex items-center gap-2"><span className="text-xs">{groupBuy.currency ?? "GBP"}</span><input className={`${inputClass} w-24 text-right`} type="number" min="0" step="0.01" disabled={included[order.id] === false} value={amounts[order.id] ?? "0.00"} onChange={e => setAmounts(current => ({ ...current, [order.id]: e.target.value }))} /></span>
                     {included[order.id] !== false && shippingDifference !== 0 ? <span className="text-[10px] whitespace-nowrap" style={{ color: shippingDifference > 0 ? "#B45309" : "var(--t-subtle)" }}>{shippingDifference > 0 ? "Shortfall" : "Reduced"} {groupBuy.currency ?? "GBP"} {Math.abs(shippingDifference).toFixed(2)}</span> : null}
                   </label>
+                  {expanded ? (
+                    <div className="col-span-full rounded-lg border p-3 space-y-3 text-xs" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div><span style={{ color: "var(--t-subtle)" }}>Base split</span><p className="font-bold mt-0.5">{currency} {(normalAllocations[order.id] ?? 0).toFixed(2)}</p></div>
+                        <div><span style={{ color: "var(--t-subtle)" }}>Assigned shipping</span><p className="font-bold mt-0.5">{currency} {(Number(amounts[order.id]) || 0).toFixed(2)}</p></div>
+                        <div><span style={{ color: "var(--t-subtle)" }}>Current saved shipping</span><p className="font-bold mt-0.5">{currency} {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</p></div>
+                      </div>
+                      <div>
+                        <p className="font-bold mb-1">Order products</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(order.lineItems ?? []).map((item, index) => {
+                            const isSingleVial = Boolean(item.productId && activeSingleVialProductIds.has(item.productId));
+                            return <span key={`${item.productId ?? item.productName ?? "item"}-${index}`} className="rounded-md border px-2 py-1" style={{ borderColor: isSingleVial ? "var(--t-blue)" : "var(--t-border)", background: "var(--t-surface)" }}>{item.productName || "Product"} × {item.quantity}{isSingleVial ? " · single vial" : ""}</span>;
+                          })}
+                        </div>
+                      </div>
+                      {calculation.hasSelectedVialProduct ? (
+                        <div className="rounded-lg border p-3 space-y-1" style={{ borderColor: "color-mix(in srgb, var(--t-blue) 35%, var(--t-border))", background: "color-mix(in srgb, var(--t-blue) 8%, var(--t-surface))" }}>
+                          <p className="font-bold">Single-vial calculation</p>
+                          <p>{currency} {calculation.normalVialAmount.toFixed(2)} normal vial share ÷ {calculation.vialQuantity} = {currency} {detailedMoney(calculation.perKitAmount)} per kit</p>
+                          <p>{currency} {detailedMoney(calculation.perKitAmount)} ÷ 10 = {currency} {detailedMoney(calculation.perVialAmount)} per vial</p>
+                          <p>{currency} {detailedMoney(calculation.perVialAmount)} × {calculation.vialQuantity} vial{calculation.vialQuantity === 1 ? "" : "s"} = <strong>{currency} {calculation.adjustedVialAmount.toFixed(2)}</strong></p>
+                          {calculation.regularProductAmount > 0 ? <p>Regular products remain at {currency} {calculation.regularProductAmount.toFixed(2)}.</p> : null}
+                          <p className="pt-1 font-bold">Calculated order shipping: {currency} {calculation.adjustedOrderAmount.toFixed(2)}</p>
+                        </div>
+                      ) : (
+                        <p style={{ color: "var(--t-subtle)" }}>{singleVialEnabled ? "No selected single-vial products are in this order. Its assigned amount includes the recalculated remainder." : "Normal vendor shipping split applied to this order."}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

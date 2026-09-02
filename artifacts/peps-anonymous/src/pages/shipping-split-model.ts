@@ -7,6 +7,12 @@ function roundCurrency(value: number): number {
   return Number(value.toFixed(2));
 }
 
+function roundTo(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  const rounded = Math.round((value + Number.EPSILON) * factor) / factor;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 export function calculateShippingDifference(
   current: number | string | null | undefined,
   proposed: number | string | null | undefined,
@@ -39,6 +45,70 @@ export type ShippingSplitOrder = {
 
 function orderQuantity(order: ShippingSplitOrder): number {
   return totalOrderQuantity(order.lineItems);
+}
+
+export type ShippingCalculationBreakdown = {
+  hasSelectedVialProduct: boolean;
+  normalOrderAmount: number;
+  totalQuantity: number;
+  vialQuantity: number;
+  regularProductAmount: number;
+  normalVialAmount: number;
+  perKitAmount: number;
+  perVialAmount: number;
+  adjustedVialAmount: number;
+  adjustedOrderAmount: number;
+};
+
+export function getShippingCalculationBreakdown(
+  order: ShippingSplitOrder,
+  normalOrderAmount: number,
+  singleVialProductIds: ReadonlySet<string>,
+): ShippingCalculationBreakdown {
+  const totalQuantity = orderQuantity(order);
+  const vialQuantity = (order.lineItems ?? []).reduce(
+    (sum, item) => sum + (
+      item.productId && singleVialProductIds.has(item.productId)
+        ? Math.max(0, normalizeShippingAmount(item.quantity))
+        : 0
+    ),
+    0,
+  );
+  const hasSelectedVialProduct = vialQuantity > 0;
+
+  if (!hasSelectedVialProduct || totalQuantity <= 0) {
+    return {
+      hasSelectedVialProduct: false,
+      normalOrderAmount,
+      totalQuantity,
+      vialQuantity: 0,
+      regularProductAmount: roundTo(normalOrderAmount, 4),
+      normalVialAmount: 0,
+      perKitAmount: 0,
+      perVialAmount: 0,
+      adjustedVialAmount: 0,
+      adjustedOrderAmount: roundCurrency(normalOrderAmount),
+    };
+  }
+
+  const normalVialAmount = normalOrderAmount * vialQuantity / totalQuantity;
+  const regularProductAmount = normalOrderAmount - normalVialAmount;
+  const perKitAmount = normalVialAmount / vialQuantity;
+  const perVialAmount = perKitAmount / 10;
+  const adjustedVialAmount = perVialAmount * vialQuantity;
+
+  return {
+    hasSelectedVialProduct,
+    normalOrderAmount,
+    totalQuantity,
+    vialQuantity,
+    regularProductAmount: roundTo(regularProductAmount, 4),
+    normalVialAmount: roundTo(normalVialAmount, 4),
+    perKitAmount: roundTo(perKitAmount, 4),
+    perVialAmount: roundTo(perVialAmount, 4),
+    adjustedVialAmount: roundCurrency(adjustedVialAmount),
+    adjustedOrderAmount: roundCurrency(regularProductAmount + adjustedVialAmount),
+  };
 }
 
 function allocateNormally(
@@ -90,21 +160,13 @@ export function allocateShippingSplit(
   let vialAssignedCents = 0;
 
   for (const order of vialOrders) {
-    const totalQuantity = orderQuantity(order);
-    const vialQuantity = (order.lineItems ?? []).reduce(
-      (sum, item) => sum + (
-        item.productId && singleVialProductIds.has(item.productId)
-          ? Math.max(0, normalizeShippingAmount(item.quantity))
-          : 0
-      ),
-      0,
+    const breakdown = getShippingCalculationBreakdown(
+      order,
+      normalAllocation[order.id] ?? 0,
+      singleVialProductIds,
     );
-    const normalQuantity = Math.max(0, totalQuantity - vialQuantity);
-    const adjustedRatio = totalQuantity > 0
-      ? (normalQuantity + vialQuantity / 10) / totalQuantity
-      : 1;
-    const cents = Math.round((normalAllocation[order.id] ?? 0) * 100 * adjustedRatio);
-    adjusted[order.id] = cents / 100;
+    const cents = Math.round(breakdown.adjustedOrderAmount * 100);
+    adjusted[order.id] = breakdown.adjustedOrderAmount;
     vialAssignedCents += cents;
   }
 

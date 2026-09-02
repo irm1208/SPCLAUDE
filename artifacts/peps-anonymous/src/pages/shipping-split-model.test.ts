@@ -4,6 +4,7 @@ import {
   allocateShippingSplit,
   calculateShippingDifference,
   calculateShippingShortfall,
+  getShippingCalculationBreakdown,
   normalizeShippingAmount,
   totalOrderQuantity,
 } from "./shipping-split-model.ts";
@@ -88,4 +89,41 @@ test("totalOrderQuantity sums all line-item quantities", () => {
     { quantity: "3" },
   ]), 5);
   assert.equal(totalOrderQuantity(undefined), 0);
+});
+
+test("getShippingCalculationBreakdown shows the vial quantity multiplier", () => {
+  assert.deepEqual(getShippingCalculationBreakdown({
+    lineItems: [{ productId: "vial-a", quantity: 3 }],
+  }, 7.90, new Set(["vial-a"])), {
+    hasSelectedVialProduct: true,
+    normalOrderAmount: 7.9,
+    totalQuantity: 3,
+    vialQuantity: 3,
+    regularProductAmount: 0,
+    normalVialAmount: 7.9,
+    perKitAmount: 2.6333,
+    perVialAmount: 0.2633,
+    adjustedVialAmount: 0.79,
+    adjustedOrderAmount: 0.79,
+  });
+});
+
+test("getShippingCalculationBreakdown keeps normal products at their regular rate", () => {
+  assert.deepEqual(getShippingCalculationBreakdown({
+    lineItems: [
+      { productId: "vial-a", quantity: 5 },
+      { productId: "kit", quantity: 5 },
+    ],
+  }, 30, new Set(["vial-a"])), {
+    hasSelectedVialProduct: true,
+    normalOrderAmount: 30,
+    totalQuantity: 10,
+    vialQuantity: 5,
+    regularProductAmount: 15,
+    normalVialAmount: 15,
+    perKitAmount: 3,
+    perVialAmount: 0.3,
+    adjustedVialAmount: 1.5,
+    adjustedOrderAmount: 16.5,
+  });
 });
