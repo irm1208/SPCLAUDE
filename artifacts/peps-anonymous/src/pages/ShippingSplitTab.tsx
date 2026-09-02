@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, RefreshCw, Truck } from "lucide-react";
-import { normalizeShippingAmount } from "./shipping-split-model";
+import {
+  calculateShippingDifference,
+  calculateShippingShortfall,
+  normalizeShippingAmount,
+} from "./shipping-split-model";
 
 type ShippingOrder = {
   id: string;
@@ -73,6 +77,12 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   const assignedTotal = selected.reduce((sum, order) => sum + (Number(amounts[order.id]) || 0), 0);
   const targetTotal = Number(total) || 0;
   const totalsMatch = Math.round(assignedTotal * 100) === Math.round(targetTotal * 100);
+  const shippingShortfall = calculateShippingShortfall(targetTotal, assignedTotal);
+  const splitStatus = totalsMatch
+    ? "Fully allocated"
+    : shippingShortfall > 0
+      ? `Shortfall ${shippingShortfall.toFixed(2)}`
+      : `Over by ${Math.abs(shippingShortfall).toFixed(2)}`;
 
   const apply = async () => {
     if (!selected.length || !totalsMatch) return;
@@ -119,14 +129,29 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
         </div>
       </div>
       <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
-        {loading ? <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div> : filtered.length === 0 ? <p className="p-8 text-center text-sm" style={{ color: "var(--t-subtle)" }}>No orders match these filters.</p> : filtered.map(order => (
-          <div key={order.id} className="grid grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_120px_140px] gap-3 items-center p-3 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
-            <input type="checkbox" checked={included[order.id] !== false} onChange={e => setIncluded(current => ({ ...current, [order.id]: e.target.checked }))} />
-            <div className="min-w-0"><p className="font-semibold text-sm truncate">@{order.telegramUsername}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · {order.shippingCountry || "Country not set"} · {order.paymentStatus.replaceAll("_", " ")}</p></div>
-            <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</span>
-            <label className="flex items-center gap-2"><span className="text-xs">{groupBuy.currency ?? "GBP"}</span><input className={`${inputClass} w-24 text-right`} type="number" min="0" step="0.01" disabled={included[order.id] === false} value={amounts[order.id] ?? "0.00"} onChange={e => setAmounts(current => ({ ...current, [order.id]: e.target.value }))} /></label>
-          </div>
-        ))}
+        {loading ? <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div> : filtered.length === 0 ? <p className="p-8 text-center text-sm" style={{ color: "var(--t-subtle)" }}>No orders match these filters.</p> : (
+          <>
+            {filtered.map(order => {
+              const shippingDifference = calculateShippingDifference(order.vendorShipping, amounts[order.id]);
+              return (
+                <div key={order.id} className="grid grid-cols-[auto_1fr_auto] sm:grid-cols-[auto_1fr_120px_140px] gap-3 items-center p-3 border-b last:border-b-0" style={{ borderColor: "var(--t-border)" }}>
+                  <input type="checkbox" checked={included[order.id] !== false} onChange={e => setIncluded(current => ({ ...current, [order.id]: e.target.checked }))} />
+                  <div className="min-w-0"><p className="font-semibold text-sm truncate">@{order.telegramUsername}</p><p className="text-xs" style={{ color: "var(--t-subtle)" }}>{order.code} · {order.shippingCountry || "Country not set"} · {order.paymentStatus.replaceAll("_", " ")}</p></div>
+                  <span className="hidden sm:block text-xs text-right" style={{ color: "var(--t-subtle)" }}>Current {normalizeShippingAmount(order.vendorShipping).toFixed(2)}</span>
+                  <label className="flex flex-col items-end gap-1">
+                    <span className="flex items-center gap-2"><span className="text-xs">{groupBuy.currency ?? "GBP"}</span><input className={`${inputClass} w-24 text-right`} type="number" min="0" step="0.01" disabled={included[order.id] === false} value={amounts[order.id] ?? "0.00"} onChange={e => setAmounts(current => ({ ...current, [order.id]: e.target.value }))} /></span>
+                    {included[order.id] !== false && shippingDifference !== 0 ? <span className="text-[10px] whitespace-nowrap" style={{ color: shippingDifference > 0 ? "#B45309" : "var(--t-subtle)" }}>{shippingDifference > 0 ? "Shortfall" : "Reduced"} {groupBuy.currency ?? "GBP"} {Math.abs(shippingDifference).toFixed(2)}</span> : null}
+                  </label>
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 text-sm" style={{ background: "var(--t-surface2)" }}>
+              <span className="font-semibold">Shipping split total</span>
+              <span>{assignedTotal.toFixed(2)} assigned / {targetTotal.toFixed(2)} target {groupBuy.currency ?? "GBP"}</span>
+              <span className="font-bold" style={{ color: totalsMatch ? "#16A34A" : "#B45309" }}>{splitStatus}{totalsMatch ? "" : ` ${groupBuy.currency ?? "GBP"}`}</span>
+            </div>
+          </>
+        )}
       </div>
       {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
       {success ? <p className="text-sm font-semibold text-green-600 flex items-center gap-1"><Check className="w-4 h-4" />{success}</p> : null}
