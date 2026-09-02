@@ -39,9 +39,10 @@ import { AdminCountryLegsSection } from "./panels/CountryLegsPanel";
 import { SummarySubTab } from "./panels/SummaryPanel";
 import { BroadcastSubTab } from "./panels/BroadcastPanel";
 import { LegShippingCalcSubTab } from "./panels/LegCalcPanel";
+import ShippingSplitTab from "@/pages/ShippingSplitTab";
 
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "./shared/core";
-export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "fulfilment" | "qrcodes";
+export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes";
 
 export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
   secret: string;
@@ -105,6 +106,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
         { id: "reshippers", label: "Reshippers", icon: UserCheck },
         { id: "countrylegs", label: "Country Legs", icon: Globe },
         { id: "shippingcalc", label: "Leg Calc", icon: Calculator },
+        { id: "shippingsplit", label: "Shipping Split", icon: Truck },
         { id: "intlshipping", label: "Intl Shipping", icon: Ship },
         { id: "sharedshipping", label: "Shared Shipping", icon: Navigation },
       ],
@@ -257,6 +259,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
           {activeTab === "summary" && <SummarySubTab secret={secret} gb={currentGb} />}
           {activeTab === "broadcast" && <BroadcastSubTab secret={secret} gb={currentGb} />}
           {activeTab === "shippingcalc" && <LegShippingCalcSubTab secret={secret} gb={currentGb} />}
+          {activeTab === "shippingsplit" && <ShippingSplitTab groupBuy={currentGb} accessMode="admin" adminSecret={secret} />}
           {activeTab === "fulfilment" && (
             <AdminGbFulfilment
               secret={secret}

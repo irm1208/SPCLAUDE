@@ -31,6 +31,16 @@ export const groupBuysTable = pgTable("group_buys", {
   vendorShippingKits: integer("vendor_shipping_kits"),
   vendorShippingMaxKitsPerPackage: integer("vendor_shipping_max_kits_per_package"),
   vendorShippingExcludedProductIds: jsonb("vendor_shipping_excluded_product_ids").$type<string[]>().notNull().default([]),
+  vendorShippingSplit: jsonb("vendor_shipping_split").$type<{
+    totalShipping: number;
+    equalPct: number;
+    weightedPct: number;
+    statusFilter: string;
+    paymentStatusFilter: string;
+    singleVialEnabled: boolean;
+    singleVialProductIds: string[];
+    assignments: Array<{ orderId: string; amount: number }>;
+  } | null>(),
   paymentMessageEnabled: boolean("payment_message_enabled").notNull().default(false),
   paymentMessage: text("payment_message"),
   paymentsEnabled: boolean("payments_enabled").notNull().default(true),

@@ -2176,6 +2176,7 @@ router.get("/organiser/group-buys/:id/shipping-settings", requireOrganiser, asyn
     .select({
       id: groupBuysTable.id,
       vendorShippingExcludedProductIds: groupBuysTable.vendorShippingExcludedProductIds,
+      vendorShippingSplit: groupBuysTable.vendorShippingSplit,
     })
     .from(groupBuysTable)
     .where(gbOwner(req, id));
@@ -2185,7 +2186,7 @@ router.get("/organiser/group-buys/:id/shipping-settings", requireOrganiser, asyn
   const excludedProductIds = Array.isArray(gb.vendorShippingExcludedProductIds)
     ? gb.vendorShippingExcludedProductIds.filter((value): value is string => typeof value === "string" && value.length > 0)
     : [];
-  res.json({ excludedProductIds });
+  res.json({ excludedProductIds, split: gb.vendorShippingSplit ?? null });
 });
 
 // PUT /api/organiser/group-buys/:id/shipping-settings — save products whose prices already include vendor shipping
@@ -3866,6 +3867,8 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
     statusFilter = "Submitted",
     paymentStatusFilter = "all",
     assignments,
+    singleVialEnabled = false,
+    singleVialProductIds = [],
   } = req.body as {
     totalShipping: unknown;
     equalPct?: unknown;
@@ -3873,6 +3876,8 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
     statusFilter?: string;
     paymentStatusFilter?: string;
     assignments?: Array<{ orderId: string; amount: number }>;
+    singleVialEnabled?: boolean;
+    singleVialProductIds?: string[];
   };
 
   const shipping = parseFloat(String(totalShipping));
@@ -3952,6 +3957,21 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
   }
 
   const targetOrders = assignments === undefined ? orders : orders.filter(order => allocationMap.has(order.id));
+  const savedSplit = {
+    totalShipping: shipping,
+    equalPct: ep,
+    weightedPct: wp,
+    statusFilter,
+    paymentStatusFilter,
+    singleVialEnabled: Boolean(singleVialEnabled),
+    singleVialProductIds: Array.isArray(singleVialProductIds)
+      ? [...new Set(singleVialProductIds.filter((value): value is string => typeof value === "string" && value.length > 0))]
+      : [],
+    assignments: targetOrders.map(order => ({
+      orderId: order.id,
+      amount: Number((allocationMap.get(order.id) ?? 0).toFixed(2)),
+    })),
+  };
   const updates: Array<{
     orderId: string;
     vendorShipping: number;
@@ -4016,6 +4036,10 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
         adminFeeLabel: u.resolvedAdminFeeLabel as any,
       }).where(and(eq(ordersTable.id, u.orderId), eq(ordersTable.groupBuyId, id)));
     }
+    await tx
+      .update(groupBuysTable)
+      .set({ vendorShippingSplit: savedSplit })
+      .where(gbOwner(req, id));
   });
 
   res.json({

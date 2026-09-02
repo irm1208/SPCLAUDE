@@ -594,6 +594,7 @@ async function runStartupMigrations(): Promise<void> {
     // group_buys — vendor shipping kits count
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_kits integer`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_excluded_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb`);
+    await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_split jsonb`);
     // gb_country_legs — per-leg vendor shipping fields
     await db.execute(sql`ALTER TABLE gb_country_legs ADD COLUMN IF NOT EXISTS vendor_shipping_cost numeric(10,2)`);
     await db.execute(sql`ALTER TABLE gb_country_legs ADD COLUMN IF NOT EXISTS vendor_package_count integer`);

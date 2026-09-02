@@ -24,7 +24,26 @@ type ShippingOrder = {
   lineItems?: Array<{ productId?: string | null; productName?: string; quantity: number }>;
 };
 
-export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string; name: string; currency?: string | null } }) {
+type SavedShippingSplit = {
+  totalShipping: number;
+  equalPct: number;
+  weightedPct: number;
+  statusFilter: string;
+  paymentStatusFilter: string;
+  singleVialEnabled: boolean;
+  singleVialProductIds: string[];
+  assignments: Array<{ orderId: string; amount: number }>;
+};
+
+export default function ShippingSplitTab({
+  groupBuy,
+  accessMode = "organiser",
+  adminSecret = "",
+}: {
+  groupBuy: { id: string; name: string; currency?: string | null };
+  accessMode?: "organiser" | "admin";
+  adminSecret?: string;
+}) {
   const [orders, setOrders] = useState<ShippingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,22 +59,49 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   const [singleVialProductIds, setSingleVialProductIds] = useState<string[]>([]);
   const [excludedProductIds, setExcludedProductIds] = useState<string[]>([]);
   const [showExcludedProducts, setShowExcludedProducts] = useState(false);
+  const [showIncludedKitQuantities, setShowIncludedKitQuantities] = useState(false);
   const [shippingSettingsSaving, setShippingSettingsSaving] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
+  const [restoreSavedAmounts, setRestoreSavedAmounts] = useState(false);
+
+  const apiBase = `/api/${accessMode}/group-buys/${groupBuy.id}`;
+  const requestInit = (init: RequestInit = {}): RequestInit => ({
+    ...init,
+    credentials: accessMode === "organiser" ? "include" : "same-origin",
+    headers: {
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(accessMode === "admin" ? { "x-admin-secret": adminSecret } : {}),
+      ...init.headers,
+    },
+  });
 
   const load = async () => {
     setLoading(true); setError("");
     try {
       const [ordersResponse, settingsResponse] = await Promise.all([
-        fetch(`/api/organiser/group-buys/${groupBuy.id}/orders`, { credentials: "include" }),
-        fetch(`/api/organiser/group-buys/${groupBuy.id}/shipping-settings`, { credentials: "include" }),
+        fetch(`${apiBase}/orders`, requestInit()),
+        fetch(`${apiBase}/shipping-settings`, requestInit()),
       ]);
       const [ordersData, settingsData] = await Promise.all([ordersResponse.json(), settingsResponse.json()]);
       if (!ordersResponse.ok) throw new Error(ordersData.error || "Failed to load orders");
       if (!settingsResponse.ok) throw new Error(settingsData.error || "Failed to load shipping settings");
       setOrders(ordersData);
       setExcludedProductIds(Array.isArray(settingsData.excludedProductIds) ? settingsData.excludedProductIds : []);
-      setIncluded(Object.fromEntries(ordersData.map((order: ShippingOrder) => [order.id, true])));
+      const savedSplit = settingsData.split as SavedShippingSplit | null;
+      if (savedSplit && Array.isArray(savedSplit.assignments)) {
+        const savedAssignments = new Map(savedSplit.assignments.map(assignment => [assignment.orderId, assignment.amount]));
+        setTotal(String(savedSplit.totalShipping ?? ""));
+        setEqualPct(Number(savedSplit.equalPct ?? 80));
+        setStatus(savedSplit.statusFilter || "Submitted");
+        setPayment(savedSplit.paymentStatusFilter || "all");
+        setSingleVialEnabled(Boolean(savedSplit.singleVialEnabled));
+        setSingleVialProductIds(Array.isArray(savedSplit.singleVialProductIds) ? savedSplit.singleVialProductIds : []);
+        setIncluded(Object.fromEntries(ordersData.map((order: ShippingOrder) => [order.id, savedAssignments.has(order.id)])));
+        setAmounts(Object.fromEntries(savedSplit.assignments.map(assignment => [assignment.orderId, Number(assignment.amount).toFixed(2)])));
+        setRestoreSavedAmounts(true);
+      } else {
+        setIncluded(Object.fromEntries(ordersData.map((order: ShippingOrder) => [order.id, true])));
+      }
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to load orders"); }
     finally { setLoading(false); }
   };
@@ -111,6 +157,10 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
   );
 
   useEffect(() => {
+    if (restoreSavedAmounts) {
+      setRestoreSavedAmounts(false);
+      return;
+    }
     setAmounts(Object.fromEntries(Object.entries(automaticAllocations).map(([id, amount]) => [id, amount.toFixed(2)])));
   }, [automaticAllocations]);
 
@@ -124,12 +174,10 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
     setShippingSettingsSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/organiser/group-buys/${groupBuy.id}/shipping-settings`, {
+      const response = await fetch(`${apiBase}/shipping-settings`, requestInit({
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ excludedProductIds: next }),
-      });
+      }));
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to save shipping settings");
       setExcludedProductIds(Array.isArray(data.excludedProductIds) ? data.excludedProductIds : []);
@@ -155,19 +203,19 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
     if (!selected.length || !totalsMatch) return;
     setSaving(true); setError(""); setSuccess("");
     try {
-      const response = await fetch(`/api/organiser/group-buys/${groupBuy.id}/apply-shipping`, {
+      const response = await fetch(`${apiBase}/apply-shipping`, requestInit({
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           totalShipping: targetTotal,
           equalPct,
           weightedPct: 100 - equalPct,
           statusFilter: status,
           paymentStatusFilter: payment,
+          singleVialEnabled,
+          singleVialProductIds,
           assignments: selected.map(order => ({ orderId: order.id, amount: Number(amounts[order.id]) })),
         }),
-      });
+      }));
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to apply shipping");
       setSuccess(data.message);
@@ -259,27 +307,40 @@ export default function ShippingSplitTab({ groupBuy }: { groupBuy: { id: string;
           ) : null}
         </div>
         <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-bold">Included kit quantities</p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Only products contributing to the current filtered split.</p>
+          <button
+            type="button"
+            className="flex w-full items-start justify-between gap-3 text-left"
+            onClick={() => setShowIncludedKitQuantities(current => !current)}
+            aria-expanded={showIncludedKitQuantities}
+            aria-controls="included-kit-quantities"
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${showIncludedKitQuantities ? "rotate-180" : ""}`} aria-hidden="true" />
+              <div>
+                <p className="text-sm font-bold">Included kit quantities</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--t-subtle)" }}>Only products contributing to the current filtered split.</p>
+              </div>
             </div>
             <span className="rounded-full px-2.5 py-1 text-xs font-bold tabular-nums" style={{ background: "var(--t-surface)", color: "var(--t-text)" }}>
               {includedProductSummary.reduce((sum, product) => sum + product.quantity, 0)} kits total
             </span>
-          </div>
-          {includedProductSummary.length === 0 ? (
-            <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No included product kits match the current order filters.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {includedProductSummary.map(product => (
-                <div key={product.productId} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
-                  <span className="min-w-0 truncate font-semibold">{product.productName}</span>
-                  <span className="shrink-0 font-bold tabular-nums">{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
+          </button>
+          {showIncludedKitQuantities ? (
+            <div id="included-kit-quantities">
+              {includedProductSummary.length === 0 ? (
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No included product kits match the current order filters.</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {includedProductSummary.map(product => (
+                    <div key={product.productId} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+                      <span className="min-w-0 truncate font-semibold">{product.productName}</span>
+                      <span className="shrink-0 font-bold tabular-nums">{product.quantity} kit{product.quantity === 1 ? "" : "s"}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center justify-between rounded-lg px-3 py-2 text-sm" style={{ background: "var(--t-surface2)" }}>
           <span>{selected.length} orders selected · {equalPct}% equal / {100 - equalPct}% by quantity</span>

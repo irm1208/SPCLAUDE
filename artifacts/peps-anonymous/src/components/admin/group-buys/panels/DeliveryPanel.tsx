@@ -303,8 +303,6 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
         </div>
       </Card>
 
-      <ShippingSplitCard secret={secret} gbId={gb.id} />
-
       <CouriersManager secret={secret} />
     </div>
   );

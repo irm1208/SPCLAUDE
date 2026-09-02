@@ -29,6 +29,10 @@ import { createAlert } from "../lib/create-alert";
 import { writeLog } from "../lib/audit-log";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
+import {
+  reconcileShippingAdjustment,
+  ShippingAdjustmentError,
+} from "../lib/group-buy-shipping-adjustment";
 
 function shortId(len = 5): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -68,6 +72,22 @@ function parseAdminFeeCountries(raw: string | null | undefined): { country: stri
 function parseSharedShippingCountries(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try { return JSON.parse(raw) as string[]; } catch { return []; }
+}
+
+function resolveAdminFeeOnRecompute(
+  storedAdminFeeRaw: unknown,
+  storedAdminFeeLabel: string | null | undefined,
+  gbFeeSettings: { adminFeeEnabled?: boolean | null; adminFeeType?: string | null; adminFeeAmount?: unknown; adminFeeLabel?: string | null },
+  newProductSubtotal: number,
+): { resolvedAdminFee: number; resolvedAdminFeeLabel: string | null } {
+  const storedAdminFee = parseFloat(String(storedAdminFeeRaw ?? "0"));
+  let resolvedAdminFee = storedAdminFee;
+  let resolvedAdminFeeLabel = storedAdminFeeLabel ?? null;
+  if (storedAdminFee > 0 && gbFeeSettings.adminFeeEnabled && gbFeeSettings.adminFeeType === "percent" && gbFeeSettings.adminFeeAmount != null) {
+    resolvedAdminFee = Number(((newProductSubtotal * parseFloat(String(gbFeeSettings.adminFeeAmount))) / 100).toFixed(2));
+    resolvedAdminFeeLabel = resolvedAdminFee > 0 ? (gbFeeSettings.adminFeeLabel ?? null) : null;
+  }
+  return { resolvedAdminFee, resolvedAdminFeeLabel };
 }
 
 /** Returns an error string if shippingOptions are malformed, or null if valid. */
@@ -1555,13 +1575,85 @@ router.patch("/admin/group-buys/:id/members/:accountId/tags", async (req, res): 
   res.json({ ok: true, tags: row.tags });
 });
 
+// ── GET /admin/group-buys/:id/shipping-settings ────────────────
+router.get("/admin/group-buys/:id/shipping-settings", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  const [gb] = await db
+    .select({
+      id: groupBuysTable.id,
+      vendorShippingExcludedProductIds: groupBuysTable.vendorShippingExcludedProductIds,
+      vendorShippingSplit: groupBuysTable.vendorShippingSplit,
+    })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+  const excludedProductIds = Array.isArray(gb.vendorShippingExcludedProductIds)
+    ? gb.vendorShippingExcludedProductIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+  res.json({ excludedProductIds, split: gb.vendorShippingSplit ?? null });
+});
+
+// ── PUT /admin/group-buys/:id/shipping-settings ────────────────
+router.put("/admin/group-buys/:id/shipping-settings", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  const [gb] = await db.select({ id: groupBuysTable.id }).from(groupBuysTable).where(eq(groupBuysTable.id, id));
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  const rawProductIds = (req.body as { excludedProductIds?: unknown }).excludedProductIds;
+  if (!Array.isArray(rawProductIds) || rawProductIds.some(value => typeof value !== "string" || value.trim().length === 0)) {
+    res.status(400).json({ error: "excludedProductIds must be an array of product IDs" });
+    return;
+  }
+  const productIds = [...new Set(rawProductIds.map(value => String(value).trim()))];
+  if (productIds.length > 0) {
+    const matchingProducts = await db
+      .select({ productId: groupBuyProductsTable.productId })
+      .from(groupBuyProductsTable)
+      .where(and(
+        eq(groupBuyProductsTable.groupBuyId, id),
+        inArray(groupBuyProductsTable.productId, productIds),
+      ));
+    if (matchingProducts.length !== productIds.length) {
+      res.status(400).json({ error: "Every excluded product must belong to this group buy" });
+      return;
+    }
+  }
+
+  await db
+    .update(groupBuysTable)
+    .set({ vendorShippingExcludedProductIds: productIds })
+    .where(eq(groupBuysTable.id, id));
+  res.json({ excludedProductIds: productIds });
+});
+
 // ── POST /admin/group-buys/:id/apply-shipping ──────────────────
 // Per-group-buy shipping split: equalPct + weightedPct must sum to 100
 router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
-  const { totalShipping, equalPct = 80, weightedPct = 20, statusFilter = "Submitted" } = req.body;
+  const {
+    totalShipping,
+    equalPct = 80,
+    weightedPct = 20,
+    statusFilter = "Submitted",
+    paymentStatusFilter = "all",
+    assignments,
+    singleVialEnabled = false,
+    singleVialProductIds = [],
+  } = req.body as {
+    totalShipping: unknown;
+    equalPct?: unknown;
+    weightedPct?: unknown;
+    statusFilter?: string;
+    paymentStatusFilter?: string;
+    assignments?: Array<{ orderId: string; amount: number }>;
+    singleVialEnabled?: boolean;
+    singleVialProductIds?: string[];
+  };
 
   const shipping = parseFloat(String(totalShipping));
   if (isNaN(shipping) || shipping < 0) {
@@ -1576,10 +1668,33 @@ router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<vo
     return;
   }
 
+  const [gb] = await db
+    .select({
+      id: groupBuysTable.id,
+      adminFeeEnabled: groupBuysTable.adminFeeEnabled,
+      adminFeeType: groupBuysTable.adminFeeType,
+      adminFeeAmount: groupBuysTable.adminFeeAmount,
+      adminFeeLabel: groupBuysTable.adminFeeLabel,
+    })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+  if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  const paymentWhere = paymentStatusFilter === "paid"
+    ? or(eq(ordersTable.paymentStatus, "confirmed"), eq(ordersTable.paymentStatus, "test_confirmed"))
+    : paymentStatusFilter === "unpaid"
+      ? eq(ordersTable.paymentStatus, "unpaid")
+      : undefined;
+
   const orders = await db
     .select()
     .from(ordersTable)
-    .where(and(eq(ordersTable.groupBuyId, id), eq(ordersTable.status, statusFilter), isNull(ordersTable.deletedAt)));
+    .where(and(
+      eq(ordersTable.groupBuyId, id),
+      eq(ordersTable.status, statusFilter),
+      isNull(ordersTable.deletedAt),
+      paymentWhere,
+    ));
 
   if (orders.length === 0) {
     res.json({ message: `No ${statusFilter} orders found for this group buy`, updatedCount: 0, breakdown: [] });
@@ -1598,48 +1713,137 @@ router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<vo
     orderQtyMap.set(li.orderId, cur + parseFloat(String(li.quantity)));
   }
 
-  const totalQty = Array.from(orderQtyMap.values()).reduce((s, q) => s + q, 0);
-  const orderCount = orders.length;
-  const equalAmount = (ep / 100) * shipping;
-  const weightedAmount = (wp / 100) * shipping;
+  let allocationMap: Map<string, number>;
+  if (assignments !== undefined) {
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      res.status(400).json({ error: "At least one shipping assignment is required" });
+      return;
+    }
+    const validOrderIds = new Set(orders.map(order => order.id));
+    const seen = new Set<string>();
+    for (const assignment of assignments) {
+      if (!validOrderIds.has(assignment.orderId) || seen.has(assignment.orderId) || !Number.isFinite(Number(assignment.amount)) || Number(assignment.amount) < 0) {
+        res.status(400).json({ error: "Shipping assignments must contain unique matching order IDs and non-negative amounts" });
+        return;
+      }
+      seen.add(assignment.orderId);
+    }
+    const assignedTotal = assignments.reduce((sum, assignment) => sum + Math.round(Number(assignment.amount) * 100), 0);
+    if (assignedTotal !== Math.round(shipping * 100)) {
+      res.status(400).json({ error: "Manual shipping assignments must equal totalShipping" });
+      return;
+    }
+    allocationMap = new Map(assignments.map(assignment => [assignment.orderId, Number(assignment.amount)]));
+  } else {
+    const totalQty = Array.from(orderQtyMap.values()).reduce((sum, quantity) => sum + quantity, 0);
+    const equalAmount = (ep / 100) * shipping;
+    const weightedAmount = (wp / 100) * shipping;
+    allocationMap = new Map(orders.map(order => {
+      const equalShare = equalAmount / orders.length;
+      const weightedShare = totalQty > 0 ? weightedAmount * ((orderQtyMap.get(order.id) ?? 0) / totalQty) : 0;
+      return [order.id, parseFloat((equalShare + weightedShare).toFixed(2))];
+    }));
+  }
 
-  const updates: Array<{ orderId: string; vendorShipping: number; newGrandTotal: number; username: string; setAmountDue: boolean }> = [];
+  const targetOrders = assignments === undefined ? orders : orders.filter(order => allocationMap.has(order.id));
+  const savedSplit = {
+    totalShipping: shipping,
+    equalPct: ep,
+    weightedPct: wp,
+    statusFilter,
+    paymentStatusFilter,
+    singleVialEnabled: Boolean(singleVialEnabled),
+    singleVialProductIds: Array.isArray(singleVialProductIds)
+      ? [...new Set(singleVialProductIds.filter((value): value is string => typeof value === "string" && value.length > 0))]
+      : [],
+    assignments: targetOrders.map(order => ({
+      orderId: order.id,
+      amount: Number((allocationMap.get(order.id) ?? 0).toFixed(2)),
+    })),
+  };
+  const updates: Array<{
+    orderId: string;
+    vendorShipping: number;
+    newGrandTotal: number;
+    username: string;
+    newAmountDue: number;
+    balancePaymentStatus: string | null;
+    clearPrimaryPaymentLock: boolean;
+    resolvedAdminFee: number;
+    resolvedAdminFeeLabel: string | null;
+  }> = [];
 
-  for (const order of orders) {
-    const orderQty = orderQtyMap.get(order.id) ?? 0;
-    const equalShare = equalAmount / orderCount;
-    const weightedShare = totalQty > 0 ? weightedAmount * (orderQty / totalQty) : 0;
-    const vendorShipping = parseFloat((equalShare + weightedShare).toFixed(2));
+  try {
+  for (const order of targetOrders) {
+    const vendorShipping = allocationMap.get(order.id) ?? 0;
 
     const productSubtotal = parseFloat(String(order.productSubtotal));
     const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
     const tip = parseFloat(String(order.tip ?? "0"));
     const testingContribution = parseFloat(String(order.testingContribution ?? "0"));
     const couponDiscount = parseFloat(String(order.couponDiscount ?? "0"));
-    const newGrandTotal = parseFloat(Math.max(0, productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution - couponDiscount).toFixed(2));
+    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(
+      order.adminFee,
+      order.adminFeeLabel,
+      gb,
+      productSubtotal,
+    );
+    const newGrandTotal = parseFloat(Math.max(0, productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee - couponDiscount).toFixed(2));
 
-    // If already paid, vendor shipping is an outstanding balance to collect
-    const alreadyPaid = order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed";
-    const balanceAlreadySettled = ["confirmed", "waived"].includes(order.balancePaymentStatus ?? "");
-    const setAmountDue = alreadyPaid && !balanceAlreadySettled;
+    const payment = reconcileShippingAdjustment({
+      paymentStatus: order.paymentStatus,
+      balancePaymentStatus: order.balancePaymentStatus,
+      currentGrandTotal: parseFloat(String(order.grandTotal ?? "0")),
+      currentVendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
+      currentAmountDue: parseFloat(String(order.amountDue ?? "0")),
+      newGrandTotal,
+      newVendorShipping: vendorShipping,
+    });
 
-    updates.push({ orderId: order.id, vendorShipping, newGrandTotal, username: order.telegramUsername, setAmountDue });
+    updates.push({
+      orderId: order.id,
+      vendorShipping,
+      newGrandTotal,
+      username: order.telegramUsername,
+      newAmountDue: payment.amountDue,
+      balancePaymentStatus: payment.balancePaymentStatus,
+      clearPrimaryPaymentLock: payment.clearPrimaryPaymentLock,
+      resolvedAdminFee,
+      resolvedAdminFeeLabel,
+    });
+  }
+  } catch (error) {
+    if (error instanceof ShippingAdjustmentError) {
+      res.status(409).json({ error: error.message, code: error.code });
+      return;
+    }
+    throw error;
   }
 
-  for (const u of updates) {
-    await db
+  await db.transaction(async tx => {
+    for (const u of updates) {
+      await tx
       .update(ordersTable)
       .set({
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
-        ...(u.setAmountDue ? { amountDue: u.vendorShipping.toFixed(2) } : {}),
+        amountDue: u.newAmountDue.toFixed(2),
+        balancePaymentStatus: u.balancePaymentStatus,
+        ...(u.clearPrimaryPaymentLock ? { paymentUsdAmount: null } : {}),
+        adminFee: u.resolvedAdminFee.toFixed(2),
+        adminFeeLabel: u.resolvedAdminFeeLabel,
       } as any)
-      .where(eq(ordersTable.id, u.orderId));
-  }
+      .where(and(eq(ordersTable.id, u.orderId), eq(ordersTable.groupBuyId, id)));
+    }
+    await tx
+      .update(groupBuysTable)
+      .set({ vendorShippingSplit: savedSplit })
+      .where(eq(groupBuysTable.id, id));
+  });
 
   res.json({
-    message: `$${shipping.toFixed(2)} split across ${orders.length} order(s) — ${ep}% equal / ${wp}% by quantity`,
-    updatedCount: orders.length,
+    message: `${assignments ? "Manual shipping" : `$${shipping.toFixed(2)} split`} applied to ${targetOrders.length} order(s)`,
+    updatedCount: targetOrders.length,
     totalShipping: shipping,
     breakdown: updates.map((u) => ({
       orderId: u.orderId,
