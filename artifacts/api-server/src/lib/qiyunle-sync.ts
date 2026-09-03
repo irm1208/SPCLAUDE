@@ -14,6 +14,7 @@ import { sendAdminMessage } from "./telegram";
 import { callSageAI } from "./sage-ai";
 import { randomUUID } from "crypto";
 import { registerScheduler } from "./scheduler-registry";
+import { filterNonPositiveStockItems } from "./qiyunle-inventory";
 
 const QIYUNLE_BASE = "https://web3.qiyunle.com";
 const SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -224,7 +225,7 @@ async function fetchInventoryPage(
   const body = new URLSearchParams({
     page: String(page),
     limit: String(limit),
-    showzero: "0", // 0 = show all products; 1 = only non-zero stock (hides OOS items)
+    showzero: "1", // Only return products with positive stock.
     wpd: "0",
     name: "",
     class: "",
@@ -284,7 +285,7 @@ async function fetchAllInventoryWithSession(cookie: string, baseUrl: string): Pr
     page++;
   }
 
-  return items;
+  return filterNonPositiveStockItems(items);
 }
 
 export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
@@ -296,7 +297,7 @@ export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
     const body = new URLSearchParams({
       page: String(page),
       limit: String(limit),
-      showzero: "0", // 0 = show all products; 1 = only non-zero stock (hides OOS items)
+      showzero: "1", // Only return products with positive stock.
       wpd: "0",
       name: "",
       class: "",
@@ -336,7 +337,7 @@ export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
     page++;
   }
 
-  return items;
+  return filterNonPositiveStockItems(items);
 }
 
 // ─── Inventory items (no DB write) ───────────────────────────────────────────
