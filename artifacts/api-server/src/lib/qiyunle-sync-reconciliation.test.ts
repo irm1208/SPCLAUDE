@@ -2,7 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   transactionCalls: 0,
-  writes: [] as { batchStock: number | null; code?: string }[],
+  committedWrites: [] as {
+    values: { batchStock: number | null };
+    predicate?: { column: string; value: string };
+  }[],
+  failOnPositiveWrite: false,
+}));
+
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal()),
+  eq: (column: string, value: string) => ({ column, value }),
 }));
 
 vi.mock("@workspace/db", () => ({
@@ -10,7 +19,7 @@ vi.mock("@workspace/db", () => ({
     transaction: async (callback: (tx: {
       update: () => {
         set: (values: { batchStock: number | null }) => {
-          where: () => Promise<void>;
+          where: (predicate: { column: string; value: string }) => Promise<void>;
           then: <T>(
             onfulfilled?: ((value: void) => T | PromiseLike<T>) | null,
           ) => Promise<T>;
@@ -18,18 +27,24 @@ vi.mock("@workspace/db", () => ({
       };
     }) => Promise<void>) => {
       state.transactionCalls++;
-      return callback({
-      update: () => ({
-        set: (values) => {
-          const write: { batchStock: number | null; code?: string } = { ...values };
-          state.writes.push(write);
-          return {
-            where: () => Promise.resolve(),
-            then: (onfulfilled) => Promise.resolve().then(onfulfilled),
-          };
-        },
-      }),
+      const stagedWrites: typeof state.committedWrites = [];
+      await callback({
+        update: () => ({
+          set: (values) => ({
+            where: async (predicate) => {
+              if (values.batchStock !== null && state.failOnPositiveWrite) {
+                throw new Error("positive write failed");
+              }
+              stagedWrites.push({ values, predicate });
+            },
+            then: (onfulfilled) => {
+              stagedWrites.push({ values });
+              return Promise.resolve().then(onfulfilled);
+            },
+          }),
+        }),
       });
+      state.committedWrites.push(...stagedWrites);
     },
   },
   qiyunleMappingsTable: { qiyunleCode: "qiyunle_code" },
@@ -43,7 +58,8 @@ import {
 describe("reconcileQiyunleBatchStock", () => {
   it("atomically clears mappings before writing only positive current stock", async () => {
     state.transactionCalls = 0;
-    state.writes.length = 0;
+    state.committedWrites.length = 0;
+    state.failOnPositiveWrite = false;
 
     await reconcileQiyunleBatchStock(new Map([
       ["current", 12],
@@ -52,17 +68,32 @@ describe("reconcileQiyunleBatchStock", () => {
     ]));
 
     expect(state.transactionCalls).toBe(1);
-    expect(state.writes).toEqual([
-      { batchStock: null },
-      { batchStock: 12 },
+    expect(state.committedWrites).toEqual([
+      { values: { batchStock: null } },
+      {
+        values: { batchStock: 12 },
+        predicate: { column: "qiyunle_code", value: "current" },
+      },
     ]);
+  });
+
+  it("rolls back the clear and partial writes when a positive write fails", async () => {
+    state.committedWrites.length = 0;
+    state.failOnPositiveWrite = true;
+
+    await expect(reconcileQiyunleBatchStock(new Map([
+      ["current", 12],
+      ["later", 24],
+    ]))).rejects.toThrow("positive write failed");
+
+    expect(state.committedWrites).toEqual([]);
   });
 });
 
 describe("runQiyunleSyncWithInventoryFetcher", () => {
   it("does not reconcile batch stock when inventory fetching fails", async () => {
     state.transactionCalls = 0;
-    state.writes.length = 0;
+    state.committedWrites.length = 0;
 
     await expect(runQiyunleSyncWithInventoryFetcher(
       false,
@@ -72,6 +103,6 @@ describe("runQiyunleSyncWithInventoryFetcher", () => {
     )).rejects.toThrow("inventory unavailable");
 
     expect(state.transactionCalls).toBe(0);
-    expect(state.writes).toEqual([]);
+    expect(state.committedWrites).toEqual([]);
   });
 });
