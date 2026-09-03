@@ -45,7 +45,7 @@ router.get("/products", async (_req, res): Promise<void> => {
 });
 
 // GET /api/wholesale/products - returns wholesale-enabled active global products
-router.get("/wholesale/products", requireWholesale, async (req, res): Promise<void> => {
+export async function wholesaleProductsHandler(req: any, res: any): Promise<void> {
   const username = req.wholesale!.telegramUsername.replace(/^@/, "").toLowerCase();
   const usernameWithAt = `@${username}`;
   const orderRows = await db
@@ -108,7 +108,9 @@ router.get("/wholesale/products", requireWholesale, async (req, res): Promise<vo
       lowStockThreshold: p.lowStockThreshold ?? null,
     }, eligible, selectedBatchCodes))
   );
-});
+}
+
+router.get("/wholesale/products", requireWholesale, wholesaleProductsHandler);
 
 // GET /api/admin/wholesale-products - list all products with wholesale visibility status
 router.get("/admin/wholesale-products", async (req, res): Promise<void> => {

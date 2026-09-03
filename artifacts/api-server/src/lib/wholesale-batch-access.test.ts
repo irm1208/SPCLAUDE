@@ -123,7 +123,7 @@ describe("withAuthorizedBatchCode", () => {
 
 describe("wholesale catalogue route contract", () => {
   it("uses wholesale authentication and only conditionally serializes selected batches", () => {
-    expect(productsRouteSource).toContain('router.get("/wholesale/products", requireWholesale, async (req, res)');
+    expect(productsRouteSource).toContain('router.get("/wholesale/products", requireWholesale, wholesaleProductsHandler)');
     expect(productsRouteSource).toContain("req.wholesale!.telegramUsername.replace(/^@/, \"\").toLowerCase()");
     expect(productsRouteSource).toContain("ordersTable.orderType");
     expect(productsRouteSource).toContain("ordersTable.status");
