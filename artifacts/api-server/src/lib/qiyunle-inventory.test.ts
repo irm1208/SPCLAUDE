@@ -3,6 +3,7 @@ import {
   filterNonPositiveStockItems,
   findUnavailableMappedCodes,
   findUniqueBatchProductId,
+  normalizeQiyunleStock,
 } from "./qiyunle-inventory";
 
 describe("filterNonPositiveStockItems", () => {
@@ -52,5 +53,17 @@ describe("findUniqueBatchProductId", () => {
 
   it("does not match a different product base or dose", () => {
     expect(findUniqueBatchProductId("KS20-0903", mappings)).toBeNull();
+  });
+});
+
+describe("normalizeQiyunleStock", () => {
+  it("keeps positive stock and turns zero or negative stock into the OOS value", () => {
+    expect(normalizeQiyunleStock("12")).toBe(12);
+    expect(normalizeQiyunleStock("0")).toBe(0);
+    expect(normalizeQiyunleStock("-3")).toBe(0);
+  });
+
+  it("returns null for an invalid stock value", () => {
+    expect(normalizeQiyunleStock("not-a-number")).toBeNull();
   });
 });
