@@ -35,7 +35,10 @@ vi.mock("@workspace/db", () => ({
   qiyunleMappingsTable: { qiyunleCode: "qiyunle_code" },
 }));
 
-import { reconcileQiyunleBatchStock } from "./qiyunle-sync";
+import {
+  reconcileQiyunleBatchStock,
+  runQiyunleSyncWithInventoryFetcher,
+} from "./qiyunle-sync";
 
 describe("reconcileQiyunleBatchStock", () => {
   it("atomically clears mappings before writing only positive current stock", async () => {
@@ -53,5 +56,22 @@ describe("reconcileQiyunleBatchStock", () => {
       { batchStock: null },
       { batchStock: 12 },
     ]);
+  });
+});
+
+describe("runQiyunleSyncWithInventoryFetcher", () => {
+  it("does not reconcile batch stock when inventory fetching fails", async () => {
+    state.transactionCalls = 0;
+    state.writes.length = 0;
+
+    await expect(runQiyunleSyncWithInventoryFetcher(
+      false,
+      async () => {
+        throw new Error("inventory unavailable");
+      },
+    )).rejects.toThrow("inventory unavailable");
+
+    expect(state.transactionCalls).toBe(0);
+    expect(state.writes).toEqual([]);
   });
 });

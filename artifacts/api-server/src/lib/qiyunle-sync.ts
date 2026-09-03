@@ -528,8 +528,11 @@ OUTPUT FORMAT:
   }
 }
 
-export async function runQiyunleSync(allowRelogin = false): Promise<{ updated: number; skipped: number; autoMapped: number; autoMappedItems: AutoMapResult[]; remainingUnmapped: { code: string; name: string }[]; errors: string[]; items: QiyunleItem[] }> {
-  const items = await getInventoryItems(allowRelogin);
+export async function runQiyunleSyncWithInventoryFetcher(
+  allowRelogin = false,
+  fetchInventory: typeof getInventoryItems = getInventoryItems,
+): Promise<{ updated: number; skipped: number; autoMapped: number; autoMappedItems: AutoMapResult[]; remainingUnmapped: { code: string; name: string }[]; errors: string[]; items: QiyunleItem[] }> {
+  const items = await fetchInventory(allowRelogin);
 
   const mappingResult = await db.execute(sql`
     SELECT m.product_id, m.qiyunle_code, m.qiyunle_name, m.batch_stock AS current_batch_stock, p.name AS product_name
@@ -655,6 +658,10 @@ export async function runQiyunleSync(allowRelogin = false): Promise<{ updated: n
   `).catch(() => {});
 
   return { updated, skipped, autoMapped, autoMappedItems, remainingUnmapped, errors, items };
+}
+
+export async function runQiyunleSync(allowRelogin = false): Promise<{ updated: number; skipped: number; autoMapped: number; autoMappedItems: AutoMapResult[]; remainingUnmapped: { code: string; name: string }[]; errors: string[]; items: QiyunleItem[] }> {
+  return runQiyunleSyncWithInventoryFetcher(allowRelogin);
 }
 
 // ─── Scheduler ───────────────────────────────────────────────────────────────
