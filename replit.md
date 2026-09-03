@@ -36,7 +36,7 @@ afterward so the app can seed and use the new tables.
 
 ## Stack
 
-- **Frontend**: React 18, Vite, Wouter, TanStack React Query, shadcn/ui, Radix UI, Tailwind CSS v4
+- **Frontend**: React 19, Vite, Wouter, TanStack React Query, shadcn/ui, Radix UI, Tailwind CSS v4
 - **Backend**: Express 5 (ESM, TypeScript), esbuild
 - **ORM**: Drizzle ORM (with `drizzle-kit`)
 - **Database**: PostgreSQL
@@ -49,7 +49,7 @@ afterward so the app can seed and use the new tables.
 
 - **Frontend App**: `artifacts/peps-anonymous`
 - **API Server**: `artifacts/api-server`
-- **Database Schema**: `lib/db/schema.ts` (source of truth for Drizzle ORM)
+- **Database Schema**: `lib/db/src/schema/index.ts` (source of truth for Drizzle ORM)
 - **API Specification**: `lib/api-spec/openapi.yaml` (source of truth for API contracts)
 - **Auto-generated API Client (React Query hooks)**: `lib/api-client-react`
 - **Auto-generated API Validation (Zod schemas)**: `lib/api-zod`
@@ -97,7 +97,7 @@ Until step 4 is done the widget is hidden site-wide and users see only the deep-
 
 ## Gotchas
 
-- **DB Schema Push on Startup**: The `npm start` command includes `drizzle-kit push --force`, which modifies the production database schema. Ensure this is intentional for your deployment strategy.
+- **DB Schema Setup**: `bash start.sh` does not push the database schema. For a fresh development database, intentionally run `pnpm --filter @workspace/db run push-force`, then restart the application so seed data can be created.
 - **API Server Port**: The API server requires the `PORT` environment variable to be set.
 - **Admin Secret Header**: Admin requests require `X-Admin-Secret` header for authentication; never include it in the request body.
 - **Pnpm Required**: The project exclusively uses `pnpm` as the package manager; `npm` or `yarn` will be blocked by a `preinstall` script.
