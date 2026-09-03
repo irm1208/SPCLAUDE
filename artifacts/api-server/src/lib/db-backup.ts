@@ -1,7 +1,7 @@
 /**
  * Scheduled database backup.
  *
- * Runs a compressed pg_dump twice a day (every 12 hours) in production.
+ * Runs a plain pg_dump every six hours in production.
  * Uploads completed dumps to Google Drive and removes the local temporary file.
  * Local temporary files are retained only when an upload fails, then pruned after 3 days.
  */
@@ -21,13 +21,20 @@ import { buildPgDumpArgs } from "./db-backup-command";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
-const INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
-const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with application startup.
+export const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+export const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with application startup.
+export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention without busy-looping.
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
 const BACKUP_FILE_PREFIX = "S&PBACKUP-";
 const BACKUP_FILE_SUFFIX = ".SQL";
 
 let backupInProgress = false;
+
+export type DbBackupResult =
+  | "completed"
+  | "lock_contended"
+  | "already_in_progress"
+  | "not_configured";
 
 /** Deletes temporary backup files whose last-modified time is older than KEEP_DAYS days. */
 async function pruneOldBackups(): Promise<void> {
@@ -112,19 +119,19 @@ async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
 }
 
 /** Runs a single plain SQL dump, uploads it, and prunes temporary failures. */
-export async function runDbBackup(): Promise<void> {
+export async function runDbBackup(): Promise<DbBackupResult> {
   if (backupInProgress) {
     console.log("[db-backup] A backup is already in progress — skipping");
-    return;
+    return "already_in_progress";
   }
   if (!process.env.DATABASE_URL) {
     console.warn("[db-backup] DATABASE_URL not set — skipping backup");
-    return;
+    return "not_configured";
   }
 
   backupInProgress = true;
   try {
-    await withBackupLock(async () => {
+    const acquired = await withBackupLock(async () => {
       const fileName = buildDriveBackupFileName();
       const outputPath = join(BACKUP_DIR, fileName);
       try {
@@ -141,15 +148,91 @@ export async function runDbBackup(): Promise<void> {
         await pruneOldBackups();
       }
     });
+    return acquired ? "completed" : "lock_contended";
   } finally {
     backupInProgress = false;
   }
 }
 
 /**
+ * Creates the timer orchestration for production database backups.
+ * Lock-contended attempts are retried until one gets through.
+ */
+export function createDbBackupScheduler(
+  runBackup: () => Promise<DbBackupResult>,
+): {
+  start: () => void;
+  stop: () => void;
+} {
+  let started = false;
+  let stopped = false;
+  let inFlight = false;
+  let firstBackupTimer: ReturnType<typeof setTimeout> | undefined;
+  let intervalTimer: ReturnType<typeof setInterval> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleRetry = (): void => {
+    if (stopped || retryTimer !== undefined) return;
+    console.log(`[db-backup] Backup held by another instance — retrying in ${BACKUP_RETRY_DELAY_MS / 60_000} min`);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void execute("retry");
+    }, BACKUP_RETRY_DELAY_MS);
+  };
+
+  const execute = async (source: "scheduled" | "retry"): Promise<void> => {
+    if (stopped) return;
+    if (inFlight) {
+      if (source === "retry") scheduleRetry();
+      return;
+    }
+
+    inFlight = true;
+    try {
+      const result = await runBackup();
+      if (result === "lock_contended") {
+        scheduleRetry();
+      } else if (result === "completed" && retryTimer !== undefined) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+    } catch (error) {
+      console.error("[db-backup] Scheduled backup attempt failed:", error);
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  return {
+    start: () => {
+      if (started) return;
+      started = true;
+      stopped = false;
+      firstBackupTimer = setTimeout(() => {
+        firstBackupTimer = undefined;
+        void execute("scheduled");
+      }, FIRST_BACKUP_DELAY_MS);
+      intervalTimer = setInterval(() => {
+        void execute("scheduled");
+      }, INTERVAL_MS);
+    },
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      if (firstBackupTimer !== undefined) clearTimeout(firstBackupTimer);
+      if (intervalTimer !== undefined) clearInterval(intervalTimer);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      firstBackupTimer = undefined;
+      intervalTimer = undefined;
+      retryTimer = undefined;
+    },
+  };
+}
+
+/**
  * Kicks off the backup schedule.
  * Development servers do not create backups. Production waits for startup
- * traffic to settle, then runs every 12 hours thereafter.
+ * traffic to settle, then runs every 6 hours thereafter.
  */
 export function startDbBackupSchedule(): void {
   if (process.env.NODE_ENV === "development") {
@@ -157,8 +240,7 @@ export function startDbBackupSchedule(): void {
     return;
   }
   console.log(
-    "[db-backup] Schedule started — first run in 10 min, then every 12 h (plain SQL in Google Drive, retained indefinitely)",
+    "[db-backup] Schedule started — first run in 10 min, then every 6 h (plain SQL in Google Drive, retained indefinitely; lock contention is retried)",
   );
-  setTimeout(() => void runDbBackup(), FIRST_BACKUP_DELAY_MS);
-  setInterval(runDbBackup, INTERVAL_MS);
+  createDbBackupScheduler(runDbBackup).start();
 }
