@@ -2,7 +2,7 @@
 
 ## Goal
 
-Show Qiyunle inventory batch codes beside products on the Wholesale Order
+Show one Qiyunle inventory batch code beside products on the Wholesale Order
 catalogue only for accounts with more than five qualifying wholesale orders.
 Accounts with five or fewer qualifying orders must receive the normal catalogue
 without batch-code data.
@@ -35,32 +35,46 @@ account and enrich its response only when that account passes the threshold.
 The existing product catalogue remains the source of product names and
 wholesale prices.
 
-When eligible, the server joins or separately aggregates
-`qiyunle_mappings` by `product_id` and returns a new optional field:
+When eligible, the server selects one `qiyunle_mappings` row per product and
+returns a new optional field:
 
 ```json
 {
   "id": "product-id",
   "name": "Product name",
-  "batchCodes": ["BP10-0429"]
+  "batchCode": "BP10-0429"
 }
 ```
 
-Only mappings with `batch_stock > 0` are returned, so codes represent
-currently positive-stock inventory under the new Qiyunle sync behavior.
-Codes are deduplicated and returned in a stable order. Products without a
-positive-stock mapping receive an empty array (or omit the field consistently;
-the implementation will choose one response convention and use it everywhere).
+Only mappings with `batch_stock > 0` are candidates, so the selected code
+represents currently positive-stock inventory under the new Qiyunle sync
+behavior. The server selects the candidate with the highest stock count. If
+multiple candidates have the same highest stock count, it selects the one with
+the newest parseable date suffix in the Qiyunle code. A stable code ordering is
+the final tie-breaker. Products without a positive-stock mapping omit the
+field.
+
+To keep `batch_stock` current while still excluding zero and negative source
+rows, each successful full Qiyunle sync must reconcile mapping availability:
+
+1. collect the batch codes present in the complete positive-stock source feed;
+2. mark mapped codes absent from that feed as unavailable by setting
+   `batch_stock` to `null`; and
+3. write the positive stock count for every mapped code present in the feed.
+
+The reconciliation happens only after the full source fetch succeeds, so a
+network or authentication failure cannot clear known stock. Zero and negative
+source quantities are still not stored or processed as available inventory.
 
 For accounts at or below the threshold, the endpoint must not include
-`batchCodes` at all, rather than sending the codes and relying on the frontend
+`batchCode` at all, rather than sending the code and relying on the frontend
 to hide them. The order count itself is also not required by the catalogue and
 will not be exposed unless the UI needs it.
 
 ### Frontend
 
-Update the Wholesale Order product type to accept the optional batch-code list.
-When the list is present and non-empty, render a compact `Batch:` row beside
+Update the Wholesale Order product type to accept the optional batch code.
+When the code is present and non-empty, render a compact `Batch:` row beside
 the product information. The existing catalogue, search, quantity controls,
 pricing, and checkout behavior remain unchanged for ineligible accounts.
 
@@ -70,14 +84,17 @@ client state from granting access.
 
 ## Data flow
 
-1. A wholesale account opens the Wholesale Order page.
-2. The page requests the existing wholesale catalogue endpoint.
-3. The endpoint authenticates the account and computes the qualifying-order
+1. A successful Qiyunle sync reconciles `batch_stock`, clearing stale mappings
+   to `null` and retaining only current positive-stock values.
+2. A wholesale account opens the Wholesale Order page.
+3. The page requests the existing wholesale catalogue endpoint.
+4. The endpoint authenticates the account and computes the qualifying-order
    count.
-4. If the count is greater than five, the endpoint adds current positive-stock
-   Qiyunle codes grouped by product.
-5. The page renders those codes next to matching products.
-6. All other accounts receive the same catalogue fields as before, without
+5. If the count is greater than five, the endpoint selects the highest-stock
+   positive Qiyunle batch per product, using the newest date suffix to break
+   stock-count ties.
+6. The page renders that one code next to each matching product.
+7. All other accounts receive the same catalogue fields as before, without
    batch-code data.
 
 No database migration is needed. Existing product, order, and Qiyunle mapping
@@ -107,12 +124,20 @@ tables already contain the required data.
    - unpaid, failed, cancelled, deleted, and non-wholesale orders do not
      count.
 2. Add backend response tests proving:
-   - eligible accounts receive only positive-stock Qiyunle codes;
+   - eligible accounts receive only one positive-stock Qiyunle code per
+     product;
    - ineligible accounts receive no batch-code field;
-   - codes are grouped by product and deduplicated.
-3. Add a frontend rendering test or focused UI assertion proving the batch row
-   appears only when the server response contains a non-empty authorized list.
-4. Run the focused tests, compile the API, build the frontend, restart the
+   - the highest stock count wins;
+   - the newest batch-date suffix breaks equal-stock ties;
+   - products without positive-stock mappings receive no batch-code field.
+3. Add sync reconciliation tests proving:
+   - mapped codes absent from a successful positive-stock feed are cleared to
+     `null`;
+   - current positive batches retain their positive count;
+   - a failed source fetch cannot clear mapping stock.
+4. Add a frontend rendering test or focused UI assertion proving the batch row
+   appears only when the server response contains an authorized batch code.
+5. Run the focused tests, compile the API, build the frontend, restart the
    canonical application workflow, and inspect its logs.
 
 ## Scope boundaries
@@ -123,4 +148,5 @@ This change does not:
 - expose lab/CoA batch codes;
 - add or edit product batch numbers;
 - alter historical order counts or inventory mappings;
-- change the Qiyunle sync or remove existing database records.
+- store zero or negative Qiyunle stock values;
+- delete existing Qiyunle mapping records.
