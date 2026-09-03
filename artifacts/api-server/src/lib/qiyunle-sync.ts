@@ -8,8 +8,8 @@
  *  2. Share-token fallback — legacy ?token= param, still supported if no
  *     credentials are configured.
  */
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, qiyunleMappingsTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
 import { sendAdminMessage } from "./telegram";
 import { callSageAI } from "./sage-ai";
 import { randomUUID } from "crypto";
@@ -34,6 +34,21 @@ export interface QiyunleItem {
     stocktip: string;
     number: string;
   };
+}
+
+export async function reconcileQiyunleBatchStock(
+  positiveStockByCode: ReadonlyMap<string, number>,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.update(qiyunleMappingsTable).set({ batchStock: null });
+    for (const [code, stock] of positiveStockByCode) {
+      if (stock <= 0) continue;
+      await tx
+        .update(qiyunleMappingsTable)
+        .set({ batchStock: stock })
+        .where(eq(qiyunleMappingsTable.qiyunleCode, code));
+    }
+  });
 }
 
 // ─── Credential helpers ───────────────────────────────────────────────────────
@@ -572,6 +587,8 @@ export async function runQiyunleSync(allowRelogin = false): Promise<{ updated: n
     .filter(i => i.goodsinfo?.code && !autoMappedCodes.has(i.goodsinfo.code))
     .map(i => ({ code: i.goodsinfo!.code!, name: i.goodsinfo?.name ?? "" }));
 
+  await reconcileQiyunleBatchStock(batchStockMap);
+
   for (const [productId, totalStock] of productStockMap) {
     try {
       await db.execute(sql`UPDATE products SET stock = ${totalStock} WHERE id = ${productId}`);
@@ -614,12 +631,6 @@ export async function runQiyunleSync(allowRelogin = false): Promise<{ updated: n
         `).catch(() => {});
       }
     }
-  }
-
-  for (const [code, batchStock] of batchStockMap) {
-    await db.execute(sql`
-      UPDATE qiyunle_mappings SET batch_stock = ${batchStock} WHERE qiyunle_code = ${code}
-    `).catch(() => {});
   }
 
   const now = new Date().toISOString();
