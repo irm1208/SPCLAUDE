@@ -17,6 +17,8 @@ import { registerScheduler } from "./scheduler-registry";
 import {
   filterNonPositiveStockItems,
   findUniqueBatchProductId,
+  getProductTurnoverTransition,
+  normalizeQiyunleStock,
 } from "./qiyunle-inventory";
 
 const QIYUNLE_BASE = "https://web3.qiyunle.com";
@@ -303,7 +305,7 @@ async function fetchAllInventoryWithSession(cookie: string, baseUrl: string): Pr
     page++;
   }
 
-  return filterNonPositiveStockItems(items);
+  return items;
 }
 
 export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
@@ -315,7 +317,7 @@ export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
     const body = new URLSearchParams({
       page: String(page),
       limit: String(limit),
-      showzero: "1", // Only return products with positive stock.
+      showzero: "1", // Include zero-stock rows for product-level turnover tracking.
       wpd: "0",
       name: "",
       class: "",
@@ -355,13 +357,13 @@ export async function fetchAllInventory(token: string): Promise<QiyunleItem[]> {
     page++;
   }
 
-  return filterNonPositiveStockItems(items);
+  return items;
 }
 
 // ─── Inventory items (no DB write) ───────────────────────────────────────────
 
 export async function fetchInventoryItems(): Promise<QiyunleItem[]> {
-  return getInventoryItems(true);
+  return filterNonPositiveStockItems(await getInventoryItems(true));
 }
 
 // ─── Sync core ────────────────────────────────────────────────────────────────
@@ -590,11 +592,19 @@ export async function runQiyunleSyncWithInventoryFetcher(
   const items = await fetchInventory(allowRelogin);
 
   const mappingResult = await db.execute(sql`
-    SELECT m.product_id, m.qiyunle_code, m.qiyunle_name, m.batch_stock AS current_batch_stock, p.name AS product_name
+    SELECT m.product_id, m.qiyunle_code, m.qiyunle_name, m.batch_stock AS current_batch_stock,
+           p.name AS product_name, p.stock AS current_product_stock
     FROM qiyunle_mappings m
     LEFT JOIN products p ON p.id = m.product_id
   `);
-  const mappings = mappingResult.rows as { product_id: string; qiyunle_code: string; qiyunle_name: string | null; current_batch_stock: number | null; product_name: string | null }[];
+  const mappings = mappingResult.rows as {
+    product_id: string;
+    qiyunle_code: string;
+    qiyunle_name: string | null;
+    current_batch_stock: number | null;
+    product_name: string | null;
+    current_product_stock: number | null;
+  }[];
   const codeToMapping = new Map(mappings.map(m => [m.qiyunle_code, m]));
 
   let updated = 0;
@@ -605,6 +615,21 @@ export async function runQiyunleSyncWithInventoryFetcher(
 
   const productStockMap = new Map<string, number>();
   const batchStockMap   = new Map<string, number>();
+  const previousProductStockMap = new Map<string, number>();
+  const productNameMap = new Map<string, string | null>();
+  const productReferenceCodeMap = new Map<string, string>();
+
+  for (const mapping of mappings) {
+    if (!productStockMap.has(mapping.product_id)) {
+      productStockMap.set(mapping.product_id, 0);
+      previousProductStockMap.set(
+        mapping.product_id,
+        Math.max(Number(mapping.current_product_stock) || 0, 0),
+      );
+      productNameMap.set(mapping.product_id, mapping.product_name);
+      productReferenceCodeMap.set(mapping.product_id, mapping.qiyunle_code);
+    }
+  }
 
   // Collect unmapped items so we can auto-map them after the main sync loop
   const unmappedItems: QiyunleItem[] = [];
@@ -614,10 +639,11 @@ export async function runQiyunleSyncWithInventoryFetcher(
     if (!code) continue;
     const mapping = codeToMapping.get(code);
     if (!mapping) { skipped++; unmappedItems.push(item); continue; }
-    const stock = parseInt(item.nums, 10);
-    if (isNaN(stock)) { errors.push(`${code}: invalid stock value "${item.nums}"`); continue; }
+    const stock = normalizeQiyunleStock(item.nums);
+    if (stock === null) { errors.push(`${code}: invalid stock value "${item.nums}"`); continue; }
     productStockMap.set(mapping.product_id, (productStockMap.get(mapping.product_id) ?? 0) + stock);
     batchStockMap.set(code, stock);
+    productReferenceCodeMap.set(mapping.product_id, code);
   }
 
   // Carry new dated batches forward from unambiguous existing mappings before
@@ -643,10 +669,12 @@ export async function runQiyunleSyncWithInventoryFetcher(
       autoMappedCodes.add(mapping.qiyunleCode);
       const item = unmappedItems.find(i => i.goodsinfo?.code === mapping.qiyunleCode);
       if (!item) continue;
-      const stock = parseInt(item.nums, 10);
-      if (isNaN(stock)) continue;
+      const stock = normalizeQiyunleStock(item.nums);
+      if (stock === null) continue;
       productStockMap.set(mapping.productId, (productStockMap.get(mapping.productId) ?? 0) + stock);
       batchStockMap.set(mapping.qiyunleCode, stock);
+      productNameMap.set(mapping.productId, mapping.productName);
+      productReferenceCodeMap.set(mapping.productId, mapping.qiyunleCode);
       skipped = Math.max(0, skipped - 1);
     }
   }
@@ -667,24 +695,29 @@ export async function runQiyunleSyncWithInventoryFetcher(
     }
   }
 
-  // Turnover tracking: detect OOS → restocked and in-stock → OOS transitions
+  // Turnover tracking is product-level: a new batch can restock the product.
   const syncTime = new Date();
-  for (const [code, newStock] of batchStockMap) {
-    const mapping = codeToMapping.get(code);
-    if (!mapping) continue;
-    const prevStock = mapping.current_batch_stock ?? null;
+  for (const [productId, newStock] of productStockMap) {
+    const previousStock = previousProductStockMap.get(productId) ?? 0;
+    const transition = getProductTurnoverTransition(previousStock, newStock);
+    if (!transition) continue;
 
-    if ((prevStock === null || prevStock > 0) && newStock === 0) {
-      // Went out of stock — open a new turnover record
+    const productName = productNameMap.get(productId) ?? null;
+    const referenceCode = productReferenceCodeMap.get(productId) ?? productId;
+
+    if (transition === "went_oos") {
       await db.execute(sql`
         INSERT INTO inventory_turnover_log (qiyunle_code, product_id, product_name, went_oos_at, prev_stock)
-        VALUES (${code}, ${mapping.product_id}, ${mapping.product_name ?? mapping.qiyunle_name ?? null}, ${syncTime.toISOString()}, ${prevStock ?? null})
+        SELECT ${referenceCode}, ${productId}, ${productName}, ${syncTime.toISOString()}, ${previousStock}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM inventory_turnover_log
+          WHERE product_id = ${productId} AND restocked_at IS NULL
+        )
       `).catch(() => {});
-    } else if ((prevStock === null || prevStock === 0) && newStock > 0) {
-      // Back in stock — close the most recent open record for this code
+    } else {
       const openRow = await db.execute(sql`
         SELECT id, went_oos_at FROM inventory_turnover_log
-        WHERE qiyunle_code = ${code} AND restocked_at IS NULL
+        WHERE product_id = ${productId} AND restocked_at IS NULL
         ORDER BY went_oos_at DESC LIMIT 1
       `).catch(() => ({ rows: [] }));
       const row = (openRow as { rows: { id: number; went_oos_at: string }[] }).rows[0];

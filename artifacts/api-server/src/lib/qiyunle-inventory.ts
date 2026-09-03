@@ -5,6 +5,21 @@ export function filterNonPositiveStockItems<T extends { nums: string }>(items: T
   });
 }
 
+export function normalizeQiyunleStock(value: string): number | null {
+  const stock = Number.parseInt(value, 10);
+  if (Number.isNaN(stock)) return null;
+  return Math.max(stock, 0);
+}
+
+export function getProductTurnoverTransition(
+  previousStock: number,
+  currentStock: number,
+): "went_oos" | "restocked" | null {
+  if (previousStock > 0 && currentStock === 0) return "went_oos";
+  if (previousStock <= 0 && currentStock > 0) return "restocked";
+  return null;
+}
+
 export function findUnavailableMappedCodes(
   mappedCodes: Iterable<string>,
   currentPositiveCodes: Iterable<string>,

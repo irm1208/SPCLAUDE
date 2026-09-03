@@ -3,6 +3,7 @@ import {
   filterNonPositiveStockItems,
   findUnavailableMappedCodes,
   findUniqueBatchProductId,
+  getProductTurnoverTransition,
   normalizeQiyunleStock,
 } from "./qiyunle-inventory";
 
@@ -65,5 +66,17 @@ describe("normalizeQiyunleStock", () => {
 
   it("returns null for an invalid stock value", () => {
     expect(normalizeQiyunleStock("not-a-number")).toBeNull();
+  });
+});
+
+describe("getProductTurnoverTransition", () => {
+  it("opens an OOS period only when total product stock reaches zero", () => {
+    expect(getProductTurnoverTransition(8, 0)).toBe("went_oos");
+    expect(getProductTurnoverTransition(8, 3)).toBeNull();
+  });
+
+  it("closes an OOS period when any new batch restores product stock", () => {
+    expect(getProductTurnoverTransition(0, 5)).toBe("restocked");
+    expect(getProductTurnoverTransition(0, 0)).toBeNull();
   });
 });

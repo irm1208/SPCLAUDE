@@ -454,6 +454,9 @@ router.get("/admin/qiyunle/turnover-log", async (req, res): Promise<void> => {
         l.restocked_to,
         l.created_at
       FROM inventory_turnover_log l
+      LEFT JOIN products p ON p.id = l.product_id
+      WHERE l.restocked_at IS NOT NULL
+         OR COALESCE(p.stock, 0) <= 0
       ORDER BY l.went_oos_at DESC
       LIMIT 500
     `)).rows as {
@@ -472,15 +475,18 @@ router.get("/admin/qiyunle/turnover-log", async (req, res): Promise<void> => {
     // Per-product averages (only completed events)
     const avgRows = (await db.execute(sql`
       SELECT
-        product_id,
-        product_name,
-        COUNT(*) FILTER (WHERE restocked_at IS NOT NULL) AS completed_events,
-        COUNT(*) FILTER (WHERE restocked_at IS NULL)    AS open_events,
-        ROUND(AVG(turnaround_days) FILTER (WHERE restocked_at IS NOT NULL), 1) AS avg_days,
-        ROUND(MIN(turnaround_days) FILTER (WHERE restocked_at IS NOT NULL), 1) AS min_days,
-        ROUND(MAX(turnaround_days) FILTER (WHERE restocked_at IS NOT NULL), 1) AS max_days
-      FROM inventory_turnover_log
-      GROUP BY product_id, product_name
+        l.product_id,
+        l.product_name,
+        COUNT(*) FILTER (WHERE l.restocked_at IS NOT NULL) AS completed_events,
+        COUNT(*) FILTER (WHERE l.restocked_at IS NULL)    AS open_events,
+        ROUND(AVG(l.turnaround_days) FILTER (WHERE l.restocked_at IS NOT NULL), 1) AS avg_days,
+        ROUND(MIN(l.turnaround_days) FILTER (WHERE l.restocked_at IS NOT NULL), 1) AS min_days,
+        ROUND(MAX(l.turnaround_days) FILTER (WHERE l.restocked_at IS NOT NULL), 1) AS max_days
+      FROM inventory_turnover_log l
+      LEFT JOIN products p ON p.id = l.product_id
+      WHERE l.restocked_at IS NOT NULL
+         OR COALESCE(p.stock, 0) <= 0
+      GROUP BY l.product_id, l.product_name
       ORDER BY avg_days DESC NULLS LAST
     `)).rows as {
       product_id: string | null;
