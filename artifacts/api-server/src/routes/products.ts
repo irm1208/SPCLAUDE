@@ -1,7 +1,7 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, productsTable, qiyunleMappingsTable } from "@workspace/db";
-import { eq, asc, isNull, and, gt, sql } from "drizzle-orm";
+import { eq, asc, isNull, and, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { requireWholesale } from "../middleware/require-wholesale";
 import {
   hasWholesaleBatchAccess,
@@ -45,8 +45,14 @@ router.get("/products", async (_req, res): Promise<void> => {
 });
 
 // GET /api/wholesale/products - returns wholesale-enabled active global products
-export async function wholesaleProductsHandler(req: any, res: any): Promise<void> {
-  const username = req.wholesale!.telegramUsername.replace(/^@/, "").toLowerCase();
+export async function wholesaleProductsHandler(req: Request, res: Response): Promise<void> {
+  const wholesale = req.wholesale;
+  if (!wholesale) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const username = wholesale.telegramUsername.replace(/^@/, "").toLowerCase();
   const usernameWithAt = `@${username}`;
   const orderRows = await db
     .select({
@@ -56,11 +62,31 @@ export async function wholesaleProductsHandler(req: any, res: any): Promise<void
       deletedAt: ordersTable.deletedAt,
     })
     .from(ordersTable)
-    .where(sql`lower(${ordersTable.telegramUsername}) IN (${username}, ${usernameWithAt})`);
+    .where(and(
+      sql`lower(${ordersTable.telegramUsername}) IN (${username}, ${usernameWithAt})`,
+      inArray(ordersTable.orderType, ["wholesale", "wholesale_shared"]),
+      isNull(ordersTable.deletedAt),
+      ne(ordersTable.status, "Cancelled"),
+      or(
+        inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
+        eq(ordersTable.status, "Completed"),
+      ),
+    ))
+    .limit(6);
   const eligible = hasWholesaleBatchAccess(orderRows);
 
+  const products = await db
+    .select()
+    .from(productsTable)
+    .where(and(
+      eq(productsTable.active, true),
+      eq(productsTable.wholesaleEnabled, true),
+      isNull(productsTable.sourceGroupBuyId),
+    ))
+    .orderBy(asc(productsTable.sortOrder), asc(productsTable.name));
+
   let selectedBatchCodes = new Map<string, string>();
-  if (eligible) {
+  if (eligible && products.length > 0) {
     const mappingRows = await db
       .select({
         productId: qiyunleMappingsTable.productId,
@@ -68,7 +94,10 @@ export async function wholesaleProductsHandler(req: any, res: any): Promise<void
         stock: qiyunleMappingsTable.batchStock,
       })
       .from(qiyunleMappingsTable)
-      .where(gt(qiyunleMappingsTable.batchStock, 0));
+      .where(and(
+        gt(qiyunleMappingsTable.batchStock, 0),
+        inArray(qiyunleMappingsTable.productId, products.map((product) => product.id)),
+      ));
 
     selectedBatchCodes = selectPreferredBatchCodes(
       mappingRows
@@ -80,16 +109,6 @@ export async function wholesaleProductsHandler(req: any, res: any): Promise<void
         })),
     );
   }
-
-  const products = await db
-    .select()
-    .from(productsTable)
-    .where(and(
-      eq(productsTable.active, true),
-      eq(productsTable.wholesaleEnabled, true),
-      isNull(productsTable.sourceGroupBuyId),
-    ))
-    .orderBy(asc(productsTable.sortOrder), asc(productsTable.name));
 
   res.json(
     products.map((p) => withAuthorizedBatchCode({

@@ -124,13 +124,13 @@ describe("withAuthorizedBatchCode", () => {
 describe("wholesale catalogue route contract", () => {
   it("uses wholesale authentication and only conditionally serializes selected batches", () => {
     expect(productsRouteSource).toContain('router.get("/wholesale/products", requireWholesale, wholesaleProductsHandler)');
-    expect(productsRouteSource).toContain("req.wholesale!.telegramUsername.replace(/^@/, \"\").toLowerCase()");
+    expect(productsRouteSource).toContain("wholesale.telegramUsername.replace(/^@/, \"\").toLowerCase()");
     expect(productsRouteSource).toContain("ordersTable.orderType");
     expect(productsRouteSource).toContain("ordersTable.status");
     expect(productsRouteSource).toContain("ordersTable.paymentStatus");
     expect(productsRouteSource).toContain("ordersTable.deletedAt");
     expect(productsRouteSource).toContain("hasWholesaleBatchAccess(orderRows)");
-    expect(productsRouteSource).toContain("if (eligible)");
+    expect(productsRouteSource).toContain("if (eligible && products.length > 0)");
     expect(productsRouteSource).toContain("gt(qiyunleMappingsTable.batchStock, 0)");
     expect(productsRouteSource).toContain("withAuthorizedBatchCode(");
   });
