@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import express from "express";
-import { getTableName } from "drizzle-orm";
+import { getTableName, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -12,6 +13,8 @@ const mockState = vi.hoisted(() => {
     mappingSelects: 0,
     authenticated: true,
     telegramUsername: "@RepeatBuyer",
+    predicates: {} as Record<string, { sql: string; params: unknown[] }>,
+    compilePredicate: null as null | ((predicate: SQL) => { sql: string; params: unknown[] }),
   };
 
   const makeSelect = () => {
@@ -24,7 +27,12 @@ const mockState = vi.hoisted(() => {
         if (table === "qiyunle_mappings") state.mappingSelects++;
         return builder;
       },
-      where() { whereCalled = true; return builder; },
+      where(predicate: SQL) {
+        whereCalled = true;
+        const compiled = state.compilePredicate?.(predicate);
+        if (compiled) state.predicates[table] = compiled;
+        return builder;
+      },
       orderBy() { return builder; },
       limit(value: number) { limitValue = value; return builder; },
       then(resolve: (value: unknown[]) => unknown) {
@@ -44,6 +52,9 @@ const mockState = vi.hoisted(() => {
 
   return { state, db: { select: () => makeSelect() } };
 });
+
+const dialect = new PgDialect();
+mockState.state.compilePredicate = (predicate) => dialect.sqlToQuery(predicate);
 
 vi.mock("@workspace/db", async () => {
   const schema = await import("@workspace/db/schema");
@@ -100,6 +111,7 @@ afterEach(() => {
   mockState.state.mappingSelects = 0;
   mockState.state.authenticated = true;
   mockState.state.telegramUsername = "@RepeatBuyer";
+  mockState.state.predicates = {};
 });
 
 describe("GET /wholesale/products batch access", () => {
@@ -132,6 +144,19 @@ describe("GET /wholesale/products batch access", () => {
       lowStockThreshold: 2,
     }]);
     expect(mockState.state.mappingSelects).toBe(0);
+    expect(mockState.state.predicates.orders).toMatchObject({
+      sql: expect.stringContaining('lower("orders"."telegram_username")'),
+      params: expect.arrayContaining([
+        "repeatbuyer",
+        "@repeatbuyer",
+        "wholesale",
+        "wholesale_shared",
+        "Cancelled",
+        "confirmed",
+        "test_confirmed",
+        "Completed",
+      ]),
+    });
   });
 
   it("adds one selected batchCode for an eligible wholesale account", async () => {
@@ -155,6 +180,10 @@ describe("GET /wholesale/products batch access", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject([{ id: "p1", batchCode: "BP10-0823" }]);
     expect(mockState.state.mappingSelects).toBe(1);
+    expect(mockState.state.predicates.qiyunle_mappings).toMatchObject({
+      sql: expect.stringContaining('"qiyunle_mappings"."batch_stock" > $1'),
+      params: expect.arrayContaining([0, "p1"]),
+    });
   });
 
   it("does not let another account's qualifying orders grant access", async () => {
