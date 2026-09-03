@@ -34,6 +34,7 @@ interface ProductWithMeta {
   id: string;
   name: string;
   price: number;
+  batchCode?: string;
   category?: string | null;
   mgSize?: string | null;
   active?: boolean;
@@ -1093,6 +1094,13 @@ export default function WholesaleOrder() {
                                     </span>
                                   )}
                                 </div>
+                                {product.batchCode && (
+                                  <p className="text-[11px] font-medium" style={{ color: "var(--t-muted)" }}>
+                                    Batch: <span className="font-mono font-semibold" style={{ color: "var(--t-text)" }}>
+                                      {product.batchCode}
+                                    </span>
+                                  </p>
+                                )}
                                 {/* Stock bar */}
                                 {hasStockInfo && (
                                   <div className="space-y-0.5 max-w-[160px]">
