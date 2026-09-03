@@ -12,3 +12,26 @@ export function findUnavailableMappedCodes(
   const current = new Set(currentPositiveCodes);
   return [...mappedCodes].filter((code) => !current.has(code)).sort();
 }
+
+interface QiyunleBatchMapping {
+  qiyunleCode: string;
+  productId: string;
+}
+
+function batchBaseCode(code: string): string {
+  return code.trim().replace(/-\d{4}(?:\d{2})?$/, "").toUpperCase();
+}
+
+export function findUniqueBatchProductId(
+  code: string,
+  mappings: QiyunleBatchMapping[],
+): string | null {
+  const base = batchBaseCode(code);
+  const productIds = new Set(
+    mappings
+      .filter((mapping) => batchBaseCode(mapping.qiyunleCode) === base)
+      .map((mapping) => mapping.productId),
+  );
+
+  return productIds.size === 1 ? [...productIds][0] : null;
+}

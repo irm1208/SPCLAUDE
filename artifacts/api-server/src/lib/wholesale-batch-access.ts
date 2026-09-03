@@ -30,25 +30,39 @@ export function hasWholesaleBatchAccess(
   return orders.filter(isQualifyingWholesaleOrder).length > 5;
 }
 
-function batchDateRank(code: string): number | null {
+function batchDateRank(code: string, referenceDate: Date): number | null {
   const match = /-(\d{2})(\d{2})$/.exec(code);
   if (!match) {
     return null;
   }
 
-  return Number(match[1]) * 100 + Number(match[2]);
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+
+  let year = referenceDate.getUTCFullYear();
+  let timestamp = Date.UTC(year, month - 1, day);
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  if (timestamp > referenceDate.getTime() + sevenDays) {
+    timestamp = Date.UTC(year - 1, month - 1, day);
+  }
+
+  const parsed = new Date(timestamp);
+  if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
+    return null;
+  }
+  return timestamp;
 }
 
 function isPreferredCandidate(
   candidate: WholesaleBatchCandidate,
   current: WholesaleBatchCandidate,
+  referenceDate: Date,
 ): boolean {
-  if (candidate.stock !== current.stock) {
-    return candidate.stock > current.stock;
-  }
-
-  const candidateDateRank = batchDateRank(candidate.code);
-  const currentDateRank = batchDateRank(current.code);
+  const candidateDateRank = batchDateRank(candidate.code, referenceDate);
+  const currentDateRank = batchDateRank(current.code, referenceDate);
 
   if (candidateDateRank !== null && currentDateRank === null) {
     return true;
@@ -61,11 +75,16 @@ function isPreferredCandidate(
     return candidateDateRank > currentDateRank;
   }
 
+  if (candidate.stock !== current.stock) {
+    return candidate.stock > current.stock;
+  }
+
   return candidate.code.localeCompare(current.code) < 0;
 }
 
 export function selectPreferredBatchCodes(
   candidates: WholesaleBatchCandidate[],
+  referenceDate = new Date(),
 ): Map<string, string> {
   const preferredCandidates = new Map<string, WholesaleBatchCandidate>();
 
@@ -75,7 +94,7 @@ export function selectPreferredBatchCodes(
     }
 
     const current = preferredCandidates.get(candidate.productId);
-    if (!current || isPreferredCandidate(candidate, current)) {
+    if (!current || isPreferredCandidate(candidate, current, referenceDate)) {
       preferredCandidates.set(candidate.productId, candidate);
     }
   }

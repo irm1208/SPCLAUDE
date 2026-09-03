@@ -105,3 +105,4 @@
 - [Google Drive database backups](google-drive-database-backups.md) — production dumps gzip to /tmp, upload to Drive, then delete locally; dev skips backups and startup waits 10 minutes.
 - [GB vendor-shipping payment integrity](gb-vendor-shipping-payment-integrity.md) — paid-order shipping increases become amountDue; decreases and edits during balance verification are blocked.
 - [Wholesale access split payment verification](wholesale-access-split-payment-verification.md) — verify the test tx before storing it; final sync and scheduled checks must verify fee minus verified test amount.
+- [Qiyunle batch freshness](qiyunle-batch-freshness.md) — new dated codes inherit an unambiguous base-code mapping; wholesale display prefers the most recent positive-stock batch, not the largest stock.

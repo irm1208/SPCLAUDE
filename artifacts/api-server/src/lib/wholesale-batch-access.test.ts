@@ -46,25 +46,33 @@ describe("hasWholesaleBatchAccess", () => {
 });
 
 describe("selectPreferredBatchCodes", () => {
-  it("selects highest stock first and newest MMDD suffix on a stock tie", () => {
+  it("selects the newest MMDD batch before considering stock", () => {
     const selected = selectPreferredBatchCodes([
-      { productId: "p1", code: "BP10-0712", stock: 8 },
-      { productId: "p1", code: "BP10-0813", stock: 36 },
-      { productId: "p1", code: "BP10-0823", stock: 36 },
+      { productId: "p1", code: "BP10-0827", stock: 214 },
+      { productId: "p1", code: "BP10-0901", stock: 100 },
       { productId: "p2", code: "CAG10-0802", stock: 267 },
-    ]);
+    ], new Date("2026-09-03T12:00:00Z"));
 
-    expect(selected.get("p1")).toBe("BP10-0823");
+    expect(selected.get("p1")).toBe("BP10-0901");
     expect(selected.get("p2")).toBe("CAG10-0802");
   });
 
-  it("prefers parseable suffixes, then uses lexical ordering for exact rank ties", () => {
+  it("treats far-future MMDD suffixes as last year's batches", () => {
     const selected = selectPreferredBatchCodes([
-      { productId: "p1", code: "Z-0823", stock: 10 },
+      { productId: "p1", code: "ZE20-1230", stock: 500 },
+      { productId: "p1", code: "ZE20-0902", stock: 398 },
+    ], new Date("2026-09-03T12:00:00Z"));
+
+    expect(selected.get("p1")).toBe("ZE20-0902");
+  });
+
+  it("uses stock then lexical ordering when batch dates are equal", () => {
+    const selected = selectPreferredBatchCodes([
+      { productId: "p1", code: "Z-0823", stock: 9 },
       { productId: "p1", code: "A-0823", stock: 10 },
       { productId: "p2", code: "unparseable", stock: 10 },
       { productId: "p2", code: "BP10-0101", stock: 10 },
-    ]);
+    ], new Date("2026-09-03T12:00:00Z"));
 
     expect(selected.get("p1")).toBe("A-0823");
     expect(selected.get("p2")).toBe("BP10-0101");

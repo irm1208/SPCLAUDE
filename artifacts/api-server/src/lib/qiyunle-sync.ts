@@ -14,7 +14,10 @@ import { sendAdminMessage } from "./telegram";
 import { callSageAI } from "./sage-ai";
 import { randomUUID } from "crypto";
 import { registerScheduler } from "./scheduler-registry";
-import { filterNonPositiveStockItems } from "./qiyunle-inventory";
+import {
+  filterNonPositiveStockItems,
+  findUniqueBatchProductId,
+} from "./qiyunle-inventory";
 
 const QIYUNLE_BASE = "https://web3.qiyunle.com";
 const SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -414,6 +417,58 @@ interface AutoMapResult {
   reasoning: string;
 }
 
+async function autoMapMatchingBatchBases(
+  unmapped: QiyunleItem[],
+  mappings: {
+    product_id: string;
+    qiyunle_code: string;
+    product_name: string | null;
+  }[],
+): Promise<AutoMapResult[]> {
+  const existing = mappings.map((mapping) => ({
+    qiyunleCode: mapping.qiyunle_code,
+    productId: mapping.product_id,
+  }));
+  const inserted: AutoMapResult[] = [];
+
+  for (const item of unmapped) {
+    const qiyunleCode = item.goodsinfo?.code;
+    if (!qiyunleCode) continue;
+
+    const productId = findUniqueBatchProductId(qiyunleCode, existing);
+    if (!productId) continue;
+
+    const prior = mappings.find((mapping) => mapping.product_id === productId);
+    const result: AutoMapResult = {
+      qiyunleCode,
+      qiyunleGoodsId: item.goodsinfo?.id ?? null,
+      qiyunleName: item.goodsinfo?.name ?? "",
+      productId,
+      productName: prior?.product_name ?? productId,
+      confidence: "high",
+      reasoning: "same product batch-code base as an existing mapping",
+    };
+
+    await db.execute(sql`
+      INSERT INTO qiyunle_mappings (id, product_id, qiyunle_code, qiyunle_goods_id, qiyunle_name, manufacturer)
+      VALUES (
+        ${randomUUID()},
+        ${result.productId},
+        ${result.qiyunleCode},
+        ${result.qiyunleGoodsId},
+        ${result.qiyunleName},
+        'Uther'
+      )
+      ON CONFLICT (qiyunle_code) DO NOTHING
+    `);
+    existing.push({ qiyunleCode, productId });
+    inserted.push(result);
+    console.log(`[qiyunle-automap] ✓ ${qiyunleCode} → ${result.productName} (matching batch-code base)`);
+  }
+
+  return inserted;
+}
+
 /**
  * Calls Gemini AI to match unmapped Qiyunle batch items to Peps products.
  * Only inserts mappings where confidence === "high".
@@ -565,10 +620,21 @@ export async function runQiyunleSyncWithInventoryFetcher(
     batchStockMap.set(code, stock);
   }
 
-  // Auto-map high-confidence unmapped items via Gemini AI
+  // Carry new dated batches forward from unambiguous existing mappings before
+  // using AI for genuinely new product codes.
   const autoMappedCodes = new Set<string>();
   if (unmappedItems.length > 0) {
-    const newMappings = await autoMapHighConfidence(unmappedItems);
+    const matchingBatchMappings = await autoMapMatchingBatchBases(unmappedItems, mappings);
+    const matchingBatchCodes = new Set(
+      matchingBatchMappings.map((mapping) => mapping.qiyunleCode),
+    );
+    const aiMappings = await autoMapHighConfidence(
+      unmappedItems.filter((item) => {
+        const code = item.goodsinfo?.code;
+        return !!code && !matchingBatchCodes.has(code);
+      }),
+    );
+    const newMappings = [...matchingBatchMappings, ...aiMappings];
     autoMapped = newMappings.length;
     autoMappedItems = newMappings;
 
