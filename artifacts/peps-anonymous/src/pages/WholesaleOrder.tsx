@@ -1019,6 +1019,22 @@ export default function WholesaleOrder() {
                   />
                 </div>
               </div>
+              {products.some(p => p.batchCode) && (
+                <div
+                  role="note"
+                  className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
+                  style={{
+                    background: "color-mix(in srgb, var(--t-blue) 5%, var(--t-surface))",
+                    borderColor: "color-mix(in srgb, var(--t-blue) 18%, var(--t-border))",
+                  }}
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--t-blue)" }} />
+                  <p className="text-[11px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+                    <span className="font-semibold" style={{ color: "var(--t-text)" }}>Batch information:</span>{" "}
+                    The batch number shown is the latest current batch and is for guidance only. The batch you receive may differ depending on when your order is placed and whether that batch is still in stock when your order is dispatched.
+                  </p>
+                </div>
+              )}
               {isLoading ? (
                 <div className="flex items-center gap-2 py-4 px-1" style={{ color: "var(--t-muted)" }}>
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading products…

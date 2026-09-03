@@ -13,3 +13,11 @@ test("Wholesale Order accepts and conditionally displays an authorized batch cod
     /\{product\.batchCode && \(\s*<p[^>]*>\s*Batch:\s*<span[^>]*>\s*\{product\.batchCode\}/,
   );
 });
+
+test("Wholesale Order explains that visible batches are current guidance only", async () => {
+  const source = await readFile(pagePath, "utf8");
+
+  assert.match(source, /products\.some\(\s*p\s*=>\s*p\.batchCode\s*\)/);
+  assert.match(source, /The batch number shown is the latest current batch and is for guidance only/);
+  assert.match(source, /whether that batch is still in stock when your order is dispatched/);
+});
