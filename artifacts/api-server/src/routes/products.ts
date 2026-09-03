@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable } from "@workspace/db";
-import { eq, asc, isNull, and } from "drizzle-orm";
+import { ordersTable, productsTable, qiyunleMappingsTable } from "@workspace/db";
+import { eq, asc, isNull, and, gt, sql } from "drizzle-orm";
+import { requireWholesale } from "../middleware/require-wholesale";
+import {
+  hasWholesaleBatchAccess,
+  selectPreferredBatchCodes,
+  withAuthorizedBatchCode,
+} from "../lib/wholesale-batch-access";
 
 const router: IRouter = Router();
 
@@ -39,7 +45,42 @@ router.get("/products", async (_req, res): Promise<void> => {
 });
 
 // GET /api/wholesale/products - returns wholesale-enabled active global products
-router.get("/wholesale/products", async (_req, res): Promise<void> => {
+router.get("/wholesale/products", requireWholesale, async (req, res): Promise<void> => {
+  const username = req.wholesale!.telegramUsername.replace(/^@/, "").toLowerCase();
+  const usernameWithAt = `@${username}`;
+  const orderRows = await db
+    .select({
+      orderType: ordersTable.orderType,
+      status: ordersTable.status,
+      paymentStatus: ordersTable.paymentStatus,
+      deletedAt: ordersTable.deletedAt,
+    })
+    .from(ordersTable)
+    .where(sql`lower(${ordersTable.telegramUsername}) IN (${username}, ${usernameWithAt})`);
+  const eligible = hasWholesaleBatchAccess(orderRows);
+
+  let selectedBatchCodes = new Map<string, string>();
+  if (eligible) {
+    const mappingRows = await db
+      .select({
+        productId: qiyunleMappingsTable.productId,
+        code: qiyunleMappingsTable.qiyunleCode,
+        stock: qiyunleMappingsTable.batchStock,
+      })
+      .from(qiyunleMappingsTable)
+      .where(gt(qiyunleMappingsTable.batchStock, 0));
+
+    selectedBatchCodes = selectPreferredBatchCodes(
+      mappingRows
+        .filter((mapping): mapping is typeof mapping & { stock: number } => mapping.stock != null)
+        .map((mapping) => ({
+          productId: mapping.productId,
+          code: mapping.code,
+          stock: mapping.stock,
+        })),
+    );
+  }
+
   const products = await db
     .select()
     .from(productsTable)
@@ -51,7 +92,7 @@ router.get("/wholesale/products", async (_req, res): Promise<void> => {
     .orderBy(asc(productsTable.sortOrder), asc(productsTable.name));
 
   res.json(
-    products.map((p) => ({
+    products.map((p) => withAuthorizedBatchCode({
       id: p.id,
       name: p.name,
       price: p.wholesalePrice != null ? parseFloat(p.wholesalePrice) : parseFloat(p.price),
@@ -65,7 +106,7 @@ router.get("/wholesale/products", async (_req, res): Promise<void> => {
       isNew: p.isNew,
       stock: p.stock ?? null,
       lowStockThreshold: p.lowStockThreshold ?? null,
-    }))
+    }, eligible, selectedBatchCodes))
   );
 });
 

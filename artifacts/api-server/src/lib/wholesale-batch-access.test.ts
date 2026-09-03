@@ -1,9 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   hasWholesaleBatchAccess,
   selectPreferredBatchCodes,
   withAuthorizedBatchCode,
 } from "./wholesale-batch-access";
+
+const productsRouteSource = readFileSync(
+  new URL("../routes/products.ts", import.meta.url),
+  "utf8",
+);
 
 const paidWholesale = {
   orderType: "wholesale",
@@ -95,5 +101,37 @@ describe("withAuthorizedBatchCode", () => {
       true,
       new Map([["p1", "BP10-0823"]]),
     )).toEqual({ id: "p1", name: "BPC", batchCode: "BP10-0823" });
+  });
+
+  it("adds only each matching product's selected code", () => {
+    const selected = new Map([
+      ["p1", "BP10-0823"],
+      ["p2", "CAG10-0802"],
+    ]);
+
+    expect([
+      withAuthorizedBatchCode({ id: "p1", name: "BPC" }, true, selected),
+      withAuthorizedBatchCode({ id: "p2", name: "CAG" }, true, selected),
+      withAuthorizedBatchCode({ id: "p3", name: "No mapping" }, true, selected),
+    ]).toEqual([
+      { id: "p1", name: "BPC", batchCode: "BP10-0823" },
+      { id: "p2", name: "CAG", batchCode: "CAG10-0802" },
+      { id: "p3", name: "No mapping" },
+    ]);
+  });
+});
+
+describe("wholesale catalogue route contract", () => {
+  it("uses wholesale authentication and only conditionally serializes selected batches", () => {
+    expect(productsRouteSource).toContain('router.get("/wholesale/products", requireWholesale, async (req, res)');
+    expect(productsRouteSource).toContain("req.wholesale!.telegramUsername.replace(/^@/, \"\").toLowerCase()");
+    expect(productsRouteSource).toContain("ordersTable.orderType");
+    expect(productsRouteSource).toContain("ordersTable.status");
+    expect(productsRouteSource).toContain("ordersTable.paymentStatus");
+    expect(productsRouteSource).toContain("ordersTable.deletedAt");
+    expect(productsRouteSource).toContain("hasWholesaleBatchAccess(orderRows)");
+    expect(productsRouteSource).toContain("if (eligible)");
+    expect(productsRouteSource).toContain("gt(qiyunleMappingsTable.batchStock, 0)");
+    expect(productsRouteSource).toContain("withAuthorizedBatchCode(");
   });
 });
