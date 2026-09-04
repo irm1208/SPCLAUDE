@@ -12,6 +12,7 @@ export interface TelegramPrefs {
   new_order: boolean;
   role_application: boolean;
   wholesale_chat: boolean;
+  wholesale_tracking: boolean;
 }
 
 const DEFAULT_PREFS: TelegramPrefs = {
@@ -22,6 +23,7 @@ const DEFAULT_PREFS: TelegramPrefs = {
   new_order: true,
   role_application: true,
   wholesale_chat: true,
+  wholesale_tracking: false,
 };
 
 function parsePrefKey(pref: unknown): TelegramPrefs {
@@ -35,6 +37,7 @@ function parsePrefKey(pref: unknown): TelegramPrefs {
     new_order:        typeof p.new_order        === "boolean" ? p.new_order        : true,
     role_application: typeof p.role_application === "boolean" ? p.role_application : true,
     wholesale_chat:   typeof p.wholesale_chat   === "boolean" ? p.wholesale_chat   : true,
+    wholesale_tracking: typeof p.wholesale_tracking === "boolean" ? p.wholesale_tracking : false,
   };
 }
 
@@ -441,6 +444,15 @@ export interface NotifyResult {
   chatId?: string;
 }
 
+export interface NotifyOptions {
+  /** Do not create an in-app log if this final preference check is disabled. */
+  suppressPreferenceDisabledLog?: boolean;
+}
+
+export function shouldLogPreferenceDisabledNotification(options?: NotifyOptions): boolean {
+  return !options?.suppressPreferenceDisabledLog;
+}
+
 /**
  * Like `notifyUser`, but returns `{ ok, messageId?, chatId? }`. Sends via
  * `sendTelegramMessageFull` so the Telegram `message_id` is captured while
@@ -451,6 +463,7 @@ export async function notifyUserFull(
   prefKey: keyof TelegramPrefs,
   text: string,
   replyMarkup?: Record<string, unknown>,
+  options?: NotifyOptions,
 ): Promise<NotifyResult> {
   try {
     const bare = telegramUsername.replace(/^@/, "").toLowerCase();
@@ -462,6 +475,18 @@ export async function notifyUserFull(
     if (!account) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — account not found`);
       return { ok: false };
+    }
+
+    // Check preference before transport availability. This second read closes
+    // an opt-out race for callers that intentionally suppress disabled logs.
+    const prefs = parsePrefKey(account.telegramNotifications);
+    if (!prefs[prefKey]) {
+      console.debug(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — preference disabled`);
+      if (shouldLogPreferenceDisabledNotification(options)) {
+        // Conventional events remain visible in the in-app feed when disabled.
+        logTgMessage(account.telegramChatId ?? "", text, false, "skipped: Telegram preference off (in-app only)", { recipientType: "user", recipientUsername: bare });
+      }
+      return { ok: false, chatId: account.telegramChatId ?? undefined };
     }
 
     const { token } = await getCredentials();
@@ -476,14 +501,6 @@ export async function notifyUserFull(
       // Still record the notification so it appears in the customer's in-app feed.
       logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare });
       return { ok: false };
-    }
-
-    const prefs = parsePrefKey(account.telegramNotifications);
-    if (!prefs[prefKey]) {
-      console.debug(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — preference disabled`);
-      // Telegram delivery is off for this event, but keep it in the in-app feed.
-      logTgMessage(account.telegramChatId, text, false, "skipped: Telegram preference off (in-app only)", { recipientType: "user", recipientUsername: bare });
-      return { ok: false, chatId: account.telegramChatId };
     }
 
     const result = await sendTelegramMessageFull(
@@ -508,10 +525,11 @@ export async function notifyUser(
   prefKey: keyof TelegramPrefs,
   text: string,
   replyMarkup?: Record<string, unknown>,
+  options?: NotifyOptions,
 ): Promise<void> {
   // Fire both Telegram and Discord in parallel; failures are independent
   await Promise.all([
-    notifyUserFull(telegramUsername, prefKey, text, replyMarkup),
+    notifyUserFull(telegramUsername, prefKey, text, replyMarkup, options),
     notifyUserDiscord(telegramUsername, prefKey, text).catch(() => {}),
   ]);
 }

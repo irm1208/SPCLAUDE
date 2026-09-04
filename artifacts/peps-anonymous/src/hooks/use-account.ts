@@ -688,6 +688,7 @@ export interface TelegramPrefs {
   profile: boolean;
   new_order: boolean;
   wholesale_chat: boolean;
+  wholesale_tracking?: boolean;
 }
 
 export interface TelegramStatus {
@@ -972,5 +973,59 @@ export function useAccountOrders(gbId?: string | null, enabled = true) {
     staleTime: 30 * 1000,
     retry: false,
     enabled,
+  });
+}
+
+export interface WholesaleTrackingEvent {
+  date: string;
+  status: string;
+  location: string;
+}
+
+export interface WholesaleTrackingOrder {
+  id: string;
+  code: string;
+  trackingNumbers: string[];
+  trackingStatus: string | null;
+  trackingEvents: WholesaleTrackingEvent[];
+  trackingLastChecked: string | null;
+}
+
+export interface WholesaleTrackingResponse {
+  alertsEnabled: boolean;
+  orders: WholesaleTrackingOrder[];
+}
+
+export function useWholesaleTracking() {
+  return useQuery<WholesaleTrackingResponse>({
+    queryKey: ["account", "wholesale-tracking"],
+    queryFn: async () => {
+      const res = await fetch("/api/account/wholesale-tracking", { credentials: "include" });
+      if (res.status === 401) throw new Error("Unauthorized");
+      if (!res.ok) throw new Error("Failed to load tracking data");
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+}
+
+export function useUpdateWholesaleTrackingPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/account/telegram/prefs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prefs: { wholesale_tracking: enabled } }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update preferences");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["account", "wholesale-tracking"] });
+      qc.invalidateQueries({ queryKey: ["account", "telegram-status"] });
+    },
   });
 }

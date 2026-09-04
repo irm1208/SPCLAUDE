@@ -503,7 +503,17 @@ export default function WholesaleOrder() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
             <div className="space-y-1">
-              <h1 className="text-xl font-bold" style={{ color: "var(--t-text)" }}>Wholesale Order</h1>
+              <div className="flex items-start justify-between gap-4">
+                <h1 className="text-xl font-bold" style={{ color: "var(--t-text)" }}>Wholesale Order</h1>
+                <button
+                  onClick={() => setLocation("/wholesale/tracking")}
+                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold transition-opacity hover:opacity-70 px-3 py-1.5 rounded-lg border bg-white shadow-sm"
+                  style={{ color: "var(--t-blue)", borderColor: "var(--t-border)" }}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  Tracking
+                </button>
+              </div>
               <p className="text-sm" style={{ color: "var(--t-muted)" }}>
                 {requiresApproval
                   ? "Submit your order for admin review. Once approved, you will receive payment instructions."

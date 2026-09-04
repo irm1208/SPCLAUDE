@@ -126,10 +126,16 @@ export async function sendAdminDiscordMessage(content: string): Promise<boolean>
 
 /**
  * Check whether the notification preference `prefKey` is enabled for an account.
- * Defaults to true (opt-in) for all keys, mirroring parsePrefKey in telegram.ts.
+ * Defaults to true for existing keys; wholesale tracking is explicitly opt-in.
  * Uses telegramNotifications JSON column so Discord honours the same user prefs.
  */
 function checkPref(prefs: unknown, prefKey: string): boolean {
+  // Wholesale tracking is an explicit opt-in; existing notification keys retain
+  // their historical default-on behavior.
+  if (prefKey === "wholesale_tracking") {
+    return !!(prefs && typeof prefs === "object" &&
+      (prefs as Record<string, unknown>).wholesale_tracking === true);
+  }
   if (!prefs || typeof prefs !== "object") return true;
   const p = prefs as Record<string, unknown>;
   return typeof p[prefKey] === "boolean" ? (p[prefKey] as boolean) : true;

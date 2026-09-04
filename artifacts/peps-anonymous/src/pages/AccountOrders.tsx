@@ -804,6 +804,20 @@ function ProfileTab({ username }: { username: string }) {
   );
 }
 
+export function DirectWholesaleTrackingLink() {
+  const [, setLocation] = useLocation();
+  return (
+    <button
+      onClick={() => setLocation("/wholesale/tracking")}
+      className="shrink-0 inline-flex items-center justify-center gap-1.5 text-xs font-bold transition-opacity hover:opacity-70 h-10 px-4 rounded-xl border bg-white shadow-sm"
+      style={{ color: "var(--t-blue)", borderColor: "var(--t-border)" }}
+    >
+      <Truck className="w-4 h-4" />
+      Direct Wholesale Tracking
+    </button>
+  );
+}
+
 export default function AccountOrders() {
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -943,6 +957,12 @@ export default function AccountOrders() {
                 </div>
               )}
 
+              {!ordersLoading && (
+                <div className="flex justify-end">
+                  <DirectWholesaleTrackingLink />
+                </div>
+              )}
+
               {!ordersLoading && orders.length === 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className="bg-white rounded-xl p-8 text-center shadow-sm"
@@ -973,35 +993,37 @@ export default function AccountOrders() {
 
               {!ordersLoading && orders.length > 0 && !gbId && (
                 <>
-                  {/* Order category sub-tabs: Group Buys / Wholesale / Shop */}
-                  <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm" style={{ border: "1px solid var(--t-border)" }}>
-                    {([
-                      { id: "groupbuy" as const, label: "Group Buys", icon: Users },
-                      { id: "wholesale" as const, label: "Wholesale", icon: Boxes },
-                      { id: "shop" as const, label: "Shop", icon: ShoppingBag },
-                    ]).map(tab => {
-                      const count = groupedOrders[tab.id].length;
-                      const active = orderFilter === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={() => { setOrderFilter(tab.id); setOrderFilterTouched(true); }}
-                          className="flex-1 relative flex items-center justify-center gap-1 h-9 rounded-xl text-[11px] font-semibold transition-all min-w-0"
-                          style={active ? { background: "var(--t-blue)", color: "#fff" } : { color: "var(--t-muted)" }}
-                        >
-                          <tab.icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{tab.label}</span>
-                          {count > 0 && (
-                            <span className="text-[10px] font-bold px-1.5 rounded-full shrink-0"
-                              style={active
-                                ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
-                                : { background: "var(--t-surface2)", color: "var(--t-muted)" }}>
-                              {count}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    {/* Order category sub-tabs: Group Buys / Wholesale / Shop */}
+                    <div className="flex-1 flex gap-1 bg-white rounded-xl p-1 shadow-sm" style={{ border: "1px solid var(--t-border)", maxWidth: "400px" }}>
+                      {([
+                        { id: "groupbuy" as const, label: "Group Buys", icon: Users },
+                        { id: "wholesale" as const, label: "Wholesale", icon: Boxes },
+                        { id: "shop" as const, label: "Shop", icon: ShoppingBag },
+                      ]).map(tab => {
+                        const count = groupedOrders[tab.id].length;
+                        const active = orderFilter === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => { setOrderFilter(tab.id); setOrderFilterTouched(true); }}
+                            className="flex-1 relative flex items-center justify-center gap-1 h-9 rounded-xl text-[11px] font-semibold transition-all min-w-0"
+                            style={active ? { background: "var(--t-blue)", color: "#fff" } : { color: "var(--t-muted)" }}
+                          >
+                            <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{tab.label}</span>
+                            {count > 0 && (
+                              <span className="text-[10px] font-bold px-1.5 rounded-full shrink-0"
+                                style={active
+                                  ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
+                                  : { background: "var(--t-surface2)", color: "var(--t-muted)" }}>
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {groupedOrders[orderFilter].length === 0 ? (

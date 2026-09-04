@@ -59,6 +59,7 @@ import ReshipperApply from "@/pages/ReshipperApply";
 import WholesaleOrder from "@/pages/WholesaleOrder";
 import WholesaleShared from "@/pages/WholesaleShared";
 import WholesaleShareEntry from "@/pages/WholesaleShareEntry";
+import WholesaleTracking from "@/pages/WholesaleTracking";
 import WholesaleInviteLanding from "@/pages/WholesaleInviteLanding";
 import PublicTestingPools from "@/pages/PublicTestingPools";
 import SagePage from "@/pages/SagePage";
@@ -165,6 +166,7 @@ function Router() {
       <Route path="/reshipper-apply" component={ReshipperApply} />
       <Route path="/wholesale/shared/:id" component={WholesaleShared} />
       <Route path="/wholesale/shared" component={WholesaleShareEntry} />
+      <Route path="/wholesale/tracking" component={WholesaleTracking} />
       <Route path="/wholesale" component={WholesaleOrder} />
       <Route path="/join-wholesale/:code" component={WholesaleInviteLanding} />
       <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />

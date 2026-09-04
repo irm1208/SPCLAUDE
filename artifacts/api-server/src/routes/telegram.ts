@@ -10,6 +10,7 @@ import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
 import { translateZh } from "../lib/translate-zh";
 import { refreshSingleGbParcel, fetchTrackingEventsForNumber } from "../lib/tracking-auto-refresh";
+import { toggleWholesaleTrackingPreference } from "../lib/wholesale-tracking";
 import { GoogleGenAI } from "../lib/google-genai";
 import { callSageAI } from "../lib/sage-ai";
 
@@ -779,6 +780,7 @@ const NOTIF_PREF_LABELS: Record<string, string> = {
   profile:         "Profile changes",
   new_order:       "New order alerts",
   wholesale_chat:  "Wholesale chat messages",
+  wholesale_tracking: "Wholesale tracking alerts",
 };
 const NOTIF_PREF_KEYS = Object.keys(NOTIF_PREF_LABELS);
 
@@ -789,7 +791,7 @@ async function sendNotifPrefs(chatId: string, telegramUsername: string): Promise
     .from(accountsTable)
     .where(sql`lower(${accountsTable.telegramUsername}) = ${norm}`);
 
-  const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
+  const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true, wholesale_tracking: false };
   const prefs: Record<string, boolean> = { ...defaults, ...((acct?.telegramNotifications && typeof acct.telegramNotifications === "object") ? acct.telegramNotifications as Record<string, boolean> : {}) };
 
   const keyboard = NOTIF_PREF_KEYS.map(key => {
@@ -2629,8 +2631,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         const existing = (acctRow?.telegramNotifications && typeof acctRow.telegramNotifications === "object")
           ? acctRow.telegramNotifications as Record<string, boolean>
           : {};
-        const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
-        const updated = { ...defaults, ...existing, [prefKey]: !(({ ...defaults, ...existing })[prefKey] ?? true) };
+        const defaults: Record<string, boolean> = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true, wholesale_tracking: false };
+        const resolved = { ...defaults, ...existing };
+        const updated = prefKey === "wholesale_tracking"
+          ? toggleWholesaleTrackingPreference(resolved)
+          : { ...resolved, [prefKey]: !(resolved[prefKey] ?? true) };
 
         await db.update(accountsTable)
           .set({ telegramNotifications: updated })
@@ -3598,7 +3603,7 @@ router.get("/account/telegram/status", requireAccount, async (req, res): Promise
     .from(accountsTable)
     .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
 
-  const defaultPrefs = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true };
+  const defaultPrefs = { status: true, deleted: true, payment: true, profile: true, new_order: true, wholesale_chat: true, wholesale_tracking: false };
   const prefs = (account?.telegramNotifications && typeof account.telegramNotifications === "object")
     ? { ...defaultPrefs, ...(account.telegramNotifications as Record<string, boolean>) }
     : defaultPrefs;
@@ -3644,7 +3649,7 @@ router.patch("/account/telegram/prefs", requireAccount, async (req, res): Promis
     return;
   }
 
-  const validKeys = ["status", "deleted", "payment", "profile", "new_order", "wholesale_chat"];
+  const validKeys = ["status", "deleted", "payment", "profile", "new_order", "wholesale_chat", "wholesale_tracking"];
   const sanitized: Record<string, boolean> = {};
   for (const key of validKeys) {
     if (typeof (prefs as Record<string, unknown>)[key] === "boolean") {

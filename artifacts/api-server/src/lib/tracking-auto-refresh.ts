@@ -9,6 +9,7 @@ import type { TrackingPackage, TrackingEvent } from "@workspace/db";
 import { registerScheduler } from "./scheduler-registry";
 import { translateZh } from "./translate-zh";
 import { resolveCarrierCode } from "../routes/gb-parcels";
+import { classifyTrackingStatus, hasWholesaleTrackingOptIn, isWholesaleTrackingAlertStatus, shouldApplyWholesaleTrackingClassification } from "./wholesale-tracking";
 
 const TRACK17_BASE = "https://api.17track.net/track/v2.4";
 
@@ -153,7 +154,7 @@ async function track17GetInfo(trackingNumber: string, carrierCode = 0): Promise<
   }
 }
 
-function parseTrack17Response(accepted: unknown): {
+function parseTrack17Response(accepted: unknown, classifyWholesaleStatus = false): {
   status: string;
   statusCode: number;
   events: { date: string; status: string; location: string }[];
@@ -161,12 +162,12 @@ function parseTrack17Response(accepted: unknown): {
   const a = accepted as V24Accepted;
   const trackInfo = a?.track_info ?? {};
   const rawStatus = trackInfo.latest_status?.status ?? "";
-  const status = STATUS_STRING_MAP[rawStatus] ?? "pending";
-  const statusCode = STATUS_REVERSE[status] ?? 0;
+  const track17Status = STATUS_STRING_MAP[rawStatus] ?? "pending";
 
   const providers = trackInfo.tracking?.providers ?? [];
   const seen = new Set<string>();
   const events: { date: string; status: string; location: string }[] = [];
+  const eventDescriptions: Array<{ date: string; description: string }> = [];
   for (const prov of providers) {
     for (const ev of prov.events ?? []) {
       const date = ev.time_utc ?? ev.time_iso ?? "";
@@ -175,9 +176,14 @@ function parseTrack17Response(accepted: unknown): {
       const key = `${date}|${description}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      eventDescriptions.push({ date, description });
       events.push({ date, status: maskStatus(description), location: maskLocation(ev.location ?? "") });
     }
   }
+  const status = classifyWholesaleStatus
+    ? classifyTrackingStatus(track17Status, eventDescriptions)
+    : track17Status;
+  const statusCode = STATUS_REVERSE[status] ?? 0;
   return { status, statusCode, events };
 }
 
@@ -417,6 +423,7 @@ async function refreshIndividualOrders(): Promise<number> {
       trackingNumbers: ordersTable.trackingNumbers,
       trackingStatus: ordersTable.trackingStatus,
       telegramUsername: ordersTable.telegramUsername,
+      orderType: ordersTable.orderType,
     })
     .from(ordersTable)
     .where(
@@ -439,6 +446,12 @@ async function refreshIndividualOrders(): Promise<number> {
           eq(ordersTable.trackingStatus, "out_for_delivery"),
           eq(ordersTable.trackingStatus, "attempted"),
           eq(ordersTable.trackingStatus, "exception"),
+          // Special statuses are non-terminal for direct wholesale only.
+          // Preserve the prior non-wholesale polling predicate unchanged.
+          and(
+            eq(ordersTable.orderType, "wholesale"),
+            inArray(ordersTable.trackingStatus, ["redirected", "seized", "return_to_sender"]),
+          ),
         ),
         // Stale (never checked or checked >90 min ago)
         or(
@@ -477,7 +490,8 @@ async function refreshIndividualOrders(): Promise<number> {
         continue;
       }
 
-      const { status, events } = parseTrack17Response(accepted);
+      const isDirectWholesale = shouldApplyWholesaleTrackingClassification(order.orderType);
+      const { status, events } = parseTrack17Response(accepted, isDirectWholesale);
       const oldStatus = order.trackingStatus;
 
       await db.update(ordersTable)
@@ -486,9 +500,13 @@ async function refreshIndividualOrders(): Promise<number> {
 
       if (status !== oldStatus) {
         refreshed++;
-        // Notify customer on meaningful status change (skip silent statuses)
+        // Direct wholesale orders only alert on their opt-in allowlist. All other
+        // individual orders retain their existing status-notification behavior.
         const SILENT = new Set(["pending", "delivered", "undeliverable", "expired"]);
-        if (!SILENT.has(status) && order.telegramUsername?.trim()) {
+        const shouldNotify = isDirectWholesale
+          ? isWholesaleTrackingAlertStatus(status)
+          : !SILENT.has(status);
+        if (shouldNotify && order.telegramUsername?.trim()) {
           const emoji: Record<string, string> = {
             in_transit: "📦", out_for_delivery: "🚚", attempted: "⚠️", exception: "❗",
           };
@@ -499,9 +517,19 @@ async function refreshIndividualOrders(): Promise<number> {
             `Status: <b>${statusLabel}</b>\n\n` +
             `Tracking: <code>${num}</code>\n` +
             `<a href="${trackUrl}">🔍 Track parcel →</a>`;
-          notifyUser(order.telegramUsername, "status", text, {
+          if (isDirectWholesale) {
+            const [account] = await db
+              .select({ telegramNotifications: accountsTable.telegramNotifications })
+              .from(accountsTable)
+              .where(eq(accountsTable.telegramUsername, order.telegramUsername.replace(/^@/, "").trim().toLowerCase()));
+            // Unlike conventional status updates, wholesale tracking is strictly
+            // website opt-in: avoid notifyUser entirely so absent/disabled users
+            // receive no Telegram/Discord delivery and no in-app bell log entry.
+            if (!hasWholesaleTrackingOptIn(account?.telegramNotifications)) continue;
+          }
+          notifyUser(order.telegramUsername, isDirectWholesale ? "wholesale_tracking" : "status", text, {
             inline_keyboard: [[{ text: "🚚 Track Parcel →", url: trackUrl }]],
-          }).catch(() => {});
+          }, isDirectWholesale ? { suppressPreferenceDisabledLog: true } : undefined).catch(() => {});
         }
       }
     } catch (err) {
