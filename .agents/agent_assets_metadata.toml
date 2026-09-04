@@ -29,75 +29,102 @@ id = "cBFi4nCzSaOgy_Zeek-Ca"
 uri = "file://production_db_export.tar.gz"
 type = "unspecified"
 title = "production_db_export.tar.gz (19 MB)"
+logical_id = "77e09c3f-3ca4-48de-abc9-56dc16a6b854"
 
 [[outputs]]
 id = "mMW1lp32Y4zvoyda3AX5Y"
 uri = "file://.local/security/AUDIT.md"
 type = "text"
 title = "Peps Anonymous — Security Audit Report (May 2026)"
+logical_id = "b6e8da5f-11ea-4c55-945a-8d6a9cefeb71"
 
 [[outputs]]
 id = "Ap7YbjYueaAFj959WG98F"
 uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_Overview.png"
 type = "image"
 title = "Lab Reports — Overview (heatmap + activity)"
+logical_id = "ad9fb053-a671-4617-8912-aa8bf3f3de24"
 
 [[outputs]]
 id = "gWX6xs05nk449ViBu2R0x"
 uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_CompoundLeaderboard.png"
 type = "image"
 title = "Lab Reports — Compound Leaderboard (TIRZ-5)"
+logical_id = "a13d9ebc-2bd1-43c3-91af-287ec77c9db8"
 
 [[outputs]]
 id = "eo_b6lmQqknPs2ev6F9yd"
 uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_Browse.png"
 type = "image"
 title = "Lab Reports — Browse (desktop preview)"
+logical_id = "eadeacc8-e850-43b1-82a4-42ad9b366af8"
 
 [[outputs]]
 id = "PSLNSL3Kt_g_75K8nDijX"
 uri = "file://attached_assets/screenshots/bbc34ef6-d242-429e-ba8d-882d8f2a859e-00-bvops6huiuly_worf_replit_dev_mockup_preview_lab-reports_BatchDetail.png"
 type = "image"
 title = "Lab Reports — Batch Detail (desktop preview)"
+logical_id = "f494d6db-61a8-4ab9-9ec9-62b5cf744c99"
 
 [[outputs]]
 id = "BWn7tEsBpSjVKnBYKxP1m"
 uri = "file://Product-Landing-Page/.local/peps_anonymous_db_dump.tar.gz"
 type = "unspecified"
 title = "Peps Anonymous — Production DB Dump"
+logical_id = "5d1f096a-08eb-4e49-92e5-39ac2f0dd265"
 
 [[outputs]]
 id = "Oeti23iBOa0fRcQVXJbWo"
 uri = "file://peps_anonymous_db_dump.tar.gz"
 type = "unspecified"
 title = "Peps Anonymous — Production DB Dump"
+logical_id = "a329808c-36da-41e5-86f1-cae899ce9369"
 
 [[outputs]]
 id = "piMfysMGLD9nsf-Hm0j3O"
 uri = "file://peps_dump.tar.gz"
 type = "unspecified"
 title = "peps_dump.tar.gz — PostgreSQL database backup"
+logical_id = "4346b93e-28dd-48d0-b0b5-c332ec5be853"
 
 [[outputs]]
 id = "q36N7xFZ_qsjAKfm_3BXg"
 uri = "file://peps_anonymous_backup.tar.gz"
 type = "unspecified"
 title = "peps_anonymous.backup (tar.gz)"
+logical_id = "232e279b-1103-4e02-bee3-32dab3ec1405"
 
 [[outputs]]
 id = "KeE3pgkBz0WVfm_Mlba1Y"
 uri = "file://.local/exports/janoshik-com-links.txt"
 type = "text"
 title = "janoshik.com links (416) — run on janoshik.com"
+logical_id = "6e12d086-fb4c-4c99-9959-dea5f234ff25"
 
 [[outputs]]
 id = "jZvapeGB7K-30VZF35zw1"
 uri = "file://.local/exports/verify-janoshik-com-links.txt"
 type = "text"
 title = "verify.janoshik.com links (328) — run on verify.janoshik.com"
+logical_id = "52bcd928-183d-456d-9d8f-0b3f5acfc4ef"
 
 [[outputs]]
 id = "zIVaMG-m4F8oOHidgI3Lk"
 uri = "file://.local/exports/janoshik-links-verify.txt"
 type = "text"
 title = "All Janoshik links (730) — verify.janoshik.com"
+logical_id = "d8d78b7e-a6e6-4d4e-b479-6b9e5c8fd17a"
+
+[[outputs]]
+id = "KgT53WyRD2F7EP3Wi_Tla"
+uri = "file://previews/wholesale-tracking-layout.html"
+type = "text"
+title = "Wholesale Tracking Layout"
+description = "Standalone preview of the proposed direct-wholesale tracking dashboard."
+logical_id = "81fc683d-8ba9-4992-882f-5a6d964a3284"
+content_hash = "sha256:131869c3faf3603d0b27516594b54800577216cf617702c57fb1d94c87de19b8"
+size = 7701
+mtime_ms = 1788528783429
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:da666713-c1e9-4980-8c1e-25d24be65c5e/81fc683d-8ba9-4992-882f-5a6d964a3284/dfa29da4-cf22-402b-a7b5-1f9ed2d63caa"
+storage_version_token = "1788528784675882"
+content_type = "text/html"
