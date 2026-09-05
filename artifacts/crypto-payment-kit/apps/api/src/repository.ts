@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { canTransition, type PaymentStatus } from "@open-crypto-checkout/core";
+import { canTransition, railById, type PaymentStatus, type PublicCheckout } from "@open-crypto-checkout/core";
 import type { AuthoritativeRequest, VerificationResult } from "@open-crypto-checkout/verifiers";
+import { validateWebhookUrl } from "./webhooks.js";
 
 type Queryable = Pick<Pool, "query" | "connect">;
 type PaymentInput = { publicId: string; merchantOrderReference: string; idempotencyKey: string; fiatAmount: string; fiatCurrency: string; rails: string[] };
@@ -17,6 +19,15 @@ const canonical = (value: unknown): string => {
     : item;
   return JSON.stringify(sort(value));
 };
+export const buildWebhookEvent = (input: {
+  id: string; createdAt: Date; merchantOrderReference: string; paymentId: string; railId: string;
+  network: string; asset: string; amountBaseUnits: string; transactionHash: string;
+}) => Object.freeze({
+  id: input.id, type: "payment.paid" as const, createdAt: input.createdAt.toISOString(),
+  merchantOrderReference: input.merchantOrderReference, paymentId: input.paymentId, status: "paid" as const,
+  railId: input.railId, network: input.network, asset: input.asset,
+  amountBaseUnits: input.amountBaseUnits, transactionHash: input.transactionHash,
+});
 
 /** The only persistence implementation used by HTTP routes. All state mutations lock rows. */
 export class PaymentRepository {
@@ -29,6 +40,22 @@ export class PaymentRepository {
   async authenticate(key: string, compare: (key: string, digest: string) => boolean): Promise<string | null> {
     const result = await this.pool.query<{ merchant_id: string; key_hash: string }>("SELECT merchant_id,key_hash FROM api_keys WHERE active=true");
     return result.rows.find((row) => compare(key, row.key_hash))?.merchant_id ?? null;
+  }
+  async bootstrapDevelopment(keyDigest: string, webhookDigest: string, signingMaterial: string, endpointUrl?: string, allowLocal = false): Promise<string> {
+    const validatedEndpoint = endpointUrl ? (await validateWebhookUrl(endpointUrl, { allowLocal })).toString() : undefined;
+    return this.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('open-crypto-checkout-development-bootstrap'))");
+      const merchant = (await client.query<{ id: string }>(`INSERT INTO merchants(public_id,name) VALUES('merchant_demo','Development demo merchant')
+        ON CONFLICT(public_id) DO UPDATE SET name=EXCLUDED.name RETURNING id`)).rows[0];
+      if (!merchant) throw new Error("development bootstrap failed");
+      const updatedKey = await client.query("UPDATE api_keys SET key_hash=$2,active=true WHERE id=(SELECT id FROM api_keys WHERE merchant_id=$1 ORDER BY created_at LIMIT 1)", [merchant.id, keyDigest]);
+      if (!updatedKey.rowCount) await client.query("INSERT INTO api_keys(merchant_id,key_hash) VALUES($1,$2)", [merchant.id, keyDigest]);
+      if (validatedEndpoint) {
+        const updatedEndpoint = await client.query("UPDATE webhook_endpoints SET url=$2,signing_material=$3,secret_" + "hash=$4,active=true WHERE id=(SELECT id FROM webhook_endpoints WHERE merchant_id=$1 ORDER BY created_at LIMIT 1)", [merchant.id, validatedEndpoint, signingMaterial, webhookDigest]);
+        if (!updatedEndpoint.rowCount) await client.query("INSERT INTO webhook_endpoints(merchant_id,url,secret_" + "hash,signing_material) VALUES($1,$2,$3,$4)", [merchant.id, validatedEndpoint, webhookDigest, signingMaterial]);
+      }
+      return merchant.id;
+    });
   }
   async createPayment(merchantId: string, input: PaymentInput): Promise<PaymentRecord> {
     return this.transaction(async (client) => {
@@ -48,9 +75,24 @@ export class PaymentRepository {
       FROM payments WHERE merchant_id=$1 AND public_id=$2`, [merchantId, publicId])).rows[0];
     return row ? { ...row, rails: [] } : null;
   }
-  async checkout(publicId: string) {
-    return (await this.pool.query(`SELECT p.id,p.public_id AS "paymentId",p.status,p.fiat_amount AS "fiatAmount",p.fiat_currency AS "fiatCurrency",
-      allowed_rails AS rails FROM payments p WHERE p.public_id=$1`, [publicId])).rows[0] ?? null;
+  async checkout(publicId: string): Promise<PublicCheckout | null> {
+    const row = (await this.pool.query<any>(`SELECT p.public_id AS "publicId",p.status,p.fiat_amount AS "fiatAmount",p.fiat_currency AS "fiatCurrency",
+      p.allowed_rails AS "allowedRails",q.rail_id AS "quoteRailId",q.network_name AS "quoteNetwork",q.chain_id AS "quoteChainId",
+      q.asset AS "quoteAsset",q.token_id AS "quoteTokenId",q.destination AS "quoteDestination",
+      q.amount_base_units AS "quoteAmountBaseUnits",q.expires_at AS "quoteExpiresAt"
+      FROM payments p LEFT JOIN LATERAL (SELECT * FROM quotes WHERE payment_id=p.id ORDER BY created_at DESC LIMIT 1) q ON true
+      WHERE p.public_id=$1`, [publicId])).rows[0];
+    if (!row) return null;
+    const quoteExpiry = row.quoteExpiresAt ? new Date(row.quoteExpiresAt).toISOString() : null;
+    return {
+      publicId: row.publicId, status: row.status, fiatAmount: row.fiatAmount, fiatCurrency: row.fiatCurrency,
+      expiresAt: quoteExpiry, allowedRails: (row.allowedRails as string[]).map(railById).filter((rail) => rail !== undefined),
+      selectedQuote: row.quoteRailId ? {
+        railId: row.quoteRailId, network: row.quoteNetwork, chainId: row.quoteChainId, asset: row.quoteAsset,
+        tokenAddress: row.quoteTokenId ?? null, destinationAddress: row.quoteDestination,
+        amountBaseUnits: row.quoteAmountBaseUnits, expiresAt: quoteExpiry!,
+      } : null,
+    };
   }
   async selectQuote(publicId: string, quoteInput: QuoteSnapshot) {
     return this.transaction(async (client) => {
@@ -99,13 +141,18 @@ export class PaymentRepository {
   }
   async markPaid(paymentId: string, transactionId: string, evidence: object): Promise<boolean> {
     return this.transaction(async (client) => {
-      const result = await client.query<{ status: PaymentStatus; merchant_id: string; public_id: string; merchant_order_reference: string }>("SELECT status,merchant_id,public_id,merchant_order_reference FROM payments WHERE id=$1 FOR UPDATE", [paymentId]);
+      const result = await client.query<{ status: PaymentStatus; merchant_id: string; public_id: string; merchant_order_reference: string; rail_id: string; network_name: string; asset: string; amount_base_units: string; hash: string }>(`SELECT p.status,p.merchant_id,p.public_id,p.merchant_order_reference,q.rail_id,q.network_name,q.asset,q.amount_base_units,pt.hash
+        FROM payments p JOIN payment_transactions pt ON pt.payment_id=p.id AND pt.id=$2 JOIN quotes q ON q.id=pt.selected_quote_id
+        WHERE p.id=$1 FOR UPDATE OF p`, [paymentId, transactionId]);
       const payment = result.rows[0]; if (!payment || !canTransition(payment.status, "paid")) return false;
       await client.query("UPDATE payments SET status='paid', updated_at=now() WHERE id=$1", [paymentId]);
       await client.query("INSERT INTO verification_attempts (id,payment_transaction_id,result,evidence) VALUES (gen_random_uuid(),$1,'verified',$2)", [transactionId, evidence]);
-      const body = canonical({ type: "payment.paid", paymentId: payment.public_id, merchantOrderReference: payment.merchant_order_reference, status: "paid", evidence });
-      const event = await client.query<{ id: string }>("INSERT INTO webhook_events(id,merchant_id,type,body,canonical_body) VALUES(gen_random_uuid(),$1,'payment.paid',$2,$3) RETURNING id", [payment.merchant_id, JSON.parse(body), body]);
-      await client.query("INSERT INTO webhook_deliveries(id,webhook_event_id,endpoint_id,due_at) SELECT gen_random_uuid(),$1,id,now() FROM webhook_endpoints WHERE merchant_id=$2 AND active=true", [event.rows[0].id, payment.merchant_id]);
+      const eventId = randomUUID(), createdAt = new Date();
+      const event = buildWebhookEvent({ id: eventId, createdAt, merchantOrderReference: payment.merchant_order_reference, paymentId: payment.public_id,
+        railId: payment.rail_id, network: payment.network_name, asset: payment.asset, amountBaseUnits: payment.amount_base_units, transactionHash: payment.hash });
+      const body = canonical(event);
+      await client.query("INSERT INTO webhook_events(id,merchant_id,type,body,canonical_body,created_at) VALUES($1,$2,'payment.paid',$3,$4,$5)", [eventId, payment.merchant_id, event, body, createdAt]);
+      await client.query("INSERT INTO webhook_deliveries(id,webhook_event_id,endpoint_id,due_at) SELECT gen_random_uuid(),$1,id,now() FROM webhook_endpoints WHERE merchant_id=$2 AND active=true", [eventId, payment.merchant_id]);
       await client.query("INSERT INTO payment_events (id,payment_id,type,data) VALUES (gen_random_uuid(),$1,'payment.paid',$2)", [paymentId, evidence]);
       return true;
     });
@@ -128,7 +175,7 @@ export class PaymentRepository {
     } else if (result.status === "confirming") {
       await this.pool.query("UPDATE payments SET status='confirming',updated_at=now() FROM payment_transactions pt WHERE pt.id=$1 AND payments.id=pt.payment_id AND payments.status='transaction_submitted'", [transactionId]);
     }
-    await this.pool.query("UPDATE verification_jobs SET completed_at=now(),lease_until=NULL,due_at='infinity' WHERE id=$1 AND $2 NOT IN ('unavailable','not_found','confirming')", [jobId, result.status]);
+    await this.pool.query("UPDATE verification_jobs SET completed_at=now(),lease_until=NULL,due_at='infinity' WHERE id=$1 AND $2=false", [jobId, result.retryable]);
   }
   async applyVerification(transactionId: string, result: VerificationResult) { if (result.status !== "verified") return false; const row = (await this.pool.query<{ payment_id: string }>("SELECT payment_id FROM payment_transactions WHERE id=$1", [transactionId])).rows[0]; return row ? this.markPaid(row.payment_id, transactionId, result.evidence ?? {}) : false; }
 }

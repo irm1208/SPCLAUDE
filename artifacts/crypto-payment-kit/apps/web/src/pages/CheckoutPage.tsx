@@ -51,7 +51,7 @@ export default function CheckoutPage() {
         <div className="p-6 sm:p-8 flex-1 flex flex-col">
           <StatusBanner status={payment.status} />
 
-          {!payment.selectedQuote && payment.status === "created" && (
+          {!payment.selectedQuote && ["created", "awaiting_payment"].includes(payment.status) && (
             <RailSelector payment={payment} />
           )}
 

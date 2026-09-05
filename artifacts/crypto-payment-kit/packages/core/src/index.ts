@@ -31,6 +31,14 @@ export const PAYMENT_RAILS: readonly PaymentRail[] = [
   { id: "bitcoin-btc", network: "bitcoin", chainId: "mainnet", asset: "BTC", decimals: 8, confirmations: 3, kind: "bitcoin" },
 ] as const;
 export const railById = (id: string) => PAYMENT_RAILS.find((rail) => rail.id === id);
+export type PublicCheckout = Readonly<{
+  publicId: string; status: PaymentStatus; fiatAmount: string; fiatCurrency: string; expiresAt: string | null;
+  allowedRails: readonly PaymentRail[];
+  selectedQuote: Readonly<{
+    railId: RailId; network: string; chainId: string; asset: string; tokenAddress: string | null;
+    destinationAddress: string; amountBaseUnits: string; expiresAt: string;
+  }> | null;
+}>;
 
 export type AmountClassification = "verified" | "underpaid" | "overpaid_review";
 /** Compares integer base units; bps are always integer values. */
@@ -79,5 +87,5 @@ export const publicIdSchema = z.string().regex(/^pay_[A-Za-z0-9_-]{20,}$/);
 export const webhookEventSchema = z.object({
   id: z.string().min(1), type: z.enum(["payment.paid", "payment.status_changed"]), createdAt: z.string().datetime(),
   merchantOrderReference: z.string(), paymentId: publicIdSchema, status: z.enum(paymentStatuses),
-  asset: z.string().optional(), network: z.string().optional(), amountBaseUnits: z.string().regex(/^\d+$/).optional(), transactionHash: z.string().optional(),
+  railId: railIdSchema, asset: z.string(), network: z.string(), amountBaseUnits: z.string().regex(/^\d+$/), transactionHash: z.string(),
 }).strict();

@@ -9,4 +9,8 @@ Do not treat this starter as production-ready. Before accepting real payments, r
 5. Commission security testing and review confirmation/finality, quote, wallet, reconciliation, and idempotency policies.
 6. Obtain independent legal and tax advice for their jurisdiction.
 
+Production startup refuses missing RPC URLs for Ethereum, BSC, Arbitrum, Polygon, Solana, Tron, or Bitcoin, and refuses a missing rate provider. The API starts persisted verification and webhook loops with the HTTP process and drains timers, the listener, and PostgreSQL on SIGINT/SIGTERM.
+
+Webhook destinations must be HTTPS in production. URL persistence and every delivery resolve DNS and reject loopback, private, link-local, unique-local, and multicast addresses. Delivery pins the validated address, validates the connected socket address, and never follows redirects. Local HTTP/private destinations require both non-production mode and explicit `ALLOW_LOCAL_WEBHOOKS=true`.
+
 Private keys and seed phrases do not belong in this service. The system only presents public destinations and verifies chain evidence.

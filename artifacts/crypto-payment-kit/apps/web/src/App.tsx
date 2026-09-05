@@ -25,7 +25,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Switch>
-        <Route path="/" component={DemoStorefront} />
+        {import.meta.env.DEV && <Route path="/" component={DemoStorefront} />}
         <Route path="/checkout/:publicId" component={CheckoutPage} />
         <Route component={NotFound} />
       </Switch>

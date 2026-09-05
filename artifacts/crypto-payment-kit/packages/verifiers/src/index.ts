@@ -28,7 +28,7 @@ const base = (request: AuthoritativeRequest, fields: Partial<TransferChecks>): T
 const same = (a: string | undefined | null, b: string | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const blockConfirmations = (tip: bigint | number, block: bigint | number | undefined) => block === undefined ? 0 : Math.max(0, Number(BigInt(tip) - BigInt(block) + 1n));
 
-type EvmProvider = {
+export type EvmProvider = {
   getChainId(): Promise<number | bigint>; getTransaction(hash: string): Promise<{ to?: string | null; value?: bigint; blockNumber?: bigint } | null>;
   getTransactionReceipt(hash: string): Promise<{ status: string; blockNumber?: bigint; logs?: { address: string; topics: readonly string[]; data: string }[] }>;
   getBlock(block: { blockNumber: bigint }): Promise<{ timestamp: bigint } | null>; getBlockNumber(): Promise<bigint>;
@@ -57,7 +57,7 @@ export const createErc20Adapter = (provider: EvmProvider) => async (request: Aut
   } catch { return { status: "unavailable", retryable: true }; }
 };
 
-type BitcoinProvider = { getNetwork(): Promise<string>; getTransaction(hash: string): Promise<{ status: { confirmed: boolean; block_height?: number; block_time?: number }; vout: { value: number; scriptpubkey_address?: string }[] } | null>; getTipHeight(): Promise<number> };
+export type BitcoinProvider = { getNetwork(): Promise<string>; getTransaction(hash: string): Promise<{ status: { confirmed: boolean; block_height?: number; block_time?: number }; vout: { value: number; scriptpubkey_address?: string }[] } | null>; getTipHeight(): Promise<number> };
 export const createBitcoinAdapter = (provider: BitcoinProvider) => async (request: AuthoritativeRequest): Promise<VerificationResult> => {
   try {
     const tx = await provider.getTransaction(request.transactionHash);
@@ -70,7 +70,7 @@ export const createBitcoinAdapter = (provider: BitcoinProvider) => async (reques
 };
 
 type SolanaBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } };
-type SolanaProvider = { getCluster(): Promise<string>; getCurrentSlot(): Promise<number>; getParsedTransaction(hash: string): Promise<{ slot: number; blockTime: number | null; meta: { err: unknown; preTokenBalances?: SolanaBalance[]; postTokenBalances?: SolanaBalance[] } } | null> };
+export type SolanaProvider = { getCluster(): Promise<string>; getCurrentSlot(): Promise<number>; getParsedTransaction(hash: string): Promise<{ slot: number; blockTime: number | null; meta: { err: unknown; preTokenBalances?: SolanaBalance[]; postTokenBalances?: SolanaBalance[] } } | null> };
 export const createSolanaSplAdapter = (provider: SolanaProvider) => async (request: AuthoritativeRequest): Promise<VerificationResult> => {
   try {
     const tx = await provider.getParsedTransaction(request.transactionHash);
@@ -84,7 +84,7 @@ export const createSolanaSplAdapter = (provider: SolanaProvider) => async (reque
   } catch { return { status: "unavailable", retryable: true }; }
 };
 
-type TronProvider = { getNetwork(): Promise<string>; getTransactionInfo(hash: string): Promise<{ receipt?: { result?: string }; blockNumber?: number; blockTimeStamp?: number } | null>; getEvents(hash: string): Promise<{ data: { event_name: string; contract_address: string; result: { to?: string; value?: string } }[] }>; getNowBlock(): Promise<{ block_header: { raw_data: { number: number } } }> };
+export type TronProvider = { getNetwork(): Promise<string>; getTransactionInfo(hash: string): Promise<{ receipt?: { result?: string }; blockNumber?: number; blockTimeStamp?: number } | null>; getEvents(hash: string): Promise<{ data: { event_name: string; contract_address: string; result: { to?: string; value?: string } }[] }>; getNowBlock(): Promise<{ block_header: { raw_data: { number: number } } }> };
 export const createTronTrc20Adapter = (provider: TronProvider) => async (request: AuthoritativeRequest): Promise<VerificationResult> => {
   try {
     const info = await provider.getTransactionInfo(request.transactionHash);

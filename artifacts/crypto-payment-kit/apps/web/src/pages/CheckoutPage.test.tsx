@@ -66,6 +66,18 @@ describe("CheckoutPage", () => {
     expect(screen.getByTestId("btn-select-rail-ethereum-usdc")).toBeInTheDocument();
   });
 
+  it("allows selecting a rail while awaiting payment before a quote exists", () => {
+    const mutate = vi.fn();
+    (useSelectRail as any).mockReturnValue({ mutate, isPending: false });
+    (usePayment as any).mockReturnValue({ data: {
+      publicId: "pay_123", status: "awaiting_payment", fiatAmount: "100.00", fiatCurrency: "USD",
+      allowedRails: [{ id: "ethereum-usdc" }], selectedQuote: null,
+    }, isLoading: false });
+    render(<CheckoutPage />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByTestId("btn-select-rail-ethereum-usdc"));
+    expect(mutate).toHaveBeenCalledWith("ethereum-usdc");
+  });
+
   it("renders payment details after rail selected", () => {
     (usePayment as any).mockReturnValue({
       data: {

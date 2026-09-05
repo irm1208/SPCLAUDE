@@ -27,7 +27,8 @@ suite("PostgreSQL repository integration (requires isolated TEST_DATABASE_URL)",
   it("rejects a transaction hash reused by another payment and creates one verification job", async () => {
     const first = await repository.createPayment(merchantId, input("one"));
     const second = await repository.createPayment(merchantId, input("two"));
-    for (const payment of [first, second]) await pool.query("INSERT INTO quotes(payment_id,rail_id,amount_base_units,rate,rate_source,destination,expires_at) VALUES($1,'ethereum-usdc','1','1','test','0x0000000000000000000000000000000000000001',now()+interval '1 hour')", [payment.id]);
+    for (const payment of [first, second]) await pool.query(`INSERT INTO quotes(payment_id,rail_id,family,network_name,chain_id,asset,token_id,decimals,amount_base_units,rate,rate_source,destination,required_confirmations,underpay_bps,overpay_bps,expires_at)
+      VALUES($1,'ethereum-usdc','evm_erc20','ethereum','1','USDC','0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',6,'1','1','test','0x0000000000000000000000000000000000000001',12,100,200,now()+interval '1 hour')`, [payment.id]);
     expect((await repository.submitTransaction(first.publicId, "0x" + "a".repeat(64))).kind).toBe("accepted");
     expect((await repository.submitTransaction(second.publicId, "0x" + "a".repeat(64))).kind).toBe("reused");
     expect((await pool.query("SELECT * FROM verification_jobs")).rowCount).toBe(1);

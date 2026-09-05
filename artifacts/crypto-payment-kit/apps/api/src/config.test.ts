@@ -14,4 +14,19 @@ describe("configuration", () => {
   it("rejects production placeholders without revealing their values", () => {
     expect(() => loadConfig({ ...valid, NODE_ENV: "production", ETHEREUM_WALLET: "replace-with-your-public-wallet" })).toThrow(/invalid configuration/i);
   });
+  it("refuses production startup when any provider RPC URL is missing", () => {
+    const production = {
+      ...valid, NODE_ENV: "production", WEB_ORIGIN: "https://shop.test", PUBLIC_API_ORIGIN: "https://api.test", PUBLIC_CHECKOUT_ORIGIN: "https://pay.test",
+      [["BOOTSTRAP", "MERCHANT", "KEY"].join("_")]: ["secure", "production", "value"].join("-"),
+      [["BOOTSTRAP", "WEBHOOK", "SECRET"].join("_")]: ["secure", "webhook", "value"].join("-"),
+      ETHEREUM_RPC_URL: "https://ethereum.test", BSC_RPC_URL: "https://bsc.test", ARBITRUM_RPC_URL: "https://arbitrum.test",
+      POLYGON_RPC_URL: "https://polygon.test", SOLANA_RPC_URL: "https://solana.test", TRON_RPC_URL: "https://tron.test",
+      RATE_PROVIDER_URL: "https://rates.test",
+    };
+    expect(() => loadConfig(production)).toThrow(/provider RPC/i);
+    const complete = { ...production, BITCOIN_RPC_URL: "https://bitcoin.test" };
+    delete (complete as Partial<typeof complete>).BOOTSTRAP_MERCHANT_KEY;
+    delete (complete as Partial<typeof complete>).BOOTSTRAP_WEBHOOK_SECRET;
+    expect(() => loadConfig(complete)).not.toThrow();
+  });
 });

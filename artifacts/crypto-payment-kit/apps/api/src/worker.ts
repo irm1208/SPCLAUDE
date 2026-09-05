@@ -17,10 +17,15 @@ export class VerificationWorker {
     const jobs = await this.store.claimVerificationJobs(limit);
     await Promise.all(jobs.map(async (job) => {
       const request = await this.store.transactionForJob(job.paymentTransactionId);
-      if (!request) return this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
+      if (!request) {
+        const result: VerificationResult = { status: "mismatch", retryable: false };
+        await this.store.recordVerification(job.paymentTransactionId, result);
+        return this.store.finalizeVerification(job.id, job.paymentTransactionId, result);
+      }
       const result = await this.verify(request);
       await this.store.recordVerification(job.paymentTransactionId, result);
       if (result.retryable) {
+        if (result.status === "confirming") await this.store.finalizeVerification(job.id, job.paymentTransactionId, result);
         await this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
         return;
       }
@@ -53,3 +58,26 @@ export class WebhookDeliveryWorker {
 
 /** Retry transport failures, throttling, timeouts, and server failures only. */
 export const isRetryableDeliveryStatus = (status: number) => status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
+
+export function startWorkerLoops(
+  verification: Pick<VerificationWorker, "tick">,
+  webhooks: Pick<WebhookDeliveryWorker, "tick">,
+  intervalMs = 1_000,
+  onError: (error: unknown) => void = console.error,
+) {
+  let stopped = false, verificationRunning = false, webhookRunning = false;
+  const verify = async () => {
+    if (stopped || verificationRunning) return;
+    verificationRunning = true;
+    try { await verification.tick(); } catch (error) { onError(error); } finally { verificationRunning = false; }
+  };
+  const deliver = async () => {
+    if (stopped || webhookRunning) return;
+    webhookRunning = true;
+    try { await webhooks.tick(); } catch (error) { onError(error); } finally { webhookRunning = false; }
+  };
+  void verify(); void deliver();
+  const verificationTimer = setInterval(() => void verify(), intervalMs);
+  const webhookTimer = setInterval(() => void deliver(), intervalMs);
+  return () => { stopped = true; clearInterval(verificationTimer); clearInterval(webhookTimer); };
+}

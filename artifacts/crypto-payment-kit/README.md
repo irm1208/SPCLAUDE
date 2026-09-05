@@ -20,7 +20,7 @@ pnpm --filter @open-crypto-checkout/api db:migrate
 pnpm dev
 ```
 
-Run `pnpm test`, `pnpm typecheck`, `pnpm build`, and `pnpm check:standalone` before integration. The demo storefront is only a demonstration; its development credential must not be used outside a controlled local environment.
+Run `pnpm test`, `pnpm typecheck`, `pnpm build`, and `pnpm check:standalone` before integration. On development startup the API idempotently creates one demo merchant from the server-only `BOOTSTRAP_*` values. The browser calls a development-only demo endpoint and never receives or sends that merchant key. Both the endpoint and demo storefront route are absent in production.
 
 ## Merchant integration
 

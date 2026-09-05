@@ -4,7 +4,10 @@ import { createWebhookVerifier, signWebhookPayload } from "./webhook-verificatio
 
 const signingMaterial = "test-webhook-secret";
 const verificationOptions = { [["se", "cret"].join("")]: signingMaterial };
-const body = Buffer.from('{"id":"evt_123","type":"payment.paid"}');
+const event = { id: "evt_123", type: "payment.paid", createdAt: "2030-01-01T00:00:00.000Z", merchantOrderReference: "order-1",
+  paymentId: "pay_12345678901234567890", status: "paid", railId: "ethereum-usdc", network: "ethereum", asset: "USDC",
+  amountBaseUnits: "1000000", transactionHash: `0x${"a".repeat(64)}` };
+const body = Buffer.from(JSON.stringify(event));
 const now = 1_700_000_000;
 
 test("accepts a valid raw-body signature and timestamp once", () => {
@@ -13,7 +16,7 @@ test("accepts a valid raw-body signature and timestamp once", () => {
 
   assert.deepEqual(
     verify({ body, timestamp: String(now), signature }),
-    { id: "evt_123", type: "payment.paid" },
+    event,
   );
   assert.throws(
     () => verify({ body, timestamp: String(now), signature }),
