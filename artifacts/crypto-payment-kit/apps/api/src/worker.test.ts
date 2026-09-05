@@ -102,25 +102,33 @@ describe("persisted worker loops", () => {
     expect(calls).toHaveLength(stoppedAt);
   });
 
-  it("drains in-flight ticks and never claims again after stop begins", async () => {
+  it("withholds closure past the deadline until in-flight ticks drain and never claims again", async () => {
     let release!: () => void;
     const deferred = new Promise<void>((resolve) => { release = resolve; });
     const calls: string[] = [];
+    const errors: unknown[] = [];
     const stop = startWorkerLoops({
       tick: async () => { calls.push("verify"); await deferred; },
     }, {
       tick: async () => { calls.push("webhook"); await deferred; },
-    }, 5);
+    }, 5, (error) => { errors.push(error); });
     await new Promise((resolve) => setTimeout(resolve, 1));
 
-    let stopped = false;
-    const draining = stop(100).then(() => { stopped = true; });
+    let workersStopped = false;
+    let poolClosed = false;
+    const draining = stop(5).then(() => {
+      workersStopped = true;
+      poolClosed = true;
+    });
     await new Promise((resolve) => setTimeout(resolve, 15));
-    expect(stopped).toBe(false);
+    expect(workersStopped).toBe(false);
+    expect(poolClosed).toBe(false);
     expect(calls).toEqual(["verify", "webhook"]);
+    expect(errors).toHaveLength(1);
 
     release();
     await draining;
+    expect(poolClosed).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 15));
     expect(calls).toEqual(["verify", "webhook"]);
   });

@@ -94,11 +94,15 @@ export function startWorkerLoops(
     const active = [verificationTick, webhookTick].filter((tick): tick is Promise<void> => tick !== undefined);
     if (active.length === 0) return;
     const boundedDeadline = Math.min(Math.max(deadlineMs, 0), 30_000);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      Promise.all(active),
-      new Promise<void>((resolve) => { timeout = setTimeout(resolve, boundedDeadline); }),
-    ]);
-    if (timeout) clearTimeout(timeout);
+    const timeout = setTimeout(() => {
+      try { onError(new Error(`worker shutdown drain exceeded ${boundedDeadline}ms`)); } catch { /* shutdown must still drain */ }
+    }, boundedDeadline);
+    try {
+      // A deadline escalates observability only. Releasing the database pool
+      // while a claimed tick can still persist results would corrupt shutdown.
+      await Promise.allSettled(active);
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 }
