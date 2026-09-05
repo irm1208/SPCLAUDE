@@ -11,7 +11,7 @@
     "dev": "pnpm --parallel --filter @open-crypto-checkout/api --filter @open-crypto-checkout/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "node --test scripts/assert-standalone.test.mjs && vitest run --config vitest.workspace.ts",
+    "test": "node --test scripts/assert-standalone.test.mjs scripts/source-archive.test.mjs examples/merchant-express/webhook-verification.test.mjs && vitest run --config vitest.workspace.ts",
     "test:clean": "find apps packages -type d -name dist -prune -exec rm -rf {} + && pnpm test",
     "test:archive": "node --test scripts/source-archive.test.mjs",
     "archive:source": "node scripts/source-archive.mjs",
