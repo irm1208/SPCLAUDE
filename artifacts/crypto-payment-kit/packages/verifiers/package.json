@@ -6,12 +6,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
       "import": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
     "test": "vitest run"
   },
   "dependencies": {

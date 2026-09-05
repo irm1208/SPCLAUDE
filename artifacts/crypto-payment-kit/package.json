@@ -12,6 +12,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "node --test scripts/assert-standalone.test.mjs && vitest run --config vitest.workspace.ts",
+    "test:clean": "find apps packages -type d -name dist -prune -exec rm -rf {} + && pnpm test",
     "test:archive": "node --test scripts/source-archive.test.mjs",
     "archive:source": "node scripts/source-archive.mjs",
     "check:standalone": "node scripts/assert-standalone.mjs",
