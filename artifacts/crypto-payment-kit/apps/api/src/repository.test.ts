@@ -74,4 +74,25 @@ describe("PaymentRepository SQL contract", () => {
     await expect(repository.bootstrapDevelopment("api-digest", "webhook-digest", "signing", "http://127.0.0.1/hook")).rejects.toThrow(/HTTPS/);
     expect(connected).toBe(false);
   });
+
+  it("namespaces transaction reuse by the quote network rather than its rail", async () => {
+    const calls: { sql: string; parameters?: unknown[] }[] = [];
+    const client = {
+      query: async (sql: string, parameters?: unknown[]) => {
+        calls.push({ sql, parameters });
+        if (sql.includes("SELECT id,status FROM payments")) return { rows: [{ id: "payment", status: "awaiting_payment" }] };
+        if (sql.includes("SELECT id,network_name FROM quotes")) return { rows: [{ id: "quote", network_name: "ethereum" }] };
+        if (sql.includes("INSERT INTO payment_transactions")) return { rows: [{ id: "transaction", payment_id: "payment" }] };
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    const repository = new PaymentRepository({ connect: async () => client } as never);
+
+    await expect(repository.submitTransaction("pay_1", "same-hash")).resolves.toMatchObject({ kind: "accepted" });
+
+    const insert = calls.find(({ sql }) => sql.includes("INSERT INTO payment_transactions"));
+    expect(insert?.sql).toContain("chain_namespace");
+    expect(insert?.parameters?.[2]).toBe("ethereum");
+  });
 });

@@ -122,7 +122,7 @@ export async function createServer(config: Config = loadConfig(), rates?: RatePr
   const rateProvider = rates ?? (config.NODE_ENV === "production" ? new HttpRateProvider(String(config.RATE_PROVIDER_URL)) : new DeterministicDevRateProvider());
   const app = createApp(config, rateProvider, repository, demoMerchantId);
   const close = async (server?: Server) => {
-    stopWorkers();
+    await stopWorkers();
     if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await pool.end();
   };

@@ -65,19 +65,40 @@ export function startWorkerLoops(
   intervalMs = 1_000,
   onError: (error: unknown) => void = console.error,
 ) {
-  let stopped = false, verificationRunning = false, webhookRunning = false;
-  const verify = async () => {
-    if (stopped || verificationRunning) return;
-    verificationRunning = true;
-    try { await verification.tick(); } catch (error) { onError(error); } finally { verificationRunning = false; }
+  let stopped = false;
+  let verificationTick: Promise<void> | undefined;
+  let webhookTick: Promise<void> | undefined;
+  const verify = () => {
+    if (stopped || verificationTick) return;
+    const active = (async () => {
+      try { await verification.tick(); } catch (error) { onError(error); }
+    })();
+    verificationTick = active;
+    void active.finally(() => { if (verificationTick === active) verificationTick = undefined; });
   };
-  const deliver = async () => {
-    if (stopped || webhookRunning) return;
-    webhookRunning = true;
-    try { await webhooks.tick(); } catch (error) { onError(error); } finally { webhookRunning = false; }
+  const deliver = () => {
+    if (stopped || webhookTick) return;
+    const active = (async () => {
+      try { await webhooks.tick(); } catch (error) { onError(error); }
+    })();
+    webhookTick = active;
+    void active.finally(() => { if (webhookTick === active) webhookTick = undefined; });
   };
-  void verify(); void deliver();
-  const verificationTimer = setInterval(() => void verify(), intervalMs);
-  const webhookTimer = setInterval(() => void deliver(), intervalMs);
-  return () => { stopped = true; clearInterval(verificationTimer); clearInterval(webhookTimer); };
+  verify(); deliver();
+  const verificationTimer = setInterval(verify, intervalMs);
+  const webhookTimer = setInterval(deliver, intervalMs);
+  return async (deadlineMs = 10_000): Promise<void> => {
+    stopped = true;
+    clearInterval(verificationTimer);
+    clearInterval(webhookTimer);
+    const active = [verificationTick, webhookTick].filter((tick): tick is Promise<void> => tick !== undefined);
+    if (active.length === 0) return;
+    const boundedDeadline = Math.min(Math.max(deadlineMs, 0), 30_000);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all(active),
+      new Promise<void>((resolve) => { timeout = setTimeout(resolve, boundedDeadline); }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+  };
 }

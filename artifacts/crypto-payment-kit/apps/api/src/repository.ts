@@ -109,10 +109,10 @@ export class PaymentRepository {
     return this.transaction(async (client) => {
       const payment = (await client.query<{ id: string; status: PaymentStatus }>("SELECT id,status FROM payments WHERE public_id=$1 FOR UPDATE", [publicId])).rows[0];
       if (!payment) return { kind: "missing" as const };
-      const quote = (await client.query<{ id: string; rail_id: string }>("SELECT id,rail_id FROM quotes WHERE payment_id=$1 AND expires_at>now() ORDER BY created_at DESC LIMIT 1", [payment.id])).rows[0];
+      const quote = (await client.query<{ id: string; network_name: string }>("SELECT id,network_name FROM quotes WHERE payment_id=$1 AND expires_at>now() ORDER BY created_at DESC LIMIT 1", [payment.id])).rows[0];
       if (!quote) return { kind: "quote_required" as const };
-      const insert = await client.query<{ id: string; payment_id: string }>("INSERT INTO payment_transactions(id,payment_id,selected_quote_id,network,hash) VALUES(gen_random_uuid(),$1,$2,$3,$4) ON CONFLICT(network,hash) DO NOTHING RETURNING id,payment_id", [payment.id, quote.id, quote.rail_id, hash]);
-      const tx = insert.rows[0] ?? (await client.query<{ id: string; payment_id: string }>("SELECT id,payment_id FROM payment_transactions WHERE network=$1 AND hash=$2", [quote.rail_id, hash])).rows[0];
+      const insert = await client.query<{ id: string; payment_id: string }>("INSERT INTO payment_transactions(id,payment_id,selected_quote_id,chain_namespace,hash) VALUES(gen_random_uuid(),$1,$2,$3,$4) ON CONFLICT(chain_namespace,hash) DO NOTHING RETURNING id,payment_id", [payment.id, quote.id, quote.network_name, hash]);
+      const tx = insert.rows[0] ?? (await client.query<{ id: string; payment_id: string }>("SELECT id,payment_id FROM payment_transactions WHERE chain_namespace=$1 AND hash=$2", [quote.network_name, hash])).rows[0];
       if (!tx || tx.payment_id !== payment.id) return { kind: "reused" as const };
       await client.query("INSERT INTO verification_jobs(id,payment_transaction_id,due_at) VALUES(gen_random_uuid(),$1,now()) ON CONFLICT(payment_transaction_id) DO NOTHING", [tx.id]);
       if (canTransition(payment.status, "transaction_submitted")) await client.query("UPDATE payments SET status='transaction_submitted',updated_at=now() WHERE id=$1", [payment.id]);

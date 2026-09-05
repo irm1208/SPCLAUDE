@@ -24,14 +24,25 @@ suite("PostgreSQL repository integration (requires isolated TEST_DATABASE_URL)",
     const records = await Promise.all(Array.from({ length: 6 }, () => repository.createPayment(merchantId, request)));
     expect(new Set(records.map((record) => record.id)).size).toBe(1);
   });
-  it("rejects a transaction hash reused by another payment and creates one verification job", async () => {
+  it("rejects a transaction hash reused across rails on the same canonical chain", async () => {
     const first = await repository.createPayment(merchantId, input("one"));
     const second = await repository.createPayment(merchantId, input("two"));
-    for (const payment of [first, second]) await pool.query(`INSERT INTO quotes(payment_id,rail_id,family,network_name,chain_id,asset,token_id,decimals,amount_base_units,rate,rate_source,destination,required_confirmations,underpay_bps,overpay_bps,expires_at)
-      VALUES($1,'ethereum-usdc','evm_erc20','ethereum','1','USDC','0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',6,'1','1','test','0x0000000000000000000000000000000000000001',12,100,200,now()+interval '1 hour')`, [payment.id]);
+    await pool.query(`INSERT INTO quotes(payment_id,rail_id,family,network_name,chain_id,asset,token_id,decimals,amount_base_units,rate,rate_source,destination,required_confirmations,underpay_bps,overpay_bps,expires_at)
+      VALUES($1,'ethereum-usdc','evm_erc20','ethereum','1','USDC','token',6,'1','1','test','destination',12,100,200,now()+interval '1 hour'),
+            ($2,'ethereum-usdt','evm_erc20','ethereum','1','USDT','token',6,'1','1','test','destination',12,100,200,now()+interval '1 hour')`, [first.id, second.id]);
     expect((await repository.submitTransaction(first.publicId, "0x" + "a".repeat(64))).kind).toBe("accepted");
     expect((await repository.submitTransaction(second.publicId, "0x" + "a".repeat(64))).kind).toBe("reused");
     expect((await pool.query("SELECT * FROM verification_jobs")).rowCount).toBe(1);
+  });
+  it("accepts the same transaction hash on different canonical chains", async () => {
+    const first = await repository.createPayment(merchantId, input("ethereum"));
+    const second = await repository.createPayment(merchantId, input("arbitrum"));
+    await pool.query(`INSERT INTO quotes(payment_id,rail_id,family,network_name,chain_id,asset,token_id,decimals,amount_base_units,rate,rate_source,destination,required_confirmations,underpay_bps,overpay_bps,expires_at)
+      VALUES($1,'ethereum-usdc','evm_erc20','ethereum','1','USDC','token',6,'1','1','test','destination',12,100,200,now()+interval '1 hour'),
+            ($2,'arbitrum-usdc','evm_erc20','arbitrum','42161','USDC','token',6,'1','1','test','destination',20,100,200,now()+interval '1 hour')`, [first.id, second.id]);
+    const hash = "0x" + "b".repeat(64);
+    expect((await repository.submitTransaction(first.publicId, hash)).kind).toBe("accepted");
+    expect((await repository.submitTransaction(second.publicId, hash)).kind).toBe("accepted");
   });
   it("claims each due verification job once using a lease", async () => {
     const claimed = await Promise.all([repository.claimVerificationJobs(10), repository.claimVerificationJobs(10)]);
