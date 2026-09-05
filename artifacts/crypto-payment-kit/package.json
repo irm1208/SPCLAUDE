@@ -1,0 +1,23 @@
+{
+  "name": "open-crypto-checkout",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @open-crypto-checkout/api --filter @open-crypto-checkout/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run --workspace vitest.workspace.ts",
+    "check:standalone": "node scripts/assert-standalone.mjs",
+    "check": "pnpm check:standalone && pnpm typecheck && pnpm test && pnpm build",
+    "archive": "node scripts/create-source-archive.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vitest": "4.1.9"
+  }
+}
