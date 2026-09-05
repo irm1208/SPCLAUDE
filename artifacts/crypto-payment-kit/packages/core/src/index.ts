@@ -48,6 +48,21 @@ export function decimalToBaseUnits(value: string, decimals: number): bigint {
   return BigInt(whole + fraction.padEnd(decimals, "0"));
 }
 
+/** Converts fiat / (fiat per asset) using integer rational arithmetic, rounding up. */
+export function fiatToBaseUnits(fiatAmount: string, assetPrice: string, decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0) throw new Error("invalid decimals");
+  const parse = (value: string) => {
+    if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) throw new Error("invalid decimal amount");
+    const [whole, fraction = ""] = value.split(".");
+    return { value: BigInt(whole + fraction), scale: fraction.length };
+  };
+  const fiat = parse(fiatAmount), price = parse(assetPrice);
+  if (price.value <= 0n) throw new Error("price must be positive");
+  const numerator = fiat.value * 10n ** BigInt(decimals + price.scale);
+  const denominator = price.value * 10n ** BigInt(fiat.scale);
+  return (numerator + denominator - 1n) / denominator;
+}
+
 const railIdSchema = z.enum(["ethereum-eth", "ethereum-usdt", "ethereum-usdc", "bsc-usdt", "arbitrum-usdt", "arbitrum-usdc", "polygon-usdt", "polygon-usdc", "solana-usdt", "solana-usdc", "tron-usdt", "bitcoin-btc"]);
 const decimalSchema = z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/).max(40);
 export const createPaymentRequestSchema = z.object({

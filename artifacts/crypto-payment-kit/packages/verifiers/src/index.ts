@@ -7,7 +7,7 @@ export type TransferChecks = {
   destinationMatches?: boolean; timestampMatches?: boolean; confirmations?: number; requiredConfirmations?: number;
   expectedBaseUnits?: string; observedBaseUnits?: string; underpayBps?: number; overpayBps?: number;
 };
-export type AuthoritativeRequest = Readonly<{ chainId: string; tokenId?: string; destination: string; expectedBaseUnits: string; earliestTimestamp: number; requiredConfirmations: number; underpayBps: number; overpayBps: number; transactionHash: string }>;
+export type AuthoritativeRequest = Readonly<{ chainId: string; tokenId?: string; railId?: string; family?: "evm_native" | "evm_erc20" | "solana_spl" | "tron_trc20" | "bitcoin"; destination: string; expectedBaseUnits: string; earliestTimestamp: number; requiredConfirmations: number; underpayBps: number; overpayBps: number; transactionHash: string }>;
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 /** Shared fail-closed evaluation for data decoded from provider-native responses. */

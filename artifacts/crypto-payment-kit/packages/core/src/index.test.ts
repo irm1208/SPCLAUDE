@@ -4,6 +4,7 @@ import {
   canTransition,
   classifyAmount,
   createPaymentRequestSchema,
+  fiatToBaseUnits,
 } from "./index.js";
 
 describe("payment domain", () => {
@@ -27,6 +28,13 @@ describe("payment domain", () => {
     expect(classifyAmount(100n, 99n, 100, 200)).toBe("verified");
     expect(classifyAmount(100n, 98n, 100, 200)).toBe("underpaid");
     expect(classifyAmount(100n, 103n, 100, 200)).toBe("overpaid_review");
+  });
+
+  it("converts decimal fiat and asset prices to rounded-up integer base units", () => {
+    expect(fiatToBaseUnits("12.34", "2.5", 6)).toBe(4_936_000n);
+    expect(fiatToBaseUnits("1", "3", 6)).toBe(333_334n);
+    expect(() => fiatToBaseUnits("1", "0", 6)).toThrow("price must be positive");
+    expect(() => fiatToBaseUnits("1", "USD:ETH:1", 6)).toThrow("invalid decimal amount");
   });
 
   it("rejects unknown keys and an unsafe decimal amount", () => {

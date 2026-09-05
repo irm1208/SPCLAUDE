@@ -5,7 +5,7 @@ import cors from "cors";
 import { rateLimit } from "express-rate-limit";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { createPaymentRequestSchema, railById, selectRailSchema, transactionHashSchema } from "@open-crypto-checkout/core";
+import { createPaymentRequestSchema, fiatToBaseUnits, railById, selectRailSchema, transactionHashSchema } from "@open-crypto-checkout/core";
 import { loadConfig, type Config } from "./config.js";
 import { PaymentRepository } from "./repository.js";
 import * as schema from "./db/schema.js";
@@ -16,8 +16,8 @@ export const validateCredential = (key: string, encoded: string) => {
   const actual = scryptSync(key, salt, 64).toString("hex");
   return actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 };
-export interface RateProvider { quote(fiatAmount: string, fiatCurrency: string, railId: string): Promise<{ rate: string; source: string }> }
-export class DeterministicDevRateProvider implements RateProvider { async quote(fiatAmount: string, fiatCurrency: string, railId: string) { return { rate: `${fiatCurrency}:${railId}:1`, source: "deterministic-development" }; } }
+export interface RateProvider { quote(fiatAmount: string, fiatCurrency: string, railId: string): Promise<{ rate: string; source: string; quotedAt?: Date }> }
+export class DeterministicDevRateProvider implements RateProvider { async quote() { return { rate: "1", source: "deterministic-development", quotedAt: new Date() }; } }
 
 /** Routes deliberately receive persistence; tests can inject a repository fake, production cannot. */
 export function createApp(config: Config = loadConfig(), rates: RateProvider = new DeterministicDevRateProvider(), repository?: PaymentRepository) {
@@ -51,9 +51,18 @@ export function createApp(config: Config = loadConfig(), rates: RateProvider = n
     const body = selectRailSchema.safeParse(req.body); if (!body.success) return fail(res, "validation_error", "Invalid rail");
     const rail = railById(body.data.railId); if (!rail) return fail(res, "validation_error", "Invalid rail");
     const payment = await repository.checkout(parameter(req.params.publicId)); if (!payment) return fail(res, "not_found", "Payment not found", 404);
-    const rate = await rates.quote(String(payment.fiatAmount), String(payment.fiatCurrency), rail.id), destination = String(config[`${rail.network.toUpperCase()}_WALLET`]);
-    const quote = await repository.selectQuote(parameter(req.params.publicId), rail.id, rate.rate, rate.source, destination, new Date(Date.now() + config.QUOTE_TTL_SECONDS * 1000));
-    return quote ? res.json({ rail: { id: rail.id, network: rail.network, asset: rail.asset }, ...quote, rateSource: rate.source }) : fail(res, "not_found", "Payment not found", 404);
+    const rate = await rates.quote(String(payment.fiatAmount), String(payment.fiatCurrency), rail.id);
+    if (!rate.source || !rate.quotedAt || !Number.isFinite(rate.quotedAt.getTime()) || Date.now() - rate.quotedAt.getTime() > config.QUOTE_TTL_SECONDS * 1000) return fail(res, "rate_unavailable", "Rate is stale or unavailable", 503);
+    const destination = String(config[`${rail.network.toUpperCase()}_WALLET`]);
+    let amountBaseUnits: bigint;
+    try { amountBaseUnits = fiatToBaseUnits(String(payment.fiatAmount), rate.rate, rail.decimals); } catch { return fail(res, "rate_unavailable", "Rate is invalid or unavailable", 503); }
+    if (amountBaseUnits <= 0n) return fail(res, "rate_unavailable", "Rate produced an invalid amount", 503);
+    const quote = await repository.selectQuote(parameter(req.params.publicId), {
+      railId: rail.id, family: rail.kind, networkName: rail.network, chainId: rail.chainId, asset: rail.asset, tokenId: rail.tokenId, decimals: rail.decimals,
+      amountBaseUnits: amountBaseUnits.toString(), rate: rate.rate, rateSource: rate.source, destination, requiredConfirmations: rail.confirmations,
+      underpayBps: Number(config.UNDERPAY_TOLERANCE_BPS), overpayBps: Number(config.OVERPAY_REVIEW_BPS), expiresAt: new Date(Date.now() + config.QUOTE_TTL_SECONDS * 1000),
+    });
+    return quote ? res.json({ selectedQuote: { ...quote, tokenAddress: quote.tokenId ?? null, displayAmount: `${amountBaseUnits}`, chainId: Number.isFinite(Number(rail.chainId)) ? Number(rail.chainId) : rail.chainId }, rateSource: rate.source }) : fail(res, "not_found", "Payment not found", 404);
   } catch (error) { next(error); } });
   app.post("/v1/checkout/:publicId/transactions", publicLimiter, async (req, res, next) => { try {
     const body = transactionHashSchema.safeParse(req.body); if (!body.success) return fail(res, "validation_error", "Invalid transaction submission");

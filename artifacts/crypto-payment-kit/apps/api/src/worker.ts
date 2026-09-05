@@ -8,7 +8,7 @@ export interface VerificationJobStore {
   transactionForJob(id: string): Promise<AuthoritativeRequest | null>;
   recordVerification(transactionId: string, result: VerificationResult): Promise<void>;
   rescheduleVerification(jobId: string, seconds: number): Promise<void>;
-  applyVerification(transactionId: string, result: VerificationResult): Promise<boolean>;
+  finalizeVerification(jobId: string, transactionId: string, result: VerificationResult): Promise<void>;
 }
 /** Claims quickly, does network I/O outside the transaction, then locks only to apply. */
 export class VerificationWorker {
@@ -20,8 +20,11 @@ export class VerificationWorker {
       if (!request) return this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
       const result = await this.verify(request);
       await this.store.recordVerification(job.paymentTransactionId, result);
-      if (result.status === "verified") { await this.store.applyVerification(job.paymentTransactionId, result); return; }
-      if (result.retryable) await this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
+      if (result.status === "unavailable" || result.status === "not_found" || result.status === "confirming") {
+        await this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
+        return;
+      }
+      await this.store.finalizeVerification(job.id, job.paymentTransactionId, result);
     }));
   }
 }
