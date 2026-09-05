@@ -1,0 +1,11 @@
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS family varchar(24);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS network_name varchar(64);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS chain_id varchar(32);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS asset varchar(16);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS token_id varchar(128);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS decimals integer;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS required_confirmations integer;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS underpay_bps integer;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS overpay_bps integer;
+ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS selected_quote_id uuid REFERENCES quotes(id);
+ALTER TABLE verification_jobs ADD COLUMN IF NOT EXISTS completed_at timestamptz;
