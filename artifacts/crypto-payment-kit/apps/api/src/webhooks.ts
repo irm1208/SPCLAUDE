@@ -15,3 +15,14 @@ export async function validateWebhookUrl(value: string, allowLocal = false) {
   return url;
 }
 export const redactResponse = (value: string) => value.replace(/(?:authorization|token|secret|password)\s*[:=]\s*\S+/gi, "[redacted]").slice(0, 512);
+export type WebhookFetch = (url: URL, init: RequestInit) => Promise<Response>;
+export async function deliverWebhook(url: URL, rawBody: Buffer, signingMaterial: string, send: WebhookFetch = (target, init) => fetch(target, init)) {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  try {
+    const response = await send(url, {
+      method: "POST", body: new Uint8Array(rawBody), redirect: "error", signal: AbortSignal.timeout(10_000),
+      headers: { "content-type": "application/json", "x-webhook-timestamp": timestamp, "x-webhook-signature": signWebhook(timestamp, rawBody, signingMaterial) },
+    });
+    return { ok: response.ok, responseStatus: response.status, responseExcerpt: redactResponse(await response.text()) };
+  } catch { return { ok: false, responseStatus: 0, responseExcerpt: "delivery unavailable" }; }
+}

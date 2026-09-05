@@ -37,3 +37,20 @@ export const createErc20Verifier = createVerifier;
 export const createBitcoinVerifier = createVerifier;
 export const createSolanaVerifier = createVerifier;
 export const createTronVerifier = createVerifier;
+
+type TransferFixture = { chainId: string; success: boolean; to: string; value: string; timestamp: number; confirmations: number; tokenId?: string };
+const normalized = (tx: TransferFixture, request: AuthoritativeRequest, token = false): TransferChecks => ({
+  available: true, found: true, chainMatches: tx.chainId === request.chainId, succeeded: tx.success,
+  tokenMatches: !token || tx.tokenId?.toLowerCase() === request.tokenId?.toLowerCase(),
+  destinationMatches: tx.to.toLowerCase() === request.destination.toLowerCase(), timestampMatches: tx.timestamp >= request.earliestTimestamp,
+  confirmations: tx.confirmations, requiredConfirmations: request.requiredConfirmations, expectedBaseUnits: request.expectedBaseUnits,
+  observedBaseUnits: tx.value, underpayBps: request.underpayBps, overpayBps: request.overpayBps,
+});
+export const createEvmNativeAdapter = (provider: ChainProvider<TransferFixture>) => createVerifier(provider, (tx, request) => normalized(tx, request));
+export const createErc20Adapter = (provider: ChainProvider<TransferFixture>) => createVerifier(provider, (tx, request) => normalized(tx, request, true));
+/** Bitcoin providers normalize an output paying the authoritative destination. */
+export const createBitcoinAdapter = (provider: ChainProvider<TransferFixture>) => createVerifier(provider, (tx, request) => normalized(tx, request));
+/** Solana providers normalize parsed SPL token account balance deltas. */
+export const createSolanaSplAdapter = (provider: ChainProvider<TransferFixture>) => createVerifier(provider, (tx, request) => normalized(tx, request, true));
+/** TronGrid providers normalize successful TRC-20 Transfer logs. */
+export const createTronTrc20Adapter = (provider: ChainProvider<TransferFixture>) => createVerifier(provider, (tx, request) => normalized(tx, request, true));
