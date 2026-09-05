@@ -1,0 +1,1 @@
+export const serviceName = "open-crypto-checkout-api";

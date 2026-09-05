@@ -13,8 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "node --test scripts/assert-standalone.test.mjs && vitest run --config vitest.workspace.ts",
     "check:standalone": "node scripts/assert-standalone.mjs",
-    "check": "pnpm check:standalone && pnpm typecheck && pnpm test && pnpm build",
-    "archive": "node scripts/create-source-archive.mjs"
+    "check": "pnpm check:standalone && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "typescript": "5.9.2",

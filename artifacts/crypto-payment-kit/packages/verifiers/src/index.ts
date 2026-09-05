@@ -1,0 +1,1 @@
+export const packageName = "open-crypto-checkout-verifiers";
