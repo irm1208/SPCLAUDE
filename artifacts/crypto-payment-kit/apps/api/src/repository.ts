@@ -1,50 +1,113 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { canTransition, type PaymentStatus } from "@open-crypto-checkout/core";
 import type { AuthoritativeRequest, VerificationResult } from "@open-crypto-checkout/verifiers";
 
-/** PostgreSQL operations whose locks preserve payment and job integrity. */
+type Queryable = Pick<Pool, "query" | "connect">;
+type PaymentInput = { publicId: string; merchantOrderReference: string; idempotencyKey: string; fiatAmount: string; fiatCurrency: string; rails: string[] };
+export type PaymentRecord = { id: string; publicId: string; status: string; fiatAmount: string; fiatCurrency: string; rails: string[]; merchantOrderReference: string };
+const canonical = (value: unknown): string => {
+  const sort = (item: unknown): unknown => Array.isArray(item) ? item.map(sort) : item && typeof item === "object"
+    ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, sort(child)]))
+    : item;
+  return JSON.stringify(sort(value));
+};
+
+/** The only persistence implementation used by HTTP routes. All state mutations lock rows. */
 export class PaymentRepository {
-  constructor(private readonly pool: Pool) {}
-  async markPaid(paymentId: string, transactionId: string, evidence: object): Promise<boolean> {
+  constructor(private readonly pool: Queryable) {}
+  private async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const result = await client.query<{ status: PaymentStatus }>("SELECT status FROM payments WHERE id=$1 FOR UPDATE", [paymentId]);
-      if (!result.rowCount || !canTransition(result.rows[0].status, "paid")) { await client.query("ROLLBACK"); return false; }
+    try { await client.query("BEGIN"); const result = await work(client); await client.query("COMMIT"); return result; }
+    catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  }
+  async authenticate(key: string, compare: (key: string, digest: string) => boolean): Promise<string | null> {
+    const result = await this.pool.query<{ merchant_id: string; key_hash: string }>("SELECT merchant_id,key_hash FROM api_keys WHERE active=true");
+    return result.rows.find((row) => compare(key, row.key_hash))?.merchant_id ?? null;
+  }
+  async createPayment(merchantId: string, input: PaymentInput): Promise<PaymentRecord> {
+    return this.transaction(async (client) => {
+      const inserted = await client.query<PaymentRecord>(`INSERT INTO payments (id,public_id,merchant_id,merchant_order_reference,idempotency_key,status,fiat_amount,fiat_currency,allowed_rails)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,'awaiting_payment',$5,$6,$7)
+        ON CONFLICT (merchant_id,idempotency_key) DO NOTHING
+        RETURNING id,public_id AS "publicId",status,fiat_amount AS "fiatAmount",fiat_currency AS "fiatCurrency",merchant_order_reference AS "merchantOrderReference"`,
+        [input.publicId, merchantId, input.merchantOrderReference, input.idempotencyKey, input.fiatAmount, input.fiatCurrency, JSON.stringify(input.rails)]);
+      const row = inserted.rows[0] ?? (await client.query<PaymentRecord>(`SELECT id,public_id AS "publicId",status,fiat_amount AS "fiatAmount",fiat_currency AS "fiatCurrency",merchant_order_reference AS "merchantOrderReference"
+        FROM payments WHERE merchant_id=$1 AND (idempotency_key=$2 OR merchant_order_reference=$3) ORDER BY created_at LIMIT 1 FOR SHARE`, [merchantId, input.idempotencyKey, input.merchantOrderReference])).rows[0];
+      if (!row) throw new Error("payment creation conflict");
+      return { ...row, publicId: row.publicId ?? (row as PaymentRecord & { public_id?: string }).public_id!, rails: input.rails };
+    });
+  }
+  async paymentForMerchant(merchantId: string, publicId: string): Promise<PaymentRecord | null> {
+    const row = (await this.pool.query<PaymentRecord>(`SELECT id,public_id AS "publicId",status,fiat_amount AS "fiatAmount",fiat_currency AS "fiatCurrency",merchant_order_reference AS "merchantOrderReference"
+      FROM payments WHERE merchant_id=$1 AND public_id=$2`, [merchantId, publicId])).rows[0];
+    return row ? { ...row, rails: [] } : null;
+  }
+  async checkout(publicId: string) {
+    return (await this.pool.query(`SELECT p.id,p.public_id AS "paymentId",p.status,p.fiat_amount AS "fiatAmount",p.fiat_currency AS "fiatCurrency",
+      allowed_rails AS rails FROM payments p WHERE p.public_id=$1`, [publicId])).rows[0] ?? null;
+  }
+  async selectQuote(publicId: string, railId: string, rate: string, rateSource: string, destination: string, expiresAt: Date) {
+    return this.transaction(async (client) => {
+      const payment = (await client.query<{ id: string; status: PaymentStatus; allowed_rails: string[] }>("SELECT id,status,allowed_rails FROM payments WHERE public_id=$1 FOR UPDATE", [publicId])).rows[0];
+      if (!payment || !["created", "awaiting_payment"].includes(payment.status) || !payment.allowed_rails.includes(railId)) return null;
+      const quote = (await client.query(`INSERT INTO quotes (id,payment_id,rail_id,amount_base_units,rate,rate_source,destination,expires_at)
+        VALUES(gen_random_uuid(),$1,$2,'0',$3,$4,$5,$6) RETURNING rail_id AS "railId",amount_base_units AS "amountBaseUnits",destination,expires_at AS "expiresAt"`,
+        [payment.id, railId, rate, rateSource, destination, expiresAt])).rows[0];
+      await client.query("UPDATE payments SET status='awaiting_payment',updated_at=now() WHERE id=$1", [payment.id]);
+      return quote;
+    });
+  }
+  async submitTransaction(publicId: string, hash: string) {
+    return this.transaction(async (client) => {
+      const payment = (await client.query<{ id: string; status: PaymentStatus }>("SELECT id,status FROM payments WHERE public_id=$1 FOR UPDATE", [publicId])).rows[0];
+      if (!payment) return { kind: "missing" as const };
+      const quote = (await client.query<{ rail_id: string }>("SELECT rail_id FROM quotes WHERE payment_id=$1 AND expires_at>now() ORDER BY created_at DESC LIMIT 1", [payment.id])).rows[0];
+      if (!quote) return { kind: "quote_required" as const };
+      const insert = await client.query<{ id: string; payment_id: string }>("INSERT INTO payment_transactions(id,payment_id,network,hash) VALUES(gen_random_uuid(),$1,$2,$3) ON CONFLICT(network,hash) DO NOTHING RETURNING id,payment_id", [payment.id, quote.rail_id, hash]);
+      const tx = insert.rows[0] ?? (await client.query<{ id: string; payment_id: string }>("SELECT id,payment_id FROM payment_transactions WHERE network=$1 AND hash=$2", [quote.rail_id, hash])).rows[0];
+      if (!tx || tx.payment_id !== payment.id) return { kind: "reused" as const };
+      await client.query("INSERT INTO verification_jobs(id,payment_transaction_id,due_at) VALUES(gen_random_uuid(),$1,now()) ON CONFLICT(payment_transaction_id) DO NOTHING", [tx.id]);
+      if (canTransition(payment.status, "transaction_submitted")) await client.query("UPDATE payments SET status='transaction_submitted',updated_at=now() WHERE id=$1", [payment.id]);
+      return { kind: "accepted" as const, status: "transaction_submitted", transactionId: tx.id };
+    });
+  }
+  async replayDelivery(merchantId: string, deliveryId: string): Promise<boolean> {
+    const result = await this.pool.query(`UPDATE webhook_deliveries d SET due_at=now(),lease_until=NULL
+      FROM webhook_events e WHERE d.webhook_event_id=e.id AND d.id=$1 AND e.merchant_id=$2`, [deliveryId, merchantId]);
+    return (result.rowCount ?? 0) === 1;
+  }
+  async claimWebhookDeliveries(limit: number, leaseSeconds = 60) {
+    return (await this.pool.query(`WITH due AS (SELECT id FROM webhook_deliveries WHERE due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $1)
+      UPDATE webhook_deliveries d SET lease_until=now()+($2 * interval '1 second') FROM due WHERE d.id=due.id RETURNING d.*`, [limit, leaseSeconds])).rows;
+  }
+  async deliveryForJob(deliveryId: string): Promise<{ url: URL; canonicalBody: string; signingMaterial: string } | null> {
+    const row = (await this.pool.query<{ url: string; canonical_body: string; signing_material: string }>(`SELECT e.url,w.canonical_body,e.signing_material FROM webhook_deliveries d
+      JOIN webhook_events w ON w.id=d.webhook_event_id JOIN webhook_endpoints e ON e.id=d.endpoint_id WHERE d.id=$1`, [deliveryId])).rows[0];
+    return row ? { url: new URL(row.url), canonicalBody: row.canonical_body, signingMaterial: row.signing_material } : null;
+  }
+  async completeWebhookDelivery(id: string, responseStatus: number, responseExcerpt: string) {
+    await this.pool.query("UPDATE webhook_deliveries SET response_status=$2,response_excerpt=$3,lease_until=NULL,due_at='infinity' WHERE id=$1", [id, String(responseStatus), responseExcerpt]);
+  }
+  async rescheduleWebhookDelivery(id: string, seconds: number, responseStatus: number, responseExcerpt: string) {
+    await this.pool.query("UPDATE webhook_deliveries SET attempts=attempts+1,due_at=now()+($2 * interval '1 second'),lease_until=NULL,response_status=$3,response_excerpt=$4 WHERE id=$1", [id, seconds, String(responseStatus), responseExcerpt]);
+  }
+  async markPaid(paymentId: string, transactionId: string, evidence: object): Promise<boolean> {
+    return this.transaction(async (client) => {
+      const result = await client.query<{ status: PaymentStatus; merchant_id: string; public_id: string; merchant_order_reference: string }>("SELECT status,merchant_id,public_id,merchant_order_reference FROM payments WHERE id=$1 FOR UPDATE", [paymentId]);
+      const payment = result.rows[0]; if (!payment || !canTransition(payment.status, "paid")) return false;
       await client.query("UPDATE payments SET status='paid', updated_at=now() WHERE id=$1", [paymentId]);
       await client.query("INSERT INTO verification_attempts (id,payment_transaction_id,result,evidence) VALUES (gen_random_uuid(),$1,'verified',$2)", [transactionId, evidence]);
+      const body = canonical({ type: "payment.paid", paymentId: payment.public_id, merchantOrderReference: payment.merchant_order_reference, status: "paid", evidence });
+      const event = await client.query<{ id: string }>("INSERT INTO webhook_events(id,merchant_id,type,body,canonical_body) VALUES(gen_random_uuid(),$1,'payment.paid',$2,$3) RETURNING id", [payment.merchant_id, JSON.parse(body), body]);
+      await client.query("INSERT INTO webhook_deliveries(id,webhook_event_id,endpoint_id,due_at) SELECT gen_random_uuid(),$1,id,now() FROM webhook_endpoints WHERE merchant_id=$2 AND active=true", [event.rows[0].id, payment.merchant_id]);
       await client.query("INSERT INTO payment_events (id,payment_id,type,data) VALUES (gen_random_uuid(),$1,'payment.paid',$2)", [paymentId, evidence]);
-      await client.query("COMMIT"); return true;
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+      return true;
+    });
   }
-  async claimVerificationJobs(limit: number, leaseSeconds = 60) {
-    const sql = `WITH due AS (SELECT id FROM verification_jobs WHERE due_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $1)
-      UPDATE verification_jobs j SET lease_until=now()+($2 * interval '1 second') FROM due WHERE j.id=due.id RETURNING j.*`;
-    return (await this.pool.query(sql, [limit, leaseSeconds])).rows;
-  }
-  async transactionForJob(transactionId: string): Promise<AuthoritativeRequest | null> {
-    const sql = `SELECT pt.hash, q.destination, q.amount_base_units, q.rail_id, p.created_at FROM payment_transactions pt
-      JOIN quotes q ON q.payment_id=pt.payment_id JOIN payments p ON p.id=pt.payment_id WHERE pt.id=$1 ORDER BY q.created_at DESC LIMIT 1`;
-    const row = (await this.pool.query(sql, [transactionId])).rows[0]; if (!row) return null;
-    return { transactionHash: row.hash, chainId: row.rail_id, destination: row.destination, expectedBaseUnits: row.amount_base_units, earliestTimestamp: new Date(row.created_at).getTime(), requiredConfirmations: 1, underpayBps: 100, overpayBps: 200 };
-  }
-  async recordVerification(transactionId: string, result: VerificationResult) {
-    await this.pool.query("INSERT INTO verification_attempts (id,payment_transaction_id,result,evidence) VALUES (gen_random_uuid(),$1,$2,$3)", [transactionId, result.status, result.evidence ?? {}]);
-  }
-  async rescheduleVerification(jobId: string, seconds: number) {
-    await this.pool.query("UPDATE verification_jobs SET attempts=(attempts::int+1)::text, due_at=now()+($2 * interval '1 second'), lease_until=NULL WHERE id=$1", [jobId, seconds]);
-  }
-  async applyVerification(transactionId: string, result: VerificationResult) {
-    if (result.status !== "verified") return false;
-    const client = await this.pool.connect();
-    try { await client.query("BEGIN");
-      const row = (await client.query<{ id: string; status: PaymentStatus }>("SELECT p.id,p.status FROM payments p JOIN payment_transactions pt ON pt.payment_id=p.id WHERE pt.id=$1 FOR UPDATE", [transactionId])).rows[0];
-      if (!row || !canTransition(row.status, "paid")) { await client.query("ROLLBACK"); return false; }
-      await client.query("UPDATE payments SET status='paid',updated_at=now() WHERE id=$1", [row.id]);
-      await client.query("UPDATE verification_jobs SET lease_until=NULL WHERE payment_transaction_id=$1", [transactionId]);
-      await client.query("INSERT INTO payment_events (id,payment_id,type,data) VALUES(gen_random_uuid(),$1,'payment.paid',$2)", [row.id, result.evidence ?? {}]);
-      await client.query("COMMIT"); return true;
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
-  }
+  async claimVerificationJobs(limit: number, leaseSeconds = 60) { return (await this.pool.query(`WITH due AS (SELECT id FROM verification_jobs WHERE due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE verification_jobs j SET lease_until=now()+($2 * interval '1 second') FROM due WHERE j.id=due.id RETURNING j.*`, [limit, leaseSeconds])).rows; }
+  async transactionForJob(transactionId: string): Promise<AuthoritativeRequest | null> { const row = (await this.pool.query<any>("SELECT pt.hash,q.destination,q.amount_base_units,q.rail_id,p.created_at FROM payment_transactions pt JOIN quotes q ON q.payment_id=pt.payment_id JOIN payments p ON p.id=pt.payment_id WHERE pt.id=$1 ORDER BY q.created_at DESC LIMIT 1", [transactionId])).rows[0]; return row ? { transactionHash: row.hash, chainId: row.rail_id, destination: row.destination, expectedBaseUnits: row.amount_base_units, earliestTimestamp: new Date(row.created_at).getTime(), requiredConfirmations: 1, underpayBps: 100, overpayBps: 200 } : null; }
+  async recordVerification(transactionId: string, result: VerificationResult) { await this.pool.query("INSERT INTO verification_attempts (id,payment_transaction_id,result,evidence) VALUES(gen_random_uuid(),$1,$2,$3)", [transactionId, result.status, result.evidence ?? {}]); }
+  async rescheduleVerification(jobId: string, seconds: number) { await this.pool.query("UPDATE verification_jobs SET attempts=attempts+1,due_at=now()+($2 * interval '1 second'),lease_until=NULL WHERE id=$1", [jobId, seconds]); }
+  async applyVerification(transactionId: string, result: VerificationResult) { if (result.status !== "verified") return false; const row = (await this.pool.query<{ payment_id: string }>("SELECT payment_id FROM payment_transactions WHERE id=$1", [transactionId])).rows[0]; return row ? this.markPaid(row.payment_id, transactionId, result.evidence ?? {}) : false; }
 }
 export const retryDelaySeconds = (attempt: number) => Math.min(3600, 5 * 2 ** Math.min(Math.max(attempt, 0), 9));

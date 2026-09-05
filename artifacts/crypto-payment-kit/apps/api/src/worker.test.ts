@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { VerificationWorker } from "./worker.js";
+import { WebhookDeliveryWorker } from "./worker.js";
 
 describe("verification worker", () => {
   it("reschedules an unavailable transaction with bounded backoff", async () => {
@@ -13,5 +14,19 @@ describe("verification worker", () => {
     }, async () => ({ status: "unavailable", retryable: true }));
     await worker.tick();
     expect(calls).toEqual(["unavailable", "20"]);
+  });
+});
+
+describe("webhook delivery worker", () => {
+  it("records a failed durable delivery and schedules its leased job for retry", async () => {
+    const calls: string[] = [];
+    const worker = new WebhookDeliveryWorker({
+      claimWebhookDeliveries: async () => [{ id: "delivery", attempts: "1" }],
+      deliveryForJob: async () => ({ url: new URL("https://hooks.example.test/payments"), canonicalBody: '{"id":"evt"}', signingMaterial: "secret" }),
+      completeWebhookDelivery: async () => { calls.push("complete"); },
+      rescheduleWebhookDelivery: async (_id, delay) => { calls.push(String(delay)); },
+    }, async () => ({ ok: false, responseStatus: 503, responseExcerpt: "unavailable" }));
+    await worker.tick();
+    expect(calls).toEqual(["10"]);
   });
 });
