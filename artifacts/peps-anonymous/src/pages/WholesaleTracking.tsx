@@ -9,7 +9,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useAccountOrderDetail, useWholesaleTracking, useUpdateWholesaleTrackingPrefs, type WholesaleTrackingOrder, type WholesaleTrackingParcel } from "@/hooks/use-account";
 import { useThemeStore } from "@/hooks/use-theme";
-import { formatOrderMoney, getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, trackingHistoryId } from "./wholesale-tracking-model";
+import { formatOrderMoney, getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, resolveOrderCurrency, trackingHistoryId } from "./wholesale-tracking-model";
 
 const ATTENTION_STATUSES = [
   "redirected",
@@ -336,6 +336,7 @@ function TrackingParcelRow({ orderId, parcel }: { orderId: string; parcel: Whole
 
 function OrderDetailsDialog({ orderId, onOpenChange }: { orderId: string | null; onOpenChange: (open: boolean) => void }) {
   const { data: order, isLoading, error, refetch } = useAccountOrderDetail(orderId, !!orderId);
+  const currency = resolveOrderCurrency(order?.currency, order?.orderType);
   return (
     <Dialog.Root open={!!orderId} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -350,7 +351,7 @@ function OrderDetailsDialog({ orderId, onOpenChange }: { orderId: string | null;
             : !order?.lineItems?.length ? <p className="py-6 text-center text-sm" style={{ color: "var(--t-muted)" }}>No order items found.</p>
             : <div className="space-y-3">{order.lineItems.map((item, index) => <div key={`${item.productName}-${index}`} className="border-b pb-3 text-sm" style={{ borderColor: "var(--t-border)" }}>
               <div className="font-semibold" style={{ color: "var(--t-text)" }}>{item.productName}</div>
-              <div className="flex justify-between mt-1" style={{ color: "var(--t-muted)" }}><span>Qty {item.quantity} · {formatOrderMoney(item.unitPrice, order.currency)}</span><span>{formatOrderMoney(item.lineTotal, order.currency)}</span></div>
+              <div className="flex justify-between mt-1" style={{ color: "var(--t-muted)" }}><span>Qty {item.quantity} · {formatOrderMoney(item.unitPrice, currency)}</span><span>{formatOrderMoney(item.lineTotal, currency)}</span></div>
             </div>)}</div>}
         </Dialog.Content>
       </Dialog.Portal>

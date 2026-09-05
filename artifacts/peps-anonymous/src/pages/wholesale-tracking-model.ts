@@ -18,6 +18,12 @@ export function formatOrderMoney(value: number, currency?: string | null): strin
   }
 }
 
+export function resolveOrderCurrency(currency?: string | null, orderType?: string | null): string {
+  if (typeof currency === "string" && /^[A-Za-z]{3}$/.test(currency)) return currency.toUpperCase();
+  if (orderType === "wholesale" || orderType === "wholesale_shared") return "USD";
+  return "GBP";
+}
+
 export function trackingHistoryId(orderId: string, trackingNumber: string): string {
   const encode = (value: string) => {
     const bytes = new TextEncoder().encode(value);

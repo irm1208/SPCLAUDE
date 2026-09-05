@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, formatOrderMoney, trackingHistoryId } from './wholesale-tracking-model.ts';
+import { getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, formatOrderMoney, resolveOrderCurrency, trackingHistoryId } from './wholesale-tracking-model.ts';
 
 test('getLatestTrackingEvent', async (t) => {
   await t.test('returns undefined for empty array', () => {
@@ -78,6 +78,13 @@ test('normalizeTrackingParcels falls back to legacy history only for the first p
 test('formatOrderMoney uses valid currency and never renders nonfinite amounts', () => {
   assert.match(formatOrderMoney(12.5, 'USD'), /\$12\.50/);
   assert.strictEqual(formatOrderMoney(Number.NaN, 'not-valid'), 'Unavailable');
+});
+
+test('resolveOrderCurrency treats direct and shared wholesale prices as USD', () => {
+  assert.strictEqual(resolveOrderCurrency(null, 'wholesale'), 'USD');
+  assert.strictEqual(resolveOrderCurrency(null, 'wholesale_shared'), 'USD');
+  assert.strictEqual(resolveOrderCurrency('EUR', 'wholesale'), 'EUR');
+  assert.strictEqual(resolveOrderCurrency(null, null), 'GBP');
 });
 
 test('trackingHistoryId is unique per order for the same tracking number', () => {
