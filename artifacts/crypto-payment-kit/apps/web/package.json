@@ -11,10 +11,16 @@
   },
   "dependencies": {
     "@open-crypto-checkout/core": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "5.90.21",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.41.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-qr-code": "2.0.15"
+    "react-qr-code": "2.0.15",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3",
+    "wouter": "^3.11.0"
   },
   "devDependencies": {
     "@testing-library/dom": "10.4.1",
