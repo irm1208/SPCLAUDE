@@ -15,6 +15,19 @@ describe("verification worker", () => {
     await worker.tick();
     expect(calls).toEqual(["unavailable", "20"]);
   });
+
+  it("finalizes an unavailable result when its provider marks it non-retryable", async () => {
+    const calls: string[] = [];
+    const worker = new VerificationWorker({
+      claimVerificationJobs: async () => [{ id: "job", paymentTransactionId: "tx", attempts: "0" }],
+      transactionForJob: async () => ({ transactionHash: "0x" + "1".repeat(64), chainId: "1", destination: "0x" + "2".repeat(40), expectedBaseUnits: "1", requiredConfirmations: 1, underpayBps: 0, overpayBps: 0, earliestTimestamp: 0 }),
+      recordVerification: async () => { calls.push("record"); },
+      rescheduleVerification: async () => { calls.push("retry"); },
+      finalizeVerification: async () => { calls.push("finalize"); },
+    }, async () => ({ status: "unavailable", retryable: false }));
+    await worker.tick();
+    expect(calls).toEqual(["record", "finalize"]);
+  });
 });
 
 describe("webhook delivery worker", () => {
@@ -28,5 +41,29 @@ describe("webhook delivery worker", () => {
     }, async () => ({ ok: false, responseStatus: 503, responseExcerpt: "unavailable" }));
     await worker.tick();
     expect(calls).toEqual(["10"]);
+  });
+
+  it("finalizes permanent HTTP failures instead of retrying them", async () => {
+    const calls: string[] = [];
+    const worker = new WebhookDeliveryWorker({
+      claimWebhookDeliveries: async () => [{ id: "delivery", attempts: "1" }],
+      deliveryForJob: async () => ({ url: new URL("https://hooks.example.test/payments"), canonicalBody: '{"id":"evt"}', signingMaterial: "secret" }),
+      completeWebhookDelivery: async () => { calls.push("complete"); },
+      rescheduleWebhookDelivery: async () => { calls.push("retry"); },
+    }, async () => ({ ok: false, responseStatus: 400, responseExcerpt: "bad request" }));
+    await worker.tick();
+    expect(calls).toEqual(["complete"]);
+  });
+
+  it("finalizes a claimed delivery that no longer has an endpoint", async () => {
+    const calls: string[] = [];
+    const worker = new WebhookDeliveryWorker({
+      claimWebhookDeliveries: async () => [{ id: "delivery", attempts: "1" }],
+      deliveryForJob: async () => null,
+      completeWebhookDelivery: async () => { calls.push("complete"); },
+      rescheduleWebhookDelivery: async () => { calls.push("retry"); },
+    });
+    await worker.tick();
+    expect(calls).toEqual(["complete"]);
   });
 });

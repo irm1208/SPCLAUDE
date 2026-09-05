@@ -20,7 +20,7 @@ export class VerificationWorker {
       if (!request) return this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
       const result = await this.verify(request);
       await this.store.recordVerification(job.paymentTransactionId, result);
-      if (result.status === "unavailable" || result.status === "not_found" || result.status === "confirming") {
+      if (result.retryable) {
         await this.store.rescheduleVerification(job.id, retryDelaySeconds(Number(job.attempts)));
         return;
       }
@@ -43,10 +43,13 @@ export class WebhookDeliveryWorker {
     const jobs = await this.store.claimWebhookDeliveries(limit);
     await Promise.all(jobs.map(async (job) => {
       const delivery = await this.store.deliveryForJob(job.id);
-      if (!delivery) return this.store.rescheduleWebhookDelivery(job.id, retryDelaySeconds(Number(job.attempts)), 0, "delivery missing");
+      if (!delivery) return this.store.completeWebhookDelivery(job.id, 0, "delivery endpoint missing");
       const result = await this.send(delivery.url, Buffer.from(delivery.canonicalBody), delivery.signingMaterial);
-      if (result.ok) return this.store.completeWebhookDelivery(job.id, result.responseStatus, result.responseExcerpt);
+      if (result.ok || !isRetryableDeliveryStatus(result.responseStatus)) return this.store.completeWebhookDelivery(job.id, result.responseStatus, result.responseExcerpt);
       return this.store.rescheduleWebhookDelivery(job.id, retryDelaySeconds(Number(job.attempts)), result.responseStatus, result.responseExcerpt);
     }));
   }
 }
+
+/** Retry transport failures, throttling, timeouts, and server failures only. */
+export const isRetryableDeliveryStatus = (status: number) => status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
