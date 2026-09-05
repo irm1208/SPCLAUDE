@@ -87,4 +87,70 @@ describe("GET /account/wholesale-tracking", () => {
     expect(predicate).toContain("deleted_at");
     expect(predicate).toContain("telegram_username");
   });
+
+  it("maps each canonical parcel from its exact tracking detail without duplicating legacy history", async () => {
+    state.authenticated = true;
+    state.orders = [{
+      id: "direct", code: "W-2", trackingNumber: "FIRST", trackingNumbers: ["SECOND", "FIRST", "SECOND"],
+      trackingStatus: "in_transit",
+      trackingEvents: [{ date: "2026-01-01T00:00:00Z", status: "Legacy", location: "Old" }],
+      trackingLastChecked: null,
+      trackingDetails: {
+        SECOND: {
+          trackingNumber: "SECOND", carrier: "DHL", status: "delivered", statusCode: "DEL",
+          events: [{ date: "2026-01-02T00:00:00Z", status: "Delivered", location: "New" }],
+          lastChecked: "2026-01-02T01:00:00Z",
+        },
+      },
+    }];
+    state.account = [];
+
+    const result = await request();
+
+    expect(result.body.orders[0].trackingParcels).toEqual([
+      {
+        trackingNumber: "SECOND", carrier: "DHL", status: "delivered", statusCode: "DEL",
+        events: [{ date: "2026-01-02T00:00:00Z", status: "Delivered", location: "New" }],
+        lastChecked: "2026-01-02T01:00:00Z",
+      },
+      { trackingNumber: "FIRST", status: null, events: [], lastChecked: null },
+    ]);
+  });
+
+  it("uses legacy tracking history only for the first canonical parcel", async () => {
+    state.authenticated = true;
+    state.orders = [{
+      id: "legacy", code: "W-3", trackingNumber: "FIRST", trackingNumbers: ["FIRST", "SECOND"],
+      trackingStatus: "in_transit",
+      trackingEvents: [{ date: "2026-01-01T00:00:00Z", status: "Departed", location: "Origin" }],
+      trackingLastChecked: "2026-01-01T02:00:00Z",
+      trackingDetails: null,
+    }];
+    state.account = [];
+
+    const result = await request();
+
+    expect(result.body.orders[0].trackingParcels).toEqual([
+      {
+        trackingNumber: "FIRST", status: "in_transit",
+        events: [{ date: "2026-01-01T00:00:00Z", status: "Departed", location: "Origin" }],
+        lastChecked: "2026-01-01T02:00:00Z",
+      },
+      { trackingNumber: "SECOND", status: null, events: [], lastChecked: null },
+    ]);
+  });
+
+  it("discards malformed tracking details at the API trust boundary", async () => {
+    state.authenticated = true;
+    state.orders = [{
+      id: "invalid", code: "W-4", trackingNumber: "FIRST", trackingNumbers: ["FIRST"],
+      trackingStatus: null, trackingEvents: [], trackingLastChecked: null,
+      trackingDetails: { FIRST: { trackingNumber: "FIRST", status: 123, events: [{ date: 1 }] } },
+    }];
+    state.account = [];
+    const result = await request();
+    expect(result.body.orders[0].trackingParcels).toEqual([
+      { trackingNumber: "FIRST", status: null, events: [], lastChecked: null },
+    ]);
+  });
 });

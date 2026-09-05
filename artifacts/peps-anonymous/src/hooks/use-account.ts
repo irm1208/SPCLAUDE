@@ -982,6 +982,15 @@ export interface WholesaleTrackingEvent {
   location: string;
 }
 
+export interface WholesaleTrackingParcel {
+  trackingNumber: string;
+  carrier?: string;
+  status: string | null;
+  statusCode?: string;
+  events: WholesaleTrackingEvent[];
+  lastChecked: string | null;
+}
+
 export interface WholesaleTrackingOrder {
   id: string;
   code: string;
@@ -989,6 +998,21 @@ export interface WholesaleTrackingOrder {
   trackingStatus: string | null;
   trackingEvents: WholesaleTrackingEvent[];
   trackingLastChecked: string | null;
+  trackingParcels?: WholesaleTrackingParcel[];
+}
+
+export function useAccountOrderDetail(orderId?: string | null, enabled = true) {
+  return useQuery<AccountOrder>({
+    queryKey: ["account", "order", orderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/account/orders/${encodeURIComponent(orderId!)}`, { credentials: "include" });
+      if (res.status === 401) throw new Error("Unauthorized");
+      if (!res.ok) throw new Error("Failed to load order details");
+      return res.json();
+    },
+    enabled: enabled && !!orderId,
+    retry: false,
+  });
 }
 
 export interface WholesaleTrackingResponse {

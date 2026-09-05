@@ -39,6 +39,15 @@ export const ordersTable = pgTable("orders", {
   trackingStatus: text("tracking_status"),
   trackingEvents: jsonb("tracking_events").$type<Array<{ date: string; status: string; location: string }>>(),
   trackingLastChecked: timestamp("tracking_last_checked", { withTimezone: true }),
+  // Per-parcel live tracking cache, keyed by normalized tracking number.
+  trackingDetails: jsonb("tracking_details").$type<Record<string, {
+    trackingNumber: string;
+    carrier?: string;
+    status: string | null;
+    statusCode?: string;
+    events: Array<{ date: string; status: string; location: string }>;
+    lastChecked: string | null;
+  }>>(),
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   paymentTxHash: text("payment_tx_hash"),
   paymentTxHashes: jsonb("payment_tx_hashes").$type<string[]>(),

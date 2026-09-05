@@ -101,9 +101,19 @@ test('WholesaleOrder deliveryMethodId reversion', () => {
   );
 });
 
-test('Tracking and Order links', () => {
+test('Tracking links and order-details modal trigger', () => {
   assert.ok(pageContent.includes('t.17track.net/en#nums='), 'Must contain 17Track link');
-  assert.ok(pageContent.includes('/account/orders/${order.id}'), 'Must contain internal order link');
+  assert.ok(pageContent.includes('OrderDetailsDialog'), 'Order details must open in a modal');
+  assert.ok(pageContent.includes('useAccountOrderDetail'), 'Modal must load the account order-detail endpoint on demand');
+  assert.ok(pageContent.includes('Previous updates'), 'Each parcel history must be expandable');
+  assert.ok(pageContent.includes('aria-expanded={showPrevious}'), 'History control must expose expansion state');
+});
+
+test('Every parcel renders an accessible Previous updates control', () => {
+  assert.ok(pageContent.includes('disabled={olderEvents.length === 0}'), 'No-history parcel controls must be disabled');
+  assert.ok(pageContent.includes('Previous updates ({olderEvents.length})'), 'Control must visibly show the prior-event count');
+  assert.ok(pageContent.includes('aria-controls={olderEvents.length > 0 ? historyId : undefined}'), 'Only controls with a history region may identify it');
+  assert.ok(pageContent.includes('<div id={historyId} hidden={!showPrevious}'), 'History region must remain mounted while collapsed');
 });
 
 test('Filter labels present', () => {

@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from "react";
 import { useLocation } from "wouter";
+import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Search, Clock, CheckCircle2, AlertTriangle, Truck, ExternalLink,
   ChevronRight, RefreshCw, XCircle, Bell, BellOff, ArrowLeft, Loader2, Link2, Info
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
-import { useAccount, useWholesaleTracking, useUpdateWholesaleTrackingPrefs, type WholesaleTrackingOrder } from "@/hooks/use-account";
+import { useAccount, useAccountOrderDetail, useWholesaleTracking, useUpdateWholesaleTrackingPrefs, type WholesaleTrackingOrder, type WholesaleTrackingParcel } from "@/hooks/use-account";
 import { useThemeStore } from "@/hooks/use-theme";
-import { getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo } from "./wholesale-tracking-model";
+import { formatOrderMoney, getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, trackingHistoryId } from "./wholesale-tracking-model";
 
 const ATTENTION_STATUSES = [
   "redirected",
@@ -41,6 +42,7 @@ export default function WholesaleTracking() {
   const { data, isLoading: dataLoading, error, refetch } = useWholesaleTracking();
   const updatePrefs = useUpdateWholesaleTrackingPrefs();
   const [filter, setFilter] = useState<"All" | "In transit" | "Attention needed" | "Delivered">("All");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (!accountLoading && !account) {
@@ -194,7 +196,7 @@ export default function WholesaleTracking() {
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
                   {filteredOrders.map(order => (
-                    <OrderTrackingCard key={order.id} order={order} onNavigate={() => setLocation(`/account/orders/${order.id}`)} />
+                    <OrderTrackingCard key={order.id} order={order} onOrderDetails={() => setSelectedOrderId(order.id)} />
                   ))}
                 </AnimatePresence>
               </div>
@@ -202,15 +204,14 @@ export default function WholesaleTracking() {
           </>
         )}
       </div>
+      <OrderDetailsDialog orderId={selectedOrderId} onOpenChange={open => { if (!open) setSelectedOrderId(null); }} />
     </PageLayout>
   );
 }
 
-function OrderTrackingCard({ order, onNavigate }: { order: WholesaleTrackingOrder, onNavigate: () => void }) {
+function OrderTrackingCard({ order, onOrderDetails }: { order: WholesaleTrackingOrder, onOrderDetails: () => void }) {
   const { label, color, bg, icon: StatusIcon } = getStatusInfo(order.trackingStatus);
-  const latestEvent = getLatestTrackingEvent(order.trackingEvents);
-  const formattedDate = latestEvent ? formatSafeDateTime(latestEvent.date) : null;
-  const checkedAgo = formatSafeTimeAgo(order.trackingLastChecked);
+  const parcels = normalizeTrackingParcels(order);
 
   return (
     <motion.div
@@ -255,7 +256,7 @@ function OrderTrackingCard({ order, onNavigate }: { order: WholesaleTrackingOrde
 
           <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
             <button
-              onClick={onNavigate}
+              onClick={onOrderDetails}
               className="inline-flex items-center gap-1 text-sm font-bold transition-opacity hover:opacity-70 px-3 py-1.5 rounded-lg bg-slate-100"
               style={{ color: "var(--t-text)", background: "var(--t-bg)" }}
             >
@@ -265,7 +266,31 @@ function OrderTrackingCard({ order, onNavigate }: { order: WholesaleTrackingOrde
           </div>
         </div>
 
-        <div className="rounded-xl p-4 mt-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+        <div className="space-y-3 mt-2">
+          {parcels.map(parcel => <TrackingParcelRow key={parcel.trackingNumber} orderId={order.id} parcel={parcel} />)}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function TrackingParcelRow({ orderId, parcel }: { orderId: string; parcel: WholesaleTrackingParcel }) {
+  const [showPrevious, setShowPrevious] = useState(false);
+  const latestEvent = getLatestTrackingEvent(parcel.events);
+  const olderEvents = parcel.events
+    .filter(event => event !== latestEvent)
+    .slice()
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const { label, color } = getStatusInfo(parcel.status);
+  const historyId = trackingHistoryId(orderId, parcel.trackingNumber);
+  const formattedDate = latestEvent ? formatSafeDateTime(latestEvent.date) : null;
+  const checkedAgo = formatSafeTimeAgo(parcel.lastChecked);
+  return (
+    <div className="rounded-xl p-4" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <span className="font-mono text-xs font-bold" style={{ color: "var(--t-blue)" }}>{parcel.trackingNumber}</span>
+        <span className="text-xs font-semibold" style={{ color }}>{label}</span>
+      </div>
           {latestEvent ? (
             <div className="flex gap-4 relative">
               <div className="w-1.5 bg-blue-500 rounded-full shrink-0" style={{ background: color, opacity: 0.6 }} />
@@ -296,8 +321,39 @@ function OrderTrackingCard({ order, onNavigate }: { order: WholesaleTrackingOrde
               Checked {checkedAgo}
             </div>
           )}
+           <button type="button" onClick={() => setShowPrevious(!showPrevious)} aria-expanded={showPrevious} aria-controls={olderEvents.length > 0 ? historyId : undefined}
+             disabled={olderEvents.length === 0} className="mt-3 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed" style={{ color: "var(--t-blue)" }}>
+             Previous updates ({olderEvents.length})
+           </button>
+           {olderEvents.length > 0 && <div id={historyId} hidden={!showPrevious} className="mt-2 space-y-2">
+                {olderEvents.map((event, index) => <div key={`${event.date}-${index}`} className="text-xs border-t pt-2" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}>
+                  <span className="font-semibold">{event.status}</span>{event.location ? ` — ${event.location}` : ""} {formatSafeDateTime(event.date) ? `· ${formatSafeDateTime(event.date)}` : ""}
+                </div>)}
+           </div>}
         </div>
-      </div>
-    </motion.div>
+  );
+}
+
+function OrderDetailsDialog({ orderId, onOpenChange }: { orderId: string | null; onOpenChange: (open: boolean) => void }) {
+  const { data: order, isLoading, error, refetch } = useAccountOrderDetail(orderId, !!orderId);
+  return (
+    <Dialog.Root open={!!orderId} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <Dialog.Content className="fixed z-50 left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6 shadow-xl" style={{ background: "var(--t-surface)" }}>
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <Dialog.Title className="text-lg font-bold" style={{ color: "var(--t-text)" }}>Order Details</Dialog.Title>
+            <Dialog.Close aria-label="Close order details" className="p-1 rounded"><XCircle className="w-5 h-5" /></Dialog.Close>
+          </div>
+          {isLoading ? <div className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></div>
+            : error ? <div className="py-6 text-center"><p className="text-sm mb-3">Failed to load order details.</p><button className="text-sm font-bold" onClick={() => refetch()}>Retry</button></div>
+            : !order?.lineItems?.length ? <p className="py-6 text-center text-sm" style={{ color: "var(--t-muted)" }}>No order items found.</p>
+            : <div className="space-y-3">{order.lineItems.map((item, index) => <div key={`${item.productName}-${index}`} className="border-b pb-3 text-sm" style={{ borderColor: "var(--t-border)" }}>
+              <div className="font-semibold" style={{ color: "var(--t-text)" }}>{item.productName}</div>
+              <div className="flex justify-between mt-1" style={{ color: "var(--t-muted)" }}><span>Qty {item.quantity} · {formatOrderMoney(item.unitPrice, order.currency)}</span><span>{formatOrderMoney(item.lineTotal, order.currency)}</span></div>
+            </div>)}</div>}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo } from './wholesale-tracking-model.ts';
+import { getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, formatOrderMoney, trackingHistoryId } from './wholesale-tracking-model.ts';
 
 test('getLatestTrackingEvent', async (t) => {
   await t.test('returns undefined for empty array', () => {
@@ -57,4 +57,33 @@ test('formatSafeTimeAgo', async (t) => {
     const str = formatSafeTimeAgo(now.toISOString());
     assert.strictEqual(str, '5m ago');
   });
+});
+
+test('normalizeTrackingParcels falls back to legacy history only for the first parcel', () => {
+  assert.deepEqual(normalizeTrackingParcels({
+    trackingNumbers: ['FIRST', 'SECOND'],
+    trackingStatus: 'in_transit',
+    trackingEvents: [{ date: '2026-01-01T00:00:00Z', status: 'Departed', location: 'Origin' }],
+    trackingLastChecked: '2026-01-01T01:00:00Z',
+  }), [
+    {
+      trackingNumber: 'FIRST', status: 'in_transit',
+      events: [{ date: '2026-01-01T00:00:00Z', status: 'Departed', location: 'Origin' }],
+      lastChecked: '2026-01-01T01:00:00Z',
+    },
+    { trackingNumber: 'SECOND', status: null, events: [], lastChecked: null },
+  ]);
+});
+
+test('formatOrderMoney uses valid currency and never renders nonfinite amounts', () => {
+  assert.match(formatOrderMoney(12.5, 'USD'), /\$12\.50/);
+  assert.strictEqual(formatOrderMoney(Number.NaN, 'not-valid'), 'Unavailable');
+});
+
+test('trackingHistoryId is unique per order for the same tracking number', () => {
+  assert.notStrictEqual(trackingHistoryId('order-one', 'SAME/NUMBER'), trackingHistoryId('order-two', 'SAME/NUMBER'));
+});
+
+test('trackingHistoryId is collision-proof for distinct tracking values on one order', () => {
+  assert.notStrictEqual(trackingHistoryId('order-one', 'AB/12'), trackingHistoryId('order-one', 'AB?12'));
 });

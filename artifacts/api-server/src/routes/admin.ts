@@ -58,6 +58,7 @@ import { createAlert } from "../lib/create-alert";
 import { calculateVendorShipping } from "../lib/vendor-shipping";
 import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
+import { normalizeWholesaleTrackingDetails, reconcileWholesaleTrackingCache } from "../lib/tracking-auto-refresh-model";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
 import { callSageAI } from "../lib/sage-ai";
 import { logCustomerActivity } from "../lib/activity-log";
@@ -1185,10 +1186,18 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     const cleaned = Array.isArray(trackingNumbers)
       ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
       : [];
-    updates.trackingNumbers = cleaned.length ? cleaned : null;
-    updates.trackingNumber = cleaned[0] ?? null;
+    const canonical = [...new Set(cleaned)];
+    updates.trackingNumbers = canonical.length ? canonical : null;
+    updates.trackingNumber = canonical[0] ?? null;
   } else if (trackingNumber !== undefined) {
-    updates.trackingNumber = trackingNumber ? String(trackingNumber).slice(0, 200).trim() : null;
+    const canonical = trackingNumber ? String(trackingNumber).slice(0, 200).trim() : "";
+    updates.trackingNumber = canonical || null;
+    updates.trackingNumbers = canonical ? [canonical] : null;
+  }
+  if (updates.trackingNumber !== undefined || updates.trackingNumbers !== undefined) {
+    const oldNumbers = [...new Set((Array.isArray(existing.trackingNumbers) && existing.trackingNumbers.length ? existing.trackingNumbers : existing.trackingNumber ? [existing.trackingNumber] : []).map((n: string) => n.trim()).filter(Boolean))];
+    const nextNumbers = (updates.trackingNumbers ?? (updates.trackingNumber ? [updates.trackingNumber] : [])) as string[];
+    Object.assign(updates, reconcileWholesaleTrackingCache(oldNumbers, nextNumbers, normalizeWholesaleTrackingDetails(existing.trackingDetails)));
   }
   // Auto-advance to Shipped when a tracking number is set and the order isn't already Shipped/Completed
   const incomingTracking = updates.trackingNumber ?? (Array.isArray(updates.trackingNumbers) ? updates.trackingNumbers?.[0] : undefined);
@@ -6444,6 +6453,9 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
         status: "Shipped",
         updatedAt: new Date(),
       };
+      Object.assign(updateFields, reconcileWholesaleTrackingCache(
+        existingTrackingNumbers, trackingNumbers, normalizeWholesaleTrackingDetails(order.trackingDetails),
+      ));
       if (trackingNumbers.length > 0 && Array.isArray(items) && items.length > 0) {
         const existing: Record<string, Array<{name: string; qty: number}>> =
           (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? {};

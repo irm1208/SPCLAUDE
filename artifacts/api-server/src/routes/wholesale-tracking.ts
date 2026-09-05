@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { accountsTable, db, ordersTable } from "@workspace/db";
 import { requireAccount } from "../middleware/account-auth";
 import { normalizeTg } from "../lib/normalize";
+import { normalizeWholesaleTrackingDetails } from "../lib/tracking-auto-refresh-model";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,41 @@ function canonicalTrackingNumbers(trackingNumber: string | null, trackingNumbers
     .filter((number): number is string => typeof number === "string")
     .map(number => number.trim())
     .filter(Boolean))];
+}
+
+type TrackingParcel = {
+  trackingNumber: string;
+  carrier?: string;
+  status: string | null;
+  statusCode?: string;
+  events: Array<{ date: string; status: string; location: string }>;
+  lastChecked: string | Date | null;
+};
+
+function trackingParcels(order: {
+  trackingNumber: string | null;
+  trackingNumbers: unknown;
+  trackingStatus: string | null;
+  trackingEvents: Array<{ date: string; status: string; location: string }> | null;
+  trackingLastChecked: Date | null;
+  trackingDetails: unknown;
+}): TrackingParcel[] {
+  const numbers = canonicalTrackingNumbers(order.trackingNumber, order.trackingNumbers);
+  const details = normalizeWholesaleTrackingDetails(order.trackingDetails);
+  return numbers.map((trackingNumber, index) => {
+    const detail = details[trackingNumber];
+    if (detail) return {
+      trackingNumber,
+      ...(typeof detail.carrier === "string" ? { carrier: detail.carrier } : {}),
+      status: typeof detail.status === "string" ? detail.status : null,
+      ...(typeof detail.statusCode === "string" ? { statusCode: detail.statusCode } : {}),
+      events: Array.isArray(detail.events) ? detail.events : [],
+      lastChecked: detail.lastChecked ?? null,
+    };
+    return index === 0
+      ? { trackingNumber, status: order.trackingStatus, events: order.trackingEvents ?? [], lastChecked: order.trackingLastChecked }
+      : { trackingNumber, status: null, events: [], lastChecked: null };
+  });
 }
 
 router.get("/account/wholesale-tracking", requireAccount, async (req, res): Promise<void> => {
@@ -32,6 +68,7 @@ router.get("/account/wholesale-tracking", requireAccount, async (req, res): Prom
       trackingStatus: ordersTable.trackingStatus,
       trackingEvents: ordersTable.trackingEvents,
       trackingLastChecked: ordersTable.trackingLastChecked,
+      trackingDetails: ordersTable.trackingDetails,
     })
       .from(ordersTable)
       .where(and(
@@ -61,6 +98,7 @@ router.get("/account/wholesale-tracking", requireAccount, async (req, res): Prom
       trackingStatus: order.trackingStatus,
       trackingEvents: order.trackingEvents ?? [],
       trackingLastChecked: order.trackingLastChecked,
+      trackingParcels: trackingParcels(order),
     })),
   });
 });
