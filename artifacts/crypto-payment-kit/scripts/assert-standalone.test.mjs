@@ -5,14 +5,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
+import { escapesStandaloneRoot } from "./standalone-boundary-utils.mjs";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const scanner = join(scriptsDirectory, "assert-standalone.mjs");
+const boundaryUtils = join(scriptsDirectory, "standalone-boundary-utils.mjs");
+
+test("recognizes path.relative output on POSIX and Windows", () => {
+  assert.equal(escapesStandaloneRoot("../outside.js"), true);
+  assert.equal(escapesStandaloneRoot("..\\outside.js"), true);
+  assert.equal(escapesStandaloneRoot("packages/core/index.ts"), false);
+});
 
 async function createFixture(file, contents) {
   const root = await mkdtemp(join(tmpdir(), "crypto-boundary-"));
   await mkdir(join(root, "scripts"));
-  await cp(scanner, join(root, "scripts", "assert-standalone.mjs"));
+  await Promise.all([
+    cp(scanner, join(root, "scripts", "assert-standalone.mjs")),
+    cp(boundaryUtils, join(root, "scripts", "standalone-boundary-utils.mjs")),
+  ]);
   await Promise.all([
     writeFile(join(root, "package.json"), "{}"),
     writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n"),

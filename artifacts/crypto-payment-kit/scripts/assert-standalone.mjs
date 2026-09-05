@@ -1,6 +1,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapesStandaloneRoot } from "./standalone-boundary-utils.mjs";
 
 const root = resolve(process.argv[2] ?? fileURLToPath(new URL("../", import.meta.url)));
 const excludedDirectories = new Set([".git", "node_modules", "dist", "coverage"]);
@@ -112,7 +113,7 @@ for (const file of files) {
   for (const match of text.matchAll(/(["'`])(\.\.?[\\/][^"'`]*)\1/g)) {
     const path = resolve(dirname(file), match[2].replaceAll("\\", "/"));
     const pathFromRoot = relative(root, path);
-    if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${"/"}`)) {
+    if (escapesStandaloneRoot(pathFromRoot)) {
       throw new Error(`Path escapes standalone workspace in ${relative(root, file)}`);
     }
   }
