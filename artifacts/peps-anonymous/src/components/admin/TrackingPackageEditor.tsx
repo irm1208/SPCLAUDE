@@ -1,15 +1,19 @@
 import { MAX_TRACKING_NUMBERS, type TrackingPackage } from "@workspace/shipping/tracking";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
+import { ALL_CARRIERS_17TRACK } from "@/data/carriers17track";
 import { newTrackingPackage, trackingPackageErrors } from "./admin-tracking-model";
 
-const COURIERS = [
-  ["other", "Other / auto-detect"],
+const PRIORITY_COURIERS = [
+  ["GLY", "GLY"],
+  ["YunExpress", "YunExpress"],
   ["bmurfs", "BMURFS Express"],
-  ["DHL", "DHL"],
-  ["UPS", "UPS"],
-  ["FedEx", "FedEx"],
-  ["Royal Mail", "Royal Mail"],
+  ["other", "Other / auto-detect"],
 ] as const;
+
+const PRIORITY_LABELS = new Set(PRIORITY_COURIERS.map(([, label]) => label.toLowerCase()));
+const OTHER_17TRACK_COURIERS = [...new Set(ALL_CARRIERS_17TRACK)].filter(
+  carrier => !PRIORITY_LABELS.has(carrier.toLowerCase()),
+);
 
 export function TrackingPackageEditor({
   value,
@@ -67,8 +71,15 @@ export function TrackingPackageEditor({
                 Courier
                 <select value={pkg.courier} onChange={event => update(pkg.id, { courier: event.target.value })}
                   className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800">
-                  {!COURIERS.some(([code]) => code === pkg.courier) && <option value={pkg.courier}>{pkg.courier}</option>}
-                  {COURIERS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  {!PRIORITY_COURIERS.some(([code]) => code === pkg.courier) &&
+                    !OTHER_17TRACK_COURIERS.includes(pkg.courier) &&
+                    <option value={pkg.courier}>{pkg.courier}</option>}
+                  <optgroup label="Common couriers">
+                    {PRIORITY_COURIERS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </optgroup>
+                  <optgroup label="All 17TRACK couriers">
+                    {OTHER_17TRACK_COURIERS.map(carrier => <option key={carrier} value={carrier}>{carrier}</option>)}
+                  </optgroup>
                 </select>
               </label>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
