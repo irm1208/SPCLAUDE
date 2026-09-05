@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { TrackingPackage, TrackingPackageView } from "@workspace/shipping/tracking";
 
 export interface AccountMe {
   telegramUsername: string;
@@ -536,6 +537,9 @@ export interface AccountOrder {
   currency?: string | null;
   adminMessage: string | null;
   trackingNumber: string | null;
+  trackingPackages?: TrackingPackage[];
+  trackingPackageViews?: TrackingPackageView[];
+  packageTrackingStatus?: string | null;
   notes: string | null;
   createdAt: string;
   testingContribution?: number;
@@ -999,6 +1003,10 @@ export interface WholesaleTrackingOrder {
   trackingEvents: WholesaleTrackingEvent[];
   trackingLastChecked: string | null;
   trackingParcels?: WholesaleTrackingParcel[];
+  trackingPackages?: TrackingPackage[];
+  trackingPackageViews?: TrackingPackageView[];
+  packageTrackingStatus?: string | null;
+  trackingDetails?: unknown;
 }
 
 export function useAccountOrderDetail(orderId?: string | null, enabled = true) {

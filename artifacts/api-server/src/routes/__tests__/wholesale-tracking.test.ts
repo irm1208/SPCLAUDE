@@ -153,4 +153,23 @@ describe("GET /account/wholesale-tracking", () => {
       { trackingNumber: "FIRST", status: null, events: [], lastChecked: null },
     ]);
   });
+
+  it("returns one explicitly paired BMURFS package with separate histories and local-authoritative delivery", async () => {
+    state.authenticated = true;
+    state.orders = [{
+      id: "paired", code: "W-BMURFS", trackingNumber: "SMEX6082643740",
+      trackingNumbers: ["SMEX6082643740", "HD358713635GB"],
+      trackingPackages: [{ id: "package-1", courier: "bmurfs", internationalTrackingNumber: "SMEX6082643740", localTrackingNumber: "HD358713635GB" }],
+      trackingStatus: "delivered", trackingEvents: [], trackingLastChecked: null,
+      trackingDetails: {
+        SMEX6082643740: { trackingNumber: "SMEX6082643740", status: "delivered", events: [], lastChecked: null },
+        HD358713635GB: { trackingNumber: "HD358713635GB", status: "out_for_delivery", events: [{ date: "2026-09-05", status: "Local courier", location: "UK" }], lastChecked: null },
+      },
+    }];
+    const result = await request();
+    expect(result.body.orders[0].trackingPackageViews).toHaveLength(1);
+    expect(result.body.orders[0].trackingPackageViews[0].local.events[0].status).toBe("Local courier");
+    expect(result.body.orders[0].packageTrackingStatus).toBe("out_for_delivery");
+    expect(result.body.orders[0].trackingParcels).toHaveLength(2);
+  });
 });

@@ -35,6 +35,10 @@ import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
 } from "../lib/group-buy-shipping-adjustment";
+import { prepareTrackingWrite } from "../lib/tracking-write";
+import { getTrackingPackages } from "@workspace/shipping/tracking";
+import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
+import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -2636,6 +2640,15 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       id: ordersTable.id,
       telegramUsername: ordersTable.telegramUsername,
       trackingNumber: ordersTable.trackingNumber,
+      trackingNumbers: ordersTable.trackingNumbers,
+      trackingPackages: ordersTable.trackingPackages,
+      trackingDetails: ordersTable.trackingDetails,
+      trackingStatus: ordersTable.trackingStatus,
+      trackingEvents: ordersTable.trackingEvents,
+      trackingLastChecked: ordersTable.trackingLastChecked,
+      trackingShippedItems: ordersTable.trackingShippedItems,
+      orderType: ordersTable.orderType,
+      sharedOrderId: ordersTable.sharedOrderId,
       code: ordersTable.code,
       grandTotal: ordersTable.grandTotal,
       deliveryMethod: ordersTable.deliveryMethod,
@@ -2652,12 +2665,14 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
 
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const { status, paymentStatus, adminNotes, trackingNumber, trackingNumbers, paymentTxHash, paymentTxHashes, lineItems: lineItemUpdates } = req.body as {
+  const { status, paymentStatus, adminNotes, trackingNumber, trackingNumbers, trackingPackages, expectedTrackingSnapshot, paymentTxHash, paymentTxHashes, lineItems: lineItemUpdates } = req.body as {
     status?: string;
     paymentStatus?: string;
     adminNotes?: string | null;
     trackingNumber?: string | null;
     trackingNumbers?: string[];
+    trackingPackages?: unknown;
+    expectedTrackingSnapshot?: string;
     paymentTxHash?: string | null;
     paymentTxHashes?: string[];
     lineItems?: { id?: string; productId?: string; quantity: number }[];
@@ -2670,6 +2685,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
     status === undefined &&
     adminNotes === undefined &&
     trackingNumber === undefined &&
+    trackingPackages === undefined &&
     (trackingNumbers === undefined || (Array.isArray(trackingNumbers) && trackingNumbers.length === 0)) &&
     paymentTxHash === undefined &&
     (paymentTxHashes === undefined || (Array.isArray(paymentTxHashes) && paymentTxHashes.length === 0)) &&
@@ -2691,6 +2707,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   }
 
   const updates: Record<string, unknown> = {};
+  let trackingWrite: ReturnType<typeof prepareTrackingWrite> | null = null;
   if (status !== undefined && gb.organiserCanEditStatus) updates.status = status;
   if (paymentStatus !== undefined && gb.organiserCanEditPaymentStatus) {
     updates.paymentStatus = paymentStatus;
@@ -2705,14 +2722,15 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   }
   if (adminNotes !== undefined && gb.organiserCanEditNotes) updates.adminNotes = adminNotes ? String(adminNotes).trim() : null;
   if (gb.organiserCanEditTracking) {
-    if (trackingNumbers !== undefined) {
-      const cleaned = Array.isArray(trackingNumbers)
-        ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
-        : [];
-      updates.trackingNumbers = cleaned.length ? cleaned : null;
-      updates.trackingNumber = cleaned[0] ?? null;
-    } else if (trackingNumber !== undefined) {
-      updates.trackingNumber = trackingNumber ? String(trackingNumber).trim() : null;
+    if (trackingPackages !== undefined || trackingNumbers !== undefined || trackingNumber !== undefined) {
+      try {
+        trackingWrite = prepareTrackingWrite(order, { trackingPackages, trackingNumbers, trackingNumber, expectedTrackingSnapshot });
+        Object.assign(updates, trackingWrite.updates);
+      } catch (error) {
+        res.status(error instanceof Error && /another writer/.test(error.message) ? 409 : 400)
+          .json({ error: error instanceof Error ? error.message : "Invalid tracking update" });
+        return;
+      }
     }
   }
   if (gb.organiserCanEditTxId) {
@@ -2840,7 +2858,10 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   const [updated] = await db
     .update(ordersTable)
     .set(updates)
-    .where(eq(ordersTable.id, orderId))
+    .where(trackingWrite ? and(
+      eq(ordersTable.id, orderId),
+      unchangedTrackingWriteFields(order),
+    ) : eq(ordersTable.id, orderId))
     .returning({
       id: ordersTable.id,
       code: ordersTable.code,
@@ -2852,15 +2873,19 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       grandTotal: ordersTable.grandTotal,
       productSubtotal: ordersTable.productSubtotal,
     });
+  if (!updated) {
+    res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
+    return;
+  }
 
   // Notify customer if tracking number was newly set
-  const newTracking = trackingNumber ? String(trackingNumber).trim() : null;
-  if (newTracking && newTracking !== order.trackingNumber) {
+  const newTracking = trackingWrite?.updates.trackingNumber as string | null | undefined;
+  if (newTracking && trackingWrite?.shouldNotify) {
     notifyUserFromTemplate(
       order.telegramUsername,
       "status",
       "customer_order_shipped",
-      { code: order.code, gb_name: `\nGB: <b>${gb.name}</b>`, tracking: newTracking, username: order.telegramUsername.replace(/^@/, ""), order_total: (gb.currency === "GBP" ? "£" : "$") + String(order.grandTotal ?? ""), delivery: order.deliveryMethod ?? "", payment_status: order.paymentStatus === "confirmed" ? "Paid" : "Unpaid", app_url: process.env["APP_URL"] ?? "https://saltandpeps.co.uk" },
+      { code: order.code, gb_name: `\nGB: <b>${gb.name}</b>`, tracking: formatTrackingNumbersForNotification(getTrackingPackages({ ...order, ...trackingWrite.updates })), username: order.telegramUsername.replace(/^@/, ""), order_total: (gb.currency === "GBP" ? "£" : "$") + String(order.grandTotal ?? ""), delivery: order.deliveryMethod ?? "", payment_status: order.paymentStatus === "confirmed" ? "Paid" : "Unpaid", app_url: process.env["APP_URL"] ?? "https://saltandpeps.co.uk" },
     ).catch(() => {});
   }
 

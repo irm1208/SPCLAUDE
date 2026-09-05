@@ -4,6 +4,7 @@ import { accountsTable, db, ordersTable } from "@workspace/db";
 import { requireAccount } from "../middleware/account-auth";
 import { normalizeTg } from "../lib/normalize";
 import { normalizeWholesaleTrackingDetails } from "../lib/tracking-auto-refresh-model";
+import { getTrackingPackages, projectTrackingPackages, getOrderTrackingStatus } from "@workspace/shipping/tracking";
 
 const router: IRouter = Router();
 
@@ -65,6 +66,7 @@ router.get("/account/wholesale-tracking", requireAccount, async (req, res): Prom
       code: ordersTable.code,
       trackingNumber: ordersTable.trackingNumber,
       trackingNumbers: ordersTable.trackingNumbers,
+      trackingPackages: ordersTable.trackingPackages,
       trackingStatus: ordersTable.trackingStatus,
       trackingEvents: ordersTable.trackingEvents,
       trackingLastChecked: ordersTable.trackingLastChecked,
@@ -99,6 +101,9 @@ router.get("/account/wholesale-tracking", requireAccount, async (req, res): Prom
       trackingEvents: order.trackingEvents ?? [],
       trackingLastChecked: order.trackingLastChecked,
       trackingParcels: trackingParcels(order),
+      trackingPackages: getTrackingPackages(order),
+      trackingPackageViews: projectTrackingPackages(order),
+      packageTrackingStatus: getOrderTrackingStatus(projectTrackingPackages(order)),
     })),
   });
 });

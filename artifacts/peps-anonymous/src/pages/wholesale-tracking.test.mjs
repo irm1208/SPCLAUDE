@@ -58,10 +58,16 @@ test('Visible explanatory copy for alerts', () => {
 });
 
 test('Filter logic classifies null/pending as In transit', () => {
-  // Extract the filter logic or verify strings
-  // "In transit" should include null/undefined trackingStatus
-  // It shouldn't just check o.trackingStatus && ...
-  assert.match(pageContent, /if \(filter === "In transit"\) return !isAttentionNeeded\(o\.trackingStatus\) && o\.trackingStatus\?\.toLowerCase\(\) !== "delivered";/i, 'Filter logic for In transit should include null/pending tracking statuses');
+  // Filter the physical-package aggregate, not the primary/international cache.
+  assert.match(pageContent, /const status = getTrackingOrderStatus\(o\)/);
+  assert.match(pageContent, /if \(filter === "In transit"\) return !isAttentionNeeded\(status\) && status\?\.toLowerCase\(\) !== "delivered";/i, 'Filter logic for In transit should include null/pending package statuses');
+});
+
+test('Tracking content stays width-constrained and controls wrap on mobile', () => {
+  assert.match(pageContent, /w-full min-w-0 max-w-4xl mx-auto/);
+  assert.match(pageContent, /flex flex-col sm:flex-row items-start sm:justify-between/);
+  assert.match(pageContent, /flex flex-wrap gap-2 mb-6/);
+  assert.doesNotMatch(pageContent, /flex overflow-x-auto gap-2 mb-6/);
 });
 
 test('My Orders entry is generally visible and clearly labelled', () => {

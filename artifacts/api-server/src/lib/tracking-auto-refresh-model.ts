@@ -1,3 +1,6 @@
+import { getTrackingPackages, projectTrackingPackages, trackingCarrierCode, type TrackingSource } from "@workspace/shipping/tracking";
+import { isWholesaleTrackingAlertStatus } from "./wholesale-tracking";
+
 export type WholesaleParcelDetail = {
   trackingNumber: string;
   carrier?: string;
@@ -45,7 +48,7 @@ export function normalizeWholesaleTrackingDetails(value: unknown): Record<string
   for (const [key, raw] of Object.entries(value)) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const entry = raw as Record<string, unknown>;
-    if (typeof entry.trackingNumber !== "string" || (entry.status !== null && typeof entry.status !== "string") ||
+    if (typeof entry.trackingNumber !== "string" || entry.trackingNumber !== key || ["__proto__", "constructor", "prototype"].includes(key) || (entry.status !== null && typeof entry.status !== "string") ||
       (entry.statusCode !== undefined && typeof entry.statusCode !== "string") ||
       (entry.carrier !== undefined && typeof entry.carrier !== "string") ||
       (entry.lastChecked !== null && typeof entry.lastChecked !== "string") || !Array.isArray(entry.events)) continue;
@@ -82,4 +85,27 @@ export function selectWholesaleCompatibilityFields(
     trackingEvents: primary?.events ?? legacy.trackingEvents,
     trackingLastChecked: primary?.lastChecked ? new Date(primary.lastChecked) : legacy.trackingLastChecked,
   };
+}
+
+/** Evaluate staleness per leg, never from the international compatibility timestamp. */
+export function trackingRefreshCandidates(source: TrackingSource, now: number, staleAfterMs: number) {
+  const packages = getTrackingPackages(source);
+  const views = projectTrackingPackages(source);
+  return packages.flatMap((pkg, index) => {
+    const view = views[index];
+    return (["international", "local"] as const).flatMap(role => {
+      const leg = view[role];
+      if (!leg || TERMINAL_STATUSES.has(leg.status ?? "")) return [];
+      const checked = leg.lastChecked ? Date.parse(leg.lastChecked) : NaN;
+      if (Number.isFinite(checked) && now - checked < staleAfterMs) return [];
+      return [{ trackingNumber: leg.trackingNumber, carrierCode: trackingCarrierCode(pkg, role) ?? 0 }];
+    });
+  });
+}
+
+/** A cache transition yields at most one milestone per physical package. */
+export function changedPackageMilestones(source: TrackingSource, details: Record<string, WholesaleParcelDetail>) {
+  const before = new Map(projectTrackingPackages(source).map(p => [p.id, p.status]));
+  return projectTrackingPackages({ ...source, trackingDetails: details }).filter(p =>
+    p.status && isWholesaleTrackingAlertStatus(p.status) && before.get(p.id) !== p.status);
 }

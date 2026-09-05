@@ -19,6 +19,11 @@ import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayme
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import {
+  getOrderTrackingStatus,
+  getTrackingPackages,
+  projectTrackingPackages,
+} from "@workspace/shipping/tracking";
 
 const BALANCE_ANON_PAY_PREFIX = "anonpay:";
 
@@ -1810,6 +1815,15 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     status: order.status,
     adminMessage: order.adminMessage ?? null,
     trackingNumber: order.trackingNumber ?? null,
+    ...(order.orderType !== "wholesale_shared" ? (() => {
+      const trackingPackages = getTrackingPackages(order);
+      const trackingPackageViews = projectTrackingPackages(order);
+      return {
+        trackingPackages,
+        trackingPackageViews,
+        packageTrackingStatus: getOrderTrackingStatus(trackingPackageViews),
+      };
+    })() : {}),
     paymentStatus: order.paymentStatus ?? "unpaid",
     paymentTxHash: order.paymentTxHash ?? null,
     paymentTestAmount: order.paymentTestAmount ? parseFloat(String(order.paymentTestAmount)) : null,
@@ -2047,6 +2061,15 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     status: order.status,
     adminMessage: order.adminMessage ?? null,
     trackingNumber: order.trackingNumber ?? null,
+    ...(order.orderType !== "wholesale_shared" ? (() => {
+      const trackingPackages = getTrackingPackages(order);
+      const trackingPackageViews = projectTrackingPackages(order);
+      return {
+        trackingPackages,
+        trackingPackageViews,
+        packageTrackingStatus: getOrderTrackingStatus(trackingPackageViews),
+      };
+    })() : {}),
     paymentStatus: order.paymentStatus ?? "unpaid",
     paymentTxHash: order.paymentTxHash ?? null,
     paymentTestAmount: order.paymentTestAmount ? parseFloat(String(order.paymentTestAmount)) : null,

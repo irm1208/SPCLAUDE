@@ -45,3 +45,8 @@ up to date). Force it:
 `pnpm exec tsc --build lib/api-client-react/tsconfig.json --force`, then re-run the
 artifact `tsc --noEmit`. **Why:** this cost real debugging time — the TS7006s look
 like they were introduced by an edit but are pure stale-dist cascade.
+
+This incremental-output trap also affects the API's DB declarations. If a normal
+library build succeeds but artifact checks still cascade with missing declaration
+outputs, use `pnpm exec tsc --build --force` before classifying the errors as
+pre-existing or changing application types.

@@ -67,6 +67,16 @@ import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from
 import { verifyTransaction } from "../lib/payment-verify";
 import { formatTelegramExportForAi } from "../lib/telegram-export-parser";
 import {
+  canonicalTrackingNumbers,
+  getOrderTrackingStatus,
+  getTrackingPackages,
+  projectTrackingPackages,
+  trackingSnapshot,
+} from "@workspace/shipping/tracking";
+import { prepareTrackingWrite } from "../lib/tracking-write";
+import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
+import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
+import {
   hasExpectedAuditAmount,
   normaliseWalletAddress,
   paymentAuditScopeForOrder,
@@ -201,6 +211,8 @@ const router: IRouter = Router();
 
 // ─── Formatters ───────────────────────────────────────────────
 function fmtOrder(o: Record<string, any>, lineItems: Record<string, any>[] = []) {
+  const trackingPackages = getTrackingPackages(o);
+  const trackingPackageViews = projectTrackingPackages(o);
   return {
     id: o.id,
     code: o.code,
@@ -219,6 +231,10 @@ function fmtOrder(o: Record<string, any>, lineItems: Record<string, any>[] = [])
     adminMessage: o.adminMessage ?? null,
     trackingNumber: o.trackingNumber ?? null,
     trackingNumbers: (o as any).trackingNumbers ?? null,
+    trackingPackages,
+    trackingPackageViews,
+    packageTrackingStatus: getOrderTrackingStatus(trackingPackageViews),
+    trackingSnapshot: trackingSnapshot(o),
     shippingCarrier: o.shippingCarrier ?? null,
     carrierServiceRef: o.carrierServiceRef ?? null,
     paymentStatus: o.paymentStatus ?? "unpaid",
@@ -1147,7 +1163,7 @@ router.patch("/admin/orders/bulk-tracking", bulkTrackingHandler);
 router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { status, vendorShipping, trackingNumber, trackingNumbers, adminNotes, adminMessage, telegramUsername, paymentStatus, paymentTxHash, paymentTxHashes, paymentUsdAmount, pin, refundStatus, refundReason, clearBalance, shippingName, shippingAddress, directShippingRequested, deliveryMethod, deliveryPrice, amountDue, adminFee, adminFeeLabel, requiresAddressOverride, requiresQrCodeOverride } = req.body;
+  const { status, vendorShipping, trackingNumber, trackingNumbers, trackingPackages, expectedTrackingSnapshot, adminNotes, adminMessage, telegramUsername, paymentStatus, paymentTxHash, paymentTxHashes, paymentUsdAmount, pin, refundStatus, refundReason, clearBalance, shippingName, shippingAddress, directShippingRequested, deliveryMethod, deliveryPrice, amountDue, adminFee, adminFeeLabel, requiresAddressOverride, requiresQrCodeOverride } = req.body;
 
   const [existing] = await db
     .select()
@@ -1163,6 +1179,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   const VALID_PAYMENT_STATUSES = ["unpaid", "test_ready", "test_confirmed", "pending_confirmation", "confirmed", "failed", "rejected"];
 
   const updates: Record<string, any> = {};
+  let trackingWrite: ReturnType<typeof prepareTrackingWrite> | null = null;
 
   if (status !== undefined) {
     if (!VALID_STATUSES.includes(String(status))) {
@@ -1182,22 +1199,20 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   if (adminMessage !== undefined) {
     updates.adminMessage = adminMessage ? String(adminMessage).slice(0, 1000) : null;
   }
-  if (trackingNumbers !== undefined) {
-    const cleaned = Array.isArray(trackingNumbers)
-      ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
-      : [];
-    const canonical = [...new Set(cleaned)];
-    updates.trackingNumbers = canonical.length ? canonical : null;
-    updates.trackingNumber = canonical[0] ?? null;
-  } else if (trackingNumber !== undefined) {
-    const canonical = trackingNumber ? String(trackingNumber).slice(0, 200).trim() : "";
-    updates.trackingNumber = canonical || null;
-    updates.trackingNumbers = canonical ? [canonical] : null;
-  }
-  if (updates.trackingNumber !== undefined || updates.trackingNumbers !== undefined) {
-    const oldNumbers = [...new Set((Array.isArray(existing.trackingNumbers) && existing.trackingNumbers.length ? existing.trackingNumbers : existing.trackingNumber ? [existing.trackingNumber] : []).map((n: string) => n.trim()).filter(Boolean))];
-    const nextNumbers = (updates.trackingNumbers ?? (updates.trackingNumber ? [updates.trackingNumber] : [])) as string[];
-    Object.assign(updates, reconcileWholesaleTrackingCache(oldNumbers, nextNumbers, normalizeWholesaleTrackingDetails(existing.trackingDetails)));
+  if (trackingPackages !== undefined || trackingNumbers !== undefined || trackingNumber !== undefined) {
+    try {
+      trackingWrite = prepareTrackingWrite(existing, {
+        trackingPackages,
+        trackingNumbers,
+        trackingNumber,
+        expectedTrackingSnapshot,
+      });
+      Object.assign(updates, trackingWrite.updates);
+    } catch (error) {
+      res.status(error instanceof Error && /another writer/.test(error.message) ? 409 : 400)
+        .json({ error: error instanceof Error ? error.message : "Invalid tracking update" });
+      return;
+    }
   }
   // Auto-advance to Shipped when a tracking number is set and the order isn't already Shipped/Completed
   const incomingTracking = updates.trackingNumber ?? (Array.isArray(updates.trackingNumbers) ? updates.trackingNumbers?.[0] : undefined);
@@ -1382,18 +1397,40 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     updates.paymentUsdAmount = null;
   }
 
+  const trackingCas = trackingWrite
+    ? and(
+        eq(ordersTable.id, req.params.id),
+        unchangedTrackingWriteFields(existing),
+      )
+    : eq(ordersTable.id, req.params.id);
   const [updated] = await db
     .update(ordersTable)
     .set(updates)
-    .where(eq(ordersTable.id, req.params.id))
+    .where(trackingCas)
     .returning();
+  if (!updated) {
+    res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
+    return;
+  }
 
   const lineItems = await db
     .select()
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, req.params.id));
 
-  const changedFields = Object.keys(updates).filter(f => f !== "grandTotal");
+  const valuesEqual = (left: unknown, right: unknown): boolean => {
+    if (left instanceof Date || right instanceof Date) {
+      const leftTime = left instanceof Date ? left.getTime() : new Date(String(left)).getTime();
+      const rightTime = right instanceof Date ? right.getTime() : new Date(String(right)).getTime();
+      return leftTime === rightTime;
+    }
+    if ((left && typeof left === "object") || (right && typeof right === "object")) {
+      return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+    }
+    return left === right;
+  };
+  const changedFields = Object.keys(updates)
+    .filter(f => f !== "grandTotal" && !valuesEqual((existing as any)[f], updates[f]));
   const FIELD_LABELS: Record<string, string> = {
     status: "Status",
     paymentStatus: "Payment",
@@ -1597,16 +1634,19 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   // Fire when tracking numbers are first set or changed, so the member gets
   // their number and a direct 17track link via Telegram.
   // For direct / wholesale orders, also include the parcel contents.
-  const trackingChanged = changedFields.includes("trackingNumber") || changedFields.includes("trackingNumbers");
+  const trackingChanged = trackingWrite?.shouldNotify ??
+    (changedFields.includes("trackingNumber") || changedFields.includes("trackingNumbers"));
   if (trackingChanged) {
     const newNums: string[] = Array.isArray(updates.trackingNumbers) && (updates.trackingNumbers as string[]).length
       ? (updates.trackingNumbers as string[])
       : (updates.trackingNumber ? [updates.trackingNumber as string] : []);
     if (newNums.length > 0 && existing.telegramUsername) {
       const trackUrl = `https://t.17track.net/en#nums=${newNums.map(encodeURIComponent).join(",")}`;
-      const numLines = newNums.length === 1
-        ? `Tracking: <code>${newNums[0]}</code>`
-        : newNums.map((n, i) => `Tracking ${i + 1}: <code>${n}</code>`).join("\n");
+      const numLines = trackingWrite
+        ? formatTrackingNumbersForNotification(getTrackingPackages({ ...existing, ...updates }))
+        : newNums.length === 1
+          ? `Tracking: <code>${newNums[0]}</code>`
+          : newNums.map((n, i) => `Tracking ${i + 1}: <code>${n}</code>`).join("\n");
 
       const isDirectOrWholesale = existing.routingType === "direct" || existing.orderType === "wholesale";
       const itemsSection = isDirectOrWholesale && lineItems.length > 0
@@ -6143,6 +6183,8 @@ Return a JSON array (no markdown, no code fences, pure JSON). Each element must 
 {
   "label": "<parcel label/identifier if present, else empty string>",
   "trackingNumbers": ["<tracking number 1>", "<tracking number 2>"],
+  "trackingPackages": [{"id":"<explicit label-derived stable id>","courier":"bmurfs","internationalTrackingNumber":"<explicitly labelled international number>","localTrackingNumber":"<explicitly labelled local number or null>"}],
+  "reviewWarnings": ["<ambiguity requiring admin review>"],
   "items": [{"name": "<product name>", "qty": <number>}],
   "address": {
     "name": "<recipient full name>",
@@ -6156,7 +6198,9 @@ Return a JSON array (no markdown, no code fences, pure JSON). Each element must 
 
 Rules:
 - Extract tracking numbers from URLs: "17track.net/en#nums=ABC123" → "ABC123", "royalmail.com/：HD355877507GB" → "HD355877507GB"
-- If multiple tracking numbers appear for one shipment, include all in trackingNumbers array.
+- Create a paired trackingPackages entry only when the text explicitly identifies BMURFS and explicitly labels which number is international and which is local. Never infer a pair from order, prefixes, proximity, or carrier guesses.
+- If two numbers might be a pair but either BMURFS or the roles are not explicit, leave trackingPackages empty, retain both in trackingNumbers, and add a clear reviewWarnings entry.
+- For ordinary/unpaired shipments, leave trackingPackages empty.
 - The input may be a Telegram export. Every line matching "[DD/MM/YYYY HH:mm] -" starts a new Telegram message. Treat that timestamp as a message boundary, not shipment data.
 - A tracking number may be at the top or bottom of a timestamped message. Inspect the complete message and collect every tracking number.
 - Consecutive timestamped messages may describe the same shipment; correlate them using the label, recipient, address, phone, and items instead of creating a shipment for every timestamp.
@@ -6170,6 +6214,8 @@ Rules:
   type ParsedShipment = {
     label: string;
     trackingNumbers: string[];
+    trackingPackages?: unknown;
+    reviewWarnings?: string[];
     items: { name: string; qty: number }[];
     address: { name: string; line1: string; city: string; postcode: string; country: string; phone: string };
   };
@@ -6200,6 +6246,8 @@ Rules:
       telegramUsername: ordersTable.telegramUsername,
       status: ordersTable.status,
       trackingNumber: ordersTable.trackingNumber,
+      trackingNumbers: ordersTable.trackingNumbers,
+      trackingPackages: ordersTable.trackingPackages,
       groupBuyId: ordersTable.groupBuyId,
       sharedOrderId: ordersTable.sharedOrderId,
       shippingName: ordersTable.shippingName,
@@ -6259,6 +6307,9 @@ Rules:
     shippingCountry: string | null;
     shippingAddress: string | null;
     currentTrackingNumber: string | null;
+    currentTrackingNumbers: string[];
+    currentTrackingPackages: ReturnType<typeof getTrackingPackages>;
+    currentTrackingSnapshot: string;
     grandTotal: string;
     groupBuyId: string | null;
     lineItems: { productName: string; quantity: string }[];
@@ -6339,6 +6390,9 @@ Rules:
         shippingCountry: best.order.shippingCountry,
         shippingAddress: best.order.shippingAddress,
         currentTrackingNumber: best.order.trackingNumber,
+        currentTrackingNumbers: canonicalTrackingNumbers(best.order),
+        currentTrackingPackages: getTrackingPackages(best.order),
+        currentTrackingSnapshot: trackingSnapshot(best.order),
         grandTotal: best.order.grandTotal,
         groupBuyId: best.order.groupBuyId,
         lineItems: lineItemsByOrder[best.order.id] ?? [],
@@ -6352,6 +6406,8 @@ Rules:
       id: `shipment-${idx}`,
       label: shipment.label,
       trackingNumbers: shipment.trackingNumbers ?? [],
+      trackingPackages: shipment.trackingPackages ?? [],
+      reviewWarnings: Array.isArray(shipment.reviewWarnings) ? shipment.reviewWarnings : [],
       items: shipment.items ?? [],
       parsedAddress: shipment.address,
       match,
@@ -6372,7 +6428,8 @@ Rules:
   }
 
   const outstanding = recentOrders.filter(o =>
-    !o.trackingNumber &&
+    (!o.trackingNumber || getTrackingPackages(o).some(pkg =>
+      pkg.courier === "bmurfs" && !pkg.localTrackingNumber)) &&
     !matchedOrderIds.has(o.id) &&
     !["Cancelled", "Deleted", "Shipped"].includes(o.status) &&
     (
@@ -6425,9 +6482,39 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
     )].slice(0, 20);
   };
 
+  const groupedLines = new Map<string, any>();
+  for (const line of lines) {
+    const code = String(line?.code ?? "").trim();
+    const current = groupedLines.get(code);
+    if (!current) {
+      groupedLines.set(code, { ...line, code });
+      continue;
+    }
+    if (current.trackingNumbers !== undefined || current.trackingNumber !== undefined ||
+        line.trackingNumbers !== undefined || line.trackingNumber !== undefined) {
+      current.trackingNumbers = [
+        ...normalizeTrackingNumbers(current.trackingNumbers, current.trackingNumber),
+        ...normalizeTrackingNumbers(line.trackingNumbers, line.trackingNumber),
+      ];
+    }
+    if (line.trackingPackages !== undefined) {
+      current.trackingPackageAmendments = [
+        ...(current.trackingPackageAmendments ??
+          (current.trackingPackages !== undefined
+            ? [{ packages: current.trackingPackages, items: current.items }]
+            : [])),
+        { packages: line.trackingPackages, items: line.items },
+      ];
+      delete current.trackingPackages;
+    }
+    if (line.trackingPackages === undefined && Array.isArray(line.items)) {
+      current.items = [...(current.items ?? []), ...line.items];
+    }
+  }
+
   const results: { code: string; trackingNumber: string; ok: boolean; error?: string }[] = [];
 
-  for (const { code, trackingNumber, trackingNumbers: submittedTrackingNumbers, items } of lines) {
+  for (const { code, trackingNumber, trackingNumbers: submittedTrackingNumbers, trackingPackages, trackingPackageAmendments, expectedTrackingSnapshot, items } of groupedLines.values()) {
     const safeCode = String(code ?? "").trim();
     const trackingNumbers = normalizeTrackingNumbers(submittedTrackingNumbers, trackingNumber);
     const primaryTracking = trackingNumbers[0] ?? "";
@@ -6437,41 +6524,77 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, safeCode));
       if (!order) { results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: "Order not found" }); continue; }
 
-      const existingTrackingNumbers = normalizeTrackingNumbers(
-        order.trackingNumbers,
-        order.trackingNumber,
-      );
-      const trackingChanged = trackingNumbers.length !== existingTrackingNumbers.length
-        || trackingNumbers.some((value, index) => value !== existingTrackingNumbers[index]);
-      const needsUpdate = order.status !== "Shipped" || trackingChanged;
-
-      // All tracking numbers identify this shipment, so each one retains the
-      // extracted item list when the customer views parcel contents.
+      let plannedSource = order as any;
+      let trackingWrite;
+      let amendmentNumbersChanged = false;
+      let amendmentGroupingChanged = false;
+      const amendments: Array<{ packages: unknown; items?: unknown }> = trackingPackageAmendments ??
+        (trackingPackages !== undefined ? [{ packages: trackingPackages, items }] : []);
+      if (amendments.length) {
+        for (const [amendmentIndex, amendment] of amendments.entries()) {
+          trackingWrite = prepareTrackingWrite(plannedSource, {
+            trackingPackages: amendment.packages,
+            ...(amendmentIndex === 0 && (submittedTrackingNumbers !== undefined || trackingNumber !== undefined)
+              ? { trackingNumbers }
+              : {}),
+            expectedTrackingSnapshot: plannedSource === order ? expectedTrackingSnapshot : undefined,
+            items: amendment.items,
+          }, { mergePackages: true });
+          amendmentNumbersChanged ||= trackingWrite.numbersChanged;
+          amendmentGroupingChanged ||= trackingWrite.groupingChanged;
+          plannedSource = { ...plannedSource, ...trackingWrite.updates };
+        }
+        trackingWrite = {
+          ...trackingWrite!,
+          numbersChanged: amendmentNumbersChanged,
+          groupingChanged: amendmentGroupingChanged,
+          shouldNotify: amendmentNumbersChanged,
+        };
+      } else {
+        trackingWrite = prepareTrackingWrite(order, {
+          trackingNumbers,
+          expectedTrackingSnapshot,
+          items,
+        });
+      }
+      const finalNumbers = canonicalTrackingNumbers(plannedSource === order
+        ? { ...order, ...trackingWrite.updates }
+        : plannedSource);
+      const finalPrimary = finalNumbers[0] ?? "";
+      const needsUpdate = order.status !== "Shipped" ||
+        trackingWrite.numbersChanged || trackingWrite.groupingChanged ||
+        (Object.hasOwn(trackingWrite.updates, "trackingShippedItems") &&
+          JSON.stringify(trackingWrite.updates.trackingShippedItems ?? null) !==
+            JSON.stringify(order.trackingShippedItems ?? null));
       const updateFields: Record<string, unknown> = {
-        trackingNumber: primaryTracking || null,
-        trackingNumbers: trackingNumbers.length ? trackingNumbers : null,
+        ...(plannedSource === order ? trackingWrite.updates : {
+          trackingNumber: plannedSource.trackingNumber,
+          trackingNumbers: plannedSource.trackingNumbers,
+          trackingPackages: plannedSource.trackingPackages,
+          trackingDetails: plannedSource.trackingDetails,
+          trackingStatus: plannedSource.trackingStatus,
+          trackingEvents: plannedSource.trackingEvents,
+          trackingLastChecked: plannedSource.trackingLastChecked,
+          trackingShippedItems: plannedSource.trackingShippedItems,
+        }),
         status: "Shipped",
         updatedAt: new Date(),
       };
-      Object.assign(updateFields, reconcileWholesaleTrackingCache(
-        existingTrackingNumbers, trackingNumbers, normalizeWholesaleTrackingDetails(order.trackingDetails),
-      ));
-      if (trackingNumbers.length > 0 && Array.isArray(items) && items.length > 0) {
-        const existing: Record<string, Array<{name: string; qty: number}>> =
-          (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? {};
-        updateFields.trackingShippedItems = {
-          ...existing,
-          ...Object.fromEntries(trackingNumbers.map(number => [number, items])),
-        };
-      }
 
       if (needsUpdate) {
-        await db.update(ordersTable)
+        const applied = await db.update(ordersTable)
           .set(updateFields as any)
-          .where(eq(ordersTable.code, safeCode));
+          .where(and(
+            eq(ordersTable.code, safeCode),
+            unchangedTrackingWriteFields(order),
+          ))
+          .returning({ id: ordersTable.id });
+        if (applied.length === 0) {
+          throw new Error("Tracking was changed by another writer; reload and try again");
+        }
       }
 
-      if (primaryTracking && needsUpdate) {
+      if (finalPrimary && trackingWrite.shouldNotify) {
         const appUrl = process.env["APP_URL"] ?? "https://saltandpeps.co.uk";
 
         let btGbName = "";
@@ -6491,12 +6614,12 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
         const btPaidLabel = order.paymentStatus === "confirmed" ? "Paid" : "Unpaid";
 
         notifyUserFromTemplate(order.telegramUsername, "status", "customer_order_shipped",
-          { code: order.code, gb_name: btGbContext, tracking: primaryTracking, username: order.telegramUsername.replace(/^@/, ""), order_total: String(order.grandTotal), delivery: order.deliveryMethod, payment_status: btPaidLabel, app_url: appUrl },
+          { code: order.code, gb_name: btGbContext, tracking: formatTrackingNumbersForNotification(getTrackingPackages(plannedSource === order ? { ...order, ...trackingWrite.updates } : plannedSource)), username: order.telegramUsername.replace(/^@/, ""), order_total: String(order.grandTotal), delivery: order.deliveryMethod, payment_status: btPaidLabel, app_url: appUrl },
           {
             inline_keyboard: [
               [
                 { text: "📦 View Order", url: `${appUrl}/account?s=orders` },
-                { text: "🚚 Track →", url: `https://t.17track.net/en#nums=${trackingNumbers.map(encodeURIComponent).join(",")}` },
+                { text: "🚚 Track →", url: `https://t.17track.net/en#nums=${finalNumbers.map(encodeURIComponent).join(",")}` },
               ],
             ],
           },
@@ -6505,19 +6628,19 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
         ;(async () => {
           try {
             const [acct] = await db.select({ email: accountsTable.email }).from(accountsTable).where(eq(accountsTable.telegramUsername, order.telegramUsername));
-            if (acct?.email && primaryTracking) {
+            if (acct?.email && finalPrimary) {
               const { sendTemplatedEmail } = await import("../lib/email.js");
               await sendTemplatedEmail("order_shipped", acct.email, {
                 order_id: order.code,
-                tracking_number: primaryTracking,
-                tracking_url: `https://t.17track.net/en#nums=${trackingNumbers.map(encodeURIComponent).join(",")}`,
+                tracking_number: finalPrimary,
+                tracking_url: `https://t.17track.net/en#nums=${finalNumbers.map(encodeURIComponent).join(",")}`,
               });
             }
           } catch {}
         })().catch(() => {});
       }
 
-      results.push({ code: safeCode, trackingNumber: primaryTracking, ok: true });
+      results.push({ code: safeCode, trackingNumber: finalPrimary, ok: true });
     } catch (err: any) {
       results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: err?.message ?? "Unknown error" });
     }
@@ -10592,6 +10715,7 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         telegramUsername: ordersTable.telegramUsername,
         trackingNumber: ordersTable.trackingNumber,
         trackingNumbers: ordersTable.trackingNumbers,
+        trackingPackages: ordersTable.trackingPackages,
         paymentStatus: ordersTable.paymentStatus,
         shippingName: ordersTable.shippingName,
         shippingAddress: ordersTable.shippingAddress,
@@ -10604,18 +10728,24 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
         trackingStatus: ordersTable.trackingStatus,
         trackingEvents: ordersTable.trackingEvents,
         trackingLastChecked: ordersTable.trackingLastChecked,
+        trackingDetails: ordersTable.trackingDetails,
       })
       .from(ordersTable)
       .where(and(eq(ordersTable.orderType, "wholesale"), isNull(ordersTable.deletedAt)))
       .orderBy(desc(ordersTable.createdAt));
 
-    const wholesaleOrdersResult = wholesaleOrders.map(o => ({
+    const wholesaleOrdersResult = wholesaleOrders.map(o => {
+      const trackingPackageViews = projectTrackingPackages(o);
+      return {
       code: o.code,
       telegramUsername: o.telegramUsername,
       trackingNumbers: [
         ...(o.trackingNumber ? [o.trackingNumber] : []),
         ...((o.trackingNumbers ?? []).filter((t: string) => t !== o.trackingNumber)),
       ],
+      trackingPackages: getTrackingPackages(o),
+      trackingPackageViews,
+      packageTrackingStatus: getOrderTrackingStatus(trackingPackageViews),
       paymentStatus: o.paymentStatus,
       shippingName: o.shippingName ?? null,
       shippingAddress: o.shippingAddress ?? null,
@@ -10628,7 +10758,8 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
       trackingStatus: o.trackingStatus ?? null,
       trackingEvents: (o.trackingEvents ?? []) as Array<{ date: string; status: string; location: string }>,
       trackingLastChecked: o.trackingLastChecked ? (o.trackingLastChecked as Date).toISOString() : null,
-    }));
+      };
+    });
 
     if (shares.length === 0) { res.json({ shares: [], wholesaleOrders: wholesaleOrdersResult }); return; }
 

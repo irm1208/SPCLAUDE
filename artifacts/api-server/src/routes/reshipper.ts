@@ -22,6 +22,8 @@ import { refreshSingleGbParcel } from "../lib/tracking-auto-refresh";
 import { requireReshipper, verifyReshipperAssignment } from "../middleware/require-reshipper";
 import { writeLog } from "../lib/audit-log";
 import { sendTelegramMessage, sendTelegramMessageFull, sendAdminFromTemplate, getTemplate, renderTemplate } from "../lib/telegram";
+import { prepareTrackingWrite } from "../lib/tracking-write";
+import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 
 const router: IRouter = Router();
 
@@ -717,7 +719,20 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   }
 
   const [existing] = await db
-    .select({ id: ordersTable.id, status: ordersTable.status })
+    .select({
+      id: ordersTable.id,
+      status: ordersTable.status,
+      trackingNumber: ordersTable.trackingNumber,
+      trackingNumbers: ordersTable.trackingNumbers,
+      trackingPackages: ordersTable.trackingPackages,
+      trackingDetails: ordersTable.trackingDetails,
+      trackingStatus: ordersTable.trackingStatus,
+      trackingEvents: ordersTable.trackingEvents,
+      trackingLastChecked: ordersTable.trackingLastChecked,
+      trackingShippedItems: ordersTable.trackingShippedItems,
+      orderType: ordersTable.orderType,
+      sharedOrderId: ordersTable.sharedOrderId,
+    })
     .from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
 
@@ -726,7 +741,7 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   // Reshippers may only update: shipping address/name/city/postcode, order status
   // transitions, tracking number, and QR codes. Payment status, admin messages, and pricing
   // remain admin/organiser-only. Each field group is gated by its GB-level permission flag.
-  const { shippingName, shippingAddress, shippingCity, shippingPostcode, status, trackingNumber, trackingNumbers, inpostQrCode, royalMailQrCode } = req.body;
+  const { shippingName, shippingAddress, shippingCity, shippingPostcode, status, trackingNumber, trackingNumbers, trackingPackages, expectedTrackingSnapshot, inpostQrCode, royalMailQrCode } = req.body;
 
   // Uses the real codebase status values: Draft → Submitted → Processing → Shipped → Completed/Cancelled
   const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -739,6 +754,7 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   };
 
   const updates: Record<string, unknown> = {};
+  let trackingWrite: ReturnType<typeof prepareTrackingWrite> | null = null;
 
   if (gbPerms.reshipperCanEditAddress !== false) {
     if (shippingName !== undefined) updates.shippingName = shippingName ? String(shippingName).trim() : null;
@@ -747,14 +763,15 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
     if (shippingPostcode !== undefined) updates.shippingPostcode = shippingPostcode ? String(shippingPostcode).trim() : null;
   }
   if (gbPerms.reshipperCanEditTracking !== false) {
-    if (trackingNumbers !== undefined) {
-      const cleaned = Array.isArray(trackingNumbers)
-        ? (trackingNumbers as unknown[]).filter(v => typeof v === "string" && (v as string).trim()).map(v => (v as string).trim().slice(0, 200)).slice(0, 20)
-        : [];
-      updates.trackingNumbers = cleaned.length ? cleaned : null;
-      updates.trackingNumber = cleaned[0] ?? null;
-    } else if (trackingNumber !== undefined) {
-      updates.trackingNumber = trackingNumber ? String(trackingNumber).trim() : null;
+    if (trackingPackages !== undefined || trackingNumbers !== undefined || trackingNumber !== undefined) {
+      try {
+        trackingWrite = prepareTrackingWrite(existing, { trackingPackages, trackingNumbers, trackingNumber, expectedTrackingSnapshot });
+        Object.assign(updates, trackingWrite.updates);
+      } catch (error) {
+        res.status(error instanceof Error && /another writer/.test(error.message) ? 409 : 400)
+          .json({ error: error instanceof Error ? error.message : "Invalid tracking update" });
+        return;
+      }
     }
     for (const [field, value] of [["inpostQrCode", inpostQrCode], ["royalMailQrCode", royalMailQrCode]] as const) {
       if (value !== undefined) {
@@ -787,8 +804,15 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   const [updated] = await db
     .update(ordersTable)
     .set(updates)
-    .where(eq(ordersTable.id, orderId))
+    .where(trackingWrite ? and(
+      eq(ordersTable.id, orderId),
+      unchangedTrackingWriteFields(existing),
+    ) : eq(ordersTable.id, orderId))
     .returning();
+  if (!updated) {
+    res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
+    return;
+  }
 
   res.json(updated);
 });

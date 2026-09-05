@@ -4,12 +4,12 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Search, Clock, CheckCircle2, AlertTriangle, Truck, ExternalLink,
-  ChevronRight, RefreshCw, XCircle, Bell, BellOff, ArrowLeft, Loader2, Link2, Info
+  ChevronRight, XCircle, Bell, BellOff, ArrowLeft, Loader2, Info
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { useAccount, useAccountOrderDetail, useWholesaleTracking, useUpdateWholesaleTrackingPrefs, type WholesaleTrackingOrder, type WholesaleTrackingParcel } from "@/hooks/use-account";
-import { useThemeStore } from "@/hooks/use-theme";
-import { formatOrderMoney, getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, normalizeTrackingParcels, resolveOrderCurrency, trackingHistoryId } from "./wholesale-tracking-model";
+import type { TrackingLeg, TrackingPackageView } from "@workspace/shipping/tracking";
+import { formatOrderMoney, getLatestTrackingEvent, formatSafeDateTime, formatSafeTimeAgo, getTrackingPackageViews, getTrackingOrderStatus, normalizeTrackingParcels, resolveOrderCurrency, trackingHistoryId } from "./wholesale-tracking-model";
 
 const ATTENTION_STATUSES = [
   "redirected",
@@ -31,6 +31,7 @@ function getStatusInfo(status: string | null | undefined) {
   const s = status.toLowerCase();
 
   if (s === "delivered") return { label: "Delivered", color: "#16A34A", bg: "rgba(22,163,74,0.1)", icon: CheckCircle2 };
+  if (s === "awaiting_local") return { label: "Awaiting local delivery", color: "#D97706", bg: "rgba(217,119,6,0.1)", icon: Clock };
   if (isAttentionNeeded(s)) return { label: "Attention Needed", color: "#DC2626", bg: "rgba(220,38,38,0.1)", icon: AlertTriangle };
   return { label: "In Transit", color: "var(--t-blue)", bg: "var(--t-blue-10)", icon: Truck };
 }
@@ -54,19 +55,23 @@ export default function WholesaleTracking() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
+      const status = getTrackingOrderStatus(o);
       if (filter === "All") return true;
-      if (filter === "In transit") return !isAttentionNeeded(o.trackingStatus) && o.trackingStatus?.toLowerCase() !== "delivered";
-      if (filter === "Attention needed") return isAttentionNeeded(o.trackingStatus);
-      if (filter === "Delivered") return o.trackingStatus && o.trackingStatus.toLowerCase() === "delivered";
+      if (filter === "In transit") return !isAttentionNeeded(status) && status?.toLowerCase() !== "delivered";
+      if (filter === "Attention needed") return isAttentionNeeded(status);
+      if (filter === "Delivered") return status?.toLowerCase() === "delivered";
       return true;
     });
   }, [orders, filter]);
 
   const counts = useMemo(() => ({
     all: orders.length,
-    inTransit: orders.filter(o => !isAttentionNeeded(o.trackingStatus) && o.trackingStatus?.toLowerCase() !== "delivered").length,
-    attention: orders.filter(o => isAttentionNeeded(o.trackingStatus)).length,
-    delivered: orders.filter(o => o.trackingStatus && o.trackingStatus.toLowerCase() === "delivered").length,
+    inTransit: orders.filter(o => {
+      const status = getTrackingOrderStatus(o);
+      return !isAttentionNeeded(status) && status?.toLowerCase() !== "delivered";
+    }).length,
+    attention: orders.filter(o => isAttentionNeeded(getTrackingOrderStatus(o))).length,
+    delivered: orders.filter(o => getTrackingOrderStatus(o)?.toLowerCase() === "delivered").length,
   }), [orders]);
 
   if (accountLoading || (dataLoading && !data)) {
@@ -102,9 +107,9 @@ export default function WholesaleTracking() {
 
   return (
     <PageLayout>
-      <div className="max-w-4xl mx-auto px-4 py-6 md:py-10 pb-32">
-        <div className="flex items-center justify-between mb-8">
-          <div>
+      <div className="w-full min-w-0 max-w-4xl mx-auto px-4 py-6 md:py-10 pb-32">
+        <div className="flex flex-col sm:flex-row items-start sm:justify-between gap-4 mb-8">
+          <div className="min-w-0">
             <button onClick={() => setLocation("/account")} className="flex items-center gap-1.5 text-sm font-semibold mb-3 transition-opacity hover:opacity-70" style={{ color: "var(--t-muted)" }}>
               <ArrowLeft className="w-4 h-4" />
               Back
@@ -113,14 +118,14 @@ export default function WholesaleTracking() {
             <p className="text-sm mt-1" style={{ color: "var(--t-subtle)" }}>Direct Wholesale Tracking</p>
           </div>
 
-          <div className="flex flex-col items-end gap-2 text-right">
+          <div className="flex w-full sm:w-auto flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-2 text-left sm:text-right">
             <button
               role="switch"
               aria-checked={data?.alertsEnabled ?? false}
               aria-label="Wholesale tracking alerts"
               onClick={() => updatePrefs.mutate(!data?.alertsEnabled)}
               disabled={updatePrefs.isPending}
-              className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 rounded-xl border transition-all active:scale-95 disabled:opacity-50"
+              className="flex shrink-0 items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 rounded-xl border transition-all active:scale-95 disabled:opacity-50"
               style={{
                 background: data?.alertsEnabled ? "var(--t-blue-10)" : "var(--t-surface)",
                 borderColor: data?.alertsEnabled ? "var(--t-blue-20)" : "var(--t-border)",
@@ -133,7 +138,7 @@ export default function WholesaleTracking() {
                 {data?.alertsEnabled ? "Alerts Enabled" : "Alerts Off"}
               </span>
             </button>
-            <p className="text-[11px] max-w-[200px]" style={{ color: "var(--t-subtle)" }}>
+            <p className="min-w-0 text-[11px] sm:max-w-[200px]" style={{ color: "var(--t-subtle)" }}>
               When enabled, updates appear in your in-app feed and linked Telegram or Discord.
             </p>
           </div>
@@ -155,7 +160,7 @@ export default function WholesaleTracking() {
         ) : (
           <>
             {/* Filters */}
-            <div className="flex overflow-x-auto gap-2 mb-6 pb-2 no-scrollbar">
+            <div className="flex flex-wrap gap-2 mb-6 pb-2">
               {(["All", "In transit", "Attention needed", "Delivered"] as const).map(f => {
                 const isActive = filter === f;
                 const count = f === "All" ? counts.all : f === "In transit" ? counts.inTransit : f === "Attention needed" ? counts.attention : counts.delivered;
@@ -164,7 +169,7 @@ export default function WholesaleTracking() {
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all"
                     style={{
                       background: isActive ? "var(--t-text)" : "var(--t-surface)",
                       color: isActive ? "var(--t-surface)" : "var(--t-muted)",
@@ -210,8 +215,8 @@ export default function WholesaleTracking() {
 }
 
 function OrderTrackingCard({ order, onOrderDetails }: { order: WholesaleTrackingOrder, onOrderDetails: () => void }) {
-  const { label, color, bg, icon: StatusIcon } = getStatusInfo(order.trackingStatus);
-  const parcels = normalizeTrackingParcels(order);
+  const packageViews = getTrackingPackageViews(order);
+  const { label, color, bg, icon: StatusIcon } = getStatusInfo(getTrackingOrderStatus({ ...order, trackingPackageViews: packageViews }));
 
   return (
     <motion.div
@@ -224,9 +229,9 @@ function OrderTrackingCard({ order, onOrderDetails }: { order: WholesaleTracking
     >
       <div className="p-5">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <span className="font-mono text-sm font-bold tracking-tight bg-slate-100 px-2 py-0.5 rounded-md" style={{ color: "var(--t-text)", background: "var(--t-bg)" }}>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+              <span className="min-w-0 break-all font-mono text-sm font-bold tracking-tight bg-slate-100 px-2 py-0.5 rounded-md" style={{ color: "var(--t-text)", background: "var(--t-bg)" }}>
                 #{order.code}
               </span>
               <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ color, background: bg }}>
@@ -236,21 +241,9 @@ function OrderTrackingCard({ order, onOrderDetails }: { order: WholesaleTracking
             </div>
 
             <div className="flex flex-wrap gap-2 mt-2.5">
-              {order.trackingNumbers.map(tn => (
-                <a
-                  key={tn}
-                  href={`https://t.17track.net/en#nums=${encodeURIComponent(tn)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1.5 rounded-lg border transition-colors hover:bg-slate-50"
-                  style={{ color: "var(--t-blue)", borderColor: "var(--t-blue-20)", background: "var(--t-blue-03)" }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <Truck className="w-3.5 h-3.5 opacity-70" />
-                  {tn}
-                  <ExternalLink className="w-3 h-3 opacity-50" />
-                </a>
-              ))}
+              <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>
+                {packageViews.length} physical {packageViews.length === 1 ? "package" : "packages"}
+              </span>
             </div>
           </div>
 
@@ -267,10 +260,56 @@ function OrderTrackingCard({ order, onOrderDetails }: { order: WholesaleTracking
         </div>
 
         <div className="space-y-3 mt-2">
-          {parcels.map(parcel => <TrackingParcelRow key={parcel.trackingNumber} orderId={order.id} parcel={parcel} />)}
+          {packageViews.length > 0
+            ? packageViews.map((pkg, index) => <TrackingPackageCard key={pkg.id} orderId={order.id} packageView={pkg} index={index} />)
+            : normalizeTrackingParcels(order).map(parcel => <TrackingParcelRow key={parcel.trackingNumber} orderId={order.id} parcel={parcel} />)}
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function TrackingPackageCard({ orderId, packageView, index }: { orderId: string; packageView: TrackingPackageView; index: number }) {
+  const statusInfo = getStatusInfo(packageView.status);
+  return (
+    <section className="rounded-xl p-3 sm:p-4 space-y-3" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 break-words">
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Package {index + 1}</p>
+          <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>{packageView.courier === "bmurfs" ? "BMURFS Express" : packageView.courier}</p>
+        </div>
+        <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ color: statusInfo.color, background: statusInfo.bg }}>{statusInfo.label}</span>
+      </div>
+      <TrackingLegRow orderId={orderId} packageId={packageView.id} label="International" leg={packageView.international} />
+      {packageView.local
+        ? <TrackingLegRow orderId={orderId} packageId={packageView.id} label="Local courier" leg={packageView.local} />
+        : packageView.waitingForLocal && (
+          <div className="rounded-lg px-3 py-3 flex items-center gap-2" style={{ border: "1px dashed rgba(217,119,6,0.4)", color: "#D97706" }}>
+            <Clock className="w-4 h-4 shrink-0" />
+            <span className="text-xs font-semibold">Awaiting local courier tracking number</span>
+          </div>
+        )}
+    </section>
+  );
+}
+
+function TrackingLegRow({ orderId, packageId, label, leg }: { orderId: string; packageId: string; label: string; leg: TrackingLeg }) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>{label}</span>
+        <a
+          href={`https://t.17track.net/en#nums=${encodeURIComponent(leg.trackingNumber)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs font-mono font-bold"
+          style={{ color: "var(--t-blue)" }}
+        >
+          <span className="min-w-0 break-all">{leg.trackingNumber}</span><ExternalLink className="w-3 h-3 shrink-0" />
+        </a>
+      </div>
+      <TrackingParcelRow orderId={`${orderId}-${packageId}-${label}`} parcel={leg} />
+    </div>
   );
 }
 
@@ -287,8 +326,8 @@ function TrackingParcelRow({ orderId, parcel }: { orderId: string; parcel: Whole
   const checkedAgo = formatSafeTimeAgo(parcel.lastChecked);
   return (
     <div className="rounded-xl p-4" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <span className="font-mono text-xs font-bold" style={{ color: "var(--t-blue)" }}>{parcel.trackingNumber}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <span className="min-w-0 break-all font-mono text-xs font-bold" style={{ color: "var(--t-blue)" }}>{parcel.trackingNumber}</span>
         <span className="text-xs font-semibold" style={{ color }}>{label}</span>
       </div>
           {latestEvent ? (

@@ -30,6 +30,14 @@ import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
+import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
+import { TrackingPackageEditor } from "@/components/admin/TrackingPackageEditor";
+import {
+  bindTrackingPackagesDraft,
+  canApplyReviewedShipment,
+  parseBulkTrackingCsv,
+  type BulkTrackingLine,
+} from "@/components/admin/admin-tracking-model";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
@@ -38,6 +46,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
 } from "recharts";
+import { getTrackingPackages, type TrackingPackage, type TrackingPackageView } from "@workspace/shipping/tracking";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -117,6 +126,8 @@ interface Order {
   creditsApplied?: number;
   testingContribution?: number; testVote?: string | null;
   notes: string | null; adminNotes: string | null; adminMessage: string | null; trackingNumber: string | null; trackingNumbers?: string[] | null;
+  trackingPackages?: TrackingPackage[]; trackingPackageViews?: TrackingPackageView[]; packageTrackingStatus?: string | null;
+  trackingSnapshot?: string;
   paymentStatus: string; paymentTxHash: string | null; paymentTxHashes?: string[] | null; testPaymentTxHash?: string | null; paymentTestAmount?: number | null;
   paymentScreenshot: string | null;
   hasPaymentScreenshot?: boolean;
@@ -1502,7 +1513,11 @@ function OrdersTab({ secret }: { secret: string }) {
 
   const saveOrder = async (orderId: string) => {
     setSaving(orderId);
-    const patch = editing[orderId] || {};
+    const patch = { ...(editing[orderId] || {}) };
+    if (Object.prototype.hasOwnProperty.call(patch, "trackingPackages")) {
+      delete patch.trackingNumber;
+      delete patch.trackingNumbers;
+    }
     try {
       const res = await fetch(apiUrl(`/admin/orders/${orderId}`), {
         method: "PATCH",
@@ -1511,7 +1526,9 @@ function OrdersTab({ secret }: { secret: string }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setMsg(data.error || "Save failed");
+        setMsg(res.status === 409
+          ? (data.error || "Tracking changed elsewhere. Reload before saving again.")
+          : (data.error || "Save failed"));
         setTimeout(() => setMsg(""), 3000);
         setSaving(null);
         return;
@@ -1525,6 +1542,12 @@ function OrdersTab({ secret }: { secret: string }) {
 
   const updateEdit = (orderId: string, field: string, value: any) =>
     setEditing(prev => ({ ...prev, [orderId]: { ...(prev[orderId] ?? {}), [field]: value } }));
+
+  const updateTrackingPackages = (order: Order, packages: TrackingPackage[]) =>
+    setEditing(prev => ({
+      ...prev,
+      [order.id]: bindTrackingPackagesDraft(prev[order.id] ?? {}, packages, order.trackingSnapshot),
+    }));
 
   const startEditItems = async (order: Order) => {
     let products = catalogProducts;
@@ -3719,35 +3742,12 @@ function OrdersTab({ secret }: { secret: string }) {
                           )}
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Tracking Numbers</Label>
-                          {(() => {
-                            const vals: string[] = (ed as any).trackingNumbers !== undefined
-                              ? ((ed as any).trackingNumbers as string[] ?? [])
-                              : (order.trackingNumbers?.length ? order.trackingNumbers : (order.trackingNumber ? [order.trackingNumber] : [""]));
-                            return (
-                              <div className="space-y-1">
-                                {vals.map((v, i) => (
-                                  <div key={i} className="flex gap-1">
-                                    <Input className="h-9 text-sm font-mono flex-1" placeholder={i === 0 ? "e.g. AB123456789GB" : "Additional tracking…"}
-                                      value={v}
-                                      onChange={e => { const n = [...vals]; n[i] = e.target.value; updateEdit(order.id, "trackingNumbers" as any, n); }} />
-                                    {vals.length > 1 && (
-                                      <button type="button" className="h-9 w-9 rounded-lg border border-input flex items-center justify-center text-muted-foreground hover:text-red-500 transition-colors"
-                                        onClick={() => updateEdit(order.id, "trackingNumbers" as any, vals.filter((_, j) => j !== i))}>
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                                {vals.length < 10 && (
-                                  <button type="button" className="flex items-center gap-1 text-[11px] text-primary hover:underline"
-                                    onClick={() => updateEdit(order.id, "trackingNumbers" as any, [...vals, ""])}>
-                                    <Plus className="w-3 h-3" /> Add tracking number
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })()}
+                          <Label className="text-xs">Physical Packages</Label>
+                          <p className="text-[11px] text-muted-foreground">BMURFS international and local numbers belong to one package. Pairing is never inferred.</p>
+                          <TrackingPackageEditor
+                            value={(ed as any).trackingPackages ?? getTrackingPackages(order)}
+                            onChange={packages => updateTrackingPackages(order, packages)}
+                          />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Admin Notes (internal)</Label>
@@ -18411,20 +18411,10 @@ function AccountsTab({ secret }: { secret: string }) {
 }
 
 // ─── Bulk Shipment Tab ────────────────────────────────────────
-interface BulkTrackingLine {
-  code: string;
-  trackingNumber: string;
-  trackingNumbers?: string[];
-  items?: { name: string; qty: number }[];
-}
 interface BulkTrackingResult { code: string; trackingNumber: string; ok: boolean; error?: string }
 
 function parseCsvLines(raw: string): BulkTrackingLine[] {
-  return raw.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
-    const comma = l.indexOf(",");
-    if (comma === -1) return { code: l.trim(), trackingNumber: "" };
-    return { code: l.slice(0, comma).trim(), trackingNumber: l.slice(comma + 1).trim() };
-  });
+  return parseBulkTrackingCsv(raw);
 }
 
 // ── AI Paste types ──────────────────────────────────────────────────────────
@@ -18434,7 +18424,9 @@ interface AiMatchResult   {
   orderId: string; orderCode: string; telegramUsername: string;
   shippingName: string | null; shippingPostcode: string | null;
   shippingCountry: string | null; shippingAddress: string | null;
-  currentTrackingNumber: string | null; grandTotal: string; groupBuyId: string | null; status?: string;
+  currentTrackingNumber: string | null; currentTrackingNumbers?: string[]; currentTrackingPackages?: TrackingPackage[];
+  currentTrackingSnapshot?: string;
+  grandTotal: string; groupBuyId: string | null; status?: string;
   lineItems: { productName: string; quantity: string }[];
   score: number; confidence: "high" | "medium" | "low" | "none";
   matchReasons: string[];
@@ -18442,6 +18434,8 @@ interface AiMatchResult   {
 interface AiShipment {
   id: string; label: string;
   trackingNumbers: string[];
+  trackingPackages?: TrackingPackage[];
+  reviewWarnings?: string[];
   items: AiParsedItem[];
   parsedAddress: AiParsedAddress;
   match: AiMatchResult | null;
@@ -18477,9 +18471,9 @@ function AiPasteMode({ secret }: { secret: string }) {
   const [parsed, setParsed] = useState<AiParseResponse | null>(null);
   // Which shipments are checked (included in apply)
   const [included, setIncluded] = useState<Record<string, boolean>>({});
-  // Per-shipment tracking number overrides, retaining every number extracted
-  // from the dispatch message rather than only the primary one.
-  const [trackingOverrides, setTrackingOverrides] = useState<Record<string, string[]>>({});
+  // Per-shipment package overrides preserve explicit international/local roles.
+  const [trackingOverrides, setTrackingOverrides] = useState<Record<string, TrackingPackage[]>>({});
+  const [acknowledgedWarnings, setAcknowledgedWarnings] = useState<Record<string, boolean>>({});
   // Per-shipment order code overrides (in case admin wants to reassign)
   const [codeOverride, setCodeOverride] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
@@ -18502,10 +18496,11 @@ function AiPasteMode({ secret }: { secret: string }) {
       // Auto-check high+medium matches
       const init: Record<string, boolean> = {};
       for (const s of result.shipments) {
-        init[s.id] = s.match !== null && s.match.confidence !== "none";
+        init[s.id] = s.match !== null && s.match.confidence !== "none" && !(s.reviewWarnings?.length);
       }
       setIncluded(init);
       setTrackingOverrides({});
+      setAcknowledgedWarnings({});
       setCodeOverride({});
       setAppliedShipmentIds({});
     } catch { setParseError("Network error — please try again"); }
@@ -18517,15 +18512,14 @@ function AiPasteMode({ secret }: { secret: string }) {
     const lines: BulkTrackingLine[] = [];
     for (const s of parsed.shipments) {
       if (!included[s.id]) continue;
+      if (!canApplyReviewedShipment(s.reviewWarnings, !!acknowledgedWarnings[s.id])) continue;
       const code = (codeOverride[s.id] ?? s.match?.orderCode ?? "").trim();
       if (!code) continue;
-      const trackingNumbers = (trackingOverrides[s.id] ?? s.trackingNumbers)
-        .map(number => number.trim())
-        .filter(Boolean);
+      const trackingPackages = trackingOverrides[s.id] ?? getTrackingPackages(s);
       lines.push({
         code,
-        trackingNumber: trackingNumbers[0] ?? "",
-        trackingNumbers: trackingNumbers,
+        trackingPackages,
+        expectedTrackingSnapshot: s.match?.currentTrackingSnapshot,
         items: s.items.length > 0 ? s.items : undefined,
       });
     }
@@ -18560,14 +18554,19 @@ function AiPasteMode({ secret }: { secret: string }) {
           ...previous,
           shipments: previous.shipments.map(shipment => {
             const code = (codeOverride[shipment.id] ?? shipment.match?.orderCode ?? "").trim();
-            const trackingNumbers = (trackingOverrides[shipment.id] ?? shipment.trackingNumbers)
-              .map(number => number.trim())
-              .filter(Boolean);
+            const trackingPackages = trackingOverrides[shipment.id] ?? getTrackingPackages(shipment);
             return successfulCodes.has(code) && shipment.match
               ? {
                 ...shipment,
-                trackingNumbers,
-                match: { ...shipment.match, currentTrackingNumber: trackingNumbers[0] ?? null, status: "Shipped" },
+                trackingPackages,
+                match: {
+                  ...shipment.match,
+                  currentTrackingNumber: trackingPackages[0]?.internationalTrackingNumber ?? null,
+                  currentTrackingNumbers: trackingPackages.flatMap(pkg =>
+                    [pkg.internationalTrackingNumber, pkg.localTrackingNumber].filter(Boolean) as string[]),
+                  currentTrackingPackages: trackingPackages,
+                  status: "Shipped",
+                },
               }
               : shipment;
           }),
@@ -18577,7 +18576,9 @@ function AiPasteMode({ secret }: { secret: string }) {
     finally { setApplying(false); }
   };
 
-  const includedCount = parsed ? parsed.shipments.filter(s => included[s.id]).length : 0;
+  const includedCount = parsed ? parsed.shipments.filter(s =>
+    included[s.id] && canApplyReviewedShipment(s.reviewWarnings, !!acknowledgedWarnings[s.id])
+  ).length : 0;
 
   return (
     <div className="space-y-5">
@@ -18634,7 +18635,13 @@ function AiPasteMode({ secret }: { secret: string }) {
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-foreground">Matched Shipments — review before applying</p>
             <div className="flex gap-2">
-              <button onClick={() => { const n: Record<string,boolean> = {}; for (const s of parsed.shipments) n[s.id] = s.match !== null; setIncluded(n); }} className="text-[11px] text-muted-foreground hover:text-foreground">Select all</button>
+              <button onClick={() => {
+                const n: Record<string,boolean> = {};
+                for (const s of parsed.shipments) {
+                  n[s.id] = s.match !== null && canApplyReviewedShipment(s.reviewWarnings, !!acknowledgedWarnings[s.id]);
+                }
+                setIncluded(n);
+              }} className="text-[11px] text-muted-foreground hover:text-foreground">Select reviewed</button>
               <span className="text-[11px] text-muted-foreground">·</span>
               <button onClick={() => setIncluded({})} className="text-[11px] text-muted-foreground hover:text-foreground">Deselect all</button>
             </div>
@@ -18642,7 +18649,7 @@ function AiPasteMode({ secret }: { secret: string }) {
 
           {parsed.shipments.map(s => {
             const isOn = !!included[s.id];
-            const trackingValues = trackingOverrides[s.id] ?? (s.trackingNumbers.length ? s.trackingNumbers : [""]);
+            const trackingValues = trackingOverrides[s.id] ?? getTrackingPackages(s);
             const codeVal = codeOverride[s.id] ?? s.match?.orderCode ?? "";
             return (
               <div
@@ -18655,8 +18662,9 @@ function AiPasteMode({ secret }: { secret: string }) {
                   <input
                     type="checkbox"
                     checked={isOn}
+                    disabled={!!s.reviewWarnings?.length && !acknowledgedWarnings[s.id]}
                     onChange={e => setIncluded(prev => ({ ...prev, [s.id]: e.target.checked }))}
-                    className="mt-0.5 h-4 w-4 rounded shrink-0 cursor-pointer"
+                    className="mt-0.5 h-4 w-4 rounded shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                   />
                   <div className="flex-1 min-w-0 space-y-1.5">
                     {/* Label + confidence */}
@@ -18667,13 +18675,29 @@ function AiPasteMode({ secret }: { secret: string }) {
                         <span className="text-[10px] text-muted-foreground">matched by: {s.match.matchReasons.join(", ")}</span>
                       )}
                     </div>
+                    {s.reviewWarnings && s.reviewWarnings.length > 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[10px] text-amber-800">
+                        {s.reviewWarnings.map(warning => <p key={warning}>{warning}</p>)}
+                        <label className="mt-2 flex cursor-pointer items-start gap-2 font-semibold">
+                          <input type="checkbox" checked={!!acknowledgedWarnings[s.id]}
+                            onChange={event => {
+                              const checked = event.target.checked;
+                              setAcknowledgedWarnings(previous => ({ ...previous, [s.id]: checked }));
+                              if (!checked) setIncluded(previous => ({ ...previous, [s.id]: false }));
+                            }} />
+                          I reviewed this ambiguity and confirm the package roles shown below.
+                        </label>
+                      </div>
+                    )}
 
                     {/* Tracking numbers */}
                     <div className="flex flex-wrap gap-1.5">
-                      {trackingValues.filter(Boolean).map((tn, i) => (
-                        <span key={i} className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700">{tn}</span>
+                      {trackingValues.map((pkg, i) => (
+                        <span key={pkg.id || i} className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                          {pkg.internationalTrackingNumber}{pkg.localTrackingNumber ? ` + local ${pkg.localTrackingNumber}` : ""}
+                        </span>
                       ))}
-                      {trackingValues.every(number => !number) && <span className="text-[11px] text-amber-600 italic">No tracking number extracted</span>}
+                      {trackingValues.length === 0 && <span className="text-[11px] text-amber-600 italic">No tracking number extracted</span>}
                     </div>
 
                     {/* Parsed address */}
@@ -18723,6 +18747,13 @@ function AiPasteMode({ secret }: { secret: string }) {
                           </span>
                         )}
                       </div>
+                      {(s.match.currentTrackingPackages?.length ?? 0) > 0 && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Existing packages: {s.match.currentTrackingPackages!.map(pkg =>
+                            `${pkg.courier}: ${pkg.internationalTrackingNumber}${pkg.localTrackingNumber ? ` + local ${pkg.localTrackingNumber}` : ""}`
+                          ).join(" · ")}
+                        </p>
+                      )}
                       {s.match.lineItems.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {s.match.lineItems.slice(0, 8).map((li, i) => (
@@ -18750,23 +18781,10 @@ function AiPasteMode({ secret }: { secret: string }) {
                           className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
                         />
                       </div>
-                      {trackingValues.map((trackingNumber, index) => (
-                        <div key={`${s.id}-${index}`}>
-                          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-                            Tracking Number {index + 1}{index === 0 ? " (primary)" : ""}
-                          </label>
-                          <input
-                            value={trackingNumber}
-                            onChange={e => setTrackingOverrides(prev => {
-                              const next = [...trackingValues];
-                              next[index] = e.target.value;
-                              return { ...prev, [s.id]: next };
-                            })}
-                            placeholder={s.trackingNumbers[index] ?? "Enter tracking number…"}
-                            className="w-full px-2 py-1.5 rounded-lg border border-input bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
-                          />
-                        </div>
-                      ))}
+                      <div className="sm:col-span-2">
+                        <TrackingPackageEditor compact value={trackingValues}
+                          onChange={packages => setTrackingOverrides(prev => ({ ...prev, [s.id]: packages }))} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -18861,7 +18879,12 @@ function BulkShipmentTab({ secret }: { secret: string }) {
 
   const handleParse = () => {
     setResults(null);
-    setPreview(parseCsvLines(csv));
+    try {
+      setPreview(parseCsvLines(csv));
+    } catch (error) {
+      setPreview([]);
+      setResults([{ code: "—", trackingNumber: "", ok: false, error: error instanceof Error ? error.message : "Invalid CSV" }]);
+    }
   };
 
   const handleApply = async () => {
@@ -18921,7 +18944,11 @@ function BulkShipmentTab({ secret }: { secret: string }) {
         <>
           <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
             <p className="text-xs font-semibold text-foreground">CSV Input</p>
-            <p className="text-[11px] text-muted-foreground">One line per order: <code className="bg-muted rounded px-1">ORDER_CODE,TRACKING_NUMBER</code></p>
+            <p className="text-[11px] text-muted-foreground">
+              Legacy: <code className="bg-muted rounded px-1">ORDER_CODE,TRACKING_NUMBER</code>
+              {" · "}Paired BMURFS: <code className="bg-muted rounded px-1">ORDER_CODE,BMURFS,INTERNATIONAL,LOCAL</code>
+              {" "}(local may be blank). Pairing is only created by the explicit BMURFS label.
+            </p>
             <textarea
               value={csv}
               onChange={e => { setCsv(e.target.value); setPreview([]); setResults(null); }}
@@ -18934,7 +18961,7 @@ function BulkShipmentTab({ secret }: { secret: string }) {
               disabled={!csv.trim()}
               className="h-9 px-4 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
-              Preview ({parseCsvLines(csv).length} lines)
+              Preview ({csv.split(/\r?\n/).filter(line => line.trim()).length} lines)
             </button>
           </div>
 
@@ -18948,7 +18975,11 @@ function BulkShipmentTab({ secret }: { secret: string }) {
                 {preview.map((l, i) => (
                   <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2 bg-slate-50 text-xs font-mono">
                     <span className="font-bold text-foreground">{l.code}</span>
-                    <span className="text-muted-foreground truncate flex-1">{l.trackingNumber || <em className="not-italic text-amber-500">no tracking</em>}</span>
+                    <span className="text-muted-foreground truncate flex-1">
+                      {l.trackingPackages?.map(pkg => `${pkg.internationalTrackingNumber}${pkg.localTrackingNumber ? ` + ${pkg.localTrackingNumber}` : ""}`).join(" · ")
+                        || l.trackingNumber
+                        || <em className="not-italic text-amber-500">no tracking</em>}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -20345,6 +20376,9 @@ type WholesaleIndividualOrder = {
   trackingStatus: string | null;
   trackingEvents: Array<{ date: string; status: string; location: string }>;
   trackingLastChecked: string | null;
+  trackingPackages?: TrackingPackage[];
+  trackingPackageViews?: TrackingPackageView[];
+  packageTrackingStatus?: string | null;
 };
 
 function TrackingStatusPill({ status, code }: { status: string | null; code: number | null }) {
@@ -20406,7 +20440,9 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
     !!s.mainTracking.trackingNumber && !isDelivered(s);
   const isNotShipped = (s: WholesaleTrackingShare) => !s.mainTracking.trackingNumber;
 
-  const woHasTracking = (o: WholesaleIndividualOrder) => o.trackingNumbers.length > 0;
+  const woHasTracking = (o: WholesaleIndividualOrder) =>
+    (o.trackingPackageViews?.length ?? 0) > 0 || o.trackingNumbers.length > 0;
+  const woDelivered = (o: WholesaleIndividualOrder) => o.packageTrackingStatus === "delivered";
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return "—";
@@ -20447,7 +20483,8 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
   const woFiltered = useMemo(() => {
     let list = wholesaleOrders;
     if (filterTab === "not_shipped") list = list.filter(o => !woHasTracking(o));
-    else if (filterTab === "in_transit" || filterTab === "delivered") list = list.filter(o => woHasTracking(o));
+    else if (filterTab === "in_transit") list = list.filter(o => woHasTracking(o) && !woDelivered(o));
+    else if (filterTab === "delivered") list = list.filter(woDelivered);
     if (!search.trim()) return list;
     const q = search.toLowerCase();
     return list.filter(o =>
@@ -20462,7 +20499,8 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
   const woCounts = useMemo(() => ({
     all: wholesaleOrders.length,
     not_shipped: wholesaleOrders.filter(o => !woHasTracking(o)).length,
-    shipped: wholesaleOrders.filter(o => woHasTracking(o)).length,
+    shipped: wholesaleOrders.filter(o => woHasTracking(o) && !woDelivered(o)).length,
+    delivered: wholesaleOrders.filter(woDelivered).length,
   }), [wholesaleOrders]);
 
   // ── pagination ───────────────────────────────────────────────────────────
@@ -20481,14 +20519,16 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
     : [
         { key: "all", label: "All" },
         { key: "not_shipped", label: "Not Shipped" },
-        { key: "in_transit", label: "Shipped" }, // re-use "in_transit" key for wholesale shipped
+        { key: "in_transit", label: "In Transit" },
+        { key: "delivered", label: "Delivered" },
       ];
 
   const getCount = (key: string) => {
     if (typeTab === "shared") return (shareCounts as any)[key] ?? 0;
     if (key === "all") return woCounts.all;
     if (key === "not_shipped") return woCounts.not_shipped;
-    return woCounts.shipped; // in_transit maps to shipped for wholesale
+    if (key === "delivered") return woCounts.delivered;
+    return woCounts.shipped;
   };
 
   return (
@@ -20599,10 +20639,17 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono font-semibold text-sm" style={{ color: "var(--adm-text)" }}>{order.code}</span>
-                        {order.trackingNumbers.length > 0 ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>Shipped</span>
+                        {woHasTracking(order) ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
+                            {order.packageTrackingStatus?.replace(/_/g, " ") ?? "Shipped"}
+                          </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(148,163,184,0.12)", color: "var(--adm-muted)" }}>Not shipped</span>
+                        )}
+                        {(order.trackingPackageViews?.length ?? 0) > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "var(--adm-shell)", color: "var(--adm-muted)" }}>
+                            {order.trackingPackageViews!.length} physical package{order.trackingPackageViews!.length === 1 ? "" : "s"}
+                          </span>
                         )}
                         {order.paymentStatus === "confirmed" || order.paymentStatus === "test_confirmed" ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Paid</span>
@@ -20647,8 +20694,12 @@ function WholesaleTrackingTab({ secret }: { secret: string }) {
                         </div>
                       </div>
 
+                      {order.trackingPackageViews && order.trackingPackageViews.length > 0 && (
+                        <AdminTrackingPackages views={order.trackingPackageViews} status={order.packageTrackingStatus} />
+                      )}
+
                       {/* Tracking numbers with live status + 17track links */}
-                      {order.trackingNumbers.length > 0 && (
+                      {(!order.trackingPackageViews || order.trackingPackageViews.length === 0) && order.trackingNumbers.length > 0 && (
                         <div>
                           <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--adm-muted)" }}>
                             Parcel{order.trackingNumbers.length !== 1 ? "s" : ""} ({order.trackingNumbers.length})

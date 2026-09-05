@@ -5,6 +5,8 @@ import {
   selectWholesaleCompatibilityFields,
   reconcileWholesaleTrackingCache,
   shouldSkipWholesaleRefresh,
+  trackingRefreshCandidates,
+  changedPackageMilestones,
 } from "./tracking-auto-refresh-model";
 
 const prior = {
@@ -66,5 +68,36 @@ describe("direct wholesale parcel refresh model", () => {
     expect(shouldSkipWholesaleRefresh(["FIRST", "SECOND"], {
       FIRST: { ...prior.FIRST, status: "delivered" },
     })).toBe(false);
+  });
+
+  it("refreshes an active local leg even after international delivery", () => {
+    const source = {
+      trackingNumbers: ["FIRST", "SECOND"],
+      trackingPackages: [{ id: "pair", courier: "bmurfs", internationalTrackingNumber: "FIRST", localTrackingNumber: "SECOND" }],
+      trackingDetails: { FIRST: { ...prior.FIRST, status: "delivered" }, SECOND: prior.SECOND },
+    };
+    expect(trackingRefreshCandidates(source, Date.now(), 90 * 60000)).toEqual([{ trackingNumber: "SECOND", carrierCode: 0 }]);
+    expect(trackingRefreshCandidates({ ...source, trackingDetails: {} }, Date.now(), 90 * 60000)).toEqual([
+      { trackingNumber: "FIRST", carrierCode: 190843 }, { trackingNumber: "SECOND", carrierCode: 0 },
+    ]);
+  });
+
+  it("does not refetch a fresh leg just because the other is stale", () => {
+    const now = Date.now();
+    const source = { trackingNumbers: ["FIRST", "SECOND"], trackingDetails: { FIRST: { ...prior.FIRST, lastChecked: new Date(now).toISOString() }, SECOND: prior.SECOND } };
+    expect(trackingRefreshCandidates(source, now, 90 * 60000)).toEqual([{ trackingNumber: "SECOND", carrierCode: 0 }]);
+  });
+
+  it("alerts once for a package milestone, never for international handover", () => {
+    const source = {
+      trackingNumbers: ["FIRST", "SECOND"],
+      trackingPackages: [{ id: "pair", courier: "bmurfs", internationalTrackingNumber: "FIRST", localTrackingNumber: "SECOND" }],
+      trackingDetails: prior,
+    };
+    const handover = { ...prior, FIRST: { ...prior.FIRST, status: "delivered" } };
+    expect(changedPackageMilestones(source, handover)).toEqual([]);
+    const delivered = { ...handover, SECOND: { ...prior.SECOND, status: "delivered" } };
+    expect(changedPackageMilestones({ ...source, trackingDetails: handover }, delivered)).toHaveLength(1);
+    expect(changedPackageMilestones({ ...source, trackingDetails: delivered }, delivered)).toEqual([]);
   });
 });

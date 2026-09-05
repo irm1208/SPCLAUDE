@@ -25,6 +25,7 @@ import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-url";
 import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
 import { getOrderPaymentSummary } from "./order-payment-summary";
+import type { TrackingPackageView } from "@workspace/shipping/tracking";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -35,6 +36,39 @@ function SecIcon({ Icon }: { Icon: React.ElementType }) {
     <span className="flex items-center justify-center shrink-0" style={{ width: 30, height: 30, borderRadius: 10, background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
       <Icon className="w-4 h-4" />
     </span>
+  );
+}
+
+function PairedTrackingSummary({ packages }: { packages: TrackingPackageView[] }) {
+  return (
+    <div className="rounded-lg p-4 sm:p-5 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", color: "var(--t-text)" }}>
+      <div className="flex items-center gap-2">
+        <SecIcon Icon={Truck} />
+        <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>Tracking</span>
+      </div>
+      {packages.map((pkg, index) => (
+        <div key={pkg.id} className="rounded-md p-3 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Package {index + 1} · {pkg.courier === "bmurfs" ? "BMURFS Express" : pkg.courier}</span>
+            <span className="text-[10px] font-bold capitalize" style={{ color: pkg.status === "delivered" ? "#16a34a" : pkg.waitingForLocal ? "#d97706" : "var(--t-blue)" }}>
+              {pkg.waitingForLocal ? "Awaiting local tracking" : (pkg.status ?? "Pending").replaceAll("_", " ")}
+            </span>
+          </div>
+          {([
+            ["International", pkg.international],
+            ["Local courier", pkg.local],
+          ] as const).map(([label, leg]) => leg ? (
+            <div key={label} className="flex items-start justify-between gap-3">
+              <span className="text-xs font-semibold shrink-0" style={{ color: "var(--t-muted)" }}>{label}</span>
+              <a href={`https://t.17track.net/en#nums=${encodeURIComponent(leg.trackingNumber)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono font-bold text-xs text-right break-all" style={{ color: "var(--t-blue)" }}>
+                {leg.trackingNumber}<ExternalLink className="w-3 h-3 shrink-0" />
+              </a>
+            </div>
+          ) : null)}
+          {pkg.waitingForLocal && !pkg.local && <p className="text-xs font-semibold" style={{ color: "#d97706" }}>Local courier number will appear after handover.</p>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -142,6 +176,8 @@ interface OrderDetail {
   status: string;
   adminMessage: string | null;
   trackingNumber: string | null;
+  trackingPackageViews?: TrackingPackageView[];
+  packageTrackingStatus?: string | null;
   trackingShippedItems?: Record<string, Array<{name: string; qty: number}>> | null;
   shippingCarrier?: string | null;
   paymentStatus: string;
@@ -2529,8 +2565,12 @@ export default function AccountOrderDetail() {
                         </div>
                       )}
 
+                      {order.orderType !== "wholesale_shared" && order.trackingPackageViews?.length
+                        ? <PairedTrackingSummary packages={order.trackingPackageViews} />
+                        : null}
+
                       {/* Direct / wholesale tracking number — parcel card style */}
-                      {order.trackingNumber && (() => {
+                      {(order.orderType === "wholesale_shared" || !order.trackingPackageViews?.length) && order.trackingNumber && (() => {
                         // Compute per-item shipped qty across ALL tracking numbers
                         const shippedMap: Record<string, number> = {};
                         const tsiMap = order.trackingShippedItems ?? {};

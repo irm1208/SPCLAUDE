@@ -13,6 +13,14 @@ import { refreshSingleGbParcel, fetchTrackingEventsForNumber } from "../lib/trac
 import { toggleWholesaleTrackingPreference } from "../lib/wholesale-tracking";
 import { GoogleGenAI } from "../lib/google-genai";
 import { callSageAI } from "../lib/sage-ai";
+import { projectTrackingPackages } from "@workspace/shipping/tracking";
+import {
+  decodeWholesaleTrackingCallback,
+  encodeWholesaleTrackingCallback,
+  escapeTelegramHtml,
+  formatTrackingHistory,
+  formatTrackingPackagePage,
+} from "../lib/telegram-package-tracking";
 
 const router: IRouter = Router();
 const appUrl = (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(/\/+$/, "");
@@ -1940,7 +1948,15 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
             tip: ordersTable.tip,
             paymentStatus: ordersTable.paymentStatus,
             trackingNumber: ordersTable.trackingNumber,
+             trackingPackages: ordersTable.trackingPackages,
+             trackingNumbers: ordersTable.trackingNumbers,
+             trackingStatus: ordersTable.trackingStatus,
+             trackingEvents: ordersTable.trackingEvents,
+             trackingLastChecked: ordersTable.trackingLastChecked,
+             trackingDetails: ordersTable.trackingDetails,
             groupBuyId: ordersTable.groupBuyId,
+             sharedOrderId: ordersTable.sharedOrderId,
+             orderType: ordersTable.orderType,
             gbName: groupBuysTable.name,
             gbCurrency: groupBuysTable.currency,
             adminMessage: ordersTable.adminMessage,
@@ -1982,7 +1998,11 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           ? "Paid" : order.paymentStatus === "pending_confirmation" ? "Pending Review"
           : order.paymentStatus === "rejected" ? "Rejected" : "Unpaid";
         const gbLine = (order.gbName ?? order.groupBuyId) ? `\n🛒 <b>Group Buy:</b> ${order.gbName ?? order.groupBuyId}` : "";
-        const trackingLine = order.trackingNumber ? `\n📮 <b>Tracking:</b> <code>${order.trackingNumber}</code>` : "";
+        const structuredTracking = Array.isArray(order.trackingPackages) && order.orderType !== "wholesale_shared";
+        const orderTrackingViews = structuredTracking ? projectTrackingPackages(order) : [];
+        const trackingLine = !structuredTracking && order.trackingNumber
+          ? `\n📮 <b>Tracking:</b> <code>${escapeTelegramHtml(order.trackingNumber)}</code>`
+          : "";
         const messageLine = order.adminMessage ? `\n\n💬 <i>${order.adminMessage}</i>` : "";
 
         const itemLines = lineItems.map(li => {
@@ -2000,14 +2020,156 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           `${trackingLine}` +
           `${messageLine}`;
 
+        if (orderTrackingViews.length) {
+          const trackingPageCount = orderTrackingViews.length;
+          for (let page = 0; page < trackingPageCount; page++) {
+            await sendTelegramMessage(cbChatId, formatTrackingPackagePage(order.code, orderTrackingViews, page, 1).text, "HTML");
+          }
+        }
+
+        const detailKeyboard: { text: string; url?: string; callback_data?: string }[][] = [];
+        if (order.orderType === "wholesale" && order.groupBuyId === null && order.sharedOrderId === null && orderTrackingViews.length) {
+          detailKeyboard.push([{ text: "🚚 Tracking details", callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: 0 }) }]);
+        }
+        detailKeyboard.push(
+          [{ text: "⬅️ Back to Orders", callback_data: "mn:orders" }],
+          [{ text: "🌐 Manage Order", url: `${appUrl}/account/orders/${order.id}` }],
+        );
         await sendTelegramMessageFull(cbChatId, msg, "HTML", undefined, {
           reply_markup: {
-            inline_keyboard: [
-              [{ text: "⬅️ Back to Orders", callback_data: "mn:orders" }],
-              [{ text: "🌐 Manage Order", url: `${appUrl}/account/orders/${order.id}` }],
-            ],
+            inline_keyboard: detailKeyboard,
           },
         });
+        res.json({ ok: true }); return;
+      }
+
+      // ── Direct wholesale package tracking ──────────────────────────────────
+      if (action.startsWith("wtl:") || action.startsWith("wtd:") || action.startsWith("wth:")) {
+        if (!linked) {
+          const { template: notLinkedTpl } = await getTemplate("bot_not_linked");
+          await sendTelegramMessage(cbChatId, notLinkedTpl, "HTML");
+          res.json({ ok: true }); return;
+        }
+        const callback = decodeWholesaleTrackingCallback(cbData);
+        if (!callback) {
+          await sendTelegramMessage(cbChatId, "Invalid tracking request.", "HTML");
+          res.json({ ok: true }); return;
+        }
+        const trackingUsername = linked.telegramUsername.replace(/^@/, "").toLowerCase();
+        const trackingSelection = {
+          id: ordersTable.id,
+          code: ordersTable.code,
+          trackingNumber: ordersTable.trackingNumber,
+          trackingPackages: ordersTable.trackingPackages,
+          trackingNumbers: ordersTable.trackingNumbers,
+          trackingStatus: ordersTable.trackingStatus,
+          trackingEvents: ordersTable.trackingEvents,
+          trackingLastChecked: ordersTable.trackingLastChecked,
+          trackingDetails: ordersTable.trackingDetails,
+        };
+        const directWholesaleScope = [
+          sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${trackingUsername}`,
+          eq(ordersTable.orderType, "wholesale"),
+          isNull(ordersTable.groupBuyId),
+          isNull(ordersTable.sharedOrderId),
+          isNull(ordersTable.deletedAt),
+        ] as const;
+
+        if (callback.kind === "list") {
+          const rows = await db.select(trackingSelection)
+            .from(ordersTable)
+            .where(and(...directWholesaleScope))
+            .orderBy(desc(ordersTable.createdAt));
+          const tracked = rows
+            .map(order => ({ order, views: projectTrackingPackages(order) }))
+            .filter(entry => entry.views.length > 0);
+          const pageSize = 8;
+          const pageCount = Math.max(1, Math.ceil(tracked.length / pageSize));
+          const page = Math.min(pageCount - 1, Math.max(0, callback.page));
+          const visible = tracked.slice(page * pageSize, page * pageSize + pageSize);
+          const keyboard: { text: string; callback_data: string }[][] = visible.map(({ order, views }) => [{
+            text: `📮 ${order.code} · ${views.length} package${views.length === 1 ? "" : "s"}`,
+            callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: 0 }),
+          }]);
+          const nav: { text: string; callback_data: string }[] = [];
+          if (page > 0) nav.push({ text: "⬅️ Previous", callback_data: encodeWholesaleTrackingCallback({ kind: "list", page: page - 1 }) });
+          if (page + 1 < pageCount) nav.push({ text: "Next ➡️", callback_data: encodeWholesaleTrackingCallback({ kind: "list", page: page + 1 }) });
+          if (nav.length) keyboard.push(nav);
+          keyboard.push([{ text: "⬅️ Back to Tracking", callback_data: "mn:tracking" }]);
+          await sendTelegramMessageFull(
+            cbChatId,
+            `📮 <b>Wholesale tracking</b>\n\n${tracked.length ? `Select an order.\n\nPage ${page + 1}/${pageCount}` : "<i>No tracked wholesale orders.</i>"}`,
+            "HTML", undefined, { reply_markup: { inline_keyboard: keyboard } },
+          );
+          res.json({ ok: true }); return;
+        }
+
+        const [order] = await db.select(trackingSelection)
+          .from(ordersTable)
+          .where(and(
+            ...directWholesaleScope,
+            eq(ordersTable.id, callback.orderCode),
+          ))
+          .limit(1);
+        if (!order) {
+          await sendTelegramMessage(cbChatId, "Tracking order not found.", "HTML");
+          res.json({ ok: true }); return;
+        }
+        const views = projectTrackingPackages(order);
+
+        if (callback.kind === "detail") {
+          const detail = formatTrackingPackagePage(order.code, views, callback.page, 1);
+          const keyboard: { text: string; url?: string; callback_data?: string }[][] = [];
+          for (const ref of detail.history) {
+            const roleLabel = ref.role === "local" ? "Local" : "International";
+            keyboard.push([{
+              text: `📋 Package ${ref.packageIndex + 1} ${roleLabel} history`,
+              callback_data: encodeWholesaleTrackingCallback({
+                kind: "history",
+                orderCode: order.id,
+                packageIndex: ref.packageIndex,
+                role: ref.role,
+                page: 0,
+              }),
+            }]);
+          }
+          const firstIndex = detail.page;
+          for (let index = firstIndex; index < Math.min(views.length, firstIndex + 1); index++) {
+            const pkg = views[index]!;
+            keyboard.push([{ text: `🌐 Package ${index + 1} International`, url: `https://t.17track.net/en#nums=${encodeURIComponent(pkg.international.trackingNumber)}` }]);
+            if (pkg.local) keyboard.push([{ text: `🌐 Package ${index + 1} Local courier`, url: `https://t.17track.net/en#nums=${encodeURIComponent(pkg.local.trackingNumber)}` }]);
+          }
+          const nav: { text: string; callback_data: string }[] = [];
+          if (detail.hasPrevious) nav.push({ text: "⬅️ Previous", callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: detail.page - 1 }) });
+          if (detail.hasNext) nav.push({ text: "Next ➡️", callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: detail.page + 1 }) });
+          if (nav.length) keyboard.push(nav);
+          keyboard.push([{ text: "⬅️ Wholesale orders", callback_data: encodeWholesaleTrackingCallback({ kind: "list", page: 0 }) }]);
+          await sendTelegramMessageFull(cbChatId, detail.text, "HTML", undefined, { reply_markup: { inline_keyboard: keyboard } });
+          res.json({ ok: true }); return;
+        }
+
+        const pkg = views[callback.packageIndex];
+        if (!pkg || (callback.role === "local" && !pkg.local)) {
+          await sendTelegramMessage(cbChatId, "Tracking history not found.", "HTML");
+          res.json({ ok: true }); return;
+        }
+        const history = formatTrackingHistory(order.code, pkg, callback.packageIndex, callback.role, callback.page, 5);
+        const historyKeyboard: { text: string; callback_data: string }[][] = [];
+        const historyNav: { text: string; callback_data: string }[] = [];
+        if (history.hasPrevious) historyNav.push({
+          text: "⬅️ Newer",
+          callback_data: encodeWholesaleTrackingCallback({ ...callback, page: history.page - 1 }),
+        });
+        if (history.hasNext) historyNav.push({
+          text: "Older ➡️",
+          callback_data: encodeWholesaleTrackingCallback({ ...callback, page: history.page + 1 }),
+        });
+        if (historyNav.length) historyKeyboard.push(historyNav);
+        historyKeyboard.push([{
+          text: "⬅️ Package details",
+          callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: callback.packageIndex }),
+        }]);
+        await sendTelegramMessageFull(cbChatId, history.text, "HTML", undefined, { reply_markup: { inline_keyboard: historyKeyboard } });
         res.json({ ok: true }); return;
       }
 
@@ -2032,6 +2194,29 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
             sql`${ordersTable.groupBuyId} is not null`,
           ));
 
+        const wholesaleOrders = await db
+          .select({
+            id: ordersTable.id,
+            code: ordersTable.code,
+            trackingNumber: ordersTable.trackingNumber,
+            trackingPackages: ordersTable.trackingPackages,
+            trackingNumbers: ordersTable.trackingNumbers,
+            trackingStatus: ordersTable.trackingStatus,
+            trackingEvents: ordersTable.trackingEvents,
+            trackingLastChecked: ordersTable.trackingLastChecked,
+            trackingDetails: ordersTable.trackingDetails,
+          })
+          .from(ordersTable)
+          .where(and(
+            sql`regexp_replace(lower(${ordersTable.telegramUsername}), '^@', '') = ${trackingUsername}`,
+            eq(ordersTable.orderType, "wholesale"),
+            isNull(ordersTable.groupBuyId),
+            isNull(ordersTable.sharedOrderId),
+            isNull(ordersTable.deletedAt),
+          ))
+          .orderBy(desc(ordersTable.createdAt));
+        const trackedWholesaleOrders = wholesaleOrders.filter(order => projectTrackingPackages(order).length > 0);
+
         // Exclude GBs where every paid order is direct-shipping
         const gbNonDirectSet = new Set<string>();
         for (const o of memberOrders) {
@@ -2040,7 +2225,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         }
         const gbIds = [...gbNonDirectSet];
 
-        if (gbIds.length === 0) {
+        if (gbIds.length === 0 && trackedWholesaleOrders.length === 0) {
           const { template: trackingEmptyTpl } = await getTemplate("bot_tracking_empty");
           await sendTelegramMessage(cbChatId, trackingEmptyTpl, "HTML");
           res.json({ ok: true }); return;
@@ -2049,20 +2234,30 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         const GB_STATUS_EMOJI: Record<string, string> = {
           open: "🟢", closed: "🔴", dispatching: "🚀", completed: "✅", cancelled: "❌",
         };
-        const gbs = await db
+        const gbs = gbIds.length ? await db
           .select({ id: groupBuysTable.id, name: groupBuysTable.name, status: groupBuysTable.status })
           .from(groupBuysTable)
-          .where(inArray(groupBuysTable.id, gbIds));
+          .where(inArray(groupBuysTable.id, gbIds)) : [];
 
         const keyboard: { text: string; callback_data: string }[][] = gbs.map(gb => ([{
           text: `${GB_STATUS_EMOJI[gb.status ?? ""] ?? "📦"} ${gb.name}`,
           callback_data: `mn:track_gb:${gb.id}`,
         }]));
+        for (const order of trackedWholesaleOrders.slice(0, 8)) {
+          const views = projectTrackingPackages(order);
+          keyboard.push([{
+            text: `📮 ${order.code} · ${views.length} package${views.length === 1 ? "" : "s"}`,
+            callback_data: encodeWholesaleTrackingCallback({ kind: "detail", orderCode: order.id, page: 0 }),
+          }]);
+        }
+        if (trackedWholesaleOrders.length > 0) {
+          keyboard.push([{ text: "📮 All wholesale tracking", callback_data: encodeWholesaleTrackingCallback({ kind: "list", page: 0 }) }]);
+        }
         keyboard.push([{ text: "⬅️ Back to Menu", callback_data: "mn:menu" }]);
 
         await sendTelegramMessageFull(
           cbChatId,
-          "🚚 <b>Tracking</b>\n\nSelect a group buy to view your packages:",
+          "🚚 <b>Tracking</b>\n\nSelect a group buy or wholesale order to view your packages:",
           "HTML", undefined, { reply_markup: { inline_keyboard: keyboard } },
         );
         res.json({ ok: true }); return;
@@ -2083,12 +2278,18 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         const memberOrders = await db
           .select({
             id: ordersTable.id,
+            code: ordersTable.code,
             reshipperUsername: ordersTable.reshipperUsername,
             countryLegId: ordersTable.countryLegId,
             routingType: ordersTable.routingType,
             directShippingRequested: ordersTable.directShippingRequested,
             trackingNumber: ordersTable.trackingNumber,
+            trackingPackages: ordersTable.trackingPackages,
             trackingNumbers: ordersTable.trackingNumbers,
+            trackingStatus: ordersTable.trackingStatus,
+            trackingEvents: ordersTable.trackingEvents,
+            trackingLastChecked: ordersTable.trackingLastChecked,
+            trackingDetails: ordersTable.trackingDetails,
             status: ordersTable.status,
           })
           .from(ordersTable)
@@ -2182,9 +2383,15 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           const [gbRowDirect] = await db.select({ name: groupBuysTable.name }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
           const gbNameDirect = gbRowDirect?.name ?? gbId;
 
-          // Collect all tracking numbers from this member's orders for this GB
+          const groupedOrders = memberOrders
+            .filter(order => Array.isArray(order.trackingPackages))
+            .map(order => ({ order, views: projectTrackingPackages(order) }))
+            .filter(entry => entry.views.length > 0);
+
+          // Collect legacy numbers only from orders without explicit package metadata.
           const directNums: string[] = [];
           for (const o of memberOrders) {
+            if (Array.isArray(o.trackingPackages)) continue;
             const nums = Array.isArray(o.trackingNumbers) && (o.trackingNumbers as string[]).length
               ? (o.trackingNumbers as string[])
               : (o.trackingNumber ? [o.trackingNumber] : []);
@@ -2204,9 +2411,17 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 
           let directBody = `📦 <b>${gbNameDirect}</b>\n🏠 <i>Direct shipping to your address</i>\n`;
 
-          if (directNums.length === 0) {
+          if (directNums.length === 0 && groupedOrders.length === 0) {
             directBody += "\n<i>No tracking number has been added to your order yet.</i>";
           } else {
+            for (const { order, views } of groupedOrders) {
+              const pageCount = views.length;
+              for (let page = 0; page < pageCount; page++) {
+                await sendTelegramMessage(cbChatId, formatTrackingPackagePage(order.code, views, page, 1).text, "HTML");
+              }
+            }
+          }
+          if (directNums.length > 0) {
             for (const num of directNums) {
               directBody += `\n\n🔢 <b>Tracking #:</b> <code>${num}</code>`;
               // Fetch live 17track events
@@ -2227,6 +2442,13 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
           }
 
           const directKeyboard: { text: string; url?: string; callback_data?: string }[][] = [];
+          for (const { views } of groupedOrders) {
+            for (let index = 0; index < views.length; index++) {
+              const pkg = views[index]!;
+              directKeyboard.push([{ text: `🌐 Package ${index + 1} International`, url: `https://t.17track.net/en#nums=${encodeURIComponent(pkg.international.trackingNumber)}` }]);
+              if (pkg.local) directKeyboard.push([{ text: `🌐 Package ${index + 1} Local courier`, url: `https://t.17track.net/en#nums=${encodeURIComponent(pkg.local.trackingNumber)}` }]);
+            }
+          }
           for (const num of directNums) {
             directKeyboard.push([{ text: `🌐 Track ${num} on 17track`, url: `https://t.17track.net/en#nums=${num}` }]);
           }

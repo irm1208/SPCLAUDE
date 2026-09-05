@@ -9,8 +9,10 @@ import type { TrackingPackage, TrackingEvent } from "@workspace/db";
 import { registerScheduler } from "./scheduler-registry";
 import { translateZh } from "./translate-zh";
 import { resolveCarrierCode } from "../routes/gb-parcels";
-import { classifyTrackingStatus, hasWholesaleTrackingOptIn, isWholesaleTrackingAlertStatus, shouldApplyWholesaleTrackingClassification } from "./wholesale-tracking";
-import { mergeWholesaleParcelResults, normalizeWholesaleTrackingDetails, parcelNeedsRefresh, selectWholesaleCompatibilityFields, shouldSkipWholesaleRefresh } from "./tracking-auto-refresh-model";
+import { classifyTrackingStatus, hasWholesaleTrackingOptIn, shouldApplyWholesaleTrackingClassification } from "./wholesale-tracking";
+import { mergeWholesaleParcelResults, normalizeWholesaleTrackingDetails, selectWholesaleCompatibilityFields, trackingRefreshCandidates, changedPackageMilestones } from "./tracking-auto-refresh-model";
+import { canonicalTrackingNumbers, getTrackingPackages, projectTrackingPackages } from "@workspace/shipping/tracking";
+import { unchangedTrackingCache } from "./tracking-cache-guard";
 
 const TRACK17_BASE = "https://api.17track.net/track/v2.4";
 
@@ -25,6 +27,7 @@ const API_CALL_DELAY_MS = 1200;
 
 // Terminal statuses — skip these
 const TERMINAL_STATUSES = new Set(["delivered", "undeliverable", "expired"]);
+const trackingHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 async function getTrack17Key(): Promise<string | null> {
   try {
@@ -422,6 +425,7 @@ async function refreshIndividualOrders(): Promise<number> {
       code: ordersTable.code,
       trackingNumber: ordersTable.trackingNumber,
       trackingNumbers: ordersTable.trackingNumbers,
+      trackingPackages: ordersTable.trackingPackages,
       trackingStatus: ordersTable.trackingStatus,
       trackingEvents: ordersTable.trackingEvents,
       trackingDetails: ordersTable.trackingDetails,
@@ -438,7 +442,7 @@ async function refreshIndividualOrders(): Promise<number> {
           sql`jsonb_array_length(coalesce(${ordersTable.trackingNumbers}, '[]'::jsonb)) > 0`,
         ),
         // Not a GB or shared wholesale order
-        isNull(ordersTable.groupBuyId),
+        or(isNull(ordersTable.groupBuyId), sql`${ordersTable.trackingPackages} @> '[{"courier":"bmurfs"}]'::jsonb`),
         isNull(ordersTable.sharedOrderId),
         // Not deleted
         isNull(ordersTable.deletedAt),
@@ -446,6 +450,7 @@ async function refreshIndividualOrders(): Promise<number> {
         // terminal state is evaluated below; preserve the legacy predicate for others.
         or(
           eq(ordersTable.orderType, "wholesale"),
+           sql`${ordersTable.trackingPackages} @> '[{"courier":"bmurfs"}]'::jsonb`,
           isNull(ordersTable.trackingStatus),
           eq(ordersTable.trackingStatus, "pending"),
           eq(ordersTable.trackingStatus, "in_transit"),
@@ -461,6 +466,8 @@ async function refreshIndividualOrders(): Promise<number> {
         ),
         // Stale (never checked or checked >90 min ago)
         or(
+           eq(ordersTable.orderType, "wholesale"),
+           sql`${ordersTable.trackingPackages} @> '[{"courier":"bmurfs"}]'::jsonb`,
           isNull(ordersTable.trackingLastChecked),
           lt(ordersTable.trackingLastChecked, staleThreshold),
         ),
@@ -477,29 +484,25 @@ async function refreshIndividualOrders(): Promise<number> {
 
   for (const order of orders) {
     try {
-       // Canonical tracking numbers (trackingNumbers array preferred)
-       const candidates: unknown[] = Array.isArray(order.trackingNumbers) && order.trackingNumbers.length
-        ? order.trackingNumbers
-        : (order.trackingNumber?.trim() ? [order.trackingNumber.trim()] : []);
-       const nums: string[] = [...new Set(candidates
-        .filter((num): num is string => typeof num === "string")
-        .map(num => num.trim()).filter(Boolean))];
+       const nums = canonicalTrackingNumbers(order);
       if (!nums.length) continue;
 
       const isDirectWholesale = shouldApplyWholesaleTrackingClassification(order.orderType);
+       const hasBmurfs = getTrackingPackages(order).some(p => p.courier === "bmurfs");
        // Non-wholesale orders retain their historic single-parcel refresh behavior.
-       if (!isDirectWholesale) {
+        if (!isDirectWholesale && !hasBmurfs) {
          const num = nums[0];
          await track17Register(num, 0);
          await sleep(500);
          const accepted = await track17GetInfo(num, 0);
          if (!accepted) {
-           await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(eq(ordersTable.id, order.id));
+           await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(unchangedTrackingCache(order));
            continue;
          }
          const { status, events } = parseTrack17Response(accepted, false);
          const oldStatus = order.trackingStatus;
-         await db.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() }).where(eq(ordersTable.id, order.id));
+         const saved = await db.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() }).where(unchangedTrackingCache(order)).returning({ id: ordersTable.id });
+         if (!saved.length) continue;
          if (status !== oldStatus) {
            refreshed++;
            const SILENT = new Set(["pending", "delivered", "undeliverable", "expired"]);
@@ -512,78 +515,73 @@ async function refreshIndividualOrders(): Promise<number> {
        }
 
        const details = normalizeWholesaleTrackingDetails(order.trackingDetails);
-       if (shouldSkipWholesaleRefresh(nums, details)) continue;
+       const candidates = trackingRefreshCandidates(order, Date.now(), STALE_AFTER_MS);
+       if (!candidates.length) continue;
        const successful = {} as typeof details;
-       let primaryResult: { status: string; events: any[] } | undefined;
-       for (const num of nums) {
-         const existing = details[num];
-         if (!parcelNeedsRefresh(existing)) continue;
+       for (const { trackingNumber: num, carrierCode } of candidates) {
          try {
-           await track17Register(num, 0);
+           await track17Register(num, carrierCode);
            await sleep(500);
-           const accepted = await track17GetInfo(num, 0);
+           const accepted = await track17GetInfo(num, carrierCode);
            if (!accepted) continue; // Keep prior data when a lookup is unavailable.
-           const parsed = parseTrack17Response(accepted, true);
+           const parsed = parseTrack17Response(accepted, isDirectWholesale);
            successful[num] = {
              trackingNumber: num,
+             ...(carrierCode === 190843 ? { carrier: "BMURFS Express" } : details[num]?.carrier ? { carrier: details[num].carrier } : {}),
              status: parsed.status,
              statusCode: String(parsed.statusCode),
              events: parsed.events,
              lastChecked: new Date().toISOString(),
            };
-           if (num === nums[0]) primaryResult = parsed;
          } catch (err) {
            console.error(`[tracking-auto-refresh] Error refreshing parcel ${num}:`, err);
+         } finally {
+           await sleep(API_CALL_DELAY_MS);
          }
        }
+       if (!Object.keys(successful).length) continue;
        const mergedDetails = mergeWholesaleParcelResults(details, successful);
        const compatibility = selectWholesaleCompatibilityFields(nums, mergedDetails, {
          trackingStatus: order.trackingStatus,
          trackingEvents: order.trackingEvents,
          trackingLastChecked: order.trackingLastChecked,
        });
-       await db.update(ordersTable).set({
+       const saved = await db.update(ordersTable).set({
          trackingDetails: mergedDetails,
          trackingStatus: compatibility.trackingStatus,
          trackingEvents: compatibility.trackingEvents as any,
          trackingLastChecked: compatibility.trackingLastChecked,
-       }).where(eq(ordersTable.id, order.id));
-       if (!primaryResult || primaryResult.status === order.trackingStatus) continue;
-       const status = primaryResult.status;
-      const oldStatus = order.trackingStatus;
-
-      if (status !== oldStatus) {
-        refreshed++;
-        // Direct wholesale orders only alert on their opt-in allowlist. All other
-        // individual orders retain their existing status-notification behavior.
-        const SILENT = new Set(["pending", "delivered", "undeliverable", "expired"]);
-         const shouldNotify = isWholesaleTrackingAlertStatus(status);
-        if (shouldNotify && order.telegramUsername?.trim()) {
-          const emoji: Record<string, string> = {
-            in_transit: "📦", out_for_delivery: "🚚", attempted: "⚠️", exception: "❗",
-          };
-          const statusLabel = status.replace(/_/g, " ");
-           const trackUrl = `https://t.17track.net/en#nums=${encodeURIComponent(nums[0])}`;
-          const text =
-            `${emoji[status] ?? "📬"} <b>Order ${order.code} — tracking update</b>\n\n` +
-            `Status: <b>${statusLabel}</b>\n\n` +
-             `Tracking: <code>${nums[0]}</code>\n` +
-            `<a href="${trackUrl}">🔍 Track parcel →</a>`;
-           {
-             const [account] = await db
-              .select({ telegramNotifications: accountsTable.telegramNotifications })
-              .from(accountsTable)
-              .where(eq(accountsTable.telegramUsername, order.telegramUsername.replace(/^@/, "").trim().toLowerCase()));
-            // Unlike conventional status updates, wholesale tracking is strictly
-            // website opt-in: avoid notifyUser entirely so absent/disabled users
-            // receive no Telegram/Discord delivery and no in-app bell log entry.
-             if (!hasWholesaleTrackingOptIn(account?.telegramNotifications)) continue;
-          }
-           notifyUser(order.telegramUsername, "wholesale_tracking", text, {
-            inline_keyboard: [[{ text: "🚚 Track Parcel →", url: trackUrl }]],
-           }, { suppressPreferenceDisabledLog: true }).catch(() => {});
-        }
-      }
+       }).where(unchangedTrackingCache(order)).returning({ id: ordersTable.id });
+       // A newer edit or another refresh won the race: no stale write or duplicate alert.
+       if (!saved.length) continue;
+       refreshed++;
+       if (!order.telegramUsername?.trim()) continue;
+       const views = projectTrackingPackages({ ...order, trackingDetails: mergedDetails });
+       const previous = new Map(projectTrackingPackages(order).map(p => [p.id, p.status]));
+       let milestones = isDirectWholesale
+         ? changedPackageMilestones(order, mergedDetails)
+         : views.filter(p => p.status && !["pending", "delivered", "undeliverable", "expired", "awaiting_local"].includes(p.status) && previous.get(p.id) !== p.status);
+       // Legacy non-BMURFS wholesale alerts historically concern the primary only.
+       if (!hasBmurfs) milestones = milestones.filter(p => p.id === views[0]?.id);
+       if (!milestones.length) continue;
+       if (isDirectWholesale) {
+         const [account] = await db.select({ telegramNotifications: accountsTable.telegramNotifications })
+           .from(accountsTable)
+           .where(sql`regexp_replace(lower(${accountsTable.telegramUsername}), '^@', '') = ${order.telegramUsername.replace(/^@/, "").trim().toLowerCase()}`);
+         if (!hasWholesaleTrackingOptIn(account?.telegramNotifications)) continue;
+       }
+       for (const pkg of milestones) {
+         const packageIndex = views.findIndex(p => p.id === pkg.id) + 1;
+         const trackUrl = `https://t.17track.net/en#nums=${[pkg.international.trackingNumber, pkg.local?.trackingNumber].filter(Boolean).map(n => encodeURIComponent(n!)).join(",")}`;
+         const text = `<b>Order ${trackingHtml(order.code)} — package ${packageIndex} tracking update</b>\n\n` +
+           `Status: <b>${trackingHtml(pkg.status?.replace(/_/g, " ") ?? "pending")}</b>\n` +
+           `International: <code>${trackingHtml(pkg.international.trackingNumber)}</code>` +
+           (pkg.courier === "bmurfs" ? `\nLocal courier: ${pkg.local ? `<code>${trackingHtml(pkg.local.trackingNumber)}</code>` : "Awaiting tracking number"}` : "") +
+           `\n<a href="${trackUrl}">Track package →</a>`;
+         notifyUser(order.telegramUsername, isDirectWholesale ? "wholesale_tracking" : "status", text, {
+           inline_keyboard: [[{ text: "Track package", url: trackUrl }]],
+         }, { suppressPreferenceDisabledLog: isDirectWholesale }).catch(() => {});
+       }
     } catch (err) {
       console.error(`[tracking-auto-refresh] Error refreshing order ${order.id}:`, err);
     }

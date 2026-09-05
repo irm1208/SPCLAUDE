@@ -1,4 +1,21 @@
 import { WholesaleTrackingEvent, WholesaleTrackingOrder, WholesaleTrackingParcel } from "../hooks/use-account";
+import { getOrderTrackingStatus, projectTrackingPackages, type TrackingPackageView, type TrackingSource } from "@workspace/shipping/tracking";
+
+type TrackingProjectionSource = Partial<TrackingSource> & {
+  trackingPackageViews?: TrackingPackageView[];
+  packageTrackingStatus?: string | null;
+};
+
+export function getTrackingPackageViews(order: TrackingProjectionSource): TrackingPackageView[] {
+  if (Array.isArray(order.trackingPackageViews)) return order.trackingPackageViews;
+  return projectTrackingPackages(order as TrackingSource);
+}
+
+export function getTrackingOrderStatus(order: Pick<TrackingProjectionSource, "trackingPackageViews" | "packageTrackingStatus"> & Partial<TrackingSource>): string | null {
+  if (order.packageTrackingStatus !== undefined) return order.packageTrackingStatus;
+  const views = Array.isArray(order.trackingPackageViews) ? order.trackingPackageViews : projectTrackingPackages(order as TrackingSource);
+  return getOrderTrackingStatus(views);
+}
 
 export function normalizeTrackingParcels(order: Pick<WholesaleTrackingOrder, "trackingNumbers" | "trackingStatus" | "trackingEvents" | "trackingLastChecked" | "trackingParcels">): WholesaleTrackingParcel[] {
   if (order.trackingParcels?.length) return order.trackingParcels;

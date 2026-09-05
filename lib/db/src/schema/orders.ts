@@ -31,6 +31,13 @@ export const ordersTable = pgTable("orders", {
   adminMessage: text("admin_message"),
   trackingNumber: text("tracking_number"),
   trackingNumbers: jsonb("tracking_numbers").$type<string[]>(),
+  // Explicit physical-package identities; only BMURFS supports a local tracking leg.
+  trackingPackages: jsonb("tracking_packages").$type<Array<{
+    id: string;
+    courier: string;
+    internationalTrackingNumber: string;
+    localTrackingNumber: string | null;
+  }>>(),
   // Per-tracking shipped items: { "<trackingNumber>": [{name, qty}] }
   // Populated when admin applies bulk tracking that includes item info (AI-parse path).
   trackingShippedItems: jsonb("tracking_shipped_items").$type<Record<string, Array<{name: string; qty: number}>>>(),

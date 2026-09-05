@@ -735,6 +735,7 @@ async function runStartupMigrations(): Promise<void> {
     // orders — tracking_numbers (jsonb array of per-leg tracking numbers)
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_numbers jsonb`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_details jsonb`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_packages jsonb`);
     // orders — payment_tx_hashes (jsonb array of additional payment tx hashes)
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_tx_hashes jsonb`);
     // group_buys — allow_reshipper_code
