@@ -29,6 +29,14 @@
       "follow-redirects": ">=1.16.0",
       "postcss": ">=8.5.10",
       "ws": ">=8.20.1"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@pnpm/exe",
+      "@swc/core",
+      "core-js",
+      "esbuild",
+      "msw",
+      "unrs-resolver"
+    ]
   }
 }

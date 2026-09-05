@@ -128,3 +128,17 @@ mtime_ms = 1788528783429
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:da666713-c1e9-4980-8c1e-25d24be65c5e/81fc683d-8ba9-4992-882f-5a6d964a3284/dfa29da4-cf22-402b-a7b5-1f9ed2d63caa"
 storage_version_token = "1788528784675882"
 content_type = "text/html"
+
+[[outputs]]
+id = "Ay9c6kjoegihtsK9xgHpX"
+uri = "file://.worktrees/standalone-crypto-payment-kit/deliverables/open-crypto-checkout-v1.0.0.tar.gz"
+type = "unspecified"
+title = "Open Crypto Checkout v1.0.0"
+description = "Standalone TypeScript, Express, React, and PostgreSQL crypto payment starter. Contains no Peps branding, database links, production wallets, credentials, customer data, or parent-project imports."
+logical_id = "5184f0f4-ecae-43ab-94da-613f6144c310"
+content_hash = "sha256:cd3b0773596b49580ecdc4828fba76ec3a2e1353944efc5044bf8280d27bb9b7"
+size = 101191
+mtime_ms = 1788632004401
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:bbc34ef6-d242-429e-ba8d-882d8f2a859e/5184f0f4-ecae-43ab-94da-613f6144c310/684f4df1-3e8a-4967-aa9b-8da491cd873f"
+storage_version_token = "1788632289593797"
+content_type = "application/octet-stream"

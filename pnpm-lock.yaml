@@ -4,77 +4,56 @@ settings:
   autoInstallPeers: false
   excludeLinksFromLockfile: false
 
-catalogs:
-  default:
-    '@replit/vite-plugin-cartographer':
-      specifier: ^0.5.0
-      version: 0.5.0
-    '@replit/vite-plugin-dev-banner':
-      specifier: ^0.1.1
-      version: 0.1.2
-    '@replit/vite-plugin-runtime-error-modal':
-      specifier: ^0.0.6
-      version: 0.0.6
-    '@tailwindcss/vite':
-      specifier: ^4.1.14
-      version: 4.2.1
-    '@tanstack/react-query':
-      specifier: ^5.90.21
-      version: 5.90.21
-    '@types/node':
-      specifier: ^25.3.3
-      version: 25.3.5
-    '@types/react':
-      specifier: ^19.2.0
-      version: 19.2.14
-    '@types/react-dom':
-      specifier: ^19.2.0
-      version: 19.2.3
-    '@vitejs/plugin-react':
-      specifier: ^5.0.4
-      version: 5.1.4
-    class-variance-authority:
-      specifier: ^0.7.1
-      version: 0.7.1
-    clsx:
-      specifier: 2.1.1
-      version: 2.1.1
-    drizzle-orm:
-      specifier: ^0.45.2
-      version: 0.45.2
-    framer-motion:
-      specifier: 12.35.1
-      version: 12.35.1
-    lucide-react:
-      specifier: 0.545.0
-      version: 0.545.0
-    react:
-      specifier: 19.1.0
-      version: 19.1.0
-    react-dom:
-      specifier: 19.1.0
-      version: 19.1.0
-    tailwind-merge:
-      specifier: 3.5.0
-      version: 3.5.0
-    tailwindcss:
-      specifier: ^4.1.14
-      version: 4.2.1
-    tsx:
-      specifier: ^4.21.0
-      version: 4.21.0
-    vite:
-      specifier: ^7.3.2
-      version: 7.3.2
-    zod:
-      specifier: ^3.25.76
-      version: 3.25.76
-
 overrides:
+  '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
+  esbuild: 0.27.3
+  lodash: ^4.18.0
+  mcp: ^1.23.0
+  brace-expansion: '>=2.0.3'
+  picomatch: '>=4.0.4'
+  yaml: '>=2.8.3'
+  path-to-regexp: ^8.4.0
+  protobufjs: workspace:*
+  '@google/genai': workspace:*
   dompurify: '>=3.4.0'
   follow-redirects: '>=1.16.0'
   postcss: '>=8.5.10'
   ws: '>=8.20.1'
+  '@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-darwin-x64': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-freebsd-ia32': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-freebsd-x64': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-linux-arm': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-linux-arm64': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-linux-ia32': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-sunos-x64': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-win32-ia32': '-'
+  '@expo/ngrok-bin>@expo/ngrok-bin-win32-x64': '-'
+  esbuild>@esbuild/aix-ppc64: '-'
+  esbuild>@esbuild/android-arm: '-'
+  esbuild>@esbuild/android-arm64: '-'
+  esbuild>@esbuild/android-x64: '-'
+  esbuild>@esbuild/darwin-arm64: '-'
+  esbuild>@esbuild/darwin-x64: '-'
+  esbuild>@esbuild/freebsd-arm64: '-'
+  esbuild>@esbuild/freebsd-x64: '-'
+  esbuild>@esbuild/linux-arm: '-'
+  esbuild>@esbuild/linux-arm64: '-'
+  esbuild>@esbuild/linux-ia32: '-'
+  esbuild>@esbuild/linux-loong64: '-'
+  esbuild>@esbuild/linux-mips64el: '-'
+  esbuild>@esbuild/linux-ppc64: '-'
+  esbuild>@esbuild/linux-riscv64: '-'
+  esbuild>@esbuild/linux-s390x: '-'
+  esbuild>@esbuild/netbsd-arm64: '-'
+  esbuild>@esbuild/netbsd-x64: '-'
+  esbuild>@esbuild/openbsd-arm64: '-'
+  esbuild>@esbuild/openbsd-x64: '-'
+  esbuild>@esbuild/openharmony-arm64: '-'
+  esbuild>@esbuild/sunos-x64: '-'
+  esbuild>@esbuild/win32-arm64: '-'
+  esbuild>@esbuild/win32-ia32: '-'
+  esbuild>@esbuild/win32-x64: '-'
 
 importers:
 
@@ -101,6 +80,12 @@ importers:
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
+
+  .local/share/pnpm/.tools/pnpm/10.15.1_tmp_3072:
+    dependencies:
+      pnpm:
+        specifier: 10.15.1
+        version: 10.15.1
 
   artifacts/api-server:
     dependencies:
@@ -4784,6 +4769,11 @@ packages:
   pngjs@7.0.0:
     resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
     engines: {node: '>=14.19.0'}
+
+  pnpm@10.15.1:
+    resolution: {integrity: sha512-NOU4wym1VTAUyo6PRTWZf5YYCh0PYUM5NXRJk1NQ2STiL4YUaCGRJk7DPRRirCFWGv+X9rsYBlNRwWLH6PbeZw==}
+    engines: {node: '>=18.12'}
+    hasBin: true
 
   postcss-selector-parser@6.0.10:
     resolution: {integrity: sha512-IQ7TZdoaqbT+LCpShg46jnZVlhWD2w6iQYAcYXfHARZ7X1t/UGhhceQDs5X0cGqKvYlHNOuv7Oa1xmb0oQuA3w==}
@@ -9487,6 +9477,8 @@ snapshots:
   picomatch@4.0.4: {}
 
   pngjs@7.0.0: {}
+
+  pnpm@10.15.1: {}
 
   postcss-selector-parser@6.0.10:
     dependencies:
