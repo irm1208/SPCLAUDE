@@ -11,7 +11,7 @@
     "dev": "pnpm --parallel --filter @open-crypto-checkout/api --filter @open-crypto-checkout/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "vitest run --workspace vitest.workspace.ts",
+    "test": "node --test scripts/assert-standalone.test.mjs && vitest run --config vitest.workspace.ts",
     "check:standalone": "node scripts/assert-standalone.mjs",
     "check": "pnpm check:standalone && pnpm typecheck && pnpm test && pnpm build",
     "archive": "node scripts/create-source-archive.mjs"

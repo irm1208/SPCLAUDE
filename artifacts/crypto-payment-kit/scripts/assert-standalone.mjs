@@ -1,8 +1,8 @@
 import { access, readFile, readdir } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
+const root = resolve(process.argv[2] ?? fileURLToPath(new URL("../", import.meta.url)));
 const excludedDirectories = new Set([".git", "node_modules", "dist", "coverage"]);
 const excludedExtensions = new Set([".zip", ".tar", ".tgz", ".gz", ".bz2", ".xz", ".7z"]);
 const requiredFiles = [
@@ -21,8 +21,21 @@ const forbidden = [
   { label: "seed phrase", pattern: /\b(?:seed phrase|mnemonic)\s*[:=]\s*\S+/i },
 ];
 const placeholderDatabaseUrl = "postgresql://user:password@localhost:5432/crypto_payments";
-const credentialAssignment =
-  /\b(?:api[_-]?key|secret|token|password|private[_-]?key)\b\s*=\s*(?!["']?(?:replace-with-[a-z-]+|undefined|null|process\.env\b))["']?([^\s"'`]+)/gi;
+const databaseUrl = /\bpostgres(?:ql)?:\/\/[^\s"'`\\)\]}>,]+/gi;
+const jwt = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{6,}\b/g;
+const assignment = /(?:\b(?:const|let|var)\s+)?["']?([A-Za-z_$][\w$-]*)["']?\s*(?::|=)\s*([^,\n;}\]]+)/g;
+
+function isPlaceholder(value) {
+  const normalized = value.trim().replace(/^["']|["']$/g, "");
+  return /^(?:replace-with-[a-z0-9-]+|<[^>\n]+>|process\.env(?:\.[A-Z0-9_]+|\[[^\]]+\])|undefined|null)$/i.test(normalized);
+}
+
+function isSensitiveName(name) {
+  const normalized = name.replace(/[_-]/g, "").toLowerCase();
+  return /(?:apikey|secret|token|password|privatekey|seed|mnemonic)/.test(normalized)
+    || normalized.endsWith("merchantkey")
+    || normalized.endsWith("webhookkey");
+}
 
 async function exists(path) {
   await access(path);
@@ -55,8 +68,9 @@ let checkedFiles = 0;
 
 for (const file of files) {
   if (file.endsWith("assert-standalone.mjs")) continue;
-  if (relative(root, file) === ".env") {
-    throw new Error("Standalone workspace must not include a .env file");
+  const fileName = basename(file);
+  if (fileName.startsWith(".env") && fileName !== ".env.example") {
+    throw new Error(`Standalone workspace must not include ${relative(root, file)}`);
   }
 
   const text = await readFile(file, "utf8").catch(() => "");
@@ -68,17 +82,30 @@ for (const file of files) {
     }
   }
 
-  const databaseUrls = text.matchAll(/(?:^|\n)\s*DATABASE_URL\s*=\s*(\S+)/g);
+  const databaseUrls = text.matchAll(databaseUrl);
   for (const match of databaseUrls) {
-    if (match[1] !== placeholderDatabaseUrl) {
+    if (match[0] !== placeholderDatabaseUrl) {
       throw new Error(`Non-placeholder database URL in ${relative(root, file)}`);
     }
   }
 
-  credentialAssignment.lastIndex = 0;
-  const credential = credentialAssignment.exec(text);
-  if (credential) {
-    throw new Error(`Likely credential assignment in ${relative(root, file)}`);
+  if (jwt.test(text)) {
+    throw new Error(`JWT-shaped value in ${relative(root, file)}`);
+  }
+
+  assignment.lastIndex = 0;
+  for (const match of text.matchAll(assignment)) {
+    if (isSensitiveName(match[1]) && !isPlaceholder(match[2])) {
+      throw new Error(`Likely credential assignment in ${relative(root, file)}`);
+    }
+  }
+
+  for (const match of text.matchAll(/(["'])(\.\.?\/[^"']*)\1/g)) {
+    const path = resolve(dirname(file), match[2]);
+    const pathFromRoot = relative(root, path);
+    if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${"/"}`)) {
+      throw new Error(`Path escapes standalone workspace in ${relative(root, file)}`);
+    }
   }
 }
 

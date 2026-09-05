@@ -1,6 +1,8 @@
-import { defineWorkspace } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
-export default defineWorkspace([
-  "apps/*",
-  "packages/*",
-]);
+export default defineConfig({
+  test: {
+    passWithNoTests: true,
+    projects: ["apps/*", "packages/*"],
+  },
+});
