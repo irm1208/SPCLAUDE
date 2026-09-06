@@ -2900,7 +2900,10 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       await sendTelegramMessage(chatId, invalidTpl, "HTML");
       res.json({ ok: true }); return;
     }
-    console.log(`[telegram:webhook] /link code="${code}" from chatId=${chatId}`);
+    writeLog("login", "info", "telegram_link_attempted", "Telegram account link attempted", {
+      enforcementPoint: "telegram_webhook",
+      chatId,
+    }).catch(() => {});
     const [account] = await db
       .select()
       .from(accountsTable)
@@ -3616,7 +3619,9 @@ router.post("/account/telegram/link-init", requireAccountIdentity, async (req, r
     .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
 
   if (!account) {
-    console.warn(`[telegram:link-init] Account not found for username="${tg}"`);
+    writeLog("login", "warn", "telegram_link_account_missing", "Telegram link initiation account missing", {
+      enforcementPoint: "telegram_link_init",
+    }, req.ip).catch(() => {});
     res.status(404).json({ error: "Account not found — please log out and log in again." });
     return;
   }
@@ -3629,7 +3634,9 @@ router.post("/account/telegram/link-init", requireAccountIdentity, async (req, r
     .set({ telegramLinkToken: code, telegramLinkExpiresAt: expiresAt })
     .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
 
-  console.log(`[telegram:link-init] Code generated for username="${tg}" code=${code}`);
+  writeLog("login", "info", "telegram_link_initiated", "Telegram account link initiated", {
+    enforcementPoint: "telegram_link_init",
+  }, req.ip).catch(() => {});
   const botUsername = await getBotUsername();
 
   res.json({
