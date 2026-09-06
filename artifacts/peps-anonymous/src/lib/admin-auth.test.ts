@@ -284,16 +284,13 @@ test("enabled interceptor authenticates intl-shipping mutations carrying admin s
   assert.equal(new Headers(seen?.init?.headers).get("x-admin-csrf"), "csrf");
 });
 
-test("admin impersonation mutations retain identity header and support action binding hook", async () => {
+test("admin impersonation payment destinations use exact built-in action bindings", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const auth = new AdminAuthController(async (input, init) => {
     calls.push({ url: String(input), init });
     return String(input).endsWith("/step-up") ? json({ assertion: "bound" }) : json({ ok: true });
   });
   auth.setMode(true); auth.setCsrfToken("csrf"); auth.setStepUpHandler(async () => "123456");
-  auth.setActionBindingResolver((path) => path === "/api/reshipper/me"
-    ? { action: "reshipper.payment-destination.update", target: "reshipper:alice", payload: { paypalHandle: "redacted@example" } }
-    : undefined);
   const target = { fetch: async () => json({ original: true }) } as typeof globalThis;
   const uninstall = auth.installFetchInterceptor(target);
   await target.fetch("/api/reshipper/me", {
@@ -301,11 +298,32 @@ test("admin impersonation mutations retain identity header and support action bi
     headers: { "x-admin-secret": "must-strip", "x-impersonate-username": "alice" },
     body: JSON.stringify({ paypalHandle: "redacted@example" }),
   });
+  await target.fetch("/api/reshipper/gb/gb-123/payment-details", {
+    method: "PATCH",
+    headers: { "x-admin-secret": "must-strip", "x-impersonate-username": "alice" },
+    body: JSON.stringify({ revolutHandle: " @alice " }),
+  });
   uninstall();
-  const mutation = calls.at(-1)!;
-  assert.equal(new Headers(mutation.init?.headers).get("x-impersonate-username"), "alice");
-  assert.equal(new Headers(mutation.init?.headers).get("x-admin-action-assertion"), "bound");
-  assert.equal(new Headers(mutation.init?.headers).has("x-admin-secret"), false);
+  const stepUps = calls.filter(call => call.url.endsWith("/step-up")).map(call => JSON.parse(String(call.init?.body)));
+  assert.deepEqual(stepUps, [
+    {
+      code: "123456",
+      action: "reshipper.payment-destination.update",
+      target: "reshipper:alice",
+      payload: { paypalHandle: "redacted@example" },
+    },
+    {
+      code: "123456",
+      action: "reshipper.assignment-payment-destination.update",
+      target: "reshipper:alice:group-buy:gb-123",
+      payload: { revolutHandle: "@alice" },
+    },
+  ]);
+  for (const mutation of calls.filter(call => !call.url.endsWith("/step-up"))) {
+    assert.equal(new Headers(mutation.init?.headers).get("x-impersonate-username"), "alice");
+    assert.equal(new Headers(mutation.init?.headers).get("x-admin-action-assertion"), "bound");
+    assert.equal(new Headers(mutation.init?.headers).has("x-admin-secret"), false);
+  }
 });
 
 test("Admin FS3 and P&L contain no retired static-password gate", async () => {

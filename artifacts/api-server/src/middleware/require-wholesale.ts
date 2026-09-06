@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { accountsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
-import { attachAdminSensitiveMutationAudit, requireAdminForRequest, requireAdminStepUp } from "./require-admin";
+import { requireAdminForRequest } from "./require-admin";
 import { wholesaleSharesTable } from "@workspace/db";
 import { writeLog } from "../lib/audit-log";
 
@@ -75,10 +75,6 @@ export async function requireWholesaleOrAdmin(req: Request, res: Response, next:
     return;
   }
   if (!await requireAdminForRequest(req, res)) return;
-  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-    attachAdminSensitiveMutationAudit(req, res, "reusable");
-    if (!requireAdminStepUp(req, res)) return;
-  }
 
   const shareId = typeof req.params.id === "string" ? req.params.id.trim() : "";
   if (!shareId) {

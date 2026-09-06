@@ -23,14 +23,12 @@ describe("admin security hardening wiring", () => {
     expect(authCheck).not.toContain('"admin_login_failed"');
   });
 
-  it("step-ups admin alternate-route mutations and action-binds reshipper destinations", () => {
+  it("action-binds payment destinations without step-upping every alternate-route mutation", () => {
     const wholesale = read("../middleware/require-wholesale.ts");
     const reshipperMiddleware = read("../middleware/require-reshipper.ts");
     const reshipperRoutes = read("./reshipper.ts");
-    expect(wholesale).toContain("requireAdminStepUp(req, res)");
-    expect(wholesale).toContain("attachAdminSensitiveMutationAudit");
-    expect(reshipperMiddleware).toContain("requireAdminStepUp(req, res)");
-    expect(reshipperMiddleware).toContain("attachAdminSensitiveMutationAudit");
+    expect(wholesale).not.toContain("requireAdminStepUp(req, res)");
+    expect(reshipperMiddleware).not.toContain("requireAdminStepUp(req, res)");
     expect(reshipperRoutes).toContain('"reshipper.payment-destination.update"');
     expect(reshipperRoutes).toContain('"reshipper.assignment-payment-destination.update"');
     expect(reshipperRoutes).toContain("consumeAdminActionAssertion");
@@ -46,15 +44,35 @@ describe("admin security hardening wiring", () => {
     expect(read("./group-buys-admin.ts")).toContain('"fs3_submission"');
   });
 
-  it("default-protects and audits arbitrary non-admin mutations but not reads", () => {
+  it("requires reusable step-up only for payment-routing and wallet configuration", () => {
     const middleware = read("../middleware/require-admin.ts");
-    const helper = middleware.slice(
+    const policy = middleware.slice(middleware.indexOf("function isReusableStepUpRoute"));
+    expect(policy).toContain('path === "/payments-config"');
+    expect(policy).toContain('path === "/anonpay-config"');
+    expect(policy).toContain('path === "/wallet-address"');
+    expect(policy).toContain('path === "/wallet-change-code"');
+    expect(policy).toContain('path === "/chain-wallets"');
+    expect(policy).not.toContain('req.baseUrl.endsWith("/admin")');
+    expect(policy).not.toContain("/payment-status");
+    expect(policy).not.toContain("/shipping-config");
+    expect(policy).not.toContain("/telegram-config");
+    const alternateHelper = middleware.slice(
       middleware.indexOf("export async function requireAdminForRequest"),
       middleware.indexOf("function timingSafeHashEqual"),
     );
-    expect(helper).toContain('!["GET", "HEAD", "OPTIONS"].includes(req.method)');
-    expect(helper).toContain('attachAdminSensitiveMutationAudit(req, res, "reusable")');
-    expect(helper).toContain("requireAdminStepUp(req, res)");
+    expect(alternateHelper).not.toContain("requireAdminStepUp(req, res)");
+  });
+
+  it("does not add redundant step-up checks to routine admin operations", () => {
+    expect(read("./admin.ts")).not.toContain("requireAdminStepUp(req, res)");
+    expect(read("./group-buys-admin.ts")).not.toContain("requireAdminStepUp(req, res)");
+    expect(read("./config.ts")).not.toContain("requireAdminStepUp(req, res)");
+    const payments = read("./payments.ts");
+    const paymentStatus = payments.slice(
+      payments.indexOf('router.patch("/admin/orders/:id/payment-status"'),
+      payments.indexOf('router.patch("/admin/chain-wallets"'),
+    );
+    expect(paymentStatus).not.toContain("requireAdminStepUp(req, res)");
   });
 
   it("uses one transactional FS3 submit implementation", () => {

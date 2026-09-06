@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { accountsTable, gbReshippersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
-import { attachAdminSensitiveMutationAudit, requireAdminForRequest, requireAdminStepUp } from "./require-admin";
+import { requireAdminForRequest } from "./require-admin";
 
 declare global {
   namespace Express {
@@ -31,10 +31,6 @@ export async function requireReshipper(req: Request, res: Response, next: NextFu
   if ((adminSecret || adminSession) && impersonateUsername) {
     if (await requireAdminForRequest(req, res)) {
       req.reshipper = { telegramUsername: impersonateUsername, reshipperStatus: "approved" };
-      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-        attachAdminSensitiveMutationAudit(req, res, "reusable");
-        if (!requireAdminStepUp(req, res)) return;
-      }
       next();
       return;
     }

@@ -2189,7 +2189,6 @@ router.get("/admin/payment-orders", async (req, res): Promise<void> => {
 // ─── ADMIN: Manually override payment status ───────────────────
 router.patch("/admin/orders/:id/payment-status", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   const { paymentStatus } = req.body;
   const valid = ["unpaid", "test_ready", "test_confirmed", "pending_confirmation", "confirmed", "failed"];
   if (!valid.includes(paymentStatus)) {

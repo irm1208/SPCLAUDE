@@ -243,10 +243,6 @@ export async function requireAdminForRequest(req: Request, res: Response): Promi
   if (!res.locals["adminModeEnabled"]) return requireAdmin(req, res);
   let passed = false;
   await adminAuthorizationMiddleware(req, res, () => { passed = true; });
-  if (passed && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-    attachAdminSensitiveMutationAudit(req, res, "reusable");
-    if (!requireAdminStepUp(req, res)) return false;
-  }
   return passed;
 }
 
@@ -276,27 +272,15 @@ function hasRecentStepUp(stepUpAt: Date | null | undefined): boolean {
   return !!stepUpAt && Date.now() - new Date(stepUpAt).getTime() <= 10 * 60_000;
 }
 
-// Paths are evaluated after the /admin mount. This is a second, central guard
-// in addition to the explicit checks near FS3 business mutations, preventing
-// an alternate router mount from accidentally weakening the policy.
+// Paths are evaluated after the /admin mount. Extra TOTP is intentionally
+// limited to security and money-destination configuration; the authenticated
+// admin session is sufficient for routine operational mutations.
 function isReusableStepUpRoute(req: Request): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
   const path = req.path;
-  // Default-deny policy: every ordinary admin mutation is sensitive in enabled
-  // mode. Explicit entries document especially high-impact families and keep
-  // route additions protected without relying on each handler remembering a
-  // local check. Auth routes are mounted before this boundary.
-  if (req.baseUrl.endsWith("/admin")) return true;
-  return path === "/fs3-costs" ||
-    /^\/fs3-costs\/[^/]+$/.test(path) ||
-    path === "/fs3-ping-address" ||
-    /^\/group-buys\/[^/]+\/fs3-submit$/.test(path) ||
-    path === "/payments-config" ||
+  return path === "/payments-config" ||
     path === "/anonpay-config" ||
     path === "/wallet-address" ||
-    path === "/chain-wallets" ||
-    path === "/telegram-config" ||
-    path === "/shipping-config" ||
-    /^\/orders\/[^/]+\/payment-status$/.test(path) ||
-    (req.method === "DELETE" && /^\/group-buys(?:\/|$)/.test(path));
+    path === "/wallet-change-code" ||
+    path === "/chain-wallets";
 }

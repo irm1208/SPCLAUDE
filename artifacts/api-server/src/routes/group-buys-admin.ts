@@ -22,7 +22,7 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, or, sql, asc, desc, inArray, isNotNull } from "drizzle-orm";
 import { randomUUID, randomBytes } from "crypto";
-import { requireAdmin, requireAdminStepUp, setAdminMutationSummary } from "../middleware/require-admin";
+import { requireAdmin, setAdminMutationSummary } from "../middleware/require-admin";
 import { normalizeTg } from "../lib/normalize";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { createAlert } from "../lib/create-alert";
@@ -517,7 +517,6 @@ router.patch("/admin/group-buys/entry-fee-payments/:id/status", async (req, res)
 // ── DELETE /admin/group-buys/:id — soft delete (→ archived) ───
 router.delete("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
 
   const { id } = req.params;
 
@@ -3239,7 +3238,6 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req, res): Promise<vo
 // Records a submission in fs3_submissions for history tracking.
 router.post("/admin/group-buys/:gbId/fs3-submit", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   setAdminMutationSummary(res, "fs3_submission", ["batchLocked", "status"], "submitted");
   const { gbId } = req.params;
   const { includeUnconfirmed = false, submittedBy = "admin", notes = "", sheets = [] } = req.body as { includeUnconfirmed?: boolean; submittedBy?: string; notes?: string; sheets?: { label: string; type: string; orderCount: number }[] };

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID, timingSafeEqual, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
-import { requireAdmin, requireAdminStepUp, setAdminMutationSummary, getAdminUsername } from "../middleware/require-admin";
+import { requireAdmin, setAdminMutationSummary, getAdminUsername } from "../middleware/require-admin";
 import { db } from "@workspace/db";
 import ExcelJS from "exceljs";
 import {
@@ -3825,7 +3825,6 @@ router.get("/admin/fs3-costs", async (req: any, res: any) => {
 // POST: upsert a single entry
 router.post("/admin/fs3-costs", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   const productName = String(req.body?.productName ?? "").trim().slice(0, 200);
   const unitCost = parseFloat(String(req.body?.unitCost ?? ""));
   if (!productName) { res.status(400).json({ error: "productName required" }); return; }
@@ -3842,7 +3841,6 @@ router.post("/admin/fs3-costs", async (req: any, res: any) => {
 // DELETE: remove a single entry by id
 router.delete("/admin/fs3-costs/:id", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   setAdminMutationSummary(res, "fs3_cost", ["deleted"], "deleted");
@@ -3853,7 +3851,6 @@ router.delete("/admin/fs3-costs/:id", async (req: any, res: any) => {
 // DELETE /admin/fs3-costs — wipe all entries (next GET re-seeds from defaults)
 router.delete("/admin/fs3-costs", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   setAdminMutationSummary(res, "fs3_cost", ["deleted"], "deleted_all");
   await db.delete(fs3CostsTable);
   res.json({ ok: true });
@@ -4177,7 +4174,6 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
 // a link to add their delivery details.
 router.post("/admin/fs3-ping-address", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
 
   const {
     gbId,

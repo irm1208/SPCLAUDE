@@ -320,6 +320,22 @@ async function inferActionBinding(path: string, init?: RequestInit): Promise<Adm
   if (!isMutation(init?.method)) return undefined;
   let body: any = null;
   try { body = typeof init?.body === "string" ? JSON.parse(init.body) : null; } catch { return undefined; }
+  const impersonatedUsername = new Headers(init?.headers).get("x-impersonate-username")?.trim();
+  if (impersonatedUsername && path === "/api/reshipper/me") {
+    return {
+      action: "reshipper.payment-destination.update",
+      target: `reshipper:${impersonatedUsername}`,
+      payload: normalizeReshipperPaymentDestination(body),
+    };
+  }
+  const assignment = path.match(/^\/api\/reshipper\/gb\/([^/]+)\/payment-details$/);
+  if (impersonatedUsername && assignment) {
+    return {
+      action: "reshipper.assignment-payment-destination.update",
+      target: `reshipper:${impersonatedUsername}:group-buy:${assignment[1]}`,
+      payload: normalizeReshipperPaymentDestination(body),
+    };
+  }
   if (path === "/api/admin/wallet-address" && typeof body?.walletAddress === "string") {
     return { action: "wallet.address.update", target: "wallet.primary", payload: { walletAddress: body.walletAddress.trim() } };
   }
@@ -334,6 +350,41 @@ async function inferActionBinding(path: string, init?: RequestInit): Promise<Adm
     return { action: "wallet.change-code.update", target: "wallet.change-code", payload: { newCodeHash } };
   }
   return undefined;
+}
+
+function normalizeReshipperPaymentDestination(body: any): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const cryptoOptions = Array.isArray(body?.cryptoOptions)
+    ? body.cryptoOptions
+        .filter((option: unknown) => option && typeof option === "object")
+        .map((option: { currency?: unknown; network?: unknown; walletAddress?: unknown }) => ({
+          currency: String(option.currency ?? "").trim(),
+          network: String(option.network ?? "").trim(),
+          walletAddress: String(option.walletAddress ?? "").trim(),
+        }))
+        .filter((option: { currency: string; network: string; walletAddress: string }) =>
+          option.currency && option.network && option.walletAddress)
+    : undefined;
+  const firstCrypto = cryptoOptions?.[0];
+
+  for (const key of ["usdtWallet", "revolutHandle", "paypalHandle"] as const) {
+    if (body?.[key] !== undefined) result[key] = body[key] ? String(body[key]).trim() : null;
+  }
+  if (cryptoOptions !== undefined) {
+    result.cryptoCurrency = firstCrypto?.currency ?? null;
+    result.cryptoNetwork = firstCrypto?.network ?? null;
+    result.cryptoWalletAddress = firstCrypto?.walletAddress ?? null;
+    result.cryptoOptions = cryptoOptions;
+  } else {
+    for (const key of ["cryptoCurrency", "cryptoNetwork", "cryptoWalletAddress"] as const) {
+      if (body?.[key] !== undefined) result[key] = body[key] ? String(body[key]).trim() : null;
+    }
+  }
+  if (body?.anonPayEnabled !== undefined) result.anonPayEnabled = Boolean(body.anonPayEnabled);
+  for (const key of ["anonPayWallet", "anonPayTicker", "anonPayNetwork"] as const) {
+    if (body?.[key] !== undefined) result[key] = body[key] ? String(body[key]).trim() : null;
+  }
+  return result;
 }
 
 export const adminAuth = new AdminAuthController();

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { siteConfigTable, ruleAcceptancesTable, accountsTable } from "@workspace/db";
 import { eq, desc, count } from "drizzle-orm";
 import { invalidateTelegramCache, getTelegramStatus, sendAdminTestMessage, setWebhook, buildWebhookUrl } from "../lib/telegram";
-import { requireAdmin, requireAdminStepUp } from "../middleware/require-admin";
+import { requireAdmin } from "../middleware/require-admin";
 
 const router: IRouter = Router();
 
@@ -209,7 +209,6 @@ router.get("/admin/telegram-config", async (req, res): Promise<void> => {
 
 router.put("/admin/telegram-config", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   const { botToken, adminChatId } = req.body as { botToken?: string; adminChatId?: string };
   if (botToken !== undefined) {
     const trimmed = String(botToken).trim();
@@ -279,7 +278,6 @@ router.get("/admin/shipping-config", async (req, res): Promise<void> => {
 // ─── PATCH /api/admin/shipping-config ──────────────────────────
 router.patch("/admin/shipping-config", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdminStepUp(req, res)) return;
   const { adminFeeEnabled, adminFeeAmount, adminFeeCountries } = req.body as {
     adminFeeEnabled?: boolean;
     adminFeeAmount?: number | string;
