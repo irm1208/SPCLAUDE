@@ -10,7 +10,7 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 import { pool } from "@workspace/db";
 import { decryptBackupToStream, parseBackupEncryptionKey } from "./backup-encryption";
 import { startDisposablePostgres, type DisposablePostgres } from "./disposable-postgres";
-import { getGoogleDriveBackupFolderId, type DriveBackupFile } from "./google-drive-backup";
+import { getGoogleDriveBackupFolderId, isSupportedBackupName, selectNewestBackup, type DriveBackupFile } from "./google-drive-backup";
 import { validateRestoredDatabase, type RestoreValidationResult } from "./db-restore-validation";
 import { writeLog } from "./audit-log";
 import { createAlert } from "./create-alert";
@@ -19,7 +19,6 @@ import { sendAdminMessage } from "./telegram";
 const VERIFY_LOCK_NAME = "salt-and-peps:database-backup-restore-verification";
 const DRIVE_CONNECTOR = "google-drive";
 const ENCRYPTED_SUFFIX = ".sql.gz.enc";
-const LEGACY_SUFFIX = ".sql";
 
 export interface BackupVerificationDependencies {
   acquireLock(): Promise<boolean>;
@@ -40,16 +39,9 @@ export interface BackupVerificationDependencies {
   removeDownload(path: string): Promise<void>;
 }
 
-function supported(backup: DriveBackupFile): boolean {
-  const name = backup.name.toLowerCase();
-  return name.endsWith(ENCRYPTED_SUFFIX) || name.endsWith(LEGACY_SUFFIX);
-}
-
 function newestSupported(backups: DriveBackupFile[]): DriveBackupFile {
-  const backup = backups
-    .filter(supported)
-    .sort((left, right) => Date.parse(right.modifiedTime ?? "") - Date.parse(left.modifiedTime ?? ""))[0];
-  if (!backup) throw new Error("No supported database backup is available");
+  const backup = selectNewestBackup(backups);
+  if (!backup || !isSupportedBackupName(backup.name)) throw new Error("No supported database backup is available");
   return backup;
 }
 
@@ -103,16 +95,22 @@ export async function runBackupVerification(
     failure = error;
   }
 
-  const cleanupFailure = await cleanUp(dependencies, target, downloadedPath);
-  if (!failure && cleanupFailure) failure = cleanupFailure;
   try {
     if (failure) {
       const requestId = randomUUID();
       await dependencies.audit("backup_restore_failed", "Database backup restore verification failed", { category: "backup_restore_failed", requestId }).catch(() => undefined);
       await dependencies.alert("backup_restore_failed", requestId).catch(() => undefined);
       await dependencies.notifyAdmin("backup_restore_failed", requestId).catch(() => undefined);
-      throw genericFailure();
     }
+    const cleanupFailure = await cleanUp(dependencies, target, downloadedPath);
+    if (cleanupFailure) {
+      const requestId = randomUUID();
+      await dependencies.audit("backup_restore_failed", "Database backup restore verification cleanup failed", { category: "backup_restore_cleanup_failed", requestId }).catch(() => undefined);
+      await dependencies.alert("backup_restore_cleanup_failed", requestId).catch(() => undefined);
+      await dependencies.notifyAdmin("backup_restore_cleanup_failed", requestId).catch(() => undefined);
+      failure = cleanupFailure;
+    }
+    if (failure) throw genericFailure();
     return "verified";
   } finally {
     await dependencies.releaseLock();
@@ -130,7 +128,7 @@ async function digestFile(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function legacySqlSource(path: string): Promise<Readable> {
+export async function legacySqlSource(path: string): Promise<Readable> {
   const file = await open(path, "r");
   const magic = Buffer.alloc(2);
   try { await file.read(magic, 0, 2, 0); } finally { await file.close(); }

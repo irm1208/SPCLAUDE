@@ -1,8 +1,13 @@
 import { Readable } from "node:stream";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 import type { DisposablePostgres } from "./disposable-postgres";
 import {
   runBackupVerification,
+  legacySqlSource,
   type BackupVerificationDependencies,
 } from "./db-backup-verifier";
 
@@ -27,7 +32,7 @@ function dependencies(events: string[]): BackupVerificationDependencies {
       return [
         { id: "old-legacy", name: "S&PBACKUP-2026-09-05_12-00-00.SQL", modifiedTime: "2026-09-05T12:00:00Z" },
         encryptedBackup,
-        { id: "unsupported", name: "notes.txt", modifiedTime: "2026-09-07T12:00:00Z" },
+        { id: "unsupported", name: "notes.sql", modifiedTime: "2026-09-07T12:00:00Z" },
       ];
     }),
     allocateDownloadPath: vi.fn(async () => "/tmp/envelope"),
@@ -52,13 +57,15 @@ function dependencies(events: string[]): BackupVerificationDependencies {
 describe("runBackupVerification", () => {
   it("restores the newest supported encrypted backup in its locked disposable target", async () => {
     const events: string[] = [];
-    const result = await runBackupVerification(dependencies(events));
+    const d = dependencies(events);
+    const result = await runBackupVerification(d);
 
     expect(result).toBe("verified");
     expect(events).toEqual([
       "lock", "list", "download", "digest", "cluster", "decrypt", "psql", "validate",
       "audit:backup_restore_verified", "cleanup-cluster", "cleanup-download", "release-lock",
     ]);
+    expect(d.download).toHaveBeenCalledWith(encryptedBackup, "/tmp/envelope");
   });
 
   it.each([
@@ -80,6 +87,7 @@ describe("runBackupVerification", () => {
     expect(JSON.stringify((d.audit as any).mock.calls)).not.toContain("postgres://production/secret");
     expect(JSON.stringify((d.audit as any).mock.calls)).not.toContain("SQL stderr private text");
     expect(events).toContain("cleanup-download");
+    expect(events.indexOf("audit:backup_restore_failed")).toBeLessThan(events.indexOf("cleanup-download"));
     expect(events.at(-1)).toBe("release-lock");
   });
 
@@ -100,5 +108,32 @@ describe("runBackupVerification", () => {
     await expect(runBackupVerification(d)).resolves.toBe("lock_contended");
     expect(d.listBackups).not.toHaveBeenCalled();
     expect(d.releaseLock).not.toHaveBeenCalled();
+  });
+
+  it("uses the legacy SQL stream without modifying plain or gzip Drive media", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "verifier-legacy-"));
+    try {
+      for (const [name, bytes] of [["plain.SQL", Buffer.from("SELECT 1;")], ["gzip.SQL", gzipSync("SELECT 2;")]] as const) {
+        const path = join(directory, name);
+        await writeFile(path, bytes);
+        const source = await legacySqlSource(path);
+        const chunks: Buffer[] = [];
+        for await (const chunk of source) chunks.push(Buffer.from(chunk));
+        const restored = Buffer.concat(chunks).toString("utf8");
+        expect(restored).toBe(name === "plain.SQL" ? "SELECT 1;" : "SELECT 2;");
+        expect(await readFile(path)).toEqual(bytes);
+      }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("reports target cleanup failure, still removes download, and releases lock", async () => {
+    const events: string[] = [];
+    const d = dependencies(events);
+    ((await (d.startPostgres as any)()) as any).stopAndRemove.mockRejectedValueOnce(new Error("postgres://secret stderr"));
+    await expect(runBackupVerification(d)).rejects.toThrow("backup verification failed");
+    expect(events).toContain("cleanup-download");
+    expect(events.at(-1)).toBe("release-lock");
+    expect(d.audit).toHaveBeenCalledWith("backup_restore_failed", expect.any(String), expect.objectContaining({ category: "backup_restore_cleanup_failed" }));
+    expect(JSON.stringify((d.audit as any).mock.calls)).not.toContain("postgres://secret");
   });
 });
