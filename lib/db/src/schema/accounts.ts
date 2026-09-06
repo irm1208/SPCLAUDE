@@ -106,6 +106,11 @@ export const accountsTable = pgTable("accounts", {
   lastLoginIp: text("last_login_ip"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   signupInviteCode: text("signup_invite_code"),
+  // null verificationRequiredAt keeps accounts created before verification rollout grandfathered.
+  verificationRequiredAt: timestamp("verification_required_at", { withTimezone: true }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verificationMethod: text("verification_method"),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   // Discord integration
   discordId: text("discord_id").unique(),
   discordUsername: text("discord_username"),
