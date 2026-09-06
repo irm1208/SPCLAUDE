@@ -1,4 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+
+const { proxy } = vi.hoisted(() => ({ proxy: vi.fn() }));
+
+vi.mock("@replit/connectors-sdk", () => ({
+  ReplitConnectors: class {
+    proxy = proxy;
+  },
+}));
+
 import {
   buildDriveTransportHeaders,
   DRIVE_BACKUP_MIME_TYPE,
@@ -8,8 +20,11 @@ import {
   findMatchingDriveBackup,
   isRetryableDriveUploadStatus,
   isSupportedBackupName,
+  downloadGoogleDriveBackup,
+  listGoogleDriveBackups,
   migrationAction,
   selectNewestBackup,
+  uploadBackupToGoogleDrive,
 } from "./google-drive-backup";
 import { buildPgDumpArgs } from "./db-backup-command";
 
@@ -118,6 +133,132 @@ describe("Google Drive database backup helpers", () => {
         },
       ]),
     ).toMatchObject({ id: "encrypted-newest" });
+  });
+
+  it("lists every Drive backup page before selecting a supported backup", async () => {
+    proxy.mockReset();
+    proxy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ files: [{ id: "backup-folder" }] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                id: "newest-unrelated",
+                name: "notes.txt",
+                modifiedTime: "2026-09-04T10:40:11.000Z",
+              },
+            ],
+            nextPageToken: "page-two",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                id: "supported-on-page-two",
+                name: "S&PBACKUP-2026-09-03_10-40-11.sql.gz.enc",
+                modifiedTime: "2026-09-03T10:40:11.000Z",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+
+    const files = await listGoogleDriveBackups();
+
+    expect(selectNewestBackup(files)).toMatchObject({ id: "supported-on-page-two" });
+    expect(proxy).toHaveBeenCalledTimes(3);
+    expect(proxy.mock.calls[1]?.[1]).toContain("orderBy=modifiedTime+desc");
+    expect(proxy.mock.calls[1]?.[1]).toContain("trashed+%3D+false");
+    expect(proxy.mock.calls[2]?.[1]).toContain("pageToken=page-two");
+  });
+
+  it("uploads the encrypted file bytes with only binary transport headers", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const encryptedPath = join(directory, "backup.sql.gz.enc");
+    await writeFile(encryptedPath, "encrypted backup");
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/session" },
+        });
+      }
+      if (path === "/upload/session") {
+        return new Response(JSON.stringify({ id: "uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+          size: "16",
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await uploadBackupToGoogleDrive(
+        encryptedPath,
+        "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+      );
+
+      const uploadCall = proxy.mock.calls.find((call) => call[1] === "/upload/session");
+      const uploadOptions = uploadCall?.[2] as {
+        headers: Record<string, string>;
+        body: Blob;
+      };
+      expect(uploadOptions.headers).toEqual({
+        "Content-Type": "application/octet-stream",
+        "Content-Length": "16",
+      });
+      expect(uploadOptions.headers).not.toHaveProperty("Content-Encoding");
+      expect(uploadOptions.headers).not.toHaveProperty("Content-Range");
+      expect(await uploadOptions.body.text()).toBe("encrypted backup");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads atomically and removes partial files when streaming fails", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const destination = join(directory, "backup.sql.gz.enc");
+    await writeFile(destination, "old backup");
+    proxy.mockReset();
+    proxy.mockResolvedValueOnce(new Response("encrypted backup", { status: 200 }));
+
+    try {
+      await downloadGoogleDriveBackup("downloaded", destination);
+      expect(await readFile(destination, "utf8")).toBe("encrypted backup");
+      expect(proxy.mock.calls[0]?.[1]).toBe("/drive/v3/files/downloaded?alt=media");
+
+      proxy.mockReset();
+      proxy.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error("network interrupted"));
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+      await expect(downloadGoogleDriveBackup("failed", destination)).rejects.toThrow(
+        "network interrupted",
+      );
+      expect(await readFile(destination, "utf8")).toBe("encrypted backup");
+      expect((await readdir(directory)).filter((name) => name.endsWith(".partial"))).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("retries only temporary connector and Drive upload failures", () => {

@@ -191,16 +191,26 @@ class GoogleDriveBackupStorage {
 
   async listBackups(): Promise<DriveBackupFile[]> {
     const folderId = await this.getFolderId();
-    const params = new URLSearchParams({
-      q: [`'${escapeDriveQueryValue(folderId)}' in parents`, "trashed = false"].join(" and "),
-      fields: "files(id,name,size,mimeType,modifiedTime,parents,trashed)",
-      pageSize: "100",
-      orderBy: "modifiedTime desc",
-    });
-    const response = await this.connectors.proxy(DRIVE_CONNECTOR, driveFilesPath(params));
-    if (!response.ok) return responseError(response, "Listing Google Drive backups");
-    const body = (await response.json()) as { files?: DriveBackupFile[] };
-    return body.files ?? [];
+    const files: DriveBackupFile[] = [];
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        q: [`'${escapeDriveQueryValue(folderId)}' in parents`, "trashed = false"].join(" and "),
+        fields: "nextPageToken,files(id,name,size,mimeType,modifiedTime,parents,trashed)",
+        pageSize: "100",
+        orderBy: "modifiedTime desc",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const response = await this.connectors.proxy(DRIVE_CONNECTOR, driveFilesPath(params));
+      if (!response.ok) return responseError(response, "Listing Google Drive backups");
+      const body = (await response.json()) as {
+        files?: DriveBackupFile[];
+        nextPageToken?: string;
+      };
+      files.push(...(body.files ?? []));
+      pageToken = body.nextPageToken;
+    } while (pageToken);
+    return files;
   }
 
   async getFile(fileId: string): Promise<DriveBackupFile> {
