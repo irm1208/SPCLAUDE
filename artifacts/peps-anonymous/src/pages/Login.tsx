@@ -97,6 +97,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileLoadError, setTurnstileLoadError] = useState("");
+  const [turnstileLoadAttempt, setTurnstileLoadAttempt] = useState(0);
   const turnstileSiteKey = resolveTurnstileSiteKey(
     import.meta.env.VITE_TURNSTILE_SITE_KEY,
     import.meta.env.PROD,
@@ -120,15 +122,25 @@ export default function Login() {
     if (tab !== "signup") return;
     if (!turnstileSiteKey) return;
 
-    if (!document.querySelector('script[src*="turnstile/v0/api.js"]')) {
-      const script = document.createElement('script');
+    setTurnstileLoadError("");
+    let script = document.querySelector<HTMLScriptElement>('script[src*="turnstile/v0/api.js"]');
+    if (!script) {
+      script = document.createElement("script");
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);
     }
 
-    let checkInterval = setInterval(() => {
+    let checks = 0;
+    const failLoad = () => {
+      setTurnstileToken("");
+      setTurnstileLoadError("The security check could not load. Check your connection and try again.");
+    };
+    script.addEventListener("error", failLoad, { once: true });
+
+    const checkInterval = window.setInterval(() => {
+      checks += 1;
       if ((window as any).turnstile && turnstileContainerRef.current) {
         clearInterval(checkInterval);
         try {
@@ -143,14 +155,18 @@ export default function Login() {
             appearance: "interaction-only"
           });
           turnstileWidgetIdRef.current = id;
-        } catch (e) {
-          console.error("Turnstile render error", e);
+        } catch {
+          failLoad();
         }
+      } else if (checks >= 150) {
+        clearInterval(checkInterval);
+        failLoad();
       }
     }, 100);
 
     return () => {
       clearInterval(checkInterval);
+      script?.removeEventListener("error", failLoad);
       if (turnstileWidgetIdRef.current && (window as any).turnstile) {
         try {
           (window as any).turnstile.remove(turnstileWidgetIdRef.current);
@@ -159,7 +175,7 @@ export default function Login() {
       }
       setTurnstileToken("");
     };
-  }, [tab, turnstileSiteKey]);
+  }, [tab, turnstileSiteKey, turnstileLoadAttempt]);
 
   const { data: siteConfig } = useQuery({
     queryKey: ["site-config"],
@@ -302,10 +318,10 @@ export default function Login() {
       if ((result as any).needsSetup) {
         setTab("signup");
         setError("An account has been created for you — please set a password to complete your registration.");
-      } else if (result.needsPassword) {
-        setStep("set-password");
       } else if (result.verificationRequired) {
         setLocation("/verify-account");
+      } else if (result.needsPassword) {
+        setStep("set-password");
       } else {
         setLocation(nextParam || "/account");
       }
@@ -527,7 +543,9 @@ export default function Login() {
                       className="w-full h-12 px-4 pr-12 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }}
                     />
-                    <button type="button" onClick={() => setShowCredential(s => !s)} tabIndex={-1}
+                    <button type="button" onClick={() => setShowCredential(s => !s)}
+                      aria-label={showCredential ? "Hide password or PIN" : "Show password or PIN"}
+                      aria-pressed={showCredential}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors"
                       style={{ color: T.muted }}>
                       {showCredential ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -583,7 +601,9 @@ export default function Login() {
                           autoComplete="new-password" disabled={setPasswordMutation.isPending}
                           className="w-full h-12 px-4 pr-12 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                           style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
-                        <button type="button" onClick={() => setShowNewPassword(s => !s)} tabIndex={-1}
+                        <button type="button" onClick={() => setShowNewPassword(s => !s)}
+                          aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                          aria-pressed={showNewPassword}
                           className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors"
                           style={{ color: T.muted }}>
                           {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -727,7 +747,9 @@ export default function Login() {
                       autoComplete="new-password" disabled={forgotLoading}
                       className="w-full h-12 px-4 pr-12 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
-                    <button type="button" onClick={() => setShowForgotPw(s => !s)} tabIndex={-1}
+                    <button type="button" onClick={() => setShowForgotPw(s => !s)}
+                      aria-label={showForgotPw ? "Hide new password" : "Show new password"}
+                      aria-pressed={showForgotPw}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors"
                       style={{ color: T.muted }}>
                       {showForgotPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -868,7 +890,9 @@ export default function Login() {
                       placeholder="Min. 8 characters" autoComplete="new-password" disabled={isLoading}
                       className="w-full h-12 px-4 pr-12 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
-                    <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                    <button type="button" onClick={() => setShowPassword(s => !s)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-pressed={showPassword}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors"
                       style={{ color: T.muted }}>
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -886,6 +910,24 @@ export default function Login() {
 
                 {tab === "signup" && turnstileSiteKey && (
                   <div className="flex justify-center my-2" ref={turnstileContainerRef}></div>
+                )}
+                {tab === "signup" && turnstileLoadError && (
+                  <div className="space-y-2">
+                    <ErrorBanner message={turnstileLoadError} />
+                    <button
+                      type="button"
+                      className="w-full h-10 rounded-xl text-xs font-bold"
+                      style={{ color: "var(--t-blue-deep)", border: `1px solid ${T.border}` }}
+                      onClick={() => {
+                        if (!(window as any).turnstile) {
+                          document.querySelector('script[src*="turnstile/v0/api.js"]')?.remove();
+                        }
+                        setTurnstileLoadAttempt(attempt => attempt + 1);
+                      }}
+                    >
+                      Try Security Check Again
+                    </button>
+                  </div>
                 )}
                 {tab === "signup" && !turnstileSiteKey && (
                   <ErrorBanner message="The security check is unavailable. Please try again later." />
@@ -1112,7 +1154,7 @@ export default function Login() {
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+    <div role="alert" aria-live="polite" className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
       style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)" }}>
       <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
       <p className="text-sm text-red-600">{message}</p>

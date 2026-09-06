@@ -23,7 +23,7 @@ import { accountRequiresVerification, parseResendRetrySeconds } from "@/lib/acco
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+    <div role="alert" aria-live="polite" className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
       style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)" }}>
       <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
       <p className="text-sm text-red-600">{message}</p>
@@ -34,7 +34,13 @@ function ErrorBanner({ message }: { message: string }) {
 export default function VerifyAccount() {
   const [, setLocation] = useLocation();
   const { account, isLoading: accountLoading } = useAccount();
-  const { data: status, isLoading: statusLoading } = useVerificationStatus();
+  const {
+    data: status,
+    isLoading: statusLoading,
+    isError: statusError,
+    isFetching: statusFetching,
+    refetch: refetchStatus,
+  } = useVerificationStatus();
   const logout = useLogout();
   
   const resendEmail = useResendVerificationEmail();
@@ -53,7 +59,10 @@ export default function VerifyAccount() {
   const [tgLinkData, setTgLinkData] = useState<{ deepLink: string | null; botUsername: string | null } | null>(null);
   const [tgLinkError, setTgLinkError] = useState("");
   const [tgLinked, setTgLinked] = useState(false);
-  const { data: tgStatus } = useTelegramStatus(activeMethod === "telegram" && !tgLinked, { refetchInterval: 3000 });
+  const {
+    data: tgStatus,
+    dataUpdatedAt: tgStatusUpdatedAt,
+  } = useTelegramStatus(activeMethod === "telegram" && !tgLinked, { refetchInterval: 3000 });
 
   // Redirect if already verified or not logged in
   useEffect(() => {
@@ -126,7 +135,7 @@ export default function VerifyAccount() {
           // Keep polling: the authoritative verification transaction may still be completing.
         });
     }
-  }, [activeMethod, tgStatus?.linked, tgLinked, upgradeSession.isPending]);
+  }, [activeMethod, tgStatus?.linked, tgStatusUpdatedAt, tgLinked]);
 
   const handleResendEmail = async () => {
     setEmailError("");
@@ -166,7 +175,36 @@ export default function VerifyAccount() {
     );
   }
 
-  if (!status || !status.required) {
+  if (statusError || !status) {
+    return (
+      <PageLayout>
+        <div className="min-h-[100dvh] flex items-center justify-center px-4" style={{ background: T.bg }}>
+          <div className="w-full max-w-sm space-y-4">
+            <ErrorBanner message="We could not load your verification options. Your session is still secure." />
+            <button
+              type="button"
+              disabled={statusFetching}
+              onClick={() => refetchStatus()}
+              className="w-full h-11 rounded-xl text-sm font-bold disabled:opacity-50"
+              style={{ color: "var(--t-blue-deep)", border: `1px solid ${T.border}` }}
+            >
+              {statusFetching ? "Trying again..." : "Try Again"}
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full h-10 text-sm font-semibold"
+              style={{ color: T.muted }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  if (!status.required) {
     return null; // Will redirect via useEffect
   }
 

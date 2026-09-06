@@ -38,7 +38,7 @@ export interface AccountVerificationStatus {
 
 async function fetchVerificationStatus(): Promise<AccountVerificationStatus | null> {
   const res = await fetch("/api/account/verification/status", { credentials: "include" });
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error("Unable to load verification status");
   return res.json();
 }
 
@@ -48,13 +48,10 @@ async function fetchMe(): Promise<AccountMe | null> {
   if (res.status === 403) {
     const body = await res.json().catch(() => null) as { error?: string } | null;
     if (body?.error === "verification_required") {
-      const status = await fetchVerificationStatus();
-      if (status?.required && !status.verified) {
-        return {
-          telegramUsername: "",
-          verificationRequired: true,
-        };
-      }
+      return {
+        telegramUsername: "",
+        verificationRequired: true,
+      };
     }
     return null;
   }
