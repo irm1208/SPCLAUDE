@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import {
   accountVerificationChallengesTable,
   accountsTable,
@@ -12,6 +12,15 @@ const MAX_FAILED_ATTEMPTS = 5;
 
 type VerificationDb = Pick<typeof db, "select" | "insert" | "update">;
 type VerificationMethod = "email" | "telegram";
+
+export class EmailChallengeResendCooldownError extends Error {
+  readonly code = "email_challenge_resend_cooldown";
+
+  constructor(readonly retryAfterSeconds: number) {
+    super("Email verification code resend is cooling down");
+    this.name = "EmailChallengeResendCooldownError";
+  }
+}
 
 export function needsVerification(account: {
   verificationRequiredAt: Date | null;
@@ -30,6 +39,23 @@ export function resendAvailableAt(lastSentAt: Date): Date {
 
 export async function createEmailChallenge(database: VerificationDb, username: string) {
   const now = new Date();
+  const challenges = await database
+    .select()
+    .from(accountVerificationChallengesTable)
+    .where(eq(accountVerificationChallengesTable.accountUsername, username));
+  const latestChallenge = challenges
+    .sort((a, b) => {
+      const aTime = a.lastSentAt?.getTime() ?? a.createdAt.getTime();
+      const bTime = b.lastSentAt?.getTime() ?? b.createdAt.getTime();
+      return bTime - aTime;
+    })[0];
+  if (latestChallenge) {
+    const availableAt = resendAvailableAt(latestChallenge.lastSentAt ?? latestChallenge.createdAt);
+    if (availableAt > now) {
+      throw new EmailChallengeResendCooldownError(Math.ceil((availableAt.getTime() - now.getTime()) / 1_000));
+    }
+  }
+
   const code = String(randomInt(100000, 1_000_000));
 
   await database
@@ -96,10 +122,15 @@ export async function confirmEmailChallenge(database: VerificationDb, username: 
   if (challenge.attemptCount >= MAX_FAILED_ATTEMPTS) return { ok: false as const, reason: "attempts_exhausted" as const };
 
   if (challenge.codeHash !== hashEmailCode(code.trim())) {
-    await database
+    const [attempt] = await database
       .update(accountVerificationChallengesTable)
-      .set({ attemptCount: challenge.attemptCount + 1 })
-      .where(eq(accountVerificationChallengesTable.id, challenge.id));
+      .set({ attemptCount: sql`${accountVerificationChallengesTable.attemptCount} + 1` })
+      .where(and(
+        eq(accountVerificationChallengesTable.id, challenge.id),
+        lt(accountVerificationChallengesTable.attemptCount, MAX_FAILED_ATTEMPTS),
+      ))
+      .returning();
+    if (!attempt) return { ok: false as const, reason: "attempts_exhausted" as const };
     return { ok: false as const, reason: "invalid" as const };
   }
 
