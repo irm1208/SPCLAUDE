@@ -1506,6 +1506,9 @@ router.post("/orders", async (req, res): Promise<void> => {
 
 // ── POST /api/orders/lookup — look up order by Telegram username or order code + PIN ──
 router.post("/orders/lookup", async (req, res): Promise<void> => {
+  res.status(410).json({ error: "Public order lookup is temporarily disabled." });
+  return;
+
   // Accept `identifier` (new) or `telegramUsername` (legacy) from body
   const rawIdentifier: unknown = req.body.identifier ?? req.body.telegramUsername;
   const pin: unknown = req.body.pin;
