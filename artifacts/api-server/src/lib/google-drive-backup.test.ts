@@ -272,6 +272,51 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
+  it("recovers an upload completed after a retryable connector exception", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const encryptedPath = join(directory, "backup.sql.gz.enc");
+    await writeFile(encryptedPath, "encrypted backup");
+    let sessionRequests = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/session" },
+        });
+      }
+      if (path === "/upload/session") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) throw new Error("connector timeout");
+        if (sessionRequests === 2) return new Response(JSON.stringify({ id: "uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+          size: "16",
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await expect(
+        uploadBackupToGoogleDrive(encryptedPath, "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc"),
+      ).resolves.toMatchObject({ id: "uploaded" });
+      const statusCall = proxy.mock.calls.filter((call) => call[1] === "/upload/session")[1];
+      expect(statusCall?.[2]).toMatchObject({
+        method: "PUT",
+        headers: {
+          "Content-Length": "0",
+          "Content-Range": "bytes */16",
+        },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("resumes only encrypted bytes not committed before a retryable failure", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const encryptedPath = join(directory, "backup.sql.gz.enc");

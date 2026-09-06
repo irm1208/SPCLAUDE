@@ -98,6 +98,18 @@ export function isRetryableDriveUploadStatus(status: number): boolean {
   return [403, 408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
+function isRetryableDriveUploadException(error: unknown): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return isRetryableDriveUploadStatus(error.status);
+  }
+  return true;
+}
+
 export type MigrationAction = "upload" | "already_migrated" | "conflict";
 
 export function migrationAction(
@@ -279,13 +291,26 @@ class GoogleDriveBackupStorage {
     let needsStatusRecovery = false;
     for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
       if (needsStatusRecovery) {
-        const statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
-          method: "PUT",
-          headers: {
-            "Content-Length": "0",
-            "Content-Range": `bytes */${fileStats.size}`,
-          },
-        });
+        let statusResponse: Response;
+        try {
+          statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+            method: "PUT",
+            headers: {
+              "Content-Length": "0",
+              "Content-Range": `bytes */${fileStats.size}`,
+            },
+          });
+        } catch (error) {
+          if (!isRetryableDriveUploadException(error)) {
+            throw new Error("Google Drive backup upload status check failed");
+          }
+          const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
+          console.warn(
+            `[db-backup] Drive upload status check failed; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
+          );
+          await sleep(delayMs);
+          continue;
+        }
         if (statusResponse.status === 200 || statusResponse.status === 201) {
           uploadResponse = statusResponse;
           break;
@@ -306,11 +331,24 @@ class GoogleDriveBackupStorage {
           continue;
         }
       }
-      uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
-        method: "PUT",
-        headers: buildDriveResumableChunkHeaders(fileStats.size, nextOffset),
-        body: encryptedBlob.slice(nextOffset),
-      });
+      try {
+        uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+          method: "PUT",
+          headers: buildDriveResumableChunkHeaders(fileStats.size, nextOffset),
+          body: encryptedBlob.slice(nextOffset),
+        });
+      } catch (error) {
+        if (!isRetryableDriveUploadException(error)) {
+          throw new Error("Google Drive backup upload failed");
+        }
+        const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
+        console.warn(
+          `[db-backup] Drive upload request failed; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
+        );
+        needsStatusRecovery = true;
+        await sleep(delayMs);
+        continue;
+      }
       if (!isRetryableDriveUploadStatus(uploadResponse.status) || attempt === MAX_UPLOAD_ATTEMPTS) {
         break;
       }
