@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   inviteClaimReturnsZero: false,
   lockInviteAtMaxUses: false,
   lockShareAtMaxMembers: false,
+  existingWholesaleMember: false,
   memberInsertFails: false,
   cookies: [] as Array<{ username: string; restricted: boolean }>,
   rows: {} as Record<string, Row[]>,
@@ -53,6 +54,8 @@ function makeDatabase(rows: Record<string, Row[]>, root: boolean): any {
           let selected = rows[tableName] ?? [];
           if (tableName === "wholesale_share_members" && projection && "c" in projection) {
             selected = [{ c: selected.length }];
+          } else if (tableName === "wholesale_share_members" && projection && "id" in projection) {
+            selected = state.existingWholesaleMember ? selected.slice(0, 1) : [];
           }
           return Promise.resolve(selected).then(resolve, reject);
         },
@@ -231,6 +234,7 @@ describe("mounted public account registration", () => {
     state.inviteClaimReturnsZero = false;
     state.lockInviteAtMaxUses = false;
     state.lockShareAtMaxMembers = false;
+    state.existingWholesaleMember = false;
     state.memberInsertFails = false;
     state.cookies.length = 0;
     resetRows({
@@ -323,6 +327,7 @@ describe("mounted wholesale invite registration", () => {
     state.inviteClaimReturnsZero = false;
     state.lockInviteAtMaxUses = false;
     state.lockShareAtMaxMembers = false;
+    state.existingWholesaleMember = false;
     state.memberInsertFails = false;
     state.cookies.length = 0;
     resetRows({
@@ -413,6 +418,7 @@ describe("mounted wholesale invite registration", () => {
   });
 
   it("restores wholesale status for an existing member without consuming another invite use", async () => {
+    state.existingWholesaleMember = true;
     state.rows.accounts.push({
       telegramUsername: "wholesale_user", passwordHash: null, isWholesale: false,
     });
