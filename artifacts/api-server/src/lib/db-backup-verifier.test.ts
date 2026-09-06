@@ -3,12 +3,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DisposablePostgres } from "./disposable-postgres";
 import {
+  RESTORE_VERIFY_FIRST_DELAY_MS,
+  RESTORE_VERIFY_INTERVAL_MS,
   runBackupVerification,
   legacySqlSource,
   createVerificationAdvisoryLock,
+  startDbBackupVerificationSchedule,
   type BackupVerificationDependencies,
 } from "./db-backup-verifier";
 
@@ -17,6 +20,94 @@ const encryptedBackup = {
   name: "S&PBACKUP-2026-09-06_12-00-00.sql.gz.enc",
   modifiedTime: "2026-09-06T12:00:00Z",
 };
+
+describe("backup restore verification scheduler", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waits one hour before the first run and one week between later runs", () => {
+    expect(RESTORE_VERIFY_FIRST_DELAY_MS).toBe(60 * 60 * 1000);
+    expect(RESTORE_VERIFY_INTERVAL_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("does not automatically schedule verification in development", async () => {
+    vi.useFakeTimers();
+    const run = vi.fn().mockResolvedValue("verified");
+
+    startDbBackupVerificationSchedule({
+      environment: { NODE_ENV: "development" },
+      run,
+    });
+    await vi.advanceTimersByTimeAsync(
+      RESTORE_VERIFY_FIRST_DELAY_MS + RESTORE_VERIFY_INTERVAL_MS * 2,
+    );
+
+    expect(run).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not overlap local verification runs", async () => {
+    vi.useFakeTimers();
+    let finish!: (result: "verified") => void;
+    const run = vi.fn(() => new Promise<"verified">((resolve) => {
+      finish = resolve;
+    }));
+    const schedule = startDbBackupVerificationSchedule({
+      environment: { NODE_ENV: "production" },
+      run,
+    });
+
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_FIRST_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_INTERVAL_MS * 2);
+    expect(run).toHaveBeenCalledTimes(1);
+
+    finish("verified");
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_INTERVAL_MS);
+    expect(run).toHaveBeenCalledTimes(2);
+    schedule.stop();
+  });
+
+  it("handles advisory lock contention on the normal next interval", async () => {
+    vi.useFakeTimers();
+    const run = vi.fn().mockResolvedValue("lock_contended");
+    const schedule = startDbBackupVerificationSchedule({
+      environment: { NODE_ENV: "production" },
+      run,
+    });
+
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_FIRST_DELAY_MS);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_INTERVAL_MS - 1);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(run).toHaveBeenCalledTimes(2);
+    schedule.stop();
+  });
+
+  it("stop clears every timer and prevents scheduling after an in-flight run", async () => {
+    vi.useFakeTimers();
+    let finish!: (result: "verified") => void;
+    const run = vi.fn(() => new Promise<"verified">((resolve) => {
+      finish = resolve;
+    }));
+    const schedule = startDbBackupVerificationSchedule({
+      environment: { NODE_ENV: "production" },
+      run,
+    });
+
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_FIRST_DELAY_MS);
+    schedule.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    finish("verified");
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_INTERVAL_MS * 2);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 function dependencies(events: string[]): BackupVerificationDependencies {
   const target = {

@@ -19,6 +19,8 @@ import { sendAdminMessage } from "./telegram";
 const VERIFY_LOCK_NAME = "salt-and-peps:database-backup-restore-verification";
 const DRIVE_CONNECTOR = "google-drive";
 const ENCRYPTED_SUFFIX = ".sql.gz.enc";
+export const RESTORE_VERIFY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+export const RESTORE_VERIFY_FIRST_DELAY_MS = 60 * 60 * 1000;
 
 export interface BackupVerificationDependencies {
   acquireLock(): Promise<boolean>;
@@ -235,4 +237,50 @@ function defaultDependencies(): BackupVerificationDependencies {
 export async function runLatestBackupVerification(): Promise<"verified" | "lock_contended" | "not_configured"> {
   if (!process.env.DB_BACKUP_ENCRYPTION_KEY) return "not_configured";
   return runBackupVerification(defaultDependencies());
+}
+
+export interface BackupVerificationScheduleOptions {
+  environment?: NodeJS.ProcessEnv;
+  run?: () => Promise<"verified" | "lock_contended" | "not_configured">;
+}
+
+/**
+ * Schedules real restore verification in production. A recursive timeout keeps
+ * the weekly delay between completed attempts and prevents local overlap.
+ */
+export function startDbBackupVerificationSchedule(
+  options: BackupVerificationScheduleOptions = {},
+): { stop(): void } {
+  const environment = options.environment ?? process.env;
+  const run = options.run ?? runLatestBackupVerification;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const stop = (): void => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+
+  if (environment.NODE_ENV !== "production") {
+    return { stop };
+  }
+
+  const schedule = (delay: number): void => {
+    if (stopped) return;
+    timer = setTimeout(async () => {
+      timer = undefined;
+      try {
+        await run();
+      } catch {
+        console.error("[db-backup-verifier] Scheduled restore verification failed");
+      } finally {
+        schedule(RESTORE_VERIFY_INTERVAL_MS);
+      }
+    }, delay);
+  };
+
+  console.log("[db-backup-verifier] Schedule started — first restore verification in 1 h, then weekly");
+  schedule(RESTORE_VERIFY_FIRST_DELAY_MS);
+  return { stop };
 }

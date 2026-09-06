@@ -13,6 +13,7 @@ import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
 import { startEmailScheduler } from "./lib/email-scheduler";
 import { startDbBackupSchedule } from "./lib/db-backup";
+import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
 import { db, ordersTable } from "@workspace/db";
@@ -1037,6 +1038,7 @@ function startServer(): void {
   startGbLegsSync();
   startEmailScheduler();
   startDbBackupSchedule();
+  startDbBackupVerificationSchedule();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
   });
 }

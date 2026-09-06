@@ -28,11 +28,31 @@ afterward so the app can seed and use the new tables.
 - `ADMIN_SECRET`: Admin panel secret key
 - `ACCOUNT_JWT_SECRET`: JWT signing secret for customer sessions
 - `VENDOR_SHIPPING_PRICE`: Vendor shipping fee added to orders
+- `DB_BACKUP_ENCRYPTION_KEY`: A base64-encoded key containing exactly 32
+  cryptographically random bytes. Production encrypted backups and restore
+  verification require this secret; generate and store it as a Replit Secret,
+  and never commit or print its value.
 
 **Optional Environment Variables**:
 - `TELEGRAM_BOT_TOKEN`: Telegram Bot API token for notifications
 - `TELEGRAM_ADMIN_CHAT_ID`: Admin Telegram chat for order alerts
 - `ORDER_PIN`: Optional global PIN gate for order creation
+
+### Database backup operations
+
+- Production creates an encrypted database backup every six hours and uploads
+  it to Google Drive.
+- One hour after production startup, the newest backup is restored into a
+  disposable PostgreSQL instance and validated. Real restore verification then
+  runs weekly. Failures generate generic alerts and admin notifications without
+  exposing database output, credentials, backup contents, or encryption keys.
+- Run verification manually from `artifacts/api-server` with:
+  `pnpm exec tsx -e 'import("./src/lib/db-backup-verifier.ts").then(async ({ runLatestBackupVerification }) => console.log(await runLatestBackupVerification()))'`
+- Restore verification remains compatible with legacy plain SQL and gzip
+  backups. New backups use authenticated encryption.
+- Local failed-upload cleanup is limited to known encrypted temporary
+  artifacts. The application does not delete backups from remote storage or
+  enforce remote retention; manage Google Drive retention operationally.
 
 ## Stack
 

@@ -37,3 +37,14 @@ describe("admin security startup migrations", () => {
     expect(adminSecuritySchemaSource).toContain('uniqueIndex("admin_pending_challenges_token_hash_unique_idx"');
   });
 });
+
+describe("database backup startup schedules", () => {
+  it("starts restore verification beside the encrypted backup schedule", () => {
+    expect(startupSource).toMatch(
+      /import \{ startDbBackupVerificationSchedule \} from "\.\/lib\/db-backup-verifier";/,
+    );
+    expect(startupSource).toMatch(
+      /startDbBackupSchedule\(\);\s*startDbBackupVerificationSchedule\(\);/,
+    );
+  });
+});
