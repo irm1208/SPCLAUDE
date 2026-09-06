@@ -43,6 +43,9 @@ import {
 import { buildSharedOrderReopenPlan } from "../lib/shared-order-reopen";
 import { notifyUser } from "../lib/telegram";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import { verifyTurnstile } from "../lib/turnstile";
+import { createEmailChallenge } from "../lib/account-verification";
+import { sendTemplatedEmail } from "../lib/email";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -3614,7 +3617,7 @@ router.post("/wholesale-invite/:code/redeem", requireAccount, async (req, res): 
 router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> => {
   const code = String(req.params.code).trim().toUpperCase();
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const { telegramUsername, password, email, country } = body;
+  const { telegramUsername, password, email, country, turnstileToken } = body;
 
   if (!telegramUsername || typeof telegramUsername !== "string") {
     res.status(400).json({ error: "Telegram username is required" }); return;
@@ -3639,6 +3642,15 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
   if (isBlockedAutomatedRegistrationName(tg)) {
     writeLog("security", "warn", "automated_signup_blocked",
       "Automated account registration blocked",
+      { registrationType: "wholesale_invite" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Registration could not be completed" });
+    return;
+  }
+  if (!(await verifyTurnstile({ token: turnstileToken, remoteIp: req.ip })).ok) {
+    writeLog("security", "warn", "captcha_verification_failed",
+      "Wholesale invite registration CAPTCHA verification failed",
       { registrationType: "wholesale_invite" },
       req.ip,
     ).catch(() => {});
@@ -3690,13 +3702,26 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
     accountStatus: "active",
     country: (country as string).trim(),
     isWholesale: true,
+    verificationRequiredAt: new Date(),
   });
   await redeemShareInviteLink(link, share, tg, true, req.ip);
+  const challenge = await createEmailChallenge(db, tg);
+  const verificationDelivery = await sendTemplatedEmail("email_verification", (email as string).trim().toLowerCase(), {
+    code: challenge.code,
+    username: tg.replace(/^@/, ""),
+  });
+  if (!verificationDelivery.ok) {
+    writeLog("login", "warn", "verification_email_delivery_failed",
+      "New wholesale account verification email delivery failed",
+      { telegramUsername: tg },
+      req.ip,
+    ).catch(() => {});
+  }
   await issueAccountCookieForAccount(res, tg);
   await writeLog("login", "info", "account_signup_via_wholesale_invite",
     `New account created via wholesale invite link: ${tg}`,
     { telegramUsername: tg, shareId: share.id, linkCode: link.code }, req.ip).catch(() => {});
-  res.status(201).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: true });
+  res.status(201).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: true, verificationRequired: true });
 });
 
 // Organiser: create or replace the invite link for a share.

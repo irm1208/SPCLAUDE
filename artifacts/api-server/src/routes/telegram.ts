@@ -14,6 +14,7 @@ import { toggleWholesaleTrackingPreference } from "../lib/wholesale-tracking";
 import { GoogleGenAI } from "../lib/google-genai";
 import { callSageAI } from "../lib/sage-ai";
 import { projectTrackingPackages } from "@workspace/shipping/tracking";
+import { completeAccountVerification } from "../lib/account-verification";
 import {
   decodeWholesaleTrackingCallback,
   encodeWholesaleTrackingCallback,
@@ -2930,6 +2931,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
     await db.update(accountsTable)
       .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
       .where(eq(accountsTable.telegramUsername, account.telegramUsername));
+    await completeAccountVerification(db, account.telegramUsername, "telegram");
     markTokenConsumed(code);
 
     await sendMainMenu(chatId, account.telegramUsername);
@@ -3035,6 +3037,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       await db.update(accountsTable)
         .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
         .where(eq(accountsTable.telegramUsername, tokenAccount.telegramUsername));
+      await completeAccountVerification(db, tokenAccount.telegramUsername, "telegram");
       markTokenConsumed(code);
 
       await sendMainMenu(chatId, tokenAccount.telegramUsername);
@@ -3797,6 +3800,7 @@ router.post("/account/telegram/widget-auth", requireAccount, async (req, res): P
     .update(accountsTable)
     .set({ telegramChatId: String(id), telegramLinkToken: null, telegramLinkExpiresAt: null })
     .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
+  await completeAccountVerification(db, tg, "telegram");
 
   writeLog("login", "info", "telegram_widget_linked", `Telegram widget-linked for: ${tg}`, {
     telegramUsername: tg, telegramId: id,

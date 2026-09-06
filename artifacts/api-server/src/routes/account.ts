@@ -14,6 +14,9 @@ import { createAlert } from "../lib/create-alert";
 import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import { verifyTurnstile } from "../lib/turnstile";
+import { createEmailChallenge } from "../lib/account-verification";
+import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
@@ -93,7 +96,7 @@ const LOGIN_BLOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 // POST /api/account/signup
 // Creates a new account OR allows an admin-pre-created account (passwordHash = null) to set their password.
 router.post("/account/signup", async (req, res): Promise<void> => {
-  const { telegramUsername, password, email, country, inviteCode } = req.body;
+  const { telegramUsername, password, email, country, inviteCode, turnstileToken } = req.body;
 
   if (!telegramUsername || typeof telegramUsername !== "string") {
     res.status(400).json({ error: "Telegram username is required" });
@@ -113,6 +116,16 @@ router.post("/account/signup", async (req, res): Promise<void> => {
   }
   if (!country || typeof country !== "string" || country.trim().length === 0) {
     res.status(400).json({ error: "Country is required" });
+    return;
+  }
+
+  if (!(await verifyTurnstile({ token: turnstileToken, remoteIp: req.ip })).ok) {
+    writeLog("security", "warn", "captcha_verification_failed",
+      "Public account registration CAPTCHA verification failed",
+      { registrationType: "customer" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Registration could not be completed" });
     return;
   }
 
@@ -205,6 +218,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     email: email.trim().toLowerCase(),
     accountStatus: "active",
     country: normalizeCountryToCode(country.trim()),
+    verificationRequiredAt: new Date(),
     ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}),
   });
 
@@ -212,6 +226,19 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     await db.update(inviteCodesTable)
       .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
       .where(eq(inviteCodesTable.code, resolvedInviteCode));
+  }
+
+  const challenge = await createEmailChallenge(db, tg);
+  const verificationDelivery = await sendTemplatedEmail("email_verification", email.trim().toLowerCase(), {
+    code: challenge.code,
+    username: tg.replace(/^@/, ""),
+  });
+  if (!verificationDelivery.ok) {
+    writeLog("login", "warn", "verification_email_delivery_failed",
+      "New account verification email delivery failed",
+      { telegramUsername: tg },
+      req.ip,
+    ).catch(() => {});
   }
 
   await issueAccountCookieForAccount(res, tg);
@@ -246,7 +273,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
     ).catch(() => {});
   }
 
-  res.status(201).json({ ok: true, telegramUsername: tg });
+  res.status(201).json({ ok: true, telegramUsername: tg, verificationRequired: true });
 });
 
 // POST /api/account/login

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { accountVerificationChallengesTable, accountsTable, db } from "@workspace/db";
-import { requireAccountIdentity, issueAccountCookie } from "../middleware/account-auth";
+import { requireAccountIdentity, issueAccountCookieForAccount } from "../middleware/account-auth";
 import {
   EmailChallengeResendCooldownError,
   confirmEmailChallenge,
@@ -106,7 +106,7 @@ router.post("/account/verification/email/confirm", requireAccountIdentity, async
       res.status(400).json({ error: "Invalid verification code" });
       return;
     }
-    issueAccountCookie(res, req.account!.telegramUsername, { verificationRequired: false });
+    await issueAccountCookieForAccount(res, req.account!.telegramUsername);
     writeLog("login", "info", "verification_email_completed", "Email account verification completed", {
       telegramUsername: req.account!.telegramUsername,
     }, req.ip).catch(() => {});
@@ -122,7 +122,7 @@ router.post("/account/verification/session/upgrade", requireAccountIdentity, asy
     res.status(403).json({ error: "verification_required" });
     return;
   }
-  issueAccountCookie(res, account.telegramUsername, { verificationRequired: false });
+  await issueAccountCookieForAccount(res, account.telegramUsername);
   writeLog("login", "info", "verification_session_upgraded", "Verified account session upgraded", {
     telegramUsername: account.telegramUsername,
   }, req.ip).catch(() => {});

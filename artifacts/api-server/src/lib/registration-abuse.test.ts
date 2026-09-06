@@ -37,6 +37,37 @@ describe("automated registration name blocking", () => {
     expect(routesSource).toContain('router.post("/wholesale-invite/:code/register", signupLimiter)');
   });
 
+  it("requires Turnstile before public registration writes or password hashing", () => {
+    const accountSource = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
+    const sellerSource = readFileSync(new URL("../routes/vial-shop.ts", import.meta.url), "utf8");
+    const wholesaleSource = readFileSync(new URL("../routes/wholesale-shares.ts", import.meta.url), "utf8");
+    for (const source of [accountSource, sellerSource, wholesaleSource]) {
+      expect(source).toMatch(/verifyTurnstile\(\{ token: turnstileToken, remoteIp: req\.ip \}\)/);
+      expect(source).toMatch(/captcha_verification_failed/);
+    }
+    expect(accountSource).toMatch(/verifyTurnstile[\s\S]*bcrypt\.hash/);
+    expect(sellerSource).toMatch(/verifyTurnstile[\s\S]*hashPassword/);
+    expect(wholesaleSource).toMatch(/verifyTurnstile[\s\S]*bcrypt\.hash/);
+  });
+
+  it("restricts newly created public accounts and sends an email challenge", () => {
+    const accountSource = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
+    const wholesaleSource = readFileSync(new URL("../routes/wholesale-shares.ts", import.meta.url), "utf8");
+    for (const source of [accountSource, wholesaleSource]) {
+      expect(source).toMatch(/verificationRequiredAt:\s*new Date\(\)/);
+      expect(source).toMatch(/createEmailChallenge\(db,\s*tg\)/);
+      expect(source).toMatch(/sendTemplatedEmail\("email_verification"/);
+      expect(source).toMatch(/verificationRequired:\s*true/);
+    }
+  });
+
+  it("completes verification after either Telegram link flow binds identity", () => {
+    const telegramSource = readFileSync(new URL("../routes/telegram.ts", import.meta.url), "utf8");
+    expect(telegramSource).toMatch(/\/link command[\s\S]*completeAccountVerification\(db, account\.telegramUsername, "telegram"\)/);
+    expect(telegramSource).toMatch(/Deep-link auto-linking[\s\S]*completeAccountVerification\(db, tokenAccount\.telegramUsername, "telegram"\)/);
+    expect(telegramSource).toMatch(/telegram\/widget-auth[\s\S]*completeAccountVerification\(db, tg, "telegram"\)/);
+  });
+
   it("blocks existing matching identities at the shared session gate and before login", () => {
     const authSource = readFileSync(new URL("../middleware/account-auth.ts", import.meta.url), "utf8");
     const accountSource = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");

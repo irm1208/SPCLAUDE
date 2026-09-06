@@ -30,7 +30,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
 vi.mock("../middleware/account-auth", async (importOriginal) => ({
   ...await importOriginal<typeof import("../middleware/account-auth")>(),
   requireAccountIdentity: (req: any, _res: any, next: any) => { req.account = { telegramUsername: "new-user", verificationRequired: true }; next(); },
-  issueAccountCookie: (_res: unknown, _username: string, options: { verificationRequired: boolean }) => state.issued.push(options.verificationRequired),
+  issueAccountCookieForAccount: async (_res: unknown, _username: string) => { state.issued.push(false); return true; },
 }));
 vi.mock("../lib/account-verification", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/account-verification")>();
