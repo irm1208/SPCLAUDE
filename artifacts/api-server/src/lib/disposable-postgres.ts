@@ -6,6 +6,8 @@ import { createServer } from "node:net";
 import { ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 const execFileAsync = promisify(execFile);
 const TEMPORARY_PREFIX = "sp-backup-verify-";
@@ -20,6 +22,7 @@ export interface DisposablePostgres {
   readonly database: string;
   /** Fixed connection arguments generated for this disposable target. */
   readonly psqlArgs: readonly string[];
+  restoreSql(source: Readable): Promise<void>;
   executePsql(sql: string): Promise<string>;
   stopAndRemove(): Promise<void>;
 }
@@ -251,6 +254,25 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     }
     await runCommand("createdb", ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-O", restoreRole, database], timeoutMs);
     const psqlArgs = Object.freeze(["-h", "127.0.0.1", "-p", String(port), "-U", restoreRole, "-d", database, "-Atq"]);
+    const restoreSql = async (source: Readable): Promise<void> => {
+      const arguments_ = ["-X", "--set", "ON_ERROR_STOP=1", ...psqlArgs];
+      assertSafeCommandArguments(arguments_);
+      const child = spawn("psql", arguments_, {
+        stdio: ["pipe", "ignore", "ignore"],
+        env: { ...commandEnvironment(), PGPASSWORD: restorePassword },
+      });
+      if (!child.stdin) throw new Error("psql did not provide stdin");
+      const exited = new Promise<void>((resolvePromise, reject) => {
+        child.once("error", reject);
+        child.once("close", code => code === 0 ? resolvePromise() : reject(new Error("psql restore failed")));
+      });
+      try {
+        await Promise.all([pipeline(source, child.stdin), exited]);
+      } catch (error) {
+        child.kill("SIGTERM");
+        throw error;
+      }
+    };
 
     return {
       root: resolvedRoot,
@@ -259,6 +281,7 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
       port,
       database,
       psqlArgs,
+      restoreSql,
       executePsql: async (sql: string) => runCommand("psql", [...psqlArgs, "-c", sql], timeoutMs, { PGPASSWORD: restorePassword }),
       stopAndRemove,
     };
