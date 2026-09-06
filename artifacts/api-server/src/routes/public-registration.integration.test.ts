@@ -152,9 +152,12 @@ async function post(path: string, body: unknown) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const responseText = await response.text();
     return {
       status: response.status,
-      body: await response.json(),
+      body: response.headers.get("content-type")?.includes("application/json")
+        ? JSON.parse(responseText)
+        : responseText,
       cookie: response.headers.get("set-cookie"),
     };
   } finally {
