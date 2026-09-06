@@ -7711,7 +7711,7 @@ export default function CustomerPortal() {
       </div>
     );
   }
-  if (!account) return null;
+  if (!account || accountRequiresVerification(account)) return null;
 
   const filteredByGb = gbId ? orders.filter(o => o.groupBuyId === gbId) : orders;
 

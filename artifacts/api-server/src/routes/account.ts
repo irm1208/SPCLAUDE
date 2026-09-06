@@ -15,7 +15,7 @@ import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
-import { createEmailChallengeInTransaction } from "../lib/account-verification";
+import { createEmailChallengeInTransaction, needsVerification } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
@@ -1276,7 +1276,13 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
         { telegramUsername: tg, loginMethod: "password" },
         ip,
       ).catch(() => {});
-      res.json({ ok: true, telegramUsername: tg, needsPassword: false, loginMethod: "password" });
+      res.json({
+        ok: true,
+        telegramUsername: tg,
+        needsPassword: false,
+        loginMethod: "password",
+        verificationRequired: needsVerification(account),
+      });
       return;
     }
     // Password didn't match — try as order code fallback
@@ -1387,7 +1393,13 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
     ip,
   ).catch(() => {});
 
-  res.json({ ok: true, telegramUsername: tg, needsPassword, loginMethod: "order" });
+  res.json({
+    ok: true,
+    telegramUsername: tg,
+    needsPassword,
+    loginMethod: "order",
+    verificationRequired: needsVerification(account),
+  });
 });
 
 // GET /api/account/profile — fetch customer profile for the logged-in account

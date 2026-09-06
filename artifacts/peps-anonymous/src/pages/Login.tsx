@@ -304,6 +304,8 @@ export default function Login() {
         setError("An account has been created for you — please set a password to complete your registration.");
       } else if (result.needsPassword) {
         setStep("set-password");
+      } else if (result.verificationRequired) {
+        setLocation("/verify-account");
       } else {
         setLocation(nextParam || "/account");
       }

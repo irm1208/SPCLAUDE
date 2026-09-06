@@ -166,7 +166,14 @@ export function useSmartLogin() {
       const data = await res.json();
       if (data.needsSetup) return { ok: false as const, telegramUsername: "", needsPassword: false, needsSetup: true as const, loginMethod: "" };
       if (!res.ok) throw new Error(data.error || "Login failed");
-      return data as { ok: boolean; telegramUsername: string; needsPassword: boolean; needsSetup?: boolean; loginMethod: string };
+      return data as {
+        ok: boolean;
+        telegramUsername: string;
+        needsPassword: boolean;
+        needsSetup?: boolean;
+        loginMethod: string;
+        verificationRequired?: boolean;
+      };
     },
     onSuccess: () => {
       qc.clear();

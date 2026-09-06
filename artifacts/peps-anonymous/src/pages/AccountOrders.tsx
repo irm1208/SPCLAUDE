@@ -18,6 +18,7 @@ import {
 } from "@/hooks/use-account";
 import { BottomTabs } from "@/components/BottomTabs";
 import { fmtC } from "@/lib/currency";
+import { accountRequiresVerification } from "@/lib/account-verification-flow";
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   Draft:      { label: "Draft",      color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText },
@@ -852,10 +853,12 @@ export default function AccountOrders() {
   }, [groupedOrders, orderFilter, orderFilterTouched]);
 
   React.useEffect(() => {
-    if (!accountLoading && !isLoggedIn) {
+    if (!accountLoading && accountRequiresVerification(account)) {
+      setLocation("/verify-account");
+    } else if (!accountLoading && !isLoggedIn) {
       setLocation("/login");
     }
-  }, [accountLoading, isLoggedIn, setLocation]);
+  }, [accountLoading, account, isLoggedIn, setLocation]);
 
   if (!account && accountLoading) {
     return (
