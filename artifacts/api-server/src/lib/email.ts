@@ -109,15 +109,15 @@ export async function sendTemplatedEmail(
   eventKey: string,
   to: string | null | undefined,
   vars: Record<string, string>,
-): Promise<void> {
-  if (!to || !to.includes("@")) return;
+): Promise<{ ok: boolean; error?: string }> {
+  if (!to || !to.includes("@")) return { ok: false, error: "Invalid recipient" };
   try {
     const [tpl] = await db
       .select()
       .from(emailTemplatesTable)
       .where(eq(emailTemplatesTable.eventKey, eventKey));
 
-    if (!tpl || !tpl.isActive) return;
+    if (!tpl || !tpl.isActive) return { ok: false, error: "Email template unavailable" };
 
     const allVars = { app_url: APP_URL, ...vars };
     const subject = renderTemplate(tpl.subject, allVars);
@@ -131,9 +131,10 @@ export async function sendTemplatedEmail(
       fromName: tpl.fromName,
     });
 
-    await sendEmail({ to, subject, html, fromName: tpl.fromName });
+    return await sendEmail({ to, subject, html, fromName: tpl.fromName });
   } catch (e) {
     console.error(`[email] Failed to send ${eventKey} to ${to}:`, (e as Error).message);
+    return { ok: false, error: "Email send failed" };
   }
 }
 

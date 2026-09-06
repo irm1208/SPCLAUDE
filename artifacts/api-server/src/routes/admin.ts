@@ -52,7 +52,7 @@ import { eq, inArray, notInArray, desc, asc, and, sql, or, ilike, like, gte, lte
 import { GoogleGenAI } from "../lib/google-genai";
 import { writeLog } from "../lib/audit-log";
 import { createAdminOrganiserSession } from "../lib/admin-organiser-sessions";
-import { issueAccountCookie } from "../middleware/account-auth";
+import { issueAccountCookieForAccount } from "../middleware/account-auth";
 import { enrichLogsWithGeo, enrichIps, enrichIpsFromCache } from "../lib/ip-geo";
 import { createAlert } from "../lib/create-alert";
 import { calculateVendorShipping } from "../lib/vendor-shipping";
@@ -10724,7 +10724,7 @@ router.get("/admin/impersonate-redirect", async (req: any, res: any): Promise<vo
     res.status(410).send("Token expired or invalid. Go back and try again."); return;
   }
   impersonateTokens.delete(token); // one-use
-  issueAccountCookie(res, entry.telegramUsername);
+  await issueAccountCookieForAccount(res, entry.telegramUsername);
   res.redirect("/account");
 });
 

@@ -1,8 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
-import { db } from "@workspace/db";
-import { revokedTokensTable } from "@workspace/db";
+import { accountsTable, db, revokedTokensTable } from "@workspace/db";
 import { eq, lt } from "drizzle-orm";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { writeLog } from "../lib/audit-log";
@@ -151,15 +150,16 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
 
 const SESSION_DAYS = 7; // Reduced from 30d to 7d
 
-/**
- * The two-argument form preserves existing login paths until they migrate to
- * database-derived state. New issuance should always pass verificationRequired.
- */
-export function issueAccountCookie(res: Response, telegramUsername: string, verificationRequired = false): void {
+/** Low-level issuer; callers must explicitly declare the session restriction. */
+export function issueAccountCookie(
+  res: Response,
+  telegramUsername: string,
+  options: { verificationRequired: boolean },
+): void {
   const secret = getJwtSecret();
   const jti = randomUUID();
   const expiresInSecs = SESSION_DAYS * 24 * 60 * 60;
-  const token = jwt.sign({ telegramUsername, jti, verificationRequired }, secret, { expiresIn: expiresInSecs });
+  const token = jwt.sign({ telegramUsername, jti, verificationRequired: options.verificationRequired }, secret, { expiresIn: expiresInSecs });
   res.cookie("account_session", token, {
     httpOnly: true,
     secure: process.env["NODE_ENV"] === "production",
@@ -167,6 +167,24 @@ export function issueAccountCookie(res: Response, telegramUsername: string, veri
     maxAge: expiresInSecs * 1000,
     path: "/",
   });
+}
+
+/** Issues a session from current authoritative verification state. */
+export async function issueAccountCookieForAccount(res: Response, telegramUsername: string): Promise<boolean> {
+  const [account] = await db
+    .select({
+      telegramUsername: accountsTable.telegramUsername,
+      verificationRequiredAt: accountsTable.verificationRequiredAt,
+      verifiedAt: accountsTable.verifiedAt,
+    })
+    .from(accountsTable)
+    .where(eq(accountsTable.telegramUsername, telegramUsername))
+    .limit(1);
+  if (!account) return false;
+  issueAccountCookie(res, account.telegramUsername, {
+    verificationRequired: account.verificationRequiredAt !== null && account.verifiedAt === null,
+  });
+  return true;
 }
 
 // Export jti extractor so logout can revoke the current token

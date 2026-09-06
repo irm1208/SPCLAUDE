@@ -13,6 +13,7 @@ import { startQiyunleSync } from "./lib/qiyunle-sync";
 import { startGbLegsSync } from "./lib/gb-legs-sync";
 import { startEmailScheduler } from "./lib/email-scheduler";
 import { startDbBackupSchedule } from "./lib/db-backup";
+import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, isNotNull, lt } from "drizzle-orm";
 
@@ -1042,6 +1043,7 @@ app.listen(port, "0.0.0.0", () => {
 // passes, so by the time real requests arrive these will have completed.
 runStartupMigrations()
   .then(() => seedIfEmpty())
+  .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
   .catch((err) => {
     console.error("[startup] Migration/seed error:", err);

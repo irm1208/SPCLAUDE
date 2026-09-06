@@ -66,10 +66,14 @@ router.post("/account/verification/email/resend", requireAccountIdentity, async 
   }
   try {
     const challenge = await createEmailChallenge(db, account.telegramUsername);
-    await sendTemplatedEmail("email_verification", account.email, {
+    const sent = await sendTemplatedEmail("email_verification", account.email, {
       code: challenge.code,
       username: account.telegramUsername.replace(/^@/, ""),
     });
+    if (!sent.ok) {
+      res.status(503).json({ error: "Verification email cannot be sent" });
+      return;
+    }
     writeLog("login", "info", "verification_email_sent", "Verification email sent", {
       telegramUsername: account.telegramUsername,
     }, req.ip).catch(() => {});
@@ -102,7 +106,7 @@ router.post("/account/verification/email/confirm", requireAccountIdentity, async
       res.status(400).json({ error: "Invalid verification code" });
       return;
     }
-    issueAccountCookie(res, req.account!.telegramUsername, false);
+    issueAccountCookie(res, req.account!.telegramUsername, { verificationRequired: false });
     writeLog("login", "info", "verification_email_completed", "Email account verification completed", {
       telegramUsername: req.account!.telegramUsername,
     }, req.ip).catch(() => {});
@@ -118,7 +122,10 @@ router.post("/account/verification/session/upgrade", requireAccountIdentity, asy
     res.status(403).json({ error: "verification_required" });
     return;
   }
-  issueAccountCookie(res, account.telegramUsername, false);
+  issueAccountCookie(res, account.telegramUsername, { verificationRequired: false });
+  writeLog("login", "info", "verification_session_upgraded", "Verified account session upgraded", {
+    telegramUsername: account.telegramUsername,
+  }, req.ip).catch(() => {});
   res.json({ ok: true });
 });
 

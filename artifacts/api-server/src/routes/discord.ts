@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getJwtSecret, issueAccountCookie, requireAccount } from "../middleware/account-auth";
+import { getJwtSecret, issueAccountCookieForAccount, requireAccount } from "../middleware/account-auth";
 import { requireAdmin } from "../middleware/require-admin";
 import {
   getDiscordCredentials,
@@ -232,7 +232,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
         })
         .where(eq(accountsTable.telegramUsername, byDiscord.telegramUsername));
 
-      issueAccountCookie(res, byDiscord.telegramUsername);
+      await issueAccountCookieForAccount(res, byDiscord.telegramUsername);
       res.redirect("/account");
       return;
     }
@@ -272,7 +272,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
       });
     }
 
-    issueAccountCookie(res, syntheticUsername);
+    await issueAccountCookieForAccount(res, syntheticUsername);
     res.redirect("/account");
     return;
   }

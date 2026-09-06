@@ -4,7 +4,7 @@ import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessage
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull, isNotNull, notInArray } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
-import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
+import { requireAccount, issueAccountCookieForAccount } from "../middleware/account-auth";
 import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
@@ -3733,7 +3733,7 @@ router.post("/account/telegram/miniapp-login", async (req, res): Promise<void> =
     return;
   }
 
-  issueAccountCookie(res, account.telegramUsername);
+  await issueAccountCookieForAccount(res, account.telegramUsername);
 
   writeLog("login", "info", "telegram_miniapp_login",
     `Mini App auto-login: ${account.telegramUsername} (tgId=${tgUser.id})`,

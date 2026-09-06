@@ -7,6 +7,15 @@ describe("verifyTurnstile", () => {
     await expect(verifyTurnstile({ token: "token" }, { secretKey: "", production: true })).resolves.toEqual({ ok: false });
   });
 
+  it("uses Cloudflare's documented test secret outside production when unconfigured", async () => {
+    const fetchFn = async (_url: string, init?: RequestInit) => {
+      expect(init?.body).toContain("secret=1x0000000000000000000000000000000AA");
+      return new Response(JSON.stringify({ success: true }));
+    };
+    await expect(verifyTurnstile({ token: "token" }, { secretKey: "", production: false, fetchFn }))
+      .resolves.toEqual({ ok: true });
+  });
+
   it("posts its secret, response token, and optional remote IP to siteverify", async () => {
     const fetchFn = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify");

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@workspace/db", async (importOriginal) => {
@@ -26,14 +27,14 @@ function response() {
 describe("account session authorization", () => {
   it("stores an explicit restricted-session claim in newly issued cookies", () => {
     const res = response();
-    issueAccountCookie(res as never, "new-user", true);
+    issueAccountCookie(res as never, "new-user", { verificationRequired: true });
     const token = res.cookie.mock.calls[0][1] as string;
     expect(jwt.decode(token)).toMatchObject({ telegramUsername: "new-user", verificationRequired: true });
   });
 
   it("allows a restricted JWT to establish identity but rejects protected access", async () => {
     const tokenRes = response();
-    issueAccountCookie(tokenRes as never, "new-user", true);
+    issueAccountCookie(tokenRes as never, "new-user", { verificationRequired: true });
     const token = tokenRes.cookie.mock.calls[0][1] as string;
     const identityReq = { cookies: { account_session: token }, ip: "127.0.0.1" };
     const identityRes = response();
@@ -47,5 +48,23 @@ describe("account session authorization", () => {
     await requireAccount(protectedReq as never, protectedRes as never, vi.fn());
     expect(protectedRes.status).toHaveBeenCalledWith(403);
     expect(protectedRes.json).toHaveBeenCalledWith({ error: "verification_required" });
+  });
+
+  it("requires every ordinary account cookie issuer to use database-derived state", () => {
+    const issuerRoutes = [
+      "../routes/account.ts",
+      "../routes/discord.ts",
+      "../routes/wholesale-shares.ts",
+      "../routes/admin.ts",
+      "../routes/telegram.ts",
+    ];
+    for (const route of issuerRoutes) {
+      const source = readFileSync(new URL(route, import.meta.url), "utf8");
+      expect(source).toContain("issueAccountCookieForAccount");
+      expect(source).not.toMatch(/issueAccountCookie\(res,/);
+    }
+    const authSource = readFileSync(new URL("./account-auth.ts", import.meta.url), "utf8");
+    expect(authSource).toMatch(/options: \{ verificationRequired: boolean \}/);
+    expect(authSource).toContain("verificationRequired: account.verificationRequiredAt !== null && account.verifiedAt === null");
   });
 });

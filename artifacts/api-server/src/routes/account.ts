@@ -5,7 +5,7 @@ import { db } from "@workspace/db";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
-import { requireAccount, issueAccountCookie, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
+import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { normalizeToCode as normalizeCountryToCode } from "../lib/country-utils";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
@@ -185,7 +185,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
         .where(eq(inviteCodesTable.code, resolvedInviteCode));
     }
 
-    issueAccountCookie(res, tg);
+    await issueAccountCookieForAccount(res, tg);
 
     writeLog("login", "info", "account_password_set",
       `Password set for pre-created account: ${tg}`,
@@ -214,7 +214,7 @@ router.post("/account/signup", async (req, res): Promise<void> => {
       .where(eq(inviteCodesTable.code, resolvedInviteCode));
   }
 
-  issueAccountCookie(res, tg);
+  await issueAccountCookieForAccount(res, tg);
 
   writeLog("login", "info", "account_signup",
     `New account created: ${tg}`,
@@ -297,7 +297,7 @@ router.post("/account/login", async (req, res): Promise<void> => {
     return;
   }
 
-  issueAccountCookie(res, tg);
+  await issueAccountCookieForAccount(res, tg);
 
   db.update(accountsTable).set({ lastLoginIp: req.ip ?? null, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
@@ -894,7 +894,7 @@ router.post("/account/order-login", async (req, res): Promise<void> => {
 
   const needsPassword = !existing.passwordHash;
 
-  issueAccountCookie(res, tg);
+  await issueAccountCookieForAccount(res, tg);
 
   db.update(accountsTable).set({ lastLoginIp: req.ip ?? null, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
@@ -1065,7 +1065,7 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
   await db.execute(sql`UPDATE wholesale_shares SET creator_username = ${newTg} WHERE lower(creator_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await db.execute(sql`UPDATE wholesale_shares SET delivery_username = ${newTg} WHERE lower(delivery_username) IN (${oldTgBare}, ${oldTgWithAt})`);
 
-  issueAccountCookie(res, newTg);
+  await issueAccountCookieForAccount(res, newTg);
 
   writeLog("login", "info", "account_username_changed",
     `Username changed: ${oldTgBare} → ${newTg}`,
@@ -1224,7 +1224,7 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
           .where(eq(lookupAttemptsTable.id, ipAttempt.id))
           .catch(() => {});
       }
-      issueAccountCookie(res, tg);
+      await issueAccountCookieForAccount(res, tg);
       db.update(accountsTable).set({ lastLoginIp: ip, lastLoginAt: new Date() })
         .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
       writeLog("login", "info", "account_login",
@@ -1339,7 +1339,7 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
   }
 
   const needsPassword = !existing?.passwordHash;
-  issueAccountCookie(res, tg);
+  await issueAccountCookieForAccount(res, tg);
 
   db.update(accountsTable).set({ lastLoginIp: ip, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});

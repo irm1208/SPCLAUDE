@@ -1,4 +1,5 @@
 const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const CLOUDFLARE_TEST_SECRET = "1x0000000000000000000000000000000AA";
 
 export type TurnstileFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -21,7 +22,9 @@ export async function verifyTurnstile(
   { token, remoteIp }: TurnstileVerificationInput,
   config: TurnstileVerificationConfig = {},
 ): Promise<{ ok: boolean }> {
-  const secretKey = config.secretKey ?? process.env["TURNSTILE_SECRET_KEY"];
+  const production = config.production ?? process.env["NODE_ENV"] === "production";
+  const configuredSecret = config.secretKey ?? process.env["TURNSTILE_SECRET_KEY"];
+  const secretKey = configuredSecret || (production ? undefined : CLOUDFLARE_TEST_SECRET);
   if (!token?.trim() || !secretKey) return { ok: false };
 
   const body = new URLSearchParams({ secret: secretKey, response: token });

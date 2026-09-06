@@ -18,7 +18,7 @@ import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale, requireWholesaleOrAdmin } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
-import { requireAccount, issueAccountCookie } from "../middleware/account-auth";
+import { requireAccount, issueAccountCookieForAccount } from "../middleware/account-auth";
 import bcrypt from "bcryptjs";
 import { getActiveWholesaleVendor } from "./config";
 import { normalizeTg } from "../lib/normalize";
@@ -3676,7 +3676,7 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
       .set({ passwordHash, email: (email as string).trim().toLowerCase(), country: (country as string).trim() })
       .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
     await redeemShareInviteLink(link, share, tg, false, req.ip);
-    issueAccountCookie(res, tg);
+    await issueAccountCookieForAccount(res, tg);
     res.status(200).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: false });
     return;
   }
@@ -3692,7 +3692,7 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
     isWholesale: true,
   });
   await redeemShareInviteLink(link, share, tg, true, req.ip);
-  issueAccountCookie(res, tg);
+  await issueAccountCookieForAccount(res, tg);
   await writeLog("login", "info", "account_signup_via_wholesale_invite",
     `New account created via wholesale invite link: ${tg}`,
     { telegramUsername: tg, shareId: share.id, linkCode: link.code }, req.ip).catch(() => {});
