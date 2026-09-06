@@ -9,6 +9,7 @@ import {
   RESTORE_VERIFY_FIRST_DELAY_MS,
   RESTORE_VERIFY_INTERVAL_MS,
   runBackupVerification,
+  runLatestBackupVerification,
   legacySqlSource,
   createVerificationAdvisoryLock,
   startDbBackupVerificationSchedule,
@@ -45,6 +46,56 @@ describe("backup restore verification scheduler", () => {
 
     expect(run).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reports a missing production key once and waits until the next weekly cadence", async () => {
+    vi.useFakeTimers();
+    const d = dependencies([]);
+    const consoleError = vi.fn();
+    const environment = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://private-production-details",
+    };
+    const run = () => runLatestBackupVerification({
+      environment,
+      dependencies: d,
+      consoleError,
+    });
+    const schedule = startDbBackupVerificationSchedule({ environment, run });
+
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_FIRST_DELAY_MS);
+
+    expect(d.acquireLock).not.toHaveBeenCalled();
+    expect(d.listBackups).not.toHaveBeenCalled();
+    expect(d.startPostgres).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith(
+      "[db-backup-verifier] Backup restore verification is not configured",
+    );
+    expect(d.audit).toHaveBeenCalledOnce();
+    expect(d.audit).toHaveBeenCalledWith(
+      "backup_restore_failed",
+      "Database backup restore verification is not configured",
+      expect.objectContaining({ category: "backup_restore_not_configured" }),
+    );
+    expect(d.alert).toHaveBeenCalledOnce();
+    expect(d.alert).toHaveBeenCalledWith("backup_restore_not_configured", expect.any(String));
+    expect(d.notifyAdmin).toHaveBeenCalledOnce();
+    expect(d.notifyAdmin).toHaveBeenCalledWith("backup_restore_not_configured", expect.any(String));
+    expect(JSON.stringify([
+      consoleError.mock.calls,
+      (d.audit as any).mock.calls,
+      (d.alert as any).mock.calls,
+      (d.notifyAdmin as any).mock.calls,
+    ])).not.toContain("private-production-details");
+
+    await vi.advanceTimersByTimeAsync(RESTORE_VERIFY_INTERVAL_MS - 1);
+    expect(d.audit).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(d.audit).toHaveBeenCalledTimes(2);
+    expect(d.alert).toHaveBeenCalledTimes(2);
+    expect(d.notifyAdmin).toHaveBeenCalledTimes(2);
+    schedule.stop();
   });
 
   it("does not overlap local verification runs", async () => {

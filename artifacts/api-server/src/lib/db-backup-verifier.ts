@@ -234,9 +234,35 @@ function defaultDependencies(): BackupVerificationDependencies {
   };
 }
 
-export async function runLatestBackupVerification(): Promise<"verified" | "lock_contended" | "not_configured"> {
-  if (!process.env.DB_BACKUP_ENCRYPTION_KEY) return "not_configured";
-  return runBackupVerification(defaultDependencies());
+export interface LatestBackupVerificationOptions {
+  environment?: NodeJS.ProcessEnv;
+  dependencies?: BackupVerificationDependencies;
+  consoleError?: (message: string) => void;
+}
+
+export async function runLatestBackupVerification(
+  options: LatestBackupVerificationOptions = {},
+): Promise<"verified" | "lock_contended" | "not_configured"> {
+  const environment = options.environment ?? process.env;
+  const dependencies = options.dependencies ?? defaultDependencies();
+  if (!environment.DB_BACKUP_ENCRYPTION_KEY) {
+    if (environment.NODE_ENV === "production") {
+      const category = "backup_restore_not_configured";
+      const requestId = randomUUID();
+      (options.consoleError ?? console.error)(
+        "[db-backup-verifier] Backup restore verification is not configured",
+      );
+      await dependencies.audit(
+        "backup_restore_failed",
+        "Database backup restore verification is not configured",
+        { category, requestId },
+      ).catch(() => undefined);
+      await dependencies.alert(category, requestId).catch(() => undefined);
+      await dependencies.notifyAdmin(category, requestId).catch(() => undefined);
+    }
+    return "not_configured";
+  }
+  return runBackupVerification(dependencies);
 }
 
 export interface BackupVerificationScheduleOptions {
