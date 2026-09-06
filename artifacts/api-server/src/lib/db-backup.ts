@@ -29,8 +29,12 @@ export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention wit
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
 const BACKUP_FILE_PREFIX = "S&PBACKUP-";
 const BACKUP_FILE_SUFFIX = ".sql.gz.enc";
-const BACKUP_PARTIAL_FILE_SUFFIX = ".sql.gz.enc.partial";
 const TERMINATION_GRACE_MS = 10_000;
+const BACKUP_TIMESTAMP = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}";
+const RANDOM_UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const PRUNABLE_ENCRYPTED_BACKUP_ARTIFACT = new RegExp(
+  `^${BACKUP_FILE_PREFIX}${BACKUP_TIMESTAMP}${BACKUP_FILE_SUFFIX.replace(/\./g, "\\.")}(?:\\.partial|\\.partial\\.\\d+\\.${RANDOM_UUID}\\.partial)?$`,
+);
 
 let backupInProgress = false;
 
@@ -39,6 +43,11 @@ export type DbBackupResult =
   | "lock_contended"
   | "already_in_progress"
   | "not_configured";
+
+/** Limits stale-file deletion to encrypted backup artifacts we create. */
+export function isPrunableEncryptedBackupArtifact(fileName: string): boolean {
+  return PRUNABLE_ENCRYPTED_BACKUP_ARTIFACT.test(fileName);
+}
 
 /** Deletes temporary backup files whose last-modified time is older than KEEP_DAYS days. */
 async function pruneOldBackups(): Promise<void> {
@@ -52,10 +61,7 @@ async function pruneOldBackups(): Promise<void> {
   const cutoffMs = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
 
   for (const file of files) {
-    if (
-      !file.startsWith(BACKUP_FILE_PREFIX)
-      || (!file.endsWith(BACKUP_FILE_SUFFIX) && !file.endsWith(BACKUP_PARTIAL_FILE_SUFFIX))
-    ) continue;
+    if (!isPrunableEncryptedBackupArtifact(file)) continue;
     const filePath = join(BACKUP_DIR, file);
     try {
       const { mtimeMs } = await promisify(stat)(filePath);

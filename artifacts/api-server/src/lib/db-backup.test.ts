@@ -6,6 +6,7 @@ import {
   createDbBackupScheduler,
   FIRST_BACKUP_DELAY_MS,
   INTERVAL_MS,
+  isPrunableEncryptedBackupArtifact,
   requireBackupEncryptionKey,
   startDbBackupSchedule,
 } from "./db-backup";
@@ -144,6 +145,19 @@ describe("encrypted database backup production orchestration", () => {
 
   it("rejects a missing production encryption key", () => {
     expect(() => requireBackupEncryptionKey({ NODE_ENV: "production" })).toThrow(/DB_BACKUP_ENCRYPTION_KEY/);
+  });
+
+  it("recognizes only constrained encrypted backup artifacts for stale pruning", () => {
+    expect(isPrunableEncryptedBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc")).toBe(true);
+    expect(isPrunableEncryptedBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc.partial")).toBe(true);
+    expect(
+      isPrunableEncryptedBackupArtifact(
+        "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc.partial.1234.550e8400-e29b-41d4-a716-446655440000.partial",
+      ),
+    ).toBe(true);
+    expect(isPrunableEncryptedBackupArtifact("S&PBACKUP-not-a-backup.sql.gz.enc.partial.1234.uuid.partial")).toBe(false);
+    expect(isPrunableEncryptedBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc.partial.1234.uuid.tmp")).toBe(false);
+    expect(isPrunableEncryptedBackupArtifact("unrelated.sql.gz.enc.partial.1234.uuid.partial")).toBe(false);
   });
 
   it("returns a canonical 32-byte production encryption key", () => {
