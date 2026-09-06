@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import {
@@ -305,6 +305,68 @@ async function pushToGoogleSheets(order: ReturnType<typeof formatOrderResponse>)
     console.error("[Sheets] Failed to push order:", err);
   }
 }
+
+const LEGACY_ORDER_ACCESS_DISABLED = true;
+router.use((req, res, next): void => {
+  if (!LEGACY_ORDER_ACCESS_DISABLED) {
+    next();
+    return;
+  }
+
+  const key = `${req.method} ${req.path}`;
+  const exactRoutes = new Set([
+    "POST /orders/claim-pin",
+    "POST /orders/lookup",
+    "PATCH /orders/change-username",
+    "POST /orders/my-orders",
+    "POST /orders/my-profile",
+    "PUT /orders/my-profile",
+  ]);
+  const legacyOrderAction =
+    /^\/orders\/[^/]+\/(?:pin|inpost-qr|royal-mail-qr|qr-upload|shipping-address|payment-screenshot|confirm-fiat)$/.test(req.path);
+  const legacyOrderMutation =
+    /^\/orders\/[^/]+$/.test(req.path) && (req.method === "PUT" || req.method === "DELETE");
+
+  if (exactRoutes.has(key) || legacyOrderAction || legacyOrderMutation) {
+    const forwardedFor = Array.isArray(req.headers["x-forwarded-for"])
+      ? req.headers["x-forwarded-for"].join(",")
+      : req.headers["x-forwarded-for"] ?? null;
+    const userAgent = req.headers["user-agent"] ?? null;
+    const requestFingerprint = createHash("sha256")
+      .update([
+        forwardedFor,
+        req.headers["cf-connecting-ip"],
+        req.headers["x-real-ip"],
+        userAgent,
+        req.headers["accept-language"],
+        req.headers["sec-ch-ua"],
+      ].map(value => String(value ?? "")).join("|"))
+      .digest("hex");
+    writeLog(
+      "login",
+      "warn",
+      "legacy_order_access_blocked",
+      "Blocked request to disabled legacy order credential route",
+      {
+        method: req.method,
+        path: req.path,
+        requestId: (req as Request & { correlationId?: string }).correlationId ?? null,
+        forwardedFor,
+        connectingIp: req.headers["cf-connecting-ip"] ?? null,
+        realIp: req.headers["x-real-ip"] ?? null,
+        userAgent,
+        acceptLanguage: req.headers["accept-language"] ?? null,
+        requestFingerprint,
+      },
+      req.ip,
+    ).catch(() => {});
+    res.status(410).json({
+      error: "Legacy PIN-based order access is temporarily disabled. Please sign in to your account.",
+    });
+    return;
+  }
+  next();
+});
 
 // ── POST /api/orders/claim-pin — first-time PIN setup for seeded accounts ──
 // Only works if the account currently has the default PIN (0000)

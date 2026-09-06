@@ -14,6 +14,7 @@ import { startGbLegsSync } from "./lib/gb-legs-sync";
 import { startEmailScheduler } from "./lib/email-scheduler";
 import { startDbBackupSchedule } from "./lib/db-backup";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
+import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, isNotNull, lt } from "drizzle-orm";
 
@@ -1045,6 +1046,7 @@ runStartupMigrations()
   .then(() => seedIfEmpty())
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
+  .then(() => runSecurityIncidentRemediation())
   .then(() => startServer())
   .catch((err) => {
     console.error("[startup] Bootstrap failed; server will not start:", err);

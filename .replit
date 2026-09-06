@@ -74,6 +74,7 @@ SAGE_PROXY_FALLBACK_BASE_URL = "https://api.nuoda.vip"
 
 [userenv.production]
 PUBLIC_URL = "saltandpeps.co.uk"
+SECURITY_INCIDENT_2026_09_06_REMEDIATE = "true"
 
 [userenv.development]
 PORT = "5000"
