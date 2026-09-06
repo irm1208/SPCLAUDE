@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, realpath, rm, stat, symlink } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -72,8 +72,35 @@ describe("assertLoopbackPostgresTarget", () => {
 
 describe("startDisposablePostgres", () => {
   test(
+    "falls back to child termination when pg_ctl fails before removing its root",
+    async () => {
+      const commandDirectory = await mkdtemp(join(tmpdir(), "sp-backup-verify-pgctl-"));
+      temporaryPaths.push(commandDirectory);
+      const fakePgCtl = join(commandDirectory, "pg_ctl");
+      await writeFile(fakePgCtl, "#!/bin/sh\nexit 1\n", { mode: 0o700 });
+      await chmod(fakePgCtl, 0o700);
+      const previousPath = process.env.PATH;
+      process.env.PATH = `${commandDirectory}:${previousPath}`;
+      let postgres;
+      try {
+        postgres = await startDisposablePostgres({ timeoutMs: 5_000 });
+        temporaryPaths.push(postgres.root);
+        await postgres.stopAndRemove();
+        await expect(stat(postgres.root)).rejects.toThrow();
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        await postgres?.stopAndRemove();
+      }
+    },
+    20_000,
+  );
+
+  test(
     "creates a queryable PostgreSQL 16 restore target and removes it idempotently",
     async () => {
+      const previousSecret = process.env.DISPOSABLE_POSTGRES_TEST_SECRET;
+      process.env.DISPOSABLE_POSTGRES_TEST_SECRET = "must-not-reach-postgres";
       const postgres = await startDisposablePostgres({ timeoutMs: 30_000 });
       temporaryPaths.push(postgres.root);
 
@@ -85,11 +112,16 @@ describe("startDisposablePostgres", () => {
         expect(postgres.psqlArgs.join(" ")).not.toMatch(/DATABASE_URL/i);
         await expect(postgres.executePsql("SELECT 42")).resolves.toContain("42");
         await expect(postgres.executePsql("SELECT 'DATABASE_URL'")).rejects.toThrow(/DATABASE_URL/i);
-        await expect(postgres.executePsql("SHOW data_directory")).resolves.toContain(postgres.dataDirectory);
+        await expect(postgres.executePsql("SHOW data_directory")).rejects.toThrow(/permission/i);
         await expect(postgres.executePsql("SELECT current_database()")).resolves.toContain(postgres.database);
+        await expect(postgres.executePsql("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")).resolves.toContain("f");
+        await expect(postgres.executePsql("COPY (SELECT 'safe') TO PROGRAM 'true'")).rejects.toThrow(/superuser|permission/i);
+        await expect(postgres.executePsql("SELECT pg_read_file('/proc/self/environ')")).rejects.toThrow(/permission/i);
       } finally {
         await postgres.stopAndRemove();
         await postgres.stopAndRemove();
+        if (previousSecret === undefined) delete process.env.DISPOSABLE_POSTGRES_TEST_SECRET;
+        else process.env.DISPOSABLE_POSTGRES_TEST_SECRET = previousSecret;
         expect(resolve(postgres.root)).not.toBe("/");
       }
       await expect(stat(postgres.root)).rejects.toThrow();

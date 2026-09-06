@@ -3,7 +3,7 @@ import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { createServer } from "node:net";
-import { execFile, spawn } from "node:child_process";
+import { ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
 
@@ -30,8 +30,8 @@ function isInside(path: string, root: string): boolean {
 }
 
 function commandEnvironment(): NodeJS.ProcessEnv {
-  const { DATABASE_URL: _databaseUrl, ...environment } = process.env;
-  return environment;
+  const allowedKeys = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TMP", "TEMP"] as const;
+  return Object.fromEntries(allowedKeys.flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]]));
 }
 
 function assertSafeCommandArguments(arguments_: readonly string[]): void {
@@ -62,6 +62,42 @@ async function reserveLoopbackPort(): Promise<number> {
     throw new Error("Could not reserve a loopback PostgreSQL port");
   }
   return address.port;
+}
+
+async function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolvePromise, reject) => {
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      reject(new Error(`Disposable PostgreSQL did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolvePromise();
+    };
+    child.once("exit", onExit);
+  });
+}
+
+async function terminateChild(child: ChildProcess, dataDirectory: string, timeoutMs: number): Promise<void> {
+  try {
+    await runCommand("pg_ctl", ["-D", dataDirectory, "-m", "fast", "stop", "-w", "-t", String(Math.max(1, Math.ceil(timeoutMs / 1000)))], timeoutMs);
+  } catch {
+    // The child is still verified below; pg_ctl failure must never imply safe removal.
+  }
+  try {
+    await waitForChildExit(child, timeoutMs);
+    return;
+  } catch {
+    if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
+  }
+  try {
+    await waitForChildExit(child, timeoutMs);
+    return;
+  } catch {
+    if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+  }
+  await waitForChildExit(child, timeoutMs);
 }
 
 async function waitUntilReady(socketDirectory: string, port: number, dataDirectory: string, timeoutMs: number, exited: () => boolean): Promise<void> {
@@ -139,24 +175,15 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
   const resolvedRoot = realpathSync(root);
   const dataDirectory = join(resolvedRoot, "data");
   const socketDirectory = join(resolvedRoot, "socket");
-  let started = false;
+  let childProcess: ChildProcess | undefined;
   let removed = false;
 
   const stopAndRemove = async (): Promise<void> => {
     if (removed) return;
+    if (childProcess) await terminateChild(childProcess, dataDirectory, timeoutMs);
+    assertDisposableDataDirectory(dataDirectory, resolvedRoot);
+    await rm(resolvedRoot, { recursive: true, force: true });
     removed = true;
-    try {
-      if (started) {
-        try {
-          await runCommand("pg_ctl", ["-D", dataDirectory, "-m", "fast", "stop"], timeoutMs);
-        } catch {
-          // A child that lost a port race can exit before pg_ctl observes it.
-        }
-      }
-    } finally {
-      assertDisposableDataDirectory(dataDirectory, resolvedRoot);
-      await rm(resolvedRoot, { recursive: true, force: true });
-    }
   };
 
   try {
@@ -171,11 +198,10 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
       const startupArgs = ["-D", dataDirectory, "-h", "127.0.0.1", "-p", String(port), "-k", socketDirectory];
       assertSafeCommandArguments(startupArgs);
       const child = spawn("postgres", startupArgs, { detached: true, stdio: "ignore", env: commandEnvironment() });
+      childProcess = child;
       let exited = false;
       child.once("exit", () => { exited = true; });
       child.once("error", () => { exited = true; });
-      child.unref();
-      started = true;
       try {
         await waitUntilReady(socketDirectory, port, dataDirectory, timeoutMs, () => exited);
         startupError = undefined;
@@ -188,9 +214,15 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     if (startupError) throw startupError;
 
     const database = `restore_verify_${randomBytes(10).toString("hex")}`;
+    const restoreRole = `restore_verify_role_${randomBytes(10).toString("hex")}`;
     assertLoopbackPostgresTarget("127.0.0.1", database, database);
-    await runCommand("createdb", ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, database], timeoutMs);
-    const psqlArgs = Object.freeze(["-h", "127.0.0.1", "-p", String(port), "-U", CLUSTER_OWNER, "-d", database, "-Atq"]);
+    await runCommand(
+      "psql",
+      ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-d", "postgres", "-Atq", "-c", `CREATE ROLE ${restoreRole} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`],
+      timeoutMs,
+    );
+    await runCommand("createdb", ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-O", restoreRole, database], timeoutMs);
+    const psqlArgs = Object.freeze(["-h", "127.0.0.1", "-p", String(port), "-U", restoreRole, "-d", database, "-Atq"]);
 
     return {
       root: resolvedRoot,
