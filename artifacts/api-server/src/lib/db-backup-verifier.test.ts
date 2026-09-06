@@ -30,7 +30,8 @@ function dependencies(events: string[]): BackupVerificationDependencies {
         { id: "unsupported", name: "notes.txt", modifiedTime: "2026-09-07T12:00:00Z" },
       ];
     }),
-    download: vi.fn(async () => { events.push("download"); return { path: "/tmp/envelope" }; }),
+    allocateDownloadPath: vi.fn(async () => "/tmp/envelope"),
+    download: vi.fn(async () => { events.push("download"); }),
     digest: vi.fn(async () => { events.push("digest"); return "digest"; }),
     startPostgres: vi.fn(async () => { events.push("cluster"); return target; }),
     activeKey: vi.fn(() => Buffer.alloc(32)),

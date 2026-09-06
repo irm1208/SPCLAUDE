@@ -25,7 +25,8 @@ export interface BackupVerificationDependencies {
   acquireLock(): Promise<boolean>;
   releaseLock(): Promise<void>;
   listBackups(): Promise<DriveBackupFile[]>;
-  download(backup: DriveBackupFile): Promise<{ path: string }>;
+  allocateDownloadPath(): Promise<string>;
+  download(backup: DriveBackupFile, path: string): Promise<void>;
   digest(path: string): Promise<string>;
   startPostgres(): Promise<DisposablePostgres>;
   activeKey(): Buffer;
@@ -82,13 +83,13 @@ export async function runBackupVerification(
   let failure: unknown;
   try {
     const backup = newestSupported(await dependencies.listBackups());
-    const downloaded = await dependencies.download(backup);
-    downloadedPath = downloaded.path;
-    const sha256 = await dependencies.digest(downloaded.path);
+    downloadedPath = await dependencies.allocateDownloadPath();
+    await dependencies.download(backup, downloadedPath);
+    const sha256 = await dependencies.digest(downloadedPath);
     target = await dependencies.startPostgres();
     const source = backup.name.toLowerCase().endsWith(ENCRYPTED_SUFFIX)
-      ? await dependencies.decrypt(downloaded.path, dependencies.activeKey())
-      : await dependencies.legacySource(downloaded.path);
+      ? await dependencies.decrypt(downloadedPath, dependencies.activeKey())
+      : await dependencies.legacySource(downloadedPath);
     await dependencies.restore(source, target);
     const validation = await dependencies.validate(target);
     if (validation.checks.some(check => !check.passed)) throw new Error("Restored database validation failed");
@@ -107,9 +108,9 @@ export async function runBackupVerification(
   try {
     if (failure) {
       const requestId = randomUUID();
-      await dependencies.audit("backup_restore_failed", "Database backup restore verification failed", { category: "backup_restore_failed", requestId });
-      await dependencies.alert("backup_restore_failed", requestId);
-      await dependencies.notifyAdmin("backup_restore_failed", requestId);
+      await dependencies.audit("backup_restore_failed", "Database backup restore verification failed", { category: "backup_restore_failed", requestId }).catch(() => undefined);
+      await dependencies.alert("backup_restore_failed", requestId).catch(() => undefined);
+      await dependencies.notifyAdmin("backup_restore_failed", requestId).catch(() => undefined);
       throw genericFailure();
     }
     return "verified";
@@ -151,17 +152,18 @@ async function listDriveBackups(): Promise<DriveBackupFile[]> {
   return ((await response.json()) as { files?: DriveBackupFile[] }).files ?? [];
 }
 
-async function downloadDriveBackup(backup: DriveBackupFile): Promise<{ path: string }> {
+async function allocateDriveDownloadPath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "sp-backup-verify-download-"));
   await chmod(directory, 0o700);
-  const path = join(directory, "backup");
+  return join(directory, "backup");
+}
+
+async function downloadDriveBackup(backup: DriveBackupFile, path: string): Promise<void> {
   try {
     const response = await new ReplitConnectors().proxy(DRIVE_CONNECTOR, `/drive/v3/files/${encodeURIComponent(backup.id)}?alt=media`);
     if (!response.ok || !response.body) throw new Error("Could not download database backup");
     await pipeline(Readable.fromWeb(response.body as never), createWriteStream(path, { mode: 0o600 }));
-    return { path };
   } catch (error) {
-    await rm(directory, { recursive: true, force: true });
     throw error;
   }
 }
@@ -187,6 +189,7 @@ function defaultDependencies(): BackupVerificationDependencies {
     acquireLock,
     releaseLock,
     listBackups: listDriveBackups,
+    allocateDownloadPath: allocateDriveDownloadPath,
     download: downloadDriveBackup,
     digest: digestFile,
     startPostgres: startDisposablePostgres,
