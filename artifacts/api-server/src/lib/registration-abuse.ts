@@ -1,5 +1,5 @@
 const AUTOMATED_REGISTRATION_NAME =
-  /^(?:auditx|audx|audv|audj|auditshop|hermesaudit)[a-z0-9_-]*$/i;
+  /^(?:aud|hermesaudit)[a-z0-9_-]*$/i;
 
 export function isBlockedAutomatedRegistrationName(value: unknown): boolean {
   if (typeof value !== "string") return false;

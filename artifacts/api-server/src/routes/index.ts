@@ -106,6 +106,7 @@ router.use("/feedback", feedbackLimiter);
 // Account auth endpoints get strict rate limiting
 router.use("/account/signup", signupLimiter);
 router.use("/vial/seller/signup", signupLimiter);
+router.post("/wholesale-invite/:code/register", signupLimiter);
 router.use("/account/login", strictLimiter);
 router.use("/account/smart-login", strictLimiter);
 router.use("/account/order-login", strictLimiter);

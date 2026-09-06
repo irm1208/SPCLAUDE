@@ -42,6 +42,7 @@ import {
 } from "../lib/shared-order-member-removal";
 import { buildSharedOrderReopenPlan } from "../lib/shared-order-reopen";
 import { notifyUser } from "../lib/telegram";
+import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -3634,6 +3635,15 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
   const tg = normalizeTg(telegramUsername as string);
   if (!tg || tg.length < 2 || tg.length > 64) {
     res.status(400).json({ error: "Invalid Telegram username" }); return;
+  }
+  if (isBlockedAutomatedRegistrationName(tg)) {
+    writeLog("security", "warn", "automated_signup_blocked",
+      "Automated account registration blocked",
+      { registrationType: "wholesale_invite" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Registration could not be completed" });
+    return;
   }
 
   // Validate the invite link BEFORE creating the account

@@ -26,6 +26,7 @@ import { writeLog } from "../lib/audit-log";
 import { sendTelegramMessage, sendTelegramMessageFull, sendAdminFromTemplate, getTemplate, renderTemplate } from "../lib/telegram";
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
+import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 
 const router: IRouter = Router();
 
@@ -139,6 +140,15 @@ router.patch("/reshipper/me", requireReshipper, async (req, res): Promise<void> 
 // ── POST /api/reshipper/apply — apply to become a reshipper ─────────────────
 router.post("/reshipper/apply", requireAccount, async (req, res): Promise<void> => {
   const username = req.account!.telegramUsername;
+  if (isBlockedAutomatedRegistrationName(username)) {
+    writeLog("security", "warn", "automated_reshipper_application_blocked",
+      "Automated Reshipper application blocked",
+      { registrationType: "reshipper_application" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Reshipper application could not be completed" });
+    return;
+  }
 
   const [account] = await db
     .select({ reshipperStatus: accountsTable.reshipperStatus })
