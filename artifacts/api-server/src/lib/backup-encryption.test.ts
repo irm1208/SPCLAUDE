@@ -1,5 +1,5 @@
-import { createHash } from "crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises";
+import { createHash, randomBytes } from "crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Readable } from "stream";
@@ -36,6 +36,15 @@ async function readRestoredSql(path: string, decryptionKey = key): Promise<Buffe
 
 async function expectRejectedWithoutSql(path: string): Promise<void> {
   await expect(decryptBackupToStream(path, key)).rejects.toThrow();
+}
+
+async function waitForSibling(directory: string, prefix: string): Promise<string> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const entry = (await readdir(directory)).find(name => name.startsWith(prefix));
+    if (entry) return join(directory, entry);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${prefix}`);
 }
 
 afterEach(async () => {
@@ -89,6 +98,22 @@ describe("backup encryption", () => {
       expect(chunks.join("")).toBe(plaintext.toString());
     } finally {
       concat.mockRestore();
+    }
+  });
+
+  it("creates the recoverable SQL staging file with owner-only permissions", async () => {
+    const path = await createTemporaryPath("backup.enc");
+    await encryptBackupStream(Readable.from([randomBytes(256 * 1024)]), path, key);
+
+    const stream = await decryptBackupToStream(path, key);
+    try {
+      const stagedPath = await waitForSibling(
+        join(path, ".."),
+        `${path.split("/").pop()}.${process.pid}.`,
+      );
+      expect((await stat(stagedPath)).mode & 0o777).toBe(0o600);
+    } finally {
+      stream.destroy();
     }
   });
 

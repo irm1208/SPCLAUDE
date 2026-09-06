@@ -57,7 +57,7 @@ export async function encryptBackupStream(
   const temporaryPath = `${destinationPath}.${process.pid}.${randomUUID()}.partial`;
   const hash = createHash("sha256");
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const destination = createWriteStream(temporaryPath, { flags: "wx" });
+  const destination = createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 });
   let sizeBytes = 0;
 
   const hashCiphertext = new Transform({
@@ -144,7 +144,7 @@ export async function decryptBackupToStream(sourcePath: string, key: Buffer): Pr
         end: sourceSize - BACKUP_TAG_BYTES - 1,
       }),
       decipher,
-      createWriteStream(temporaryPath, { flags: "wx" }),
+      createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 }),
     );
   } catch (error) {
     return removeTemporaryFile(temporaryPath, error);
