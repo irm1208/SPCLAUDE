@@ -10,7 +10,8 @@ const EMAIL_CODE_EXPIRY_MS = 15 * 60_000;
 const RESEND_COOLDOWN_MS = 60_000;
 const MAX_FAILED_ATTEMPTS = 5;
 
-type VerificationDb = Pick<typeof db, "select" | "insert" | "update">;
+type ChallengeDb = Pick<typeof db, "select" | "insert" | "update">;
+type VerificationDb = ChallengeDb & Pick<typeof db, "transaction">;
 type VerificationMethod = "email" | "telegram";
 
 export class EmailChallengeResendCooldownError extends Error {
@@ -38,6 +39,17 @@ export function resendAvailableAt(lastSentAt: Date): Date {
 }
 
 export async function createEmailChallenge(database: VerificationDb, username: string) {
+  return database.transaction(async (tx) => {
+    await tx
+      .select()
+      .from(accountsTable)
+      .where(eq(accountsTable.telegramUsername, username))
+      .for("update");
+    return createEmailChallengeInTransaction(tx, username);
+  });
+}
+
+async function createEmailChallengeInTransaction(database: ChallengeDb, username: string) {
   const now = new Date();
   const challenges = await database
     .select()

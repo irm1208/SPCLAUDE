@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   accounts: new Map<string, Record<string, unknown>>(),
   challenges: [] as Array<Record<string, unknown>>,
   rejectNextAttemptClaim: false,
+  accountLocks: 0,
 }));
 
 vi.mock("@workspace/db", async (importOriginal) => {
@@ -17,6 +18,10 @@ vi.mock("@workspace/db", async (importOriginal) => {
       from: (table: unknown) => ({
         where: () => ({
           limit: async (count: number) => rowsFor(table).slice(0, count),
+          for: async () => {
+            if (table === actual.accountsTable) state.accountLocks++;
+            return rowsFor(table);
+          },
           then: (resolve: (rows: Array<Record<string, unknown>>) => unknown) => resolve(rowsFor(table)),
         }),
       }),
@@ -66,6 +71,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
         }),
       }),
     }),
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
   };
   return { ...actual, db };
 });
@@ -86,6 +92,7 @@ describe("account verification", () => {
     state.accounts.clear();
     state.challenges.length = 0;
     state.rejectNextAttemptClaim = false;
+    state.accountLocks = 0;
   });
 
   it("does not require verification for grandfathered or verified accounts", () => {
@@ -119,6 +126,10 @@ describe("account verification", () => {
 
     state.challenges[0].lastSentAt = new Date(Date.now() - 60_000);
     await expect(createEmailChallenge(db as never, "new-user")).resolves.toMatchObject({ code: expect.stringMatching(/^\d{6}$/) });
+    expect(state.accountLocks).toBe(3);
+
+    const source = readFileSync(new URL("./account-verification.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/database\.transaction\(async \(tx\) => \{[\s\S]*accountsTable[\s\S]*\.for\("update"\)[\s\S]*createEmailChallengeInTransaction/);
   });
 
   it("rejects expired codes, locks after five failed attempts, and consumes a code once", async () => {
