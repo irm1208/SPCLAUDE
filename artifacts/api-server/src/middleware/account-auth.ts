@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
 import { revokedTokensTable } from "@workspace/db";
 import { eq, lt } from "drizzle-orm";
+import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import { writeLog } from "../lib/audit-log";
 
 // ── JWT secret ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,22 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
     payload = jwt.verify(token, getJwtSecret()) as AccountJwtPayload;
   } catch {
     res.status(401).json({ error: "Session expired or invalid — please log in again" });
+    return;
+  }
+
+  if (isBlockedAutomatedRegistrationName(payload.telegramUsername)) {
+    writeLog("login", "warn", "automated_account_access_blocked",
+      "Automated account access blocked",
+      { enforcementPoint: "account_session" },
+      req.ip,
+    ).catch(() => {});
+    res.clearCookie("account_session", {
+      httpOnly: true,
+      secure: process.env["NODE_ENV"] === "production",
+      sameSite: "lax",
+      path: "/",
+    });
+    res.status(403).json({ error: "Access denied" });
     return;
   }
 

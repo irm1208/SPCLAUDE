@@ -263,6 +263,15 @@ router.post("/account/login", async (req, res): Promise<void> => {
   }
 
   const tg = normalizeTg(telegramUsername);
+  if (isBlockedAutomatedRegistrationName(tg)) {
+    writeLog("login", "warn", "automated_account_login_blocked",
+      "Automated account login blocked",
+      { enforcementPoint: "password_login" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
 
   const [account] = await db
     .select()
@@ -832,6 +841,15 @@ router.post("/account/order-login", async (req, res): Promise<void> => {
   const tg = normalizeTg(telegramUsername);
   if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
     res.status(400).json({ error: "Invalid Telegram username" });
+    return;
+  }
+  if (isBlockedAutomatedRegistrationName(tg)) {
+    writeLog("login", "warn", "automated_account_login_blocked",
+      "Automated account login blocked",
+      { enforcementPoint: "order_login" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Access denied" });
     return;
   }
 

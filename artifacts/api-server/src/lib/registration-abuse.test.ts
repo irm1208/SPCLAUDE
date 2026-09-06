@@ -36,4 +36,12 @@ describe("automated registration name blocking", () => {
     const routesSource = readFileSync(new URL("../routes/index.ts", import.meta.url), "utf8");
     expect(routesSource).toContain('router.post("/wholesale-invite/:code/register", signupLimiter)');
   });
+
+  it("blocks existing matching identities at the shared session gate and before login", () => {
+    const authSource = readFileSync(new URL("../middleware/account-auth.ts", import.meta.url), "utf8");
+    const accountSource = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
+    expect(authSource).toMatch(/requireAccount[\s\S]*isBlockedAutomatedRegistrationName\(payload\.telegramUsername\)/);
+    expect(accountSource).toMatch(/account\/login[\s\S]*isBlockedAutomatedRegistrationName\(tg\)[\s\S]*issueAccountCookie/);
+    expect(accountSource).toMatch(/account\/order-login[\s\S]*isBlockedAutomatedRegistrationName\(tg\)[\s\S]*issueAccountCookie/);
+  });
 });
