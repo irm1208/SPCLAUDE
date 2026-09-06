@@ -7,6 +7,7 @@ import { getTableName } from "drizzle-orm";
 const state = vi.hoisted(() => ({
   account: null as any,
   completionFails: false,
+  expireAfterInitialLookup: false,
   completedUsernames: [] as string[],
   sentMessages: [] as string[],
 }));
@@ -20,7 +21,14 @@ function makeDb(root: boolean, accountBox: { value: any }): any {
         where() { return query; },
         orderBy() { return query; },
         limit() { return query; },
-        for() { return query; },
+        for() {
+          // Model a concurrent wait on the row lock: the initial token lookup was
+          // valid, but the authoritative locked row has expired by the time it is read.
+          if (table === "accounts" && state.expireAfterInitialLookup && accountBox.value) {
+            accountBox.value.telegramLinkExpiresAt = new Date(Date.now() - 1);
+          }
+          return query;
+        },
         then(resolve: (rows: any[]) => unknown, reject: (reason: unknown) => unknown) {
           return Promise.resolve(table === "accounts" && accountBox.value ? [accountBox.value] : [])
             .then(resolve, reject);
@@ -143,6 +151,7 @@ describe("mounted Telegram account linking", () => {
       verificationRequiredAt: new Date(),
     };
     state.completionFails = false;
+    state.expireAfterInitialLookup = false;
     state.completedUsernames.length = 0;
     state.sentMessages.length = 0;
   });
@@ -170,5 +179,15 @@ describe("mounted Telegram account linking", () => {
     expect(response.status).toBe(200);
     expect(state.completedUsernames).toEqual(["Stored_UserName"]);
     expect(state.sentMessages).toContain("Linked Stored_UserName");
+  });
+
+  it("does not bind or consume a token that expires while waiting for the account lock", async () => {
+    state.expireAfterInitialLookup = true;
+    const response = await webhook("/link ABCDEF12");
+    expect(response.status).toBe(500);
+    expect(state.account.telegramChatId).toBeNull();
+    expect(state.account.telegramLinkToken).toBe("ABCDEF12");
+    expect(state.account.verifiedAt).toBeNull();
+    expect(state.completedUsernames).toEqual([]);
   });
 });

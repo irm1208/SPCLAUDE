@@ -12,6 +12,10 @@ const state = vi.hoisted(() => ({
   hashCalls: 0,
   sellerHashCalls: 0,
   transactions: 0,
+  inviteClaimReturnsZero: false,
+  lockInviteAtMaxUses: false,
+  lockShareAtMaxMembers: false,
+  memberInsertFails: false,
   cookies: [] as Array<{ username: string; restricted: boolean }>,
   rows: {} as Record<string, Row[]>,
 }));
@@ -34,7 +38,17 @@ function makeDatabase(rows: Record<string, Row[]>, root: boolean): any {
         where() { return query; },
         orderBy() { return query; },
         limit() { return query; },
-        for() { return query; },
+        for() {
+          if (tableName === "wholesale_share_invite_links" && state.lockInviteAtMaxUses) {
+            const link = rows[tableName]?.[0];
+            if (link) link.usageCount = link.maxUses;
+          }
+          if (tableName === "wholesale_shares" && state.lockShareAtMaxMembers) {
+            const share = rows[tableName]?.[0];
+            if (share) share.maxMembers = (rows.wholesale_share_members ?? []).length;
+          }
+          return query;
+        },
         then(resolve: (value: Row[]) => unknown, reject: (reason: unknown) => unknown) {
           let selected = rows[tableName] ?? [];
           if (tableName === "wholesale_share_members" && projection && "c" in projection) {
@@ -49,6 +63,9 @@ function makeDatabase(rows: Record<string, Row[]>, root: boolean): any {
       const tableName = getTableName(table as never);
       return {
         values(value: Row | Row[]) {
+          if (tableName === "wholesale_share_members" && state.memberInsertFails) {
+            throw new Error("member insert failed");
+          }
           const values = Array.isArray(value) ? value : [value];
           rows[tableName] ??= [];
           rows[tableName].push(...structuredClone(values));
@@ -63,17 +80,34 @@ function makeDatabase(rows: Record<string, Row[]>, root: boolean): any {
       const tableName = getTableName(table as never);
       return {
         set(patch: Row) {
-          return {
-            where: async () => {
-              for (const row of rows[tableName] ?? []) {
-                for (const [key, value] of Object.entries(patch)) {
-                  row[key] = key === "usageCount" && typeof value !== "number"
-                    ? Number(row[key] ?? 0) + 1
-                    : value;
-                }
+          let applied = false;
+          const apply = () => {
+            if (applied) return;
+            applied = true;
+            if (state.inviteClaimReturnsZero && tableName === "invite_codes") return;
+            if (state.inviteClaimReturnsZero && tableName === "wholesale_share_invite_links") return;
+            for (const row of rows[tableName] ?? []) {
+              for (const [key, value] of Object.entries(patch)) {
+                row[key] = key === "usageCount" && typeof value !== "number"
+                  ? Number(row[key] ?? 0) + 1
+                  : value;
               }
+            }
+          };
+          const query: any = {
+            where() { return query; },
+            then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) {
+              apply();
+              return Promise.resolve(undefined).then(resolve, reject);
+            },
+            async returning() {
+              if (state.inviteClaimReturnsZero
+                && (tableName === "invite_codes" || tableName === "wholesale_share_invite_links")) return [];
+              apply();
+              return rows[tableName] ?? [];
             },
           };
+          return query;
         },
       };
     },
@@ -194,6 +228,10 @@ describe("mounted public account registration", () => {
     state.hashCalls = 0;
     state.sellerHashCalls = 0;
     state.transactions = 0;
+    state.inviteClaimReturnsZero = false;
+    state.lockInviteAtMaxUses = false;
+    state.lockShareAtMaxMembers = false;
+    state.memberInsertFails = false;
     state.cookies.length = 0;
     resetRows({
       site_config: [{ key: "signup_requires_invite", value: "true" }],
@@ -245,6 +283,16 @@ describe("mounted public account registration", () => {
     expect(state.cookies).toEqual([]);
   });
 
+  it("does not create an account when the bounded invite loses its conditional claim", async () => {
+    state.inviteClaimReturnsZero = true;
+    const result = await post("/account/signup", signup);
+    expect(result.status).toBe(409);
+    expect(state.rows.accounts).toEqual([]);
+    expect(state.rows.account_verification_challenges).toEqual([]);
+    expect(state.rows.invite_codes[0].usageCount).toBe(0);
+    expect(state.cookies).toEqual([]);
+  });
+
   it("blocks an abusive username even when Turnstile succeeds", async () => {
     const result = await post("/account/signup", { ...signup, telegramUsername: "auditx55d544" });
     expect(result.status).toBe(403);
@@ -272,6 +320,10 @@ describe("mounted wholesale invite registration", () => {
     state.hashCalls = 0;
     state.sellerHashCalls = 0;
     state.transactions = 0;
+    state.inviteClaimReturnsZero = false;
+    state.lockInviteAtMaxUses = false;
+    state.lockShareAtMaxMembers = false;
+    state.memberInsertFails = false;
     state.cookies.length = 0;
     resetRows({
       wholesale_share_invite_links: [{
@@ -329,6 +381,50 @@ describe("mounted wholesale invite registration", () => {
     expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
     expect(state.rows.account_verification_challenges).toEqual([]);
     expect(state.cookies).toEqual([]);
+  });
+
+  it("rolls back when the locked invite has reached its maximum uses", async () => {
+    state.lockInviteAtMaxUses = true;
+    expect((await post("/wholesale-invite/WHOLESALE1/register", body)).status).toBe(500);
+    expect(state.rows.accounts).toEqual([]);
+    expect(state.rows.wholesale_share_members).toEqual([]);
+    expect(state.rows.wholesale_share_invite_uses).toEqual([]);
+    expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
+    expect(state.cookies).toEqual([]);
+  });
+
+  it("rolls back when the locked share reaches its member capacity", async () => {
+    state.lockShareAtMaxMembers = true;
+    state.rows.wholesale_share_members.push({ id: "already-there", shareId: "SHARE1", username: "other" });
+    expect((await post("/wholesale-invite/WHOLESALE1/register", body)).status).toBe(500);
+    expect(state.rows.accounts).toEqual([]);
+    expect(state.rows.wholesale_share_members).toHaveLength(1);
+    expect(state.rows.wholesale_share_invite_uses).toEqual([]);
+    expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
+  });
+
+  it("does not claim an invite, record use, or grant wholesale access if membership insertion fails", async () => {
+    state.memberInsertFails = true;
+    expect((await post("/wholesale-invite/WHOLESALE1/register", body)).status).toBe(500);
+    expect(state.rows.accounts).toEqual([]);
+    expect(state.rows.wholesale_share_members).toEqual([]);
+    expect(state.rows.wholesale_share_invite_uses).toEqual([]);
+    expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
+  });
+
+  it("restores wholesale status for an existing member without consuming another invite use", async () => {
+    state.rows.accounts.push({
+      telegramUsername: "wholesale_user", passwordHash: null, isWholesale: false,
+    });
+    state.rows.wholesale_share_members.push({
+      id: "member-1", shareId: "SHARE1", username: "wholesale_user", isCreator: false,
+    });
+    const result = await post("/wholesale-invite/WHOLESALE1/register", body);
+    expect(result.status).toBe(200);
+    expect(state.rows.accounts[0]).toMatchObject({ isWholesale: true, passwordHash: "hashed-password" });
+    expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
+    expect(state.rows.wholesale_share_invite_uses).toEqual([]);
+    expect(state.rows.wholesale_share_members).toHaveLength(1);
   });
 });
 
