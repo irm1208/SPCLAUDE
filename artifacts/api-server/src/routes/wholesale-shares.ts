@@ -3510,23 +3510,36 @@ async function redeemShareInviteLink(
   username: string,
   wasNewAccount: boolean,
 ): Promise<void> {
-  // Grant wholesale access if not already granted
-  await database.update(accountsTable)
-    .set({ isWholesale: true })
-    .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
+  // Lock order is always invite link, then share. Do not trust the public
+  // validation snapshot: both availability checks and all mutations below use
+  // these locked rows so concurrent redemption cannot over-consume a link.
+  const [lockedLink] = await database.select().from(wholesaleShareInviteLinksTable)
+    .where(eq(wholesaleShareInviteLinksTable.code, link.code)).for("update");
+  if (!lockedLink || !lockedLink.isActive) throw new Error("invite_unavailable");
+  if (lockedLink.expiresAt && new Date(lockedLink.expiresAt) <= new Date()) throw new Error("invite_expired");
+  if (lockedLink.maxUses !== null && lockedLink.usageCount >= lockedLink.maxUses) throw new Error("invite_claim_failed");
+  const [lockedShare] = await database.select().from(wholesaleSharesTable)
+    .where(eq(wholesaleSharesTable.id, lockedLink.shareId)).for("update");
+  if (!lockedShare || lockedShare.status !== "open") throw new Error("share_unavailable");
 
   // Join as member if not already a member and share has capacity
   const [existingMember] = await database.select({ id: wholesaleShareMembersTable.id })
     .from(wholesaleShareMembersTable)
-    .where(and(eq(wholesaleShareMembersTable.shareId, share.id), eq(wholesaleShareMembersTable.username, username)));
-  if (!existingMember) {
+    .where(and(eq(wholesaleShareMembersTable.shareId, lockedShare.id), eq(wholesaleShareMembersTable.username, username)));
+  if (existingMember) {
+    await database.update(accountsTable)
+      .set({ isWholesale: true })
+      .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
+    return; // Idempotent: do not consume another invite use.
+  }
+  {
     const [{ c }] = await database.select({ c: sql<number>`count(*)::int` })
-      .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
-    if (share.maxMembers != null && c >= share.maxMembers) throw new Error("share_capacity_full");
-    const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
-      ? Number(share.organiserFlatFee).toFixed(2) : "0";
+      .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, lockedShare.id));
+    if (lockedShare.maxMembers != null && c >= lockedShare.maxMembers) throw new Error("share_capacity_full");
+    const joinOrganiserFee = (lockedShare.isPublic && lockedShare.organiserFlatFee != null)
+      ? Number(lockedShare.organiserFlatFee).toFixed(2) : "0";
     await database.insert(wholesaleShareMembersTable).values({
-      id: randomUUID(), shareId: share.id, username, isCreator: false,
+      id: randomUUID(), shareId: lockedShare.id, username, isCreator: false,
       items: [], tip: "0", organiserFee: joinOrganiserFee,
     });
   }
@@ -3535,7 +3548,7 @@ async function redeemShareInviteLink(
   const [claimed] = await database.update(wholesaleShareInviteLinksTable)
     .set({ usageCount: sql`${wholesaleShareInviteLinksTable.usageCount} + 1` })
     .where(and(
-      eq(wholesaleShareInviteLinksTable.code, link.code),
+      eq(wholesaleShareInviteLinksTable.code, lockedLink.code),
       eq(wholesaleShareInviteLinksTable.isActive, true),
       or(isNull(wholesaleShareInviteLinksTable.maxUses), lt(wholesaleShareInviteLinksTable.usageCount, wholesaleShareInviteLinksTable.maxUses)),
     ))
@@ -3543,8 +3556,11 @@ async function redeemShareInviteLink(
   if (!claimed) throw new Error("invite_claim_failed");
 
   await database.insert(wholesaleShareInviteUsesTable).values({
-    id: randomUUID(), linkCode: link.code, shareId: share.id, username, wasNewAccount,
+    id: randomUUID(), linkCode: lockedLink.code, shareId: lockedShare.id, username, wasNewAccount,
   });
+  await database.update(accountsTable)
+    .set({ isWholesale: true })
+    .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
 
 }
 
@@ -3610,7 +3626,7 @@ router.post("/wholesale-invite/:code/redeem", requireAccount, async (req, res): 
     res.status(409).json({ error: "This shared order is full." }); return;
   }
 
-  await redeemShareInviteLink(db, link, share, me, false);
+  await db.transaction(async (tx) => redeemShareInviteLink(tx, link, share, me, false));
   res.json({ ok: true, shareId: share.id, alreadyMember: false });
 });
 
@@ -3689,7 +3705,7 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
     await db.update(accountsTable)
       .set({ passwordHash, email: (email as string).trim().toLowerCase(), country: (country as string).trim() })
       .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
-    await redeemShareInviteLink(db, link, share, tg, false);
+    await db.transaction(async (tx) => redeemShareInviteLink(tx, link, share, tg, false));
     await issueAccountCookieForAccount(res, tg);
     res.status(200).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: false });
     return;
