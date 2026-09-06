@@ -180,7 +180,7 @@ describe("Google Drive database backup helpers", () => {
     expect(proxy.mock.calls[2]?.[1]).toContain("pageToken=page-two");
   });
 
-  it("uploads the encrypted file bytes with only binary transport headers", async () => {
+  it("uploads encrypted file bytes with a range based on encrypted length", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const encryptedPath = join(directory, "backup.sql.gz.enc");
     await writeFile(encryptedPath, "encrypted backup");
@@ -219,10 +219,144 @@ describe("Google Drive database backup helpers", () => {
       expect(uploadOptions.headers).toEqual({
         "Content-Type": "application/octet-stream",
         "Content-Length": "16",
+        "Content-Range": "bytes 0-15/16",
       });
       expect(uploadOptions.headers).not.toHaveProperty("Content-Encoding");
-      expect(uploadOptions.headers).not.toHaveProperty("Content-Range");
       expect(await uploadOptions.body.text()).toBe("encrypted backup");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers an upload completed despite a lost retryable response", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const encryptedPath = join(directory, "backup.sql.gz.enc");
+    await writeFile(encryptedPath, "encrypted backup");
+    let sessionRequests = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/session" },
+        });
+      }
+      if (path === "/upload/session") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) return new Response("timeout", { status: 500 });
+        if (sessionRequests === 2) return new Response(JSON.stringify({ id: "uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+          size: "16",
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await uploadBackupToGoogleDrive(encryptedPath, "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc");
+
+      const statusCall = proxy.mock.calls.filter((call) => call[1] === "/upload/session")[1];
+      expect(statusCall?.[2]).toMatchObject({
+        method: "PUT",
+        headers: {
+          "Content-Length": "0",
+          "Content-Range": "bytes */16",
+        },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes only encrypted bytes not committed before a retryable failure", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const encryptedPath = join(directory, "backup.sql.gz.enc");
+    await writeFile(encryptedPath, "encrypted backup");
+    let sessionRequests = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/session" },
+        });
+      }
+      if (path === "/upload/session") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) return new Response("timeout", { status: 500 });
+        if (sessionRequests === 2) {
+          return new Response(null, { status: 308, headers: { range: "bytes=0-7" } });
+        }
+        return new Response(JSON.stringify({ id: "uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+          size: "16",
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await uploadBackupToGoogleDrive(encryptedPath, "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc");
+
+      const resumeCall = proxy.mock.calls.filter((call) => call[1] === "/upload/session")[2];
+      const resumeOptions = resumeCall?.[2] as { headers: Record<string, string>; body: Blob };
+      expect(resumeOptions.headers).toMatchObject({
+        "Content-Length": "8",
+        "Content-Range": "bytes 8-15/16",
+      });
+      expect(await resumeOptions.body.text()).toBe("d backup");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("retries from zero when Drive reports no committed encrypted bytes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const encryptedPath = join(directory, "backup.sql.gz.enc");
+    await writeFile(encryptedPath, "encrypted backup");
+    let sessionRequests = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/session" },
+        });
+      }
+      if (path === "/upload/session") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) return new Response("timeout", { status: 500 });
+        if (sessionRequests === 2) return new Response(null, { status: 308 });
+        return new Response(JSON.stringify({ id: "uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+          size: "16",
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await uploadBackupToGoogleDrive(encryptedPath, "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc");
+
+      const retryCall = proxy.mock.calls.filter((call) => call[1] === "/upload/session")[2];
+      const retryOptions = retryCall?.[2] as { headers: Record<string, string>; body: Blob };
+      expect(retryOptions.headers).toMatchObject({
+        "Content-Length": "16",
+        "Content-Range": "bytes 0-15/16",
+      });
+      expect(await retryOptions.body.text()).toBe("encrypted backup");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -76,6 +76,24 @@ export function buildDriveTransportHeaders(encryptedSize: number): Record<string
   };
 }
 
+function buildDriveResumableChunkHeaders(
+  encryptedSize: number,
+  offset: number,
+): Record<string, string> {
+  return {
+    ...buildDriveTransportHeaders(encryptedSize - offset),
+    "Content-Range": `bytes ${offset}-${encryptedSize - 1}/${encryptedSize}`,
+  };
+}
+
+function committedDriveUploadBytes(response: Response, totalSize: number): number {
+  const range = response.headers.get("range");
+  const match = range?.match(/^bytes=(\d+)-(\d+)$/);
+  if (!match) return 0;
+  const end = Number(match[2]);
+  return Number.isSafeInteger(end) && end >= 0 && end < totalSize ? end + 1 : 0;
+}
+
 export function isRetryableDriveUploadStatus(status: number): boolean {
   return [403, 408, 425, 429, 500, 502, 503, 504].includes(status);
 }
@@ -257,11 +275,41 @@ class GoogleDriveBackupStorage {
     const uploadPath = `${locationUrl.pathname}${locationUrl.search}`;
     const encryptedBlob = await openAsBlob(filePath, { type: DRIVE_BACKUP_MIME_TYPE });
     let uploadResponse: Response | null = null;
+    let nextOffset = 0;
+    let needsStatusRecovery = false;
     for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+      if (needsStatusRecovery) {
+        const statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+          method: "PUT",
+          headers: {
+            "Content-Length": "0",
+            "Content-Range": `bytes */${fileStats.size}`,
+          },
+        });
+        if (statusResponse.status === 200 || statusResponse.status === 201) {
+          uploadResponse = statusResponse;
+          break;
+        }
+        if (statusResponse.status === 308) {
+          nextOffset = committedDriveUploadBytes(statusResponse, fileStats.size);
+          needsStatusRecovery = false;
+        } else {
+          if (!isRetryableDriveUploadStatus(statusResponse.status)) {
+            return responseError(statusResponse, "Recovering the Google Drive backup upload");
+          }
+          await statusResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+          const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
+          console.warn(
+            `[db-backup] Drive upload status returned ${statusResponse.status}; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
+          );
+          await sleep(delayMs);
+          continue;
+        }
+      }
       uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
         method: "PUT",
-        headers: buildDriveTransportHeaders(fileStats.size),
-        body: encryptedBlob,
+        headers: buildDriveResumableChunkHeaders(fileStats.size, nextOffset),
+        body: encryptedBlob.slice(nextOffset),
       });
       if (!isRetryableDriveUploadStatus(uploadResponse.status) || attempt === MAX_UPLOAD_ATTEMPTS) {
         break;
@@ -271,6 +319,7 @@ class GoogleDriveBackupStorage {
       console.warn(
         `[db-backup] Drive upload returned ${uploadResponse.status}; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
       );
+      needsStatusRecovery = true;
       await sleep(delayMs);
     }
     if (!uploadResponse) {
