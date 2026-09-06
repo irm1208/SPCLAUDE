@@ -217,10 +217,24 @@ export async function validateRestoredDatabase(target: DisposablePostgres): Prom
              THEN CASE WHEN sequence_metadata.cycle THEN sequence_metadata.max_value END
            ELSE sequence_state.last_value + sequence_metadata.increment_by
          END AS value,
-         sequence_metadata.increment_by
+         sequence_metadata.increment_by,
+         sequence_state.is_called
+           AND NOT sequence_metadata.cycle
+           AND (
+             (sequence_metadata.increment_by > 0 AND sequence_state.last_value >= sequence_metadata.max_value)
+             OR (sequence_metadata.increment_by < 0 AND sequence_state.last_value <= sequence_metadata.min_value)
+           ) AS exhausted,
+         sequence_state.is_called
+           AND sequence_metadata.cycle
+           AND (
+             (sequence_metadata.increment_by > 0 AND sequence_state.last_value >= sequence_metadata.max_value)
+             OR (sequence_metadata.increment_by < 0 AND sequence_state.last_value <= sequence_metadata.min_value)
+           ) AS wrapped
          FROM sequence_state CROSS JOIN sequence_metadata
        )
        SELECT COALESCE(
+         EXISTS (SELECT 1 FROM next_value WHERE exhausted)
+         OR
          EXISTS (
            SELECT 1 FROM ${table} stored CROSS JOIN next_value
             WHERE next_value.value IS NOT NULL
@@ -229,6 +243,7 @@ export async function validateRestoredDatabase(target: DisposablePostgres): Prom
          OR EXISTS (
            SELECT 1 FROM next_value
             WHERE next_value.value IS NOT NULL
+              AND NOT next_value.wrapped
               AND (
                 (next_value.increment_by > 0
                   AND next_value.value <= (SELECT max(${column})::numeric FROM ${table}))

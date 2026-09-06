@@ -162,6 +162,76 @@ describe("validateRestoredDatabase", () => {
     });
   });
 
+  test("rejects an exhausted ascending non-cycling sequence at its maximum", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      ALTER SEQUENCE audit_logs_id_seq MAXVALUE 10 NO CYCLE;
+      INSERT INTO audit_logs(id, action) VALUES (10, 'terminal');
+      SELECT setval('audit_logs_id_seq', 10, true);
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: false,
+      detail: "1 owned sequence is behind its stored IDs",
+    });
+  });
+
+  test("rejects an exhausted descending non-cycling sequence at its minimum", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      CREATE TABLE terminal_descending_records (id integer PRIMARY KEY);
+      CREATE SEQUENCE terminal_descending_records_id_seq START WITH 10 INCREMENT BY -1 MINVALUE 1 MAXVALUE 10 NO CYCLE;
+      ALTER SEQUENCE terminal_descending_records_id_seq OWNED BY terminal_descending_records.id;
+      INSERT INTO terminal_descending_records VALUES (1);
+      SELECT setval('terminal_descending_records_id_seq', 1, true);
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: false,
+      detail: "1 owned sequence is behind its stored IDs",
+    });
+  });
+
+  test("accepts a cycling boundary when its wrapped next value is unused", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      DELETE FROM audit_logs;
+      ALTER SEQUENCE audit_logs_id_seq MINVALUE 1 MAXVALUE 10 CYCLE;
+      INSERT INTO audit_logs(id, action) VALUES (10, 'boundary');
+      SELECT setval('audit_logs_id_seq', 10, true);
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: true,
+    });
+  });
+
+  test("rejects a cycling boundary when its wrapped next value collides", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      ALTER SEQUENCE audit_logs_id_seq MINVALUE 1 MAXVALUE 10 CYCLE;
+      INSERT INTO audit_logs(id, action) VALUES (10, 'boundary');
+      SELECT setval('audit_logs_id_seq', 10, true);
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: false,
+      detail: "1 owned sequence is behind its stored IDs",
+    });
+  });
+
   test("rejects an implausible restore where all core tables are empty", async () => {
     await createFixture({ rows: false });
 
