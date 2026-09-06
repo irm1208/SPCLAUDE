@@ -1,10 +1,11 @@
-import { pgTable, text, boolean, timestamp, bigint, integer, index, unique } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, boolean, timestamp, bigint, integer, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 
 export const adminSecuritySettingsTable = pgTable("admin_security_settings", {
   id: integer("id").primaryKey().default(1),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [check("admin_security_settings_id_check", sql`${t.id} = 1`)]);
 
 export const adminUsersTable = pgTable("admin_users", {
   id: text("id").primaryKey(),
@@ -40,7 +41,11 @@ export const adminSessionsTable = pgTable("admin_sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   stepUpAt: timestamp("step_up_at", { withTimezone: true }),
-}, (t) => [index("admin_sessions_token_hash_idx").on(t.tokenHash), index("admin_sessions_user_idx").on(t.adminUserId)]);
+}, (t) => [
+  index("admin_sessions_token_hash_idx").on(t.tokenHash),
+  uniqueIndex("admin_sessions_token_hash_unique_idx").on(t.tokenHash),
+  index("admin_sessions_user_idx").on(t.adminUserId),
+]);
 
 export const adminPendingChallengesTable = pgTable("admin_pending_challenges", {
   id: text("id").primaryKey(),
@@ -50,7 +55,11 @@ export const adminPendingChallengesTable = pgTable("admin_pending_challenges", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("admin_pending_challenges_token_hash_idx").on(t.tokenHash), index("admin_pending_challenges_user_idx").on(t.adminUserId)]);
+}, (t) => [
+  index("admin_pending_challenges_token_hash_idx").on(t.tokenHash),
+  uniqueIndex("admin_pending_challenges_token_hash_unique_idx").on(t.tokenHash),
+  index("admin_pending_challenges_user_idx").on(t.adminUserId),
+]);
 
 export const adminStepUpAssertionsTable = pgTable("admin_step_up_assertions", {
   id: text("id").primaryKey(),
