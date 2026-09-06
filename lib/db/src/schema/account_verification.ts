@@ -12,7 +12,7 @@ export const accountVerificationChallengesTable = pgTable("account_verification_
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("account_verification_challenges_account_idx").on(t.accountUsername),
-  index("account_verification_challenges_active_idx").on(t.accountUsername, t.consumedAt, t.expiresAt),
+  index("account_verification_challenges_active_idx").on(t.accountUsername, t.consumedAt, t.createdAt.desc()),
 ]);
 
 export type AccountVerificationChallenge = typeof accountVerificationChallengesTable.$inferSelect;

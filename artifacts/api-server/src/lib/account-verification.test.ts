@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   accounts: new Map<string, Record<string, unknown>>(),
   challenges: [] as Array<Record<string, unknown>>,
   rejectNextAttemptClaim: false,
+  failAccountActivation: false,
   accountLocks: 0,
 }));
 
@@ -18,6 +19,12 @@ vi.mock("@workspace/db", async (importOriginal) => {
       from: (table: unknown) => ({
         where: () => ({
           limit: async (count: number) => rowsFor(table).slice(0, count),
+          orderBy: () => ({
+            limit: async (count: number) => rowsFor(table)
+              .filter((row) => table === actual.accountsTable || !row.consumedAt)
+              .sort((a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime())
+              .slice(0, count),
+          }),
           for: async () => {
             if (table === actual.accountsTable) state.accountLocks++;
             return rowsFor(table);
@@ -45,11 +52,11 @@ vi.mock("@workspace/db", async (importOriginal) => {
               Object.assign(account, values);
               return resolve([account]);
             }
-            const active = state.challenges.find((challenge) => !challenge.consumedAt);
-            if (!active) return resolve([]);
-            if ("attemptCount" in values) active.attemptCount = Number(active.attemptCount) + 1;
-            else Object.assign(active, values);
-            return resolve([active]);
+            const active = state.challenges.filter((challenge) => !challenge.consumedAt);
+            if (!active.length) return resolve([]);
+            if ("attemptCount" in values) active[0].attemptCount = Number(active[0].attemptCount) + 1;
+            else active.forEach((challenge) => Object.assign(challenge, values));
+            return resolve(active);
           },
           returning: async () => {
             if ("attemptCount" in values && state.rejectNextAttemptClaim) {
@@ -58,7 +65,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
             }
             if (table === actual.accountsTable) {
               const account = [...state.accounts.values()][0];
-              if (!account) return [];
+              if (!account || ("verifiedAt" in values && state.failAccountActivation)) return [];
               Object.assign(account, values);
               return [account];
             }
@@ -71,7 +78,18 @@ vi.mock("@workspace/db", async (importOriginal) => {
         }),
       }),
     }),
-    transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+      const accountsSnapshot = new Map([...state.accounts].map(([key, value]) => [key, { ...value }]));
+      const challengesSnapshot = state.challenges.map((challenge) => ({ ...challenge }));
+      try {
+        return await callback(db);
+      } catch (error) {
+        state.accounts.clear();
+        accountsSnapshot.forEach((value, key) => state.accounts.set(key, value));
+        state.challenges.splice(0, state.challenges.length, ...challengesSnapshot);
+        throw error;
+      }
+    },
   };
   return { ...actual, db };
 });
@@ -92,6 +110,7 @@ describe("account verification", () => {
     state.accounts.clear();
     state.challenges.length = 0;
     state.rejectNextAttemptClaim = false;
+    state.failAccountActivation = false;
     state.accountLocks = 0;
   });
 
@@ -164,6 +183,35 @@ describe("account verification", () => {
     expect(source).toMatch(/lt\(accountVerificationChallengesTable\.attemptCount,\s*MAX_FAILED_ATTEMPTS\)/);
   });
 
+  it("rolls back a claimed code when account activation fails", async () => {
+    state.accounts.set("new-user", { telegramUsername: "new-user", verificationRequiredAt: new Date(), verifiedAt: null });
+    const challenge = await createEmailChallenge(db as never, "new-user");
+    state.failAccountActivation = true;
+
+    await expect(confirmEmailChallenge(db as never, "new-user", challenge.code)).rejects.toThrow("could not be activated");
+    expect(state.challenges[0].consumedAt).toBeNull();
+    expect(state.accounts.get("new-user")).toMatchObject({ verifiedAt: null });
+  });
+
+  it("keeps the first verification method and invalidates every active challenge", async () => {
+    state.accounts.set("new-user", { telegramUsername: "new-user", verificationRequiredAt: new Date(), verifiedAt: null });
+    await completeAccountVerification(db as never, "new-user", "email");
+    state.challenges.push(
+      { id: "one", accountUsername: "new-user", consumedAt: null },
+      { id: "two", accountUsername: "new-user", consumedAt: null },
+    );
+
+    await expect(completeAccountVerification(db as never, "new-user", "telegram")).resolves.toBe(true);
+    expect(state.accounts.get("new-user")).toMatchObject({ verificationMethod: "email" });
+    expect(state.challenges.every((challenge) => challenge.consumedAt instanceof Date)).toBe(true);
+  });
+
+  it("queries only the newest active challenge", () => {
+    const source = readFileSync(new URL("./account-verification.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/where\(and\([\s\S]*accountUsername[\s\S]*isNull\(accountVerificationChallengesTable\.consumedAt\)[\s\S]*\)\)[\s\S]*orderBy\(desc\(accountVerificationChallengesTable\.createdAt\)\)[\s\S]*limit\(1\)/);
+    expect(source.match(/orderBy\(desc\(accountVerificationChallengesTable\.createdAt\)\)\s*\.limit\(1\)/g)).toHaveLength(2);
+  });
+
   it("enforces resend cooldown and completing by email or Telegram invalidates active challenges", async () => {
     state.accounts.set("new-user", { telegramUsername: "new-user", verificationRequiredAt: new Date(), verifiedAt: null });
     await createEmailChallenge(db as never, "new-user");
@@ -188,5 +236,6 @@ describe("account verification", () => {
     expect(source).toMatch(/references\(\(\) => accountsTable\.telegramUsername, \{ onDelete: "cascade", onUpdate: "cascade" \}\)/);
     expect(source).toMatch(/account_verification_challenges_account_idx/);
     expect(source).toMatch(/account_verification_challenges_active_idx/);
+    expect(source).toMatch(/t\.createdAt\.desc\(\)/);
   });
 });
