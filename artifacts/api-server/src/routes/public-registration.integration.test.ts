@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   turnstileOk: true,
   challengeFails: false,
   hashCalls: 0,
+  sellerHashCalls: 0,
   transactions: 0,
   cookies: [] as Array<{ username: string; restricted: boolean }>,
   rows: {} as Record<string, Row[]>,
@@ -98,6 +99,16 @@ vi.mock("bcryptjs", () => ({
     compare: async () => false,
   },
 }));
+vi.mock("crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("crypto")>();
+  return {
+    ...actual,
+    createHash: () => {
+      state.sellerHashCalls += 1;
+      return { update: () => ({ digest: () => "seller-password-hash" }) };
+    },
+  };
+});
 vi.mock("../lib/turnstile", () => ({
   verifyTurnstile: async () => ({ ok: state.turnstileOk }),
 }));
@@ -136,12 +147,14 @@ vi.mock("../lib/telegram", () => ({
 
 import accountRouter from "./account";
 import wholesaleRouter from "./wholesale-shares";
+import vialShopRouter from "./vial-shop";
 
 async function post(path: string, body: unknown) {
   const app = express();
   app.use(express.json());
   app.use(accountRouter);
   app.use(wholesaleRouter);
+  app.use(vialShopRouter);
   const server: Server = await new Promise(resolve => {
     const listening = app.listen(0, () => resolve(listening));
   });
@@ -179,6 +192,7 @@ describe("mounted public account registration", () => {
     state.turnstileOk = true;
     state.challengeFails = false;
     state.hashCalls = 0;
+    state.sellerHashCalls = 0;
     state.transactions = 0;
     state.cookies.length = 0;
     resetRows({
@@ -256,6 +270,7 @@ describe("mounted wholesale invite registration", () => {
     state.turnstileOk = true;
     state.challengeFails = false;
     state.hashCalls = 0;
+    state.sellerHashCalls = 0;
     state.transactions = 0;
     state.cookies.length = 0;
     resetRows({
@@ -314,5 +329,49 @@ describe("mounted wholesale invite registration", () => {
     expect(state.rows.wholesale_share_invite_links[0].usageCount).toBe(0);
     expect(state.rows.account_verification_challenges).toEqual([]);
     expect(state.cookies).toEqual([]);
+  });
+});
+
+describe("mounted seller registration", () => {
+  const seller = {
+    name: "Verified Vials",
+    tagline: "Quality supplies",
+    contactTelegram: "@verified_vials",
+    country: "GB",
+    shipsTo: ["GB"],
+    password: "password1",
+    turnstileToken: "captcha",
+  };
+
+  beforeEach(() => {
+    state.turnstileOk = true;
+    state.sellerHashCalls = 0;
+    resetRows({ accounts: [], vial_vendors: [] });
+  });
+
+  it.each([undefined, "invalid"])(
+    "rejects %s Turnstile before hashing or writing a vendor application",
+    async (turnstileToken) => {
+      state.turnstileOk = false;
+      const result = await post("/vial/seller/signup", { ...seller, turnstileToken });
+      expect(result.status).toBe(403);
+      expect(state.sellerHashCalls).toBe(0);
+      expect(state.rows.vial_vendors).toEqual([]);
+      expect(state.rows.accounts).toEqual([]);
+    },
+  );
+
+  it("hashes once and writes the pending vendor application after valid Turnstile", async () => {
+    const result = await post("/vial/seller/signup", seller);
+    expect(result.status).toBe(201);
+    expect(state.sellerHashCalls).toBe(1);
+    expect(state.rows.vial_vendors).toHaveLength(1);
+    expect(state.rows.vial_vendors[0]).toMatchObject({
+      name: "Verified Vials",
+      contactTelegram: "verified_vials",
+      sellerPasswordHash: "seller-password-hash",
+      active: false,
+    });
+    expect(state.rows.accounts).toEqual([]);
   });
 });
