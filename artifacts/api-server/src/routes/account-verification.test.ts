@@ -116,4 +116,11 @@ describe("account verification routes", () => {
     expect((await request("/account/verification/session/upgrade", {})).status).toBe(200);
     expect(state.issued).toEqual([false, false]);
   });
+
+  it("does not issue a cookie when email confirmation service rejects the code", async () => {
+    state.confirmation = { ok: false, reason: "invalid" };
+    const result = await request("/account/verification/email/confirm", { code: "123456" });
+    expect(result.status).toBe(400);
+    expect(state.issued).toEqual([]);
+  });
 });

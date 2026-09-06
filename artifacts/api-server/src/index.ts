@@ -1018,10 +1018,10 @@ async function purgeExpiredDeletedOrders(): Promise<void> {
   }
 }
 
-// Start listening immediately so Cloud Run health checks pass without waiting for migrations.
-// Bind explicitly to 0.0.0.0 so the socket is reachable from outside the container
-// (some Node versions default to 127.0.0.1 when no host is passed).
-app.listen(port, "0.0.0.0", () => {
+function startServer(): void {
+  // Bootstrap completes before traffic acceptance so required system templates
+  // exist before a verification resend can be requested.
+  app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);
   autoRegisterWebhook();
   startTrackingAutoRefresh();
@@ -1037,14 +1037,16 @@ app.listen(port, "0.0.0.0", () => {
   startEmailScheduler();
   startDbBackupSchedule();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
-});
+  });
+}
 
-// Run migrations and seed asynchronously — traffic is only routed after the health check
-// passes, so by the time real requests arrive these will have completed.
+// Do not accept requests until the idempotent system-template bootstrap succeeds.
 runStartupMigrations()
   .then(() => seedIfEmpty())
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
+  .then(() => startServer())
   .catch((err) => {
-    console.error("[startup] Migration/seed error:", err);
+    console.error("[startup] Bootstrap failed; server will not start:", err);
+    process.exitCode = 1;
   });

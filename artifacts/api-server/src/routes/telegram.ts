@@ -4,7 +4,7 @@ import { accountsTable, ticketsTable, ticketMessagesTable, ticketTelegramMessage
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull, isNotNull, notInArray } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
-import { requireAccount, issueAccountCookieForAccount } from "../middleware/account-auth";
+import { requireAccount, requireAccountIdentity, issueAccountCookieForAccount } from "../middleware/account-auth";
 import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
@@ -3606,7 +3606,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 });
 
 // ── POST /api/account/telegram/link-init — generate a link token ─────────────
-router.post("/account/telegram/link-init", requireAccount, async (req, res): Promise<void> => {
+router.post("/account/telegram/link-init", requireAccountIdentity, async (req, res): Promise<void> => {
   const rawTg = req.account!.telegramUsername;
   const tg = normalizeTg(rawTg);
 
@@ -3817,7 +3817,7 @@ router.delete("/account/telegram/unlink", requireAccount, async (req, res): Prom
 });
 
 // ── GET /api/account/telegram/status ─────────────────────────────────────────
-router.get("/account/telegram/status", requireAccount, async (req, res): Promise<void> => {
+router.get("/account/telegram/status", requireAccountIdentity, async (req, res): Promise<void> => {
   const tg = normalizeTg(req.account!.telegramUsername);
 
   const [account] = await db
