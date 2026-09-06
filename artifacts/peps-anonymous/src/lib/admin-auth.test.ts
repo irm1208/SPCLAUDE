@@ -211,6 +211,20 @@ test("invalid step-up TOTP Unauthorized preserves session and interceptor for re
   assert.equal(originalCalls, 0);
 });
 
+test("generic Unauthorized from an admin tab does not erase the admin session", async () => {
+  let expired = false;
+  const auth = new AdminAuthController(async () => json({ error: "Unauthorized" }, 401));
+  auth.setMode(true);
+  auth.setCsrfToken("still-valid");
+  auth.onSessionExpired = () => { expired = true; };
+
+  const response = await auth.request("/admin/legacy-tab-data");
+
+  assert.equal(response.status, 401);
+  assert.equal(expired, false);
+  assert.equal(auth.csrfToken, "still-valid");
+});
+
 test("confirmation metadata is local UI data and not included in backend assertion", async () => {
   let stepUpBody: any;
   let shownConfirmation: any;

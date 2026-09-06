@@ -207,7 +207,7 @@ export class AdminAuthController {
     const body = await responseBody(response);
     if (response.status === 401 && this.twoFactorEnabled &&
       body && typeof body === "object" && "error" in body &&
-      (body.error === "admin_session_expired" || body.error === "Unauthorized")) return this.expired();
+      body.error === "admin_session_expired") return this.expired();
     if (response.status === 403 && allowStepUp && body && typeof body === "object" &&
       "error" in body && body.error === "step_up_required") {
       const assertion = await this.stepUp(binding);
@@ -220,7 +220,7 @@ export class AdminAuthController {
       const retried = await this.fetcher(url, retry);
       const retryBody = await responseBody(retried);
       if (retried.status === 401 && retryBody && typeof retryBody === "object" &&
-        "error" in retryBody && (retryBody.error === "admin_session_expired" || retryBody.error === "Unauthorized")) {
+        "error" in retryBody && retryBody.error === "admin_session_expired") {
         return this.expired();
       }
       return retried;
