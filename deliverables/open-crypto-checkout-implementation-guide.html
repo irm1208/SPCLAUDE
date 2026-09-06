@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Open Crypto Checkout — Implementation Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #172033; font: 10.5pt/1.5 Arial, sans-serif; }
+  h1, h2, h3 { color: #0f2d56; page-break-after: avoid; }
+  h1 { font-size: 26pt; margin: 0 0 8px; }
+  h2 { font-size: 17pt; margin: 25px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #dbe8f6; }
+  h3 { font-size: 12.5pt; margin: 17px 0 5px; }
+  p, li { orphans: 3; widows: 3; }
+  code { font-family: "Courier New", monospace; color: #12355b; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #f3f7fb; border-left: 4px solid #1473e6; padding: 10px 12px; border-radius: 3px; font-size: 8.5pt; page-break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 9pt; }
+  th { background: #0f2d56; color: white; text-align: left; }
+  th, td { border: 1px solid #ccd8e6; padding: 7px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f6f9fc; }
+  .cover { min-height: 240mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  .eyebrow { color: #1473e6; font-weight: bold; letter-spacing: .12em; text-transform: uppercase; }
+  .subtitle { font-size: 15pt; color: #53657a; max-width: 570px; }
+  .warning { border: 1px solid #e3b94f; background: #fff9e9; padding: 12px; margin: 15px 0; border-radius: 4px; }
+  .note { border-left: 4px solid #1473e6; background: #eef6ff; padding: 10px 12px; margin: 12px 0; }
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li::before { content: "□ "; color: #1473e6; font-weight: bold; }
+  .page-break { page-break-before: always; }
+  .footer { margin-top: 30px; color: #68788c; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="eyebrow">Standalone integration handbook</div>
+  <h1>Open Crypto Checkout</h1>
+  <p class="subtitle">A practical guide to installing, configuring, integrating, testing, and deploying the non-custodial TypeScript crypto payment starter.</p>
+  <div class="warning"><strong>Security boundary:</strong> This package contains no private keys and cannot transfer funds. Customers pay merchant-controlled public addresses. The merchant's server remains responsible for order creation and fulfilment.</div>
+  <p class="footer">Version 1.0.0 · Requires Node.js 22+, pnpm 10, and PostgreSQL</p>
+</section>
+
+<h2>1. Prerequisites</h2>
+<p>The receiving project must provide its own infrastructure and credentials:</p>
+<ul>
+  <li>Node.js 22 or newer and pnpm 10</li>
+  <li>A dedicated PostgreSQL database</li>
+  <li>Public receiving addresses for every enabled network</li>
+  <li>Reliable RPC/API providers for each blockchain</li>
+  <li>A fiat-to-crypto rate service</li>
+  <li>Public HTTPS domains for the API and checkout</li>
+  <li>A secret manager for database and merchant credentials</li>
+</ul>
+<p>Never transfer a populated <code>.env</code> file. Every recipient must create their own database, wallets, provider accounts, API key, and webhook secret.</p>
+
+<h2>2. Extract and install</h2>
+<pre>tar -xzf open-crypto-checkout-v1.0.0.tar.gz
+cd open-crypto-checkout
+
+corepack enable
+corepack prepare pnpm@10.15.1 --activate
+pnpm install --frozen-lockfile</pre>
+<p>Confirm that <code>node --version</code> reports Node 22 or newer.</p>
+
+<h3>Repository layout</h3>
+<pre>apps/
+  api/       Express API and persisted background workers
+  web/       React/Vite checkout and development storefront
+packages/
+  core/      Payment contracts, statuses and rail registry
+  verifiers/ EVM, Bitcoin, Solana and Tron verification
+examples/
+  merchant-express/  Signed webhook receiver example</pre>
+
+<h2>3. Create the database</h2>
+<p>Create a PostgreSQL database dedicated to the checkout and a least-privilege application user. Configure its URL through the target platform's secret manager.</p>
+<pre>cp .env.example .env
+
+# Local example only
+DATABASE_URL=postgresql://crypto_user:password@localhost:5432/crypto_payments
+
+pnpm --filter @open-crypto-checkout/api db:migrate</pre>
+<p>For production, use TLS, automated backups, point-in-time recovery, monitoring, restricted network access, and a tested restoration procedure.</p>
+
+<h2>4. Configure receiving wallets</h2>
+<pre>ETHEREUM_WALLET=0xYourEthereumAddress
+BSC_WALLET=0xYourBscAddress
+ARBITRUM_WALLET=0xYourArbitrumAddress
+POLYGON_WALLET=0xYourPolygonAddress
+SOLANA_WALLET=YourSolanaAddress
+TRON_WALLET=YourTronAddress
+BITCOIN_WALLET=bc1YourBitcoinAddress</pre>
+<div class="warning"><strong>Never configure seed phrases or private keys.</strong> Only public receiving addresses belong in this service. Independently verify every address and make a small test transfer on every enabled network.</div>
+
+<h2>5. Configure blockchain providers</h2>
+<pre>ETHEREUM_RPC_URL=https://your-ethereum-provider.example
+BSC_RPC_URL=https://your-bsc-provider.example
+ARBITRUM_RPC_URL=https://your-arbitrum-provider.example
+POLYGON_RPC_URL=https://your-polygon-provider.example
+SOLANA_RPC_URL=https://your-solana-provider.example
+TRON_RPC_URL=https://your-tron-provider.example
+BITCOIN_RPC_URL=https://your-bitcoin-esplora-provider.example</pre>
+<table>
+  <tr><th>Network</th><th>Assets</th><th>Default finality</th></tr>
+  <tr><td>Ethereum</td><td>ETH, USDT, USDC</td><td>12 confirmations</td></tr>
+  <tr><td>BNB Smart Chain</td><td>USDT</td><td>15 confirmations</td></tr>
+  <tr><td>Arbitrum</td><td>USDT, USDC</td><td>20 confirmations</td></tr>
+  <tr><td>Polygon</td><td>USDT, USDC</td><td>128 confirmations</td></tr>
+  <tr><td>Solana</td><td>USDT, USDC</td><td>Finalized</td></tr>
+  <tr><td>Tron</td><td>USDT</td><td>19 confirmations</td></tr>
+  <tr><td>Bitcoin</td><td>BTC</td><td>3 confirmations</td></tr>
+</table>
+<p>Use reliable commercial providers for production and confirm their responses match the raw adapters under <code>packages/verifiers</code>.</p>
+
+<h2>6. Implement the rate provider</h2>
+<p>Production requires <code>RATE_PROVIDER_URL</code>. The API sends:</p>
+<pre>POST /quote
+Content-Type: application/json
+
+{
+  "fiatAmount": "49.99",
+  "fiatCurrency": "USD",
+  "railId": "ethereum-usdc"
+}</pre>
+<p>The service must respond with a positive decimal rate, source, and timestamp:</p>
+<pre>{
+  "rate": "1.0002",
+  "source": "merchant-rate-service",
+  "quotedAt": "2026-09-06T17:00:00.000Z"
+}</pre>
+<p>The rate is the fiat price of one whole crypto asset. The API performs exact decimal-to-base-unit conversion. Do not calculate payment amounts with floating-point arithmetic.</p>
+
+<h2>7. Configure policies and origins</h2>
+<pre>NODE_ENV=development
+PORT=8090
+WEB_ORIGIN=http://localhost:5173
+PUBLIC_API_ORIGIN=http://localhost:8090
+PUBLIC_CHECKOUT_ORIGIN=http://localhost:5173
+
+QUOTE_TTL_SECONDS=900
+UNDERPAY_TOLERANCE_BPS=100
+OVERPAY_REVIEW_BPS=200</pre>
+<p>The defaults provide a 15-minute quote, approximately 1% underpayment tolerance, and manual review above 2% overpayment. Review these values for the merchant's risk model.</p>
+
+<h2>8. Configure development credentials</h2>
+<pre>BOOTSTRAP_MERCHANT_KEY=replace-with-a-long-random-value
+BOOTSTRAP_WEBHOOK_SECRET=replace-with-a-different-random-value
+BOOTSTRAP_WEBHOOK_URL=http://localhost:8091/webhooks/crypto
+ALLOW_LOCAL_WEBHOOKS=true</pre>
+<p>Generate separate random values, for example with <code>openssl rand -hex 32</code>. Development bootstrap is server-side and idempotent. The browser never receives the merchant key.</p>
+<p>In production, use HTTPS and set <code>ALLOW_LOCAL_WEBHOOKS=false</code>.</p>
+
+<h2>9. Start development</h2>
+<pre>pnpm --filter @open-crypto-checkout/api db:migrate
+pnpm dev</pre>
+<p>Defaults:</p>
+<ul>
+  <li>Checkout: <code>http://localhost:5173</code></li>
+  <li>API: <code>http://localhost:8090</code></li>
+</ul>
+<pre>curl http://localhost:8090/health
+curl http://localhost:8090/ready</pre>
+<p>The deterministic development rate exists only for interface testing and must never be used for real payments.</p>
+
+<h2>10. Create payments from the merchant server</h2>
+<p>Never create a payment directly from browser code. The merchant backend must use its server-only bearer key and a stable idempotency key.</p>
+<pre>const response = await fetch(
+  `${process.env.CRYPTO_PAYMENT_API_URL}/v1/payments`,
+  {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${process.env.CRYPTO_PAYMENT_API_KEY}`,
+      "content-type": "application/json",
+      "idempotency-key": `crypto-payment:${order.id}`,
+    },
+    body: JSON.stringify({
+      merchantOrderReference: order.id,
+      fiatAmount: order.total,
+      fiatCurrency: order.currency,
+      rails: [
+        "ethereum-eth", "ethereum-usdt", "ethereum-usdc",
+        "bsc-usdt", "arbitrum-usdt", "arbitrum-usdc",
+        "polygon-usdt", "polygon-usdc",
+        "solana-usdt", "solana-usdc",
+        "tron-usdt", "bitcoin-btc"
+      ],
+    }),
+  }
+);
+
+if (!response.ok) throw new Error("Payment creation failed");
+const payment = await response.json();</pre>
+<p>The order total must be loaded from the merchant database. Never trust an amount supplied by the browser. Redirect the customer to the returned checkout URL.</p>
+
+<h3>Idempotency</h3>
+<p>Retries for the same order must reuse the same key, such as <code>crypto-payment:order-1001</code>. Generating a new key on every retry can create duplicate payment requests.</p>
+
+<h2>11. Customer checkout flow</h2>
+<ol>
+  <li><code>GET /v1/checkout/:publicId</code> loads restricted checkout data.</li>
+  <li><code>POST /v1/checkout/:publicId/select</code> with <code>{"railId":"ethereum-usdc"}</code> locks the quote.</li>
+  <li>The checkout displays the exact network, asset, destination, amount, and expiry.</li>
+  <li>The customer sends funds from their wallet.</li>
+  <li><code>POST /v1/checkout/:publicId/transactions</code> submits <code>{"transactionHash":"0x..."}</code>.</li>
+</ol>
+<p>The server—not the browser—owns the wallet, token, network, amount, tolerance, finality target, and quote expiry. The submitted transaction is bound to that immutable quote. The same on-chain transaction cannot pay multiple requests on the same chain, even across different tokens.</p>
+
+<h2>12. Payment states</h2>
+<pre>created → awaiting_payment → transaction_submitted → confirming → paid</pre>
+<p>Terminal or review states also include expired, underpaid, overpaid review, failed, and cancelled. Fulfil only after the authoritative state is <code>paid</code>; neither submission nor confirmation-in-progress is sufficient.</p>
+
+<h2>13. Verify signed webhooks</h2>
+<p>The service sends the exact JSON bytes with:</p>
+<ul>
+  <li><code>x-webhook-timestamp</code> — Unix seconds</li>
+  <li><code>x-webhook-signature</code> — lowercase hex HMAC-SHA256 of <code>timestamp + "." + rawBody</code></li>
+</ul>
+<p>In Express, capture the untouched body before JSON parsing:</p>
+<pre>app.post(
+  "/webhooks/open-crypto-checkout",
+  express.raw({ type: "application/json", limit: "100kb" }),
+  async (req, res) => {
+    const event = verifier.verify({
+      rawBody: req.body,
+      timestamp: req.header("x-webhook-timestamp"),
+      signature: req.header("x-webhook-signature"),
+    });
+
+    await database.transaction(async (tx) => {
+      const inserted = await tx.events.insertIfMissing(event.id);
+      if (!inserted) return;
+
+      if (event.type === "payment.paid") {
+        await tx.orders.markPaid(event.merchantOrderReference);
+      }
+    });
+
+    res.status(204).end();
+  }
+);</pre>
+<p>Use a unique database constraint on the event ID. Deduplication and fulfilment must occur in the same transaction. The included example under <code>examples/merchant-express</code> demonstrates signature verification.</p>
+
+<h2>14. Confirm status independently</h2>
+<p>Webhooks are retryable and must not be the sole source of truth. The merchant backend can query:</p>
+<pre>GET /v1/payments/:publicId
+Authorization: Bearer &lt;merchant key&gt;</pre>
+<p>Recommended fulfilment sequence:</p>
+<ol>
+  <li>Verify and deduplicate the signed webhook.</li>
+  <li>Query the authoritative payment status.</li>
+  <li>Confirm the merchant order reference and expected amount.</li>
+  <li>Mark the store order paid atomically.</li>
+  <li>Begin fulfilment.</li>
+</ol>
+<div class="warning">Never fulfil because the browser shows success, a wallet says “submitted,” a customer provides a screenshot, or a transaction hash merely exists.</div>
+
+<h2>15. Build and test</h2>
+<pre>pnpm check:standalone
+pnpm test:clean
+pnpm typecheck
+pnpm build</pre>
+<p>Run PostgreSQL concurrency tests against a disposable database:</p>
+<pre>export TEST_DATABASE_URL="postgresql://test_user:test_password@localhost:5432/crypto_payments_test"
+pnpm test</pre>
+<p>Never point integration tests at production. Confirm that the PostgreSQL tests run with zero skips before accepting real payments.</p>
+
+<h2>16. Production topology</h2>
+<pre>shop.example.com
+  Existing merchant storefront and order service
+
+checkout.example.com
+  Built React checkout
+
+payments-api.example.com
+  Express API, verification loop and webhook loop
+
+Managed PostgreSQL
+  Payments, quotes, transactions, jobs and webhooks</pre>
+<p>Production startup requires all RPC URLs and a rate provider. On shutdown, the service stops claiming new jobs, waits for active verification and webhook operations, closes HTTP, and then closes PostgreSQL.</p>
+
+<h2>17. Production security checklist</h2>
+<ul class="checklist">
+  <li>Node.js 22 is used.</li>
+  <li>All tests pass, including PostgreSQL tests with zero skips.</li>
+  <li>Every wallet address and token contract/mint is independently verified.</li>
+  <li>Small live transfers are tested on every enabled rail.</li>
+  <li>RPC reliability, rate limits, monitoring, and finality assumptions are reviewed.</li>
+  <li>Rate-provider failure stops quote creation rather than falling back silently.</li>
+  <li>The merchant API key exists only on the server.</li>
+  <li>The webhook secret is separate from the merchant key.</li>
+  <li>Webhook event IDs are durably deduplicated.</li>
+  <li>The store checks authoritative paid status before fulfilment.</li>
+  <li>HTTPS, strict CORS, rate limits, and least-privilege access are enabled.</li>
+  <li><code>ALLOW_LOCAL_WEBHOOKS</code> is disabled.</li>
+  <li>Database backup and restoration are tested.</li>
+  <li>Alerts cover failed verification and webhook jobs.</li>
+  <li>An incident-response procedure is documented.</li>
+  <li>Independent security, legal, and tax reviews are complete.</li>
+</ul>
+
+<div class="note"><strong>Core integration rule:</strong> the merchant server creates the payment; the checkout collects the customer's transaction hash; and the merchant fulfils only after a verified signed webhook and authoritative <code>paid</code> status.</div>
+</body>
+</html>

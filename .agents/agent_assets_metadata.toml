@@ -142,3 +142,17 @@ mtime_ms = 1788632004401
 storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:bbc34ef6-d242-429e-ba8d-882d8f2a859e/5184f0f4-ecae-43ab-94da-613f6144c310/684f4df1-3e8a-4967-aa9b-8da491cd873f"
 storage_version_token = "1788632289593797"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "7hUk8gDQlh-Bf-0SH1S-u"
+uri = "file://deliverables/open-crypto-checkout-implementation-guide.pdf"
+type = "pdf"
+title = "Open Crypto Checkout — Implementation Guide"
+description = "Downloadable 9-page PDF tutorial covering installation, database and wallet configuration, RPCs, rate provider setup, merchant integration, checkout flow, signed webhooks, testing, deployment, and production security."
+logical_id = "b799a56a-52b6-4e7f-a515-9beff3facf31"
+content_hash = "sha256:8fef475ae7346c4e992d975e5d97c96b576839b0273b588adfedd97e7e59e62b"
+size = 121998
+mtime_ms = 1788691763769
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:bbc34ef6-d242-429e-ba8d-882d8f2a859e/b799a56a-52b6-4e7f-a515-9beff3facf31/0e25eea8-4172-410f-bd7c-b0d447e0f5ef"
+storage_version_token = "1788691771489927"
+content_type = "application/pdf"
