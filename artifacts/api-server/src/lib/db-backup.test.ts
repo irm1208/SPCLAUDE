@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PassThrough } from "stream";
 import {
   BACKUP_RETRY_DELAY_MS,
+  createAndUploadEncryptedBackup,
   createDbBackupScheduler,
   FIRST_BACKUP_DELAY_MS,
   INTERVAL_MS,
+  requireBackupEncryptionKey,
   startDbBackupSchedule,
 } from "./db-backup";
 import type { DbBackupResult } from "./db-backup";
@@ -118,5 +121,110 @@ describe("database backup scheduler", () => {
       setTimeoutSpy.mockRestore();
       setIntervalSpy.mockRestore();
     }
+  });
+});
+
+describe("encrypted database backup production orchestration", () => {
+  const key = Buffer.alloc(32, 1).toString("base64");
+
+  function dumpProcess(exitCode = 0) {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const process = {
+      stdout,
+      stderr,
+      once: vi.fn((event: string, listener: (value?: number | Error) => void) => {
+        if (event === "close") queueMicrotask(() => listener(exitCode));
+        return process;
+      }),
+      kill: vi.fn(),
+    };
+    return { process, stdout };
+  }
+
+  it("rejects a missing production encryption key", () => {
+    expect(() => requireBackupEncryptionKey({ NODE_ENV: "production" })).toThrow(/DB_BACKUP_ENCRYPTION_KEY/);
+  });
+
+  it("returns a canonical 32-byte production encryption key", () => {
+    expect(requireBackupEncryptionKey({
+      NODE_ENV: "production",
+      DB_BACKUP_ENCRYPTION_KEY: key,
+    })).toEqual(Buffer.alloc(32, 1));
+  });
+
+  it.each(["not base64", Buffer.alloc(31).toString("base64"), `${key}\n`])(
+    "rejects malformed production encryption key %j",
+    (invalidKey) => {
+      expect(() => requireBackupEncryptionKey({
+        NODE_ENV: "production",
+        DB_BACKUP_ENCRYPTION_KEY: invalidKey,
+      })).toThrow(/DB_BACKUP_ENCRYPTION_KEY/);
+    },
+  );
+
+  it("validates the encryption key before spawning pg_dump", async () => {
+    const spawnPgDump = vi.fn();
+    await expect(createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private" },
+      spawnPgDump,
+      encrypt: vi.fn(),
+      upload: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(),
+    })).rejects.toThrow(/DB_BACKUP_ENCRYPTION_KEY/);
+    expect(spawnPgDump).not.toHaveBeenCalled();
+  });
+
+  it("streams pg_dump stdout into encryption and uploads only after both succeed", async () => {
+    const { process, stdout } = dumpProcess();
+    const events: string[] = [];
+    const encrypt = vi.fn(async (source: PassThrough, path: string) => {
+      events.push("encrypt");
+      expect(source).toBe(stdout);
+      expect(path).toBe("/tmp/backup.sql.gz.enc.partial");
+    });
+    const rename = vi.fn(async () => { events.push("rename"); });
+    const upload = vi.fn(async () => { events.push("upload"); return { id: "drive-file" }; });
+    const unlink = vi.fn(async () => { events.push("unlink"); });
+    await createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
+      spawnPgDump: vi.fn(() => process),
+      encrypt,
+      upload,
+      rename,
+      unlink,
+    });
+    expect(events).toEqual(["encrypt", "rename", "upload", "unlink"]);
+    expect(upload).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc", "backup.sql.gz.enc");
+    expect(unlink).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc");
+  });
+
+  it.each([
+    ["encryption", 0, new Error("encryption failed")],
+    ["pg_dump", 1, undefined],
+  ] as const)("does not upload and cleans encrypted artifacts after failed %s", async (_name, code, encryptionError) => {
+    const { process } = dumpProcess(code);
+    const upload = vi.fn();
+    const unlink = vi.fn(async () => undefined);
+    await expect(createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
+      spawnPgDump: vi.fn(() => process),
+      encrypt: vi.fn(async () => {
+        if (encryptionError) throw encryptionError;
+      }),
+      upload,
+      rename: vi.fn(async () => undefined),
+      unlink,
+    })).rejects.toThrow();
+    expect(upload).not.toHaveBeenCalled();
+    expect(unlink).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc.partial");
+    expect(unlink).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc");
   });
 });

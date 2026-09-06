@@ -1,15 +1,16 @@
 /**
  * Scheduled database backup.
  *
- * Runs a plain pg_dump every six hours in production.
- * Uploads completed dumps to Google Drive and removes the local temporary file.
- * Local temporary files are retained only when an upload fails, then pruned after 3 days.
+ * Streams an encrypted pg_dump every six hours in production.
+ * Uploads completed encrypted dumps to Google Drive and removes the local temporary file.
+ * Local encrypted files are retained only when an upload fails, then pruned after 3 days.
  */
 
 import { spawn } from "child_process";
 import { promisify } from "util";
-import { mkdir, readdir, unlink, stat, createWriteStream } from "fs";
-import { pipeline } from "stream/promises";
+import { mkdir, readdir, unlink, stat } from "fs";
+import { rename as renameFile } from "fs/promises";
+import { Readable } from "stream";
 import { tmpdir } from "os";
 import { join } from "path";
 import { pool } from "@workspace/db";
@@ -18,6 +19,7 @@ import {
   uploadBackupToGoogleDrive,
 } from "./google-drive-backup";
 import { buildPgDumpArgs } from "./db-backup-command";
+import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
@@ -26,7 +28,7 @@ export const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with appl
 export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention without busy-looping.
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
 const BACKUP_FILE_PREFIX = "S&PBACKUP-";
-const BACKUP_FILE_SUFFIX = ".SQL";
+const BACKUP_FILE_SUFFIX = ".sql.gz.enc";
 
 let backupInProgress = false;
 
@@ -62,26 +64,50 @@ async function pruneOldBackups(): Promise<void> {
   }
 }
 
-async function createPlainDump(outputPath: string): Promise<void> {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("DATABASE_URL not set");
+export function requireBackupEncryptionKey(environment: NodeJS.ProcessEnv = process.env): Buffer {
+  const encodedKey = environment.DB_BACKUP_ENCRYPTION_KEY;
+  if (!encodedKey) {
+    throw new Error("DB_BACKUP_ENCRYPTION_KEY must be set for encrypted database backups");
+  }
+  return parseBackupEncryptionKey(encodedKey);
+}
 
-  const pgDump = spawn(
-    "pg_dump",
-    buildPgDumpArgs(dbUrl),
-    { stdio: ["ignore", "pipe", "pipe"] },
-  );
+interface PgDumpProcess {
+  stdout: Readable;
+  stderr: NodeJS.ReadableStream;
+  once(event: "error", listener: (error: Error) => void): unknown;
+  once(event: "close", listener: (code: number | null) => void): unknown;
+  kill(signal: NodeJS.Signals): unknown;
+}
+
+export interface EncryptedBackupOptions {
+  fileName: string;
+  outputPath: string;
+  environment: NodeJS.ProcessEnv;
+  spawnPgDump: (databaseUrl: string) => PgDumpProcess;
+  encrypt: (source: Readable, destinationPath: string, key: Buffer) => Promise<unknown>;
+  upload: (filePath: string, fileName: string) => Promise<{ id: string }>;
+  rename: (oldPath: string, newPath: string) => Promise<void>;
+  unlink: (path: string) => Promise<void>;
+}
+
+/** Streams pg_dump into an encrypted temporary file before uploading it. */
+export async function createAndUploadEncryptedBackup(options: EncryptedBackupOptions): Promise<void> {
+  const encryptionKey = requireBackupEncryptionKey(options.environment);
+  const databaseUrl = options.environment.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL not set");
+  const partialPath = `${options.outputPath}.partial`;
+  const pgDump = options.spawnPgDump(databaseUrl);
   const stderr: Buffer[] = [];
   pgDump.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-
   const exitCode = new Promise<number>((resolve, reject) => {
     pgDump.once("error", reject);
     pgDump.once("close", (code) => resolve(code ?? 1));
   });
-
+  let encryptedFileReadyForUpload = false;
   try {
     await Promise.all([
-      pipeline(pgDump.stdout, createWriteStream(outputPath)),
+      options.encrypt(pgDump.stdout, partialPath, encryptionKey),
       exitCode.then((code) => {
         if (code !== 0) {
           const detail = Buffer.concat(stderr).toString("utf8").trim();
@@ -89,10 +115,30 @@ async function createPlainDump(outputPath: string): Promise<void> {
         }
       }),
     ]);
+    await options.rename(partialPath, options.outputPath);
+    encryptedFileReadyForUpload = true;
+    await options.upload(options.outputPath, options.fileName);
+    await options.unlink(options.outputPath);
   } catch (error) {
     pgDump.kill("SIGTERM");
+    if (!encryptedFileReadyForUpload) {
+      await options.unlink(partialPath).catch(() => undefined);
+      await options.unlink(options.outputPath).catch(() => undefined);
+    }
     throw error;
   }
+}
+
+function spawnPgDump(databaseUrl: string): PgDumpProcess {
+  const pgDump = spawn(
+    "pg_dump",
+    buildPgDumpArgs(databaseUrl),
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  if (!pgDump.stdout || !pgDump.stderr) {
+    throw new Error("pg_dump did not provide stdout and stderr streams");
+  }
+  return pgDump as PgDumpProcess;
 }
 
 async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
@@ -118,7 +164,7 @@ async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
   }
 }
 
-/** Runs a single plain SQL dump, uploads it, and prunes temporary failures. */
+/** Runs a single encrypted SQL dump, uploads it, and prunes temporary failures. */
 export async function runDbBackup(): Promise<DbBackupResult> {
   if (backupInProgress) {
     console.log("[db-backup] A backup is already in progress — skipping");
@@ -136,14 +182,19 @@ export async function runDbBackup(): Promise<DbBackupResult> {
       const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
-        await createPlainDump(outputPath);
-        const { size } = await promisify(stat)(outputPath);
-        console.log(`[db-backup] Plain SQL dump ready (${size} bytes): ${fileName}`);
-        const uploaded = await uploadBackupToGoogleDrive(outputPath, fileName);
-        await promisify(unlink)(outputPath);
-        console.log(`[db-backup] Uploaded ${fileName} to Google Drive (file ${uploaded.id})`);
-      } catch (err) {
-        console.error("[db-backup] Backup/upload failed; temporary file retained:", err);
+        await createAndUploadEncryptedBackup({
+          fileName,
+          outputPath,
+          environment: process.env,
+          spawnPgDump,
+          encrypt: encryptBackupStream,
+          upload: uploadBackupToGoogleDrive,
+          rename: renameFile,
+          unlink: (path) => promisify(unlink)(path),
+        });
+        console.log(`[db-backup] Uploaded encrypted backup ${fileName} to Google Drive`);
+      } catch {
+        console.error("[db-backup] Encrypted backup/upload failed; encrypted file retained when upload failed");
       } finally {
         await pruneOldBackups();
       }
@@ -240,7 +291,7 @@ export function startDbBackupSchedule(): void {
     return;
   }
   console.log(
-    "[db-backup] Schedule started — first run in 10 min, then every 6 h (plain SQL in Google Drive, retained indefinitely; lock contention is retried)",
+    "[db-backup] Schedule started — first run in 10 min, then every 6 h (encrypted backups in Google Drive; lock contention is retried)",
   );
   createDbBackupScheduler(runDbBackup).start();
 }
