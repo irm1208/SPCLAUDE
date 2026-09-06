@@ -80,6 +80,27 @@ describe("validateRestoredDatabase", () => {
     expect(JSON.stringify(result)).not.toContain("private-orphan-value");
   });
 
+  test("detects a partial-null child row that violates a composite MATCH FULL foreign key", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      CREATE TABLE composite_parents (part_a integer NOT NULL, part_b integer NOT NULL, PRIMARY KEY (part_a, part_b));
+      CREATE TABLE composite_children (part_a integer, part_b integer);
+      INSERT INTO composite_parents VALUES (1, 2);
+      INSERT INTO composite_children VALUES (1, NULL);
+      ALTER TABLE composite_children ADD CONSTRAINT composite_children_parent_fk
+        FOREIGN KEY (part_a, part_b) REFERENCES composite_parents(part_a, part_b)
+        MATCH FULL NOT VALID;
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "foreign_keys")).toEqual({
+      name: "foreign_keys",
+      passed: false,
+      detail: "1 foreign key constraint has violating rows",
+    });
+  });
+
   test("detects NOT VALID constraints even when their rows are valid", async () => {
     await createFixture();
     await postgres.executePsql(`

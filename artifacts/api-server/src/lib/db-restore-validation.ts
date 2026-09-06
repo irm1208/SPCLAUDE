@@ -15,6 +15,7 @@ interface ForeignKeyDescription {
   parentSchema: string;
   parentTable: string;
   parentColumns: string[];
+  matchType: "f" | "p" | "s";
 }
 
 interface SequenceDescription {
@@ -88,7 +89,8 @@ export async function validateRestoredDatabase(target: DisposablePostgres): Prom
          'parentColumns', (SELECT json_agg(a.attname ORDER BY key.ord)
                              FROM unnest(con.confkey) WITH ORDINALITY key(attnum, ord)
                              JOIN pg_catalog.pg_attribute a
-                               ON a.attrelid = con.confrelid AND a.attnum = key.attnum)
+                               ON a.attrelid = con.confrelid AND a.attnum = key.attnum),
+         'matchType', con.confmatchtype
        ) ORDER BY con.oid), '[]'::json)
        FROM pg_catalog.pg_constraint con
        JOIN pg_catalog.pg_class child ON child.oid = con.conrelid
@@ -106,18 +108,33 @@ export async function validateRestoredDatabase(target: DisposablePostgres): Prom
     }
     const child = qualified(foreignKey.childSchema, foreignKey.childTable);
     const parent = qualified(foreignKey.parentSchema, foreignKey.parentTable);
-    const nonNull = foreignKey.childColumns
+    const allNonNull = foreignKey.childColumns
       .map((column) => `child.${quoteIdentifier(column)} IS NOT NULL`)
       .join(" AND ");
-    const matchingColumns = foreignKey.childColumns
+    const anyNonNull = foreignKey.childColumns
+      .map((column) => `child.${quoteIdentifier(column)} IS NOT NULL`)
+      .join(" OR ");
+    const anyNull = foreignKey.childColumns
+      .map((column) => `child.${quoteIdentifier(column)} IS NULL`)
+      .join(" OR ");
+    const exactMatch = foreignKey.childColumns
       .map((column, index) => `parent.${quoteIdentifier(foreignKey.parentColumns[index]!)} = child.${quoteIdentifier(column)}`)
       .join(" AND ");
+    const partialMatch = foreignKey.childColumns
+      .map((column, index) => `(child.${quoteIdentifier(column)} IS NULL OR parent.${quoteIdentifier(foreignKey.parentColumns[index]!)} = child.${quoteIdentifier(column)})`)
+      .join(" AND ");
+    const violationPredicate = foreignKey.matchType === "s"
+      ? `(${allNonNull}) AND NOT EXISTS (SELECT 1 FROM ${parent} parent WHERE ${exactMatch})`
+      : foreignKey.matchType === "f"
+        ? `((${anyNull}) AND (${anyNonNull})) OR ((${allNonNull}) AND NOT EXISTS (SELECT 1 FROM ${parent} parent WHERE ${exactMatch}))`
+        : foreignKey.matchType === "p"
+          ? `(${anyNonNull}) AND NOT EXISTS (SELECT 1 FROM ${parent} parent WHERE ${partialMatch})`
+          : "true";
     const violated = await readOnlyQuery(
       target,
       `SELECT EXISTS (
          SELECT 1 FROM ${child} child
-          WHERE ${nonNull}
-            AND NOT EXISTS (SELECT 1 FROM ${parent} parent WHERE ${matchingColumns})
+          WHERE ${violationPredicate}
        )`,
     );
     if (violated === "t") violatingForeignKeys += 1;
