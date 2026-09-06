@@ -29,6 +29,8 @@ export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention wit
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
 const BACKUP_FILE_PREFIX = "S&PBACKUP-";
 const BACKUP_FILE_SUFFIX = ".sql.gz.enc";
+const BACKUP_PARTIAL_FILE_SUFFIX = ".sql.gz.enc.partial";
+const TERMINATION_GRACE_MS = 10_000;
 
 let backupInProgress = false;
 
@@ -50,7 +52,10 @@ async function pruneOldBackups(): Promise<void> {
   const cutoffMs = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
 
   for (const file of files) {
-    if (!file.startsWith(BACKUP_FILE_PREFIX) || !file.endsWith(BACKUP_FILE_SUFFIX)) continue;
+    if (
+      !file.startsWith(BACKUP_FILE_PREFIX)
+      || (!file.endsWith(BACKUP_FILE_SUFFIX) && !file.endsWith(BACKUP_PARTIAL_FILE_SUFFIX))
+    ) continue;
     const filePath = join(BACKUP_DIR, file);
     try {
       const { mtimeMs } = await promisify(stat)(filePath);
@@ -89,6 +94,7 @@ export interface EncryptedBackupOptions {
   upload: (filePath: string, fileName: string) => Promise<{ id: string }>;
   rename: (oldPath: string, newPath: string) => Promise<void>;
   unlink: (path: string) => Promise<void>;
+  terminationGraceMs?: number;
 }
 
 /** Streams pg_dump into an encrypted temporary file before uploading it. */
@@ -100,27 +106,51 @@ export async function createAndUploadEncryptedBackup(options: EncryptedBackupOpt
   const pgDump = options.spawnPgDump(databaseUrl);
   const stderr: Buffer[] = [];
   pgDump.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const exitCode = new Promise<number>((resolve, reject) => {
-    pgDump.once("error", reject);
-    pgDump.once("close", (code) => resolve(code ?? 1));
+  let childClosed = false;
+  const childClosedPromise = new Promise<number>((resolve) => {
+    pgDump.once("close", (code) => {
+      childClosed = true;
+      resolve(code ?? 1);
+    });
   });
+  const childError = new Promise<never>((_resolve, reject) => {
+    pgDump.once("error", reject);
+  });
+  const dumpCompleted = Promise.race([
+    childClosedPromise.then((code) => {
+      if (code !== 0) {
+        const detail = Buffer.concat(stderr).toString("utf8").trim();
+        throw new Error(`pg_dump exited with ${code}${detail ? `: ${detail}` : ""}`);
+      }
+    }),
+    childError,
+  ]);
+  const encryptionCompleted = options.encrypt(pgDump.stdout, partialPath, encryptionKey);
   let encryptedFileReadyForUpload = false;
   try {
     await Promise.all([
-      options.encrypt(pgDump.stdout, partialPath, encryptionKey),
-      exitCode.then((code) => {
-        if (code !== 0) {
-          const detail = Buffer.concat(stderr).toString("utf8").trim();
-          throw new Error(`pg_dump exited with ${code}${detail ? `: ${detail}` : ""}`);
-        }
-      }),
+      encryptionCompleted,
+      dumpCompleted,
     ]);
     await options.rename(partialPath, options.outputPath);
     encryptedFileReadyForUpload = true;
     await options.upload(options.outputPath, options.fileName);
     await options.unlink(options.outputPath);
   } catch (error) {
-    pgDump.kill("SIGTERM");
+    if (!childClosed) {
+      pgDump.kill("SIGTERM");
+      const graceMs = options.terminationGraceMs ?? TERMINATION_GRACE_MS;
+      const graceExpired = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(true), graceMs);
+        void childClosedPromise.then(() => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      if (graceExpired && !childClosed) pgDump.kill("SIGKILL");
+      await childClosedPromise;
+    }
+    await Promise.allSettled([encryptionCompleted, dumpCompleted]);
     if (!encryptedFileReadyForUpload) {
       await options.unlink(partialPath).catch(() => undefined);
       await options.unlink(options.outputPath).catch(() => undefined);

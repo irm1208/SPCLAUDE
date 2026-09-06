@@ -227,4 +227,104 @@ describe("encrypted database backup production orchestration", () => {
     expect(unlink).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc.partial");
     expect(unlink).toHaveBeenCalledWith("/tmp/backup.sql.gz.enc");
   });
+
+  it("waits for pending encryption before cleaning after pg_dump fails", async () => {
+    const { process } = dumpProcess(1);
+    let settleEncryption!: () => void;
+    const encryption = new Promise<void>(resolve => {
+      settleEncryption = resolve;
+    });
+    const events: string[] = [];
+    const operation = createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
+      spawnPgDump: vi.fn(() => process),
+      encrypt: vi.fn(async () => {
+        await encryption;
+        events.push("encryption-settled");
+      }),
+      upload: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(async (path: string) => { events.push(`unlink:${path}`); }),
+    });
+
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(events).toEqual([]);
+    settleEncryption();
+    await expect(operation).rejects.toThrow(/pg_dump exited/);
+    expect(events).toEqual([
+      "encryption-settled",
+      "unlink:/tmp/backup.sql.gz.enc.partial",
+      "unlink:/tmp/backup.sql.gz.enc",
+    ]);
+  });
+
+  it("terminates a running child and waits for its close after encryption fails", async () => {
+    let close!: (code: number | null) => void;
+    const process = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      once: vi.fn((event: string, listener: (value?: number | Error) => void) => {
+        if (event === "close") close = listener as (code: number | null) => void;
+        return process;
+      }),
+      kill: vi.fn(),
+    };
+    const operation = createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
+      spawnPgDump: vi.fn(() => process),
+      encrypt: vi.fn(async () => { throw new Error("encryption failed"); }),
+      upload: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(async () => undefined),
+      terminationGraceMs: 10,
+    });
+
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(process.kill).toHaveBeenCalledWith("SIGTERM");
+    let settled = false;
+    void operation.then(
+      () => { settled = true; },
+      () => { settled = true; },
+    );
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    close(1);
+    await expect(operation).rejects.toThrow(/encryption failed/);
+    expect(process.kill).not.toHaveBeenCalledWith("SIGKILL");
+  });
+
+  it("escalates termination to SIGKILL after the configured grace period", async () => {
+    vi.useFakeTimers();
+    let close!: (code: number | null) => void;
+    const process = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      once: vi.fn((event: string, listener: (value?: number | Error) => void) => {
+        if (event === "close") close = listener as (code: number | null) => void;
+        return process;
+      }),
+      kill: vi.fn(),
+    };
+    const operation = createAndUploadEncryptedBackup({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
+      spawnPgDump: vi.fn(() => process),
+      encrypt: vi.fn(async () => { throw new Error("encryption failed"); }),
+      upload: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(async () => undefined),
+      terminationGraceMs: 10,
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(process.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+    expect(process.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+    close(1);
+    await expect(operation).rejects.toThrow(/encryption failed/);
+  });
 });
