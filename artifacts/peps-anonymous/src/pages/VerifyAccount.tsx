@@ -51,6 +51,7 @@ export default function VerifyAccount() {
   // Telegram verification state
   const tgLinkInit = useTelegramLinkInit();
   const [tgLinkData, setTgLinkData] = useState<{ deepLink: string | null; botUsername: string | null } | null>(null);
+  const [tgLinkError, setTgLinkError] = useState("");
   const [tgLinked, setTgLinked] = useState(false);
   const { data: tgStatus } = useTelegramStatus(activeMethod === "telegram" && !tgLinked, { refetchInterval: 3000 });
 
@@ -97,18 +98,24 @@ export default function VerifyAccount() {
 
   // Initialize Telegram link when selected
   useEffect(() => {
-    if (activeMethod === "telegram" && !tgLinkData && !tgLinkInit.isPending) {
+    if (activeMethod === "telegram" && !tgLinkData && !tgLinkError && !tgLinkInit.isPending) {
       let cancelled = false;
       tgLinkInit.mutateAsync().then(data => {
-        if (!cancelled && data) {
+        if (!cancelled && data?.deepLink) {
           const botUsername = data.botUrl ? data.botUrl.split("/").pop()! : null;
           setTgLinkData({ deepLink: data.deepLink, botUsername });
+        } else if (!cancelled) {
+          setTgLinkError("Telegram verification is unavailable right now. Please try again.");
         }
-      }).catch(() => {});
+      }).catch((error: unknown) => {
+        if (!cancelled) {
+          setTgLinkError(error instanceof Error ? error.message : "Unable to prepare Telegram verification.");
+        }
+      });
       return () => { cancelled = true; };
     }
     return undefined;
-  }, [activeMethod, tgLinkData, tgLinkInit]);
+  }, [activeMethod, tgLinkData, tgLinkError, tgLinkInit]);
 
   // Poll for Telegram link status
   useEffect(() => {
@@ -265,6 +272,21 @@ export default function VerifyAccount() {
                             Open Telegram
                             <ArrowRight className="w-4 h-4" />
                           </a>
+                        ) : tgLinkError ? (
+                          <div className="space-y-3">
+                            <ErrorBanner message={tgLinkError} />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                tgLinkInit.reset();
+                                setTgLinkError("");
+                              }}
+                              className="w-full h-11 rounded-xl text-sm font-bold"
+                              style={{ color: "var(--t-blue-deep)", border: `1px solid ${T.border}` }}
+                            >
+                              Try Telegram Again
+                            </button>
+                          </div>
                         ) : (
                           <button disabled className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 opacity-50" style={{ background: "#229ED9", color: "#fff" }}>
                             <Loader2 className="w-4 h-4 animate-spin" /> Preparing link...
