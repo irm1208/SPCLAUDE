@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
-import { rename, unlink } from "fs/promises";
-import { Transform, Readable, Writable } from "stream";
+import { open, rename, stat, unlink } from "fs/promises";
+import { PassThrough, Transform, Readable, Writable } from "stream";
 import { pipeline } from "stream/promises";
 import { createGunzip, createGzip } from "zlib";
 
@@ -86,60 +86,89 @@ export async function encryptBackupStream(
     return { sizeBytes, sha256: hash.digest("hex") };
   } catch (error) {
     destination.destroy();
-    await unlink(temporaryPath).catch(() => undefined);
-    throw error;
+    await removeTemporaryFile(temporaryPath, error);
   }
 }
 
-function validateEnvelope(envelope: Buffer): { iv: Buffer; ciphertext: Buffer; tag: Buffer } {
-  if (envelope.length < HEADER_BYTES + BACKUP_TAG_BYTES + 1) {
+function validateEnvelopeHeader(header: Buffer, sizeBytes: number): Buffer {
+  if (sizeBytes < HEADER_BYTES + BACKUP_TAG_BYTES + 1) {
     throw new Error("Encrypted backup is truncated or missing its authentication tag");
   }
-  if (!envelope.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) {
+  if (!header.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) {
     throw new Error("Encrypted backup has invalid magic");
   }
-  if (envelope[BACKUP_MAGIC.length] !== BACKUP_FORMAT_VERSION) {
-    throw new Error(`Unsupported encrypted backup format version: ${envelope[BACKUP_MAGIC.length]}`);
+  if (header[BACKUP_MAGIC.length] !== BACKUP_FORMAT_VERSION) {
+    throw new Error(`Unsupported encrypted backup format version: ${header[BACKUP_MAGIC.length]}`);
   }
-
-  const iv = envelope.subarray(BACKUP_MAGIC.length + 1, HEADER_BYTES);
-  const tag = envelope.subarray(-BACKUP_TAG_BYTES);
-  const ciphertext = envelope.subarray(HEADER_BYTES, -BACKUP_TAG_BYTES);
-  return { iv, ciphertext, tag };
+  return header.subarray(BACKUP_MAGIC.length + 1, HEADER_BYTES);
 }
 
-async function gunzipFully(compressed: Buffer): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  await pipeline(
-    Readable.from([compressed]),
-    createGunzip(),
-    new Writable({
-      write(chunk: Buffer, _encoding, callback) {
-        chunks.push(Buffer.from(chunk));
-        callback();
-      },
-    }),
-  );
-  return Buffer.concat(chunks);
+async function removeTemporaryFile(temporaryPath: string, originalError: unknown): Promise<never> {
+  try {
+    await unlink(temporaryPath);
+  } catch (cleanupError) {
+    if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new AggregateError(
+        [originalError, cleanupError],
+        "Encrypted backup processing failed and its temporary file could not be removed",
+      );
+    }
+  }
+  throw originalError;
 }
 
 export async function decryptBackupToStream(sourcePath: string, key: Buffer): Promise<Readable> {
   assertEncryptionKey(key);
-  const source = createReadStream(sourcePath);
-  const chunks: Buffer[] = [];
-  await pipeline(
-    source,
-    new Writable({
-      write(chunk: Buffer, _encoding, callback) {
-        chunks.push(Buffer.from(chunk));
-        callback();
-      },
-    }),
-  );
-  const { iv, ciphertext, tag } = validateEnvelope(Buffer.concat(chunks));
+  const { size: sourceSize } = await stat(sourcePath);
+  const handle = await open(sourcePath, "r");
+  const header = Buffer.alloc(HEADER_BYTES);
+  const tag = Buffer.alloc(BACKUP_TAG_BYTES);
+  try {
+    const headerRead = await handle.read(header, 0, header.length, 0);
+    const tagRead = await handle.read(tag, 0, tag.length, sourceSize - tag.length);
+    if (headerRead.bytesRead !== header.length || tagRead.bytesRead !== tag.length) {
+      throw new Error("Encrypted backup is truncated or missing its authentication tag");
+    }
+  } finally {
+    await handle.close();
+  }
+
+  const iv = validateEnvelopeHeader(header, sourceSize);
+  const temporaryPath = `${sourcePath}.${process.pid}.${randomUUID()}.restore.partial`;
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
-  const compressed = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  const plaintext = await gunzipFully(compressed);
-  return Readable.from([plaintext]);
+  try {
+    await pipeline(
+      createReadStream(sourcePath, {
+        start: HEADER_BYTES,
+        end: sourceSize - BACKUP_TAG_BYTES - 1,
+      }),
+      decipher,
+      createWriteStream(temporaryPath, { flags: "wx" }),
+    );
+  } catch (error) {
+    return removeTemporaryFile(temporaryPath, error);
+  }
+
+  const output = new PassThrough();
+  const removeStagedData = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      callback(null, chunk);
+    },
+    flush(callback) {
+      unlink(temporaryPath).then(
+        () => callback(),
+        cleanupError => callback(cleanupError),
+      );
+    },
+  });
+  void pipeline(createReadStream(temporaryPath), createGunzip(), removeStagedData, output)
+    .catch(async error => {
+      try {
+        await removeTemporaryFile(temporaryPath, error);
+      } catch (processingError) {
+        output.destroy(processingError as Error);
+      }
+    });
+  return output;
 }

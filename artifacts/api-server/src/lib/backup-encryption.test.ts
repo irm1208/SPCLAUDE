@@ -1,9 +1,9 @@
 import { createHash } from "crypto";
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Readable } from "stream";
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import {
   BACKUP_FORMAT_VERSION,
   BACKUP_IV_BYTES,
@@ -73,6 +73,37 @@ describe("backup encryption", () => {
     expect(ciphertext.includes(plaintext)).toBe(false);
     expect(metadata.sizeBytes).toBe(ciphertext.length);
     expect(metadata.sha256).toBe(createHash("sha256").update(ciphertext).digest("hex"));
+  });
+
+  it("does not buffer the encrypted envelope while staging authenticated restoration data", async () => {
+    const path = await createTemporaryPath("backup.enc");
+    await encryptBackupStream(Readable.from([plaintext]), path, key);
+    const concat = vi.spyOn(Buffer, "concat").mockImplementation(() => {
+      throw new Error("decrypt must not concatenate the full envelope");
+    });
+
+    try {
+      const stream = await decryptBackupToStream(path, key);
+      const chunks: string[] = [];
+      for await (const chunk of stream) chunks.push(chunk.toString());
+      expect(chunks.join("")).toBe(plaintext.toString());
+    } finally {
+      concat.mockRestore();
+    }
+  });
+
+  it("preserves a failed destination and removes its partial sibling", async () => {
+    const directory = await createTemporaryPath("existing-destination");
+    await rm(directory, { force: true });
+    await mkdir(directory);
+
+    await expect(
+      encryptBackupStream(Readable.from([plaintext]), directory, key),
+    ).rejects.toThrow();
+
+    expect((await readdir(directory)).length).toBe(0);
+    const parentEntries = await readdir(join(directory, ".."));
+    expect(parentEntries.filter(entry => entry.startsWith(`${directory.split("/").pop()}.`))).toEqual([]);
   });
 
   it.each([
