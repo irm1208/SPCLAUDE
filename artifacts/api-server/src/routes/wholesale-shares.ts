@@ -14,7 +14,7 @@ import {
   type WholesaleShareItem,
   type WholesaleShareSplitMode,
 } from "@workspace/db";
-import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
+import { eq, and, or, isNull, sql, desc, inArray, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale, requireWholesaleOrAdmin } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
@@ -3522,22 +3522,25 @@ async function redeemShareInviteLink(
   if (!existingMember) {
     const [{ c }] = await database.select({ c: sql<number>`count(*)::int` })
       .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
-    if (share.maxMembers == null || c < share.maxMembers) {
-      const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
-        ? Number(share.organiserFlatFee).toFixed(2) : "0";
-      try {
-        await database.insert(wholesaleShareMembersTable).values({
-          id: randomUUID(), shareId: share.id, username, isCreator: false,
-          items: [], tip: "0", organiserFee: joinOrganiserFee,
-        });
-      } catch { /* unique race — already joined */ }
-    }
+    if (share.maxMembers != null && c >= share.maxMembers) throw new Error("share_capacity_full");
+    const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
+      ? Number(share.organiserFlatFee).toFixed(2) : "0";
+    await database.insert(wholesaleShareMembersTable).values({
+      id: randomUUID(), shareId: share.id, username, isCreator: false,
+      items: [], tip: "0", organiserFee: joinOrganiserFee,
+    });
   }
 
   // Atomically increment usage count and record the use
-  await database.update(wholesaleShareInviteLinksTable)
+  const [claimed] = await database.update(wholesaleShareInviteLinksTable)
     .set({ usageCount: sql`${wholesaleShareInviteLinksTable.usageCount} + 1` })
-    .where(eq(wholesaleShareInviteLinksTable.code, link.code));
+    .where(and(
+      eq(wholesaleShareInviteLinksTable.code, link.code),
+      eq(wholesaleShareInviteLinksTable.isActive, true),
+      or(isNull(wholesaleShareInviteLinksTable.maxUses), lt(wholesaleShareInviteLinksTable.usageCount, wholesaleShareInviteLinksTable.maxUses)),
+    ))
+    .returning({ code: wholesaleShareInviteLinksTable.code });
+  if (!claimed) throw new Error("invite_claim_failed");
 
   await database.insert(wholesaleShareInviteUsesTable).values({
     id: randomUUID(), linkCode: link.code, shareId: share.id, username, wasNewAccount,

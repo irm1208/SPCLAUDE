@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
-import { eq, and, or, desc, sql, isNull, isNotNull, gt, inArray } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
@@ -212,7 +212,22 @@ router.post("/account/signup", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  const challenge = await db.transaction(async (tx) => {
+  let challenge: Awaited<ReturnType<typeof createEmailChallengeInTransaction>>;
+  try {
+    challenge = await db.transaction(async (tx) => {
+      // Claim a bounded invite before inserting. The conditional update is the
+      // authority; the earlier lookup is only for friendly validation messages.
+      if (resolvedInviteCode) {
+        const [claimed] = await tx.update(inviteCodesTable)
+          .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
+          .where(and(
+            eq(inviteCodesTable.code, resolvedInviteCode),
+            eq(inviteCodesTable.isActive, true),
+            or(isNull(inviteCodesTable.maxUses), lt(inviteCodesTable.usageCount, inviteCodesTable.maxUses)),
+          ))
+          .returning({ code: inviteCodesTable.code });
+        if (!claimed) throw new Error("invite_claim_failed");
+      }
     await tx.insert(accountsTable).values({
       telegramUsername: tg,
       passwordHash,
@@ -222,13 +237,15 @@ router.post("/account/signup", async (req, res): Promise<void> => {
       verificationRequiredAt: new Date(),
       ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}),
     });
-    if (resolvedInviteCode) {
-      await tx.update(inviteCodesTable)
-        .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
-        .where(eq(inviteCodesTable.code, resolvedInviteCode));
-    }
     return createEmailChallengeInTransaction(tx, tg);
-  });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "invite_claim_failed") {
+      res.status(409).json({ error: "This invite code has reached its usage limit" });
+      return;
+    }
+    throw error;
+  }
   const verificationDelivery = await sendTemplatedEmail("email_verification", email.trim().toLowerCase(), {
     code: challenge.code,
     username: tg.replace(/^@/, ""),

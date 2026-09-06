@@ -2931,7 +2931,9 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
     await db.transaction(async (tx) => {
       const [lockedAccount] = await tx.select().from(accountsTable)
         .where(eq(accountsTable.telegramUsername, account.telegramUsername)).for("update");
-      if (!lockedAccount || lockedAccount.telegramLinkToken !== code) throw new Error("Telegram link token changed");
+      if (!lockedAccount || lockedAccount.telegramLinkToken !== code || !lockedAccount.telegramLinkExpiresAt || lockedAccount.telegramLinkExpiresAt <= new Date()) {
+        throw new Error("Telegram link token changed");
+      }
       await tx.update(accountsTable)
         .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
         .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
@@ -3042,7 +3044,9 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       await db.transaction(async (tx) => {
         const [lockedAccount] = await tx.select().from(accountsTable)
           .where(eq(accountsTable.telegramUsername, tokenAccount.telegramUsername)).for("update");
-        if (!lockedAccount || lockedAccount.telegramLinkToken !== code) throw new Error("Telegram link token changed");
+        if (!lockedAccount || lockedAccount.telegramLinkToken !== code || !lockedAccount.telegramLinkExpiresAt || lockedAccount.telegramLinkExpiresAt <= new Date()) {
+          throw new Error("Telegram link token changed");
+        }
         await tx.update(accountsTable)
           .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
           .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
