@@ -8,6 +8,7 @@ import type { DisposablePostgres } from "./disposable-postgres";
 import {
   runBackupVerification,
   legacySqlSource,
+  createVerificationAdvisoryLock,
   type BackupVerificationDependencies,
 } from "./db-backup-verifier";
 
@@ -135,5 +136,42 @@ describe("runBackupVerification", () => {
     expect(events.at(-1)).toBe("release-lock");
     expect(d.audit).toHaveBeenCalledWith("backup_restore_failed", expect.any(String), expect.objectContaining({ category: "backup_restore_cleanup_failed" }));
     expect(JSON.stringify((d.audit as any).mock.calls)).not.toContain("postgres://secret");
+  });
+
+  it("routes a sanitized lock release failure after cleanup", async () => {
+    const d = dependencies([]);
+    (d.releaseLock as any).mockRejectedValueOnce(new Error("postgres://secret raw DB error"));
+    await expect(runBackupVerification(d)).rejects.toThrow("backup verification lock release failed");
+    expect(d.audit).toHaveBeenCalledWith("backup_restore_failed", expect.any(String), expect.objectContaining({
+      category: "backup_restore_lock_release_failed",
+    }));
+    expect(JSON.stringify((d.audit as any).mock.calls)).not.toContain("postgres://secret");
+  });
+});
+
+describe("verification advisory lock lifecycle", () => {
+  it("releases a client exactly once when lock acquisition query rejects", async () => {
+    const client = { query: vi.fn().mockRejectedValue(new Error("postgres://secret")), release: vi.fn() };
+    const lock = createVerificationAdvisoryLock({ connect: async () => client } as any);
+    await expect(lock.acquire()).rejects.toThrow("backup verification lock failed");
+    expect(client.release).toHaveBeenCalledOnce();
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
+  it.each([
+    ["unlock rejection", () => Promise.reject(new Error("raw DB stderr"))],
+    ["unlock false", () => Promise.resolve({ rows: [{ unlocked: false }] })],
+  ])("destroys the session on %s and exposes only a generic error", async (_case, unlock) => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ locked: true }] })
+        .mockImplementationOnce(unlock),
+      release: vi.fn(),
+    };
+    const lock = createVerificationAdvisoryLock({ connect: async () => client } as any);
+    await lock.acquire();
+    await expect(lock.release()).rejects.toThrow("backup verification lock release failed");
+    expect(client.release).toHaveBeenCalledOnce();
+    expect(client.release).toHaveBeenCalledWith(true);
   });
 });

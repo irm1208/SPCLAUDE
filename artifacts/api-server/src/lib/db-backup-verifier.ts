@@ -113,7 +113,15 @@ export async function runBackupVerification(
     if (failure) throw genericFailure();
     return "verified";
   } finally {
-    await dependencies.releaseLock();
+    try {
+      await dependencies.releaseLock();
+    } catch {
+      const requestId = randomUUID();
+      await dependencies.audit("backup_restore_failed", "Database backup verification lock release failed", { category: "backup_restore_lock_release_failed", requestId }).catch(() => undefined);
+      await dependencies.alert("backup_restore_lock_release_failed", requestId).catch(() => undefined);
+      await dependencies.notifyAdmin("backup_restore_lock_release_failed", requestId).catch(() => undefined);
+      throw new Error("backup verification lock release failed");
+    }
   }
 }
 
@@ -166,26 +174,47 @@ async function downloadDriveBackup(backup: DriveBackupFile, path: string): Promi
   }
 }
 
-async function acquireLock(): Promise<boolean> {
-  const client = await pool.connect();
-  const result = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [VERIFY_LOCK_NAME]);
-  if (!result.rows[0]?.locked) client.release();
-  else (acquireLock as unknown as { client?: typeof client }).client = client;
-  return Boolean(result.rows[0]?.locked);
+export function createVerificationAdvisoryLock(lockPool: {
+  connect(): Promise<{ query<T>(sql: string, values?: unknown[]): Promise<{ rows: T[] }>; release(destroy?: boolean): void }>;
+}): { acquire(): Promise<boolean>; release(): Promise<void> } {
+  let held: Awaited<ReturnType<typeof lockPool.connect>> | undefined;
+  return {
+    async acquire() {
+      const client = await lockPool.connect();
+      try {
+        const result = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [VERIFY_LOCK_NAME]);
+        if (!result.rows[0]?.locked) {
+          client.release();
+          return false;
+        }
+        held = client;
+        return true;
+      } catch {
+        try { client.release(true); } catch { /* already being destroyed */ }
+        throw new Error("backup verification lock failed");
+      }
+    },
+    async release() {
+      const client = held;
+      if (!client) return;
+      held = undefined;
+      try {
+        const result = await client.query<{ unlocked: boolean }>("SELECT pg_advisory_unlock(hashtext($1)) AS unlocked", [VERIFY_LOCK_NAME]);
+        if (!result.rows[0]?.unlocked) throw new Error("unlock failed");
+        client.release();
+      } catch {
+        try { client.release(true); } catch { /* already being destroyed */ }
+        throw new Error("backup verification lock release failed");
+      }
+    },
+  };
 }
-
-async function releaseLock(): Promise<void> {
-  const holder = acquireLock as unknown as { client?: Awaited<ReturnType<typeof pool.connect>> };
-  const client = holder.client;
-  if (!client) return;
-  holder.client = undefined;
-  try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [VERIFY_LOCK_NAME]); } finally { client.release(); }
-}
+const verificationLock = createVerificationAdvisoryLock(pool);
 
 function defaultDependencies(): BackupVerificationDependencies {
   return {
-    acquireLock,
-    releaseLock,
+    acquireLock: verificationLock.acquire,
+    releaseLock: verificationLock.release,
     listBackups: listDriveBackups,
     allocateDownloadPath: allocateDriveDownloadPath,
     download: downloadDriveBackup,

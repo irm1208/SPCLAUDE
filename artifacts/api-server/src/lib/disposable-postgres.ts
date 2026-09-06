@@ -12,6 +12,8 @@ import { pipeline } from "node:stream/promises";
 const execFileAsync = promisify(execFile);
 const TEMPORARY_PREFIX = "sp-backup-verify-";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_RESTORE_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 const CLUSTER_OWNER = "restore_verify_owner";
 
 export interface DisposablePostgres {
@@ -25,6 +27,71 @@ export interface DisposablePostgres {
   restoreSql(source: Readable): Promise<void>;
   executePsql(sql: string): Promise<string>;
   stopAndRemove(): Promise<void>;
+}
+
+interface RestoreChild {
+  stdin: NodeJS.WritableStream | null;
+  kill(signal: NodeJS.Signals): unknown;
+  once(event: string, listener: (...arguments_: any[]) => void): unknown;
+}
+
+export async function restoreSqlProcess(
+  source: Readable,
+  arguments_: readonly string[],
+  environment: NodeJS.ProcessEnv,
+  options: {
+    spawnProcess?: (arguments_: readonly string[], environment: NodeJS.ProcessEnv) => RestoreChild;
+    timeoutMs?: number;
+    terminationGraceMs?: number;
+  } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RESTORE_TIMEOUT_MS;
+  const graceMs = options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isFinite(graceMs) || graceMs < 0) {
+    throw new Error("psql restore failed");
+  }
+  const child = (options.spawnProcess ?? ((args, env) => spawn("psql", [...args], {
+    stdio: ["pipe", "ignore", "ignore"], env,
+  })))(arguments_, environment);
+  if (!child.stdin) throw new Error("psql restore failed");
+  let closed = false;
+  const close = new Promise<number | null>((resolvePromise) => {
+    child.once("close", (code: number | null) => { closed = true; resolvePromise(code); });
+    child.once("error", () => { if (!closed) { closed = true; resolvePromise(null); } });
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+  });
+  const input = pipeline(source, child.stdin);
+  try {
+    const [, code] = await Promise.race([
+      Promise.all([input, close]),
+      timeout,
+    ]);
+    if (code !== 0) throw new Error("nonzero");
+  } catch {
+    source.destroy();
+    if ("destroy" in child.stdin && typeof child.stdin.destroy === "function") child.stdin.destroy();
+    if (!closed) child.kill("SIGTERM");
+    if (!closed) {
+      let graceTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          close,
+          new Promise<void>(resolvePromise => { graceTimer = setTimeout(resolvePromise, graceMs); }),
+        ]);
+      } finally {
+        if (graceTimer) clearTimeout(graceTimer);
+      }
+    }
+    if (!closed) child.kill("SIGKILL");
+    await close;
+    await input.catch(() => undefined);
+    throw new Error("psql restore failed");
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function isInside(path: string, root: string): boolean {
@@ -172,7 +239,7 @@ export function assertLoopbackPostgresTarget(host: string, database: string, exp
   }
 }
 
-export async function startDisposablePostgres(options: { timeoutMs?: number } = {}): Promise<DisposablePostgres> {
+export async function startDisposablePostgres(options: { timeoutMs?: number; restoreTimeoutMs?: number; terminationGraceMs?: number } = {}): Promise<DisposablePostgres> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Disposable PostgreSQL timeout must be positive");
@@ -257,21 +324,10 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     const restoreSql = async (source: Readable): Promise<void> => {
       const arguments_ = ["-X", "--set", "ON_ERROR_STOP=1", ...psqlArgs];
       assertSafeCommandArguments(arguments_);
-      const child = spawn("psql", arguments_, {
-        stdio: ["pipe", "ignore", "ignore"],
-        env: { ...commandEnvironment(), PGPASSWORD: restorePassword },
+      await restoreSqlProcess(source, arguments_, { ...commandEnvironment(), PGPASSWORD: restorePassword }, {
+        timeoutMs: options.restoreTimeoutMs,
+        terminationGraceMs: options.terminationGraceMs,
       });
-      if (!child.stdin) throw new Error("psql did not provide stdin");
-      const exited = new Promise<void>((resolvePromise, reject) => {
-        child.once("error", reject);
-        child.once("close", code => code === 0 ? resolvePromise() : reject(new Error("psql restore failed")));
-      });
-      try {
-        await Promise.all([pipeline(source, child.stdin), exited]);
-      } catch (error) {
-        child.kill("SIGTERM");
-        throw error;
-      }
     };
 
     return {

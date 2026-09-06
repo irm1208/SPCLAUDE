@@ -2,12 +2,15 @@ import { chmod, mkdtemp, mkdir, realpath, rm, stat, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough, Readable } from "node:stream";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   assertDisposableDataDirectory,
   assertLoopbackPostgresTarget,
   startDisposablePostgres,
+  restoreSqlProcess,
 } from "./disposable-postgres";
 
 const temporaryPaths: string[] = [];
@@ -15,6 +18,39 @@ const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   await Promise.all(temporaryPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+describe("restoreSqlProcess", () => {
+  test("times out, escalates TERM to KILL, and awaits final close", async () => {
+    vi.useFakeTimers();
+    const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), kill: vi.fn() });
+    const restoring = restoreSqlProcess(Readable.from(["SELECT 1"]), [], {}, {
+      spawnProcess: () => child as any, timeoutMs: 10, terminationGraceMs: 5,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    await vi.advanceTimersByTimeAsync(5);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    let settled = false;
+    void restoring.finally(() => { settled = true; }).catch(() => undefined);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    child.emit("close", null);
+    await expect(restoring).rejects.toThrow("psql restore failed");
+    vi.useRealTimers();
+  });
+
+  test("awaits child close after an input pipeline failure", async () => {
+    const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), kill: vi.fn() });
+    const source = new Readable({ read() { this.destroy(new Error("secret SQL")); } });
+    const restoring = restoreSqlProcess(source, [], {}, {
+      spawnProcess: () => child as any, timeoutMs: 1_000, terminationGraceMs: 1_000,
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    child.emit("close", 1);
+    await expect(restoring).rejects.toThrow("psql restore failed");
+  });
 });
 
 describe("assertDisposableDataDirectory", () => {
