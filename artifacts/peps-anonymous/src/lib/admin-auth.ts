@@ -78,12 +78,15 @@ export class AdminAuthController {
   private readonly confirmationByAction = new Map<string, { before: string; after: string }>();
   private uninstallInterceptor?: () => void;
   private actionBindingResolver?: ActionBindingResolver;
+  private readonly fetcher: Fetcher;
 
   constructor(
-    private readonly fetcher: Fetcher = (input, init) => fetch(input, init),
+    fetcher: Fetcher | undefined = undefined,
     private readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null =
       typeof sessionStorage === "undefined" ? null : sessionStorage,
-  ) {}
+  ) {
+    this.fetcher = fetcher ?? globalThis.fetch.bind(globalThis);
+  }
 
   setMode(enabled: boolean): void {
     this.twoFactorEnabled = enabled;

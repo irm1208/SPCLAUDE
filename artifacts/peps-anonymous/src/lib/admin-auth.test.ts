@@ -299,3 +299,26 @@ test("Admin FS3 and P&L contain no retired static-password gate", async () => {
   assert.equal(source.includes("/admin/fs3-verify"), false);
   assert.equal(source.includes("FS3 password"), false);
 });
+
+test("default transport captures native fetch before installing the interceptor", async () => {
+  const source = await readFile(new URL("./admin-auth.ts", import.meta.url), "utf8");
+  assert.match(source, /this\.fetcher = fetcher \?\? globalThis\.fetch\.bind\(globalThis\)/);
+
+  const originalFetch = globalThis.fetch;
+  let nativeCalls = 0;
+  globalThis.fetch = async () => {
+    nativeCalls++;
+    return json({ ok: true });
+  };
+  try {
+    const auth = new AdminAuthController();
+    auth.setMode(true);
+    const uninstall = auth.installFetchInterceptor();
+    const response = await globalThis.fetch("/api/admin/dashboard");
+    uninstall();
+    assert.equal(response.status, 200);
+    assert.equal(nativeCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
