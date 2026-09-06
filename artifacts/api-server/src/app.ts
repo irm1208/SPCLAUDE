@@ -197,12 +197,12 @@ if (process.env["NODE_ENV"] === "production") {
   if (fs.existsSync(frontendDist)) {
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' https://telegram.org https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "connect-src 'self' https: wss:",
       "img-src 'self' data: blob: https:",
-      "frame-src 'self' blob: https://trocador.app",
+      "frame-src 'self' blob: https://trocador.app https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
