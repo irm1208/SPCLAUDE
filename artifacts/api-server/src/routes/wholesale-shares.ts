@@ -44,7 +44,7 @@ import { buildSharedOrderReopenPlan } from "../lib/shared-order-reopen";
 import { notifyUser } from "../lib/telegram";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
-import { createEmailChallenge } from "../lib/account-verification";
+import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
 
 function escHtml(s: string): string {
@@ -3504,27 +3504,29 @@ async function validateShareInviteLink(code: string): Promise<
 
 // Grant isWholesale + join share + record use. Call only after link has been validated.
 async function redeemShareInviteLink(
+  database: any,
   link: { code: string; shareId: string },
   share: NonNullable<Awaited<ReturnType<typeof loadShare>>>,
   username: string,
   wasNewAccount: boolean,
-  reqIp: string | undefined,
 ): Promise<void> {
   // Grant wholesale access if not already granted
-  await db.update(accountsTable)
+  await database.update(accountsTable)
     .set({ isWholesale: true })
     .where(sql`lower(${accountsTable.telegramUsername}) = ${username.toLowerCase()}`);
 
   // Join as member if not already a member and share has capacity
-  const existingMember = await loadMember(share.id, username);
+  const [existingMember] = await database.select({ id: wholesaleShareMembersTable.id })
+    .from(wholesaleShareMembersTable)
+    .where(and(eq(wholesaleShareMembersTable.shareId, share.id), eq(wholesaleShareMembersTable.username, username)));
   if (!existingMember) {
-    const [{ c }] = await db.select({ c: sql<number>`count(*)::int` })
+    const [{ c }] = await database.select({ c: sql<number>`count(*)::int` })
       .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
     if (share.maxMembers == null || c < share.maxMembers) {
       const joinOrganiserFee = (share.isPublic && share.organiserFlatFee != null)
         ? Number(share.organiserFlatFee).toFixed(2) : "0";
       try {
-        await db.insert(wholesaleShareMembersTable).values({
+        await database.insert(wholesaleShareMembersTable).values({
           id: randomUUID(), shareId: share.id, username, isCreator: false,
           items: [], tip: "0", organiserFee: joinOrganiserFee,
         });
@@ -3533,17 +3535,14 @@ async function redeemShareInviteLink(
   }
 
   // Atomically increment usage count and record the use
-  await db.update(wholesaleShareInviteLinksTable)
+  await database.update(wholesaleShareInviteLinksTable)
     .set({ usageCount: sql`${wholesaleShareInviteLinksTable.usageCount} + 1` })
     .where(eq(wholesaleShareInviteLinksTable.code, link.code));
 
-  await db.insert(wholesaleShareInviteUsesTable).values({
+  await database.insert(wholesaleShareInviteUsesTable).values({
     id: randomUUID(), linkCode: link.code, shareId: share.id, username, wasNewAccount,
   });
 
-  await writeLog("order", "info", "wholesale_invite_link_redeemed",
-    `${username} redeemed invite link ${link.code} for share ${share.id}`,
-    { code: link.code, shareId: share.id, username, wasNewAccount }, reqIp);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3608,7 +3607,7 @@ router.post("/wholesale-invite/:code/redeem", requireAccount, async (req, res): 
     res.status(409).json({ error: "This shared order is full." }); return;
   }
 
-  await redeemShareInviteLink(link, share, me, false, req.ip);
+  await redeemShareInviteLink(db, link, share, me, false);
   res.json({ ok: true, shareId: share.id, alreadyMember: false });
 });
 
@@ -3687,7 +3686,7 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
     await db.update(accountsTable)
       .set({ passwordHash, email: (email as string).trim().toLowerCase(), country: (country as string).trim() })
       .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
-    await redeemShareInviteLink(link, share, tg, false, req.ip);
+    await redeemShareInviteLink(db, link, share, tg, false);
     await issueAccountCookieForAccount(res, tg);
     res.status(200).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: false });
     return;
@@ -3695,17 +3694,19 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
 
   // Create brand-new account with isWholesale = true from the start
   const passwordHash = await bcrypt.hash(password as string, 12);
-  await db.insert(accountsTable).values({
-    telegramUsername: tg,
-    passwordHash,
-    email: (email as string).trim().toLowerCase(),
-    accountStatus: "active",
-    country: (country as string).trim(),
-    isWholesale: true,
-    verificationRequiredAt: new Date(),
+  const challenge = await db.transaction(async (tx) => {
+    await tx.insert(accountsTable).values({
+      telegramUsername: tg,
+      passwordHash,
+      email: (email as string).trim().toLowerCase(),
+      accountStatus: "active",
+      country: (country as string).trim(),
+      isWholesale: true,
+      verificationRequiredAt: new Date(),
+    });
+    await redeemShareInviteLink(tx, link, share, tg, true);
+    return createEmailChallengeInTransaction(tx, tg);
   });
-  await redeemShareInviteLink(link, share, tg, true, req.ip);
-  const challenge = await createEmailChallenge(db, tg);
   const verificationDelivery = await sendTemplatedEmail("email_verification", (email as string).trim().toLowerCase(), {
     code: challenge.code,
     username: tg.replace(/^@/, ""),
@@ -3720,7 +3721,7 @@ router.post("/wholesale-invite/:code/register", async (req, res): Promise<void> 
   await issueAccountCookieForAccount(res, tg);
   await writeLog("login", "info", "account_signup_via_wholesale_invite",
     `New account created via wholesale invite link: ${tg}`,
-    { telegramUsername: tg, shareId: share.id, linkCode: link.code }, req.ip).catch(() => {});
+    { telegramUsername: tg, shareId: share.id }, req.ip).catch(() => {});
   res.status(201).json({ ok: true, telegramUsername: tg, shareId: share.id, wasNewAccount: true, verificationRequired: true });
 });
 
@@ -3769,8 +3770,8 @@ router.post("/wholesale-shares/:id/invite-link", requireWholesale, async (req, r
   }).returning();
 
   await writeLog("order", "info", "wholesale_invite_link_created",
-    `Organiser @${me} created invite link ${newCode} for share ${share.id}`,
-    { code: newCode, shareId: share.id, maxUses, expiresAt: expiresAt?.toISOString() }, req.ip);
+    `Organiser @${me} created an invite link for share ${share.id}`,
+    { shareId: share.id, maxUses, expiresAt: expiresAt?.toISOString() }, req.ip);
 
   res.status(201).json({
     code: created.code, shareId: created.shareId, maxUses: created.maxUses,

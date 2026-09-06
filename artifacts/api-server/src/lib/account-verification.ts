@@ -57,7 +57,8 @@ export async function createEmailChallenge(database: VerificationDb, username: s
   });
 }
 
-async function createEmailChallengeInTransaction(database: ChallengeDb, username: string) {
+/** Creates an initial/resend challenge inside an already locked caller transaction. */
+export async function createEmailChallengeInTransaction(database: ChallengeDb, username: string) {
   const now = new Date();
   const [latestChallenge] = await database
     .select()
@@ -129,7 +130,8 @@ async function invalidateActiveChallenges(database: ChallengeDb, username: strin
     ));
 }
 
-async function completeAccountVerificationInTransaction(
+/** Completes verification inside an already locked caller transaction. */
+export async function completeAccountVerificationInTransaction(
   database: ChallengeDb,
   username: string,
   method: VerificationMethod,

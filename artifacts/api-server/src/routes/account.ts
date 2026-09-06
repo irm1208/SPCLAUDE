@@ -15,7 +15,7 @@ import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
-import { createEmailChallenge } from "../lib/account-verification";
+import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
@@ -212,23 +212,23 @@ router.post("/account/signup", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  await db.insert(accountsTable).values({
-    telegramUsername: tg,
-    passwordHash,
-    email: email.trim().toLowerCase(),
-    accountStatus: "active",
-    country: normalizeCountryToCode(country.trim()),
-    verificationRequiredAt: new Date(),
-    ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}),
+  const challenge = await db.transaction(async (tx) => {
+    await tx.insert(accountsTable).values({
+      telegramUsername: tg,
+      passwordHash,
+      email: email.trim().toLowerCase(),
+      accountStatus: "active",
+      country: normalizeCountryToCode(country.trim()),
+      verificationRequiredAt: new Date(),
+      ...(resolvedInviteCode ? { signupInviteCode: resolvedInviteCode } : {}),
+    });
+    if (resolvedInviteCode) {
+      await tx.update(inviteCodesTable)
+        .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
+        .where(eq(inviteCodesTable.code, resolvedInviteCode));
+    }
+    return createEmailChallengeInTransaction(tx, tg);
   });
-
-  if (resolvedInviteCode) {
-    await db.update(inviteCodesTable)
-      .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
-      .where(eq(inviteCodesTable.code, resolvedInviteCode));
-  }
-
-  const challenge = await createEmailChallenge(db, tg);
   const verificationDelivery = await sendTemplatedEmail("email_verification", email.trim().toLowerCase(), {
     code: challenge.code,
     username: tg.replace(/^@/, ""),
@@ -1351,29 +1351,22 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
       .catch(() => {});
   }
 
-  // Create or update account entry if needed
-  const [existing] = await db
-    .select({ telegramUsername: accountsTable.telegramUsername, passwordHash: accountsTable.passwordHash })
-    .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, tg));
-
-  if (!existing) {
-    await db.insert(accountsTable).values({
-      telegramUsername: tg,
-      passwordHash: null,
-      accountStatus: "active",
-    });
+  // An order is never an account-creation credential. Historical accounts may
+  // still use order login, but a new identity must register through signup.
+  if (!account) {
+    res.status(403).json({ error: "Signup required", needsSignup: true });
+    return;
   }
 
-  const needsPassword = !existing?.passwordHash;
+  const needsPassword = !account.passwordHash;
   await issueAccountCookieForAccount(res, tg);
 
   db.update(accountsTable).set({ lastLoginIp: ip, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
 
   writeLog("login", "info", "account_order_login",
-    `Smart-login (order) for ${tg} using order ${credential.trim().toUpperCase()}`,
-    { telegramUsername: tg, orderCode: credential.trim().toUpperCase(), needsPassword, loginMethod: "order" },
+    `Smart-login (order) for ${tg}`,
+    { telegramUsername: tg, needsPassword, loginMethod: "order" },
     ip,
   ).catch(() => {});
 

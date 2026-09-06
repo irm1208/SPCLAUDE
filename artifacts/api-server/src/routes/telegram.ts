@@ -14,7 +14,7 @@ import { toggleWholesaleTrackingPreference } from "../lib/wholesale-tracking";
 import { GoogleGenAI } from "../lib/google-genai";
 import { callSageAI } from "../lib/sage-ai";
 import { projectTrackingPackages } from "@workspace/shipping/tracking";
-import { completeAccountVerification } from "../lib/account-verification";
+import { completeAccountVerificationInTransaction } from "../lib/account-verification";
 import {
   decodeWholesaleTrackingCallback,
   encodeWholesaleTrackingCallback,
@@ -2885,7 +2885,7 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 
   const chatId = String(message.chat.id);
   const text   = String(message.text).trim();
-  console.log(`[telegram:webhook] message from chatId=${chatId} username=@${message.chat.username ?? "?"} text="${text.slice(0, 40)}"`);
+  console.log(`[telegram:webhook] message received from chatId=${chatId} username=@${message.chat.username ?? "?"}`);
 
   // ── /link command ─────────────────────────────────────────────────────────
   const linkMatch = text.match(/^\/link(?:@\S+)?(\s+(.+))?$/i);
@@ -2928,10 +2928,15 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
       res.json({ ok: true }); return;
     }
 
-    await db.update(accountsTable)
-      .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
-      .where(eq(accountsTable.telegramUsername, account.telegramUsername));
-    await completeAccountVerification(db, account.telegramUsername, "telegram");
+    await db.transaction(async (tx) => {
+      const [lockedAccount] = await tx.select().from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, account.telegramUsername)).for("update");
+      if (!lockedAccount || lockedAccount.telegramLinkToken !== code) throw new Error("Telegram link token changed");
+      await tx.update(accountsTable)
+        .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
+        .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
+      await completeAccountVerificationInTransaction(tx, lockedAccount.telegramUsername, "telegram", lockedAccount);
+    });
     markTokenConsumed(code);
 
     await sendMainMenu(chatId, account.telegramUsername);
@@ -3034,10 +3039,15 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
         res.json({ ok: true }); return;
       }
 
-      await db.update(accountsTable)
-        .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
-        .where(eq(accountsTable.telegramUsername, tokenAccount.telegramUsername));
-      await completeAccountVerification(db, tokenAccount.telegramUsername, "telegram");
+      await db.transaction(async (tx) => {
+        const [lockedAccount] = await tx.select().from(accountsTable)
+          .where(eq(accountsTable.telegramUsername, tokenAccount.telegramUsername)).for("update");
+        if (!lockedAccount || lockedAccount.telegramLinkToken !== code) throw new Error("Telegram link token changed");
+        await tx.update(accountsTable)
+          .set({ telegramChatId: chatId, telegramLinkToken: null, telegramLinkExpiresAt: null })
+          .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
+        await completeAccountVerificationInTransaction(tx, lockedAccount.telegramUsername, "telegram", lockedAccount);
+      });
       markTokenConsumed(code);
 
       await sendMainMenu(chatId, tokenAccount.telegramUsername);
@@ -3795,20 +3805,30 @@ router.post("/account/telegram/widget-auth", requireAccount, async (req, res): P
   }
 
   const tg = normalizeTg(req.account!.telegramUsername);
+  let accountUsername: string;
+  try {
+    accountUsername = await db.transaction(async (tx) => {
+      const [lockedAccount] = await tx.select().from(accountsTable)
+        .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`).for("update");
+      if (!lockedAccount) throw new Error("Account not found");
+      await tx.update(accountsTable)
+        .set({ telegramChatId: String(id), telegramLinkToken: null, telegramLinkExpiresAt: null })
+        .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
+      await completeAccountVerificationInTransaction(tx, lockedAccount.telegramUsername, "telegram", lockedAccount);
+      return lockedAccount.telegramUsername;
+    });
+  } catch {
+    res.status(400).json({ error: "Telegram link could not be completed" });
+    return;
+  }
 
-  await db
-    .update(accountsTable)
-    .set({ telegramChatId: String(id), telegramLinkToken: null, telegramLinkExpiresAt: null })
-    .where(sql`lower(${accountsTable.telegramUsername}) = ${tg.toLowerCase()}`);
-  await completeAccountVerification(db, tg, "telegram");
-
-  writeLog("login", "info", "telegram_widget_linked", `Telegram widget-linked for: ${tg}`, {
-    telegramUsername: tg, telegramId: id,
+  writeLog("login", "info", "telegram_widget_linked", `Telegram widget-linked for: ${accountUsername}`, {
+    telegramUsername: accountUsername, telegramId: id,
   }).catch(() => {});
 
   // Welcome DM
   sendTelegramMessage(String(id),
-    `✅ Your Telegram is now linked to your Salt & Peps account (@${tg}). You'll receive order notifications here.`,
+    `✅ Your Telegram is now linked to your Salt & Peps account (@${accountUsername}). You'll receive order notifications here.`,
   ).catch(() => {});
 
   res.json({ ok: true });

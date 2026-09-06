@@ -55,7 +55,7 @@ describe("automated registration name blocking", () => {
     const wholesaleSource = readFileSync(new URL("../routes/wholesale-shares.ts", import.meta.url), "utf8");
     for (const source of [accountSource, wholesaleSource]) {
       expect(source).toMatch(/verificationRequiredAt:\s*new Date\(\)/);
-      expect(source).toMatch(/createEmailChallenge\(db,\s*tg\)/);
+      expect(source).toMatch(/createEmailChallengeInTransaction\(tx,\s*tg\)/);
       expect(source).toMatch(/sendTemplatedEmail\("email_verification"/);
       expect(source).toMatch(/verificationRequired:\s*true/);
     }
@@ -63,9 +63,9 @@ describe("automated registration name blocking", () => {
 
   it("completes verification after either Telegram link flow binds identity", () => {
     const telegramSource = readFileSync(new URL("../routes/telegram.ts", import.meta.url), "utf8");
-    expect(telegramSource).toMatch(/\/link command[\s\S]*completeAccountVerification\(db, account\.telegramUsername, "telegram"\)/);
-    expect(telegramSource).toMatch(/Deep-link auto-linking[\s\S]*completeAccountVerification\(db, tokenAccount\.telegramUsername, "telegram"\)/);
-    expect(telegramSource).toMatch(/telegram\/widget-auth[\s\S]*completeAccountVerification\(db, tg, "telegram"\)/);
+    expect(telegramSource).toMatch(/\/link command[\s\S]*completeAccountVerificationInTransaction\(tx, lockedAccount\.telegramUsername, "telegram", lockedAccount\)/);
+    expect(telegramSource).toMatch(/Deep-link auto-linking[\s\S]*completeAccountVerificationInTransaction\(tx, lockedAccount\.telegramUsername, "telegram", lockedAccount\)/);
+    expect(telegramSource).toMatch(/telegram\/widget-auth[\s\S]*completeAccountVerificationInTransaction\(tx, lockedAccount\.telegramUsername, "telegram", lockedAccount\)/);
   });
 
   it("blocks existing matching identities at the shared session gate and before login", () => {

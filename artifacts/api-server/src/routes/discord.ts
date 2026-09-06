@@ -207,7 +207,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
     return;
   }
 
-  // ── LOGIN: find or create account via Discord ─────────────────────────────
+  // ── LOGIN: only pre-existing linked accounts may authenticate via Discord ─
   if (action === "login") {
     // Look up by discord_id
     const [byDiscord] = await db
@@ -237,43 +237,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
       return;
     }
 
-    // No account found — create one with synthetic username discord:<id>
-    const syntheticUsername = `discord:${discordUser.id}`;
-
-    const [clash] = await db
-      .select({ telegramUsername: accountsTable.telegramUsername })
-      .from(accountsTable)
-      .where(eq(accountsTable.telegramUsername, syntheticUsername));
-
-    if (clash) {
-      // Exists but discordId wasn't set — update it
-      await db.update(accountsTable)
-        .set({
-          discordId: discordUser.id,
-          discordUsername: discordUser.username,
-          discordAvatar: discordUser.avatar,
-          discordAccessToken: tokens.access_token,
-          discordRefreshToken: tokens.refresh_token,
-          discordTokenExpiresAt: expiresAt,
-          lastLoginAt: new Date(),
-        })
-        .where(eq(accountsTable.telegramUsername, syntheticUsername));
-    } else {
-      await db.insert(accountsTable).values({
-        telegramUsername: syntheticUsername,
-        discordId: discordUser.id,
-        discordUsername: discordUser.username,
-        discordAvatar: discordUser.avatar,
-        discordAccessToken: tokens.access_token,
-        discordRefreshToken: tokens.refresh_token,
-        discordTokenExpiresAt: expiresAt,
-        accountStatus: "active",
-        lastLoginAt: new Date(),
-      });
-    }
-
-    await issueAccountCookieForAccount(res, syntheticUsername);
-    res.redirect("/account");
+    res.redirect(`/login?discord_error=${encodeURIComponent("No account is linked to this Discord profile. Please sign up and verify your account first.")}`);
     return;
   }
 
