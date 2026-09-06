@@ -130,6 +130,38 @@ describe("validateRestoredDatabase", () => {
     });
   });
 
+  test("detects an ascending sequence whose uncalled last value would collide on nextval", async () => {
+    await createFixture();
+    await postgres.executePsql("INSERT INTO audit_logs(id, action) VALUES (10, 'existing'); SELECT setval('audit_logs_id_seq', 10, false)");
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: false,
+      detail: "1 owned sequence is behind its stored IDs",
+    });
+  });
+
+  test("detects a descending sequence whose next emitted value collides with stored IDs", async () => {
+    await createFixture();
+    await postgres.executePsql(`
+      CREATE TABLE descending_records (id integer PRIMARY KEY);
+      CREATE SEQUENCE descending_records_id_seq START WITH 10 INCREMENT BY -1 MINVALUE 1 MAXVALUE 10;
+      ALTER SEQUENCE descending_records_id_seq OWNED BY descending_records.id;
+      INSERT INTO descending_records VALUES (10), (9);
+      SELECT setval('descending_records_id_seq', 10, true);
+    `);
+
+    const result = await validateRestoredDatabase(postgres);
+
+    expect(result.checks.find(({ name }) => name === "owned_sequences")).toEqual({
+      name: "owned_sequences",
+      passed: false,
+      detail: "1 owned sequence is behind its stored IDs",
+    });
+  });
+
   test("rejects an implausible restore where all core tables are empty", async () => {
     await createFixture({ rows: false });
 

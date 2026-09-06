@@ -35,6 +35,11 @@ function qualified(schema: string, relation: string): string {
   return `${quoteIdentifier(schema)}.${quoteIdentifier(relation)}`;
 }
 
+function quoteLiteral(value: string): string {
+  if (value.includes("\0")) throw new Error("PostgreSQL catalog returned an invalid relation name");
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return count === 1 ? singular : pluralForm;
 }
@@ -191,9 +196,47 @@ export async function validateRestoredDatabase(target: DisposablePostgres): Prom
     const table = qualified(sequence.tableSchema, sequence.tableName);
     const ownedSequence = qualified(sequence.sequenceSchema, sequence.sequenceName);
     const column = quoteIdentifier(sequence.columnName);
+    const sequenceRegclass = quoteLiteral(qualified(sequence.sequenceSchema, sequence.sequenceName));
     const behind = await readOnlyQuery(
       target,
-      `SELECT COALESCE((SELECT last_value FROM ${ownedSequence}) < max(${column}), false) FROM ${table}`,
+      `WITH sequence_state AS (
+         SELECT last_value::numeric AS last_value, is_called FROM ${ownedSequence}
+       ), sequence_metadata AS (
+         SELECT seqincrement::numeric AS increment_by, seqmin::numeric AS min_value,
+                seqmax::numeric AS max_value, seqcycle AS cycle
+           FROM pg_catalog.pg_sequence
+          WHERE seqrelid = to_regclass(${sequenceRegclass})
+       ), next_value AS (
+         SELECT CASE
+           WHEN NOT sequence_state.is_called THEN sequence_state.last_value
+           WHEN sequence_metadata.increment_by > 0
+             AND sequence_state.last_value >= sequence_metadata.max_value
+             THEN CASE WHEN sequence_metadata.cycle THEN sequence_metadata.min_value END
+           WHEN sequence_metadata.increment_by < 0
+             AND sequence_state.last_value <= sequence_metadata.min_value
+             THEN CASE WHEN sequence_metadata.cycle THEN sequence_metadata.max_value END
+           ELSE sequence_state.last_value + sequence_metadata.increment_by
+         END AS value,
+         sequence_metadata.increment_by
+         FROM sequence_state CROSS JOIN sequence_metadata
+       )
+       SELECT COALESCE(
+         EXISTS (
+           SELECT 1 FROM ${table} stored CROSS JOIN next_value
+            WHERE next_value.value IS NOT NULL
+              AND stored.${column}::numeric = next_value.value
+         )
+         OR EXISTS (
+           SELECT 1 FROM next_value
+            WHERE next_value.value IS NOT NULL
+              AND (
+                (next_value.increment_by > 0
+                  AND next_value.value <= (SELECT max(${column})::numeric FROM ${table}))
+                OR (next_value.increment_by < 0
+                  AND next_value.value >= (SELECT min(${column})::numeric FROM ${table}))
+              )
+         ),
+         false)`,
     );
     if (behind === "t") behindSequences += 1;
   }
