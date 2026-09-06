@@ -1,16 +1,15 @@
 import { randomUUID } from "crypto";
-import { createReadStream, createWriteStream, openAsBlob } from "fs";
-import { stat, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { createWriteStream, openAsBlob } from "fs";
+import { rename, stat, unlink } from "fs/promises";
+import { basename, dirname, join } from "path";
+import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { createGzip } from "zlib";
 import { ReplitConnectors } from "@replit/connectors-sdk";
 
 export const DRIVE_BACKUP_FOLDER_NAME = "Salt & Peps Database Backups";
 export const DRIVE_BACKUP_FILE_PREFIX = "S&PBACKUP-";
-export const DRIVE_BACKUP_FILE_SUFFIX = ".SQL";
-export const DRIVE_BACKUP_MIME_TYPE = "application/sql";
+export const DRIVE_BACKUP_FILE_SUFFIX = ".sql.gz.enc";
+export const DRIVE_BACKUP_MIME_TYPE = "application/octet-stream";
 
 const DRIVE_CONNECTOR = "google-drive";
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
@@ -35,6 +34,25 @@ export function buildDriveBackupFileName(date: Date = new Date()): string {
   return `${DRIVE_BACKUP_FILE_PREFIX}${timestamp}${DRIVE_BACKUP_FILE_SUFFIX}`;
 }
 
+export function isSupportedBackupName(fileName: string): boolean {
+  const timestamp = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}";
+  return new RegExp(
+    `^${DRIVE_BACKUP_FILE_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${timestamp}(?:\\.sql\\.gz\\.enc|\\.SQL)$`,
+  ).test(fileName);
+}
+
+export function selectNewestBackup(files: DriveBackupFile[]): DriveBackupFile | null {
+  return (
+    [...files]
+      .filter((file) => !file.trashed && isSupportedBackupName(file.name))
+      .sort((a, b) => {
+        const bTime = Date.parse(b.modifiedTime ?? "") || 0;
+        const aTime = Date.parse(a.modifiedTime ?? "") || 0;
+        return bTime - aTime;
+      })[0] ?? null
+  );
+}
+
 export function findMatchingDriveBackup(
   files: DriveBackupFile[],
   fileName: string,
@@ -51,15 +69,10 @@ export function discoverLegacyBackupFiles(paths: string[]): string[] {
   return paths.filter((filePath) => filePath.toLowerCase().endsWith(".sql"));
 }
 
-export function buildDriveTransportHeaders(
-  originalSize: number,
-  transportSize: number,
-): Record<string, string> {
+export function buildDriveTransportHeaders(encryptedSize: number): Record<string, string> {
   return {
     "Content-Type": DRIVE_BACKUP_MIME_TYPE,
-    "Content-Encoding": "gzip",
-    "Content-Length": String(transportSize),
-    "Content-Range": `bytes 0-${originalSize - 1}/${originalSize}`,
+    "Content-Length": String(encryptedSize),
   };
 }
 
@@ -89,28 +102,6 @@ function driveFilesPath(params: URLSearchParams): string {
 
 function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function createTransportFile(filePath: string): Promise<{
-  filePath: string;
-  size: number;
-}> {
-  const transportPath = join(
-    tmpdir(),
-    `drive-backup-${process.pid}-${randomUUID()}.transport.gz`,
-  );
-  try {
-    await pipeline(
-      createReadStream(filePath),
-      createGzip(),
-      createWriteStream(transportPath),
-    );
-    const transportStats = await stat(transportPath);
-    return { filePath: transportPath, size: transportStats.size };
-  } catch (error) {
-    await unlink(transportPath).catch(() => undefined);
-    throw error;
-  }
 }
 
 async function responseError(response: Response, action: string): Promise<never> {
@@ -198,6 +189,20 @@ class GoogleDriveBackupStorage {
     return body.files ?? [];
   }
 
+  async listBackups(): Promise<DriveBackupFile[]> {
+    const folderId = await this.getFolderId();
+    const params = new URLSearchParams({
+      q: [`'${escapeDriveQueryValue(folderId)}' in parents`, "trashed = false"].join(" and "),
+      fields: "files(id,name,size,mimeType,modifiedTime,parents,trashed)",
+      pageSize: "100",
+      orderBy: "modifiedTime desc",
+    });
+    const response = await this.connectors.proxy(DRIVE_CONNECTOR, driveFilesPath(params));
+    if (!response.ok) return responseError(response, "Listing Google Drive backups");
+    const body = (await response.json()) as { files?: DriveBackupFile[] };
+    return body.files ?? [];
+  }
+
   async getFile(fileId: string): Promise<DriveBackupFile> {
     const params = new URLSearchParams({
       fields: "id,name,size,mimeType,modifiedTime,parents,trashed",
@@ -213,77 +218,91 @@ class GoogleDriveBackupStorage {
   async upload(filePath: string, fileName: string): Promise<DriveBackupFile> {
     const folderId = await this.getFolderId();
     const fileStats = await stat(filePath);
-    const transport = await createTransportFile(filePath);
-    try {
-      const initResponse = await this.connectors.proxy(
-        DRIVE_CONNECTOR,
-        "/upload/drive/v3/files?uploadType=resumable",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json; charset=UTF-8",
-            "X-Upload-Content-Type": DRIVE_BACKUP_MIME_TYPE,
-            "X-Upload-Content-Length": String(fileStats.size),
-          },
-          body: JSON.stringify({
-            name: fileName,
-            mimeType: DRIVE_BACKUP_MIME_TYPE,
-            parents: [folderId],
-          }),
+    const initResponse = await this.connectors.proxy(
+      DRIVE_CONNECTOR,
+      "/upload/drive/v3/files?uploadType=resumable",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": DRIVE_BACKUP_MIME_TYPE,
+          "X-Upload-Content-Length": String(fileStats.size),
         },
-      );
-      if (!initResponse.ok) {
-        return responseError(initResponse, "Starting the Google Drive backup upload");
-      }
-      const location = initResponse.headers.get("location");
-      if (!location) {
-        throw new Error("Google Drive did not return a resumable upload location");
-      }
+        body: JSON.stringify({
+          name: fileName,
+          mimeType: DRIVE_BACKUP_MIME_TYPE,
+          parents: [folderId],
+        }),
+      },
+    );
+    if (!initResponse.ok) {
+      return responseError(initResponse, "Starting the Google Drive backup upload");
+    }
+    const location = initResponse.headers.get("location");
+    if (!location) {
+      throw new Error("Google Drive did not return a resumable upload location");
+    }
 
-      const locationUrl = new URL(location);
-      const uploadPath = `${locationUrl.pathname}${locationUrl.search}`;
-      const transportBlob = await openAsBlob(transport.filePath, {
-        type: DRIVE_BACKUP_MIME_TYPE,
+    const locationUrl = new URL(location);
+    const uploadPath = `${locationUrl.pathname}${locationUrl.search}`;
+    const encryptedBlob = await openAsBlob(filePath, { type: DRIVE_BACKUP_MIME_TYPE });
+    let uploadResponse: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+      uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+        method: "PUT",
+        headers: buildDriveTransportHeaders(fileStats.size),
+        body: encryptedBlob,
       });
-      let uploadResponse: Response | null = null;
-      for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
-        uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
-            method: "PUT",
-            headers: buildDriveTransportHeaders(fileStats.size, transport.size),
-            body: transportBlob,
-        });
-        if (
-          !isRetryableDriveUploadStatus(uploadResponse.status) ||
-          attempt === MAX_UPLOAD_ATTEMPTS
-        ) {
-          break;
-        }
-        await uploadResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
-        const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
-        console.warn(
-          `[db-backup] Drive upload returned ${uploadResponse.status}; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
-        );
-        await sleep(delayMs);
+      if (!isRetryableDriveUploadStatus(uploadResponse.status) || attempt === MAX_UPLOAD_ATTEMPTS) {
+        break;
       }
-      if (!uploadResponse) {
-        throw new Error("Google Drive upload did not produce a response");
-      }
-      if (!uploadResponse.ok || (uploadResponse.status !== 200 && uploadResponse.status !== 201)) {
-        return responseError(uploadResponse, "Uploading the Google Drive backup");
-      }
-      const uploaded = (await uploadResponse.json().catch(() => ({}))) as { id?: string };
-      if (!uploaded.id) {
-        throw new Error("Google Drive completed the upload without returning a file ID");
-      }
-      const verified = await this.getFile(uploaded.id);
-      if (Number(verified.size) !== fileStats.size || verified.name !== fileName) {
-        throw new Error(
-          `Google Drive verification failed for ${fileName}: expected ${fileStats.size} bytes, got ${verified.size ?? "unknown"}`,
-        );
-      }
-      return verified;
-    } finally {
-      await unlink(transport.filePath).catch(() => undefined);
+      await uploadResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+      const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
+      console.warn(
+        `[db-backup] Drive upload returned ${uploadResponse.status}; retrying in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
+      );
+      await sleep(delayMs);
+    }
+    if (!uploadResponse) {
+      throw new Error("Google Drive upload did not produce a response");
+    }
+    if (!uploadResponse.ok || (uploadResponse.status !== 200 && uploadResponse.status !== 201)) {
+      return responseError(uploadResponse, "Uploading the Google Drive backup");
+    }
+    const uploaded = (await uploadResponse.json().catch(() => ({}))) as { id?: string };
+    if (!uploaded.id) {
+      throw new Error("Google Drive completed the upload without returning a file ID");
+    }
+    const verified = await this.getFile(uploaded.id);
+    if (Number(verified.size) !== fileStats.size || verified.name !== fileName) {
+      throw new Error(
+        `Google Drive verification failed for ${fileName}: expected ${fileStats.size} bytes, got ${verified.size ?? "unknown"}`,
+      );
+    }
+    return verified;
+  }
+
+  async download(fileId: string, destinationPath: string): Promise<void> {
+    const response = await this.connectors.proxy(
+      DRIVE_CONNECTOR,
+      `/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    );
+    if (!response.ok) return responseError(response, `Downloading Google Drive file ${fileId}`);
+    if (!response.body) throw new Error(`Google Drive download ${fileId} returned no response body`);
+
+    const temporaryPath = join(
+      dirname(destinationPath),
+      `.${basename(destinationPath)}.${process.pid}.${randomUUID()}.partial`,
+    );
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as import("stream/web").ReadableStream),
+        createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 }),
+      );
+      await rename(temporaryPath, destinationPath);
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      throw error;
     }
   }
 }
@@ -298,6 +317,17 @@ export async function findGoogleDriveBackupsByName(
   fileName: string,
 ): Promise<DriveBackupFile[]> {
   return storage.findFilesByName(fileName);
+}
+
+export async function listGoogleDriveBackups(): Promise<DriveBackupFile[]> {
+  return storage.listBackups();
+}
+
+export async function downloadGoogleDriveBackup(
+  fileId: string,
+  destinationPath: string,
+): Promise<void> {
+  return storage.download(fileId, destinationPath);
 }
 
 export async function uploadBackupToGoogleDrive(
