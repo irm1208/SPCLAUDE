@@ -1,0 +1,33 @@
+{
+  "name": "@open-crypto-checkout/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "test": "vitest run",
+    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "@open-crypto-checkout/core": "workspace:*",
+    "@open-crypto-checkout/verifiers": "workspace:*",
+    "cors": "2.8.5",
+    "dotenv": "16.6.1",
+    "drizzle-orm": "0.44.5",
+    "express": "5.1.0",
+    "express-rate-limit": "8.0.1",
+    "helmet": "8.1.0",
+    "pg": "8.16.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.3",
+    "@types/node": "22.17.2",
+    "@types/pg": "8.15.5",
+    "drizzle-kit": "0.31.4",
+    "tsx": "4.20.5"
+  }
+}
