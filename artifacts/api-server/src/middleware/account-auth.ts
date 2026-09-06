@@ -24,6 +24,8 @@ export function getJwtSecret(): string {
 export interface AccountJwtPayload {
   telegramUsername: string;
   jti: string;
+  /** True only for sessions issued while account verification is outstanding. */
+  verificationRequired: boolean;
 }
 
 declare global {
@@ -72,7 +74,7 @@ scheduleCleanup();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-export async function requireAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function requireAccountIdentity(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies?.account_session as string | undefined;
   if (!token) {
     res.status(401).json({ error: "Authentication required" });
@@ -82,6 +84,17 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
   try {
     payload = jwt.verify(token, getJwtSecret()) as AccountJwtPayload;
   } catch {
+    res.status(401).json({ error: "Session expired or invalid — please log in again" });
+    return;
+  }
+  if (
+    !payload
+    || typeof payload.telegramUsername !== "string"
+    || !payload.telegramUsername
+    || typeof payload.jti !== "string"
+    || !payload.jti
+    || (payload.verificationRequired !== undefined && typeof payload.verificationRequired !== "boolean")
+  ) {
     res.status(401).json({ error: "Session expired or invalid — please log in again" });
     return;
   }
@@ -103,24 +116,50 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
   }
 
   // Reject if this specific token has been revoked (e.g. explicit logout)
-  if (payload.jti && await isTokenRevoked(payload.jti)) {
+  if (await isTokenRevoked(payload.jti)) {
     res.status(401).json({ error: "Session has been revoked — please log in again" });
     return;
   }
 
-  req.account = { telegramUsername: payload.telegramUsername, jti: payload.jti };
+  // Tokens issued before verification rollout have no claim and remain
+  // grandfathered. New issuance must always include this explicit boolean.
+  req.account = {
+    telegramUsername: payload.telegramUsername,
+    jti: payload.jti,
+    verificationRequired: payload.verificationRequired === true,
+  };
   next();
+}
+
+/** Requires a valid identity and an unrestricted (verified/grandfathered) session. */
+export async function requireAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await requireAccountIdentity(req, res, () => {
+    if (req.account?.verificationRequired) {
+      writeLog("login", "warn", "restricted_session_access_denied",
+        "Restricted account session attempted protected access",
+        { enforcementPoint: "account_session" },
+        req.ip,
+      ).catch(() => {});
+      res.status(403).json({ error: "verification_required" });
+      return;
+    }
+    next();
+  });
 }
 
 // ── Cookie issuance ───────────────────────────────────────────────────────────
 
 const SESSION_DAYS = 7; // Reduced from 30d to 7d
 
-export function issueAccountCookie(res: Response, telegramUsername: string): void {
+/**
+ * The two-argument form preserves existing login paths until they migrate to
+ * database-derived state. New issuance should always pass verificationRequired.
+ */
+export function issueAccountCookie(res: Response, telegramUsername: string, verificationRequired = false): void {
   const secret = getJwtSecret();
   const jti = randomUUID();
   const expiresInSecs = SESSION_DAYS * 24 * 60 * 60;
-  const token = jwt.sign({ telegramUsername, jti }, secret, { expiresIn: expiresInSecs });
+  const token = jwt.sign({ telegramUsername, jti, verificationRequired }, secret, { expiresIn: expiresInSecs });
   res.cookie("account_session", token, {
     httpOnly: true,
     secure: process.env["NODE_ENV"] === "production",
