@@ -61,6 +61,7 @@ import {
   type DiscussSource,
 } from "@/hooks/use-blood-tests";
 import { parsePDFBiomarkers, parseBiomarkersFromText, type ParsedBiomarker } from "@/lib/parsePDF";
+import { accountRequiresVerification } from "@/lib/account-verification-flow";
 import { generateLabHistoryPDF, generateHealthPlanPDF } from "@/lib/generatePDF";
 import {
   useCompounds, useCreateCompound, useUpdateCompound, useDeleteCompound,
@@ -7159,6 +7160,7 @@ export default function CustomerPortal() {
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const qc = useQueryClient();
   const logoutMutation = useLogout();
+
   const { data: ordersData, isLoading: ordersLoading, refetch } = useAccountOrders(gbId, isLoggedIn);
   const deleteOrderMut = useDeleteOrder();
   const { data: deletedOrders = [], refetch: refetchDeleted } = useDeletedOrders();
@@ -7376,9 +7378,13 @@ export default function CustomerPortal() {
   const [showDashCustomise, setShowDashCustomise] = useState(false);
 
   useEffect(() => {
-    if (!accountLoading && !account) {
-      const next = encodeURIComponent(window.location.pathname + window.location.search);
-      setLocation(`/login?next=${next}`);
+    if (!accountLoading) {
+      if (!account) {
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        setLocation(`/login?next=${next}`);
+      } else if (accountRequiresVerification(account)) {
+        setLocation('/verify-account');
+      }
     }
   }, [accountLoading, account, setLocation]);
 

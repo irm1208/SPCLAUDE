@@ -33,6 +33,7 @@ import SellerDashboard from "@/pages/SellerDashboard";
 import CustomerPortal from "@/pages/CustomerPortal";
 import AccountOrderDetail from "@/pages/AccountOrderDetail";
 import Login from "@/pages/Login";
+import VerifyAccount from "@/pages/VerifyAccount";
 import AccountOrders from "@/pages/AccountOrders";
 import BloodTests from "@/pages/BloodTests";
 import Compounds from "@/pages/Compounds";
@@ -134,6 +135,7 @@ function Router() {
       <Route path="/account/orders/:id" component={AccountOrderDetail} />
       <Route path="/account" component={CustomerPortal} />
       <Route path="/login" component={Login} />
+      <Route path="/verify-account" component={VerifyAccount} />
       <Route path="/groups">{() => { useEffect(() => { window.location.replace("/account?s=groups"); }, []); return null; }}</Route>
       <Route path="/my-orders" component={AccountOrders} />
       <Route path="/blood-tests" component={BloodTests} />

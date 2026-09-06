@@ -6,6 +6,7 @@ import { useSmartLogin, useSignup, useAccount, useSetPassword } from "@/hooks/us
 import { PageLayout } from "@/components/PageLayout";
 import { COUNTRIES } from "@/data/countries";
 import { T } from "@/lib/theme";
+import { accountRequiresVerification, resolveTurnstileSiteKey } from "@/lib/account-verification-flow";
 import { useQuery } from "@tanstack/react-query";
 
 type Tab = "login" | "signup";
@@ -95,6 +96,13 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileSiteKey = resolveTurnstileSiteKey(
+    import.meta.env.VITE_TURNSTILE_SITE_KEY,
+    import.meta.env.PROD,
+  );
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
   const [error, setError] = useState("");
 
   // Handle discord_error param from OAuth callback
@@ -102,12 +110,56 @@ export default function Login() {
     const discordError = new URLSearchParams(window.location.search).get("discord_error");
     if (discordError) {
       setError(decodeURIComponent(discordError));
-      // Clean up the URL
       const url = new URL(window.location.href);
       url.searchParams.delete("discord_error");
       window.history.replaceState({}, "", url.toString());
     }
   }, []);
+
+  useEffect(() => {
+    if (tab !== "signup") return;
+    if (!turnstileSiteKey) return;
+
+    if (!document.querySelector('script[src*="turnstile/v0/api.js"]')) {
+      const script = document.createElement('script');
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    let checkInterval = setInterval(() => {
+      if ((window as any).turnstile && turnstileContainerRef.current) {
+        clearInterval(checkInterval);
+        try {
+          if (turnstileWidgetIdRef.current) {
+             (window as any).turnstile.remove(turnstileWidgetIdRef.current);
+          }
+          const id = (window as any).turnstile.render(turnstileContainerRef.current, {
+            sitekey: turnstileSiteKey,
+            callback: (token: string) => setTurnstileToken(token),
+            "error-callback": () => setTurnstileToken(""),
+            "expired-callback": () => setTurnstileToken(""),
+            appearance: "interaction-only"
+          });
+          turnstileWidgetIdRef.current = id;
+        } catch (e) {
+          console.error("Turnstile render error", e);
+        }
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(checkInterval);
+      if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+        try {
+          (window as any).turnstile.remove(turnstileWidgetIdRef.current);
+          turnstileWidgetIdRef.current = null;
+        } catch (e) {}
+      }
+      setTurnstileToken("");
+    };
+  }, [tab, turnstileSiteKey]);
 
   const { data: siteConfig } = useQuery({
     queryKey: ["site-config"],
@@ -126,7 +178,11 @@ export default function Login() {
     // Do NOT redirect during the post-signup steps (telegram-prompt, join-group-buy)
     // because those steps appear right after the account data is set by the signup mutation.
     if (!accountLoading && account && step === "form") {
-      setLocation(nextParam || "/account");
+      if (accountRequiresVerification(account)) {
+        setLocation("/verify-account");
+      } else {
+        setLocation(nextParam || "/account");
+      }
     }
   }, [accountLoading, account, step, setLocation, nextParam]);
 
@@ -265,11 +321,21 @@ export default function Login() {
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (password !== confirmPassword) { setError("Passwords do not match"); return; }
     if (inviteRequired && !inviteCode.trim()) { setError("An invite code is required to sign up"); return; }
+    if (!turnstileSiteKey) { setError("The security check is unavailable. Please try again later."); return; }
+    if (!turnstileToken) { setError("Please complete the security check"); return; }
     try {
-      await signup.mutateAsync({ telegramUsername: username.trim(), password, email: email.trim(), country, inviteCode: inviteCode.trim() || undefined });
-      setStep("telegram-prompt");
+      const res = await signup.mutateAsync({ telegramUsername: username.trim(), password, email: email.trim(), country, inviteCode: inviteCode.trim() || undefined, turnstileToken });
+      if (res.verificationRequired) {
+        setLocation("/verify-account");
+      } else {
+        setStep("telegram-prompt");
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Signup failed");
+      if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+        (window as any).turnstile.reset(turnstileWidgetIdRef.current);
+      }
+      setTurnstileToken("");
     }
   };
 
@@ -815,7 +881,15 @@ export default function Login() {
                     style={{ background: T.surface, border: `1.5px solid ${T.border}`, color: T.text }} />
                 </div>
                 {error && <ErrorBanner message={error} />}
-                <button type="submit" disabled={isLoading || !username.trim() || !email.trim() || !country || !password || !confirmPassword || (inviteRequired && !inviteCode.trim())}
+
+                {tab === "signup" && turnstileSiteKey && (
+                  <div className="flex justify-center my-2" ref={turnstileContainerRef}></div>
+                )}
+                {tab === "signup" && !turnstileSiteKey && (
+                  <ErrorBanner message="The security check is unavailable. Please try again later." />
+                )}
+
+                <button type="submit" disabled={isLoading || !username.trim() || !email.trim() || !country || !password || !confirmPassword || (inviteRequired && !inviteCode.trim()) || !turnstileSiteKey || !turnstileToken}
                   className="w-full h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
                   style={{ background: "var(--t-blue-deep)" }}>
                   {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Create Account</>}

@@ -3,6 +3,7 @@ import type { TrackingPackage, TrackingPackageView } from "@workspace/shipping/t
 
 export interface AccountMe {
   telegramUsername: string;
+  verificationRequired?: boolean;
   discordUsername?: string | null;
   accountStatus?: string;
   createdAt?: string;
@@ -24,11 +25,41 @@ export interface AccountMe {
   ruleAcceptedVersion?: number | null;
 }
 
+export interface AccountVerificationStatus {
+  required: boolean;
+  verified: boolean;
+  emailMasked: string | null;
+  emailVerified: boolean;
+  telegramLinked: boolean;
+  availableMethods: Array<"email" | "telegram">;
+  resendAvailableAt: string | null;
+  resendAfterSeconds: number;
+}
+
+async function fetchVerificationStatus(): Promise<AccountVerificationStatus | null> {
+  const res = await fetch("/api/account/verification/status", { credentials: "include" });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function fetchMe(): Promise<AccountMe | null> {
   const res = await fetch("/api/account/me", { credentials: "include" });
   if (res.status === 401) return null;
+  if (res.status === 403) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    if (body?.error === "verification_required") {
+      const status = await fetchVerificationStatus();
+      if (status?.required && !status.verified) {
+        return {
+          telegramUsername: "",
+          verificationRequired: true,
+        };
+      }
+    }
+    return null;
+  }
   if (!res.ok) return null;
-  return res.json();
+  return { ...await res.json(), verificationRequired: false };
 }
 
 export interface UseAccountResult {
@@ -61,7 +92,7 @@ export function useAccount(): UseAccountResult {
   return {
     account: data ?? null,
     isLoading: isLoading || isFetching,
-    isLoggedIn: !!data,
+    isLoggedIn: !!data && data.verificationRequired !== true,
   };
 }
 
@@ -80,7 +111,7 @@ export function useTelegramAutoLogin() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Auto-login failed");
-      return data as { ok: boolean; telegramUsername: string };
+      return data as { ok: boolean; telegramUsername: string; verificationRequired?: boolean };
     },
     onSuccess: () => {
       qc.clear();
@@ -147,16 +178,16 @@ export function useSmartLogin() {
 export function useSignup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ telegramUsername, password, email, country, inviteCode }: { telegramUsername: string; password: string; email: string; country: string; inviteCode?: string }) => {
+    mutationFn: async ({ telegramUsername, password, email, country, inviteCode, turnstileToken }: { telegramUsername: string; password: string; email: string; country: string; inviteCode?: string; turnstileToken?: string }) => {
       const res = await fetch("/api/account/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramUsername, password, email, country, inviteCode: inviteCode || undefined }),
+        body: JSON.stringify({ telegramUsername, password, email, country, inviteCode: inviteCode || undefined, turnstileToken }),
         credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
-      return data as { ok: boolean; telegramUsername: string };
+      return data as { ok: boolean; telegramUsername: string; verificationRequired?: boolean };
     },
     onSuccess: () => {
       qc.clear();
@@ -202,6 +233,83 @@ export interface GroupBuySummary {
   archived?: boolean;
   telegramImageUrl?: string | null;
   createdAt?: string | null;
+}
+
+
+
+export function useVerificationStatus() {
+  return useQuery<AccountVerificationStatus | null>({
+    queryKey: ["account", "verification-status"],
+    queryFn: fetchVerificationStatus,
+    retry: false,
+  });
+}
+
+export function useResendVerificationEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/account/verification/email/resend", {
+        method: "POST",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error(`Please wait ${data.retryAfterSeconds} seconds before resending.`);
+        }
+        throw new Error(data.error || "Failed to resend email");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["account", "verification-status"] });
+    }
+  });
+}
+
+export function useConfirmVerificationEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ code }: { code: string }) => {
+      const res = await fetch("/api/account/verification/email/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid code");
+      return data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["account", "me"] }),
+        qc.invalidateQueries({ queryKey: ["account", "verification-status"] }),
+      ]);
+    }
+  });
+}
+
+export function useUpgradeSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/account/verification/session/upgrade", {
+        method: "POST",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to upgrade session");
+      return data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["account", "me"] }),
+        qc.invalidateQueries({ queryKey: ["account", "verification-status"] }),
+      ]);
+    }
+  });
 }
 
 export function useMyGroupBuys(enabled = true) {
@@ -700,7 +808,7 @@ export interface TelegramStatus {
   prefs: TelegramPrefs;
 }
 
-export function useTelegramStatus(enabled = true) {
+export function useTelegramStatus(enabled = true, options?: { refetchInterval?: number }) {
   return useQuery<TelegramStatus>({
     queryKey: ["account", "telegram-status"],
     queryFn: async () => {
@@ -711,6 +819,7 @@ export function useTelegramStatus(enabled = true) {
     staleTime: 30 * 1000,
     retry: false,
     enabled,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
