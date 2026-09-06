@@ -1,6 +1,8 @@
 import { chmod, mkdtemp, mkdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   assertDisposableDataDirectory,
@@ -9,6 +11,7 @@ import {
 } from "./disposable-postgres";
 
 const temporaryPaths: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   await Promise.all(temporaryPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -117,6 +120,16 @@ describe("startDisposablePostgres", () => {
         await expect(postgres.executePsql("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")).resolves.toContain("f");
         await expect(postgres.executePsql("COPY (SELECT 'safe') TO PROGRAM 'true'")).rejects.toThrow(/superuser|permission/i);
         await expect(postgres.executePsql("SELECT pg_read_file('/proc/self/environ')")).rejects.toThrow(/permission/i);
+        const restoreRole = postgres.psqlArgs[postgres.psqlArgs.indexOf("-U") + 1]!;
+        await expect(
+          execFileAsync("psql", ["-h", "127.0.0.1", "-p", String(postgres.port), "-U", "restore_verify_owner", "-d", "postgres", "-Atq", "-c", "SELECT 1"]),
+        ).rejects.toThrow(/authentication|rejects connection|password/i);
+        await expect(
+          execFileAsync("psql", [...postgres.psqlArgs, "-c", "SELECT 1"], {
+            env: { PATH: process.env.PATH, PGPASSWORD: "definitely-wrong", PGCONNECT_TIMEOUT: "2" },
+          }),
+        ).rejects.toThrow(/authentication|password/i);
+        expect(restoreRole).toMatch(/^restore_verify_role_/);
       } finally {
         await postgres.stopAndRemove();
         await postgres.stopAndRemove();

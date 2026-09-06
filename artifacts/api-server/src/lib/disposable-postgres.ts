@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { createServer } from "node:net";
@@ -40,10 +40,15 @@ function assertSafeCommandArguments(arguments_: readonly string[]): void {
   }
 }
 
-async function runCommand(command: string, arguments_: readonly string[], timeoutMs: number): Promise<string> {
+async function runCommand(
+  command: string,
+  arguments_: readonly string[],
+  timeoutMs: number,
+  extraEnvironment: NodeJS.ProcessEnv = {},
+): Promise<string> {
   assertSafeCommandArguments(arguments_);
   const { stdout } = await execFileAsync(command, [...arguments_], {
-    env: commandEnvironment(),
+    env: { ...commandEnvironment(), ...extraEnvironment },
     timeout: timeoutMs,
     maxBuffer: 1024 * 1024,
   });
@@ -175,6 +180,9 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
   const resolvedRoot = realpathSync(root);
   const dataDirectory = join(resolvedRoot, "data");
   const socketDirectory = join(resolvedRoot, "socket");
+  const database = `restore_verify_${randomBytes(10).toString("hex")}`;
+  const restoreRole = `restore_verify_role_${randomBytes(10).toString("hex")}`;
+  const restorePassword = randomBytes(32).toString("base64url");
   let childProcess: ChildProcess | undefined;
   let removed = false;
 
@@ -191,6 +199,18 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     await mkdir(socketDirectory, { mode: 0o700 });
     assertDisposableDataDirectory(dataDirectory, resolvedRoot);
     await runCommand("initdb", ["-D", dataDirectory, "--auth=trust", "--no-locale", "--encoding=UTF8", `--username=${CLUSTER_OWNER}`], timeoutMs);
+    await writeFile(
+      join(dataDirectory, "pg_hba.conf"),
+      [
+        `local all ${CLUSTER_OWNER} trust`,
+        "local all all reject",
+        `host ${database} ${restoreRole} 127.0.0.1/32 scram-sha-256`,
+        "host all all 127.0.0.1/32 reject",
+        "host all all ::1/128 reject",
+        "",
+      ].join("\n"),
+      { mode: 0o600 },
+    );
     let port = 0;
     let startupError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -213,14 +233,22 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     }
     if (startupError) throw startupError;
 
-    const database = `restore_verify_${randomBytes(10).toString("hex")}`;
-    const restoreRole = `restore_verify_role_${randomBytes(10).toString("hex")}`;
     assertLoopbackPostgresTarget("127.0.0.1", database, database);
-    await runCommand(
-      "psql",
-      ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-d", "postgres", "-Atq", "-c", `CREATE ROLE ${restoreRole} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`],
-      timeoutMs,
+    const bootstrapSql = join(resolvedRoot, "bootstrap-role.sql");
+    await writeFile(
+      bootstrapSql,
+      `SET password_encryption = 'scram-sha-256';\nCREATE ROLE ${restoreRole} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT PASSWORD '${restorePassword}';\n`,
+      { mode: 0o600 },
     );
+    try {
+      await runCommand(
+        "psql",
+        ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-d", "postgres", "-Atq", "-f", bootstrapSql],
+        timeoutMs,
+      );
+    } finally {
+      await rm(bootstrapSql, { force: true });
+    }
     await runCommand("createdb", ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-O", restoreRole, database], timeoutMs);
     const psqlArgs = Object.freeze(["-h", "127.0.0.1", "-p", String(port), "-U", restoreRole, "-d", database, "-Atq"]);
 
@@ -231,7 +259,7 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
       port,
       database,
       psqlArgs,
-      executePsql: async (sql: string) => runCommand("psql", [...psqlArgs, "-c", sql], timeoutMs),
+      executePsql: async (sql: string) => runCommand("psql", [...psqlArgs, "-c", sql], timeoutMs, { PGPASSWORD: restorePassword }),
       stopAndRemove,
     };
   } catch (error) {
