@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { createServer } from "node:net";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -64,19 +64,30 @@ async function reserveLoopbackPort(): Promise<number> {
   return address.port;
 }
 
-async function waitUntilReady(port: number, timeoutMs: number): Promise<void> {
+async function waitUntilReady(socketDirectory: string, port: number, dataDirectory: string, timeoutMs: number, exited: () => boolean): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
   while (Date.now() < deadline) {
+    if (exited()) {
+      throw new Error("Disposable PostgreSQL exited before its private socket became ready");
+    }
     try {
-      await runCommand("pg_isready", ["-h", "127.0.0.1", "-p", String(port), "-d", "postgres"], 2_000);
+      await runCommand("pg_isready", ["-h", socketDirectory, "-p", String(port), "-d", "postgres"], 2_000);
+      const reportedDataDirectory = (await runCommand(
+        "psql",
+        ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, "-d", "postgres", "-Atq", "-c", "SHOW data_directory"],
+        2_000,
+      )).trim();
+      if (reportedDataDirectory !== dataDirectory) {
+        throw new Error("Private PostgreSQL socket reported an unexpected data directory");
+      }
       return;
     } catch (error) {
       lastError = error;
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
     }
   }
-  throw new Error(`Disposable PostgreSQL did not become ready within ${timeoutMs}ms: ${String(lastError)}`);
+  throw new Error(`Disposable PostgreSQL private socket did not become ready within ${timeoutMs}ms: ${String(lastError)}`);
 }
 
 export function assertDisposableDataDirectory(path: string, expectedRoot: string): void {
@@ -93,11 +104,15 @@ export function assertDisposableDataDirectory(path: string, expectedRoot: string
   if (!isInside(resolvedPath, resolvedExpectedRoot)) {
     throw new Error("Disposable PostgreSQL data directory must be inside its temporary root");
   }
-  if (!resolvedExpectedRoot.startsWith(`${tmpdir()}${sep}${TEMPORARY_PREFIX}`)) {
+  const realRoot = realpathSync(resolvedExpectedRoot);
+  if (
+    resolvedExpectedRoot !== realRoot ||
+    dirname(realRoot) !== resolve(tmpdir()) ||
+    !basename(realRoot).startsWith(TEMPORARY_PREFIX)
+  ) {
     throw new Error("Disposable PostgreSQL temporary root is not an approved temporary root");
   }
 
-  const realRoot = realpathSync(resolvedExpectedRoot);
   const realPath = realpathSync(resolvedPath);
   if (!isInside(realPath, realRoot)) {
     throw new Error("Disposable PostgreSQL data directory symlink escapes its temporary root");
@@ -132,7 +147,11 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     removed = true;
     try {
       if (started) {
-        await runCommand("pg_ctl", ["-D", dataDirectory, "-m", "fast", "stop"], timeoutMs);
+        try {
+          await runCommand("pg_ctl", ["-D", dataDirectory, "-m", "fast", "stop"], timeoutMs);
+        } catch {
+          // A child that lost a port race can exit before pg_ctl observes it.
+        }
       }
     } finally {
       assertDisposableDataDirectory(dataDirectory, resolvedRoot);
@@ -145,16 +164,32 @@ export async function startDisposablePostgres(options: { timeoutMs?: number } = 
     await mkdir(socketDirectory, { mode: 0o700 });
     assertDisposableDataDirectory(dataDirectory, resolvedRoot);
     await runCommand("initdb", ["-D", dataDirectory, "--auth=trust", "--no-locale", "--encoding=UTF8", `--username=${CLUSTER_OWNER}`], timeoutMs);
-    const port = await reserveLoopbackPort();
-    const startupArgs = ["-D", dataDirectory, "-h", "127.0.0.1", "-p", String(port), "-k", socketDirectory];
-    assertSafeCommandArguments(startupArgs);
-    spawn("postgres", startupArgs, { detached: true, stdio: "ignore", env: commandEnvironment() }).unref();
-    started = true;
-    await waitUntilReady(port, timeoutMs);
+    let port = 0;
+    let startupError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      port = await reserveLoopbackPort();
+      const startupArgs = ["-D", dataDirectory, "-h", "127.0.0.1", "-p", String(port), "-k", socketDirectory];
+      assertSafeCommandArguments(startupArgs);
+      const child = spawn("postgres", startupArgs, { detached: true, stdio: "ignore", env: commandEnvironment() });
+      let exited = false;
+      child.once("exit", () => { exited = true; });
+      child.once("error", () => { exited = true; });
+      child.unref();
+      started = true;
+      try {
+        await waitUntilReady(socketDirectory, port, dataDirectory, timeoutMs, () => exited);
+        startupError = undefined;
+        break;
+      } catch (error) {
+        startupError = error;
+        if (!exited || attempt === 2) throw error;
+      }
+    }
+    if (startupError) throw startupError;
 
     const database = `restore_verify_${randomBytes(10).toString("hex")}`;
     assertLoopbackPostgresTarget("127.0.0.1", database, database);
-    await runCommand("createdb", ["-h", "127.0.0.1", "-p", String(port), "-U", CLUSTER_OWNER, database], timeoutMs);
+    await runCommand("createdb", ["-h", socketDirectory, "-p", String(port), "-U", CLUSTER_OWNER, database], timeoutMs);
     const psqlArgs = Object.freeze(["-h", "127.0.0.1", "-p", String(port), "-U", CLUSTER_OWNER, "-d", database, "-Atq"]);
 
     return {

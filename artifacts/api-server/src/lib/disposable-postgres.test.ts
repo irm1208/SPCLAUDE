@@ -35,6 +35,16 @@ describe("assertDisposableDataDirectory", () => {
     expect(() => assertDisposableDataDirectory(escaped, root)).toThrow(/symlink|temporary root/i);
   });
 
+  test("rejects an expected root symlink that escapes the approved temporary prefix", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "sp-backup-verify-outside-"));
+    const linkedRoot = join(tmpdir(), "sp-backup-verify-linked-root");
+    temporaryPaths.push(outside, linkedRoot);
+    await mkdir(join(outside, "data"), { mode: 0o700 });
+    await symlink(outside, linkedRoot);
+
+    expect(() => assertDisposableDataDirectory(join(linkedRoot, "data"), linkedRoot)).toThrow(/root|symlink|approved/i);
+  });
+
   test("accepts a directory inside the resolved temporary root", async () => {
     const root = await mkdtemp(join(tmpdir(), "sp-backup-verify-test-"));
     temporaryPaths.push(root);
@@ -75,6 +85,8 @@ describe("startDisposablePostgres", () => {
         expect(postgres.psqlArgs.join(" ")).not.toMatch(/DATABASE_URL/i);
         await expect(postgres.executePsql("SELECT 42")).resolves.toContain("42");
         await expect(postgres.executePsql("SELECT 'DATABASE_URL'")).rejects.toThrow(/DATABASE_URL/i);
+        await expect(postgres.executePsql("SHOW data_directory")).resolves.toContain(postgres.dataDirectory);
+        await expect(postgres.executePsql("SELECT current_database()")).resolves.toContain(postgres.database);
       } finally {
         await postgres.stopAndRemove();
         await postgres.stopAndRemove();
