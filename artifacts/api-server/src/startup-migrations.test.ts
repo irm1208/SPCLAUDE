@@ -19,3 +19,14 @@ describe("group-buy shipping product exclusion migrations", () => {
     );
   });
 });
+
+describe("admin security startup migrations", () => {
+  it("creates the identity, recovery, session and challenge tables", () => {
+    for (const table of ["admin_security_settings", "admin_users", "admin_recovery_codes", "admin_sessions", "admin_pending_challenges"]) {
+      expect(startupSource).toContain(`CREATE TABLE IF NOT EXISTS ${table}`);
+    }
+    expect(startupSource).toMatch(/admin_users_username_unique UNIQUE \(username\)/);
+    expect(startupSource).toMatch(/last_totp_step bigint/);
+    expect(startupSource).toMatch(/admin_sessions_token_hash_idx/);
+  });
+});

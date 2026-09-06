@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, pool } from "@workspace/db";
 import { intlParcelSizesTable, intlShippingRatesTable } from "@workspace/db/schema";
-import { requireAdmin } from "../middleware/require-admin";
+import { requireAdminForRequest } from "../middleware/require-admin";
 import { getJwtSecret } from "../middleware/account-auth";
 import { eq, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -22,8 +22,8 @@ const gemini = new GoogleGenAI({
 // ─── Auth helper: admin secret OR approved organiser session ──────────────────
 
 async function checkAuth(req: Request, res: Response, groupBuyId?: string): Promise<boolean> {
-  if (req.headers["x-admin-secret"]) {
-    return requireAdmin(req, res);
+  if (req.headers["x-admin-secret"] || req.cookies?.peps_admin_session) {
+    return requireAdminForRequest(req, res);
   }
   const token = req.cookies?.account_session as string | undefined;
   if (!token) {
@@ -60,7 +60,7 @@ async function checkAuth(req: Request, res: Response, groupBuyId?: string): Prom
 }
 
 async function checkAuthForSize(req: Request, res: Response, sizeId: string): Promise<boolean> {
-  if (req.headers["x-admin-secret"]) return requireAdmin(req, res);
+  if (req.headers["x-admin-secret"] || req.cookies?.peps_admin_session) return requireAdminForRequest(req, res);
   const res2 = await pool.query<{ group_buy_id: string | null }>(
     "SELECT group_buy_id FROM intl_parcel_sizes WHERE id = $1 LIMIT 1",
     [sizeId]
@@ -74,7 +74,7 @@ async function checkAuthForSize(req: Request, res: Response, sizeId: string): Pr
 }
 
 async function checkAuthForRate(req: Request, res: Response, rateId: string): Promise<boolean> {
-  if (req.headers["x-admin-secret"]) return requireAdmin(req, res);
+  if (req.headers["x-admin-secret"] || req.cookies?.peps_admin_session) return requireAdminForRequest(req, res);
   const res2 = await pool.query<{ group_buy_id: string | null }>(
     "SELECT group_buy_id FROM intl_shipping_rates WHERE id = $1 LIMIT 1",
     [rateId]

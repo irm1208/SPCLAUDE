@@ -22,7 +22,7 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, or, sql, asc, desc, inArray, isNotNull } from "drizzle-orm";
 import { randomUUID, randomBytes } from "crypto";
-import { requireAdmin } from "../middleware/require-admin";
+import { requireAdmin, requireAdminStepUp, setAdminMutationSummary } from "../middleware/require-admin";
 import { normalizeTg } from "../lib/normalize";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { createAlert } from "../lib/create-alert";
@@ -517,6 +517,7 @@ router.patch("/admin/group-buys/entry-fee-payments/:id/status", async (req, res)
 // ── DELETE /admin/group-buys/:id — soft delete (→ archived) ───
 router.delete("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
 
   const { id } = req.params;
 
@@ -3238,55 +3239,49 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req, res): Promise<vo
 // Records a submission in fs3_submissions for history tracking.
 router.post("/admin/group-buys/:gbId/fs3-submit", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
+  setAdminMutationSummary(res, "fs3_submission", ["batchLocked", "status"], "submitted");
   const { gbId } = req.params;
   const { includeUnconfirmed = false, submittedBy = "admin", notes = "", sheets = [] } = req.body as { includeUnconfirmed?: boolean; submittedBy?: string; notes?: string; sheets?: { label: string; type: string; orderCount: number }[] };
 
-  const orders = await db.select({
-    id: ordersTable.id, status: ordersTable.status,
-    paymentStatus: sql<string>`coalesce(${ordersTable.paymentStatus},'unpaid')`,
-    routingType: ordersTable.routingType, reshipperUsername: ordersTable.reshipperUsername,
-    directShippingRequested: ordersTable.directShippingRequested,
-  }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
-
-  const eligible = orders.filter(o => includeUnconfirmed || o.paymentStatus === "confirmed");
-  if (eligible.length === 0) {
-    res.status(400).json({ error: "No eligible orders to submit" });
-    return;
+  let result;
+  try {
+    result = await db.transaction(async tx => {
+      const orders = await tx.select({
+        id: ordersTable.id, status: ordersTable.status,
+        paymentStatus: sql<string>`coalesce(${ordersTable.paymentStatus},'unpaid')`,
+        routingType: ordersTable.routingType, reshipperUsername: ordersTable.reshipperUsername,
+        directShippingRequested: ordersTable.directShippingRequested,
+      }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+      const eligible = orders.filter(o => includeUnconfirmed || o.paymentStatus === "confirmed");
+      if (eligible.length === 0) throw new Error("NO_ELIGIBLE_ORDERS");
+      const now = new Date();
+      const eligibleIds = eligible.map(o => o.id);
+      await tx.update(ordersTable).set({ batchLocked: true, batchLockedAt: now }).where(inArray(ordersTable.id, eligibleIds));
+      const toProcess = eligible.filter(o => o.paymentStatus === "confirmed" && o.status === "Submitted");
+      if (toProcess.length > 0) {
+        await tx.update(ordersTable).set({ status: "Processing" }).where(inArray(ordersTable.id, toProcess.map(o => o.id)));
+      }
+      const submissionId = randomUUID();
+      await tx.insert(fs3SubmissionsTable).values({
+        id: submissionId, gbId, submittedBy: String(submittedBy), totalOrders: eligible.length,
+        processedCount: toProcess.length, includeUnconfirmed: String(includeUnconfirmed),
+        notes: notes ? String(notes) : null, sheets: sheets.length > 0 ? sheets : null,
+        status: "submitted", createdAt: now,
+      });
+      return { now, eligible, toProcess, submissionId };
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "NO_ELIGIBLE_ORDERS") {
+      res.status(400).json({ error: "No eligible orders to submit" });
+      return;
+    }
+    throw error;
   }
-
-  const now = new Date();
-  const eligibleIds = eligible.map(o => o.id);
-
-  // Lock all eligible orders and advance confirmed ones to Processing
-  await db.update(ordersTable)
-    .set({ batchLocked: true, batchLockedAt: now })
-    .where(inArray(ordersTable.id, eligibleIds));
-
-  // Advance confirmed orders to Processing if they're still Submitted
-  const toProcess = eligible.filter(o => o.paymentStatus === "confirmed" && o.status === "Submitted");
-  if (toProcess.length > 0) {
-    await db.update(ordersTable)
-      .set({ status: "Processing" })
-      .where(inArray(ordersTable.id, toProcess.map(o => o.id)));
-  }
-
-  // Record submission in fs3_submissions for history tracking
-  const submissionId = randomUUID();
-  await db.insert(fs3SubmissionsTable).values({
-    id: submissionId,
-    gbId,
-    submittedBy: String(submittedBy),
-    totalOrders: eligible.length,
-    processedCount: toProcess.length,
-    includeUnconfirmed: String(includeUnconfirmed),
-    notes: notes ? String(notes) : null,
-    sheets: sheets.length > 0 ? sheets : null,
-    status: "submitted",
-    createdAt: now,
-  }).catch(() => {}); // non-fatal — don't fail the submit if history write fails
+  const { now, eligible, toProcess, submissionId } = result;
 
   writeLog("change", "info", "fs3_batch_submitted", `FS3 batch submitted for GB ${gbId}: ${eligible.length} orders locked, ${toProcess.length} advanced to Processing`, {
-    gbId, orderCount: eligible.length, processedCount: toProcess.length, submittedBy, notes, submissionId,
+    gbId, orderCount: eligible.length, processedCount: toProcess.length, submittedBy, notesPresent: Boolean(notes), submissionId,
   }).catch(() => {});
 
   res.json({ ok: true, lockedCount: eligible.length, processedCount: toProcess.length, submittedAt: now.toISOString(), submissionId });

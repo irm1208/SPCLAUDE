@@ -20,6 +20,8 @@ import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { refreshSingleGbParcel } from "../lib/tracking-auto-refresh";
 import { requireReshipper, verifyReshipperAssignment } from "../middleware/require-reshipper";
+import { consumeAdminActionAssertion } from "./admin-auth";
+import { setAdminMutationSummary } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { sendTelegramMessage, sendTelegramMessageFull, sendAdminFromTemplate, getTemplate, renderTemplate } from "../lib/telegram";
 import { prepareTrackingWrite } from "../lib/tracking-write";
@@ -114,6 +116,12 @@ router.patch("/reshipper/me", requireReshipper, async (req, res): Promise<void> 
   if (anonPayWallet !== undefined) methods.anonPayWallet = anonPayWallet ? String(anonPayWallet).trim() : null;
   if (anonPayTicker !== undefined) methods.anonPayTicker = anonPayTicker ? String(anonPayTicker).trim() : null;
   if (anonPayNetwork !== undefined) methods.anonPayNetwork = anonPayNetwork ? String(anonPayNetwork).trim() : null;
+
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(req, res, "reshipper.payment-destination.update", `reshipper:${username}`, methods)) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+  setAdminMutationSummary(res, "reshipper_payment_destination", Object.keys(methods));
 
   const [updated] = await db
     .update(accountsTable)
@@ -286,6 +294,13 @@ router.patch("/reshipper/gb/:gbId/payment-details", requireReshipper, async (req
   if (anonPayWallet !== undefined) details.anonPayWallet = anonPayWallet ? String(anonPayWallet).trim() : null;
   if (anonPayTicker !== undefined) details.anonPayTicker = anonPayTicker ? String(anonPayTicker).trim() : null;
   if (anonPayNetwork !== undefined) details.anonPayNetwork = anonPayNetwork ? String(anonPayNetwork).trim() : null;
+
+  const target = `reshipper:${req.reshipper!.telegramUsername}:group-buy:${gbId}`;
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(req, res, "reshipper.assignment-payment-destination.update", target, details)) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+  setAdminMutationSummary(res, "reshipper_payment_destination", Object.keys(details));
 
   const [updated] = await db
     .update(gbReshippersTable)

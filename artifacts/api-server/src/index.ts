@@ -32,6 +32,52 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function runStartupMigrations(): Promise<void> {
   try {
+    // Admin-only optional 2FA. These are deliberately additive/idempotent so a
+    // deployment never enables the mode until a confirmed enrolment does so.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_security_settings (
+      id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      two_factor_enabled boolean NOT NULL DEFAULT false,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await db.execute(sql`INSERT INTO admin_security_settings (id, two_factor_enabled) VALUES (1, false) ON CONFLICT (id) DO NOTHING`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_users (
+      id text PRIMARY KEY, username text NOT NULL, password_hash text NOT NULL,
+      totp_secret_encrypted text, totp_enabled boolean NOT NULL DEFAULT false,
+      active boolean NOT NULL DEFAULT true, last_totp_step bigint,
+      last_login_at timestamptz, password_changed_at timestamptz NOT NULL DEFAULT now(),
+      two_factor_changed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT admin_users_username_unique UNIQUE (username)
+    )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+      id text PRIMARY KEY, admin_user_id text NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+      code_hash text NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_sessions (
+      id text PRIMARY KEY, admin_user_id text NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+      token_hash text NOT NULL, csrf_token_hash text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), last_used_at timestamptz NOT NULL DEFAULT now(),
+      idle_expires_at timestamptz NOT NULL, expires_at timestamptz NOT NULL,
+      revoked_at timestamptz, step_up_at timestamptz
+    )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_pending_challenges (
+      id text PRIMARY KEY, admin_user_id text NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+      token_hash text NOT NULL, purpose text NOT NULL, expires_at timestamptz NOT NULL,
+      consumed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS admin_step_up_assertions (
+      id text PRIMARY KEY, admin_session_id text NOT NULL REFERENCES admin_sessions(id) ON DELETE CASCADE,
+      token_hash text NOT NULL, action text NOT NULL, target text NOT NULL, payload_hash text NOT NULL,
+      expires_at timestamptz NOT NULL, consumed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT admin_step_up_assertions_token_hash_unique UNIQUE (token_hash)
+    )`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS admin_sessions_token_hash_idx ON admin_sessions(token_hash)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS admin_sessions_user_idx ON admin_sessions(admin_user_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS admin_pending_challenges_token_hash_idx ON admin_pending_challenges(token_hash)`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS admin_sessions_token_hash_unique_idx ON admin_sessions(token_hash)`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS admin_pending_challenges_token_hash_unique_idx ON admin_pending_challenges(token_hash)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS admin_step_up_assertions_session_idx ON admin_step_up_assertions(admin_session_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS admin_recovery_codes_user_idx ON admin_recovery_codes(admin_user_id)`);
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS hidden_orders (
         id text PRIMARY KEY,

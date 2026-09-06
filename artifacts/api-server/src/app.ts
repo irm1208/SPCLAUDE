@@ -29,7 +29,7 @@ app.use(
       callback(new Error(`CORS: origin '${origin}' not allowed`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Admin-Secret", "X-Impersonate-Username"],
+    allowedHeaders: ["Content-Type", "X-Admin-Secret", "X-Admin-Csrf", "X-Admin-Action-Assertion", "X-Impersonate-Username"],
     credentials: true,
   })
 );

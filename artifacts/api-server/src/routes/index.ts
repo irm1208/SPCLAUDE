@@ -3,6 +3,7 @@ import {
   strictLimiter,
   adminLimiter,
   adminAuthLimiter,
+  adminTwoFactorLimiter,
   orderCreateLimiter,
   feedbackLimiter,
   signupLimiter,
@@ -61,6 +62,8 @@ import peppysRouter from "./peppys";
 import emailTemplatesRouter from "./email-templates";
 import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import wholesaleTrackingRouter from "./wholesale-tracking";
+import adminAuthRouter from "./admin-auth";
+import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
 
@@ -84,11 +87,18 @@ router.use("/orders/:id/confirm-fiat", strictLimiter);
 // Rate limit order creation (10 per hour per IP) — POST /orders only, not lookups
 router.post("/orders", orderCreateLimiter);
 
-// FS3 password verify gets strict limiting
-router.use("/admin/fs3-verify", strictLimiter);
-
 // Admin routes get their own limiter
 router.use("/admin", adminLimiter);
+router.use("/admin/security/enable", adminTwoFactorLimiter);
+router.use("/admin/auth/login", adminTwoFactorLimiter);
+router.use("/admin/auth/verify", adminTwoFactorLimiter);
+router.use("/admin/auth/step-up", adminTwoFactorLimiter);
+router.use("/admin/security/disable", adminTwoFactorLimiter);
+router.use("/admin/security/recovery-codes", adminTwoFactorLimiter);
+// Authentication endpoints are intentionally mounted before the protected
+// boundary; every other /admin route gets its mode from the database.
+router.use(adminAuthRouter);
+router.use("/admin", adminAuthorizationMiddleware);
 
 // Feedback submission rate limiting
 router.use("/feedback", feedbackLimiter);

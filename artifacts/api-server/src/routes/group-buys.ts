@@ -18,6 +18,7 @@ import {
 import { eq, and, asc, desc, not, sql, inArray, isNull } from "drizzle-orm";
 import { requireAccount, getJwtSecret } from "../middleware/account-auth";
 import jwt from "jsonwebtoken";
+import { requireAdminForRequest } from "../middleware/require-admin";
 import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
@@ -871,10 +872,8 @@ router.get("/group-buys/:gbId/country-legs/:legId/kit-count", async (req, res): 
   const legId = String(req.params["legId"]);
 
   // Check auth: admin secret header OR account session with leg viewer access for this legId
-  const adminSecret = req.headers["x-admin-secret"] as string | undefined;
-  const isAdmin = adminSecret && adminSecret === process.env.ADMIN_SECRET;
-
-  let authed = !!isAdmin;
+  const presentsAdminCredentials = !!req.headers["x-admin-secret"] || !!req.cookies?.peps_admin_session;
+  let authed = presentsAdminCredentials ? await requireAdminForRequest(req, res) : false;
   if (!authed) {
     // Parse account JWT directly from cookie (no middleware used here)
     const token = req.cookies?.account_session as string | undefined;

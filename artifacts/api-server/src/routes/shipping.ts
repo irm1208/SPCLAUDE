@@ -12,17 +12,9 @@ import {
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getCarrierProvider, computeWeightGrams } from "@workspace/shipping";
+import { requireAdmin } from "../middleware/require-admin";
 
 const router: IRouter = Router();
-
-function requireAdmin(req: any, res: any): boolean {
-  const secret = req.headers["x-admin-secret"];
-  if (!secret || secret !== process.env["ADMIN_SECRET"]) {
-    res.status(401).json({ error: "Unauthorized" });
-    return false;
-  }
-  return true;
-}
 
 async function getConfigValue(key: string): Promise<string | null> {
   const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));

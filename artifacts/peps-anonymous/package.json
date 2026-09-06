@@ -7,6 +7,7 @@
     "dev": "node ./node_modules/vite/bin/vite.js --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "test": "tsx --test src/lib/admin-auth.test.ts",
     "test:dispatch": "node --experimental-strip-types src/pages/organiser-v2/dispatch/model.test.ts",
     "test:overview": "node --experimental-strip-types src/pages/organiser-v2/overview-model.test.ts",
     "test:workspace-theme": "node --experimental-strip-types src/pages/organiser-v2/workspace-theme.test.ts",

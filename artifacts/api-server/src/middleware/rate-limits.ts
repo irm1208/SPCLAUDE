@@ -59,6 +59,17 @@ export const adminAuthLimiter = rateLimit({
   message: { error: "Too many auth attempts — please try again in 15 minutes." },
 });
 
+// Low threshold for password/TOTP/recovery transitions. Kept separate from
+// normal admin traffic so authentication abuse cannot consume its budget.
+export const adminTwoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Too many admin authentication attempts — try again later." },
+});
+
 // Order creation: 500 orders per hour across all users (Replit shared IP)
 export const orderCreateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

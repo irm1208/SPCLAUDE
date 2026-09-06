@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID, timingSafeEqual, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
-import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
+import { requireAdmin, requireAdminStepUp, setAdminMutationSummary, getAdminUsername } from "../middleware/require-admin";
 import { db } from "@workspace/db";
 import ExcelJS from "exceljs";
 import {
@@ -293,14 +293,7 @@ function normIp(ip: string | null | undefined): string | null {
 router.get("/admin/auth-check", (req, res): void => {
   const ip = (req.ip ?? req.socket?.remoteAddress ?? "unknown") as string;
   const passed = requireAdmin(req, res);
-  if (!passed) {
-    writeLog("login", "warn", "admin_login_failed",
-      "Failed admin login attempt",
-      { ip },
-      ip,
-    ).catch(() => {});
-    return;
-  }
+  if (!passed) return;
   writeLog("login", "info", "admin_login_success",
     "Admin logged in successfully",
     { ip },
@@ -333,42 +326,10 @@ router.get("/admin/check-user/:username", async (req, res): Promise<void> => {
   res.json({ exists: !!account });
 });
 
-// ─── POST /api/admin/fs3-verify ──────────────────────────────
-// Verifies the FS3-specific password (FS3_PASSWORD env var).
-// Requires both admin secret AND the FS3 password.
+// Retired: FS3 authorization is the active admin authorization mode.  Keep a
+// deliberate non-authentication response while old clients are rolled out.
 router.post("/admin/fs3-verify", (req: any, res: any): void => {
-  if (!requireAdmin(req, res)) return;
-
-  const fs3Password = process.env["FS3_PASSWORD"];
-  if (!fs3Password) {
-    res.status(503).json({ error: "FS3 not configured" });
-    return;
-  }
-
-  const provided = String(req.body?.password ?? "");
-  if (!provided) {
-    res.status(400).json({ error: "Password required" });
-    return;
-  }
-
-  try {
-    const bufA = Buffer.from(provided);
-    const bufB = Buffer.from(fs3Password);
-    if (bufA.length !== bufB.length) {
-      timingSafeEqual(bufA, Buffer.alloc(bufA.length));
-      res.status(401).json({ error: "Incorrect password" });
-      return;
-    }
-    if (!timingSafeEqual(bufA, bufB)) {
-      res.status(401).json({ error: "Incorrect password" });
-      return;
-    }
-  } catch {
-    res.status(401).json({ error: "Incorrect password" });
-    return;
-  }
-
-  res.json({ ok: true });
+  res.status(410).json({ error: "FS3_PASSWORD authentication has been retired" });
 });
 
 // ─── GET /api/admin/orders ────────────────────────────────────
@@ -3864,10 +3825,12 @@ router.get("/admin/fs3-costs", async (req: any, res: any) => {
 // POST: upsert a single entry
 router.post("/admin/fs3-costs", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const productName = String(req.body?.productName ?? "").trim().slice(0, 200);
   const unitCost = parseFloat(String(req.body?.unitCost ?? ""));
   if (!productName) { res.status(400).json({ error: "productName required" }); return; }
   if (isNaN(unitCost) || unitCost < 0) { res.status(400).json({ error: "unitCost must be a non-negative number" }); return; }
+  setAdminMutationSummary(res, "fs3_cost", ["productName", "unitCost"]);
   const [row] = await db
     .insert(fs3CostsTable)
     .values({ productName, unitCost: unitCost.toFixed(2) })
@@ -3879,8 +3842,10 @@ router.post("/admin/fs3-costs", async (req: any, res: any) => {
 // DELETE: remove a single entry by id
 router.delete("/admin/fs3-costs/:id", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  setAdminMutationSummary(res, "fs3_cost", ["deleted"], "deleted");
   await db.delete(fs3CostsTable).where(eq(fs3CostsTable.id, id));
   res.json({ ok: true });
 });
@@ -3888,6 +3853,8 @@ router.delete("/admin/fs3-costs/:id", async (req: any, res: any) => {
 // DELETE /admin/fs3-costs — wipe all entries (next GET re-seeds from defaults)
 router.delete("/admin/fs3-costs", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
+  setAdminMutationSummary(res, "fs3_cost", ["deleted"], "deleted_all");
   await db.delete(fs3CostsTable);
   res.json({ ok: true });
 });
@@ -4210,6 +4177,7 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
 // a link to add their delivery details.
 router.post("/admin/fs3-ping-address", async (req: any, res: any) => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
 
   const {
     gbId,
@@ -4467,88 +4435,6 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
   } catch (err) {
     console.error("[fs3-generate]", err);
     res.status(500).json({ error: "Failed to generate batch sheets" });
-  }
-});
-
-// ─── POST /api/admin/group-buys/:gbId/fs3-submit ─────────────────────────────
-// Persists the batch to fs3_submissions and batch-locks the included orders.
-router.post("/admin/group-buys/:gbId/fs3-submit", async (req: any, res: any): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  const { gbId } = req.params;
-  const { sheets, notes } = req.body as {
-    sheets: { label: string; type: string; orderCount: number; route?: string; products?: { name: string; qty: number; unitCost: number | null }[] }[];
-    notes?: string;
-  };
-
-  if (!Array.isArray(sheets) || sheets.length === 0) {
-    res.status(400).json({ error: "sheets is required and must be non-empty" });
-    return;
-  }
-
-  try {
-    // Re-fetch orders to lock them (re-derive to avoid stale client data)
-    const orders = await db
-      .select({
-        id: ordersTable.id,
-        routingType: ordersTable.routingType,
-        reshipperUsername: ordersTable.reshipperUsername,
-        directShippingRequested: ordersTable.directShippingRequested,
-        batchLocked: ordersTable.batchLocked,
-      })
-      .from(ordersTable)
-      .where(
-        and(
-          eq(ordersTable.groupBuyId, gbId),
-          isNull(ordersTable.deletedAt),
-          notInArray(ordersTable.status, ["Cancelled"]),
-        )
-      );
-
-    // Only lock orders that aren't already locked
-    const tolock = orders.filter(o => !o.batchLocked).map(o => o.id);
-
-    if (tolock.length > 0) {
-      await db
-        .update(ordersTable)
-        .set({ batchLocked: true, batchLockedAt: new Date() })
-        .where(inArray(ordersTable.id, tolock));
-    }
-
-    // Build the snapshot from the sheets payload (products may or may not be present)
-    const batchSnapshot = sheets.map(s => ({
-      route: s.route ?? s.label,
-      label: s.label,
-      type: s.type,
-      orderCount: s.orderCount,
-      products: s.products ?? [],
-    }));
-
-    const submissionId = randomUUID();
-    await db.insert(fs3SubmissionsTable).values({
-      id: submissionId,
-      gbId,
-      submittedBy: "admin",
-      totalOrders: orders.length,
-      processedCount: tolock.length,
-      includeUnconfirmed: "false",
-      notes: notes ?? null,
-      sheets: sheets.map(s => ({ label: s.label, type: s.type, orderCount: s.orderCount })),
-      batchSnapshot,
-      status: "submitted",
-    });
-
-    await writeLog("change", "info", "fs3_batch_submit", `FS3 batch submitted for GB ${gbId}: ${tolock.length} orders locked across ${sheets.length} sheet(s)`, { gbId, submissionId, lockedCount: tolock.length });
-
-    res.json({
-      ok: true,
-      submissionId,
-      lockedCount: tolock.length,
-      totalOrders: orders.length,
-      sheets: sheets.length,
-    });
-  } catch (err) {
-    console.error("[fs3-submit]", err);
-    res.status(500).json({ error: "Failed to submit batch" });
   }
 });
 

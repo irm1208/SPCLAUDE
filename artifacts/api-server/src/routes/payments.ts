@@ -13,6 +13,9 @@ import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerC
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { shouldRefreshPrimaryPaymentLock } from "../lib/order-payment-lock-integrity";
+import { requireAdmin, requireAdminStepUp } from "../middleware/require-admin";
+import { consumeAdminActionAssertion } from "./admin-auth";
+import { setAdminMutationSummary } from "../middleware/require-admin";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -120,19 +123,6 @@ export interface OrganiserPayments {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
-function requireAdmin(req: any, res: any): boolean {
-  const secret = process.env["ADMIN_SECRET"];
-  const provided = req.headers["x-admin-secret"];
-  if (!secret) {
-    res.status(503).json({ error: "Admin not configured" });
-    return false;
-  }
-  if (!provided || !safeStrEqual(String(provided), secret)) {
-    res.status(401).json({ error: "Unauthorized" });
-    return false;
-  }
-  return true;
-}
 
 function sha256(s: string) {
   return createHash("sha256").update(s).digest("hex");
@@ -2057,6 +2047,7 @@ router.get("/admin/payments-config", async (req, res): Promise<void> => {
 // ─── ADMIN: Toggle payments enabled ───────────────────────────
 router.patch("/admin/payments-config", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const { paymentsEnabled, paymentRoutingEnabled, directShippingPaymentsEnabled } = req.body;
   if (typeof paymentsEnabled !== "boolean" && typeof paymentRoutingEnabled !== "boolean" && typeof directShippingPaymentsEnabled !== "boolean") {
     res.status(400).json({ error: "paymentsEnabled, paymentRoutingEnabled, or directShippingPaymentsEnabled must be boolean" });
@@ -2081,6 +2072,7 @@ router.patch("/admin/payments-config", async (req, res): Promise<void> => {
 // ─── ADMIN: Save AnonPay config ────────────────────────────────
 router.patch("/admin/anonpay-config", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const { anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
   if (typeof anonPayEnabled === "boolean") {
     await setConfig("anonPayEnabled", anonPayEnabled ? "true" : "false");
@@ -2099,6 +2091,7 @@ router.patch("/admin/anonpay-config", async (req, res): Promise<void> => {
 // ─── ADMIN: Set wallet address (requires change code) ─────────
 router.post("/admin/wallet-address", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const { walletAddress, changeCode } = req.body;
 
   const cleanAddr = typeof walletAddress === "string" ? walletAddress.trim() : "";
@@ -2118,6 +2111,11 @@ router.post("/admin/wallet-address", async (req, res): Promise<void> => {
       return;
     }
   }
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(req, res, "wallet.address.update", "wallet.primary", { walletAddress: cleanAddr })) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+  setAdminMutationSummary(res, "wallet_destination", ["walletAddress"]);
 
   await setConfig("walletAddress", cleanAddr);
   res.json({ walletAddress: cleanAddr });
@@ -2140,8 +2138,16 @@ router.post("/admin/wallet-change-code", async (req, res): Promise<void> => {
       return;
     }
   }
+  // Bind only the derived mutation value; the change code itself must never be
+  // copied into a step-up request, assertion row, or audit context.
+  const newCodeHash = sha256(newCode.trim());
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(req, res, "wallet.change-code.update", "wallet.change-code", { newCodeHash })) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+  setAdminMutationSummary(res, "wallet_security", ["walletChangeCodeHash"]);
 
-  await setConfig("walletChangeCodeHash", sha256(newCode.trim()));
+  await setConfig("walletChangeCodeHash", newCodeHash);
   res.json({ ok: true });
 });
 
@@ -2183,6 +2189,7 @@ router.get("/admin/payment-orders", async (req, res): Promise<void> => {
 // ─── ADMIN: Manually override payment status ───────────────────
 router.patch("/admin/orders/:id/payment-status", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const { paymentStatus } = req.body;
   const valid = ["unpaid", "test_ready", "test_confirmed", "pending_confirmation", "confirmed", "failed"];
   if (!valid.includes(paymentStatus)) {
@@ -2220,12 +2227,21 @@ router.get("/admin/chain-wallets", async (req, res): Promise<void> => {
 
 router.patch("/admin/chain-wallets", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (!requireAdminStepUp(req, res)) return;
   const updates = req.body as Record<string, string | null>;
   if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
     res.status(400).json({ error: "Body must be an object of {configKey: walletAddress}" });
     return;
   }
   const allowedKeys = new Set(CHAIN_WALLET_CONFIGS.map(c => c.configKey).filter(k => k !== "walletAddress"));
+  const validatedUpdates = Object.fromEntries(Object.entries(updates)
+    .filter(([key]) => allowedKeys.has(key))
+    .map(([key, value]) => [key, typeof value === "string" ? value.trim() : ""]));
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(req, res, "wallet.chain.update", "wallet.chain", validatedUpdates)) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+  setAdminMutationSummary(res, "wallet_destination", Object.keys(validatedUpdates));
   for (const [key, value] of Object.entries(updates)) {
     if (!allowedKeys.has(key)) continue;
     const v = typeof value === "string" ? value.trim() : "";

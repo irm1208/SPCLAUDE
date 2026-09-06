@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { accountsTable, gbReshippersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
+import { attachAdminSensitiveMutationAudit, requireAdminForRequest, requireAdminStepUp } from "./require-admin";
 
 declare global {
   namespace Express {
@@ -26,13 +27,18 @@ export async function requireReshipper(req: Request, res: Response, next: NextFu
   // Admin impersonation: x-admin-secret + x-impersonate-username headers bypass account auth
   const adminSecret = req.headers["x-admin-secret"] as string | undefined;
   const impersonateUsername = req.headers["x-impersonate-username"] as string | undefined;
-  if (adminSecret && impersonateUsername) {
-    const expectedSecret = process.env.ADMIN_SECRET;
-    if (expectedSecret && adminSecret === expectedSecret) {
+  const adminSession = req.cookies?.["peps_admin_session"] as string | undefined;
+  if ((adminSecret || adminSession) && impersonateUsername) {
+    if (await requireAdminForRequest(req, res)) {
       req.reshipper = { telegramUsername: impersonateUsername, reshipperStatus: "approved" };
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        attachAdminSensitiveMutationAudit(req, res, "reusable");
+        if (!requireAdminStepUp(req, res)) return;
+      }
       next();
       return;
     }
+    return;
   }
 
   await new Promise<void>((resolve, reject) => {

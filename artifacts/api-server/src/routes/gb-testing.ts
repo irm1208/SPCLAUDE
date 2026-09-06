@@ -16,7 +16,7 @@ import { eq, and, gt, sum, count, sql, inArray, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
 import { notifyUserFull } from "../lib/telegram";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
-import { timingSafeEqual } from "crypto";
+import { requireAdminForRequest } from "../middleware/require-admin";
 import { extractBatchNumbersFromImages } from "../lib/gemini-lab-extract";
 
 // Optional account auth: decode the cookie if present, but don't 401 if missing.
@@ -39,17 +39,9 @@ const imageUpload = multer({
   },
 });
 
-function isAdminRequest(req: import("express").Request): boolean {
-  const secret = process.env["ADMIN_SECRET"];
-  if (!secret) return false;
-  const provided = req.headers["x-admin-secret"];
-  if (!provided || typeof provided !== "string") return false;
-  try {
-    const bufA = Buffer.from(provided, "utf8");
-    const bufB = Buffer.from(secret, "utf8");
-    if (bufA.length !== bufB.length) return false;
-    return timingSafeEqual(bufA, bufB);
-  } catch { return false; }
+async function isAdminRequest(req: import("express").Request, res: import("express").Response): Promise<boolean> {
+  if (!req.headers["x-admin-secret"] && !req.cookies?.peps_admin_session) return false;
+  return requireAdminForRequest(req, res);
 }
 import {
   PEPTIDE_NAMES,
@@ -289,7 +281,7 @@ router.get("/group-buys/:gbId/testing", async (req, res): Promise<void> => {
   // Resolve opt-in & vote status
   let hasVoted = false;
   let existingVote: { peptideName: string; vialCount: number; testSelections: string[] } | null = null;
-  let isOptedIn = isAdminRequest(req); // admins always see the full pool
+  let isOptedIn = await isAdminRequest(req, res); // admins always see the full pool
 
   if (req.account) {
     const tg = req.account.telegramUsername;
@@ -471,7 +463,7 @@ router.get("/group-buys/:gbId/testing", async (req, res): Promise<void> => {
     hasVoted,
     existingVote,
     isOptedIn,
-    isAdminView: isAdminRequest(req),
+    isAdminView: await isAdminRequest(req, res),
     hasGbOrder,
     pendingContribution,
     paymentMethods,
@@ -1333,7 +1325,7 @@ router.get("/account/testing/gb-pools", async (req, res): Promise<void> => {
 // ── GET /api/testing/results — admin-only: all completed GB tests ─
 // Results are private to contributors, so this aggregate feed is gated to admins.
 router.get("/testing/results", async (req, res): Promise<void> => {
-  if (!isAdminRequest(req)) { res.json([]); return; }
+  if (!await isAdminRequest(req, res)) { res.json([]); return; }
   const results = await db
     .select({
       roundId: gbTestingRoundsTable.id,

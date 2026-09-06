@@ -47,6 +47,12 @@ import {
   Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { getTrackingPackages, type TrackingPackage, type TrackingPackageView } from "@workspace/shipping/tracking";
+import {
+  adminAuth,
+  AdminApiError,
+  type AdminActionBinding,
+  type AdminEnrolment,
+} from "@/lib/admin-auth";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -6293,6 +6299,11 @@ function PaymentsTab({ secret }: { secret: string }) {
   const saveWalletAddress = async () => {
     if (!newAddress.trim()) { setAddressError("Wallet address is required"); return; }
     setSavingAddress(true); setAddressError(""); setAddressMsg("");
+    const redactWallet = (value: string | null | undefined) => value ? `Configured ••••${value.trim().slice(-4)}` : "Not configured";
+    adminAuth.setActionConfirmation("wallet.address.update", "wallet.primary", {
+      before: redactWallet(config?.walletAddress),
+      after: redactWallet(newAddress),
+    });
     const res = await fetch(apiUrl("/admin/wallet-address"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-secret": secret },
@@ -6313,6 +6324,10 @@ function PaymentsTab({ secret }: { secret: string }) {
   const saveChangeCode = async () => {
     if (!newCode.trim() || newCode.trim().length < 4) { setCodeError("Code must be at least 4 characters"); return; }
     setSavingCode(true); setCodeError(""); setCodeMsg("");
+    adminAuth.setActionConfirmation("wallet.change-code.update", "wallet.change-code", {
+      before: config?.hasChangeCode ? "Configured" : "Not configured",
+      after: "Changing (new code hidden)",
+    });
     const res = await fetch(apiUrl("/admin/wallet-change-code"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-secret": secret },
@@ -6392,6 +6407,15 @@ function PaymentsTab({ secret }: { secret: string }) {
     for (const [key, val] of Object.entries(chainWalletInputs)) {
       body[key] = val.trim() || null;
     }
+    const existing = new Map(chainWallets.map(wallet => [wallet.configKey, wallet.walletAddress]));
+    const changed = Object.entries(body).filter(([key, value]) => (existing.get(key) ?? null) !== value);
+    adminAuth.setActionConfirmation("wallet.chain.update", "wallet.chain", {
+      before: changed.map(([key]) => `${key}: ${existing.get(key) ? "set" : "unset"}`).join("; ") || "No wallet state changes",
+      after: changed.map(([key, value]) => {
+        const wasSet = !!existing.get(key);
+        return `${key}: ${wasSet ? (value ? "set → changed" : "set → removed") : (value ? "unset → set" : "unset")}`;
+      }).join("; ") || "No wallet state changes",
+    });
     const res = await fetch(apiUrl("/admin/chain-wallets"), {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-admin-secret": secret },
@@ -7018,76 +7042,8 @@ function fs3ComputePackageShipping(
   return { numPackages, packageTotal, packageLine: `Package: ${numPackages} x ${fmt(PKG_COST)} = ${fmt(packageTotal)}` };
 }
 
-function Fs3Tab({ secret }: { secret: string }) {
-  // ── Password gate (no sessionStorage — always required on mount) ──
-  const [fs3Authed, setFs3Authed] = useState(false);
-  const [fs3Pass, setFs3Pass] = useState("");
-  const [fs3PassErr, setFs3PassErr] = useState("");
-  const [fs3Checking, setFs3Checking] = useState(false);
-  const [showFs3Pass, setShowFs3Pass] = useState(false);
-
-  const handleFs3Login = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fs3Pass.trim()) return;
-    setFs3Checking(true);
-    setFs3PassErr("");
-    try {
-      const res = await fetch(apiUrl("/admin/fs3-verify"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ password: fs3Pass }),
-        credentials: "omit",
-      });
-      if (res.ok) {
-        setFs3Authed(true);
-      } else {
-        const e = await res.json().catch(() => ({}));
-        setFs3PassErr(e.error || "Incorrect password");
-        setFs3Pass("");
-      }
-    } catch {
-      setFs3PassErr("Network error — try again");
-    }
-    setFs3Checking(false);
-  };
-
-  if (!fs3Authed) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-sm p-6 space-y-4">
-          <div className="text-center space-y-1">
-            <ShieldCheck className="w-10 h-10 mx-auto text-muted-foreground" />
-            <h2 className="font-bold text-base">FS3 Access</h2>
-            <p className="text-xs text-muted-foreground">Enter your FS3 password to continue</p>
-          </div>
-          <form onSubmit={handleFs3Login} className="space-y-3">
-            <div className="relative">
-              <Input
-                type={showFs3Pass ? "text" : "password"}
-                placeholder="FS3 password"
-                value={fs3Pass}
-                onChange={e => { setFs3Pass(e.target.value); setFs3PassErr(""); }}
-                autoFocus
-                autoComplete="current-password"
-                className="pr-10"
-              />
-              <button type="button" onClick={() => setShowFs3Pass(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                {showFs3Pass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {fs3PassErr && <p className="text-xs text-red-600 font-medium">{fs3PassErr}</p>}
-            <Button type="submit" className="w-full" disabled={fs3Checking || !fs3Pass.trim()}>
-              {fs3Checking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Unlock
-            </Button>
-          </form>
-        </Card>
-      </div>
-    );
-  }
-
-  return <Fs3Content secret={secret} onLock={() => setFs3Authed(false)} />;
+function Fs3Tab({ secret }: { secret: string; admin2fa?: boolean }) {
+  return <Fs3Content secret={secret} onLock={() => {}} />;
 }
 
 // ─── FS3 Content (shown after password) ───────────────────────
@@ -9301,50 +9257,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   );
 }
 
-// ─── P&L Tab (standalone, FS3-password gated) ─────────────────
+// ─── P&L Tab (uses the active admin authorization mode) ───────
 
-function PnlTab({ secret }: { secret: string }) {
-  const [authed, setAuthed] = useState(false);
-  const [pass, setPass] = useState("");
-  const [passErr, setPassErr] = useState("");
-  const [checking, setChecking] = useState(false);
-
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pass.trim()) return;
-    setChecking(true);
-    try {
-      const res = await fetch(apiUrl("/admin/fs3-verify"), {
-        method: "POST",
-        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pass }),
-        credentials: "omit",
-      });
-      if (res.ok) { setAuthed(true); setPassErr(""); }
-      else { const d = await res.json().catch(() => ({})); setPassErr(d.error || "Incorrect password"); }
-    } catch { setPassErr("Network error"); }
-    setChecking(false);
-  };
-
-  if (!authed) return (
-    <div className="max-w-sm mx-auto mt-16">
-      <form onSubmit={handleAuth} className="space-y-4 p-6 border border-border rounded-2xl bg-card shadow-sm">
-        <div className="text-center space-y-1">
-          <TrendingUp className="w-7 h-7 mx-auto text-violet-500" />
-          <h2 className="font-bold text-base">P&amp;L Access</h2>
-          <p className="text-xs text-muted-foreground">Enter your FS3 password to continue</p>
-        </div>
-        <Input type="password" placeholder="FS3 password" value={pass} onChange={e => setPass(e.target.value)} autoFocus />
-        {passErr && <p className="text-xs text-red-600 font-medium">{passErr}</p>}
-        <Button type="submit" className="w-full" disabled={checking || !pass.trim()}>
-          {checking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-          Unlock
-        </Button>
-      </form>
-    </div>
-  );
-
-  return <PnlContent secret={secret} onLock={() => setAuthed(false)} />;
+function PnlTab({ secret }: { secret: string; admin2fa?: boolean }) {
+  return <PnlContent secret={secret} onLock={() => {}} />;
 }
 
 function PnlContent({ secret, onLock }: { secret: string; onLock: () => void }) {
@@ -27011,7 +26927,13 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
 }
 
 
-function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: string; theme: "dark"|"light"; onToggleTheme: () => void }) {
+function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, recoveryCodes = [], onRecoveryCodesDismissed, onEnabled, onDisabled }: {
+  initialSecret: string; theme: "dark"|"light"; onToggleTheme: () => void; admin2fa?: boolean;
+  recoveryCodes?: string[];
+  onRecoveryCodesDismissed: () => void;
+  onEnabled: (activation: { csrfToken: string; recoveryCodes: string[] }) => void;
+  onDisabled: () => void;
+}) {
   const [secret, setSecret] = useState(initialSecret);
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(!!initialSecret);
@@ -27025,6 +26947,12 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
   const [navSearch, setNavSearch] = useState("");
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastVisibilityCheckRef = useRef<number>(0);
+
+  // A just-enabled session reuses this mounted shell. Do not retain the prior
+  // shared secret in component state once the server changes authentication mode.
+  useEffect(() => {
+    if (admin2fa) setSecret("");
+  }, [admin2fa]);
 
   // ─── Alert badge + dropdown ──────────────────────────────────
   const [alertOpen, setAlertOpen] = useState(false);
@@ -27094,6 +27022,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
     setAuthed(false);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
     try { sessionStorage.removeItem("_adm_s"); localStorage.removeItem("_adm_lf"); } catch {}
+    window.dispatchEvent(new Event("admin-auth-logout"));
   }, []);
 
   const resetLogoutTimer = useCallback(() => {
@@ -27111,13 +27040,14 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
       const now = Date.now();
       if (now - lastVisibilityCheckRef.current < VISIBILITY_CHECK_COOLDOWN_MS) return;
       lastVisibilityCheckRef.current = now;
-      if (!secret) { doLogout(); return; }
-      fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+      if (!admin2fa && !secret) { doLogout(); return; }
+      if (admin2fa) adminAuth.restoreSession().catch(doLogout);
+      else fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
         .then(r => { if (!r.ok) doLogout(); });
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [authed, secret, doLogout]);
+  }, [authed, secret, doLogout, admin2fa]);
 
   // Inactivity auto-logout
   useEffect(() => {
@@ -27134,9 +27064,13 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
 
   useEffect(() => {
     if (!secret) { setChecking(false); return; }
-    fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
-      .then(r => { if (r.ok) setAuthed(true); else doLogout(); })
-      .finally(() => setChecking(false));
+    if (admin2fa) {
+      adminAuth.restoreSession().then(() => setAuthed(true)).catch(doLogout).finally(() => setChecking(false));
+    } else {
+      fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+        .then(r => { if (r.ok) setAuthed(true); else doLogout(); })
+        .finally(() => setChecking(false));
+    }
   }, []);
 
   useEffect(() => {
@@ -27459,8 +27393,8 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "payment-audit" && <PaymentAuditTab secret={secret} />}
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
-          {activeTab === "fs3"          && <Fs3Tab secret={secret} />}
-          {activeTab === "pnl"          && <PnlTab secret={secret} />}
+          {activeTab === "fs3"          && <Fs3Tab secret={secret} admin2fa={admin2fa} />}
+          {activeTab === "pnl"          && <PnlTab secret={secret} admin2fa={admin2fa} />}
           {activeTab === "notifications" && <NotificationsTab secret={secret} />}
           {activeTab === "tg-templates"  && <AdminTelegramTemplates secret={secret} />}
           {activeTab === "announcements" && <ScheduledAnnouncementsTab secret={secret} />}
@@ -27477,7 +27411,10 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
           {activeTab === "analytics"    && <AnalyticsTab secret={secret} />}
           {activeTab === "activity"     && <ActivityLogTab secret={secret} />}
           {activeTab === "customerlog"  && <CustomerLogTab secret={secret} />}
-          {activeTab === "lockouts"       && <LockoutsTab secret={secret} />}
+          {activeTab === "lockouts"       && <>
+            <AdminSecuritySection enabled={admin2fa} recoveryCodes={recoveryCodes} onRecoveryCodesDismissed={onRecoveryCodesDismissed} onEnabled={onEnabled} onDisabled={onDisabled} />
+            <LockoutsTab secret={secret} />
+          </>}
           {activeTab === "countryipcheck" && <CountryIpCheckTab secret={secret} />}
           {activeTab === "logs"         && <LogsTab secret={secret} />}
           {activeTab === "config"       && <ConfigTab secret={secret} onTabOrderChange={setTabOrder} />}
@@ -27549,7 +27486,212 @@ function AdminInner({ initialSecret, theme, onToggleTheme }: { initialSecret: st
   );
 }
 
-// ─── Front-end password gate (wraps AdminInner) ───────────────────────────────
+function AdminSecuritySection({ enabled, recoveryCodes, onRecoveryCodesDismissed, onEnabled, onDisabled }: {
+  enabled: boolean;
+  recoveryCodes: string[];
+  onRecoveryCodesDismissed: () => void;
+  onEnabled: (activation: { csrfToken: string; recoveryCodes: string[] }) => void;
+  onDisabled: () => void;
+}) {
+  const [adminSecret, setAdminSecret] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [enrolment, setEnrolment] = useState<AdminEnrolment | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const start = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true); setError("");
+    try { setEnrolment(await adminAuth.startEnable(adminSecret, username, password)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to start enrolment."); }
+    finally { setBusy(false); }
+  };
+  const confirmEnable = async () => {
+    if (!enrolment || !code.trim() || !confirm("Activate admin two-factor authentication now?")) return;
+    setBusy(true); setError("");
+    try {
+      const activation = await adminAuth.confirmEnable(enrolment.challenge, code.trim());
+      onEnabled(activation);
+      setAdminSecret(""); setPassword(""); setCode("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to activate 2FA."); }
+    finally { setBusy(false); }
+  };
+  const disable = async () => {
+    if (!confirm("Disable admin 2FA and return to the shared ADMIN_SECRET login? All admin sessions will be signed out.")) return;
+    setBusy(true); setError("");
+    try { await adminAuth.disable(); onDisabled(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to disable 2FA."); }
+    finally { setBusy(false); }
+  };
+  const recoveryText = recoveryCodes.join("\n");
+  const downloadCodes = () => {
+    const url = URL.createObjectURL(new Blob([recoveryText + "\n"], { type: "text/plain" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = "peps-admin-recovery-codes.txt"; link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="p-4 pb-0 max-w-4xl mx-auto">
+      <Card className="p-5 border-orange-200 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-orange-500" />Admin Security</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              {enabled ? "2FA session mode is active. Admin mutations use CSRF and authenticator step-up protection." : "Shared ADMIN_SECRET mode is active. Authenticator and step-up protection are inactive."}
+            </p>
+          </div>
+          <span className={cn("text-xs font-bold px-2.5 py-1 rounded-full", enabled ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
+            2FA {enabled ? "enabled" : "disabled"}
+          </span>
+        </div>
+        {!enabled && !enrolment && recoveryCodes.length === 0 && (
+          <form onSubmit={start} className="grid sm:grid-cols-2 gap-3">
+            <Input type="password" value={adminSecret} onChange={e => setAdminSecret(e.target.value)} placeholder="Re-enter ADMIN_SECRET" autoComplete="off" />
+            <Input value={username} onChange={e => setUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" />
+            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="New password (12+ characters)" autoComplete="new-password" />
+            <Button type="submit" disabled={busy || !adminSecret || username.length < 3 || password.length < 12}>
+              {busy && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Set up authenticator
+            </Button>
+          </form>
+        )}
+        {enrolment && recoveryCodes.length === 0 && (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">Add this account to your authenticator, then enter its six-digit code.</p>
+            <div className="rounded-xl bg-muted p-3 space-y-2">
+              <p className="text-[10px] font-bold uppercase text-muted-foreground">Authenticator URI</p>
+              <p className="text-xs font-mono break-all select-all">{enrolment.otpauthUri}</p>
+              <p className="text-[10px] font-bold uppercase text-muted-foreground pt-1">Manual secret</p>
+              <p className="text-sm font-mono tracking-wider select-all">{enrolment.manualKey}</p>
+            </div>
+            <div className="flex gap-2">
+              <Input inputMode="numeric" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="123456" />
+              <Button onClick={confirmEnable} disabled={busy || code.length !== 6}>Confirm &amp; activate</Button>
+            </div>
+          </div>
+        )}
+        {recoveryCodes.length > 0 && (
+          <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-slate-900">
+            <p className="font-bold">Save your recovery codes now</p>
+            <p className="text-xs">These codes are displayed once. Each can be used only once.</p>
+            <pre className="grid grid-cols-2 gap-1 text-xs font-mono whitespace-pre-wrap">{recoveryText}</pre>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(recoveryText)}><Copy className="w-3.5 h-3.5 mr-1" />Copy</Button>
+              <Button size="sm" variant="outline" onClick={downloadCodes}><Download className="w-3.5 h-3.5 mr-1" />Download</Button>
+              <Button size="sm" onClick={onRecoveryCodesDismissed}>I saved them</Button>
+            </div>
+          </div>
+        )}
+        {enabled && <Button variant="destructive" onClick={disable} disabled={busy}>Disable 2FA</Button>}
+        {error && <p className="text-xs font-medium text-red-500">{error}</p>}
+      </Card>
+    </div>
+  );
+}
+
+function actionConfirmation(request: AdminActionBinding): { target: string; summary: string } {
+  if (request.confirmation) {
+    return {
+      target: request.target,
+      summary: `Before: ${request.confirmation.before}\nAfter: ${request.confirmation.after}`,
+    };
+  }
+  if (request.action === "wallet.address.update") {
+    const address = (request.payload as { walletAddress?: string })?.walletAddress ?? "";
+    return { target: "Primary payment wallet", summary: `Replace wallet destination${address ? ` (ending ${address.slice(-4)})` : ""}.` };
+  }
+  if (request.action === "wallet.chain.update") {
+    const keys = Object.keys((request.payload ?? {}) as Record<string, unknown>);
+    return { target: "Chain payment wallets", summary: `Update ${keys.length} chain wallet${keys.length === 1 ? "" : "s"}: ${keys.join(", ")}.` };
+  }
+  if (request.action === "wallet.change-code.update") return { target: "Wallet change code", summary: "Replace the wallet change code. The code itself is never displayed." };
+  if (request.action === "admin.security.disable") return { target: "admin-security", summary: "Before: 2FA enabled\nAfter: 2FA disabled and sessions revoked." };
+  return { target: request.target, summary: `Confirm ${request.action}.` };
+}
+
+function AdminStepUpDialog({ request, onComplete }: {
+  request: AdminActionBinding | null | undefined;
+  onComplete: (code: string | null) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const singleUse = !!request;
+  const confirmation = request ? actionConfirmation(request) : null;
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4">
+      <form onSubmit={e => { e.preventDefault(); if (code.length === 6) onComplete(code); }}
+        className="w-full max-w-sm rounded-2xl border p-6 space-y-4 shadow-2xl"
+        style={{ background: "var(--adm-content)", borderColor: "var(--adm-border)" }}>
+        <div className="text-center">
+          <ShieldCheck className="w-8 h-8 text-orange-500 mx-auto mb-2" />
+          <h2 className="font-bold" style={{ color: "var(--adm-text)" }}>Authenticator required</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--adm-muted)" }}>
+            {request ? "This is a single-use authorization." : "Confirm this sensitive admin action."}
+          </p>
+        </div>
+        {confirmation && <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-slate-800 space-y-1">
+          <p className="font-bold">Action: {request?.action}</p>
+          <p className="font-mono">Target: {confirmation.target}</p>
+          <p className="whitespace-pre-line">{confirmation.summary}</p>
+          <label className="flex gap-2 items-start pt-1 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5" />
+            <span>I confirm this exact change.</span>
+          </label>
+        </div>}
+        <Input autoFocus inputMode="numeric" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Six-digit code" />
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={() => onComplete(null)}>Cancel</Button>
+          <Button type="submit" className="flex-1" disabled={code.length !== 6 || (singleUse && !confirmed)}>Verify</Button>
+        </div>
+      </form>
+    </div>,
+    document.body,
+  );
+}
+
+function EnabledAdminLogin({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const [challenge, setChallenge] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [factor, setFactor] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const primary = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true); setError("");
+    try { setChallenge(await adminAuth.login(username, password)); setPassword(""); }
+    catch { setError("Unable to sign in. Check your credentials and try again."); }
+    finally { setBusy(false); }
+  };
+  const verify = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true); setError("");
+    try {
+      await adminAuth.verify(challenge, recovery ? { recoveryCode: factor.trim() } : { code: factor.trim() });
+      setFactor(""); onAuthenticated();
+    } catch { setError("The verification code was not accepted."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <form onSubmit={challenge ? verify : primary} className="w-full flex flex-col gap-3">
+      {!challenge ? <>
+        <Input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" autoComplete="username" autoFocus />
+        <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
+      </> : <>
+        <Input value={factor} onChange={e => setFactor(e.target.value)} placeholder={recovery ? "Recovery code" : "Six-digit authenticator code"} autoFocus />
+        <button type="button" className="text-xs text-orange-500" onClick={() => { setRecovery(v => !v); setFactor(""); }}>
+          {recovery ? "Use authenticator code" : "Use a recovery code instead"}
+        </button>
+      </>}
+      {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+      <Button type="submit" disabled={busy || (!challenge ? !username || !password : !factor.trim())}>
+        {busy && <Loader2 className="w-4 h-4 animate-spin mr-2" />}{challenge ? "Verify" : "Continue"}
+      </Button>
+    </form>
+  );
+}
+
+// ─── Server-mode-aware admin gate (wraps AdminInner) ─────────────────────────
 export default function Admin() {
   const [adminTheme, setAdminTheme] = useState<"dark"|"light">(() =>
     (localStorage.getItem("adminTheme") as "dark"|"light") || "dark"
@@ -27562,17 +27704,86 @@ export default function Admin() {
     });
   };
 
-  // Secret persisted to sessionStorage so page refreshes don't require re-login.
-  // Cleared on explicit logout. The server still re-verifies on mount.
-  const [gateSecret, setGateSecret] = useState(() => {
-    try { return sessionStorage.getItem("_adm_s") ?? ""; } catch { return ""; }
-  });
+  const [mode, setMode] = useState<boolean | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [gateSecret, setGateSecret] = useState("");
+  const [freshRecoveryCodes, setFreshRecoveryCodes] = useState<string[]>([]);
   const [gateInput,  setGateInput]  = useState("");
   const [gateError,  setGateError]  = useState<"wrong" | "ratelimit" | "network" | false>(false);
   const [gateShow,   setGateShow]   = useState(false);
   const [gateLoading, setGateLoading] = useState(false);
   const gateLastAttemptRef = useRef(0);
   const GATE_COOLDOWN_MS = 1500;
+  const [stepUpRequest, setStepUpRequest] = useState<AdminActionBinding | null | undefined>(undefined);
+  const stepUpResolve = useRef<((code: string | null) => void) | null>(null);
+  const uninstallInterceptor = useRef<(() => void) | null>(null);
+
+  const activateSession = useCallback(() => {
+    uninstallInterceptor.current?.();
+    uninstallInterceptor.current = adminAuth.installFetchInterceptor();
+    setAuthenticated(true);
+  }, []);
+
+  const handleEnabled = useCallback((activation: { csrfToken: string; recoveryCodes: string[] }) => {
+    // The server has already issued the cookie and CSRF token. Clear the
+    // shared-secret path before rendering anything that can make admin calls.
+    adminAuth.setMode(true);
+    adminAuth.setCsrfToken(activation.csrfToken);
+    setGateSecret("");
+    try { sessionStorage.removeItem("_adm_s"); localStorage.removeItem("_adm_lf"); } catch {}
+    setFreshRecoveryCodes(activation.recoveryCodes);
+    setMode(true);
+    activateSession();
+  }, [activateSession]);
+
+  const handleDisabled = useCallback(() => {
+    uninstallInterceptor.current?.();
+    uninstallInterceptor.current = null;
+    adminAuth.clear();
+    adminAuth.setMode(false);
+    setFreshRecoveryCodes([]);
+    setGateSecret("");
+    setAuthenticated(false);
+    setMode(false);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    adminAuth.initialize().then(async status => {
+      if (!active) return;
+      setMode(status.twoFactorEnabled);
+      if (status.twoFactorEnabled) {
+        try { await adminAuth.restoreSession(); if (active) activateSession(); } catch { /* show login */ }
+      } else if (adminAuth.disabledModeSecret) {
+        try { await adminAuth.loginWithSecret(adminAuth.disabledModeSecret); if (active) { setGateSecret(adminAuth.disabledModeSecret); setAuthenticated(true); } } catch { adminAuth.clear(); }
+      }
+    }).catch(() => { if (active) setStatusFailed(true); });
+    return () => { active = false; };
+  }, [activateSession]);
+
+  useEffect(() => {
+    adminAuth.setStepUpHandler(binding => new Promise(resolve => {
+      stepUpResolve.current = resolve;
+      setStepUpRequest(binding ?? null);
+    }));
+    adminAuth.onSessionExpired = () => setAuthenticated(false);
+    return () => {
+      uninstallInterceptor.current?.();
+      uninstallInterceptor.current = null;
+      adminAuth.onSessionExpired = undefined;
+    };
+  }, []);
+
+  useEffect(() => {
+    const logout = () => {
+      if (mode) adminAuth.logout().catch(() => adminAuth.clear());
+      uninstallInterceptor.current?.(); uninstallInterceptor.current = null;
+      setAuthenticated(false); setGateSecret("");
+    };
+    window.addEventListener("admin-auth-logout", logout);
+    return () => window.removeEventListener("admin-auth-logout", logout);
+  }, [mode]);
 
   const tryGate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27582,18 +27793,16 @@ export default function Admin() {
     setGateLoading(true);
     setGateError(false);
     try {
-      const res = await fetch("/api/admin/auth-check", {
-        headers: { "x-admin-secret": gateInput },
-        credentials: "omit",
-      });
-      if (res.ok) {
+      try {
+        await adminAuth.loginWithSecret(gateInput);
         try { sessionStorage.setItem("_adm_s", gateInput); localStorage.setItem("_adm_lf", "1"); } catch {}
-        setGateSecret(gateInput);
-      } else if (res.status === 429) {
-        setGateError("ratelimit");
-      } else {
+        setGateSecret(gateInput); setAuthenticated(true);
+      } catch (cause) {
+        if (cause instanceof AdminApiError && cause.response.status === 429) setGateError("ratelimit");
+        else {
         setGateError("wrong");
         setGateInput("");
+        }
       }
     } catch {
       setGateError("network");
@@ -27601,9 +27810,24 @@ export default function Admin() {
     setGateLoading(false);
   };
 
-  if (gateSecret) return (
+  if (mode === null) return (
+    <div className="min-h-screen flex flex-col gap-3 items-center justify-center" style={{ background: "var(--adm-content)", color: "var(--adm-text)" }}>
+      {statusFailed ? <>
+        <AlertCircle className="w-7 h-7 text-red-500" />
+        <p className="text-sm font-medium">Unable to determine the admin security mode.</p>
+        <Button variant="outline" onClick={() => location.reload()}>Try again</Button>
+      </> : <Loader2 className="w-6 h-6 animate-spin text-orange-500" />}
+    </div>
+  );
+
+  if (authenticated) return (
     <div data-admin-theme={adminTheme} className={adminTheme === "dark" ? "dark" : ""}>
-      <AdminInner initialSecret={gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} />
+      <AdminInner initialSecret={mode ? "__admin_session__" : gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} admin2fa={mode}
+        recoveryCodes={freshRecoveryCodes} onRecoveryCodesDismissed={() => setFreshRecoveryCodes([])}
+        onEnabled={handleEnabled} onDisabled={handleDisabled} />
+      {stepUpRequest !== undefined && <AdminStepUpDialog request={stepUpRequest} onComplete={code => {
+        const resolve = stepUpResolve.current; stepUpResolve.current = null; setStepUpRequest(undefined); resolve?.(code);
+      }} />}
     </div>
   );
 
@@ -27627,9 +27851,9 @@ export default function Admin() {
           </div>
           <div className="text-center">
             <h1 className="font-bold text-lg tracking-tight" style={{ color: "var(--adm-text)" }}>Admin Access</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--adm-muted)" }}>Enter password to continue</p>
+            <p className="text-sm mt-1" style={{ color: "var(--adm-muted)" }}>{mode ? "Sign in with your administrator account" : "Enter password to continue"}</p>
           </div>
-          <form onSubmit={tryGate} className="w-full flex flex-col gap-3">
+          {mode ? <EnabledAdminLogin onAuthenticated={activateSession} /> : <form onSubmit={tryGate} className="w-full flex flex-col gap-3">
             <div className="relative">
               <input
                 type={gateShow ? "text" : "password"}
@@ -27666,7 +27890,7 @@ export default function Admin() {
               style={{ background: "#F24908", color: "#fff" }}>
               {gateLoading ? "Checking…" : "Unlock"}
             </button>
-          </form>
+          </form>}
         </div>
       </div>
     </div>

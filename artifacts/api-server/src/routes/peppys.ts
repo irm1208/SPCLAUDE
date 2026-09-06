@@ -18,7 +18,7 @@ import type { Request, Response } from "express";
 import { db } from "@workspace/db";
 import { peppysArticlesTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
-import { requireAdmin } from "../middleware/require-admin";
+import { requireAdminForRequest } from "../middleware/require-admin";
 import { countPeppysArticles } from "../lib/peppys-search";
 
 const router = Router();
@@ -28,7 +28,7 @@ const ALLOWED_ORIGIN = "https://chat.peppys.org";
 function setPeppysCors(res: Response) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Admin-Secret");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Admin-Secret, X-Admin-Csrf, X-Admin-Action-Assertion");
 }
 
 // ── CORS pre-flight for bookmarklet ─────────────────────────────────────────
@@ -43,7 +43,7 @@ router.options("/peppys/import", (_req, res) => {
 router.post("/peppys/import", async (req: Request, res: Response) => {
   setPeppysCors(res);
 
-  if (!requireAdmin(req, res)) return;
+  if (!await requireAdminForRequest(req, res)) return;
 
   const { id, title, url, content, categoryName, tags, postCount } = req.body as {
     id?: string;
@@ -99,7 +99,7 @@ router.post("/peppys/import", async (req: Request, res: Response) => {
 // ── GET /peppys/articles ─────────────────────────────────────────────────────
 
 router.get("/peppys/articles", async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  if (!await requireAdminForRequest(req, res)) return;
 
   const articles = await db
     .select({
@@ -121,7 +121,7 @@ router.get("/peppys/articles", async (req: Request, res: Response) => {
 // ── DELETE /peppys/articles/:id ──────────────────────────────────────────────
 
 router.delete("/peppys/articles/:id", async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  if (!await requireAdminForRequest(req, res)) return;
 
   const { id } = req.params as { id: string };
   await db.delete(peppysArticlesTable).where(eq(peppysArticlesTable.id, id));
@@ -131,7 +131,7 @@ router.delete("/peppys/articles/:id", async (req: Request, res: Response) => {
 // ── GET /peppys/bookmarklet — admin-only HTML setup page ─────────────────────
 
 router.get("/peppys/bookmarklet", async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  if (!await requireAdminForRequest(req, res)) return;
 
   const total = await countPeppysArticles();
 

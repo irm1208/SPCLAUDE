@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { accountsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
-import { requireAdmin } from "./require-admin";
+import { attachAdminSensitiveMutationAudit, requireAdminForRequest, requireAdminStepUp } from "./require-admin";
 import { wholesaleSharesTable } from "@workspace/db";
 import { writeLog } from "../lib/audit-log";
 
@@ -68,11 +68,17 @@ export async function requireWholesale(req: Request, res: Response, next: NextFu
  * creator identity after the admin secret is verified.
  */
 export async function requireWholesaleOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (typeof req.headers["x-admin-secret"] !== "string") {
+  const presentsAdminCredentials = typeof req.headers["x-admin-secret"] === "string" ||
+    typeof req.cookies?.["peps_admin_session"] === "string";
+  if (!presentsAdminCredentials) {
     await requireWholesale(req, res, next);
     return;
   }
-  if (!requireAdmin(req, res)) return;
+  if (!await requireAdminForRequest(req, res)) return;
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    attachAdminSensitiveMutationAudit(req, res, "reusable");
+    if (!requireAdminStepUp(req, res)) return;
+  }
 
   const shareId = typeof req.params.id === "string" ? req.params.id.trim() : "";
   if (!shareId) {

@@ -53,3 +53,4 @@ export * from "./peppys_articles";
 export * from "./organiser_todos";
 export * from "./email_templates";
 export * from "./payment_audit";
+export * from "./admin_security";

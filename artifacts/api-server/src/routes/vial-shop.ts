@@ -16,27 +16,11 @@ import { eq, desc, sql, inArray, and } from "drizzle-orm";
 import { isStablecoin, fetchFiatToUsd } from "../lib/crypto-pricing";
 import { verifyTransaction, effectiveStableCurrency } from "../lib/payment-verify";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import { requireAdmin } from "../middleware/require-admin";
 
 const router: IRouter = Router();
 
 // ─── Helpers ───────────────────────────────────────────────────
-function requireAdmin(req: any, res: any): boolean {
-  const secret = process.env["ADMIN_SECRET"];
-  const provided = req.headers["x-admin-secret"];
-  if (!secret) { res.status(503).json({ error: "Admin not configured" }); return false; }
-  try {
-    const bufA = Buffer.from(String(provided ?? ""));
-    const bufB = Buffer.from(secret);
-    if (bufA.length !== bufB.length) {
-      timingSafeEqual(bufA, Buffer.alloc(bufA.length));
-      res.status(401).json({ error: "Unauthorized" });
-      return false;
-    }
-    if (!timingSafeEqual(bufA, bufB)) { res.status(401).json({ error: "Unauthorized" }); return false; }
-  } catch { res.status(401).json({ error: "Unauthorized" }); return false; }
-  return true;
-}
-
 function hashPassword(password: string): string {
   const secret = process.env["ADMIN_SECRET"];
   if (!secret) throw new Error("ADMIN_SECRET is not set — cannot hash seller password");

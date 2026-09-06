@@ -1,8 +1,8 @@
-import { timingSafeEqual } from "crypto";
+import { timingSafeEqual, createHash, createHmac } from "crypto";
 import type { Request, Response } from "express";
 import { db } from "@workspace/db";
-import { auditLogsTable } from "@workspace/db";
-import { and, gte, eq, sql } from "drizzle-orm";
+import { auditLogsTable, adminSecuritySettingsTable, adminSessionsTable, adminUsersTable } from "@workspace/db";
+import { and, gte, eq, sql, gt, isNull } from "drizzle-orm";
 
 // ── In-memory fast path + DB-backed persistence ────────────────────────────────
 // In-memory map is fast for the common case.
@@ -17,6 +17,8 @@ interface AttemptRecord {
 const attempts = new Map<string, AttemptRecord>();
 const MAX_ATTEMPTS = 30;
 const BLOCK_MS = 15 * 60 * 1000; // 15 minutes
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const SESSION_ACTIVITY_WRITE_MS = 5 * 60 * 1000;
 
 function getIp(req: Request): string {
   return (req.ip ?? req.socket?.remoteAddress ?? "unknown") as string;
@@ -56,6 +58,13 @@ function syncBlockFromDB(ip: string, current: AttemptRecord): void {
 }
 
 export function requireAdmin(req: Request, res: Response): boolean {
+  // All /admin requests first pass through adminAuthorizationMiddleware.  A
+  // session is never treated as a fallback while the server setting is off.
+  if (res.locals["adminAuthorized"]) return true;
+  if (res.locals["adminModeEnabled"]) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
   const secret = process.env["ADMIN_SECRET"];
   if (!secret) {
     res.status(503).json({ error: "Admin not configured" });
@@ -120,7 +129,174 @@ export function requireAdmin(req: Request, res: Response): boolean {
   return true;
 }
 
+/**
+ * The single authorization boundary for ordinary admin routes.  In enabled
+ * mode it categorically ignores x-admin-secret; in disabled mode existing
+ * handlers retain their timing-safe shared-secret check.
+ */
+export async function adminAuthorizationMiddleware(req: Request, res: Response, next: () => void): Promise<void> {
+  const [settings] = await db.select().from(adminSecuritySettingsTable).where(eq(adminSecuritySettingsTable.id, 1));
+  const enabled = settings?.twoFactorEnabled === true;
+  res.locals["adminModeEnabled"] = enabled;
+  if (!enabled) { next(); return; }
+
+  const token = req.cookies?.["peps_admin_session"];
+  if (typeof token !== "string") { res.status(401).json({ error: "Unauthorized" }); return; }
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const [session] = await db.select().from(adminSessionsTable).where(and(
+    eq(adminSessionsTable.tokenHash, tokenHash),
+    isNull(adminSessionsTable.revokedAt),
+    gt(adminSessionsTable.idleExpiresAt, new Date()),
+    gt(adminSessionsTable.expiresAt, new Date()),
+  ));
+  if (!session) { res.status(401).json({ error: "admin_session_expired" }); return; }
+  const [user] = await db.select().from(adminUsersTable).where(and(eq(adminUsersTable.id, session.adminUserId), eq(adminUsersTable.active, true)));
+  if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    const origin = req.get("origin") ?? req.get("referer");
+    const host = req.get("host");
+    const csrf = req.get("x-admin-csrf");
+    let sameOrigin = false;
+    try { sameOrigin = !!origin && !!host && new URL(origin).host === host; } catch { /* rejected below */ }
+    if (!sameOrigin || typeof csrf !== "string" || !timingSafeHashEqual(csrf, session.csrfTokenHash)) {
+      res.status(403).json({ error: "CSRF validation failed" }); return;
+    }
+  }
+  res.locals["adminAuthorized"] = true;
+  res.locals["adminUser"] = user;
+  res.locals["adminSession"] = session;
+  res.locals["adminUsername"] = user.username;
+  if (Date.now() - new Date(session.lastUsedAt).getTime() >= SESSION_ACTIVITY_WRITE_MS) {
+    const now = new Date();
+    await db.update(adminSessionsTable).set({
+      lastUsedAt: now,
+      idleExpiresAt: new Date(Math.min(now.getTime() + SESSION_IDLE_MS, new Date(session.expiresAt).getTime())),
+    }).where(eq(adminSessionsTable.id, session.id));
+  }
+  const protectedMutation = isReusableStepUpRoute(req);
+  if (protectedMutation) attachAdminSensitiveMutationAudit(req, res, isSingleUseMutationPath(req.path) ? "single_use" : "reusable");
+  if (protectedMutation && !hasRecentStepUp(session.stepUpAt)) {
+    res.status(403).json({ error: "step_up_required" }); return;
+  }
+  next();
+}
+
+export function attachAdminSensitiveMutationAudit(req: Request, res: Response, stepUpMode: "reusable" | "single_use"): void {
+  if (res.locals["adminSensitiveAuditAttached"]) return;
+  res.locals["adminSensitiveAuditAttached"] = true;
+  const user = res.locals["adminUser"] as { id: string; username: string } | undefined;
+  const session = res.locals["adminSession"] as { stepUpAt?: Date | null } | undefined;
+  res.once("finish", () => {
+    const requestId = (req as Request & { correlationId?: string }).correlationId ?? null;
+    const fingerprintKey = process.env["SESSION_SECRET"] ?? process.env["ADMIN_SECRET"] ?? "peps-unconfigured-audit-key";
+    const requestFingerprint = createHmac("sha256", fingerprintKey).update(getIp(req)).digest("hex");
+    db.insert(auditLogsTable).values({
+      type: "change",
+      level: res.statusCode < 400 ? "info" : "warn",
+      action: "admin_sensitive_mutation",
+      message: `Admin sensitive mutation ${res.statusCode < 400 ? "completed" : "rejected"}`,
+      metadata: {
+        adminId: user?.id ?? null,
+        adminUsername: user?.username ?? null,
+        method: req.method,
+        path: req.route?.path ?? req.path,
+        target: safeMutationTarget(req),
+        authMode: res.locals["adminModeEnabled"] ? "admin_2fa_session" : "admin_secret",
+        stepUpMode,
+        stepUpTime: session?.stepUpAt?.toISOString() ?? null,
+        requestId,
+        requestFingerprint,
+        summary: res.locals["adminMutationSummary"] ?? null,
+        status: res.statusCode,
+        result: res.statusCode < 400 ? "success" : "rejected",
+      },
+      ip: getIp(req),
+    }).catch(() => {});
+  });
+}
+
+export function setAdminMutationSummary(res: Response, category: string, changedFields: string[], status?: string): void {
+  res.locals["adminMutationSummary"] = {
+    category,
+    changedFields: [...new Set(changedFields)].filter(field => /^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(field)),
+    status: status && /^[a-zA-Z0-9_-]{1,32}$/.test(status) ? status : undefined,
+  };
+}
+
+function safeMutationTarget(req: Request): string | null {
+  for (const key of ["id", "gbId", "orderId", "productId", "legId"]) {
+    const value = req.params?.[key];
+    if (typeof value === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(value)) return `${key}:${value}`;
+  }
+  return null;
+}
+
+function isSingleUseMutationPath(path: string): boolean {
+  return ["/wallet-address", "/chain-wallets", "/wallet-change-code", "/security/disable", "/security/recovery-codes"].includes(path);
+}
+
+/** Use on routes outside the `/admin` mount which offer an admin alternative. */
+export async function requireAdminForRequest(req: Request, res: Response): Promise<boolean> {
+  const [settings] = await db.select().from(adminSecuritySettingsTable).where(eq(adminSecuritySettingsTable.id, 1));
+  res.locals["adminModeEnabled"] = settings?.twoFactorEnabled === true;
+  if (!res.locals["adminModeEnabled"]) return requireAdmin(req, res);
+  let passed = false;
+  await adminAuthorizationMiddleware(req, res, () => { passed = true; });
+  if (passed && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    attachAdminSensitiveMutationAudit(req, res, "reusable");
+    if (!requireAdminStepUp(req, res)) return false;
+  }
+  return passed;
+}
+
+function timingSafeHashEqual(value: string, expectedHash: string): boolean {
+  const actualHash = createHash("sha256").update(value).digest("hex");
+  const a = Buffer.from(actualHash), b = Buffer.from(expectedHash);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Returns the authenticated admin username stamped by requireAdmin. */
 export function getAdminUsername(res: Response): string {
   return (res.locals?.["adminUsername"] as string | undefined) ?? "admin";
+}
+
+/** Enforces the reusable ten-minute, session-bound TOTP assertion. */
+export function requireAdminStepUp(_req: Request, res: Response): boolean {
+  if (!res.locals["adminModeEnabled"]) return true;
+  const stepUpAt = res.locals["adminSession"]?.stepUpAt as Date | null | undefined;
+  if (!hasRecentStepUp(stepUpAt)) {
+    res.status(403).json({ error: "step_up_required" });
+    return false;
+  }
+  return true;
+}
+
+function hasRecentStepUp(stepUpAt: Date | null | undefined): boolean {
+  return !!stepUpAt && Date.now() - new Date(stepUpAt).getTime() <= 10 * 60_000;
+}
+
+// Paths are evaluated after the /admin mount. This is a second, central guard
+// in addition to the explicit checks near FS3 business mutations, preventing
+// an alternate router mount from accidentally weakening the policy.
+function isReusableStepUpRoute(req: Request): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
+  const path = req.path;
+  // Default-deny policy: every ordinary admin mutation is sensitive in enabled
+  // mode. Explicit entries document especially high-impact families and keep
+  // route additions protected without relying on each handler remembering a
+  // local check. Auth routes are mounted before this boundary.
+  if (req.baseUrl.endsWith("/admin")) return true;
+  return path === "/fs3-costs" ||
+    /^\/fs3-costs\/[^/]+$/.test(path) ||
+    path === "/fs3-ping-address" ||
+    /^\/group-buys\/[^/]+\/fs3-submit$/.test(path) ||
+    path === "/payments-config" ||
+    path === "/anonpay-config" ||
+    path === "/wallet-address" ||
+    path === "/chain-wallets" ||
+    path === "/telegram-config" ||
+    path === "/shipping-config" ||
+    /^\/orders\/[^/]+\/payment-status$/.test(path) ||
+    (req.method === "DELETE" && /^\/group-buys(?:\/|$)/.test(path));
 }

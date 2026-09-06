@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { ordersTable, productsTable, qiyunleMappingsTable } from "@workspace/db";
 import { eq, asc, isNull, and, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { requireWholesale } from "../middleware/require-wholesale";
+import { requireAdmin } from "../middleware/require-admin";
 import {
   hasWholesaleBatchAccess,
   selectPreferredBatchCodes,
@@ -10,16 +11,6 @@ import {
 } from "../lib/wholesale-batch-access";
 
 const router: IRouter = Router();
-
-// ─── Auth helper ──────────────────────────────────────────────
-function requireAdmin(req: any, res: any): boolean {
-  const secret = req.headers["x-admin-secret"];
-  if (!secret || secret !== process.env["ADMIN_SECRET"]) {
-    res.status(401).json({ error: "Unauthorized" });
-    return false;
-  }
-  return true;
-}
 
 // GET /api/products - returns all active GLOBAL products (sourceGroupBuyId IS NULL)
 router.get("/products", async (_req, res): Promise<void> => {
