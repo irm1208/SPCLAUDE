@@ -15,6 +15,7 @@ import {
 import { eq, desc, sql, inArray, and } from "drizzle-orm";
 import { isStablecoin, fetchFiatToUsd } from "../lib/crypto-pricing";
 import { verifyTransaction, effectiveStableCurrency } from "../lib/payment-verify";
+import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 
 const router: IRouter = Router();
 
@@ -564,6 +565,15 @@ router.post("/vial/seller/signup", async (req, res): Promise<void> => {
   if (!name?.trim()) { res.status(400).json({ error: "Store name is required" }); return; }
   if (!contactTelegram?.trim()) { res.status(400).json({ error: "Telegram handle is required" }); return; }
   if (!password || String(password).length < 8) { res.status(400).json({ error: "Password must be at least 8 characters" }); return; }
+  if (isBlockedAutomatedRegistrationName(name) || isBlockedAutomatedRegistrationName(contactTelegram)) {
+    writeLog("security", "warn", "automated_signup_blocked",
+      "Automated seller registration blocked",
+      { registrationType: "seller" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Registration could not be completed" });
+    return;
+  }
   const existing = await db.select({ id: vialVendorsTable.id })
     .from(vialVendorsTable)
     .where(eq(vialVendorsTable.name, String(name).trim()));

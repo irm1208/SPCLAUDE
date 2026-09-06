@@ -13,6 +13,7 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
 import { normalizeTg } from "../lib/normalize";
 import { logCustomerActivity } from "../lib/activity-log";
+import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
@@ -151,6 +152,15 @@ router.post("/account/signup", async (req, res): Promise<void> => {
   const tg = normalizeTg(telegramUsername);
   if (!tg || tg.length < 2 || tg.length > MAX_TG_LENGTH) {
     res.status(400).json({ error: "Invalid Telegram username" });
+    return;
+  }
+  if (isBlockedAutomatedRegistrationName(tg)) {
+    writeLog("security", "warn", "automated_signup_blocked",
+      "Automated account registration blocked",
+      { registrationType: "customer" },
+      req.ip,
+    ).catch(() => {});
+    res.status(403).json({ error: "Registration could not be completed" });
     return;
   }
 

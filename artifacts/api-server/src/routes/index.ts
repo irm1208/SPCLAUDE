@@ -5,6 +5,7 @@ import {
   adminAuthLimiter,
   orderCreateLimiter,
   feedbackLimiter,
+  signupLimiter,
 } from "../middleware/rate-limits";
 import healthRouter from "./health";
 import productsRouter from "./products";
@@ -93,7 +94,8 @@ router.use("/admin", adminLimiter);
 router.use("/feedback", feedbackLimiter);
 
 // Account auth endpoints get strict rate limiting
-router.use("/account/signup", strictLimiter);
+router.use("/account/signup", signupLimiter);
+router.use("/vial/seller/signup", signupLimiter);
 router.use("/account/login", strictLimiter);
 router.use("/account/smart-login", strictLimiter);
 router.use("/account/order-login", strictLimiter);

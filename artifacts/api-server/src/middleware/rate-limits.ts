@@ -24,6 +24,16 @@ export const strictLimiter = rateLimit({
   message: { error: "Too many attempts — please try again later." },
 });
 
+// Account creation is intentionally much tighter than general auth. Replit's
+// proxy may aggregate users under one address, so this remains a shared ceiling.
+export const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many registration attempts — please try again later." },
+});
+
 export const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100000,
