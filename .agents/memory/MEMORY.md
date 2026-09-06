@@ -109,3 +109,4 @@
 - [Qiyunle turnover is product-level](qiyunle-product-turnover.md) — OOS/restock uses total stock across batches; any new batch can close the product’s open OOS period.
 - [BMURFS package integrity](bmurfs-package-integrity.md) — international delivery can mean handoff; historical pairing requires explicit roles; tracking edits must not roll back refreshed histories.
 - [Standalone crypto checkout boundary](standalone-crypto-checkout-boundary.md) — Open Crypto Checkout may live in main, but must remain independently distributable and uncoupled from Peps.
+- [Admin 2FA scope](admin-2fa-scope.md) — authenticator 2FA is admin-only; enabled uses admin sessions/step-up, disabled reverts to shared ADMIN_SECRET.
