@@ -1,47 +1,16 @@
 ---
-name: Production startup migrations
-description: How production schema changes work in this project, and the failure pattern when new DB columns are missing.
+name: Production schema ownership
+description: Keep PostgreSQL schema changes owned by Drizzle and Replit Publish, not application startup.
 ---
 
-# Production startup migrations
+# Production schema ownership
 
-## How it works
+New schema changes belong only in the Drizzle schema and flow to production through Replit Publish. Do not add new `CREATE TABLE`, `ALTER TABLE`, constraints, or indexes to the application startup path.
 
-Production runs `scripts/start-prod.sh` which does `exec node artifacts/api-server/dist/index.cjs`. There is NO `drizzle-kit push` — schema changes go via `runStartupMigrations()` in `artifacts/api-server/src/index.ts`, which runs `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements at every startup.
+**Why:** Dual-owning admin 2FA tables in Drizzle and startup DDL gave development and production identical foreign keys with different names. Publish then tried to drop and recreate four valid constraints and failed during promotion.
 
-Dev runs `tsx ./src/index.ts` which also calls `runStartupMigrations()`.
+**How to apply:** Define tables, indexes, constraints, and delete/update actions in the Drizzle schema; apply the normal development database push; inspect the publish schema diff; then publish. Treat existing startup DDL as legacy migration debt, not a pattern to copy.
 
-## The failure pattern
+Before approving a publish diff, investigate any unexpected drop or truncate. A safe additive change should not silently remove production structure or data.
 
-When a column is added to `lib/db/schema/*.ts` but no corresponding `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` is added to `runStartupMigrations()` in `index.ts`, the production DB never gets the column. The Drizzle `db.select()` then tries to SELECT that column and gets a "Failed query" 500.
-
-**Why:** The error is silently swallowed by bare `} catch {` blocks in many route handlers — the 500 shows in logs but no column name is visible.
-
-**`CREATE TABLE IF NOT EXISTS` trap:** Tables created inside `runStartupMigrations()` via `CREATE TABLE IF NOT EXISTS` do NOT get columns added to the schema *after* the table first existed — the CREATE is skipped on existing DBs, so later-added columns silently never appear. Every column added to a schema table after its initial CREATE needs its own `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` line. (Seen on `gb_testing_votes`: `peptide_names`, `test_selections`, `anonymous` were missing → testing endpoint 500.)
-
-## Replit Publish diff trap
-
-Replit's Publish flow diffs the DEV database against the PRODUCTION database. If a column was added to production via startup migration but the dev DB hasn't restarted yet (so it's behind), Replit generates a DROP COLUMN migration for production — which would delete real data.
-
-**How to apply:** Whenever the Publish flow shows a DROP COLUMN warning, do NOT approve it blindly. Check whether the column is legitimately removed from the Drizzle schema. If the schema still has the column, the dev DB is just behind — add the column to dev DB via `executeSql` then cancel and re-publish.
-
-## Never reconcile live payment balances at startup
-
-`amount_due` is authoritative transaction state. Startup migrations may add its column, but must never recalculate or clear existing values from `payment_usd_amount`, `grand_total`, vendor shipping, or primary payment status.
-
-**Why:** Primary-payment UI can legitimately retain or refresh a payment lock while a later add-on creates an independent outstanding balance. A repeated startup cleanup treated the enlarged total as already covered and erased an unpaid add-on on every restart.
-
-**How to apply:** Keep payment-state backfills versioned and one-time. Runtime startup may perform idempotent schema DDL, but settlement must happen only in explicit balance-confirmation or waiver flows.
-
-## Fix checklist for "Failed query" 500 on lab/blood endpoints
-
-1. Check deployment logs for `Failed query: select ... from "table_name"` 
-2. Find which columns in the SELECT are missing from the production DB (compare schema to `runStartupMigrations`)
-3. Add `await db.execute(sql\`ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <type>\`)` to `runStartupMigrations()` in `index.ts`
-4. Also run the same ALTER via `executeSql` against the dev DB to keep them in sync
-5. Redeploy — startup migration adds the columns on first boot
-
-## Missing packages discovered
-
-- `multer` — needed by `api-server/src/routes/lab-tests.ts`, must be in `@workspace/api-server` dependencies
-- `jspdf-autotable` — needed by `peps-anonymous/src/lib/generatePDF.ts`, must be in `@workspace/peps-anonymous` dependencies
+Never perform payment-balance reconciliation at startup. Schema rollout and settlement-state mutation are separate concerns.
