@@ -8,6 +8,7 @@ import {
   trackingRefreshCandidates,
   changedPackageMilestones,
 } from "./tracking-auto-refresh-model";
+import { TRACKING_STALE_AFTER_MS } from "./tracking-refresh-policy";
 
 const prior = {
   FIRST: { trackingNumber: "FIRST", status: "in_transit", events: [{ date: "old", status: "Old", location: "" }], lastChecked: "old" },
@@ -76,16 +77,51 @@ describe("direct wholesale parcel refresh model", () => {
       trackingPackages: [{ id: "pair", courier: "bmurfs", internationalTrackingNumber: "FIRST", localTrackingNumber: "SECOND" }],
       trackingDetails: { FIRST: { ...prior.FIRST, status: "delivered" }, SECOND: prior.SECOND },
     };
-    expect(trackingRefreshCandidates(source, Date.now(), 90 * 60000)).toEqual([{ trackingNumber: "SECOND", carrierCode: 0 }]);
-    expect(trackingRefreshCandidates({ ...source, trackingDetails: {} }, Date.now(), 90 * 60000)).toEqual([
+    expect(trackingRefreshCandidates(source, Date.now())).toEqual([{ trackingNumber: "SECOND", carrierCode: 0 }]);
+    expect(trackingRefreshCandidates({ ...source, trackingDetails: {} }, Date.now())).toEqual([
       { trackingNumber: "FIRST", carrierCode: 190843 }, { trackingNumber: "SECOND", carrierCode: 0 },
     ]);
   });
 
-  it("does not refetch a fresh leg just because the other is stale", () => {
+  it("does not refetch legs checked five hours ago but refreshes legs checked seven hours ago", () => {
     const now = Date.now();
-    const source = { trackingNumbers: ["FIRST", "SECOND"], trackingDetails: { FIRST: { ...prior.FIRST, lastChecked: new Date(now).toISOString() }, SECOND: prior.SECOND } };
-    expect(trackingRefreshCandidates(source, now, 90 * 60000)).toEqual([{ trackingNumber: "SECOND", carrierCode: 0 }]);
+    const source = { trackingNumbers: ["FIRST"], trackingDetails: { FIRST: { ...prior.FIRST, lastChecked: new Date(now - 5 * 60 * 60 * 1000).toISOString() } } };
+    expect(trackingRefreshCandidates(source, now)).toEqual([]);
+    expect(trackingRefreshCandidates({
+      ...source,
+      trackingDetails: { FIRST: { ...prior.FIRST, lastChecked: new Date(now - 7 * 60 * 60 * 1000).toISOString() } },
+    }, now)).toEqual([{ trackingNumber: "FIRST", carrierCode: 0 }]);
+  });
+
+  it.each(["delivered", "undeliverable", "expired"])("skips terminal %s legs", status => {
+    const source = {
+      trackingNumbers: ["FIRST"],
+      trackingDetails: { FIRST: { ...prior.FIRST, status, lastChecked: null } },
+    };
+    expect(trackingRefreshCandidates(source, Date.now())).toEqual([]);
+  });
+
+  it("selects only stale active legs using the six-hour policy threshold", () => {
+    const now = Date.UTC(2026, 0, 2, 12);
+    const source = {
+      trackingNumbers: ["FIRST"],
+      trackingDetails: {
+        FIRST: { ...prior.FIRST, lastChecked: new Date(now - 5 * 60 * 60 * 1000).toISOString() },
+      },
+    };
+    expect(trackingRefreshCandidates(source, now)).toEqual([]);
+    expect(trackingRefreshCandidates({
+      ...source,
+      trackingDetails: {
+        FIRST: { ...prior.FIRST, lastChecked: new Date(now - TRACKING_STALE_AFTER_MS - 1).toISOString() },
+      },
+    }, now)).toEqual([{ trackingNumber: "FIRST", carrierCode: 0 }]);
+    expect(trackingRefreshCandidates({
+      ...source,
+      trackingDetails: {
+        FIRST: { ...prior.FIRST, status: "delivered", lastChecked: null },
+      },
+    }, now)).toEqual([]);
   });
 
   it("alerts once for a package milestone, never for international handover", () => {

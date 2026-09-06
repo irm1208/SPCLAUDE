@@ -1,5 +1,6 @@
 import { getTrackingPackages, projectTrackingPackages, trackingCarrierCode, type TrackingSource } from "@workspace/shipping/tracking";
 import { isWholesaleTrackingAlertStatus } from "./wholesale-tracking";
+import { isTrackingRefreshDue, TERMINAL_TRACKING_STATUSES } from "./tracking-refresh-policy";
 
 export type WholesaleParcelDetail = {
   trackingNumber: string;
@@ -10,10 +11,8 @@ export type WholesaleParcelDetail = {
   lastChecked: string | null;
 };
 
-const TERMINAL_STATUSES = new Set(["delivered", "undeliverable", "expired"]);
-
 export function parcelNeedsRefresh(parcel: WholesaleParcelDetail | undefined): boolean {
-  return !TERMINAL_STATUSES.has(parcel?.status ?? "");
+  return !TERMINAL_TRACKING_STATUSES.has(parcel?.status ?? "");
 }
 
 export function shouldSkipWholesaleRefresh(
@@ -88,16 +87,14 @@ export function selectWholesaleCompatibilityFields(
 }
 
 /** Evaluate staleness per leg, never from the international compatibility timestamp. */
-export function trackingRefreshCandidates(source: TrackingSource, now: number, staleAfterMs: number) {
+export function trackingRefreshCandidates(source: TrackingSource, now: number) {
   const packages = getTrackingPackages(source);
   const views = projectTrackingPackages(source);
   return packages.flatMap((pkg, index) => {
     const view = views[index];
     return (["international", "local"] as const).flatMap(role => {
       const leg = view[role];
-      if (!leg || TERMINAL_STATUSES.has(leg.status ?? "")) return [];
-      const checked = leg.lastChecked ? Date.parse(leg.lastChecked) : NaN;
-      if (Number.isFinite(checked) && now - checked < staleAfterMs) return [];
+      if (!leg || !isTrackingRefreshDue(leg.lastChecked, leg.status, now)) return [];
       return [{ trackingNumber: leg.trackingNumber, carrierCode: trackingCarrierCode(pkg, role) ?? 0 }];
     });
   });

@@ -31,6 +31,7 @@ import {
 import { writeLog } from "../lib/audit-log";
 import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
+import { nullableTrackingCarrierMatch } from "../lib/tracking-carrier-cas";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
@@ -1498,7 +1499,8 @@ router.put("/wholesale-shares/:id/members/:username/tracking", requireWholesale,
     if (result) {
       // Conditional on the number we just saved still being current — if a newer
       // tracking update raced ahead of this async fetch, this stale result must not
-      // overwrite it. Keying on the tracking number is enough (it changes per save).
+      // overwrite it. Keying on both number and carrier prevents stale carrier-specific
+      // provider data from replacing a newer carrier change for the same number.
       await db.update(wholesaleShareMembersTable)
         .set({
           onwardTrackingStatus: result.status,
@@ -1509,6 +1511,7 @@ router.put("/wholesale-shares/:id/members/:username/tracking", requireWholesale,
         .where(and(
           eq(wholesaleShareMembersTable.id, target.id),
           eq(wholesaleShareMembersTable.onwardTrackingNumber, trackingNumber),
+          nullableTrackingCarrierMatch(wholesaleShareMembersTable.onwardCarrier, carrier || null),
         ));
     }
   } catch (err) {

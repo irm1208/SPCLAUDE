@@ -5,7 +5,13 @@ import { db } from "@workspace/db";
 import { shipmentsTable, siteConfigTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import type { MaskedEvent } from "@workspace/db";
+import { createStandaloneTrack17V22Client } from "../lib/standalone-track17-v22";
+import { refreshStandaloneShipmentIfAllowed } from "../lib/standalone-shipment-refresh";
+import { unchangedStandaloneShipmentIdentity } from "../lib/standalone-shipment-cas";
+import {
+  createManualShipmentRefreshHandler,
+  createPublicShipmentsHandler,
+} from "../lib/standalone-shipment-handlers";
 
 const router = Router();
 
@@ -35,140 +41,33 @@ async function getTrack17Key(): Promise<string | null> {
 // ─── 17track API helpers ──────────────────────────────────────
 const TRACK17_BASE = "https://api.17track.net/track/v2.2";
 
-async function track17Register(trackingNumber: string): Promise<void> {
-  const key = await getTrack17Key();
-  if (!key) return;
-  try {
-    await fetch(`${TRACK17_BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify({ data: [{ number: trackingNumber, carrier: 0 }] }),
-    });
-  } catch { /* silent */ }
-}
-
-async function track17GetInfo(trackingNumber: string): Promise<any | null> {
-  const key = await getTrack17Key();
-  if (!key) return null;
-  try {
-    const res = await fetch(`${TRACK17_BASE}/gettrackinfo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify({ data: [{ number: trackingNumber, carrier: 0 }] }),
-    });
-    const json = await res.json() as { code?: number; data?: { accepted?: any[] } };
-    if (json?.code !== 0) return null;
-    return json?.data?.accepted?.[0] ?? null;
-  } catch { return null; }
-}
-
-// ─── Masking helpers ──────────────────────────────────────────
-const COUNTRY_MAP: [string, string][] = [
-  ["hong kong", "China"], ["china", "China"], [", cn", "China"],
-  ["united kingdom", "United Kingdom"], ["england", "United Kingdom"],
-  ["scotland", "United Kingdom"], [", uk", "United Kingdom"],
-  ["united states", "United States"], [", usa", "United States"], [", us", "United States"],
-  ["germany", "Germany"], ["france", "France"], ["netherlands", "Netherlands"],
-  ["belgium", "Belgium"], ["poland", "Poland"], ["sweden", "Sweden"],
-  ["norway", "Norway"], ["denmark", "Denmark"], ["finland", "Finland"],
-  ["spain", "Spain"], ["italy", "Italy"], ["portugal", "Portugal"],
-  ["switzerland", "Switzerland"], ["austria", "Austria"],
-  ["australia", "Australia"], ["canada", "Canada"],
-  ["japan", "Japan"], ["south korea", "South Korea"], ["singapore", "Singapore"],
-  ["taiwan", "China"], ["thailand", "Thailand"], ["india", "India"],
-];
-
-function maskLocation(location: string): string {
-  if (!location) return "";
-  const lower = location.toLowerCase();
-  for (const [key, label] of COUNTRY_MAP) {
-    if (lower.includes(key)) return label;
-  }
-  return "";
-}
-
-function maskStatus(status: string): string {
-  if (!status) return "";
-  return status
-    .replace(/signed\s+(for\s+)?by[:\s]+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]+)*/g, "Signed for")
-    .replace(/received\s+by[:\s]+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]+)*/gi, "Received")
-    .replace(/\d{1,5}\s+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]*)*(St|Ave|Blvd|Rd|Dr|Ln|Ct|Pl|Way|Street|Avenue|Road)/gi, "")
-    .trim();
-}
-
-const STATUS_CODE_MAP: Record<number, string> = {
-  0: "pending", 10: "pending",
-  20: "in_transit",
-  30: "out_for_delivery",
-  35: "attempted",
-  40: "delivered",
-  50: "exception",
-  60: "expired",
-};
-
-function parseTrack17Response(accepted: any): { status: string; statusCode: number; events: MaskedEvent[] } {
-  const track = accepted?.track ?? {};
-  const z2: number = track.z2 ?? 0;
-  const status = STATUS_CODE_MAP[z2] ?? "pending";
-
-  const rawEvents: any[] = track.z1 ?? [];
-  const latest = track.z3 ?? null;
-
-  const allRaw = latest ? [latest, ...rawEvents] : rawEvents;
-
-  const events: MaskedEvent[] = allRaw
-    .map((e: any) => ({
-      date: e.a ?? "",
-      status: maskStatus(e.z ?? ""),
-      location: maskLocation(e.l ?? ""),
-    }))
-    .filter(e => e.status);
-
-  return { status, statusCode: z2, events };
-}
+const standaloneTrack17Client = createStandaloneTrack17V22Client({ getApiKey: getTrack17Key });
 
 // ─── Fetch & cache a single shipment ─────────────────────────
-async function refreshShipment(shipment: typeof shipmentsTable.$inferSelect): Promise<void> {
-  await track17Register(shipment.trackingNumber);
-  const accepted = await track17GetInfo(shipment.trackingNumber);
-  if (!accepted) return;
-
-  const { status, statusCode, events } = parseTrack17Response(accepted);
-
-  await db.update(shipmentsTable)
-    .set({
-      status,
-      statusCode,
-      cachedEvents: JSON.stringify(events),
-      lastChecked: new Date(),
-    })
-    .where(eq(shipmentsTable.id, shipment.id));
+async function refreshShipment(shipment: typeof shipmentsTable.$inferSelect) {
+  return refreshStandaloneShipmentIfAllowed({
+    shipment,
+    client: standaloneTrack17Client,
+    persist: async (identity, update) => {
+      const changed = await db.update(shipmentsTable)
+        .set(update)
+        .where(unchangedStandaloneShipmentIdentity(identity))
+        .returning({ id: shipmentsTable.id });
+      return changed.length > 0;
+    },
+  });
 }
 
 // ─── Public: masked shipment list ────────────────────────────
-router.get("/shipments", async (_req, res): Promise<void> => {
-  try {
-    const rows = await db
+const publicShipmentsHandler = createPublicShipmentsHandler({
+  loadShipments: () => db
       .select()
       .from(shipmentsTable)
       .where(eq(shipmentsTable.active, true))
-      .orderBy(desc(shipmentsTable.createdAt));
-
-    const masked = rows.map(r => ({
-      id: r.id,
-      label: r.label,
-      carrier: r.carrier,
-      status: r.status,
-      origin: r.origin,
-      estimatedDelivery: r.estimatedDelivery,
-      events: (() => { try { return JSON.parse(r.cachedEvents ?? "[]"); } catch { return []; } })(),
-      lastChecked: r.lastChecked,
-      createdAt: r.createdAt,
-    }));
-
-    res.json(masked);
-  } catch { res.status(500).json({ error: "Failed to load shipments" }); }
+      .orderBy(desc(shipmentsTable.createdAt)),
+  provider: standaloneTrack17Client,
 });
+router.get("/shipments", publicShipmentsHandler);
 
 // ─── Admin: list all (with tracking numbers) ─────────────────
 router.get("/admin/shipments", async (req: any, res: any): Promise<void> => {
@@ -242,22 +141,18 @@ router.delete("/admin/shipments/:id", async (req: any, res: any): Promise<void> 
 });
 
 // ─── Admin: force-refresh from 17track ───────────────────────
+const manualShipmentRefreshHandler = createManualShipmentRefreshHandler({
+  loadShipment: async id => {
+    const [shipment] = await db.select().from(shipmentsTable).where(eq(shipmentsTable.id, id));
+    return shipment;
+  },
+  hasApiKey: async () => !!(await getTrack17Key()),
+  refreshShipment,
+});
+
 router.post("/admin/shipments/:id/refresh", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { id } = req.params;
-  try {
-    const [shipment] = await db.select().from(shipmentsTable).where(eq(shipmentsTable.id, id));
-    if (!shipment) { res.status(404).json({ error: "Not found" }); return; }
-
-    if (!(await getTrack17Key())) {
-      res.status(422).json({ error: "17track API key not configured" });
-      return;
-    }
-
-    await refreshShipment(shipment);
-    const [updated] = await db.select().from(shipmentsTable).where(eq(shipmentsTable.id, id));
-    res.json(updated);
-  } catch { res.status(500).json({ error: "Failed to refresh" }); }
+  await manualShipmentRefreshHandler(req, res);
 });
 
 // ─── Admin: get 17track config status ─────────────────────────

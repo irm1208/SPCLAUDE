@@ -2,7 +2,7 @@
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
  */
-import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, siteConfigTable, wholesaleShareMembersTable, wholesaleSharesTable, ordersTable } from "@workspace/db";
+import { db, gbParcelsTable, gbParcelOptinsTable, accountsTable, groupBuysTable, trackingLinksTable, wholesaleShareMembersTable, wholesaleSharesTable, ordersTable } from "@workspace/db";
 import { eq, and, ne, or, isNull, lt, inArray, sql } from "drizzle-orm";
 import { sendTelegramMessageFull, getTemplate, renderTemplate, notifyUser } from "./telegram";
 import type { TrackingPackage, TrackingEvent } from "@workspace/db";
@@ -13,69 +13,23 @@ import { classifyTrackingStatus, hasWholesaleTrackingOptIn, shouldApplyWholesale
 import { mergeWholesaleParcelResults, normalizeWholesaleTrackingDetails, selectWholesaleCompatibilityFields, trackingRefreshCandidates, changedPackageMilestones } from "./tracking-auto-refresh-model";
 import { canonicalTrackingNumbers, getTrackingPackages, projectTrackingPackages } from "@workspace/shipping/tracking";
 import { unchangedTrackingCache } from "./tracking-cache-guard";
-
-const TRACK17_BASE = "https://api.17track.net/track/v2.4";
-
-// How often to run the auto-refresh job (ms)
-const REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-// Parcels/packages not checked within this window are considered stale
-const STALE_AFTER_MS = 90 * 60 * 1000; // 90 minutes
+import {
+  isManualTrackingRefreshAllowed,
+  isTrackingRefreshDue,
+  TRACKING_SCHEDULER_INTERVAL_MS,
+  TRACKING_STALE_AFTER_MS,
+} from "./tracking-refresh-policy";
+import { getTrack17Key, track17Client } from "./track17-service";
+import { nullableTrackingCarrierMatch, unchangedWholesaleOnwardIdentity } from "./tracking-carrier-cas";
+import {
+  unchangedGbParcelTrackingIdentity,
+  unchangedTrackingLinkPackages,
+} from "./manual-tracking-route-model";
 
 // Delay between individual 17track API calls to avoid rate limiting
 const API_CALL_DELAY_MS = 1200;
 
-// Terminal statuses — skip these
-const TERMINAL_STATUSES = new Set(["delivered", "undeliverable", "expired"]);
 const trackingHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-async function getTrack17Key(): Promise<string | null> {
-  try {
-    const [row] = await db
-      .select()
-      .from(siteConfigTable)
-      .where(eq(siteConfigTable.key, "track17ApiKey"));
-    return row?.value || process.env.TRACK17_API_KEY || null;
-  } catch {
-    return process.env.TRACK17_API_KEY || null;
-  }
-}
-
-const FETCH_TIMEOUT_MS = 10_000;
-
-function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-async function track17Register(trackingNumber: string, carrierCode = 0): Promise<boolean> {
-  const key = await getTrack17Key();
-  if (!key) return false;
-  try {
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    const res = await fetchWithTimeout(`${TRACK17_BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const json = await res.json() as {
-      data?: {
-        accepted?: unknown[];
-        rejected?: Array<{ error?: { code?: number } }>;
-      };
-    };
-    const accepted = json?.data?.accepted ?? [];
-    if (accepted.length > 0) return true;
-    const rejected = json?.data?.rejected ?? [];
-    // -18019901 = already registered — treat as success
-    return rejected.every(r => r.error?.code === -18019901) && rejected.length > 0;
-  } catch {
-    return false;
-  }
-}
 
 type V24Accepted = {
   track_info?: {
@@ -138,24 +92,16 @@ function maskStatus(status: string): string {
     .trim();
 }
 
-async function track17GetInfo(trackingNumber: string, carrierCode = 0): Promise<unknown | null> {
-  const key = await getTrack17Key();
-  if (!key) return null;
-  try {
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    const res = await fetchWithTimeout(`${TRACK17_BASE}/gettrackinfo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const json = await res.json() as { data?: { accepted?: unknown[] } };
-    const accepted = json?.data?.accepted ?? [];
-    return accepted.length > 0 ? accepted[0] : null;
-  } catch {
-    return null;
-  }
+async function getTrackingInfoWithCarrierFallback(
+  trackingNumber: string,
+  carrierCode = 0,
+): Promise<{ accepted: unknown | null; carrierCode: number }> {
+  const accepted = await track17Client.getTrackingInfo(trackingNumber, carrierCode);
+  if (accepted || carrierCode <= 0) return { accepted, carrierCode };
+  return {
+    accepted: await track17Client.getTrackingInfo(trackingNumber, 0),
+    carrierCode: 0,
+  };
 }
 
 function parseTrack17Response(accepted: unknown, classifyWholesaleStatus = false): {
@@ -266,13 +212,8 @@ async function fireParcelStatusNotifications(
   console.log(`[tracking-auto-refresh] Sent status "${status}" notifications for parcel ${parcelId} to ${optins.length} member(s)`);
 }
 
-function isStale(lastChecked: Date | null | undefined): boolean {
-  if (!lastChecked) return true;
-  return Date.now() - lastChecked.getTime() > STALE_AFTER_MS;
-}
-
 async function refreshGbParcels(): Promise<number> {
-  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+  const staleThreshold = new Date(Date.now() - TRACKING_STALE_AFTER_MS);
 
   const parcels = await db
     .select()
@@ -308,27 +249,24 @@ async function refreshGbParcels(): Promise<number> {
       if (!parcel.trackingNumber?.trim()) continue;
 
       const carrierCode = resolveCarrierCode(parcel.carrier ?? "");
-      let registered = await track17Register(parcel.trackingNumber, carrierCode);
-      // Fall back to auto-detect if specific carrier code failed
-      const effectiveCode = (!registered && carrierCode > 0)
-        ? (await track17Register(parcel.trackingNumber, 0) ? 0 : carrierCode)
-        : carrierCode;
-      if (!registered) registered = effectiveCode === 0;
-      await sleep(500);
-      const accepted = await track17GetInfo(parcel.trackingNumber, effectiveCode);
+      const { accepted, carrierCode: effectiveCode } = await getTrackingInfoWithCarrierFallback(parcel.trackingNumber, carrierCode);
 
       if (!accepted) {
-        await db
+        const saved = await db
           .update(gbParcelsTable)
           .set({ lastChecked: new Date() })
-          .where(eq(gbParcelsTable.id, parcel.id));
+          .where(unchangedGbParcelTrackingIdentity(parcel))
+          .returning({ id: gbParcelsTable.id });
+        if (!saved.length) continue;
       } else {
         const { status, statusCode, events } = parseTrack17Response(accepted);
         const oldStatus = parcel.status;
-        await db
+        const saved = await db
           .update(gbParcelsTable)
           .set({ status, statusCode, cachedEvents: events, lastChecked: new Date() })
-          .where(eq(gbParcelsTable.id, parcel.id));
+          .where(unchangedGbParcelTrackingIdentity(parcel))
+          .returning({ id: gbParcelsTable.id });
+        if (!saved.length) continue;
         refreshed++;
         console.log(`[tracking-auto-refresh] Parcel ${parcel.id} (${parcel.trackingNumber}) carrier=${parcel.carrier}(${effectiveCode}): ${status}`);
 
@@ -358,20 +296,17 @@ async function refreshTrackingLinks(): Promise<number> {
     for (const link of links) {
       const packages = (link.packages as TrackingPackage[]) ?? [];
       let changed = false;
+      let successfulRefreshes = 0;
+      const successfulLogs: string[] = [];
       const updatedPackages = [...packages];
 
       for (let i = 0; i < updatedPackages.length; i++) {
         const pkg = updatedPackages[i];
         if (!pkg.trackingNumber?.trim()) continue;
-        if (TERMINAL_STATUSES.has(pkg.status ?? "")) continue;
-
-        const lastChecked = pkg.lastChecked ? new Date(pkg.lastChecked as string) : null;
-        if (!isStale(lastChecked)) continue;
+        if (!isTrackingRefreshDue(pkg.lastChecked, pkg.status)) continue;
 
         try {
-          await track17Register(pkg.trackingNumber);
-          await sleep(500);
-          const accepted = await track17GetInfo(pkg.trackingNumber);
+          const accepted = await track17Client.getTrackingInfo(pkg.trackingNumber);
 
           if (accepted) {
             const { status, statusCode, events } = parseTrack17Response(accepted);
@@ -382,9 +317,9 @@ async function refreshTrackingLinks(): Promise<number> {
               cachedEvents: events as TrackingEvent[],
               lastChecked: new Date().toISOString(),
             };
-            refreshed++;
+            successfulRefreshes++;
+            successfulLogs.push(`[tracking-auto-refresh] Package ${pkg.id} (${pkg.trackingNumber}): ${status}`);
             changed = true;
-            console.log(`[tracking-auto-refresh] Package ${pkg.id} (${pkg.trackingNumber}): ${status}`);
           } else {
             updatedPackages[i] = { ...pkg, lastChecked: new Date().toISOString() };
             changed = true;
@@ -397,10 +332,14 @@ async function refreshTrackingLinks(): Promise<number> {
       }
 
       if (changed) {
-        await db
+        const saved = await db
           .update(trackingLinksTable)
           .set({ packages: updatedPackages })
-          .where(eq(trackingLinksTable.id, link.id));
+          .where(unchangedTrackingLinkPackages(link.id, packages))
+          .returning({ id: trackingLinksTable.id });
+        if (!saved.length) continue;
+        refreshed += successfulRefreshes;
+        successfulLogs.forEach(message => console.log(message));
       }
     }
   } catch (err) {
@@ -417,7 +356,7 @@ async function refreshTrackingLinks(): Promise<number> {
  * Sends a Telegram notification to the customer when the status changes.
  */
 async function refreshIndividualOrders(): Promise<number> {
-  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+  const staleThreshold = new Date(Date.now() - TRACKING_STALE_AFTER_MS);
 
   const orders = await db
     .select({
@@ -464,7 +403,7 @@ async function refreshIndividualOrders(): Promise<number> {
             inArray(ordersTable.trackingStatus, ["redirected", "seized", "return_to_sender"]),
           ),
         ),
-        // Stale (never checked or checked >90 min ago)
+        // Stale (never checked or checked more than six hours ago)
         or(
            eq(ordersTable.orderType, "wholesale"),
            sql`${ordersTable.trackingPackages} @> '[{"courier":"bmurfs"}]'::jsonb`,
@@ -492,9 +431,7 @@ async function refreshIndividualOrders(): Promise<number> {
        // Non-wholesale orders retain their historic single-parcel refresh behavior.
         if (!isDirectWholesale && !hasBmurfs) {
          const num = nums[0];
-         await track17Register(num, 0);
-         await sleep(500);
-         const accepted = await track17GetInfo(num, 0);
+         const accepted = await track17Client.getTrackingInfo(num, 0);
          if (!accepted) {
            await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(unchangedTrackingCache(order));
            continue;
@@ -515,14 +452,12 @@ async function refreshIndividualOrders(): Promise<number> {
        }
 
        const details = normalizeWholesaleTrackingDetails(order.trackingDetails);
-       const candidates = trackingRefreshCandidates(order, Date.now(), STALE_AFTER_MS);
+       const candidates = trackingRefreshCandidates(order, Date.now());
        if (!candidates.length) continue;
        const successful = {} as typeof details;
        for (const { trackingNumber: num, carrierCode } of candidates) {
          try {
-           await track17Register(num, carrierCode);
-           await sleep(500);
-           const accepted = await track17GetInfo(num, carrierCode);
+           const { accepted } = await getTrackingInfoWithCarrierFallback(num, carrierCode);
            if (!accepted) continue; // Keep prior data when a lookup is unavailable.
            const parsed = parseTrack17Response(accepted, isDirectWholesale);
            successful[num] = {
@@ -619,10 +554,7 @@ export async function fetchTrackingEventsForNumber(trackingNumber: string): Prom
   status: string;
   events: { date: string; status: string; location: string }[];
 }> {
-  let registered = await track17Register(trackingNumber, 0);
-  if (!registered) registered = await track17Register(trackingNumber, 0);
-  await sleep(600);
-  const accepted = await track17GetInfo(trackingNumber, 0);
+  const accepted = await track17Client.getTrackingInfo(trackingNumber, 0);
   if (!accepted) return { status: "pending", events: [] };
   const { status, events } = parseTrack17Response(accepted);
   return { status, events };
@@ -641,14 +573,7 @@ export async function fetchOnwardTracking(trackingNumber: string, carrier: strin
   const tn = trackingNumber.trim();
   if (!tn) return null;
   const carrierCode = resolveCarrierCode(carrier ?? "");
-  let registered = await track17Register(tn, carrierCode);
-  // Fall back to auto-detect if the specific carrier code was rejected.
-  const effectiveCode = (!registered && carrierCode > 0)
-    ? (await track17Register(tn, 0) ? 0 : carrierCode)
-    : carrierCode;
-  if (!registered) registered = effectiveCode === 0;
-  await sleep(500);
-  const accepted = await track17GetInfo(tn, effectiveCode);
+  const { accepted } = await getTrackingInfoWithCarrierFallback(tn, carrierCode);
   if (!accepted) return null;
   return parseTrack17Response(accepted);
 }
@@ -659,7 +584,7 @@ export async function fetchOnwardTracking(trackingNumber: string, carrier: strin
  * members of submitted shares that carry a tracking number.
  */
 async function refreshWholesaleOnwardParcels(): Promise<number> {
-  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+  const staleThreshold = new Date(Date.now() - TRACKING_STALE_AFTER_MS);
 
   const members = await db
     .select()
@@ -696,18 +621,30 @@ async function refreshWholesaleOnwardParcels(): Promise<number> {
     try {
       const result = await fetchOnwardTracking(tn, m.onwardCarrier);
       if (!result) {
-        await db.update(wholesaleShareMembersTable)
+        const saved = await db.update(wholesaleShareMembersTable)
           .set({ onwardTrackingChecked: new Date() })
-          .where(eq(wholesaleShareMembersTable.id, m.id));
+          .where(unchangedWholesaleOnwardIdentity({
+            id: m.id,
+            trackingNumber: m.onwardTrackingNumber,
+            carrier: m.onwardCarrier,
+          }))
+          .returning({ id: wholesaleShareMembersTable.id });
+        if (!saved.length) continue;
       } else {
-        await db.update(wholesaleShareMembersTable)
+        const saved = await db.update(wholesaleShareMembersTable)
           .set({
             onwardTrackingStatus: result.status,
             onwardTrackingStatusCode: result.statusCode,
             onwardTrackingEvents: result.events,
             onwardTrackingChecked: new Date(),
           })
-          .where(eq(wholesaleShareMembersTable.id, m.id));
+          .where(unchangedWholesaleOnwardIdentity({
+            id: m.id,
+            trackingNumber: m.onwardTrackingNumber,
+            carrier: m.onwardCarrier,
+          }))
+          .returning({ id: wholesaleShareMembersTable.id });
+        if (!saved.length) continue;
         refreshed++;
       }
     } catch (err) {
@@ -803,6 +740,10 @@ async function reconcileAndFetchMainParcelOnce(
   const oldKeyMatch = share.mainTrackingNumber == null
     ? isNull(wholesaleSharesTable.mainTrackingNumber)
     : eq(wholesaleSharesTable.mainTrackingNumber, share.mainTrackingNumber);
+  const oldCarrierMatch = nullableTrackingCarrierMatch(
+    wholesaleSharesTable.mainTrackingCarrier,
+    share.mainTrackingCarrier,
+  );
 
   // Number cleared/absent → drop the cached feed so a stale timeline never shows.
   if (!canonical) {
@@ -816,20 +757,22 @@ async function reconcileAndFetchMainParcelOnce(
           mainTrackingEvents: [],
           mainTrackingChecked: null,
         })
-        .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch));
+        .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch, oldCarrierMatch));
     }
     return { updated: false, fetchedNumber: null };
   }
 
   // Already fetched this exact number this cycle and it hasn't changed → skip a
   // redundant 17track call (collapses an admin burst into a single fetch).
-  if (canonical.number === alreadyFetchedNumber && share.mainTrackingNumber === canonical.number) {
+  if (canonical.number === alreadyFetchedNumber
+    && share.mainTrackingNumber === canonical.number
+    && share.mainTrackingCarrier === canonical.carrier) {
     return { updated: false, fetchedNumber: alreadyFetchedNumber };
   }
 
   // Admin changed the number → reset the cache to the new key BEFORE fetching, guarded
   // on the old key. If no row matched, another writer already reconciled → bail.
-  if (share.mainTrackingNumber !== canonical.number) {
+  if (share.mainTrackingNumber !== canonical.number || share.mainTrackingCarrier !== canonical.carrier) {
     const reset = await db.update(wholesaleSharesTable)
       .set({
         mainTrackingNumber: canonical.number,
@@ -839,7 +782,7 @@ async function reconcileAndFetchMainParcelOnce(
         mainTrackingEvents: [],
         mainTrackingChecked: null,
       })
-      .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch))
+      .where(and(eq(wholesaleSharesTable.id, shareId), oldKeyMatch, oldCarrierMatch))
       .returning({ id: wholesaleSharesTable.id });
     if (reset.length === 0) return { updated: false, fetchedNumber: alreadyFetchedNumber };
   }
@@ -849,7 +792,11 @@ async function reconcileAndFetchMainParcelOnce(
     // Couldn't fetch — just stamp checked (guarded on the cache key).
     await db.update(wholesaleSharesTable)
       .set({ mainTrackingChecked: new Date() })
-      .where(and(eq(wholesaleSharesTable.id, shareId), eq(wholesaleSharesTable.mainTrackingNumber, canonical.number)));
+      .where(and(
+        eq(wholesaleSharesTable.id, shareId),
+        eq(wholesaleSharesTable.mainTrackingNumber, canonical.number),
+        nullableTrackingCarrierMatch(wholesaleSharesTable.mainTrackingCarrier, canonical.carrier),
+      ));
     return { updated: false, fetchedNumber: canonical.number };
   }
 
@@ -861,7 +808,11 @@ async function reconcileAndFetchMainParcelOnce(
       mainTrackingCarrier: canonical.carrier,
       mainTrackingChecked: new Date(),
     })
-    .where(and(eq(wholesaleSharesTable.id, shareId), eq(wholesaleSharesTable.mainTrackingNumber, canonical.number)))
+    .where(and(
+      eq(wholesaleSharesTable.id, shareId),
+      eq(wholesaleSharesTable.mainTrackingNumber, canonical.number),
+      nullableTrackingCarrierMatch(wholesaleSharesTable.mainTrackingCarrier, canonical.carrier),
+    ))
     .returning({ id: wholesaleSharesTable.id });
   return { updated: write.length > 0, fetchedNumber: canonical.number };
 }
@@ -873,7 +824,7 @@ async function reconcileAndFetchMainParcelOnce(
  * submitted (everyone paid), so we only scan submitted shares.
  */
 async function refreshWholesaleMainParcels(): Promise<number> {
-  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS);
+  const staleThreshold = new Date(Date.now() - TRACKING_STALE_AFTER_MS);
 
   const shares = await db
     .selectDistinct({ id: wholesaleSharesTable.id })
@@ -935,24 +886,29 @@ async function refreshWholesaleMainParcels(): Promise<number> {
 export async function refreshSingleGbParcel(parcelId: string): Promise<{ status: string; updated: boolean }> {
   const [parcel] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
   if (!parcel || !parcel.trackingNumber?.trim()) return { status: parcel?.status ?? "unknown", updated: false };
+  if (!isManualTrackingRefreshAllowed(parcel.lastChecked, parcel.status)) {
+    return { status: parcel.status, updated: false };
+  }
 
   const carrierCode = resolveCarrierCode(parcel.carrier ?? "");
-  let registered = await track17Register(parcel.trackingNumber, carrierCode);
-  // Fall back to auto-detect if specific carrier code failed
-  const effectiveCode = (!registered && carrierCode > 0)
-    ? (await track17Register(parcel.trackingNumber, 0) ? 0 : carrierCode)
-    : carrierCode;
-  await sleep(500);
-  const accepted = await track17GetInfo(parcel.trackingNumber, effectiveCode);
+  const { accepted } = await getTrackingInfoWithCarrierFallback(parcel.trackingNumber, carrierCode);
 
   if (!accepted) {
-    await db.update(gbParcelsTable).set({ lastChecked: new Date() }).where(eq(gbParcelsTable.id, parcelId));
+    const saved = await db.update(gbParcelsTable)
+      .set({ lastChecked: new Date() })
+      .where(unchangedGbParcelTrackingIdentity(parcel))
+      .returning({ id: gbParcelsTable.id });
+    if (!saved.length) return { status: parcel.status, updated: false };
     return { status: parcel.status, updated: false };
   }
 
   const { status, statusCode, events } = parseTrack17Response(accepted);
   const oldStatus = parcel.status;
-  await db.update(gbParcelsTable).set({ status, statusCode, cachedEvents: events, lastChecked: new Date() }).where(eq(gbParcelsTable.id, parcelId));
+  const saved = await db.update(gbParcelsTable)
+    .set({ status, statusCode, cachedEvents: events, lastChecked: new Date() })
+    .where(unchangedGbParcelTrackingIdentity(parcel))
+    .returning({ id: gbParcelsTable.id });
+  if (!saved.length) return { status: parcel.status, updated: false };
 
   const SILENT_STATUSES = new Set(["pending", "delivered", "undeliverable", "expired"]);
   if (status !== oldStatus && !SILENT_STATUSES.has(status)) {
@@ -967,7 +923,7 @@ export function startTrackingAutoRefresh(): void {
     name: "tracking-auto-refresh",
     label: "Tracking refresh (17track)",
     description: "Refreshes parcel and package tracking via the 17track API.",
-    defaultIntervalMs: REFRESH_INTERVAL_MS,
+    defaultIntervalMs: TRACKING_SCHEDULER_INTERVAL_MS,
     minIntervalMs: 5 * 60 * 1000,
     maxIntervalMs: 24 * 60 * 60 * 1000,
     initialDelayMs: 5 * 60 * 1000,

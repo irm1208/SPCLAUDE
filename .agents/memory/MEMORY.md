@@ -112,3 +112,4 @@
 - [Admin 2FA scope](admin-2fa-scope.md) — authenticator 2FA is admin-only; enabled uses admin sessions/step-up, disabled reverts to shared ADMIN_SECRET.
 - [Admin fetch interceptor recursion](admin-fetch-interceptor-recursion.md) — capture native fetch before monkey-patching global fetch, or enabled-mode admin requests recurse until the browser crashes.
 - [Admin step-up scope](admin-step-up-scope.md) — after login, extra TOTP is only for admin security and money destinations; routine operations rely on session+CSRF.
+- [Tracking refresh coordination](tracking-refresh-coordination.md) — provider work is six-hour DB-first, terminal/cooldown gated, identity-deduped, and all delayed writes require full-identity CAS.

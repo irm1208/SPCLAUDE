@@ -8,7 +8,6 @@ import {
   accountGroupBuysTable,
   ordersTable,
   orderLineItemsTable,
-  siteConfigTable,
   gbCountryLegsTable,
   gbReshippersTable,
   type GbParcel,
@@ -18,89 +17,18 @@ import {
 import { eq, and, or, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { translateZh } from "../lib/translate-zh";
+import { refreshManuallyIfAllowed } from "../lib/manual-tracking-refresh";
+import { getTrack17Key, track17Client } from "../lib/track17-service";
+import {
+  gbManualRefreshUnavailableReason,
+  completeGbCarrierRefresh,
+  casWriteConflicted,
+  gbRefreshConflictResponse,
+  unchangedGbParcelTrackingIdentity,
+} from "../lib/manual-tracking-route-model";
+import type { Track17DetailedResult } from "../lib/track17-client";
 
 const router = Router();
-
-// ─── helpers shared with shipments ────────────────────────────
-async function getTrack17Key(): Promise<string | null> {
-  const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "track17ApiKey"));
-  return row?.value || process.env.TRACK17_API_KEY || null;
-}
-
-const TRACK17_BASE = "https://api.17track.net/track/v2.4";
-
-async function track17Register(trackingNumber: string, carrierCode = 0, extraParams: Record<string, string> = {}): Promise<boolean> {
-  const key = await getTrack17Key();
-  if (!key) return false;
-  try {
-    // Omit carrier field when code is 0 — sending carrier:0 explicitly causes -18010013
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    // Merge carrier-specific required params (postal_code, destination_country, etc.)
-    Object.assign(entry, extraParams);
-    // v2.4: plain array body (v2.2 used { data: [...] })
-    const res = await fetch(`${TRACK17_BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const text = await res.text();
-    console.log(`[17track register] ${trackingNumber} (carrier:${carrierCode}) →`, text.slice(0, 300));
-    const json = JSON.parse(text) as { code?: number; data?: { accepted?: unknown[]; rejected?: Array<{ error?: { code?: number } }> } };
-    const accepted = (json?.data?.accepted as unknown[]) ?? [];
-    if (accepted.length > 0) return true;
-    // -18019901 = "already registered" — number is tracked, treat as success
-    const rejected = json?.data?.rejected ?? [];
-    const alreadyRegistered = rejected.every(r => r.error?.code === -18019901);
-    if (alreadyRegistered && rejected.length > 0) {
-      console.log(`[17track register] ${trackingNumber} already registered — skipping re-register`);
-      return true;
-    }
-    return false;
-  } catch (e) { console.log("[17track register] error:", e); return false; }
-}
-
-async function track17ChangeCarrier(trackingNumber: string, oldCode: number, newCode: number): Promise<boolean> {
-  const key = await getTrack17Key();
-  if (!key) return false;
-  try {
-    const res = await fetch(`${TRACK17_BASE}/changecarrier`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([{ number: trackingNumber, carrier_old: oldCode, carrier_new: newCode }]),
-    });
-    const text = await res.text();
-    console.log(`[17track changecarrier] ${trackingNumber} ${oldCode}→${newCode}:`, text.slice(0, 300));
-    const json = JSON.parse(text) as { data?: { accepted?: unknown[] } };
-    return (json?.data?.accepted?.length ?? 0) > 0;
-  } catch (e) { console.log("[17track changecarrier] error:", e); return false; }
-}
-
-async function track17GetInfo(trackingNumber: string, carrierCode = 0, extraParams: Record<string, string> = {}): Promise<unknown | null> {
-  const key = await getTrack17Key();
-  if (!key) { console.log("[17track] no API key configured"); return null; }
-  try {
-    // Omit carrier field when code is 0 — same reason as register
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    Object.assign(entry, extraParams);
-    // v2.4: plain array body
-    const res = await fetch(`${TRACK17_BASE}/gettrackinfo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const text = await res.text();
-    console.log(`[17track gettrackinfo] ${trackingNumber} →`, text.slice(0, 1200));
-    const json = JSON.parse(text) as { code?: number; data?: { accepted?: unknown[]; rejected?: unknown[] } };
-    // Accept data from accepted[] regardless of outer code (code 0 = full success, -2 = partial)
-    const accepted = (json?.data?.accepted as unknown[]) ?? [];
-    if (accepted.length > 0) return accepted[0];
-    return null;
-  } catch (e) { console.log("[17track gettrackinfo] error:", e); return null; }
-}
 
 // Location + status sanitisers (same logic as shipments.ts)
 const COUNTRY_MAP: [string, string][] = [
@@ -3524,50 +3452,66 @@ export function resolveCarrierCode(carrier: string): number {
   return 0; // 0 = auto-detect
 }
 
-async function refreshParcel(parcel: GbParcel): Promise<{ ok: boolean; reason?: string }> {
-  let carrierCode = resolveCarrierCode(parcel.carrier ?? "");
+async function refreshParcel(
+  parcel: GbParcel,
+  enforceManualCooldown = true,
+): Promise<{ ok: boolean; reason?: string; conflict?: boolean }> {
+  const carrierCode = resolveCarrierCode(parcel.carrier ?? "");
   const extraParams: Record<string, string> = parcel.trackingParams ?? {};
-  let registered = await track17Register(parcel.trackingNumber, carrierCode, extraParams);
-  // If specific carrier code failed, fall back to auto-detect (no carrier field)
-  if (!registered && carrierCode > 0) {
-    console.log(`[parcel refresh] specific carrier ${carrierCode} failed — retrying with auto-detect`);
-    registered = await track17Register(parcel.trackingNumber, 0, extraParams);
-    if (registered) carrierCode = 0; // use auto-detect for gettrackinfo too
+  let providerResult: Track17DetailedResult;
+  if (enforceManualCooldown) {
+    const first = await refreshManuallyIfAllowed({
+      trackingNumber: parcel.trackingNumber,
+      carrierCode,
+      status: parcel.status,
+      lastChecked: parcel.lastChecked,
+      client: track17Client,
+      options: { extraParams, allowAlternateTrackingCarrier: true },
+    });
+    if (first.kind === "skipped") return { ok: false, reason: "Tracking was checked recently or has reached a terminal status" };
+    providerResult = first.result;
+  } else {
+    providerResult = await track17Client.getTrackingInfoDetailed(parcel.trackingNumber, carrierCode, {
+      extraParams,
+      allowAlternateTrackingCarrier: true,
+    });
   }
-  console.log(`[parcel refresh] register result: ${registered}, carrier code: ${carrierCode}`);
-
-  let accepted = await track17GetInfo(parcel.trackingNumber, carrierCode, extraParams);
-
-  // Carrier mismatch fix: if 17track has the number under a different carrier code than
-  // what we resolved (e.g. registered as Aramex 100006 when it should be FedEx 100003),
-  // use changecarrier to correct it, then re-fetch.
-  if (accepted && carrierCode > 0) {
-    const registeredCarrier = (accepted as { carrier?: number }).carrier ?? 0;
-    if (registeredCarrier > 0 && registeredCarrier !== carrierCode) {
-      console.log(`[parcel refresh] carrier mismatch — 17track has ${registeredCarrier}, we want ${carrierCode} — calling changecarrier`);
-      const changed = await track17ChangeCarrier(parcel.trackingNumber, registeredCarrier, carrierCode);
-      if (changed) {
-        accepted = await track17GetInfo(parcel.trackingNumber, carrierCode, extraParams);
-        console.log(`[parcel refresh] re-fetched after carrier change`);
-      }
-    }
-  }
+  const completed = await completeGbCarrierRefresh({
+    initialResult: providerResult,
+    trackingNumber: parcel.trackingNumber,
+    carrierCode,
+    extraParams,
+    getTrackingInfoDetailed: track17Client.getTrackingInfoDetailed,
+    changeCarrier: track17Client.changeCarrier,
+    revalidateAfterCarrierChange: track17Client.revalidateAfterCarrierChange,
+  });
+  providerResult = completed.providerResult;
+  const accepted = providerResult.kind === "success" ? providerResult.accepted : null;
 
   // Always update lastChecked so admins can see when it was last attempted
   if (!accepted) {
-    await db.update(gbParcelsTable)
+    const saved = await db.update(gbParcelsTable)
       .set({ lastChecked: new Date() })
-      .where(eq(gbParcelsTable.id, parcel.id));
-    const reason = !registered
-      ? "Tracking number not recognised by 17track — try specifying the carrier"
-      : "Registered with 17track — data not available yet (may take a few minutes)";
-    return { ok: false, reason };
+      .where(unchangedGbParcelTrackingIdentity(parcel))
+      .returning({ id: gbParcelsTable.id });
+    if (casWriteConflicted(saved)) return {
+      ok: false,
+      conflict: true,
+      reason: "Tracking details changed while refresh was in progress",
+    };
+    return { ok: false, reason: gbManualRefreshUnavailableReason(providerResult as Exclude<Track17DetailedResult, { kind: "success" }>) };
   }
 
   const { status, statusCode, events } = parseTrack17(accepted);
-  await db.update(gbParcelsTable)
+  const saved = await db.update(gbParcelsTable)
     .set({ status, statusCode, cachedEvents: events, lastChecked: new Date() })
-    .where(eq(gbParcelsTable.id, parcel.id));
+    .where(unchangedGbParcelTrackingIdentity(parcel))
+    .returning({ id: gbParcelsTable.id });
+  if (casWriteConflicted(saved)) return {
+    ok: false,
+    conflict: true,
+    reason: "Tracking details changed while refresh was in progress",
+  };
   return { ok: true };
 }
 
@@ -3853,7 +3797,7 @@ router.post("/admin/group-buys/:id/parcels", async (req: any, res): Promise<void
   const [row] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
 
   // fire-and-forget first tracking fetch
-  refreshParcel(row).catch(() => { /* silent on create */ });
+  refreshParcel(row, false).catch(() => { /* silent on create */ });
 
   res.status(201).json(row);
 });
@@ -3891,7 +3835,7 @@ router.patch("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): P
 
   // Re-register with 17track if tracking number changed
   if (trackingNumber !== undefined && trackingNumber.trim() !== existing.trackingNumber) {
-    refreshParcel(updated).catch(() => {});
+    refreshParcel(updated, false).catch(() => {});
   }
 
   res.json(updated);
@@ -3920,6 +3864,11 @@ router.post("/organiser/group-buys/:id/parcels/:parcelId/refresh", requireAccoun
   if (!key) { res.status(422).json({ error: "17track API key not configured" }); return; }
   const result = await refreshParcel(parcel);
   const [updated] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  const conflictResponse = gbRefreshConflictResponse(result, updated);
+  if (conflictResponse) {
+    res.status(conflictResponse.status).json(conflictResponse.body);
+    return;
+  }
   res.json({ ...updated, _refreshWarning: result.ok ? undefined : result.reason });
 });
 
@@ -3942,6 +3891,11 @@ router.post("/admin/group-buys/:id/parcels/:parcelId/refresh", async (req: any, 
 
   const result = await refreshParcel(parcel);
   const [updated] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  const conflictResponse = gbRefreshConflictResponse(result, updated);
+  if (conflictResponse) {
+    res.status(conflictResponse.status).json(conflictResponse.body);
+    return;
+  }
   console.log("[parcel refresh] done — status:", updated.status, "events:", updated.cachedEvents?.length ?? 0, result.ok ? "" : `reason: ${result.reason}`);
   res.json({ ...updated, _refreshWarning: result.ok ? undefined : result.reason });
 });

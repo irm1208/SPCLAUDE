@@ -1,58 +1,14 @@
 import { Router } from "express";
 import { requireAdmin } from "../middleware/require-admin";
-import { db, siteConfigTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { trackingLinksTable, gbParcelsTable, groupBuysTable, ordersTable, orderLineItemsTable, type TrackingPackage, type TrackingEvent } from "@workspace/db";
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { refreshManuallyIfAllowed } from "../lib/manual-tracking-refresh";
+import { track17Client } from "../lib/track17-service";
+import { casWriteConflicted, unchangedTrackingLinkPackages } from "../lib/manual-tracking-route-model";
 
 const router = Router();
-
-// ─── Reuse 17track helpers from gb-parcels ───────────────────────────────────
-
-async function getTrack17Key(): Promise<string | null> {
-  const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, "track17ApiKey"));
-  return row?.value || process.env.TRACK17_API_KEY || null;
-}
-
-const TRACK17_BASE = "https://api.17track.net/track/v2.4";
-
-async function track17Register(trackingNumber: string, carrierCode = 0): Promise<boolean> {
-  const key = await getTrack17Key();
-  if (!key) return false;
-  try {
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    const res = await fetch(`${TRACK17_BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const json = await res.json() as { data?: { accepted?: unknown[]; rejected?: Array<{ error?: { code?: number } }> } };
-    const accepted = json?.data?.accepted ?? [];
-    if (accepted.length > 0) return true;
-    const rejected = json?.data?.rejected ?? [];
-    return rejected.every(r => r.error?.code === -18019901) && rejected.length > 0;
-  } catch { return false; }
-}
-
-async function track17GetInfo(trackingNumber: string, carrierCode = 0): Promise<unknown | null> {
-  const key = await getTrack17Key();
-  if (!key) return null;
-  try {
-    const entry: Record<string, unknown> = carrierCode > 0
-      ? { number: trackingNumber, carrier: carrierCode }
-      : { number: trackingNumber };
-    const res = await fetch(`${TRACK17_BASE}/gettrackinfo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "17token": key },
-      body: JSON.stringify([entry]),
-    });
-    const json = await res.json() as { data?: { accepted?: unknown[] } };
-    const accepted = json?.data?.accepted ?? [];
-    return accepted.length > 0 ? accepted[0] : null;
-  } catch { return null; }
-}
 
 const COUNTRY_MAP: [string, string][] = [
   ["hong kong", "China"], ["china", "China"], [", cn", "China"],
@@ -496,25 +452,49 @@ router.post("/admin/tracking-links/:id/packages/:pkgId/refresh", async (req, res
   const [link] = await db.select().from(trackingLinksTable).where(eq(trackingLinksTable.id, id));
   if (!link) { res.status(404).json({ error: "Not found" }); return; }
 
-  const packages = link.packages as TrackingPackage[];
+  const originalPackages = link.packages as TrackingPackage[];
+  const packages = [...originalPackages];
   const pkgIdx = packages.findIndex(p => p.id === pkgId);
   if (pkgIdx === -1) { res.status(404).json({ error: "Package not found" }); return; }
   const pkg = packages[pkgIdx];
 
-  const cCode = pkg.carrierCode ?? 0;
-  await track17Register(pkg.trackingNumber, cCode);
-  const accepted = await track17GetInfo(pkg.trackingNumber, cCode);
+  const refresh = await refreshManuallyIfAllowed({
+    trackingNumber: pkg.trackingNumber,
+    carrierCode: pkg.carrierCode ?? 0,
+    status: pkg.status,
+    lastChecked: pkg.lastChecked,
+    client: track17Client,
+  });
+  if (refresh.kind === "skipped") {
+    res.json({ ok: false, reason: "Tracking was checked recently or has reached a terminal status" });
+    return;
+  }
+  const accepted = refresh.result.kind === "success" ? refresh.result.accepted : null;
 
   if (!accepted) {
     packages[pkgIdx] = { ...pkg, lastChecked: new Date().toISOString() };
-    await db.update(trackingLinksTable).set({ packages, updatedAt: new Date() }).where(eq(trackingLinksTable.id, id));
+    const saved = await db.update(trackingLinksTable)
+      .set({ packages, updatedAt: new Date() })
+      .where(unchangedTrackingLinkPackages(id, originalPackages))
+      .returning({ id: trackingLinksTable.id });
+    if (casWriteConflicted(saved)) {
+      res.status(409).json({ ok: false, reason: "Tracking package changed while refresh was in progress." });
+      return;
+    }
     res.json({ ok: false, reason: "Registered with 17track — data not yet available. Try again in a few minutes." });
     return;
   }
 
   const { status, statusCode, events } = parseTrack17(accepted);
   packages[pkgIdx] = { ...pkg, status, statusCode, cachedEvents: events, lastChecked: new Date().toISOString() };
-  await db.update(trackingLinksTable).set({ packages, updatedAt: new Date() }).where(eq(trackingLinksTable.id, id));
+  const saved = await db.update(trackingLinksTable)
+    .set({ packages, updatedAt: new Date() })
+    .where(unchangedTrackingLinkPackages(id, originalPackages))
+    .returning({ id: trackingLinksTable.id });
+  if (casWriteConflicted(saved)) {
+    res.status(409).json({ ok: false, reason: "Tracking package changed while refresh was in progress." });
+    return;
+  }
   res.json({ ok: true, status, events: events.length });
 });
 
