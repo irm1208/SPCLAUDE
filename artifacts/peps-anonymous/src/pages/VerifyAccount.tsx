@@ -17,7 +17,11 @@ import {
 } from "@/hooks/use-account";
 import { PageLayout } from "@/components/PageLayout";
 import { T } from "@/lib/theme";
-import { accountRequiresVerification, parseResendRetrySeconds } from "@/lib/account-verification-flow";
+import {
+  accountRequiresVerification,
+  parseResendRetrySeconds,
+  preferredVerificationMethod,
+} from "@/lib/account-verification-flow";
 
 
 
@@ -81,11 +85,7 @@ export default function VerifyAccount() {
   // Set default active method based on availability
   useEffect(() => {
     if (status && !activeMethod) {
-      if (status.availableMethods.includes("email")) {
-        setActiveMethod("email");
-      } else {
-        setActiveMethod("telegram");
-      }
+      setActiveMethod(preferredVerificationMethod(status.availableMethods));
     }
   }, [status, activeMethod]);
 

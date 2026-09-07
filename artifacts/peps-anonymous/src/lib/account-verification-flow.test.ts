@@ -6,6 +6,7 @@ import {
   TURNSTILE_TEST_SITE_KEY,
   accountRequiresVerification,
   parseResendRetrySeconds,
+  preferredVerificationMethod,
   resolveTurnstileSiteKey,
 } from "./account-verification-flow";
 
@@ -25,6 +26,13 @@ describe("account verification flow", () => {
   it("extracts server resend cooldowns without inventing one", () => {
     assert.equal(parseResendRetrySeconds("Please wait 45 seconds before resending."), 45);
     assert.equal(parseResendRetrySeconds("Verification email cannot be sent"), null);
+  });
+
+  it("prefers Telegram verification while keeping Email as the fallback", () => {
+    assert.equal(preferredVerificationMethod(["email", "telegram"]), "telegram");
+    assert.equal(preferredVerificationMethod(["telegram"]), "telegram");
+    assert.equal(preferredVerificationMethod(["email"]), "email");
+    assert.equal(preferredVerificationMethod([]), null);
   });
 
   it("does not restart Telegram link initialization when mutation state changes", () => {
