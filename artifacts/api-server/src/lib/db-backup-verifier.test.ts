@@ -253,6 +253,16 @@ describe("runBackupVerification", () => {
     expect(d.releaseLock).not.toHaveBeenCalled();
   });
 
+  it("reports acquisition failure through every channel without leaking its database error", async () => {
+    const d = dependencies([]);
+    (d.acquireLock as any).mockRejectedValueOnce(new Error("postgres://private/raw"));
+    (d.audit as any).mockRejectedValueOnce(new Error("audit unavailable"));
+    await expect(runBackupVerification(d)).rejects.toThrow("backup verification lock failed");
+    expect(d.alert).toHaveBeenCalledWith("backup_restore_lock_acquire_failed", expect.any(String));
+    expect(d.notifyAdmin).toHaveBeenCalledWith("backup_restore_lock_acquire_failed", expect.any(String));
+    expect(JSON.stringify((d.alert as any).mock.calls)).not.toContain("postgres://private/raw");
+  });
+
   it("uses the legacy SQL stream without modifying plain or gzip Drive media", async () => {
     const directory = await mkdtemp(join(tmpdir(), "verifier-legacy-"));
     try {

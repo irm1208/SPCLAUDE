@@ -1,23 +1,21 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream } from "node:fs";
 import { chmod, mkdtemp, open, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
-import { ReplitConnectors } from "@replit/connectors-sdk";
 import { pool } from "@workspace/db";
 import { decryptBackupToStream, parseBackupEncryptionKey } from "./backup-encryption";
 import { startDisposablePostgres, type DisposablePostgres } from "./disposable-postgres";
-import { getGoogleDriveBackupFolderId, isSupportedBackupName, selectNewestBackup, type DriveBackupFile } from "./google-drive-backup";
+import { downloadGoogleDriveBackup, isSupportedBackupName, listGoogleDriveBackups, selectNewestBackup, type DriveBackupFile } from "./google-drive-backup";
 import { validateRestoredDatabase, type RestoreValidationResult } from "./db-restore-validation";
 import { writeLog } from "./audit-log";
 import { createAlert } from "./create-alert";
 import { sendAdminMessage } from "./telegram";
 
 const VERIFY_LOCK_NAME = "salt-and-peps:database-backup-restore-verification";
-const DRIVE_CONNECTOR = "google-drive";
 const ENCRYPTED_SUFFIX = ".sql.gz.enc";
 export const RESTORE_VERIFY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 export const RESTORE_VERIFY_FIRST_DELAY_MS = 60 * 60 * 1000;
@@ -70,7 +68,17 @@ async function cleanUp(
 export async function runBackupVerification(
   dependencies: BackupVerificationDependencies,
 ): Promise<"verified" | "lock_contended"> {
-  if (!await dependencies.acquireLock()) return "lock_contended";
+  let acquired: boolean;
+  try {
+    acquired = await dependencies.acquireLock();
+  } catch {
+    const requestId = randomUUID();
+    await dependencies.audit("backup_restore_failed", "Database backup verification lock acquisition failed", { category: "backup_restore_lock_acquire_failed", requestId }).catch(() => undefined);
+    await dependencies.alert("backup_restore_lock_acquire_failed", requestId).catch(() => undefined);
+    await dependencies.notifyAdmin("backup_restore_lock_acquire_failed", requestId).catch(() => undefined);
+    throw new Error("backup verification lock failed");
+  }
+  if (!acquired) return "lock_contended";
 
   let target: DisposablePostgres | undefined;
   let downloadedPath: string | undefined;
@@ -147,19 +155,6 @@ export async function legacySqlSource(path: string): Promise<Readable> {
     : createReadStream(path);
 }
 
-async function listDriveBackups(): Promise<DriveBackupFile[]> {
-  const folderId = await getGoogleDriveBackupFolderId();
-  const query = new URLSearchParams({
-    q: `'${folderId.replaceAll("'", "\\'")}' in parents and trashed = false`,
-    fields: "files(id,name,size,mimeType,modifiedTime,parents,trashed)",
-    orderBy: "modifiedTime desc",
-    pageSize: "100",
-  });
-  const response = await new ReplitConnectors().proxy(DRIVE_CONNECTOR, `/drive/v3/files?${query}`);
-  if (!response.ok) throw new Error("Could not list database backups");
-  return ((await response.json()) as { files?: DriveBackupFile[] }).files ?? [];
-}
-
 async function allocateDriveDownloadPath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "sp-backup-verify-download-"));
   await chmod(directory, 0o700);
@@ -167,13 +162,7 @@ async function allocateDriveDownloadPath(): Promise<string> {
 }
 
 async function downloadDriveBackup(backup: DriveBackupFile, path: string): Promise<void> {
-  try {
-    const response = await new ReplitConnectors().proxy(DRIVE_CONNECTOR, `/drive/v3/files/${encodeURIComponent(backup.id)}?alt=media`);
-    if (!response.ok || !response.body) throw new Error("Could not download database backup");
-    await pipeline(Readable.fromWeb(response.body as never), createWriteStream(path, { mode: 0o600 }));
-  } catch (error) {
-    throw error;
-  }
+  await downloadGoogleDriveBackup(backup.id, path);
 }
 
 export function createVerificationAdvisoryLock(lockPool: {
@@ -217,7 +206,7 @@ function defaultDependencies(): BackupVerificationDependencies {
   return {
     acquireLock: verificationLock.acquire,
     releaseLock: verificationLock.release,
-    listBackups: listDriveBackups,
+    listBackups: listGoogleDriveBackups,
     allocateDownloadPath: allocateDriveDownloadPath,
     download: downloadDriveBackup,
     digest: digestFile,
