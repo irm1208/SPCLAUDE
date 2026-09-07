@@ -86,7 +86,7 @@ export async function encryptBackupStream(
     return { sizeBytes, sha256: hash.digest("hex") };
   } catch (error) {
     destination.destroy();
-    await removeTemporaryFile(temporaryPath, error);
+    return removeTemporaryFile(temporaryPath, error);
   }
 }
 
