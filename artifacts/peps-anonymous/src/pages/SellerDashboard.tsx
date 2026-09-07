@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Store, Package, Plus, Pencil, Trash2,
   Eye, EyeOff, Loader2, LogOut, X, Check, AlertTriangle,
   FlaskConical, DollarSign, Hash, FileText, ChevronRight,
   ShoppingBag, ToggleLeft, ToggleRight, ExternalLink,
-  UserPlus, Lock, Globe, Send, MessageCircle, KeyRound, RotateCcw, CheckCircle2,
+  UserPlus, Lock, Globe, Send, MessageCircle, KeyRound, RotateCcw, CheckCircle2, ShieldCheck,
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
+import { resolveTurnstileSiteKey } from "@/lib/account-verification-flow";
+import { buildSellerSignupBody, canSubmitSellerSignup } from "@/lib/seller-signup";
 
 interface SellerSession {
   vendorId: string;
@@ -592,8 +594,89 @@ function SignupForm({ onDone }: { onDone: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileLoadError, setTurnstileLoadError] = useState("");
+  const [turnstileLoadAttempt, setTurnstileLoadAttempt] = useState(0);
+  const turnstileSiteKey = resolveTurnstileSiteKey(
+    import.meta.env.VITE_TURNSTILE_SITE_KEY,
+    import.meta.env.PROD,
+  );
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken("");
+    if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+      try {
+        (window as any).turnstile.reset(turnstileWidgetIdRef.current);
+      } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!turnstileSiteKey) return;
+
+    setTurnstileLoadError("");
+    let script = document.querySelector<HTMLScriptElement>('script[src*="turnstile/v0/api.js"]');
+    if (!script) {
+      script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    let checks = 0;
+    const failLoad = () => {
+      setTurnstileToken("");
+      setTurnstileLoadError("The security check could not load. Check your connection and try again.");
+    };
+    script.addEventListener("error", failLoad, { once: true });
+
+    const checkInterval = window.setInterval(() => {
+      checks += 1;
+      if ((window as any).turnstile && turnstileContainerRef.current) {
+        clearInterval(checkInterval);
+        try {
+          if (turnstileWidgetIdRef.current) {
+            (window as any).turnstile.remove(turnstileWidgetIdRef.current);
+          }
+          turnstileWidgetIdRef.current = (window as any).turnstile.render(
+            turnstileContainerRef.current,
+            {
+              sitekey: turnstileSiteKey,
+              callback: (token: string) => {
+                setTurnstileToken(token);
+                setTurnstileLoadError("");
+              },
+              "error-callback": () => setTurnstileToken(""),
+              "expired-callback": () => setTurnstileToken(""),
+              appearance: "interaction-only",
+            },
+          );
+        } catch {
+          failLoad();
+        }
+      } else if (checks >= 150) {
+        clearInterval(checkInterval);
+        failLoad();
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(checkInterval);
+      script?.removeEventListener("error", failLoad);
+      if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+        try {
+          (window as any).turnstile.remove(turnstileWidgetIdRef.current);
+        } catch {}
+        turnstileWidgetIdRef.current = null;
+      }
+      setTurnstileToken("");
+    };
+  }, [turnstileSiteKey, turnstileLoadAttempt]);
 
   const handleSubmit = async () => {
     if (!form.name.trim()) { setError("Store name is required"); return; }
@@ -601,24 +684,26 @@ function SignupForm({ onDone }: { onDone: () => void }) {
     if (!form.password) { setError("Password is required"); return; }
     if (form.password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (form.password !== form.confirmPassword) { setError("Passwords do not match"); return; }
+    if (!turnstileSiteKey) { setError("The security check is unavailable. Please try again later."); return; }
+    if (!turnstileToken) { setError("Please complete the security check"); return; }
     setSubmitting(true); setError("");
     try {
       const res = await fetch("/api/vial/seller/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          tagline: form.tagline.trim() || null,
-          contactTelegram: form.contactTelegram.trim().replace(/^@/, ""),
-          country: form.country.trim() || null,
-          shipsTo: form.shipsTo || null,
-          password: form.password,
-        }),
+        body: JSON.stringify(buildSellerSignupBody(form, turnstileToken)),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || "Signup failed"); return; }
+      if (!res.ok) {
+        setError(data.error || "Signup failed");
+        resetTurnstile();
+        return;
+      }
       setSuccess(true);
-    } catch { setError("Connection error — please try again"); }
+    } catch {
+      setError("Connection error — please try again");
+      resetTurnstile();
+    }
     finally { setSubmitting(false); }
   };
 
@@ -725,10 +810,45 @@ function SignupForm({ onDone }: { onDone: () => void }) {
         </div>
       </div>
 
+      {turnstileSiteKey && (
+        <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+          <div className="flex items-center gap-2 text-xs font-bold" style={{ color: turnstileToken ? "#059669" : "var(--t-muted)" }}>
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            {turnstileToken ? "Security check complete" : "Complete the security check"}
+          </div>
+          <div className="flex justify-center min-h-1" ref={turnstileContainerRef}></div>
+        </div>
+      )}
+      {turnstileLoadError && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium" style={{ background: "rgba(239,68,68,0.08)", color: "#DC2626" }}>
+            <AlertTriangle className="w-4 h-4 shrink-0" /> {turnstileLoadError}
+          </div>
+          <button
+            type="button"
+            className="w-full h-10 rounded-xl text-xs font-bold"
+            style={{ color: "var(--t-blue)", border: "1px solid var(--t-border)" }}
+            onClick={() => {
+              if (!(window as any).turnstile) {
+                document.querySelector('script[src*="turnstile/v0/api.js"]')?.remove();
+              }
+              setTurnstileLoadAttempt(attempt => attempt + 1);
+            }}
+          >
+            Try Security Check Again
+          </button>
+        </div>
+      )}
+      {!turnstileSiteKey && (
+        <div className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium" style={{ background: "rgba(239,68,68,0.08)", color: "#DC2626" }}>
+          <AlertTriangle className="w-4 h-4 shrink-0" /> The security check is unavailable. Please try again later.
+        </div>
+      )}
+
       <button
         onClick={handleSubmit}
-        disabled={submitting}
-        className="w-full h-12 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2"
+        disabled={submitting || !turnstileSiteKey || !canSubmitSellerSignup(form, turnstileToken)}
+        className="w-full h-12 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-50"
         style={{ background: "linear-gradient(135deg, var(--t-blue) 0%, #1E3A8A 100%)", boxShadow: "0 4px 14px var(--t-blue-35)" }}
       >
         {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
