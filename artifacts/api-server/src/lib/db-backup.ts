@@ -1,23 +1,28 @@
 /**
  * Scheduled database backup.
  *
- * Streams an encrypted pg_dump every six hours in production.
- * Uploads completed encrypted dumps to Google Drive and removes the local temporary file.
- * Local encrypted files are retained only when an upload fails, then pruned after 3 days.
+ * Streams a full plain SQL pg_dump every six hours in production.
+ * Uploads completed dumps to Google Drive and removes the local temporary file.
+ * Complete local files are retained only when an upload fails, then pruned after 3 days.
+ * Encrypted backup helpers remain available for restoring historical encrypted files.
  */
 
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import { promisify } from "util";
-import { mkdir, readdir, unlink, stat } from "fs";
+import { createWriteStream, mkdir, readdir, unlink, stat } from "fs";
 import { rename as renameFile } from "fs/promises";
 import { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { pool } from "@workspace/db";
 import {
-  buildDriveBackupFileName,
+  buildPlainDriveBackupFileName,
+  findGoogleDriveBackupsByName,
+  findMatchingDriveBackup,
   uploadBackupToGoogleDrive,
+  type DriveBackupFile,
 } from "./google-drive-backup";
 import { buildPgDumpArgs } from "./db-backup-command";
 import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
@@ -38,6 +43,9 @@ const BACKUP_TIMESTAMP = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}";
 const RANDOM_UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const PRUNABLE_ENCRYPTED_BACKUP_ARTIFACT = new RegExp(
   `^${BACKUP_FILE_PREFIX}${BACKUP_TIMESTAMP}${BACKUP_FILE_SUFFIX.replace(/\./g, "\\.")}(?:\\.partial|\\.partial\\.\\d+\\.${RANDOM_UUID}\\.partial)?$`,
+);
+const PRUNABLE_PLAIN_BACKUP_ARTIFACT = new RegExp(
+  `^${BACKUP_FILE_PREFIX}${BACKUP_TIMESTAMP}\\.SQL(?:\\.partial)?$`,
 );
 
 let backupInProgress = false;
@@ -61,6 +69,17 @@ export function isPrunableEncryptedBackupArtifact(fileName: string): boolean {
   return PRUNABLE_ENCRYPTED_BACKUP_ARTIFACT.test(fileName);
 }
 
+export function isPrunableBackupArtifact(fileName: string): boolean {
+  return (
+    PRUNABLE_PLAIN_BACKUP_ARTIFACT.test(fileName) ||
+    isPrunableEncryptedBackupArtifact(fileName)
+  );
+}
+
+export function isRetainedPlainBackupArtifact(fileName: string): boolean {
+  return PRUNABLE_PLAIN_BACKUP_ARTIFACT.test(fileName) && !fileName.endsWith(".partial");
+}
+
 /** Deletes temporary backup files whose last-modified time is older than KEEP_DAYS days. */
 async function pruneOldBackups(): Promise<void> {
   let files: string[];
@@ -73,7 +92,7 @@ async function pruneOldBackups(): Promise<void> {
   const cutoffMs = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
 
   for (const file of files) {
-    if (!isPrunableEncryptedBackupArtifact(file)) continue;
+    if (!isPrunableBackupArtifact(file)) continue;
     const filePath = join(BACKUP_DIR, file);
     try {
       const { mtimeMs } = await promisify(stat)(filePath);
@@ -95,7 +114,7 @@ export function requireBackupEncryptionKey(environment: NodeJS.ProcessEnv = proc
   return parseBackupEncryptionKey(encodedKey);
 }
 
-interface PgDumpProcess {
+export interface PgDumpProcess {
   stdout: Readable;
   stderr: NodeJS.ReadableStream;
   once(event: "error", listener: (error: Error) => void): unknown;
@@ -120,6 +139,34 @@ export interface BackupAttemptOptions extends EncryptedBackupOptions {
   alert: (category: string, requestId: string) => Promise<void>;
   notifyAdmin: (category: string, requestId: string) => Promise<void>;
   consoleError: (message: string) => void;
+}
+
+export interface PlainBackupOptions {
+  fileName: string;
+  outputPath: string;
+  environment: NodeJS.ProcessEnv;
+  spawnPgDump: (databaseUrl: string) => PgDumpProcess;
+  write: (source: Readable, destinationPath: string) => Promise<unknown>;
+  upload: (filePath: string, fileName: string) => Promise<{ id: string }>;
+  rename: (oldPath: string, newPath: string) => Promise<void>;
+  unlink: (path: string) => Promise<void>;
+  terminationGraceMs?: number;
+}
+
+export interface PlainBackupAttemptOptions extends PlainBackupOptions {
+  audit: (category: string, requestId: string) => Promise<void>;
+  alert: (category: string, requestId: string) => Promise<void>;
+  notifyAdmin: (category: string, requestId: string) => Promise<void>;
+  consoleError: (message: string) => void;
+}
+
+export interface RetainedPlainBackupOptions {
+  backupDir: string;
+  fileNames: string[];
+  stat: (path: string) => Promise<{ size: number }>;
+  findRemote: (fileName: string) => Promise<DriveBackupFile[]>;
+  upload: (filePath: string, fileName: string) => Promise<{ id: string }>;
+  unlink: (path: string) => Promise<void>;
 }
 
 /** Streams pg_dump into an encrypted temporary file before uploading it. */
@@ -184,12 +231,108 @@ export async function createAndUploadEncryptedBackup(options: EncryptedBackupOpt
   }
 }
 
+/** Streams pg_dump into a private plain SQL file before uploading it. */
+export async function createAndUploadPlainBackup(options: PlainBackupOptions): Promise<void> {
+  const databaseUrl = options.environment.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL not set");
+  const partialPath = `${options.outputPath}.partial`;
+  const pgDump = options.spawnPgDump(databaseUrl);
+  const stderr: Buffer[] = [];
+  pgDump.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  let childClosed = false;
+  const childClosedPromise = new Promise<number>((resolve) => {
+    pgDump.once("close", (code) => {
+      childClosed = true;
+      resolve(code ?? 1);
+    });
+  });
+  const childError = new Promise<never>((_resolve, reject) => {
+    pgDump.once("error", reject);
+  });
+  const dumpCompleted = Promise.race([
+    childClosedPromise.then((code) => {
+      if (code !== 0) {
+        const detail = Buffer.concat(stderr).toString("utf8").trim();
+        throw new Error(`pg_dump exited with ${code}${detail ? `: ${detail}` : ""}`);
+      }
+    }),
+    childError,
+  ]);
+  const writeCompleted = options.write(pgDump.stdout, partialPath);
+  let completeFileReadyForUpload = false;
+  try {
+    await Promise.all([writeCompleted, dumpCompleted]);
+    await options.rename(partialPath, options.outputPath);
+    completeFileReadyForUpload = true;
+    await options.upload(options.outputPath, options.fileName);
+    await options.unlink(options.outputPath);
+  } catch (error) {
+    if (!childClosed) {
+      pgDump.kill("SIGTERM");
+      const graceMs = options.terminationGraceMs ?? TERMINATION_GRACE_MS;
+      const graceExpired = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(true), graceMs);
+        void childClosedPromise.then(() => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      if (graceExpired && !childClosed) pgDump.kill("SIGKILL");
+      await childClosedPromise;
+    }
+    await Promise.allSettled([writeCompleted, dumpCompleted]);
+    if (!completeFileReadyForUpload) {
+      await options.unlink(partialPath).catch(() => undefined);
+      await options.unlink(options.outputPath).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+/** Reconciles complete local SQL files before creating another database dump. */
+export async function uploadRetainedPlainBackups(
+  options: RetainedPlainBackupOptions,
+): Promise<number> {
+  let recovered = 0;
+  const retained = options.fileNames
+    .filter(isRetainedPlainBackupArtifact)
+    .sort();
+  for (const fileName of retained) {
+    const filePath = join(options.backupDir, fileName);
+    const { size } = await options.stat(filePath);
+    const remoteFiles = await options.findRemote(fileName);
+    if (!findMatchingDriveBackup(remoteFiles, fileName, size)) {
+      await options.upload(filePath, fileName);
+    }
+    await options.unlink(filePath);
+    recovered += 1;
+  }
+  return recovered;
+}
+
 async function attemptFailureChannel(operation: () => Promise<void>): Promise<void> {
   try {
     await operation();
   } catch {
     // Failure channels are independent; one unavailable channel must not block the others.
   }
+}
+
+type BackupFailureOptions = Pick<
+  PlainBackupAttemptOptions,
+  "audit" | "alert" | "notifyAdmin" | "consoleError"
+>;
+
+async function reportBackupFailure(options: BackupFailureOptions): Promise<"failed"> {
+  const category = "database_backup_failed";
+  const requestId = randomUUID();
+  options.consoleError("[db-backup] Database backup attempt failed");
+  await Promise.all([
+    attemptFailureChannel(() => options.audit(category, requestId)),
+    attemptFailureChannel(() => options.alert(category, requestId)),
+    attemptFailureChannel(() => options.notifyAdmin(category, requestId)),
+  ]);
+  return "failed";
 }
 
 /** Converts backup failures into a sanitized durable operational outcome. */
@@ -212,8 +355,20 @@ export async function runEncryptedBackupAttempt(
   }
 }
 
+/** Converts plain backup failures into a sanitized durable operational outcome. */
+export async function runPlainBackupAttempt(
+  options: PlainBackupAttemptOptions,
+): Promise<"completed" | "failed"> {
+  try {
+    await createAndUploadPlainBackup(options);
+    return "completed";
+  } catch {
+    return reportBackupFailure(options);
+  }
+}
+
 function backupFailureDependencies(): Pick<
-  BackupAttemptOptions,
+  PlainBackupAttemptOptions,
   "audit" | "alert" | "notifyAdmin" | "consoleError"
 > {
   return {
@@ -222,7 +377,7 @@ function backupFailureDependencies(): Pick<
         "error",
         "error",
         "database_backup_failed",
-        "Encrypted database backup failed",
+        "Database backup failed",
         { category, requestId },
       );
     },
@@ -230,13 +385,13 @@ function backupFailureDependencies(): Pick<
       await createAlert(
         "system",
         "high",
-        "Encrypted database backup failed",
+        "Database backup failed",
         `Category: ${category}; request ID: ${requestId}`,
       );
     },
     notifyAdmin: async (category, requestId) => {
       await sendAdminMessage(
-        `Encrypted database backup failed. Category: ${category}; request ID: ${requestId}`,
+        `Database backup failed. Category: ${category}; request ID: ${requestId}`,
       );
     },
     consoleError: (message) => console.error(message),
@@ -278,7 +433,7 @@ async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
   }
 }
 
-/** Runs a single encrypted SQL dump, uploads it, and prunes temporary failures. */
+/** Runs a single plain SQL dump, uploads it, and prunes temporary failures. */
 export async function runDbBackup(): Promise<DbBackupResult> {
   if (backupInProgress) {
     console.log("[db-backup] A backup is already in progress — skipping");
@@ -293,26 +448,46 @@ export async function runDbBackup(): Promise<DbBackupResult> {
   try {
     let attemptResult: "completed" | "failed" = "failed";
     const acquired = await withBackupLock(async () => {
-      const fileName = buildDriveBackupFileName();
+      const fileName = buildPlainDriveBackupFileName();
       const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
-        attemptResult = await runEncryptedBackupAttempt({
+        const failureDependencies = backupFailureDependencies();
+        try {
+          const recovered = await uploadRetainedPlainBackups({
+            backupDir: BACKUP_DIR,
+            fileNames: await promisify(readdir)(BACKUP_DIR),
+            stat: (path) => promisify(stat)(path),
+            findRemote: findGoogleDriveBackupsByName,
+            upload: uploadBackupToGoogleDrive,
+            unlink: (path) => promisify(unlink)(path),
+          });
+          if (recovered > 0) {
+            console.log(`[db-backup] Reconciled ${recovered} retained SQL backup(s)`);
+          }
+        } catch {
+          attemptResult = await reportBackupFailure(failureDependencies);
+          return;
+        }
+        attemptResult = await runPlainBackupAttempt({
           fileName,
           outputPath,
           environment: process.env,
           spawnPgDump,
-          encrypt: encryptBackupStream,
+          write: (source, destinationPath) => pipeline(
+            source,
+            createWriteStream(destinationPath, { flags: "wx", mode: 0o600 }),
+          ),
           upload: uploadBackupToGoogleDrive,
           rename: renameFile,
           unlink: (path) => promisify(unlink)(path),
-          ...backupFailureDependencies(),
+          ...failureDependencies,
         });
         if (attemptResult === "completed") {
-          console.log(`[db-backup] Uploaded encrypted backup ${fileName} to Google Drive`);
+          console.log(`[db-backup] Uploaded full SQL backup ${fileName} to Google Drive`);
         }
       } catch {
-        console.error("[db-backup] Encrypted backup attempt failed");
+        console.error("[db-backup] Database backup attempt failed");
       } finally {
         await pruneOldBackups();
       }
@@ -409,7 +584,7 @@ export function startDbBackupSchedule(): void {
     return;
   }
   console.log(
-    "[db-backup] Schedule started — first run in 10 min, then every 6 h (encrypted backups in Google Drive; lock contention is retried)",
+    "[db-backup] Schedule started — first run in 10 min, then every 6 h (full SQL backups in Google Drive; lock contention is retried)",
   );
   createDbBackupScheduler(runDbBackup).start();
 }

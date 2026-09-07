@@ -4,15 +4,19 @@ import {
   BACKUP_RETRY_DELAY_MS,
   backupRunResult,
   createAndUploadEncryptedBackup,
+  createAndUploadPlainBackup,
   createDbBackupScheduler,
   FIRST_BACKUP_DELAY_MS,
   INTERVAL_MS,
   isPrunableEncryptedBackupArtifact,
+  isPrunableBackupArtifact,
   requireBackupEncryptionKey,
   runEncryptedBackupAttempt,
+  runPlainBackupAttempt,
+  uploadRetainedPlainBackups,
   startDbBackupSchedule,
 } from "./db-backup";
-import type { DbBackupResult } from "./db-backup";
+import type { DbBackupResult, PgDumpProcess } from "./db-backup";
 
 describe("database backup scheduler", () => {
   afterEach(() => {
@@ -143,6 +147,163 @@ describe("database backup scheduler", () => {
   });
 });
 
+describe("plain SQL database backup production orchestration", () => {
+  function dumpProcess(exitCode = 0) {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const process = {
+      stdout,
+      stderr,
+      once: vi.fn((event: string, listener: (value?: number | Error) => void) => {
+        if (event === "close") queueMicrotask(() => listener(exitCode));
+        return process;
+      }),
+      kill: vi.fn(),
+    };
+    return { process: process as unknown as PgDumpProcess, stdout };
+  }
+
+  it("recognizes constrained plain and encrypted artifacts for stale pruning", () => {
+    expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL")).toBe(true);
+    expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL.partial")).toBe(true);
+    expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc")).toBe(true);
+    expect(isPrunableBackupArtifact("unrelated.SQL")).toBe(false);
+  });
+
+  it("streams pg_dump to a partial SQL file, then renames, uploads, and removes it", async () => {
+    const { process, stdout } = dumpProcess();
+    const events: string[] = [];
+    const write = vi.fn(async (source: PassThrough, path: string) => {
+      expect(source).toBe(stdout);
+      expect(path).toBe("/tmp/backup.SQL.partial");
+      events.push("write");
+    });
+    const rename = vi.fn(async () => { events.push("rename"); });
+    const upload = vi.fn(async () => { events.push("upload"); return { id: "drive-file" }; });
+    const unlink = vi.fn(async () => { events.push("unlink"); });
+
+    await createAndUploadPlainBackup({
+      fileName: "backup.SQL",
+      outputPath: "/tmp/backup.SQL",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private" },
+      spawnPgDump: vi.fn(() => process as unknown as PgDumpProcess),
+      write,
+      upload,
+      rename,
+      unlink,
+    });
+
+    expect(events).toEqual(["write", "rename", "upload", "unlink"]);
+    expect(upload).toHaveBeenCalledWith("/tmp/backup.SQL", "backup.SQL");
+  });
+
+  it("removes partial output and never uploads when pg_dump fails", async () => {
+    const { process } = dumpProcess(1);
+    const upload = vi.fn();
+    const unlink = vi.fn(async () => undefined);
+
+    await expect(createAndUploadPlainBackup({
+      fileName: "backup.SQL",
+      outputPath: "/tmp/backup.SQL",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private" },
+      spawnPgDump: vi.fn(() => process as unknown as PgDumpProcess),
+      write: vi.fn(async () => undefined),
+      upload,
+      rename: vi.fn(async () => undefined),
+      unlink,
+    })).rejects.toThrow(/pg_dump exited/);
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(unlink).toHaveBeenCalledWith("/tmp/backup.SQL.partial");
+    expect(unlink).toHaveBeenCalledWith("/tmp/backup.SQL");
+  });
+
+  it("retains a completed SQL file when its Drive upload fails", async () => {
+    const { process } = dumpProcess();
+    const unlink = vi.fn(async () => undefined);
+
+    await expect(createAndUploadPlainBackup({
+      fileName: "backup.SQL",
+      outputPath: "/tmp/backup.SQL",
+      environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private" },
+      spawnPgDump: vi.fn(() => process),
+      write: vi.fn(async () => undefined),
+      upload: vi.fn(async () => { throw new Error("Drive unavailable"); }),
+      rename: vi.fn(async () => undefined),
+      unlink,
+    })).rejects.toThrow(/Drive unavailable/);
+
+    expect(unlink).not.toHaveBeenCalledWith("/tmp/backup.SQL");
+  });
+
+  it("reports plain backup failures through sanitized format-neutral channels", async () => {
+    const { process } = dumpProcess(1);
+    const audit = vi.fn(async () => undefined);
+    const alert = vi.fn(async () => undefined);
+    const notifyAdmin = vi.fn(async () => undefined);
+    const consoleError = vi.fn();
+    const databaseUrl = "postgres://secret-user:secret-password@private-host/database";
+
+    const result = await runPlainBackupAttempt({
+      fileName: "backup.SQL",
+      outputPath: "/tmp/backup.SQL",
+      environment: { NODE_ENV: "production", DATABASE_URL: databaseUrl },
+      spawnPgDump: vi.fn(() => process),
+      write: vi.fn(async () => undefined),
+      upload: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(async () => undefined),
+      audit,
+      alert,
+      notifyAdmin,
+      consoleError,
+    });
+
+    expect(result).toBe("failed");
+    expect(consoleError).toHaveBeenCalledWith("[db-backup] Database backup attempt failed");
+    expect(JSON.stringify([consoleError.mock.calls, audit.mock.calls, alert.mock.calls, notifyAdmin.mock.calls]))
+      .not.toContain(databaseUrl);
+  });
+
+  it("reconciles a retained SQL backup already present in Drive without reuploading", async () => {
+    const upload = vi.fn();
+    const unlink = vi.fn(async () => undefined);
+    const recovered = await uploadRetainedPlainBackups({
+      backupDir: "/tmp/backups",
+      fileNames: ["notes.txt", "S&PBACKUP-2026-09-02_10-40-11.SQL"],
+      stat: vi.fn(async () => ({ size: 123 })),
+      findRemote: vi.fn(async () => [{
+        id: "existing",
+        name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+        size: "123",
+      }]),
+      upload,
+      unlink,
+    });
+
+    expect(recovered).toBe(1);
+    expect(upload).not.toHaveBeenCalled();
+    expect(unlink).toHaveBeenCalledWith(
+      "/tmp/backups/S&PBACKUP-2026-09-02_10-40-11.SQL",
+    );
+  });
+
+  it("uploads retained SQL before removing it and keeps it if upload fails", async () => {
+    const unlink = vi.fn(async () => undefined);
+    const options = {
+      backupDir: "/tmp/backups",
+      fileNames: ["S&PBACKUP-2026-09-02_10-40-11.SQL"],
+      stat: vi.fn(async () => ({ size: 123 })),
+      findRemote: vi.fn(async () => []),
+      upload: vi.fn(async () => { throw new Error("Drive unavailable"); }),
+      unlink,
+    };
+
+    await expect(uploadRetainedPlainBackups(options)).rejects.toThrow(/Drive unavailable/);
+    expect(unlink).not.toHaveBeenCalled();
+  });
+});
+
 describe("encrypted database backup production orchestration", () => {
   const key = Buffer.alloc(32, 1).toString("base64");
 
@@ -158,7 +319,7 @@ describe("encrypted database backup production orchestration", () => {
       }),
       kill: vi.fn(),
     };
-    return { process, stdout };
+    return { process: process as unknown as PgDumpProcess, stdout };
   }
 
   it("rejects a missing production encryption key", () => {
@@ -356,7 +517,7 @@ describe("encrypted database backup production orchestration", () => {
       fileName: "backup.sql.gz.enc",
       outputPath: "/tmp/backup.sql.gz.enc",
       environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
-      spawnPgDump: vi.fn(() => process),
+      spawnPgDump: vi.fn(() => process as unknown as PgDumpProcess),
       encrypt: vi.fn(async () => { throw new Error("encryption failed"); }),
       upload: vi.fn(),
       rename: vi.fn(),
@@ -394,7 +555,7 @@ describe("encrypted database backup production orchestration", () => {
       fileName: "backup.sql.gz.enc",
       outputPath: "/tmp/backup.sql.gz.enc",
       environment: { NODE_ENV: "production", DATABASE_URL: "postgres://private", DB_BACKUP_ENCRYPTION_KEY: key },
-      spawnPgDump: vi.fn(() => process),
+      spawnPgDump: vi.fn(() => process as unknown as PgDumpProcess),
       encrypt: vi.fn(async () => { throw new Error("encryption failed"); }),
       upload: vi.fn(),
       rename: vi.fn(),

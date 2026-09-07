@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { gunzipSync } from "zlib";
 
 const { proxy } = vi.hoisted(() => ({ proxy: vi.fn() }));
 
@@ -13,9 +14,11 @@ vi.mock("@replit/connectors-sdk", () => ({
 
 import {
   buildDriveTransportHeaders,
+  buildPlainDriveTransportHeaders,
   DRIVE_BACKUP_MIME_TYPE,
   DRIVE_BACKUP_FILE_PREFIX,
   buildDriveBackupFileName,
+  buildPlainDriveBackupFileName,
   discoverLegacyBackupFiles,
   findMatchingDriveBackup,
   isRetryableDriveUploadStatus,
@@ -32,6 +35,12 @@ describe("Google Drive database backup helpers", () => {
   it("builds the requested stable UTC backup filename", () => {
     expect(buildDriveBackupFileName(new Date("2026-09-02T10:40:11.000Z"))).toBe(
       "S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc",
+    );
+  });
+
+  it("builds a stable UTC filename for new plain SQL backups", () => {
+    expect(buildPlainDriveBackupFileName(new Date("2026-09-02T10:40:11.000Z"))).toBe(
+      "S&PBACKUP-2026-09-02_10-40-11.SQL",
     );
   });
 
@@ -98,6 +107,15 @@ describe("Google Drive database backup helpers", () => {
     expect(buildDriveTransportHeaders(2_500)).toEqual({
       "Content-Type": "application/octet-stream",
       "Content-Length": "2500",
+    });
+  });
+
+  it("describes a gzip transport whose decoded Drive object is plain SQL", () => {
+    expect(buildPlainDriveTransportHeaders(660_000_000, 42_000_000)).toEqual({
+      "Content-Type": "application/sql",
+      "Content-Encoding": "gzip",
+      "Content-Length": "42000000",
+      "Content-Range": "bytes 0-659999999/660000000",
     });
   });
 
@@ -223,6 +241,138 @@ describe("Google Drive database backup helpers", () => {
       });
       expect(uploadOptions.headers).not.toHaveProperty("Content-Encoding");
       expect(await uploadOptions.body.text()).toBe("encrypted backup");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("uploads plain SQL through gzip transport while Drive stores decoded SQL bytes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const plainPath = join(directory, "backup.SQL");
+    const plainSql = "-- PostgreSQL database dump\\nSELECT 1;\\n";
+    let uploadedTransport: Buffer | null = null;
+    await writeFile(plainPath, plainSql);
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: { body?: Blob }) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/plain-session" },
+        });
+      }
+      if (path === "/upload/plain-session") {
+        uploadedTransport = Buffer.from(await options!.body!.arrayBuffer());
+        return new Response(JSON.stringify({ id: "plain-uploaded" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "plain-uploaded",
+          name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+          size: String(Buffer.byteLength(plainSql)),
+        }),
+        { status: 200 },
+      );
+    });
+
+    try {
+      await uploadBackupToGoogleDrive(
+        plainPath,
+        "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      );
+
+      const uploadCall = proxy.mock.calls.find((call) => call[1] === "/upload/plain-session");
+      const uploadOptions = uploadCall?.[2] as {
+        headers: Record<string, string>;
+        body: Blob;
+      };
+      expect(uploadOptions.headers).toMatchObject({
+        "Content-Type": "application/sql",
+        "Content-Encoding": "gzip",
+        "Content-Range": `bytes 0-${Buffer.byteLength(plainSql) - 1}/${Buffer.byteLength(plainSql)}`,
+      });
+      expect(
+        gunzipSync(uploadedTransport!).toString("utf8"),
+      ).toBe(plainSql);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers a plain SQL upload when the completion response is lost", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const plainPath = join(directory, "backup.SQL");
+    const plainSql = "SELECT 1;\n";
+    await writeFile(plainPath, plainSql);
+    let sessionCalls = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: { body?: Blob }) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/plain-lost-response" },
+        });
+      }
+      if (path === "/upload/plain-lost-response") {
+        sessionCalls += 1;
+        if (options?.body) throw new Error("connector lost completion response");
+        return new Response(JSON.stringify({ id: "plain-uploaded" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        id: "plain-uploaded",
+        name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+        size: String(Buffer.byteLength(plainSql)),
+      }), { status: 200 });
+    });
+
+    try {
+      await expect(uploadBackupToGoogleDrive(
+        plainPath,
+        "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      )).resolves.toMatchObject({ id: "plain-uploaded" });
+      expect(sessionCalls).toBe(2);
+      expect(
+        proxy.mock.calls.filter((call) => call[1] === "/upload/drive/v3/files?uploadType=resumable"),
+      ).toHaveLength(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("starts a new plain SQL session when the old session committed only part of the decoded file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const plainPath = join(directory, "backup.SQL");
+    const plainSql = "SELECT 123456789;\n";
+    await writeFile(plainPath, plainSql);
+    let sessionsStarted = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: { body?: Blob }) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        sessionsStarted += 1;
+        return new Response(null, {
+          status: 200,
+          headers: { location: `https://www.googleapis.com/upload/plain-session-${sessionsStarted}` },
+        });
+      }
+      if (path === "/upload/plain-session-1") {
+        if (options?.body) throw new Error("connector interrupted upload");
+        return new Response(null, { status: 308, headers: { range: "bytes=0-4" } });
+      }
+      if (path === "/upload/plain-session-2") {
+        return new Response(JSON.stringify({ id: "plain-uploaded" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        id: "plain-uploaded",
+        name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+        size: String(Buffer.byteLength(plainSql)),
+      }), { status: 200 });
+    });
+
+    try {
+      await expect(uploadBackupToGoogleDrive(
+        plainPath,
+        "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      )).resolves.toMatchObject({ id: "plain-uploaded" });
+      expect(sessionsStarted).toBe(2);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
