@@ -23,6 +23,18 @@ running makes them FAIL with `DIDNT_OPEN_A_PORT` (8080 / 21504 already bound) â€
 spurious, harmless failure, not a real bug. To reload env/secrets, restart only
 **Start application** (and mockup-sandbox if needed).
 
+Agent shell commands can retain the environment snapshot from before a secret was
+added or replaced, even across later shell invocations. Repeated format checks in
+that stale shell can therefore keep reporting the old value.
+
+**Why:** Secret updates are injected into newly started workflows; they do not
+necessarily mutate the environment of the already-running agent/tool session.
+
+**How to apply:** After a secure secret update, do not repeatedly ask the user to
+replace it based only on the old agent shell. Restart **Start application** and
+validate through newly started application/production behavior without printing
+the secret.
+
 # Blank/broken preview recovery (orphan vite steals 21504)
 
 Symptom: preview pane is blank OR `curl :5000` returns 503/000; Start application log
