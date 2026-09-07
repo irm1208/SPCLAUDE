@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   TURNSTILE_TEST_SITE_KEY,
   accountRequiresVerification,
@@ -23,5 +25,22 @@ describe("account verification flow", () => {
   it("extracts server resend cooldowns without inventing one", () => {
     assert.equal(parseResendRetrySeconds("Please wait 45 seconds before resending."), 45);
     assert.equal(parseResendRetrySeconds("Verification email cannot be sent"), null);
+  });
+
+  it("does not restart Telegram link initialization when mutation state changes", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../pages/VerifyAccount.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    assert.match(
+      source,
+      /const \{\s*mutateAsync: initTelegramLink,\s*reset: resetTelegramLink,\s*\} = useTelegramLinkInit\(\)/,
+    );
+    assert.match(
+      source,
+      /\}, \[activeMethod, tgLinkData, tgLinkError, initTelegramLink\]\);/,
+    );
+    assert.doesNotMatch(source, /\[activeMethod, tgLinkData, tgLinkError, tgLinkInit\]/);
   });
 });

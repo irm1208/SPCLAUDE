@@ -55,7 +55,10 @@ export default function VerifyAccount() {
   const [resendCooldown, setResendCooldown] = useState(0);
   
   // Telegram verification state
-  const tgLinkInit = useTelegramLinkInit();
+  const {
+    mutateAsync: initTelegramLink,
+    reset: resetTelegramLink,
+  } = useTelegramLinkInit();
   const [tgLinkData, setTgLinkData] = useState<{ deepLink: string | null; botUsername: string | null } | null>(null);
   const [tgLinkError, setTgLinkError] = useState("");
   const [tgLinked, setTgLinked] = useState(false);
@@ -107,9 +110,9 @@ export default function VerifyAccount() {
 
   // Initialize Telegram link when selected
   useEffect(() => {
-    if (activeMethod === "telegram" && !tgLinkData && !tgLinkError && !tgLinkInit.isPending) {
+    if (activeMethod === "telegram" && !tgLinkData && !tgLinkError) {
       let cancelled = false;
-      tgLinkInit.mutateAsync().then(data => {
+      initTelegramLink().then(data => {
         if (!cancelled && data?.deepLink) {
           const botUsername = data.botUrl ? data.botUrl.split("/").pop()! : null;
           setTgLinkData({ deepLink: data.deepLink, botUsername });
@@ -124,7 +127,7 @@ export default function VerifyAccount() {
       return () => { cancelled = true; };
     }
     return undefined;
-  }, [activeMethod, tgLinkData, tgLinkError, tgLinkInit]);
+  }, [activeMethod, tgLinkData, tgLinkError, initTelegramLink]);
 
   // Poll for Telegram link status
   useEffect(() => {
@@ -316,7 +319,7 @@ export default function VerifyAccount() {
                             <button
                               type="button"
                               onClick={() => {
-                                tgLinkInit.reset();
+                                resetTelegramLink();
                                 setTgLinkError("");
                               }}
                               className="w-full h-11 rounded-xl text-sm font-bold"
