@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import { promisify } from "util";
 import { mkdir, readdir, unlink, stat } from "fs";
 import { rename as renameFile } from "fs/promises";
@@ -20,6 +21,9 @@ import {
 } from "./google-drive-backup";
 import { buildPgDumpArgs } from "./db-backup-command";
 import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
+import { writeLog } from "./audit-log";
+import { createAlert } from "./create-alert";
+import { sendAdminMessage } from "./telegram";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
@@ -40,9 +44,17 @@ let backupInProgress = false;
 
 export type DbBackupResult =
   | "completed"
+  | "failed"
   | "lock_contended"
   | "already_in_progress"
   | "not_configured";
+
+export function backupRunResult(
+  lockAcquired: boolean,
+  attemptResult: "completed" | "failed",
+): "completed" | "failed" | "lock_contended" {
+  return lockAcquired ? attemptResult : "lock_contended";
+}
 
 /** Limits stale-file deletion to encrypted backup artifacts we create. */
 export function isPrunableEncryptedBackupArtifact(fileName: string): boolean {
@@ -101,6 +113,13 @@ export interface EncryptedBackupOptions {
   rename: (oldPath: string, newPath: string) => Promise<void>;
   unlink: (path: string) => Promise<void>;
   terminationGraceMs?: number;
+}
+
+export interface BackupAttemptOptions extends EncryptedBackupOptions {
+  audit: (category: string, requestId: string) => Promise<void>;
+  alert: (category: string, requestId: string) => Promise<void>;
+  notifyAdmin: (category: string, requestId: string) => Promise<void>;
+  consoleError: (message: string) => void;
 }
 
 /** Streams pg_dump into an encrypted temporary file before uploading it. */
@@ -165,6 +184,65 @@ export async function createAndUploadEncryptedBackup(options: EncryptedBackupOpt
   }
 }
 
+async function attemptFailureChannel(operation: () => Promise<void>): Promise<void> {
+  try {
+    await operation();
+  } catch {
+    // Failure channels are independent; one unavailable channel must not block the others.
+  }
+}
+
+/** Converts backup failures into a sanitized durable operational outcome. */
+export async function runEncryptedBackupAttempt(
+  options: BackupAttemptOptions,
+): Promise<"completed" | "failed"> {
+  try {
+    await createAndUploadEncryptedBackup(options);
+    return "completed";
+  } catch {
+    const category = "database_backup_failed";
+    const requestId = randomUUID();
+    options.consoleError("[db-backup] Encrypted backup attempt failed");
+    await Promise.all([
+      attemptFailureChannel(() => options.audit(category, requestId)),
+      attemptFailureChannel(() => options.alert(category, requestId)),
+      attemptFailureChannel(() => options.notifyAdmin(category, requestId)),
+    ]);
+    return "failed";
+  }
+}
+
+function backupFailureDependencies(): Pick<
+  BackupAttemptOptions,
+  "audit" | "alert" | "notifyAdmin" | "consoleError"
+> {
+  return {
+    audit: async (category, requestId) => {
+      await writeLog(
+        "error",
+        "error",
+        "database_backup_failed",
+        "Encrypted database backup failed",
+        { category, requestId },
+      );
+    },
+    alert: async (category, requestId) => {
+      await createAlert(
+        "system",
+        "high",
+        "Encrypted database backup failed",
+        `Category: ${category}; request ID: ${requestId}`,
+      );
+    },
+    notifyAdmin: async (category, requestId) => {
+      await sendAdminMessage(
+        `Encrypted database backup failed. Category: ${category}; request ID: ${requestId}`,
+      );
+    },
+    consoleError: (message) => console.error(message),
+  };
+}
+
 function spawnPgDump(databaseUrl: string): PgDumpProcess {
   const pgDump = spawn(
     "pg_dump",
@@ -213,12 +291,13 @@ export async function runDbBackup(): Promise<DbBackupResult> {
 
   backupInProgress = true;
   try {
+    let attemptResult: "completed" | "failed" = "failed";
     const acquired = await withBackupLock(async () => {
       const fileName = buildDriveBackupFileName();
       const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
-        await createAndUploadEncryptedBackup({
+        attemptResult = await runEncryptedBackupAttempt({
           fileName,
           outputPath,
           environment: process.env,
@@ -227,15 +306,18 @@ export async function runDbBackup(): Promise<DbBackupResult> {
           upload: uploadBackupToGoogleDrive,
           rename: renameFile,
           unlink: (path) => promisify(unlink)(path),
+          ...backupFailureDependencies(),
         });
-        console.log(`[db-backup] Uploaded encrypted backup ${fileName} to Google Drive`);
+        if (attemptResult === "completed") {
+          console.log(`[db-backup] Uploaded encrypted backup ${fileName} to Google Drive`);
+        }
       } catch {
-        console.error("[db-backup] Encrypted backup/upload failed; encrypted file retained when upload failed");
+        console.error("[db-backup] Encrypted backup attempt failed");
       } finally {
         await pruneOldBackups();
       }
     });
-    return acquired ? "completed" : "lock_contended";
+    return backupRunResult(acquired, attemptResult);
   } finally {
     backupInProgress = false;
   }
@@ -283,8 +365,8 @@ export function createDbBackupScheduler(
         clearTimeout(retryTimer);
         retryTimer = undefined;
       }
-    } catch (error) {
-      console.error("[db-backup] Scheduled backup attempt failed:", error);
+    } catch {
+      console.error("[db-backup] Scheduled backup attempt failed");
     } finally {
       inFlight = false;
     }

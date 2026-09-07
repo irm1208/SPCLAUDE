@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "stream";
 import {
   BACKUP_RETRY_DELAY_MS,
+  backupRunResult,
   createAndUploadEncryptedBackup,
   createDbBackupScheduler,
   FIRST_BACKUP_DELAY_MS,
   INTERVAL_MS,
   isPrunableEncryptedBackupArtifact,
   requireBackupEncryptionKey,
+  runEncryptedBackupAttempt,
   startDbBackupSchedule,
 } from "./db-backup";
 import type { DbBackupResult } from "./db-backup";
@@ -19,6 +21,12 @@ describe("database backup scheduler", () => {
 
   it("uses a six-hour recurring interval", () => {
     expect(INTERVAL_MS).toBe(6 * 60 * 60 * 1000);
+  });
+
+  it("never reports an acquired failed attempt as completed", () => {
+    expect(backupRunResult(true, "failed")).toBe("failed");
+    expect(backupRunResult(true, "completed")).toBe("completed");
+    expect(backupRunResult(false, "completed")).toBe("lock_contended");
   });
 
   it("runs the first production attempt after ten minutes", async () => {
@@ -71,6 +79,16 @@ describe("database backup scheduler", () => {
     await vi.advanceTimersByTimeAsync(BACKUP_RETRY_DELAY_MS);
     expect(runBackup).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(2);
+  });
+
+  it("does not tightly retry failed backup attempts", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const scheduler = createDbBackupScheduler(runBackup);
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + BACKUP_RETRY_DELAY_MS);
+    expect(runBackup).toHaveBeenCalledTimes(1);
   });
 
   it("does not create overlapping backup work when a recurring callback fires during local work", async () => {
@@ -190,6 +208,55 @@ describe("encrypted database backup production orchestration", () => {
       unlink: vi.fn(),
     })).rejects.toThrow(/DB_BACKUP_ENCRYPTION_KEY/);
     expect(spawnPgDump).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["malformed", "SUPER_SECRET_INVALID_KEY"],
+  ])("reports a sanitized non-completed outcome for a %s production encryption key", async (_case, invalidKey) => {
+    const spawnPgDump = vi.fn();
+    const upload = vi.fn();
+    const audit = vi.fn(async () => { throw new Error("audit unavailable"); });
+    const alert = vi.fn(async () => { throw new Error("alert unavailable"); });
+    const notifyAdmin = vi.fn(async () => { throw new Error("notification unavailable"); });
+    const consoleError = vi.fn();
+    const databaseUrl = "postgres://secret-user:secret-password@private-host/database";
+
+    const result = await runEncryptedBackupAttempt({
+      fileName: "backup.sql.gz.enc",
+      outputPath: "/tmp/backup.sql.gz.enc",
+      environment: {
+        NODE_ENV: "production",
+        DATABASE_URL: databaseUrl,
+        ...(invalidKey === undefined ? {} : { DB_BACKUP_ENCRYPTION_KEY: invalidKey }),
+      },
+      spawnPgDump,
+      encrypt: vi.fn(),
+      upload,
+      rename: vi.fn(),
+      unlink: vi.fn(),
+      audit,
+      alert,
+      notifyAdmin,
+      consoleError,
+    });
+
+    expect(result).toBe("failed");
+    expect(spawnPgDump).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledOnce();
+    expect(alert).toHaveBeenCalledOnce();
+    expect(notifyAdmin).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith("[db-backup] Encrypted backup attempt failed");
+    const surfaced = JSON.stringify([
+      consoleError.mock.calls,
+      audit.mock.calls,
+      alert.mock.calls,
+      notifyAdmin.mock.calls,
+    ]);
+    expect(surfaced).not.toContain(invalidKey ?? "DB_BACKUP_ENCRYPTION_KEY");
+    expect(surfaced).not.toContain(databaseUrl);
+    expect(surfaced).not.toContain("secret-password");
   });
 
   it("streams pg_dump stdout into encryption and uploads only after both succeed", async () => {
