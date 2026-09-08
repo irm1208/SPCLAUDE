@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { AdminApiError, AdminAuthController, AdminSessionExpiredError } from "./admin-auth.ts";
+import {
+  AdminApiError,
+  AdminAuthController,
+  AdminSessionExpiredError,
+  initializeAdminRequestAuth,
+} from "./admin-auth.ts";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -52,6 +57,34 @@ test("enabled mutations include cookies and restored CSRF but never admin secret
   assert.equal(calls[1]?.credentials, "include");
   assert.equal(headers.get("x-admin-csrf"), "restored");
   assert.equal(headers.has("x-admin-secret"), false);
+});
+
+test("standalone admin pages restore the 2FA session before making mutations", async () => {
+  const calls: string[] = [];
+  const auth = new AdminAuthController(async (input) => {
+    calls.push(String(input));
+    if (calls.length === 1) return json({ twoFactorEnabled: true });
+    return json({ username: "alice", csrfToken: "receiver-csrf" });
+  });
+
+  await initializeAdminRequestAuth(auth, "legacy-secret");
+  await auth.request("/admin/lab-tests/bookmarklet-import", { method: "POST" });
+
+  assert.deepEqual(calls, [
+    "/api/admin/security/status",
+    "/api/admin/auth/me",
+    "/api/admin/lab-tests/bookmarklet-import",
+  ]);
+  assert.equal(auth.csrfToken, "receiver-csrf");
+});
+
+test("Janoshik receiver uses the session-aware admin request path", async () => {
+  const source = await readFile(new URL("../pages/JanoshikReceiver.tsx", import.meta.url), "utf8");
+  assert.match(source, /initializeAdminRequestAuth\(adminAuth,/);
+  assert.match(source, /adminAuth\.request\("\/admin\/lab-tests\/bookmarklet-import"/);
+  assert.doesNotMatch(source, /fetch\("\/api\/admin\/lab-tests\/bookmarklet-import"/);
+  assert.doesNotMatch(source, /d\.type === "janoshik-bulk-hello"[^\\n]+&& d\.secret\)/);
+  assert.doesNotMatch(source, /d\.type !== "janoshik-helper-payload"[^\\n]+\|\| !d\.secret/);
 });
 
 test("step-up retries a mutation once", async () => {

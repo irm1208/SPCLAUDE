@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SaltPepsMark } from "@/components/SaltPepsMark";
+import { adminAuth, initializeAdminRequestAuth } from "@/lib/admin-auth";
 
 // ── Janoshik browser-helper receiver ─────────────────────────────────────────
 // Opened in a new tab by the admin bookmarklet running on a Janoshik report
 // page. The bookmarklet's browser has already passed the Cloudflare challenge,
 // so it can fetch report images that our server cannot. It sends them here via
 // postMessage and this page forwards them to the admin import endpoint using the
-// admin secret the bookmarklet carries. No admin login is needed in this tab.
+// active admin session (or the legacy secret while admin 2FA is disabled).
 //
 // Two modes:
 //  • single  (default)        — imports the one report the admin is looking at.
@@ -81,7 +82,8 @@ function SingleReceiver() {
       if (p.isThirdParty) fd.append("isThirdParty", "true");
 
       try {
-        const res = await fetch("/api/admin/lab-tests/bookmarklet-import", {
+        await initializeAdminRequestAuth(adminAuth, p.secret);
+        const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
           method: "POST",
           headers: { "x-admin-secret": p.secret },
           body: fd,
@@ -115,7 +117,12 @@ function SingleReceiver() {
       // importer. The admin secret inside the payload is still what authorizes.
       if (!window.opener || e.source !== window.opener) return;
       const d = e.data as HelperPayload | undefined;
-      if (!d || d.type !== "janoshik-helper-payload" || !Array.isArray(d.images) || !d.secret) return;
+      if (
+        !d ||
+        d.type !== "janoshik-helper-payload" ||
+        !Array.isArray(d.images) ||
+        typeof d.secret !== "string"
+      ) return;
       void handlePayload(d);
     }
 
@@ -227,6 +234,7 @@ function BulkReceiver() {
   const [done, setDone] = useState(false);
 
   const secretRef = useRef("");
+  const authReadyRef = useRef<Promise<void> | null>(null);
   const openerOriginRef = useRef("");
   const runIdRef = useRef(Math.random().toString(36).slice(2) + Date.now().toString(36));
   const pendingRef = useRef<{ reqId: string; resolve: (v: BulkReply) => void } | null>(null);
@@ -236,10 +244,13 @@ function BulkReceiver() {
     function onMessage(e: MessageEvent) {
       // Messages must come from the Janoshik tab that opened us.
       if (!window.opener || e.source !== window.opener) return;
-      const d = e.data as { type?: string; secret?: string } & BulkReply;
+      const d = e.data as
+        | { type: "janoshik-bulk-hello"; secret?: string }
+        | BulkReply
+        | null;
       if (!d || typeof d.type !== "string") return;
 
-      if (d.type === "janoshik-bulk-hello" && typeof d.secret === "string" && d.secret) {
+      if (d.type === "janoshik-bulk-hello" && typeof d.secret === "string") {
         secretRef.current = d.secret;
         openerOriginRef.current = e.origin;
         setConnected(true);
@@ -301,7 +312,9 @@ function BulkReceiver() {
     const fd = new FormData();
     blobs.forEach((b, i) => fd.append("files", b, `report-${i + 1}.${extFor(b)}`));
     fd.append("url", url);
-    const res = await fetch("/api/admin/lab-tests/bookmarklet-import", {
+    authReadyRef.current ??= initializeAdminRequestAuth(adminAuth, secretRef.current);
+    await authReadyRef.current;
+    const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
       method: "POST",
       headers: { "x-admin-secret": secretRef.current },
       body: fd,

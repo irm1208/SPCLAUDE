@@ -9,6 +9,7 @@ import {
 import { Button, Input, Label, Card } from "@/components/ui";
 import { getCanonicalGroup } from "@/lib/peptide-groups";
 import { UTHER_BATCH_CODES } from "@/lib/uther-batch-codes";
+import { adminAuth } from "@/lib/admin-auth";
 
 
 function isHGH(name: string): boolean {
@@ -1094,7 +1095,7 @@ function BulkImportPanel({ secret, onImported }: { secret: string; onImported: (
     setSubmitting(true);
     setStartError("");
     try {
-      const res = await fetch(apiUrl("/admin/lab-tests/bulk-import"), {
+      const res = await adminAuth.request(apiUrl("/admin/lab-tests/bulk-import"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({ urls, isThirdParty, labName, supplier }),
@@ -1109,7 +1110,7 @@ function BulkImportPanel({ secret, onImported }: { secret: string; onImported: (
   };
 
   const handleStop = async () => {
-    await fetch(apiUrl("/admin/lab-tests/bulk-import-stop"), { method: "POST", headers: { "x-admin-secret": secret } });
+    await adminAuth.request(apiUrl("/admin/lab-tests/bulk-import-stop"), { method: "POST", headers: { "x-admin-secret": secret } });
     stopPolling();
     await pollStatus();
   };

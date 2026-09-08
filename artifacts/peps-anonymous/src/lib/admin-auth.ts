@@ -387,4 +387,16 @@ function normalizeReshipperPaymentDestination(body: any): Record<string, unknown
   return result;
 }
 
+export async function initializeAdminRequestAuth(
+  controller: AdminAuthController,
+  legacySecret = "",
+): Promise<void> {
+  const status = await controller.initialize();
+  if (status.twoFactorEnabled) {
+    await controller.restoreSession();
+  } else if (legacySecret) {
+    await controller.loginWithSecret(legacySecret);
+  }
+}
+
 export const adminAuth = new AdminAuthController();
