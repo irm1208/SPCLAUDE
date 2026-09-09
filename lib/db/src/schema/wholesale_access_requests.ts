@@ -3,7 +3,10 @@ import { accountsTable } from "./accounts";
 
 export const wholesaleAccessRequestsTable = pgTable("wholesale_access_requests", {
   id: serial("id").primaryKey(),
-  accountUsername: text("account_username").notNull().references(() => accountsTable.telegramUsername),
+  accountUsername: text("account_username").notNull().references(
+    () => accountsTable.telegramUsername,
+    { onUpdate: "cascade" },
+  ),
   amountUsd: integer("amount_usd").notNull(),
   status: text("status").notNull().default("pending"),
   paymentTestAmount: real("payment_test_amount"),
