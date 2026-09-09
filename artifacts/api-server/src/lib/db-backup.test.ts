@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "stream";
 import {
   BACKUP_RETRY_DELAY_MS,
+  BACKUP_UPLOAD_RETRY_DELAY_MS,
+  BACKUP_UPLOAD_RETRY_WINDOW_MS,
   backupRunResult,
   createAndUploadEncryptedBackup,
   createAndUploadPlainBackup,
@@ -12,6 +14,7 @@ import {
   isPrunableBackupArtifact,
   requireBackupEncryptionKey,
   runEncryptedBackupAttempt,
+  runRetainedBackupRecovery,
   runPlainBackupAttempt,
   uploadRetainedPlainBackups,
   startDbBackupSchedule,
@@ -95,7 +98,220 @@ describe("database backup scheduler", () => {
     expect(runBackup).toHaveBeenCalledTimes(1);
   });
 
-  it("does not create overlapping backup work when a recurring callback fires during local work", async () => {
+  it("retries a failed backup upload every ten minutes", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecoveryStarted = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, {
+      runRecovery,
+      onRecoveryStarted,
+    });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
+    expect(onRecoveryStarted).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS - 1);
+    expect(runRecovery).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runRecovery).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(runRecovery).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops upload retries after recovery succeeds", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("completed");
+    const onRecovered = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery, onRecovered });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(runRecovery).toHaveBeenCalledOnce();
+    expect(onRecovered).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS * 2);
+    expect(runRecovery).toHaveBeenCalledOnce();
+  });
+
+  it("keeps only one upload-recovery timer and clears it on shutdown", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
+    expect(vi.getTimerCount()).toBe(2);
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(vi.getTimerCount()).toBe(2);
+    scheduler.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reports recovery when a normal run uploads the retained backup first", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>()
+      .mockResolvedValueOnce("failed")
+      .mockResolvedValueOnce("completed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecovered = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery, onRecovered });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS);
+    expect(runBackup).toHaveBeenCalledTimes(2);
+    expect(onRecovered).toHaveBeenCalledOnce();
+    const recoveryCalls = runRecovery.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(runRecovery).toHaveBeenCalledTimes(recoveryCalls);
+  });
+
+  it("does not drop a normal six-hour run while recovery is in flight", async () => {
+    vi.useFakeTimers();
+    let finishRecovery!: (result: DbBackupResult) => void;
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>()
+      .mockImplementationOnce(() => new Promise(resolve => { finishRecovery = resolve; }))
+      .mockResolvedValue("failed");
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(runRecovery).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS - BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(runBackup).toHaveBeenCalledOnce();
+    finishRecovery("failed");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runBackup).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for an in-flight normal reconciliation before declaring expiry", async () => {
+    vi.useFakeTimers();
+    let finishNormal!: (result: DbBackupResult) => void;
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>()
+      .mockResolvedValueOnce("failed")
+      .mockImplementationOnce(() => new Promise(resolve => { finishNormal = resolve; }));
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecovered = vi.fn(async () => undefined);
+    const onRecoveryExpired = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, {
+      runRecovery,
+      onRecovered,
+      onRecoveryExpired,
+    });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    expect(runBackup).toHaveBeenCalledTimes(2);
+    expect(onRecoveryExpired).not.toHaveBeenCalled();
+    finishNormal("completed");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onRecovered).toHaveBeenCalledOnce();
+    expect(onRecoveryExpired).not.toHaveBeenCalled();
+  });
+
+  it("expires failed upload recovery after six hours", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecoveryExpired = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery, onRecoveryExpired });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(
+      FIRST_BACKUP_DELAY_MS + BACKUP_UPLOAD_RETRY_WINDOW_MS + BACKUP_UPLOAD_RETRY_DELAY_MS,
+    );
+    expect(onRecoveryExpired).toHaveBeenCalledOnce();
+    const callsAtExpiry = runRecovery.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS * 2);
+    expect(runRecovery).toHaveBeenCalledTimes(callsAtExpiry);
+  });
+
+  it("does not reopen an expired recovery episode on later normal intervals", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecoveryStarted = vi.fn(async () => undefined);
+    const onRecoveryExpired = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, {
+      runRecovery,
+      onRecoveryStarted,
+      onRecoveryExpired,
+    });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(18 * 60 * 60 * 1000);
+    expect(onRecoveryStarted).toHaveBeenCalledOnce();
+    expect(onRecoveryExpired).toHaveBeenCalledOnce();
+  });
+
+  it("starts a fresh retry window for a genuinely new failed dump", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>()
+      .mockResolvedValueOnce("failed")
+      .mockResolvedValueOnce("failed")
+      .mockResolvedValueOnce("failed_new_backup");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecoveryStarted = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, { runRecovery, onRecoveryStarted });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
+    expect(onRecoveryStarted).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives a new failed dump a full window after recovering the previous backup", async () => {
+    vi.useFakeTimers();
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>()
+      .mockResolvedValueOnce("failed_new_backup")
+      .mockResolvedValueOnce("failed_new_backup_after_recovery")
+      .mockResolvedValue("failed");
+    const runRecovery = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
+    const onRecoveryStarted = vi.fn(async () => undefined);
+    const onRecovered = vi.fn(async () => undefined);
+    const onRecoveryExpired = vi.fn(async () => undefined);
+    const scheduler = createDbBackupScheduler(runBackup, {
+      runRecovery,
+      onRecoveryStarted,
+      onRecovered,
+      onRecoveryExpired,
+    });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    expect(onRecovered).toHaveBeenCalledOnce();
+    expect(onRecoveryStarted).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS);
+    expect(onRecoveryExpired).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_WINDOW_MS);
+    expect(onRecoveryExpired).toHaveBeenCalledOnce();
+  });
+
+  it("discards a queued lock retry after the in-flight scheduled run succeeds", async () => {
+    vi.useFakeTimers();
+    let finishFirst!: (result: DbBackupResult) => void;
+    let finishScheduled!: (result: DbBackupResult) => void;
+    const runBackup = vi.fn<() => Promise<DbBackupResult>>()
+      .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishScheduled = resolve; }))
+      .mockResolvedValue("completed");
+    const scheduler = createDbBackupScheduler(runBackup);
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS);
+    finishFirst("lock_contended");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runBackup).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(BACKUP_RETRY_DELAY_MS);
+    finishScheduled("completed");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runBackup).toHaveBeenCalledTimes(2);
+  });
+
+  it("queues recurring backup work instead of overlapping or dropping it", async () => {
     vi.useFakeTimers();
     let resolveBackup!: (result: DbBackupResult) => void;
     const runBackup = vi.fn<() => Promise<DbBackupResult>>()
@@ -111,7 +327,7 @@ describe("database backup scheduler", () => {
     expect(runBackup).toHaveBeenCalledTimes(1);
     resolveBackup("completed");
     await vi.advanceTimersByTimeAsync(0);
-    expect(runBackup).toHaveBeenCalledTimes(1);
+    expect(runBackup).toHaveBeenCalledTimes(2);
   });
 
   it("stops all scheduled timers when stopped", async () => {
@@ -162,6 +378,12 @@ describe("plain SQL database backup production orchestration", () => {
     };
     return { process: process as unknown as PgDumpProcess, stdout };
   }
+
+  it("runs retained-file recovery without creating another database dump", async () => {
+    const reconcile = vi.fn(async () => 1);
+    await expect(runRetainedBackupRecovery(reconcile)).resolves.toBe("completed");
+    expect(reconcile).toHaveBeenCalledOnce();
+  });
 
   it("recognizes constrained plain and encrypted artifacts for stale pruning", () => {
     expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL")).toBe(true);

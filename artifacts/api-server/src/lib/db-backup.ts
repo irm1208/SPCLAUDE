@@ -35,6 +35,8 @@ const KEEP_DAYS = 3;
 export const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 export const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with application startup.
 export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention without busy-looping.
+export const BACKUP_UPLOAD_RETRY_DELAY_MS = 10 * 60 * 1000;
+export const BACKUP_UPLOAD_RETRY_WINDOW_MS = 6 * 60 * 60 * 1000;
 const BACKUP_LOCK_NAME = "salt-and-peps:database-backup";
 const BACKUP_FILE_PREFIX = "S&PBACKUP-";
 const BACKUP_FILE_SUFFIX = ".sql.gz.enc";
@@ -53,14 +55,18 @@ let backupInProgress = false;
 export type DbBackupResult =
   | "completed"
   | "failed"
+  | "failed_new_backup"
+  | "failed_new_backup_after_recovery"
   | "lock_contended"
   | "already_in_progress"
   | "not_configured";
 
+export type DbBackupRecoveryResult = DbBackupResult | "nothing_to_recover";
+
 export function backupRunResult(
   lockAcquired: boolean,
-  attemptResult: "completed" | "failed",
-): "completed" | "failed" | "lock_contended" {
+  attemptResult: "completed" | "failed" | "failed_new_backup" | "failed_new_backup_after_recovery",
+): "completed" | "failed" | "failed_new_backup" | "failed_new_backup_after_recovery" | "lock_contended" {
   return lockAcquired ? attemptResult : "lock_contended";
 }
 
@@ -310,6 +316,32 @@ export async function uploadRetainedPlainBackups(
   return recovered;
 }
 
+async function reconcileRetainedPlainBackups(): Promise<number> {
+  await promisify(mkdir)(BACKUP_DIR, { recursive: true });
+  return uploadRetainedPlainBackups({
+    backupDir: BACKUP_DIR,
+    fileNames: await promisify(readdir)(BACKUP_DIR),
+    stat: (path) => promisify(stat)(path),
+    findRemote: findGoogleDriveBackupsByName,
+    upload: uploadBackupToGoogleDrive,
+    unlink: (path) => promisify(unlink)(path),
+  });
+}
+
+export async function runRetainedBackupRecovery(
+  reconcile: () => Promise<number>,
+): Promise<"completed" | "failed" | "nothing_to_recover"> {
+  try {
+    const recovered = await reconcile();
+    if (recovered === 0) return "nothing_to_recover";
+    console.log(`[db-backup] Reconciled ${recovered} retained SQL backup(s)`);
+    return "completed";
+  } catch {
+    console.error("[db-backup] Retained SQL backup recovery failed");
+    return "failed";
+  }
+}
+
 async function attemptFailureChannel(operation: () => Promise<void>): Promise<void> {
   try {
     await operation();
@@ -446,23 +478,22 @@ export async function runDbBackup(): Promise<DbBackupResult> {
 
   backupInProgress = true;
   try {
-    let attemptResult: "completed" | "failed" = "failed";
+    let attemptResult:
+      | "completed"
+      | "failed"
+      | "failed_new_backup"
+      | "failed_new_backup_after_recovery" = "failed";
     const acquired = await withBackupLock(async () => {
       const fileName = buildPlainDriveBackupFileName();
       const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
         const failureDependencies = backupFailureDependencies();
+        let recoveredRetained = false;
         try {
-          const recovered = await uploadRetainedPlainBackups({
-            backupDir: BACKUP_DIR,
-            fileNames: await promisify(readdir)(BACKUP_DIR),
-            stat: (path) => promisify(stat)(path),
-            findRemote: findGoogleDriveBackupsByName,
-            upload: uploadBackupToGoogleDrive,
-            unlink: (path) => promisify(unlink)(path),
-          });
+          const recovered = await reconcileRetainedPlainBackups();
           if (recovered > 0) {
+            recoveredRetained = true;
             console.log(`[db-backup] Reconciled ${recovered} retained SQL backup(s)`);
           }
         } catch {
@@ -483,6 +514,11 @@ export async function runDbBackup(): Promise<DbBackupResult> {
           unlink: (path) => promisify(unlink)(path),
           ...failureDependencies,
         });
+        if (attemptResult === "failed") {
+          attemptResult = recoveredRetained
+            ? "failed_new_backup_after_recovery"
+            : "failed_new_backup";
+        }
         if (attemptResult === "completed") {
           console.log(`[db-backup] Uploaded full SQL backup ${fileName} to Google Drive`);
         }
@@ -498,12 +534,37 @@ export async function runDbBackup(): Promise<DbBackupResult> {
   }
 }
 
+/** Retries only retained SQL uploads; it never creates another database dump. */
+export async function runDbBackupRecovery(): Promise<DbBackupRecoveryResult> {
+  if (backupInProgress) return "already_in_progress";
+  backupInProgress = true;
+  try {
+    let result: DbBackupRecoveryResult = "failed";
+    const acquired = await withBackupLock(async () => {
+      try {
+        result = await runRetainedBackupRecovery(reconcileRetainedPlainBackups);
+      } finally {
+        await pruneOldBackups();
+      }
+    });
+    return acquired ? result : "lock_contended";
+  } finally {
+    backupInProgress = false;
+  }
+}
+
 /**
  * Creates the timer orchestration for production database backups.
  * Lock-contended attempts are retried until one gets through.
  */
 export function createDbBackupScheduler(
   runBackup: () => Promise<DbBackupResult>,
+  options: {
+    runRecovery?: () => Promise<DbBackupRecoveryResult>;
+    onRecoveryStarted?: () => Promise<void>;
+    onRecovered?: () => Promise<void>;
+    onRecoveryExpired?: () => Promise<void>;
+  } = {},
 ): {
   start: () => void;
   stop: () => void;
@@ -514,6 +575,88 @@ export function createDbBackupScheduler(
   let firstBackupTimer: ReturnType<typeof setTimeout> | undefined;
   let intervalTimer: ReturnType<typeof setInterval> | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let uploadRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let uploadRetryDeadline: number | undefined;
+  let pendingScheduled = false;
+  let pendingLockRetry = false;
+  let pendingRecovery = false;
+  let uploadRecoveryExhausted = false;
+
+  const callLifecycle = async (callback?: () => Promise<void>): Promise<void> => {
+    if (!callback) return;
+    try {
+      await callback();
+    } catch {
+      console.error("[db-backup] Backup recovery notification failed");
+    }
+  };
+
+  const clearUploadRetry = (): void => {
+    if (uploadRetryTimer !== undefined) clearTimeout(uploadRetryTimer);
+    uploadRetryTimer = undefined;
+    uploadRetryDeadline = undefined;
+    pendingRecovery = false;
+  };
+
+  const expireUploadRetry = (): void => {
+    clearUploadRetry();
+    uploadRecoveryExhausted = true;
+    void callLifecycle(options.onRecoveryExpired);
+  };
+
+  const scheduleUploadRetry = (newEpisode = false): void => {
+    if (stopped || !options.runRecovery) return;
+    if (newEpisode) {
+      if (uploadRetryTimer !== undefined) clearTimeout(uploadRetryTimer);
+      uploadRetryTimer = undefined;
+      uploadRetryDeadline = undefined;
+      pendingRecovery = false;
+      uploadRecoveryExhausted = false;
+    }
+    if (uploadRetryTimer !== undefined) return;
+    if (uploadRecoveryExhausted && !newEpisode) return;
+    if (newEpisode) uploadRecoveryExhausted = false;
+    if (uploadRetryDeadline === undefined) {
+      uploadRetryDeadline = Date.now() + BACKUP_UPLOAD_RETRY_WINDOW_MS;
+      void callLifecycle(options.onRecoveryStarted);
+    }
+    if (Date.now() + BACKUP_UPLOAD_RETRY_DELAY_MS > uploadRetryDeadline) {
+      if (pendingScheduled) return;
+      expireUploadRetry();
+      return;
+    }
+    uploadRetryTimer = setTimeout(() => {
+      uploadRetryTimer = undefined;
+      void executeRecovery();
+    }, BACKUP_UPLOAD_RETRY_DELAY_MS);
+  };
+
+  const executeRecovery = async (): Promise<void> => {
+    if (stopped || uploadRetryDeadline === undefined) return;
+    if (inFlight) {
+      pendingRecovery = true;
+      return;
+    }
+    inFlight = true;
+    try {
+      const result = await options.runRecovery?.();
+      if (result === "completed") {
+        clearUploadRetry();
+        uploadRecoveryExhausted = false;
+        await callLifecycle(options.onRecovered);
+      } else if (result === "nothing_to_recover" || result === "not_configured") {
+        clearUploadRetry();
+        uploadRecoveryExhausted = false;
+      } else {
+        scheduleUploadRetry();
+      }
+    } catch {
+      scheduleUploadRetry();
+    } finally {
+      inFlight = false;
+      drainPending();
+    }
+  };
 
   const scheduleRetry = (): void => {
     if (stopped || retryTimer !== undefined) return;
@@ -527,7 +670,8 @@ export function createDbBackupScheduler(
   const execute = async (source: "scheduled" | "retry"): Promise<void> => {
     if (stopped) return;
     if (inFlight) {
-      if (source === "retry") scheduleRetry();
+      if (source === "scheduled") pendingScheduled = true;
+      else pendingLockRetry = true;
       return;
     }
 
@@ -536,16 +680,52 @@ export function createDbBackupScheduler(
       const result = await runBackup();
       if (result === "lock_contended") {
         scheduleRetry();
-      } else if (result === "completed" && retryTimer !== undefined) {
-        clearTimeout(retryTimer);
-        retryTimer = undefined;
+      } else if (
+        result === "failed" ||
+        result === "failed_new_backup" ||
+        result === "failed_new_backup_after_recovery"
+      ) {
+        if (result === "failed_new_backup_after_recovery") {
+          await callLifecycle(options.onRecovered);
+        }
+        scheduleUploadRetry(result !== "failed");
+      } else if (result === "completed") {
+        uploadRecoveryExhausted = false;
+        if (retryTimer !== undefined) {
+          clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+        pendingLockRetry = false;
+        if (uploadRetryDeadline !== undefined) {
+          clearUploadRetry();
+          await callLifecycle(options.onRecovered);
+        }
       }
     } catch {
       console.error("[db-backup] Scheduled backup attempt failed");
     } finally {
       inFlight = false;
+      drainPending();
     }
   };
+
+  function drainPending(): void {
+    if (stopped || inFlight) return;
+    if (pendingScheduled) {
+      pendingScheduled = false;
+      void execute("scheduled");
+      return;
+    }
+    if (pendingLockRetry) {
+      pendingLockRetry = false;
+      void execute("retry");
+      return;
+    }
+    if (pendingRecovery) {
+      pendingRecovery = false;
+      void executeRecovery();
+    }
+  }
 
   return {
     start: () => {
@@ -566,9 +746,16 @@ export function createDbBackupScheduler(
       if (firstBackupTimer !== undefined) clearTimeout(firstBackupTimer);
       if (intervalTimer !== undefined) clearInterval(intervalTimer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
+      if (uploadRetryTimer !== undefined) clearTimeout(uploadRetryTimer);
       firstBackupTimer = undefined;
       intervalTimer = undefined;
       retryTimer = undefined;
+      uploadRetryTimer = undefined;
+      uploadRetryDeadline = undefined;
+      pendingScheduled = false;
+      pendingLockRetry = false;
+      pendingRecovery = false;
+      uploadRecoveryExhausted = false;
     },
   };
 }
@@ -586,5 +773,56 @@ export function startDbBackupSchedule(): void {
   console.log(
     "[db-backup] Schedule started — first run in 10 min, then every 6 h (full SQL backups in Google Drive; lock contention is retried)",
   );
-  createDbBackupScheduler(runDbBackup).start();
+  createDbBackupScheduler(runDbBackup, {
+    runRecovery: runDbBackupRecovery,
+    onRecoveryStarted: async () => {
+      console.warn("[db-backup] Drive upload unavailable — retrying retained SQL backup every 10 min for up to 6 h");
+    },
+    onRecovered: async () => {
+      const category = "database_backup_recovered";
+      await Promise.all([
+        attemptFailureChannel(() => writeLog(
+          "change",
+          "info",
+          category,
+          "Retained database backup uploaded to Google Drive",
+          { category },
+        )),
+        attemptFailureChannel(() => createAlert(
+          "system",
+          "low",
+          "Database backup recovered",
+          "Retained SQL backup uploaded and verified in Google Drive.",
+        )),
+        attemptFailureChannel(async () => {
+          await sendAdminMessage(
+            "Database backup recovered: retained SQL backup uploaded and verified in Google Drive.",
+          );
+        }),
+      ]);
+    },
+    onRecoveryExpired: async () => {
+      const category = "database_backup_recovery_expired";
+      await Promise.all([
+        attemptFailureChannel(() => writeLog(
+          "error",
+          "error",
+          category,
+          "Database backup recovery window expired",
+          { category },
+        )),
+        attemptFailureChannel(() => createAlert(
+          "system",
+          "high",
+          "Database backup recovery failed",
+          "Google Drive remained unavailable for 6 hours.",
+        )),
+        attemptFailureChannel(async () => {
+          await sendAdminMessage(
+            "Database backup recovery failed: Google Drive remained unavailable for 6 hours.",
+          );
+        }),
+      ]);
+    },
+  }).start();
 }
