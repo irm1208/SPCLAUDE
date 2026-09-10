@@ -48,6 +48,8 @@ import { verifyTurnstile } from "../lib/turnstile";
 import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
 import {
+  canAdminEditOrganiserWallets,
+  describeOrganiserWallets,
   normalizeOrganiserWallets,
   OrganiserWalletValidationError,
 } from "../lib/wholesale-organiser-wallets";
@@ -3087,6 +3089,67 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
       unitPrice: Number(product.wholesalePrice ?? product.price),
     })),
   });
+});
+
+router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const shareId = String(req.params.id);
+  const share = await loadShare(shareId);
+  if (!share) {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  if (!canAdminEditOrganiserWallets(share.status)) {
+    res.status(409).json({ error: "Organiser wallets can only be changed while the shared order is open or locked." });
+    return;
+  }
+
+  let wallets;
+  try {
+    wallets = normalizeOrganiserWallets((req.body ?? {}).wallets);
+  } catch (error) {
+    if (error instanceof OrganiserWalletValidationError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+
+  const outcome = await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, shareId))
+      .for("update");
+    if (!locked) return { kind: "missing" as const };
+    if (!canAdminEditOrganiserWallets(locked.status)) {
+      return { kind: "not_editable" as const, status: locked.status };
+    }
+    const previousWallets = normalizeOrganiserWallets(locked.leadCryptoOptions ?? []);
+    await tx.update(wholesaleSharesTable)
+      .set({ leadCryptoOptions: wallets })
+      .where(eq(wholesaleSharesTable.id, shareId));
+    return { kind: "updated" as const, previousWallets };
+  });
+
+  if (outcome.kind === "missing") {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  if (outcome.kind === "not_editable") {
+    res.status(409).json({ error: "Organiser wallets can only be changed while the shared order is open or locked." });
+    return;
+  }
+
+  await writeLog("order", "warn", "wholesale_share_admin_wallets_updated",
+    `Admin updated organiser wallets for shared order ${shareId}`,
+    {
+      shareId,
+      before: describeOrganiserWallets(outcome.previousWallets),
+      after: describeOrganiserWallets(wallets),
+    },
+    req.ip);
+
+  const updated = await loadShare(shareId);
+  res.json(await buildShareResponse(updated!, ""));
 });
 
 router.post("/admin/wholesale-shares/:id/reconcile-organiser-fees", async (req, res): Promise<void> => {

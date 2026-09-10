@@ -134,6 +134,13 @@ describe("admin security hardening wiring", () => {
     expect(wholesale).toContain('attemptLockShare(share, me, "manual")');
   });
 
+  it("wires the admin-only organiser wallet update with redacted audit data", () => {
+    const wholesale = read("./wholesale-shares.ts");
+    expect(wholesale).toContain('router.put("/admin/wholesale-shares/:id/organiser-wallets"');
+    expect(wholesale).toContain("describeOrganiserWallets");
+    expect(wholesale).toContain("wholesale_share_admin_wallets_updated");
+  });
+
   it("serializes shared-order code allocation inside the materialization transaction", () => {
     const wholesale = read("./wholesale-shares.ts");
     expect(wholesale).toContain("pg_advisory_xact_lock");
