@@ -119,8 +119,8 @@ async function generateUniqueShareId(): Promise<string> {
 
 // Next numeric order code (mirrors generateCode in routes/orders.ts). Returns the
 // integer so the lock loop can assign sequential codes without re-querying.
-async function nextOrderCodeBase(): Promise<number> {
-  const [row] = await db
+async function nextOrderCodeBase<T extends { select: (...args: any[]) => any }>(executor: T): Promise<number> {
+  const [row] = await executor
     .select({ maxCode: sql<string>`max(cast(code as integer)) filter (where code ~ '^[0-9]+$')` })
     .from(ordersTable);
   return Math.max(1000, (parseInt(row?.maxCode ?? "999", 10) || 999) + 1);
@@ -2310,9 +2310,12 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: Loc
   }
 
   // ── Materialise orders atomically ──
-  const codeBase = await nextOrderCodeBase();
   try {
     await db.transaction(async (tx) => {
+      // Serialise max(code)+1 allocation across all concurrent shared-order locks.
+      // Transaction-scoped advisory locks release automatically on commit/rollback.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('wholesale-share-order-code-allocation'))`);
+      const codeBase = await nextOrderCodeBase(tx);
       const [lockedShare] = await tx.select()
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))

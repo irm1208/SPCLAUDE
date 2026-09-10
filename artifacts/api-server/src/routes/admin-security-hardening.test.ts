@@ -133,4 +133,12 @@ describe("admin security hardening wiring", () => {
     expect(wholesale).toContain("wholesale_share_admin_force_locked");
     expect(wholesale).toContain('attemptLockShare(share, me, "manual")');
   });
+
+  it("serializes shared-order code allocation inside the materialization transaction", () => {
+    const wholesale = read("./wholesale-shares.ts");
+    expect(wholesale).toContain("pg_advisory_xact_lock");
+    expect(wholesale).toContain("nextOrderCodeBase(tx)");
+    expect(wholesale).not.toContain("const codeBase = await nextOrderCodeBase();");
+    expect(wholesale.indexOf("pg_advisory_xact_lock")).toBeLessThan(wholesale.indexOf("nextOrderCodeBase(tx)"));
+  });
 });
