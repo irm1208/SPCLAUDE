@@ -125,4 +125,12 @@ describe("admin security hardening wiring", () => {
     expect(audit).toContain("notesPresent: Boolean(notes)");
     expect(audit).not.toMatch(/[,({]\s*notes\s*[,}]/);
   });
+
+  it("wires the admin-only shared-order force-lock mode", () => {
+    const wholesale = read("./wholesale-shares.ts");
+    expect(wholesale).toContain('router.post("/admin/wholesale-shares/:id/force-lock"');
+    expect(wholesale).toContain('"admin_force"');
+    expect(wholesale).toContain("wholesale_share_admin_force_locked");
+    expect(wholesale).toContain('attemptLockShare(share, me, "manual")');
+  });
 });

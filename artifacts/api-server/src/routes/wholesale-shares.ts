@@ -2238,10 +2238,13 @@ function countryAllowed(allowed: string[] | null | undefined, country: string | 
   return allowed.some(a => a.trim().toLowerCase() === n);
 }
 
-export async function attemptLockShare(share: ShareRow, actor: string, mode: "manual" | "auto"): Promise<LockResult> {
+type LockMode = "manual" | "auto" | "admin_force";
+
+export async function attemptLockShare(share: ShareRow, actor: string, mode: LockMode): Promise<LockResult> {
   if (share.status !== "open") {
     return { ok: false, status: 409, error: "This shared order is already locked." };
   }
+  const forceMemberReadiness = mode === "admin_force";
 
   const members = await db
     .select()
@@ -2253,7 +2256,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
   if (members.length < 2) {
     return { ok: false, status: 400, error: "A shared order needs at least 2 members before it can be locked." };
   }
-  if (members.some(m => m.confirmedAt == null)) {
+  if (!forceMemberReadiness && members.some(m => m.confirmedAt == null)) {
     return { ok: false, status: 400, error: "Every member must confirm their order before it can be locked." };
   }
   if (!share.deliveryUsername || !share.shippingAddress || !share.shippingCountry || !share.shippingName || !share.shippingPhone) {
@@ -2265,7 +2268,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
   }
   // Per-person minimum (defaults to "at least one item"; honour an explicit higher min).
   const minPer = share.minKitsPerMember && share.minKitsPerMember > 0 ? share.minKitsPerMember : 1;
-  const underMin = members.find(m => memberKits(m.items ?? []) < minPer);
+  const underMin = forceMemberReadiness ? undefined : members.find(m => memberKits(m.items ?? []) < minPer);
   if (underMin) {
     return {
       ok: false, status: 400,
@@ -2325,7 +2328,7 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
         .from(wholesaleShareMembersTable)
         .where(eq(wholesaleShareMembersTable.shareId, share.id))
         .for("update");
-      if (lockedMembers.some(m => m.confirmedAt == null)) throw LOCK_UNCONFIRMED_MEMBERS;
+      if (!forceMemberReadiness && lockedMembers.some(m => m.confirmedAt == null)) throw LOCK_UNCONFIRMED_MEMBERS;
       const memberSnapshots = new Map(members.map(member => [member.id, JSON.stringify(member)]));
       const snapshotMatches = lockedMembers.length === members.length
         && lockedMembers.every(member => JSON.stringify(member) === memberSnapshots.get(member.id));
@@ -2538,9 +2541,24 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: "ma
     throw e;
   }
 
-  await writeLog("order", "info", "wholesale_share_locked",
-    `Wholesale share ${share.id} locked by ${actor} (${mode}) — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
-    { shareId: share.id, members: members.length, combinedKits, totalShipping, mode }, undefined);
+  if (mode === "admin_force") {
+    const emptyMembers = members.filter(m => memberKits(m.items ?? []) === 0).length;
+    const unconfirmedMembers = members.filter(m => m.confirmedAt == null).length;
+    await writeLog("order", "warn", "wholesale_share_admin_force_locked",
+      `Wholesale share ${share.id} force-locked by ${actor} — ${members.length} members, ${emptyMembers} empty, ${unconfirmedMembers} unconfirmed, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
+      {
+        shareId: share.id,
+        memberCount: members.length,
+        emptyCount: emptyMembers,
+        unconfirmedCount: unconfirmedMembers,
+        totalKits: combinedKits,
+        shippingTotal: totalShipping,
+      }, undefined);
+  } else {
+    await writeLog("order", "info", "wholesale_share_locked",
+      `Wholesale share ${share.id} locked by ${actor} (${mode}) — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
+      { shareId: share.id, members: members.length, combinedKits, totalShipping, mode }, undefined);
+  }
 
   return { ok: true };
 }
@@ -2557,6 +2575,22 @@ router.post("/wholesale-shares/:id/lock", requireWholesaleOrAdmin, async (req, r
   if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
+});
+
+router.post("/admin/wholesale-shares/:id/force-lock", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const share = await loadShare(String(req.params.id));
+  if (!share) {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+  const result = await attemptLockShare(share, res.locals.adminUsername ?? "admin", "admin_force");
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  const updated = await loadShare(share.id);
+  res.json(await buildShareResponse(updated!, ""));
 });
 
 // POST /api/wholesale-shares/:id/unlock — creator reverts a locked share back to
