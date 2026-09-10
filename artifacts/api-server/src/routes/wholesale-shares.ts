@@ -2232,6 +2232,11 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
 // returns a discriminated result instead of writing an Express response so both
 // callers can map it as they need; on success it writes the audit log itself.
 type LockResult = { ok: true } | { ok: false; status: number; error: string };
+type ForceLockAuditContext = {
+  adminId: string | null;
+  adminUsername: string;
+  ip: string | undefined;
+};
 
 // Case-insensitive country allow-list check. Empty/absent list = all countries.
 function countryAllowed(allowed: string[] | null | undefined, country: string | null | undefined): boolean {
@@ -2243,7 +2248,12 @@ function countryAllowed(allowed: string[] | null | undefined, country: string | 
 
 type LockMode = "manual" | "auto" | "admin_force";
 
-export async function attemptLockShare(share: ShareRow, actor: string, mode: LockMode): Promise<LockResult> {
+export async function attemptLockShare(
+  share: ShareRow,
+  actor: string,
+  mode: LockMode,
+  forceAuditContext?: ForceLockAuditContext,
+): Promise<LockResult> {
   if (share.status !== "open") {
     return { ok: false, status: 409, error: "This shared order is already locked." };
   }
@@ -2559,7 +2569,9 @@ export async function attemptLockShare(share: ShareRow, actor: string, mode: Loc
         unconfirmedCount: unconfirmedMembers,
         totalKits: combinedKits,
         shippingTotal: totalShipping,
-      }, undefined);
+        adminId: forceAuditContext?.adminId ?? null,
+        adminUsername: forceAuditContext?.adminUsername ?? actor,
+      }, forceAuditContext?.ip);
   } else {
     await writeLog("order", "info", "wholesale_share_locked",
       `Wholesale share ${share.id} locked by ${actor} (${mode}) — ${members.length} member orders, ${combinedKits} kits, shipping ${totalShipping.toFixed(2)}`,
@@ -2590,7 +2602,11 @@ router.post("/admin/wholesale-shares/:id/force-lock", async (req, res): Promise<
     res.status(404).json({ error: "Shared order not found" });
     return;
   }
-  const result = await attemptLockShare(share, res.locals.adminUsername ?? "admin", "admin_force");
+  const result = await attemptLockShare(share, res.locals.adminUsername ?? "admin", "admin_force", {
+    adminId: res.locals.adminId ?? null,
+    adminUsername: res.locals.adminUsername ?? "admin",
+    ip: req.ip,
+  });
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

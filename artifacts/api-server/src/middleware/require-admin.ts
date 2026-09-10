@@ -125,6 +125,7 @@ export function requireAdmin(req: Request, res: Response): boolean {
   // Stamp the acting admin identity onto request locals for downstream use (e.g. audit logs).
   // Uses ADMIN_USERNAME env var if set; falls back to "admin" for single-secret setups.
   res.locals["adminUsername"] = process.env["ADMIN_USERNAME"] ?? "admin";
+  res.locals["adminId"] = null;
 
   return true;
 }
@@ -166,6 +167,7 @@ export async function adminAuthorizationMiddleware(req: Request, res: Response, 
   res.locals["adminAuthorized"] = true;
   res.locals["adminUser"] = user;
   res.locals["adminSession"] = session;
+  res.locals["adminId"] = user.id;
   res.locals["adminUsername"] = user.username;
   if (Date.now() - new Date(session.lastUsedAt).getTime() >= SESSION_ACTIVITY_WRITE_MS) {
     const now = new Date();

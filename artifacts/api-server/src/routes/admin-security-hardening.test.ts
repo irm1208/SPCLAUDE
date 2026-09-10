@@ -151,4 +151,15 @@ describe("admin security hardening wiring", () => {
     expect(wholesale).not.toContain("const codeBase = await nextOrderCodeBase();");
     expect(wholesale.indexOf("pg_advisory_xact_lock")).toBeLessThan(wholesale.indexOf("nextOrderCodeBase(tx)"));
   });
+
+  it("binds force-lock audit records to the authenticated admin and request IP", () => {
+    const wholesale = read("./wholesale-shares.ts");
+    expect(wholesale).toContain("adminId: res.locals.adminId");
+    expect(wholesale).toContain("adminUsername: res.locals.adminUsername");
+    expect(wholesale).toContain("ip: req.ip");
+    expect(wholesale).toContain("forceAuditContext");
+    expect(wholesale).toContain("adminId: forceAuditContext?.adminId");
+    expect(wholesale).toContain("adminUsername: forceAuditContext?.adminUsername");
+    expect(wholesale).toContain("}, forceAuditContext?.ip);");
+  });
 });
