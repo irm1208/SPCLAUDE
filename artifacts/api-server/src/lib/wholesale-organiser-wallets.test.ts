@@ -18,6 +18,17 @@ describe("organiser wallet validation", () => {
     ]);
   });
 
+  it("drops legacy partial rows with null, undefined, or blank wallet fields", () => {
+    expect(normalizeOrganiserWallets([
+      { currency: null, network: "ERC-20", walletAddress: "partial" },
+      { currency: "USDT", network: undefined, walletAddress: "partial" },
+      { currency: "USDT", network: "ERC-20", walletAddress: "" },
+      { currency: "USDT", network: "ERC-20", walletAddress: "complete" },
+    ])).toEqual([
+      { currency: "USDT", network: "ERC-20", walletAddress: "complete" },
+    ]);
+  });
+
   it("preserves an explicit empty list so wallets can be cleared", () => {
     expect(normalizeOrganiserWallets([])).toEqual([]);
   });

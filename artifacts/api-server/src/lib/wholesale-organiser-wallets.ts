@@ -38,13 +38,13 @@ export function normalizeOrganiserWallets(value: unknown): OrganiserWalletOption
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
     for (const field of ["currency", "network", "walletAddress"] as const) {
-      if (record[field] !== undefined && typeof record[field] !== "string") {
+      if (record[field] !== null && record[field] !== undefined && typeof record[field] !== "string") {
         throw new OrganiserWalletValidationError(`Wallet ${field} must be a string.`);
       }
     }
-    const currency = (record.currency as string | undefined ?? "").trim().toUpperCase();
-    const network = (record.network as string | undefined ?? "").trim();
-    const walletAddress = (record.walletAddress as string | undefined ?? "").trim();
+    const currency = (record.currency as string | null | undefined ?? "").trim().toUpperCase();
+    const network = (record.network as string | null | undefined ?? "").trim();
+    const walletAddress = (record.walletAddress as string | null | undefined ?? "").trim();
     if (!currency || !network || !walletAddress) continue;
     if (currency.length > 10) {
       throw new OrganiserWalletValidationError("Wallet currency must be 10 characters or fewer.");
