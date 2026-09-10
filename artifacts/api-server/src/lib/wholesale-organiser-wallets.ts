@@ -56,7 +56,7 @@ export function normalizeOrganiserWallets(value: unknown): OrganiserWalletOption
       throw new OrganiserWalletValidationError("Wallet address must be 200 characters or fewer.");
     }
     if (!supportedNetworks.has(network)) {
-      throw new Error(`Unsupported crypto network: ${network}`);
+      throw new OrganiserWalletValidationError(`Unsupported crypto network: ${network}`);
     }
     wallets.push({ currency, network, walletAddress });
   }

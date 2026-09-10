@@ -27,9 +27,15 @@ describe("organiser wallet validation", () => {
   });
 
   it("throws for a non-empty wallet using an unsupported network", () => {
-    expect(() => normalizeOrganiserWallets([
-      { currency: "USDT", network: "Unknown", walletAddress: "wallet" },
-    ])).toThrow("Unsupported crypto network");
+    try {
+      normalizeOrganiserWallets([
+        { currency: "USDT", network: "Unknown", walletAddress: "wallet" },
+      ]);
+      throw new Error("expected validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrganiserWalletValidationError);
+      expect(error).toHaveProperty("message", "Unsupported crypto network: Unknown");
+    }
   });
 
   it("rejects wallet fields that exceed their limits", () => {
