@@ -22,3 +22,12 @@ test("admin mutations distinguish transport failure from refresh failure", () =>
   assert.match(source, /outcome is unknown/);
   assert.match(source, /succeeded, but refreshing/);
 });
+
+test("remaining admin mutations distinguish unknown outcomes from refresh failures", () => {
+  assert.match(source, /Could not confirm member removal; the outcome is unknown/);
+  assert.match(source, /Members were removed, but refreshing/);
+  assert.match(source, /Could not confirm organiser payment; the outcome is unknown/);
+  assert.match(source, /Organiser payment was confirmed, but refreshing/);
+  assert.match(source, /Could not confirm adjustment; the outcome is unknown/);
+  assert.match(source, /Adjustment succeeded, but refreshing/);
+});

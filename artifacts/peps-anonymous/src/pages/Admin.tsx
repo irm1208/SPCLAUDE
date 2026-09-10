@@ -20900,18 +20900,22 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const confirmOrgPayment = async (shareId: string) => {
     if (!window.confirm("Confirm this organiser payment? This cannot be undone.")) return;
     setConfirmingOrgPay(shareId);
+    let mutationConfirmed = false;
     try {
       const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
         method: "POST",
         headers: { "x-admin-secret": secret },
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); alert((d as any).error ?? "Failed to confirm payment"); return; }
+      mutationConfirmed = true;
       // Refresh detail
       const r2 = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
       if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
       else alert(`Organiser payment was confirmed, but refreshing the order failed (HTTP ${r2.status}).`);
     } catch (error) {
-      alert(`Organiser payment request completed, but refreshing the order failed. ${error instanceof Error ? error.message : "network error"}`);
+      alert(mutationConfirmed
+        ? `Organiser payment was confirmed, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm organiser payment; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setConfirmingOrgPay(null);
     }
@@ -21094,6 +21098,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     if (!window.confirm(warning)) return;
 
     setAdminAction(`${detail.id}:bulk-removal`);
+    let mutationConfirmed = false;
     try {
       const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/remove-members`), {
         method: "POST",
@@ -21108,11 +21113,14 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
         alert((result as { error?: string }).error ?? "Could not remove the selected members.");
         return;
       }
+      mutationConfirmed = true;
       setRemovalSelections(current => ({ ...current, [detail.id]: [] }));
       setDeliveryReplacements(current => ({ ...current, [detail.id]: "" }));
       await refreshDetail(detail.id);
     } catch (error) {
-      alert(`Members were removed, but refreshing the order failed. ${error instanceof Error ? error.message : "network error"}`);
+      alert(mutationConfirmed
+        ? `Members were removed, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm member removal; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setAdminAction(null);
     }
@@ -21180,6 +21188,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     ].filter(Boolean).join("\n");
     if (!window.confirm(warning)) return;
     setAdminAction(`${detail.id}:adjustment`);
+    let mutationConfirmed = false;
     try {
       const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/adjustments`), {
         method: "PUT",
@@ -21192,10 +21201,21 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
           feeMessage: editor.feeMessage,
         }),
       });
-      const result = await response.json().catch(() => ({}));
+      let result: unknown = {};
+      try { result = await response.json(); } catch (error) {
+        alert(response.ok
+          ? "Could not confirm adjustment; the server returned an invalid response."
+          : "Could not apply the adjustment.");
+        return;
+      }
       if (!response.ok) { alert((result as { error?: string }).error ?? "Could not apply the adjustment."); return; }
-      setAdjustmentEditor(null);
+      mutationConfirmed = true;
       await refreshDetail(detail.id);
+      setAdjustmentEditor(null);
+    } catch (error) {
+      alert(mutationConfirmed
+        ? `Adjustment succeeded, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm adjustment; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setAdminAction(null);
     }
