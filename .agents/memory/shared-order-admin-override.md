@@ -17,3 +17,13 @@ the workflow actor only for the requested share. Keep the client-side confirmati
 warning for every mutation and preserve the existing open/locked/submitted/cancelled
 constraints. Admin-only rule and peer-to-peer fee edits may be allowed while locked
 without reopening, but must never rewrite materialised customer order totals.
+
+View-As tabs can carry both `peps_admin_session` and the impersonated
+`account_session`. An admin cookie alone must not select the override path.
+
+**Why:** ordinary member mutations from View-As otherwise get misclassified as admin
+mutations and fail admin CSRF validation even though the account session is valid.
+
+**How to apply:** alternate shared-order mutation routes treat `x-admin-secret`
+(disabled mode) or `x-admin-csrf` (enabled mode) as explicit admin intent. Without
+either header, authenticate the account session even if an admin cookie coexists.

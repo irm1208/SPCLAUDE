@@ -68,8 +68,12 @@ export async function requireWholesale(req: Request, res: Response, next: NextFu
  * creator identity after the admin secret is verified.
  */
 export async function requireWholesaleOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  // An admin cookie can coexist with an impersonated account_session in a
+  // View-As tab. The cookie alone does not express admin intent: enabled-mode
+  // admin requests carry the CSRF header added by AdminAuthController, while
+  // disabled-mode requests carry the legacy secret.
   const presentsAdminCredentials = typeof req.headers["x-admin-secret"] === "string" ||
-    typeof req.cookies?.["peps_admin_session"] === "string";
+    typeof req.headers["x-admin-csrf"] === "string";
   if (!presentsAdminCredentials) {
     await requireWholesale(req, res, next);
     return;

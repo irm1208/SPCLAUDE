@@ -13,8 +13,10 @@ describe("admin security hardening wiring", () => {
     expect(boundary).toBeLessThan(routes.indexOf("router.use(configRouter)"));
   });
 
-  it("recognizes session-cookie admin alternatives without a legacy header", () => {
-    expect(read("../middleware/require-wholesale.ts")).toContain('req.cookies?.["peps_admin_session"]');
+  it("lets View-As account sessions win over a coexisting admin cookie", () => {
+    const wholesale = read("../middleware/require-wholesale.ts");
+    expect(wholesale).not.toContain('typeof req.cookies?.["peps_admin_session"] === "string"');
+    expect(wholesale).toContain('typeof req.headers["x-admin-csrf"] === "string"');
     expect(read("../middleware/require-reshipper.ts")).toContain('req.cookies?.["peps_admin_session"]');
   });
 
