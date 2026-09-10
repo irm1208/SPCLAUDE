@@ -170,6 +170,31 @@ test("wallet address and chain-wallet interception use exact normalized assertio
   assert.equal(JSON.stringify(stepUps).includes("never-bind"), false);
 });
 
+test("organiser wallet updates bind the backend action with normalized wallet payload", async () => {
+  const stepUps: any[] = [];
+  const auth = new AdminAuthController(async (input, init) => {
+    if (String(input).endsWith("/step-up")) {
+      stepUps.push(JSON.parse(String(init?.body)));
+      return json({ assertion: "wallet-assertion" });
+    }
+    return json({ ok: true });
+  });
+  auth.setMode(true); auth.setCsrfToken("csrf"); auth.setStepUpHandler(async () => "123456");
+  const target = { fetch: (input: RequestInfo | URL, init?: RequestInit) => auth.request(String(input), init) } as typeof globalThis;
+  const uninstall = auth.installFetchInterceptor(target);
+  await target.fetch("/api/admin/wholesale-shares/share-7/organiser-wallets", {
+    method: "PUT",
+    body: JSON.stringify({ wallets: [{ currency: "USDT", network: "ERC-20", walletAddress: "0xabc" }] }),
+  });
+  uninstall();
+  assert.deepEqual(stepUps[0], {
+    code: "123456",
+    action: "wholesale-share.organiser-wallets.update",
+    target: "share:share-7",
+    payload: [{ currency: "USDT", network: "ERC-20", walletAddress: "0xabc" }],
+  });
+});
+
 test("enabling clears persisted shared-secret state before session use", async () => {
   const storage = new Map<string, string>([["_adm_s", "shared-secret"]]);
   const auth = new AdminAuthController(async () => json({ csrfToken: "csrf", recoveryCodes: ["CODE"] }), {

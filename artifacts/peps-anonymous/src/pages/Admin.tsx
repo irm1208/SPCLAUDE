@@ -20942,8 +20942,10 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) { alert((result as { error?: string }).error ?? "Could not force lock shared order."); return; }
-      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
       await Promise.all([refreshDetail(detail.id), loadRows()]);
+      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
+    } catch (error) {
+      alert(`Force lock succeeded, but refreshing the shared order failed. Refresh the page to verify the status. ${error instanceof Error ? error.message : ""}`);
     } finally {
       setAdminAction(null);
     }
@@ -20955,19 +20957,36 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
 
   const saveWallets = async (detail: AdminShareDetail) => {
     if (!walletEditor || walletEditor.shareId !== detail.id) return;
+    if (!["open", "locked"].includes(detail.status)) {
+      alert("Organiser wallets are read-only after this order has been submitted or cancelled.");
+      setWalletEditor(null);
+      return;
+    }
+    const partial = walletEditor.wallets.find(wallet =>
+      !wallet.currency.trim() || !wallet.network.trim() || !wallet.walletAddress.trim());
+    if (partial) {
+      alert("Complete the currency, supported network, and full wallet address for every wallet, or remove incomplete rows.");
+      return;
+    }
     if (!window.confirm("Save organiser payment wallet changes?")) return;
     setAdminAction(`${detail.id}:wallets`);
     try {
       const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/organiser-wallets`), {
         method: "PUT",
         headers: { "x-admin-secret": secret, "content-type": "application/json" },
-        body: JSON.stringify({ wallets: walletEditor.wallets }),
+        body: JSON.stringify({ wallets: walletEditor.wallets.map(wallet => ({
+          currency: wallet.currency.trim().toUpperCase(),
+          network: wallet.network.trim(),
+          walletAddress: wallet.walletAddress.trim(),
+        })) }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) { alert((result as { error?: string }).error ?? "Could not save organiser wallets."); return; }
-      setWalletEditor(null);
-      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
       await refreshDetail(detail.id);
+      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
+      setWalletEditor(null);
+    } catch (error) {
+      alert(`Could not refresh organiser wallets after saving. The editor remains open; please retry. ${error instanceof Error ? error.message : ""}`);
     } finally {
       setAdminAction(null);
     }
@@ -21186,6 +21205,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
           {rows.map(row => {
             const open = expandedId === row.id;
             const detail = detailById[row.id];
+            const walletEditable = detail ? ["open", "locked"].includes(detail.status) : false;
             return (
               <div key={row.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
                 <button onClick={() => toggle(row.id)} className="w-full text-left px-4 py-3 flex items-center gap-3">
@@ -21245,8 +21265,9 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                            <div className="pt-2">
                              <div className="flex items-center justify-between gap-2">
                                <div className="font-semibold" style={{ color: "var(--adm-text)" }}>Organiser payment wallets</div>
-                               <button onClick={() => openWalletEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{walletEditor?.shareId === detail.id ? "Editing wallets below" : "Edit wallets"}</button>
+                               <button onClick={() => openWalletEditor(detail)} disabled={!walletEditable || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{walletEditor?.shareId === detail.id ? "Editing wallets below" : "Edit wallets"}</button>
                              </div>
+                             {!walletEditable && <div className="text-xs mt-1" style={{ color: "var(--adm-muted)" }}>Read-only: organiser wallets can only be changed while the order is open or locked.</div>}
                              <div className="mt-1 space-y-1" style={{ color: "var(--adm-muted)" }}>
                                {(detail.fees?.leadCryptoOptions ?? []).length === 0 ? <div className="text-xs">No wallets configured.</div> : (detail.fees?.leadCryptoOptions ?? []).map((wallet, index) => <div key={`${wallet.currency}-${index}`} className="text-xs">{wallet.currency} · {wallet.network} · {wallet.walletAddress}</div>)}
                              </div>
@@ -21255,18 +21276,17 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                              <div className="mt-3 pt-3 space-y-2 border-t" style={{ borderColor: "rgba(239,68,68,0.28)" }}>
                                {walletEditor.wallets.map((wallet, index) => (
                                  <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_2fr_auto] gap-2">
-                                   <input value={wallet.currency} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, currency: event.target.value } : item) } : current)} placeholder="Currency" className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
-                                   <select value={wallet.network} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, network: event.target.value } : item) } : current)} className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}>
+                                   <label className="sr-only" htmlFor={`wallet-currency-${detail.id}-${index}`}>Wallet {index + 1} currency</label><input id={`wallet-currency-${detail.id}-${index}`} required minLength={2} maxLength={10} disabled={!walletEditable || !!adminAction} aria-label={`Wallet ${index + 1} currency`} value={wallet.currency} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, currency: event.target.value } : item) } : current)} placeholder="Currency" className="rounded border px-2 py-1.5 text-xs disabled:opacity-50" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                   <label className="sr-only" htmlFor={`wallet-network-${detail.id}-${index}`}>Wallet {index + 1} network</label><select id={`wallet-network-${detail.id}-${index}`} required disabled={!walletEditable || !!adminAction} aria-label={`Wallet ${index + 1} supported network`} value={wallet.network} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, network: event.target.value } : item) } : current)} className="rounded border px-2 py-1.5 text-xs disabled:opacity-50" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}>
                                      {NETWORKS.map(network => <option key={network} value={network}>{network}</option>)}
                                    </select>
-                                   <input value={wallet.walletAddress} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, walletAddress: event.target.value } : item) } : current)} placeholder="Full wallet address" className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
-                                   <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: current.wallets.filter((_, i) => i !== index) } : current)} className="px-2 py-1 rounded border text-xs" style={{ color: "#dc2626", borderColor: "var(--adm-border)" }}>Remove</button>
+                                   <label className="sr-only" htmlFor={`wallet-address-${detail.id}-${index}`}>Wallet {index + 1} full address</label><input id={`wallet-address-${detail.id}-${index}`} required minLength={3} maxLength={200} disabled={!walletEditable || !!adminAction} aria-label={`Wallet ${index + 1} full address`} value={wallet.walletAddress} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, walletAddress: event.target.value } : item) } : current)} placeholder="Full wallet address" className="rounded border px-2 py-1.5 text-xs disabled:opacity-50" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                   <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: current.wallets.filter((_, i) => i !== index) } : current)} disabled={!walletEditable || !!adminAction} aria-label={`Remove wallet ${index + 1}`} className="px-2 py-1 rounded border text-xs disabled:opacity-40" style={{ color: "#dc2626", borderColor: "var(--adm-border)" }}>Remove</button>
                                  </div>
                                ))}
                                <div className="flex gap-2">
-                                 <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: [...current.wallets, { currency: "", network: NETWORKS[0], walletAddress: "" }] } : current)} className="px-2.5 py-1 rounded-md text-xs font-semibold" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Add wallet</button>
-                                 <button onClick={() => void saveWallets(detail)} disabled={!!adminAction} className="px-2.5 py-1 rounded-md text-xs font-semibold text-white disabled:opacity-40" style={{ background: "var(--adm-accent)" }}>Save wallets</button>
-                                 <button onClick={() => setWalletEditor(null)} disabled={!!adminAction} className="px-2.5 py-1 rounded-md text-xs disabled:opacity-40" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Discard</button>
+                                 <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: [...current.wallets, { currency: "", network: NETWORKS[0], walletAddress: "" }] } : current)} disabled={!walletEditable || !!adminAction} className="px-2.5 py-1 rounded-md text-xs font-semibold disabled:opacity-40" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Add wallet</button>
+                                 <button onClick={() => void saveWallets(detail)} disabled={!walletEditable || !!adminAction} className="px-2.5 py-1 rounded-md text-xs font-semibold text-white disabled:opacity-40" style={{ background: "var(--adm-accent)" }}>{adminAction === `${detail.id}:wallets` ? "Saving wallets…" : "Save wallets"}</button>
                                </div>
                              </div>
                            )}

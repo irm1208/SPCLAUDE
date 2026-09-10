@@ -349,6 +349,19 @@ async function inferActionBinding(path: string, init?: RequestInit): Promise<Adm
     const newCodeHash = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
     return { action: "wallet.change-code.update", target: "wallet.change-code", payload: { newCodeHash } };
   }
+  const organiserWallets = path.match(/^\/api\/admin\/wholesale-shares\/([^/]+)\/organiser-wallets$/);
+  if (organiserWallets && Array.isArray(body?.wallets)) {
+    const wallets = body.wallets.map((wallet: any) => ({
+      currency: String(wallet?.currency ?? "").trim().toUpperCase(),
+      network: String(wallet?.network ?? "").trim(),
+      walletAddress: String(wallet?.walletAddress ?? "").trim(),
+    }));
+    return {
+      action: "wholesale-share.organiser-wallets.update",
+      target: `share:${organiserWallets[1]}`,
+      payload: wallets,
+    };
+  }
   return undefined;
 }
 
