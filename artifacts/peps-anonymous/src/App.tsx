@@ -8,7 +8,7 @@ import { useAccount, useTelegramAutoLogin } from "@/hooks/use-account";
 
 // Pages
 import Home from "@/pages/Home";
-import Lookup from "@/pages/Lookup";
+import LegacyOrderRedirect from "@/pages/LegacyOrderRedirect";
 import OrderForm from "@/pages/OrderForm";
 import Review from "@/pages/Review";
 import Success from "@/pages/Success";
@@ -119,7 +119,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/lookup" component={Lookup} />
+      <Route path="/lookup" component={LegacyOrderRedirect} />
       <Route path="/order" component={OrderForm} />
       <Route path="/review" component={Review} />
       <Route path="/success" component={Success} />

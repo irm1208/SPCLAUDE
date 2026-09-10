@@ -873,8 +873,8 @@ export default function AccountOrders() {
   const username = account!.telegramUsername.replace(/^@/, "");
   const displayHandle = getAccountHandle(account);
 
-  const handleManage = (code: string) => {
-    setLocation(`/lookup?code=${code}`);
+  const handleManage = (orderId: string) => {
+    setLocation(`/account/orders/${orderId}`);
   };
 
   return (
@@ -988,7 +988,7 @@ export default function AccountOrders() {
                     <OrderCard
                       key={order.id}
                       order={order}
-                      onManage={() => handleManage(order.code)}
+                      onManage={() => handleManage(order.id)}
                     />
                   ))}
                 </div>
@@ -1054,7 +1054,7 @@ export default function AccountOrders() {
                         <OrderCard
                           key={order.id}
                           order={order}
-                          onManage={() => handleManage(order.code)}
+                          onManage={() => handleManage(order.id)}
                         />
                       ))}
                     </div>
