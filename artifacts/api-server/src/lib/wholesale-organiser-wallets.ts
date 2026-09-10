@@ -1,8 +1,8 @@
-export type OrganiserWalletOption = {
+export interface OrganiserWalletOption {
   currency: string;
   network: string;
   walletAddress: string;
-};
+}
 
 export const ORGANISER_WALLET_NETWORKS = [
   "ERC-20",
@@ -23,7 +23,7 @@ const supportedNetworks = new Set<string>(ORGANISER_WALLET_NETWORKS);
  */
 export function normalizeOrganiserWallets(value: unknown): OrganiserWalletOption[] {
   if (!Array.isArray(value)) {
-    throw new Error("Organiser wallets must be an array.");
+    throw new Error("Wallet options must be an array.");
   }
 
   const wallets: OrganiserWalletOption[] = [];
@@ -35,7 +35,7 @@ export function normalizeOrganiserWallets(value: unknown): OrganiserWalletOption
     const walletAddress = String(record.walletAddress ?? "").trim().slice(0, 200);
     if (!currency || !network || !walletAddress) continue;
     if (!supportedNetworks.has(network)) {
-      throw new Error(`Unsupported network for organiser wallet: ${network}`);
+      throw new Error(`Unsupported crypto network: ${network}`);
     }
     wallets.push({ currency, network, walletAddress });
   }

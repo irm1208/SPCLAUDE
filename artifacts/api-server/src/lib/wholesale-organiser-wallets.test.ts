@@ -21,10 +21,14 @@ describe("organiser wallet validation", () => {
     expect(normalizeOrganiserWallets([])).toEqual([]);
   });
 
+  it("rejects a non-array wallet value", () => {
+    expect(() => normalizeOrganiserWallets(null)).toThrow("Wallet options must be an array.");
+  });
+
   it("throws for a non-empty wallet using an unsupported network", () => {
     expect(() => normalizeOrganiserWallets([
       { currency: "USDT", network: "Unknown", walletAddress: "wallet" },
-    ])).toThrow(/unsupported network/i);
+    ])).toThrow("Unsupported crypto network");
   });
 
   it("allows admin wallet edits only for open and locked shares", () => {
