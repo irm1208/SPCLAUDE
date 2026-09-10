@@ -3135,7 +3135,7 @@ router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Pr
     if (!canAdminEditOrganiserWallets(locked.status)) {
       return { kind: "not_editable" as const, status: locked.status };
     }
-    const previousWallets = normalizeOrganiserWallets(locked.leadCryptoOptions ?? []);
+    const previousWallets = describeOrganiserWallets(locked.leadCryptoOptions);
     await tx.update(wholesaleSharesTable)
       .set({ leadCryptoOptions: wallets })
       .where(eq(wholesaleSharesTable.id, shareId));
@@ -3157,7 +3157,7 @@ router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Pr
       shareId,
       adminId: (res.locals["adminUser"] as { id?: string } | undefined)?.id ?? null,
       adminUsername: res.locals["adminUsername"] ?? null,
-      before: describeOrganiserWallets(outcome.previousWallets),
+      before: outcome.previousWallets,
       after: describeOrganiserWallets(wallets),
     },
     req.ip);

@@ -141,6 +141,7 @@ describe("admin security hardening wiring", () => {
     expect(wholesale).toContain("wholesale_share_admin_wallets_updated");
     expect(wholesale).toContain("consumeAdminActionAssertion");
     expect(wholesale).toContain('"wholesale-share.organiser-wallets.update"');
+    expect(wholesale).not.toContain("normalizeOrganiserWallets(locked.leadCryptoOptions");
   });
 
   it("serializes shared-order code allocation inside the materialization transaction", () => {
