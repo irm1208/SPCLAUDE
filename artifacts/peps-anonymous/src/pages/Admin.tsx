@@ -1501,7 +1501,7 @@ function OrdersTab({ secret }: { secret: string }) {
     setImpersonatingOrderId(orderId);
     setImpersonateOrderErr(prev => ({ ...prev, [orderId]: "" }));
     try {
-      const r = await fetch(apiUrl("/admin/impersonate"), {
+      const r = await adminAuth.request("/admin/impersonate", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({ telegramUsername }),
@@ -11823,7 +11823,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
     setImpersonating(true);
     setImpersonateErr("");
     try {
-      const r = await fetch(apiUrl("/admin/impersonate"), {
+      const r = await adminAuth.request("/admin/impersonate", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({ telegramUsername: username }),

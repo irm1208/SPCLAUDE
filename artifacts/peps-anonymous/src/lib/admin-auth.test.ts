@@ -317,6 +317,46 @@ test("enabled interceptor authenticates intl-shipping mutations carrying admin s
   assert.equal(new Headers(seen?.init?.headers).get("x-admin-csrf"), "csrf");
 });
 
+test("both Admin View-as entry points use the centralized admin request path", async () => {
+  const source = await readFile(new URL("../pages/Admin.tsx", import.meta.url), "utf8");
+  const centralizedCalls = source.match(/adminAuth\.request\("\/admin\/impersonate"/g) ?? [];
+  assert.equal(centralizedCalls.length, 2);
+  assert.doesNotMatch(source, /fetch\(apiUrl\("\/admin\/impersonate"\)/);
+});
+
+test("admin impersonation mutation uses session CSRF in enabled mode and shared secret in disabled mode", async () => {
+  const calls: RequestInit[] = [];
+  const auth = new AdminAuthController(async (_input, init) => {
+    calls.push(init ?? {});
+    return json({ token: "one-time" });
+  });
+
+  auth.setMode(true);
+  auth.setCsrfToken("csrf");
+  await auth.request("/admin/impersonate", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-secret": "must-strip" },
+    body: JSON.stringify({ telegramUsername: "alice" }),
+  });
+
+  auth.setMode(false);
+  await auth.loginWithSecret("legacy-secret");
+  await auth.request("/admin/impersonate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegramUsername: "bob" }),
+  });
+
+  const enabledHeaders = new Headers(calls[0]?.headers);
+  assert.equal(calls[0]?.credentials, "include");
+  assert.equal(enabledHeaders.get("x-admin-csrf"), "csrf");
+  assert.equal(enabledHeaders.has("x-admin-secret"), false);
+
+  const disabledHeaders = new Headers(calls[2]?.headers);
+  assert.equal(calls[2]?.credentials, "omit");
+  assert.equal(disabledHeaders.get("x-admin-secret"), "legacy-secret");
+});
+
 test("admin impersonation payment destinations use exact built-in action bindings", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const auth = new AdminAuthController(async (input, init) => {
