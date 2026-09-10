@@ -69,9 +69,6 @@ import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 const router: IRouter = Router();
 
 router.use(healthRouter);
-router.use(productsRouter);
-router.use(deliveryMethodsRouter);
-router.use(configRouter);
 
 // Tight rate limit on admin auth-check (on top of brute-force lockout)
 router.use("/admin/auth-check", adminAuthLimiter);
@@ -100,6 +97,13 @@ router.use("/admin/security/recovery-codes", adminTwoFactorLimiter);
 // boundary; every other /admin route gets its mode from the database.
 router.use(adminAuthRouter);
 router.use("/admin", adminAuthorizationMiddleware);
+
+// These routers expose both public and admin-prefixed endpoints. Mount them
+// after the scoped admin boundary so their /admin handlers receive the
+// authenticated session while their public handlers remain unaffected.
+router.use(productsRouter);
+router.use(deliveryMethodsRouter);
+router.use(configRouter);
 
 // Feedback submission rate limiting
 router.use("/feedback", feedbackLimiter);

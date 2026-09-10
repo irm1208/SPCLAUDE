@@ -4,6 +4,15 @@ import { readFileSync } from "node:fs";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("admin security hardening wiring", () => {
+  it("mounts the admin session boundary before routers that expose admin endpoints", () => {
+    const routes = read("./index.ts");
+    const boundary = routes.indexOf('router.use("/admin", adminAuthorizationMiddleware)');
+    expect(boundary).toBeGreaterThan(-1);
+    expect(boundary).toBeLessThan(routes.indexOf("router.use(productsRouter)"));
+    expect(boundary).toBeLessThan(routes.indexOf("router.use(deliveryMethodsRouter)"));
+    expect(boundary).toBeLessThan(routes.indexOf("router.use(configRouter)"));
+  });
+
   it("recognizes session-cookie admin alternatives without a legacy header", () => {
     expect(read("../middleware/require-wholesale.ts")).toContain('req.cookies?.["peps_admin_session"]');
     expect(read("../middleware/require-reshipper.ts")).toContain('req.cookies?.["peps_admin_session"]');
