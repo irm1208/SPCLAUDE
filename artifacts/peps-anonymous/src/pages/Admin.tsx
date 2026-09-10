@@ -19996,6 +19996,7 @@ type AdminShareDetail = {
   totalVendorShipping: number | null; totalKits: number | null; allPaid: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
   organiserPayment: AdminShareOrganiserPayment | null;
+  fees: { leadCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> };
   settings: {
     maxMembers: number | null; minKitsPerMember: number | null; maxKitsPerMember: number | null;
     maxTotalKits: number | null; maxPackages: number | null; organiserFlatFee: number | null;
@@ -20004,6 +20005,7 @@ type AdminShareDetail = {
   publicGroup: { isPublic: boolean; country: string | null };
   availableProducts: { id: string; name: string; unitPrice: number }[];
 };
+type AdminOrganiserWalletDraft = { currency: string; network: string; walletAddress: string };
 type AdminShareAdjustmentDraft = {
   shareId: string; memberUsername: string;
   items: { productId: string; quantity: number }[];
@@ -20863,13 +20865,20 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [adjustmentEditor, setAdjustmentEditor] = useState<AdminShareAdjustmentDraft | null>(null);
   const [removalSelections, setRemovalSelections] = useState<Record<string, string[]>>({});
   const [deliveryReplacements, setDeliveryReplacements] = useState<Record<string, string>>({});
+  const [walletEditor, setWalletEditor] = useState<{ shareId: string; wallets: AdminOrganiserWalletDraft[] } | null>(null);
+  const NETWORKS = ["ERC-20", "Arbitrum One", "Polygon", "Solana", "TRC-20", "Bitcoin Mainnet", "Ethereum"];
 
+  const loadRows = async () => {
+    const r = await fetch(apiUrl(`/admin/wholesale-shares?status=${statusFilter}`), { headers: { "x-admin-secret": secret } });
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    setRows(d.shares ?? []);
+  };
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null); setExpandedId(null);
-    fetch(apiUrl(`/admin/wholesale-shares?status=${statusFilter}`), { headers: { "x-admin-secret": secret } })
-      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(d => { if (!cancelled) setRows(d.shares ?? []); })
+    loadRows()
+      .then(() => { if (cancelled) return; })
       .catch(() => { if (!cancelled) setError("Failed to load shared orders"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -20910,6 +20919,57 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     if (r.ok) {
       const d = await r.json() as AdminShareDetail;
       setDetailById(prev => ({ ...prev, [shareId]: d }));
+    }
+  };
+
+  const forceLock = async (detail: AdminShareDetail, rowId = detail.id) => {
+    const warning = [
+      "FORCE LOCK — CONFIRM CAREFULLY",
+      "",
+      "This will lock the shared order even with unconfirmed members or empty baskets.",
+      "Current financial values will be materialized for the order and its members.",
+      `Current subtotal: ${money(detail.combinedSubtotal)}; current shipping: ${money(detail.totalVendorShipping ?? 0)}.`,
+      "",
+      "Continue?",
+    ].join("\n");
+    if (!window.confirm(warning)) return;
+    setAdminAction(`${detail.id}:force-lock`);
+    try {
+      // The expanded row invokes this with its current row.id: /admin/wholesale-shares/${row.id}/force-lock
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${rowId}/force-lock`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { alert((result as { error?: string }).error ?? "Could not force lock shared order."); return; }
+      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
+      await Promise.all([refreshDetail(detail.id), loadRows()]);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
+  const openWalletEditor = (detail: AdminShareDetail) => {
+    setWalletEditor({ shareId: detail.id, wallets: (detail.fees?.leadCryptoOptions ?? []).map(wallet => ({ ...wallet })) });
+  };
+
+  const saveWallets = async (detail: AdminShareDetail) => {
+    if (!walletEditor || walletEditor.shareId !== detail.id) return;
+    if (!window.confirm("Save organiser payment wallet changes?")) return;
+    setAdminAction(`${detail.id}:wallets`);
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/organiser-wallets`), {
+        method: "PUT",
+        headers: { "x-admin-secret": secret, "content-type": "application/json" },
+        body: JSON.stringify({ wallets: walletEditor.wallets }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { alert((result as { error?: string }).error ?? "Could not save organiser wallets."); return; }
+      setWalletEditor(null);
+      setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
+      await refreshDetail(detail.id);
+    } finally {
+      setAdminAction(null);
     }
   };
 
@@ -21172,7 +21232,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                             <button onClick={() => openAdjustmentEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "#b91c1c", color: "#fff" }}>Adjust items &amp; shipping</button>
                             {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reconcile included organiser fees", `/admin/wholesale-shares/${row.id}/reconcile-organiser-fees`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#7c3aed" }}>Reconcile included fees</button>}
                             <button onClick={() => runAdminAction(row.id, detail.publicGroup.isPublic ? "make order private" : "publish shared order", `/wholesale-shares/${row.id}/publish`, "PUT", detail.publicGroup.isPublic ? { public: false } : { public: true, country: detail.publicGroup.country, maxMembers: detail.settings.maxMembers, maxTotalKits: detail.settings.maxTotalKits, maxPackages: detail.settings.maxPackages, organiserFlatFee: detail.settings.organiserFlatFee })} disabled={detail.status !== "open" || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{detail.publicGroup.isPublic ? "Make private" : "Publish"}</button>
-                            {detail.status === "open" && <button onClick={() => runAdminAction(row.id, "lock shared order", `/wholesale-shares/${row.id}/lock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Lock</button>}
+                            {detail.status === "open" && <button onClick={() => void forceLock(detail, row.id)} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#2563eb" }}>Force lock</button>}
                             {detail.status === "locked" && <button onClick={() => runAdminAction(row.id, "reopen shared order", `/wholesale-shares/${row.id}/unlock`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#d97706" }}>Reopen</button>}
                             {["open", "locked"].includes(detail.status) && <button onClick={() => runAdminAction(row.id, "cancel shared order", `/wholesale-shares/${row.id}/cancel`, "POST")} disabled={!!adminAction} className="px-2.5 py-1 rounded-md font-semibold text-white disabled:opacity-40" style={{ background: "#dc2626" }}>Cancel order</button>}
                           </div>
@@ -21182,6 +21242,34 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                               <span><b>Max people:</b> {detail.settings.maxMembers ?? "No limit"}</span><span><b>Kits/person:</b> {detail.settings.minKitsPerMember ?? "—"}–{detail.settings.maxKitsPerMember ?? "No max"}</span><span><b>Total kits:</b> {detail.settings.maxTotalKits ?? "No limit"}</span><span><b>Max packages:</b> {detail.settings.maxPackages ?? "No limit"}</span>
                               <span><b>Fee/person:</b> {money(detail.settings.organiserFlatFee ?? 0)}</span><span><b>Fee/kit:</b> {money(detail.settings.feePerKit ?? 0)}</span><span><b>Auto-lock:</b> {detail.settings.lockDeadline ? new Date(detail.settings.lockDeadline).toLocaleString() : "Not set"}</span><span><b>Countries:</b> {detail.settings.allowedCountries?.join(", ") ?? "All"}</span>
                             </div>
+                           <div className="pt-2">
+                             <div className="flex items-center justify-between gap-2">
+                               <div className="font-semibold" style={{ color: "var(--adm-text)" }}>Organiser payment wallets</div>
+                               <button onClick={() => openWalletEditor(detail)} disabled={!["open", "locked"].includes(detail.status) || !!adminAction} className="px-2.5 py-1 rounded-md font-semibold disabled:opacity-40" style={{ background: "var(--adm-card)", color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>{walletEditor?.shareId === detail.id ? "Editing wallets below" : "Edit wallets"}</button>
+                             </div>
+                             <div className="mt-1 space-y-1" style={{ color: "var(--adm-muted)" }}>
+                               {(detail.fees?.leadCryptoOptions ?? []).length === 0 ? <div className="text-xs">No wallets configured.</div> : (detail.fees?.leadCryptoOptions ?? []).map((wallet, index) => <div key={`${wallet.currency}-${index}`} className="text-xs">{wallet.currency} · {wallet.network} · {wallet.walletAddress}</div>)}
+                             </div>
+                           </div>
+                           {walletEditor?.shareId === detail.id && (
+                             <div className="mt-3 pt-3 space-y-2 border-t" style={{ borderColor: "rgba(239,68,68,0.28)" }}>
+                               {walletEditor.wallets.map((wallet, index) => (
+                                 <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_2fr_auto] gap-2">
+                                   <input value={wallet.currency} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, currency: event.target.value } : item) } : current)} placeholder="Currency" className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                   <select value={wallet.network} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, network: event.target.value } : item) } : current)} className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }}>
+                                     {NETWORKS.map(network => <option key={network} value={network}>{network}</option>)}
+                                   </select>
+                                   <input value={wallet.walletAddress} onChange={event => setWalletEditor(current => current ? { ...current, wallets: current.wallets.map((item, i) => i === index ? { ...item, walletAddress: event.target.value } : item) } : current)} placeholder="Full wallet address" className="rounded border px-2 py-1.5 text-xs" style={{ background: "var(--adm-card)", color: "var(--adm-text)", borderColor: "var(--adm-border)" }} />
+                                   <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: current.wallets.filter((_, i) => i !== index) } : current)} className="px-2 py-1 rounded border text-xs" style={{ color: "#dc2626", borderColor: "var(--adm-border)" }}>Remove</button>
+                                 </div>
+                               ))}
+                               <div className="flex gap-2">
+                                 <button onClick={() => setWalletEditor(current => current ? { ...current, wallets: [...current.wallets, { currency: "", network: NETWORKS[0], walletAddress: "" }] } : current)} className="px-2.5 py-1 rounded-md text-xs font-semibold" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Add wallet</button>
+                                 <button onClick={() => void saveWallets(detail)} disabled={!!adminAction} className="px-2.5 py-1 rounded-md text-xs font-semibold text-white disabled:opacity-40" style={{ background: "var(--adm-accent)" }}>Save wallets</button>
+                                 <button onClick={() => setWalletEditor(null)} disabled={!!adminAction} className="px-2.5 py-1 rounded-md text-xs disabled:opacity-40" style={{ color: "var(--adm-text)", border: "1px solid var(--adm-border)" }}>Discard</button>
+                               </div>
+                             </div>
+                           )}
                           </div>
                           {settingsEditor?.shareId === detail.id && (
                             <div className="mt-3 pt-3 space-y-3 border-t" style={{ borderColor: "rgba(239,68,68,0.28)" }}>
