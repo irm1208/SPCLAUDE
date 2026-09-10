@@ -47,6 +47,7 @@ import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
 import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
+import { normalizeOrganiserWallets } from "../lib/wholesale-organiser-wallets";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2733,32 +2734,13 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
     return t.length > 0 ? t : null;
   };
 
-  const VALID_CRYPTO_NETWORKS = new Set([
-    "ERC-20", "Arbitrum One", "Polygon", "Solana", "TRC-20", "Bitcoin Mainnet", "Ethereum",
-  ]);
-  const cleanCryptoOptions = (v: unknown): Array<{ currency: string; network: string; walletAddress: string }> | null => {
-    if (!Array.isArray(v)) return null;
-    const out: Array<{ currency: string; network: string; walletAddress: string }> = [];
-    for (const item of v) {
-      if (!item || typeof item !== "object") continue;
-      const currency = String((item as Record<string, unknown>).currency ?? "").trim().toUpperCase().slice(0, 10);
-      const network = String((item as Record<string, unknown>).network ?? "").trim().slice(0, 50);
-      const walletAddress = String((item as Record<string, unknown>).walletAddress ?? "").trim().slice(0, 200);
-      if (!currency || !network || !walletAddress) continue;
-      if (!VALID_CRYPTO_NETWORKS.has(network)) continue;
-      out.push({ currency, network, walletAddress });
-    }
-    return out.length > 0 ? out : [];
-  };
-
   const shareUpdates: Partial<typeof wholesaleSharesTable.$inferInsert> = {};
   if (body.organiserPaymentInfo !== undefined) shareUpdates.organiserPaymentInfo = cleanInfo(body.organiserPaymentInfo);
   if (body.leadRevolutHandle !== undefined) shareUpdates.leadRevolutHandle = cleanHandle(body.leadRevolutHandle);
   if (body.leadPaypalEmail !== undefined) shareUpdates.leadPaypalEmail = cleanHandle(body.leadPaypalEmail);
   if (body.leadAnonPayWallet !== undefined) shareUpdates.leadAnonPayWallet = cleanHandle(body.leadAnonPayWallet);
   if (body.leadCryptoOptions !== undefined) {
-    const opts = cleanCryptoOptions(body.leadCryptoOptions);
-    if (opts !== null) shareUpdates.leadCryptoOptions = opts;
+    shareUpdates.leadCryptoOptions = normalizeOrganiserWallets(body.leadCryptoOptions);
   }
 
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
