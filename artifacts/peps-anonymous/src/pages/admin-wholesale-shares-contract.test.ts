@@ -12,3 +12,13 @@ test("admin shared orders expose force-lock and organiser wallet controls", () =
   assert.match(source, /Organiser payment wallets/);
   assert.match(source, /leadCryptoOptions/);
 });
+
+test("admin mutations distinguish transport failure from refresh failure", () => {
+  assert.match(source, /throw new Error\(`Failed to refresh shared order/);
+  assert.match(source, /Could not confirm force lock/);
+  assert.match(source, /Force lock succeeded, but refreshing/);
+  assert.match(source, /Could not save organiser wallets/);
+  assert.match(source, /Could not refresh organiser wallets after saving/);
+  assert.match(source, /outcome is unknown/);
+  assert.match(source, /succeeded, but refreshing/);
+});

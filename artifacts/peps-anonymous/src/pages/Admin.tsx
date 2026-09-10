@@ -20909,17 +20909,29 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       // Refresh detail
       const r2 = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
       if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
+      else alert(`Organiser payment was confirmed, but refreshing the order failed (HTTP ${r2.status}).`);
+    } catch (error) {
+      alert(`Organiser payment request completed, but refreshing the order failed. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setConfirmingOrgPay(null);
     }
   };
 
   const refreshDetail = async (shareId: string) => {
-    const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
-    if (r.ok) {
-      const d = await r.json() as AdminShareDetail;
-      setDetailById(prev => ({ ...prev, [shareId]: d }));
+    let r: Response;
+    try {
+      r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
+    } catch (error) {
+      throw new Error(`Failed to refresh shared order ${shareId}: ${error instanceof Error ? error.message : "network error"}`);
     }
+    if (!r.ok) throw new Error(`Failed to refresh shared order ${shareId} (HTTP ${r.status})`);
+    let d: AdminShareDetail;
+    try {
+      d = await r.json() as AdminShareDetail;
+    } catch {
+      throw new Error(`Failed to refresh shared order ${shareId}: invalid server response`);
+    }
+    setDetailById(prev => ({ ...prev, [shareId]: d }));
   };
 
   const forceLock = async (detail: AdminShareDetail, rowId = detail.id) => {
@@ -20934,14 +20946,26 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     ].join("\n");
     if (!window.confirm(warning)) return;
     setAdminAction(`${detail.id}:force-lock`);
+    let response: Response;
     try {
       // The expanded row invokes this with its current row.id: /admin/wholesale-shares/${row.id}/force-lock
-      const response = await fetch(apiUrl(`/admin/wholesale-shares/${rowId}/force-lock`), {
+      response = await fetch(apiUrl(`/admin/wholesale-shares/${rowId}/force-lock`), {
         method: "POST",
         headers: { "x-admin-secret": secret },
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) { alert((result as { error?: string }).error ?? "Could not force lock shared order."); return; }
+    } catch (error) {
+      alert(`Could not confirm force lock; the outcome is unknown. ${error instanceof Error ? error.message : "Network error"}`);
+      setAdminAction(null);
+      return;
+    }
+    let result: unknown = {};
+    try {
+      result = await response.json();
+    } catch {
+      if (response.ok) { alert("Could not confirm force lock; the server returned an invalid response."); setAdminAction(null); return; }
+    }
+    if (!response.ok) { alert((result as { error?: string }).error ?? "Could not force lock shared order."); setAdminAction(null); return; }
+    try {
       await Promise.all([refreshDetail(detail.id), loadRows()]);
       setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
     } catch (error) {
@@ -20970,8 +20994,9 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     }
     if (!window.confirm("Save organiser payment wallet changes?")) return;
     setAdminAction(`${detail.id}:wallets`);
+    let response: Response;
     try {
-      const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/organiser-wallets`), {
+      response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/organiser-wallets`), {
         method: "PUT",
         headers: { "x-admin-secret": secret, "content-type": "application/json" },
         body: JSON.stringify({ wallets: walletEditor.wallets.map(wallet => ({
@@ -20980,8 +21005,17 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
           walletAddress: wallet.walletAddress.trim(),
         })) }),
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) { alert((result as { error?: string }).error ?? "Could not save organiser wallets."); return; }
+    } catch (error) {
+      alert(`Could not save organiser wallets; the outcome is unknown. ${error instanceof Error ? error.message : "Network error"}`);
+      setAdminAction(null);
+      return;
+    }
+    let result: unknown = {};
+    try { result = await response.json(); } catch {
+      if (response.ok) { alert("Could not save organiser wallets; the server returned an invalid response."); setAdminAction(null); return; }
+    }
+    if (!response.ok) { alert((result as { error?: string }).error ?? "Could not save organiser wallets."); setAdminAction(null); return; }
+    try {
       await refreshDetail(detail.id);
       setDetailById(prev => ({ ...prev, [detail.id]: result as AdminShareDetail }));
       setWalletEditor(null);
@@ -20995,6 +21029,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const runAdminAction = async (shareId: string, label: string, path: string, method: string, body?: unknown) => {
     if (!window.confirm(`ADMIN OVERRIDE: ${label}\n\nThis changes a live shared order and may affect members, payments, shipping, or refunds. Continue only after checking the order details.`)) return;
     setAdminAction(`${shareId}:${label}`);
+    let mutationConfirmed = false;
     try {
       const r = await fetch(apiUrl(path), {
         method,
@@ -21003,8 +21038,13 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { alert((d as { error?: string }).error ?? `Could not ${label.toLowerCase()}.`); return; }
+      mutationConfirmed = true;
       setDetailById(prev => ({ ...prev, [shareId]: d as AdminShareDetail }));
       await refreshDetail(shareId);
+    } catch (error) {
+      alert(mutationConfirmed
+        ? `The ${label.toLowerCase()} succeeded, but refreshing the order failed: ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm ${label.toLowerCase()}; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setAdminAction(null);
     }
@@ -21071,6 +21111,8 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       setRemovalSelections(current => ({ ...current, [detail.id]: [] }));
       setDeliveryReplacements(current => ({ ...current, [detail.id]: "" }));
       await refreshDetail(detail.id);
+    } catch (error) {
+      alert(`Members were removed, but refreshing the order failed. ${error instanceof Error ? error.message : "network error"}`);
     } finally {
       setAdminAction(null);
     }
