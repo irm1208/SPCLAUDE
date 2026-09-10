@@ -16,6 +16,13 @@ export const ORGANISER_WALLET_NETWORKS = [
 
 const supportedNetworks = new Set<string>(ORGANISER_WALLET_NETWORKS);
 
+export class OrganiserWalletValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OrganiserWalletValidationError";
+  }
+}
+
 /**
  * Normalize the organiser-owned payment destinations stored on a shared order.
  * Incomplete rows are ignored so partially-filled UI rows are harmless; a
@@ -23,17 +30,31 @@ const supportedNetworks = new Set<string>(ORGANISER_WALLET_NETWORKS);
  */
 export function normalizeOrganiserWallets(value: unknown): OrganiserWalletOption[] {
   if (!Array.isArray(value)) {
-    throw new Error("Wallet options must be an array.");
+    throw new OrganiserWalletValidationError("Wallet options must be an array.");
   }
 
   const wallets: OrganiserWalletOption[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
-    const currency = String(record.currency ?? "").trim().toUpperCase().slice(0, 10);
-    const network = String(record.network ?? "").trim().slice(0, 50);
-    const walletAddress = String(record.walletAddress ?? "").trim().slice(0, 200);
+    for (const field of ["currency", "network", "walletAddress"] as const) {
+      if (record[field] !== undefined && typeof record[field] !== "string") {
+        throw new OrganiserWalletValidationError(`Wallet ${field} must be a string.`);
+      }
+    }
+    const currency = (record.currency as string | undefined ?? "").trim().toUpperCase();
+    const network = (record.network as string | undefined ?? "").trim();
+    const walletAddress = (record.walletAddress as string | undefined ?? "").trim();
     if (!currency || !network || !walletAddress) continue;
+    if (currency.length > 10) {
+      throw new OrganiserWalletValidationError("Wallet currency must be 10 characters or fewer.");
+    }
+    if (network.length > 50) {
+      throw new OrganiserWalletValidationError("Wallet network must be 50 characters or fewer.");
+    }
+    if (walletAddress.length > 200) {
+      throw new OrganiserWalletValidationError("Wallet address must be 200 characters or fewer.");
+    }
     if (!supportedNetworks.has(network)) {
       throw new Error(`Unsupported crypto network: ${network}`);
     }

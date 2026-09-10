@@ -3,6 +3,7 @@ import {
   canAdminEditOrganiserWallets,
   describeOrganiserWallets,
   normalizeOrganiserWallets,
+  OrganiserWalletValidationError,
   type OrganiserWalletOption,
 } from "./wholesale-organiser-wallets";
 
@@ -29,6 +30,30 @@ describe("organiser wallet validation", () => {
     expect(() => normalizeOrganiserWallets([
       { currency: "USDT", network: "Unknown", walletAddress: "wallet" },
     ])).toThrow("Unsupported crypto network");
+  });
+
+  it("rejects wallet fields that exceed their limits", () => {
+    expect(() => normalizeOrganiserWallets([
+      { currency: "A".repeat(11), network: "ERC-20", walletAddress: "wallet" },
+    ])).toThrow(OrganiserWalletValidationError);
+    expect(() => normalizeOrganiserWallets([
+      { currency: "USDT", network: "A".repeat(51), walletAddress: "wallet" },
+    ])).toThrow(OrganiserWalletValidationError);
+    expect(() => normalizeOrganiserWallets([
+      { currency: "USDT", network: "ERC-20", walletAddress: "A".repeat(201) },
+    ])).toThrow(OrganiserWalletValidationError);
+  });
+
+  it("rejects non-string populated wallet fields", () => {
+    expect(() => normalizeOrganiserWallets([
+      { currency: 123, network: "ERC-20", walletAddress: "wallet" },
+    ])).toThrow(OrganiserWalletValidationError);
+    expect(() => normalizeOrganiserWallets([
+      { currency: "USDT", network: ["ERC-20"], walletAddress: "wallet" },
+    ])).toThrow(OrganiserWalletValidationError);
+    expect(() => normalizeOrganiserWallets([
+      { currency: "USDT", network: "ERC-20", walletAddress: { value: "wallet" } },
+    ])).toThrow(OrganiserWalletValidationError);
   });
 
   it("allows admin wallet edits only for open and locked shares", () => {

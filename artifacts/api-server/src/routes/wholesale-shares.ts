@@ -47,7 +47,10 @@ import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
 import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
-import { normalizeOrganiserWallets } from "../lib/wholesale-organiser-wallets";
+import {
+  normalizeOrganiserWallets,
+  OrganiserWalletValidationError,
+} from "../lib/wholesale-organiser-wallets";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2740,7 +2743,15 @@ router.put("/wholesale-shares/:id/fees", requireWholesaleOrAdmin, async (req, re
   if (body.leadPaypalEmail !== undefined) shareUpdates.leadPaypalEmail = cleanHandle(body.leadPaypalEmail);
   if (body.leadAnonPayWallet !== undefined) shareUpdates.leadAnonPayWallet = cleanHandle(body.leadAnonPayWallet);
   if (body.leadCryptoOptions !== undefined) {
-    shareUpdates.leadCryptoOptions = normalizeOrganiserWallets(body.leadCryptoOptions);
+    try {
+      shareUpdates.leadCryptoOptions = normalizeOrganiserWallets(body.leadCryptoOptions);
+    } catch (error) {
+      if (error instanceof OrganiserWalletValidationError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
   }
 
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
