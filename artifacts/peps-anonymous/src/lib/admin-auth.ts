@@ -351,11 +351,19 @@ async function inferActionBinding(path: string, init?: RequestInit): Promise<Adm
   }
   const organiserWallets = path.match(/^\/api\/admin\/wholesale-shares\/([^/]+)\/organiser-wallets$/);
   if (organiserWallets && Array.isArray(body?.wallets)) {
-    const wallets = body.wallets.map((wallet: any) => ({
-      currency: String(wallet?.currency ?? "").trim().toUpperCase(),
-      network: String(wallet?.network ?? "").trim(),
-      walletAddress: String(wallet?.walletAddress ?? "").trim(),
-    }));
+    const wallets: Array<{ currency: string; network: string; walletAddress: string }> = [];
+    for (const wallet of body.wallets) {
+      if (!wallet || typeof wallet !== "object") continue;
+      const raw = wallet as Record<string, unknown>;
+      if (raw.currency !== undefined && raw.currency !== null && typeof raw.currency !== "string") return undefined;
+      if (raw.network !== undefined && raw.network !== null && typeof raw.network !== "string") return undefined;
+      if (raw.walletAddress !== undefined && raw.walletAddress !== null && typeof raw.walletAddress !== "string") return undefined;
+      const currency = String(raw.currency ?? "").trim().toUpperCase();
+      const network = String(raw.network ?? "").trim();
+      const walletAddress = String(raw.walletAddress ?? "").trim();
+      if (!currency || !network || !walletAddress) continue;
+      wallets.push({ currency, network, walletAddress });
+    }
     return {
       action: "wholesale-share.organiser-wallets.update",
       target: `share:${organiserWallets[1]}`,

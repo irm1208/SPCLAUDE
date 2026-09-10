@@ -195,6 +195,51 @@ test("organiser wallet updates bind the backend action with normalized wallet pa
   });
 });
 
+test("organiser wallet assertions drop incomplete rows like server normalization", async () => {
+  const stepUps: any[] = [];
+  const auth = new AdminAuthController(async (input, init) => {
+    if (String(input).endsWith("/step-up")) {
+      stepUps.push(JSON.parse(String(init?.body)));
+      return json({ assertion: "wallet-assertion" });
+    }
+    return json({ ok: true });
+  });
+  auth.setMode(true); auth.setCsrfToken("csrf"); auth.setStepUpHandler(async () => "123456");
+  const target = { fetch: (input: RequestInfo | URL, init?: RequestInit) => auth.request(String(input), init) } as typeof globalThis;
+  const uninstall = auth.installFetchInterceptor(target);
+  await target.fetch("/api/admin/wholesale-shares/share-8/organiser-wallets", {
+    method: "PUT",
+    body: JSON.stringify({ wallets: [
+      { currency: " usdt ", network: "ERC-20", walletAddress: " 0xabc " },
+      { currency: "", network: "Solana", walletAddress: "missing-currency" },
+      { currency: null, network: "Polygon", walletAddress: "missing-currency" },
+      { currency: "ETH", network: "Ethereum", walletAddress: " 0xdef " },
+    ] }),
+  });
+  uninstall();
+  assert.deepEqual(stepUps[0]?.payload, [
+    { currency: "USDT", network: "ERC-20", walletAddress: "0xabc" },
+    { currency: "ETH", network: "Ethereum", walletAddress: "0xdef" },
+  ]);
+});
+
+test("organiser wallet assertions skip binding for populated non-string fields", async () => {
+  const stepUps: unknown[] = [];
+  const auth = new AdminAuthController(async (input, init) => {
+    if (String(input).endsWith("/step-up")) stepUps.push(JSON.parse(String(init?.body)));
+    return json({ ok: true });
+  });
+  auth.setMode(true); auth.setCsrfToken("csrf"); auth.setStepUpHandler(async () => "123456");
+  const target = { fetch: (input: RequestInfo | URL, init?: RequestInit) => auth.request(String(input), init) } as typeof globalThis;
+  const uninstall = auth.installFetchInterceptor(target);
+  await target.fetch("/api/admin/wholesale-shares/share-9/organiser-wallets", {
+    method: "PUT",
+    body: JSON.stringify({ wallets: [{ currency: 42, network: "Ethereum", walletAddress: "0xabc" }] }),
+  });
+  uninstall();
+  assert.equal(stepUps.length, 0);
+});
+
 test("enabling clears persisted shared-secret state before session use", async () => {
   const storage = new Map<string, string>([["_adm_s", "shared-secret"]]);
   const auth = new AdminAuthController(async () => json({ csrfToken: "csrf", recoveryCodes: ["CODE"] }), {

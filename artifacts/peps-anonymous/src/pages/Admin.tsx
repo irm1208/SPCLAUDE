@@ -20943,7 +20943,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       "FORCE LOCK — CONFIRM CAREFULLY",
       "",
       "This will lock the shared order even with unconfirmed members or empty baskets.",
-      "Current financial values will be materialized for the order and its members.",
+      "Current item, fee, and payment values will be materialized for the order and its members.",
       `Current subtotal: ${money(detail.combinedSubtotal)}; current shipping: ${money(detail.totalVendorShipping ?? 0)}.`,
       "",
       "Continue?",
@@ -20996,7 +20996,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       alert("Complete the currency, supported network, and full wallet address for every wallet, or remove incomplete rows.");
       return;
     }
-    if (!window.confirm("Save organiser payment wallet changes?")) return;
+    if (!window.confirm(`Save organiser payment wallet changes for shared order ${detail.id}? Members will use the new destinations for future payments.`)) return;
     setAdminAction(`${detail.id}:wallets`);
     let response: Response;
     try {

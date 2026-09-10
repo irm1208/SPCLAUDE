@@ -8,9 +8,12 @@ test("admin shared orders expose force-lock and organiser wallet controls", () =
   assert.match(source, /\/admin\/wholesale-shares\/\$\{row\.id\}\/force-lock/);
   assert.match(source, /Force lock/);
   assert.match(source, /unconfirmed members/i);
+  assert.match(source, /current item, fee, and payment values will be materialized/i);
   assert.match(source, /organiser-wallets/);
   assert.match(source, /Organiser payment wallets/);
   assert.match(source, /leadCryptoOptions/);
+  assert.match(source, /members will use the new destinations for future payments/i);
+  assert.match(source, /Save organiser payment wallet changes for shared order/);
 });
 
 test("admin mutations distinguish transport failure from refresh failure", () => {
