@@ -77,4 +77,13 @@ describe("organiser wallet validation", () => {
       { currency: "USDT", network: "ERC-20" },
     ]);
   });
+
+  it("redacts malformed legacy wallet options without throwing", () => {
+    expect(describeOrganiserWallets([
+      null,
+      { currency: " USDT ", network: " ERC-20 ", walletAddress: "secret" },
+      { currency: 123, network: "Solana", walletAddress: "secret" },
+      { currency: "BTC", network: null, walletAddress: "secret" },
+    ])).toEqual([{ currency: "USDT", network: "ERC-20" }]);
+  });
 });

@@ -47,6 +47,7 @@ import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
 import { createEmailChallengeInTransaction } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
+import { consumeAdminActionAssertion } from "./admin-auth";
 import {
   canAdminEditOrganiserWallets,
   describeOrganiserWallets,
@@ -3115,6 +3116,17 @@ router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Pr
     throw error;
   }
 
+  if (res.locals["adminModeEnabled"] && !await consumeAdminActionAssertion(
+    req,
+    res,
+    "wholesale-share.organiser-wallets.update",
+    `share:${shareId}`,
+    wallets,
+  )) {
+    res.status(403).json({ error: "step_up_required" });
+    return;
+  }
+
   const outcome = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, shareId))
@@ -3143,6 +3155,8 @@ router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Pr
     `Admin updated organiser wallets for shared order ${shareId}`,
     {
       shareId,
+      adminId: (res.locals["adminUser"] as { id?: string } | undefined)?.id ?? null,
+      adminUsername: res.locals["adminUsername"] ?? null,
       before: describeOrganiserWallets(outcome.previousWallets),
       after: describeOrganiserWallets(wallets),
     },

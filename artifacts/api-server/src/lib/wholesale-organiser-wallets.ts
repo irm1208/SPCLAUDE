@@ -68,7 +68,16 @@ export function canAdminEditOrganiserWallets(status: string): boolean {
 }
 
 export function describeOrganiserWallets(
-  wallets: readonly OrganiserWalletOption[],
+  wallets: unknown,
 ): Array<{ currency: string; network: string }> {
-  return wallets.map(({ currency, network }) => ({ currency, network }));
+  if (!Array.isArray(wallets)) return [];
+  return wallets.flatMap(item => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.currency !== "string" || typeof record.network !== "string") return [];
+    const currency = record.currency.trim();
+    const network = record.network.trim();
+    if (!currency || !network) return [];
+    return [{ currency, network }];
+  });
 }
