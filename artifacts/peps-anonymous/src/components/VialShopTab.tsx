@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ChevronDown,
   FlaskConical, Tag, Package, ExternalLink,
@@ -881,6 +881,23 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
   const [notifyVendor, setNotifyVendor] = useState(seller.notifyVendor ?? true);
   const [notifyToggling, setNotifyToggling] = useState(false);
   const [notifyError, setNotifyError] = useState<string | null>(null);
+  const [passwordNew, setPasswordNew] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const passwordAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    passwordAbortRef.current?.abort();
+    passwordAbortRef.current = null;
+    setPasswordSaving(false);
+    setPasswordNew("");
+    setPasswordConfirm("");
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    return () => passwordAbortRef.current?.abort();
+  }, [seller.id]);
 
   const saveLogo = async () => {
     setLogoSaving(true); setLogoError(null); setLogoSaved(false);
@@ -915,6 +932,52 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
       setNotifyError("Failed to update — please try again.");
     } finally {
       setNotifyToggling(false);
+    }
+  };
+
+  const savePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    if (passwordNew.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
+      return;
+    }
+    if (passwordNew !== passwordConfirm) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    const sellerId = seller.id;
+    passwordAbortRef.current?.abort();
+    const passwordAbortController = new AbortController();
+    passwordAbortRef.current = passwordAbortController;
+    setPasswordSaving(true);
+    try {
+      const res = await fetch(apiUrl(`/admin/vial/sellers/${sellerId}/password`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ newPassword: passwordNew }),
+        signal: passwordAbortController.signal,
+      });
+      if (!res.ok) {
+        if (res.status === 400) {
+          throw new Error("Password must be at least 8 characters or passwords do not match.");
+        }
+        throw new Error("Failed to update seller password — please try again.");
+      }
+      if (passwordAbortRef.current !== passwordAbortController) return;
+      setPasswordNew("");
+      setPasswordConfirm("");
+      setPasswordSuccess("Seller password updated successfully.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (passwordAbortRef.current !== passwordAbortController) return;
+      setPasswordError(error instanceof Error ? error.message : "Failed to update seller password — please try again.");
+    } finally {
+      if (passwordAbortRef.current === passwordAbortController) {
+        passwordAbortRef.current = null;
+        setPasswordSaving(false);
+      }
     }
   };
 
@@ -1067,6 +1130,37 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
               <img src={logoEdit} alt="Logo preview" className="w-8 h-8 rounded-full object-cover border border-border" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             )}
           </div>
+
+          <form onSubmit={savePassword} className="rounded-lg bg-white border border-border p-3 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Set new password</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label htmlFor="seller-password-new" className="sr-only">New password</label>
+              <input id="seller-password-new"
+                type="password" value={passwordNew}
+                onChange={e => setPasswordNew(e.target.value)}
+                placeholder="New password" autoComplete="new-password" minLength={8}
+                required disabled={passwordSaving}
+                className="h-8 px-3 rounded-lg text-xs bg-muted border border-border text-foreground outline-none"
+              />
+              <label htmlFor="seller-password-confirm" className="sr-only">Confirm password</label>
+              <input id="seller-password-confirm"
+                type="password" value={passwordConfirm}
+                onChange={e => setPasswordConfirm(e.target.value)}
+                placeholder="Confirm password" autoComplete="new-password" minLength={8}
+                required disabled={passwordSaving}
+                className="h-8 px-3 rounded-lg text-xs bg-muted border border-border text-foreground outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={passwordSaving}
+              className="h-8 px-3 rounded-lg text-xs font-semibold bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors disabled:opacity-50"
+            >
+              {passwordSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Set password"}
+            </button>
+            {passwordError && <p role="alert" className="text-[10px] text-red-500">{passwordError}</p>}
+            {passwordSuccess && <p role="status" aria-live="polite" className="text-[10px] text-green-600">{passwordSuccess}</p>}
+          </form>
 
           <div className="grid grid-cols-2 gap-2">
             {seller.country && (

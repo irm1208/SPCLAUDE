@@ -1127,6 +1127,30 @@ router.get("/admin/vial/sellers/:id/activity", async (req, res): Promise<void> =
   res.json(logs);
 });
 
+router.put("/admin/vial/sellers/:id/password", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const { newPassword } = req.body;
+  if (typeof newPassword !== "string" || newPassword.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+  const [seller] = await db.select().from(vialVendorsTable)
+    .where(eq(vialVendorsTable.id, req.params.id));
+  if (!seller || !seller.sellerPasswordHash) {
+    res.status(404).json({ error: "Seller account not found" });
+    return;
+  }
+  await db.update(vialVendorsTable).set({
+    sellerPasswordHash: hashPassword(newPassword),
+    resetCode: null,
+    resetCodeExpiresAt: null,
+  }).where(eq(vialVendorsTable.id, seller.id));
+  writeLog("seller", "warn", "seller_password_reset_by_admin",
+    `Seller password reset by admin: ${seller.name}`,
+    { vendorId: seller.id, vendorName: seller.name }, req.ip).catch(() => {});
+  res.json({ ok: true, message: "Seller password updated successfully." });
+});
+
 // POST /api/vial/seller/forgot-password
 // Sends a 6-digit OTP to the seller's linked Telegram chat ID.
 router.post("/vial/seller/forgot-password", async (req, res): Promise<void> => {
