@@ -1,4 +1,4 @@
-import app from "./app";
+import app, { markApplicationReady } from "./app";
 import { seedIfEmpty } from "./seed";
 import { setWebhook, getTelegramStatus, buildWebhookUrl } from "./lib/telegram";
 import { startTrackingAutoRefresh } from "./lib/tracking-auto-refresh";
@@ -1020,11 +1020,13 @@ async function purgeExpiredDeletedOrders(): Promise<void> {
   }
 }
 
-function startServer(): void {
-  // Bootstrap completes before traffic acceptance so required system templates
-  // exist before a verification resend can be requested.
-  app.listen(port, "0.0.0.0", () => {
-  console.log(`Server listening on port ${port}`);
+function startServer() {
+  return app.listen(port, "0.0.0.0", () => {
+    console.log(`Server listening on port ${port}`);
+  });
+}
+
+function startBackgroundServices(): void {
   autoRegisterWebhook();
   startTrackingAutoRefresh();
   startGbAutoClose();
@@ -1040,17 +1042,26 @@ function startServer(): void {
   startDbBackupSchedule();
   startDbBackupVerificationSchedule();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
-  });
 }
 
-// Do not accept requests until the idempotent system-template bootstrap succeeds.
+// Bind the HTTP port before database bootstrap. Production API requests remain
+// gated with 503 until bootstrap succeeds, while the deployment health probe
+// can confirm that the process opened its configured port.
+const server = startServer();
+
 runStartupMigrations()
   .then(() => seedIfEmpty())
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
   .then(() => runSecurityIncidentRemediation())
-  .then(() => startServer())
+  .then(() => {
+    markApplicationReady();
+    startBackgroundServices();
+    console.log("[startup] Application ready");
+  })
   .catch((err) => {
-    console.error("[startup] Bootstrap failed; server will not start:", err);
-    process.exitCode = 1;
+    console.error("[startup] Bootstrap failed; shutting down server:", err);
+    server.close(() => {
+      process.exitCode = 1;
+    });
   });

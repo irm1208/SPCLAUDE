@@ -128,6 +128,29 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.get("/_health", (_req: Request, res: Response) => {
   res.status(200).json({ ok: true });
 });
+app.get("/api/healthz", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok" });
+});
+
+let applicationReady = process.env.NODE_ENV !== "production";
+
+export function markApplicationReady(): void {
+  applicationReady = true;
+}
+
+function requireApplicationReady(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!applicationReady) {
+    res.status(503).json({ error: "Application is starting" });
+    return;
+  }
+  next();
+}
+
+app.use("/api", requireApplicationReady);
 
 // ── Global rate limit (API only — not static assets or proxy) ──
 // Replit collapses all user traffic to a single egress IP, so the limit
