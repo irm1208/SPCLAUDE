@@ -45,4 +45,22 @@ describe("public order lookup emergency shutdown", () => {
     expect(guard).toContain('req.method === "DELETE"');
     expect(guard).toContain("res.status(410)");
   });
+
+  it("allows signed-in owners through the update boundary without restoring legacy access", () => {
+    const source = readFileSync(new URL("./orders.ts", import.meta.url), "utf8");
+    const guard = source.slice(
+      source.indexOf("const LEGACY_ORDER_ACCESS_DISABLED"),
+      source.indexOf("// ── POST /api/orders/claim-pin"),
+    );
+    const updateHandler = source.slice(
+      source.indexOf('router.put("/orders/:orderId"'),
+      source.indexOf('router.post("/orders/:orderId/shipping-address"'),
+    );
+
+    expect(guard).toContain('req.cookies?.account_session');
+    expect(guard).toContain("legacyOrderMutation && !signedInOrderUpdate");
+    expect(updateHandler).toContain('router.put("/orders/:orderId", requireAccount');
+    expect(updateHandler).toContain("req.account!.telegramUsername");
+    expect(updateHandler).toContain('"You can only update your own order"');
+  });
 });

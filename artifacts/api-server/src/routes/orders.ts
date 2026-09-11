@@ -30,7 +30,7 @@ import { randomUUID } from "crypto";
 import { writeLog } from "../lib/audit-log";
 import { createAlert } from "../lib/create-alert";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
-import { getJwtSecret } from "../middleware/account-auth";
+import { getJwtSecret, requireAccount } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
 import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
@@ -326,8 +326,12 @@ router.use((req, res, next): void => {
     /^\/orders\/[^/]+\/(?:pin|inpost-qr|royal-mail-qr|qr-upload|shipping-address|payment-screenshot|confirm-fiat)$/.test(req.path);
   const legacyOrderMutation =
     /^\/orders\/[^/]+$/.test(req.path) && (req.method === "PUT" || req.method === "DELETE");
+  const signedInOrderUpdate =
+    req.method === "PUT"
+    && legacyOrderMutation
+    && Boolean(req.cookies?.account_session);
 
-  if (exactRoutes.has(key) || legacyOrderAction || legacyOrderMutation) {
+  if (exactRoutes.has(key) || legacyOrderAction || (legacyOrderMutation && !signedInOrderUpdate)) {
     const forwardedFor = Array.isArray(req.headers["x-forwarded-for"])
       ? req.headers["x-forwarded-for"].join(",")
       : req.headers["x-forwarded-for"] ?? null;
@@ -1911,7 +1915,7 @@ router.post("/orders/:orderId/qr-upload", qrUploadMiddleware, async (req, res): 
 });
 
 // ── PUT /api/orders/:orderId — update an existing order ──────
-router.put("/orders/:orderId", async (req, res): Promise<void> => {
+router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.orderId) ? req.params.orderId[0] : req.params.orderId;
 
   const {
@@ -1954,6 +1958,11 @@ router.put("/orders/:orderId", async (req, res): Promise<void> => {
   const tg = normalizeTg(telegramUsername);
   if (tg.length > MAX_TG_LENGTH) {
     res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  const accountUsername = req.account!.telegramUsername;
+  if (!safeEqual(normalizeTg(accountUsername).toLowerCase(), tg.toLowerCase())) {
+    res.status(403).json({ error: "You can only update your own order" });
     return;
   }
 
