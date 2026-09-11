@@ -1972,6 +1972,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     .where(and(
       eq(ordersTable.id, rawId),
       tgEq(tg),
+      isNull(ordersTable.deletedAt),
     ));
 
   // Timing-safe code comparison

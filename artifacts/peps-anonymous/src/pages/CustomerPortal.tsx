@@ -8166,7 +8166,7 @@ export default function CustomerPortal() {
       try {
         await deleteOrderMut.mutateAsync(id);
         refetchDeleted();
-        toast({ title: "Order removed", description: "Recoverable within 48 hours." });
+        toast({ title: "Order removed", description: "Recoverable within 14 days." });
       } catch (e: unknown) {
         toast({ title: "Could not remove order", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
       }
@@ -8444,7 +8444,7 @@ export default function CustomerPortal() {
                     <div>
                       <p className="text-xs font-bold" style={{ color: T.text }}>Recently Removed</p>
                       <p className="text-[11px]" style={{ color: T.subtle }}>
-                        {deletedOrders.length} order{deletedOrders.length !== 1 ? "s" : ""} · recoverable within 48h
+              {deletedOrders.length} order{deletedOrders.length !== 1 ? "s" : ""} · recoverable within 14 days
                       </p>
                     </div>
                   </div>
@@ -8454,7 +8454,7 @@ export default function CustomerPortal() {
                 </summary>
                 <div className="p-3 border-t space-y-2" style={{ borderColor: hexToRgba("#EF4444", 0.15), background: hexToRgba("#EF4444", 0.02) }}>
                   <p className="text-[11px] px-1 leading-relaxed" style={{ color: T.subtle }}>
-                    Orders you removed within the last 48 hours. Admin-removed orders cannot be self-restored.
+                    Orders you removed within the last 14 days. Admin-removed orders cannot be self-restored.
                   </p>
                   {(deletedOrders as DeletedOrder[]).map(del => {
                     const expiresIn = Math.max(0, Math.round((new Date(del.expiresAt).getTime() - Date.now()) / 3600000));

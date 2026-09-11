@@ -2597,7 +2597,7 @@ function OrdersTab({ secret }: { secret: string }) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Trash2 className="w-4 h-4 text-red-600" />
-                  <p className="text-sm font-bold text-red-700">Deleted Orders — Restore within 2 days</p>
+                  <p className="text-sm font-bold text-red-700">Deleted Orders — Restore within 14 days</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {trashMsg && <span className={`text-xs font-medium ${trashMsg.includes("✓") ? "text-green-600" : "text-red-600"}`}>{trashMsg}</span>}

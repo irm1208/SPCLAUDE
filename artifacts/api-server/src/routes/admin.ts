@@ -866,10 +866,10 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
 });
 
 // ─── GET /api/admin/orders/trash ─────────────────────────────
-// Returns soft-deleted orders within the 2-day restore window (youngest first)
+// Returns soft-deleted orders within the 14-day recovery window (youngest first)
 router.get("/admin/orders/trash", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   const orders = await db
     .select()
     .from(ordersTable)
@@ -895,7 +895,7 @@ router.get("/admin/orders/trash", async (req, res): Promise<void> => {
     ...o,
     currency: o.groupBuyId ? (gbCurrencies[o.groupBuyId] ?? "GBP") : "GBP",
     lineItems: lineItems.filter(li => li.orderId === o.id),
-    expiresAt: new Date(new Date(o.deletedAt!).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(new Date(o.deletedAt!).getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(),
   })));
 });
 
@@ -910,7 +910,7 @@ router.post("/admin/orders/:id/restore", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Deleted order not found" });
     return;
   }
-  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   if (order.deletedAt! < cutoff) {
     res.status(410).json({ error: "Restore window has expired for this order" });
     return;
@@ -1809,7 +1809,7 @@ router.delete("/admin/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Capture line items for audit snapshot (order stays in DB as soft-deleted for 2-day restore window)
+  // Capture line items for audit snapshot (order stays in DB as soft-deleted for 14-day recovery window)
   const deletedLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
 
   try {

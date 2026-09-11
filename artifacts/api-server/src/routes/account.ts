@@ -1748,13 +1748,13 @@ router.patch("/account/hidden-orders", requireAccount, async (req, res): Promise
   res.json({ hiddenOrderIds: rows.map(r => r.orderId) });
 });
 
-// GET /api/account/orders/deleted — member's soft-deleted orders within the 48-hour restore window
+// GET /api/account/orders/deleted — member's soft-deleted orders within the 14-day restore window
 // IMPORTANT: must be registered before GET /account/orders/:id to avoid "deleted" being captured as :id
 router.get("/account/orders/deleted", requireAccount, async (req, res): Promise<void> => {
   const tg = req.account!.telegramUsername;
   const tgBare = tg.replace(/^@/, "").toLowerCase();
   const tgWithAt = `@${tgBare}`;
-  const WINDOW_MS = 48 * 60 * 60 * 1000;
+  const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
   const cutoff = new Date(Date.now() - WINDOW_MS);
 
   const rows = await db
@@ -3183,9 +3183,9 @@ router.post("/account/orders/:id/restore", requireAccount, async (req, res): Pro
     return;
   }
 
-  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   if (order.deletedAt! < cutoff) {
-    res.status(410).json({ error: "The 48-hour restore window for this order has expired." });
+    res.status(410).json({ error: "The 14-day restore window for this order has expired." });
     return;
   }
 
