@@ -1240,8 +1240,6 @@ function SellersSubTab({ secret }: { secret: string }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const selected = sellers.find(s => s.id === selectedId) ?? null;
-
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
 
   return (
@@ -1253,43 +1251,43 @@ function SellersSubTab({ secret }: { secret: string }) {
         </button>
       </div>
 
-      {selected && (
-        <SellerDetailPanel
-          seller={selected}
-          secret={secret}
-          onClose={() => setSelectedId(null)}
-          onActiveChange={(id, active) =>
-            setSellers(prev => prev.map(s => s.id === id ? { ...s, active } : s))
-          }
-        />
-      )}
-
       <div className="space-y-2">
         {sellers.map(s => (
-          <div
-            key={s.id}
-            className={cn(
-              "rounded-xl p-3 flex items-center gap-3 bg-white border transition-all cursor-pointer hover:border-violet-300",
-              selectedId === s.id ? "border-violet-400 ring-1 ring-violet-300" : "border-border",
-              !s.active && "opacity-60"
-            )}
-            onClick={() => setSelectedId(prev => prev === s.id ? null : s.id)}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-foreground">{s.name}</span>
-                {!s.active && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600">Inactive</span>}
-                {s.country && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-500">{s.country}</span>}
+          <React.Fragment key={s.id}>
+            <div
+              className={cn(
+                "rounded-xl p-3 flex items-center gap-3 bg-white border transition-all cursor-pointer hover:border-violet-300",
+                selectedId === s.id ? "border-violet-400 ring-1 ring-violet-300" : "border-border",
+                !s.active && "opacity-60"
+              )}
+              onClick={() => setSelectedId(prev => prev === s.id ? null : s.id)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-foreground">{s.name}</span>
+                  {!s.active && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600">Inactive</span>}
+                  {s.country && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-500">{s.country}</span>}
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
+                  <span><span className="font-semibold text-foreground">{s.productCount}</span> products</span>
+                  <span><span className="font-semibold text-foreground">{s.totalOrders}</span> orders</span>
+                  {s.totalRevenue > 0 && <span className="font-semibold text-orange-500">{fmt(s.totalRevenue)} revenue</span>}
+                  {s.lastLogin ? <span>Last login {fmtRelativeTime(s.lastLogin)}</span> : <span className="italic">Never logged in</span>}
+                </div>
               </div>
-              <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
-                <span><span className="font-semibold text-foreground">{s.productCount}</span> products</span>
-                <span><span className="font-semibold text-foreground">{s.totalOrders}</span> orders</span>
-                {s.totalRevenue > 0 && <span className="font-semibold text-orange-500">{fmt(s.totalRevenue)} revenue</span>}
-                {s.lastLogin ? <span>Last login {fmtRelativeTime(s.lastLogin)}</span> : <span className="italic">Never logged in</span>}
-              </div>
+              <ChevronRight className={cn("w-4 h-4 text-muted-foreground shrink-0 transition-transform", selectedId === s.id && "rotate-90")} />
             </div>
-            <ChevronRight className={cn("w-4 h-4 text-muted-foreground shrink-0 transition-transform", selectedId === s.id && "rotate-90")} />
-          </div>
+            {selectedId === s.id && (
+              <SellerDetailPanel
+                seller={s}
+                secret={secret}
+                onClose={() => setSelectedId(null)}
+                onActiveChange={(id, active) =>
+                  setSellers(prev => prev.map(seller => seller.id === id ? { ...seller, active } : seller))
+                }
+              />
+            )}
+          </React.Fragment>
         ))}
         {sellers.length === 0 && <div className="text-center py-10 text-sm text-muted-foreground">No sellers registered yet</div>}
       </div>
