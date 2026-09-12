@@ -596,6 +596,47 @@ router.post("/vial/seller/signup", async (req, res): Promise<void> => {
   res.status(201).json({ message: "Application submitted. Your account is pending admin approval.", vendorId: vendor.id });
 });
 
+router.put("/vial/seller/password", async (req, res): Promise<void> => {
+  const vendor = await requireSeller(req, res);
+  if (!vendor) return;
+
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+    res.status(400).json({ error: "Current and new password are required" });
+    return;
+  }
+
+  const currentHash = hashPassword(currentPassword);
+  if (!safeCompare(currentHash, vendor.sellerPasswordHash!)) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+  if (newPassword.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const newHash = hashPassword(newPassword);
+  if (safeCompare(currentHash, newHash)) {
+    res.status(400).json({ error: "New password must differ from current password" });
+    return;
+  }
+
+  await db.update(vialVendorsTable).set({
+    sellerPasswordHash: newHash,
+    resetCode: null,
+    resetCodeExpiresAt: null,
+  }).where(eq(vialVendorsTable.id, vendor.id));
+
+  writeLog("seller", "info", "seller_password_changed",
+    `Seller "${vendor.name}" changed their password`,
+    { vendorId: vendor.id, vendorName: vendor.name },
+    req.ip,
+  ).catch(() => {});
+
+  res.json({ ok: true });
+});
+
 router.get("/vial/seller/products", async (req, res): Promise<void> => {
   const vendor = await requireSeller(req, res);
   if (!vendor) return;

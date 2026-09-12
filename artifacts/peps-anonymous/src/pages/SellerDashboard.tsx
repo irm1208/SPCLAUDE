@@ -304,12 +304,22 @@ function Field({ label, icon: Icon, children }: { label: string; icon?: React.El
 }
 
 // ─── Login Screen ──────────────────────────────────────────────
-function LoginScreen({ onLogin }: { onLogin: (s: SellerSession) => void }) {
+function LoginScreen({ onLogin, passwordChanged }: { onLogin: (s: SellerSession) => void; passwordChanged?: boolean }) {
   const [tab, setTab] = useState<"login" | "signup">("login");
 
   return (
     <div className="flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-sm space-y-5">
+        {passwordChanged && (
+          <div
+            role="status"
+            className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium"
+            style={{ background: "rgba(16,185,129,0.08)", color: "#059669" }}
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Password changed. Please sign in again with your new password.</span>
+          </div>
+        )}
         {/* Tabs */}
         <div className="flex rounded-xl p-1 gap-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
           {(["login", "signup"] as const).map(t => (
@@ -1250,7 +1260,7 @@ interface VendorProfile {
   paypalLink: string | null;
 }
 
-function StoreProfileTab({ session }: { session: SellerSession }) {
+export function StoreProfileTab({ session, onPasswordChanged }: { session: SellerSession; onPasswordChanged: () => void }) {
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1262,6 +1272,12 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
   });
   const [membersOnly, setMembersOnly] = useState(false);
   const [togglingMO, setTogglingMO] = useState(false);
+  const [passwordCurrent, setPasswordCurrent] = useState("");
+  const [passwordNew, setPasswordNew] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const passwordAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/vial/seller/profile", { headers: sellerHeaders(session) })
@@ -1284,6 +1300,23 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
       .then(r => r.json())
       .then(d => { if (typeof d.membersOnly === "boolean") setMembersOnly(d.membersOnly); })
       .catch(() => {});
+  }, [session]);
+
+  useEffect(() => {
+    setPasswordCurrent("");
+    setPasswordNew("");
+    setPasswordConfirm("");
+    setPasswordSaving(false);
+    setPasswordError("");
+
+    const passwordAbortController = new AbortController();
+    passwordAbortRef.current?.abort();
+    passwordAbortRef.current = passwordAbortController;
+    return () => {
+      passwordAbortController.abort();
+      passwordAbortRef.current?.abort();
+      passwordAbortRef.current = null;
+    };
   }, [session]);
 
   const toggleMembersOnly = async () => {
@@ -1316,6 +1349,54 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
       setTimeout(() => setSuccess(false), 3000);
     } catch { setError("Connection error"); }
     finally { setSaving(false); }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!passwordCurrent) {
+      setPasswordError("Current password is required.");
+      return;
+    }
+    if (passwordNew.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      return;
+    }
+    if (passwordNew !== passwordConfirm) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError("");
+    const passwordAbortController = new AbortController();
+    passwordAbortRef.current?.abort();
+    passwordAbortRef.current = passwordAbortController;
+    try {
+      const res = await fetch("/api/vial/seller/password", {
+        method: "PUT",
+        headers: sellerHeaders(session),
+        body: JSON.stringify({ currentPassword: passwordCurrent, newPassword: passwordNew }),
+        signal: passwordAbortController.signal,
+      });
+      if (passwordAbortRef.current !== passwordAbortController) return;
+      if (!res.ok) {
+        setPasswordError("Unable to change password. Please verify your current password and try again.");
+        return;
+      }
+      setPasswordCurrent("");
+      setPasswordNew("");
+      setPasswordConfirm("");
+      onPasswordChanged();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (passwordAbortRef.current === passwordAbortController) {
+        setPasswordError("Unable to change password. Please try again.");
+      }
+    } finally {
+      if (passwordAbortRef.current === passwordAbortController) {
+        passwordAbortRef.current = null;
+        setPasswordSaving(false);
+      }
+    }
   };
 
   if (loading) return (
@@ -1423,6 +1504,72 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
         </div>
       </div>
 
+      <form onSubmit={e => { e.preventDefault(); handlePasswordChange(); }} className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Change password</p>
+          <p className="text-xs mt-1" style={{ color: "var(--t-muted)" }}>You will need to sign in again after changing your password.</p>
+        </div>
+        {passwordError && (
+          <div role="alert" className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium" style={{ background: "rgba(239,68,68,0.08)", color: "#DC2626" }}>
+            <AlertTriangle className="w-4 h-4 shrink-0" />{passwordError}
+          </div>
+        )}
+        <div>
+          <label htmlFor="seller-password-current" className="text-[11px] font-bold block mb-1" style={{ color: "var(--t-subtle)" }}>Current password</label>
+          <input
+            id="seller-password-current"
+            type="password"
+            value={passwordCurrent}
+            onChange={e => setPasswordCurrent(e.target.value)}
+            autoComplete="current-password"
+            minLength={8}
+            required
+            disabled={passwordSaving}
+            className="w-full h-10 px-3 rounded-xl text-sm focus:outline-none"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label htmlFor="seller-password-new" className="text-[11px] font-bold block mb-1" style={{ color: "var(--t-subtle)" }}>New password</label>
+          <input
+            id="seller-password-new"
+            type="password"
+            value={passwordNew}
+            onChange={e => setPasswordNew(e.target.value)}
+            autoComplete="new-password"
+            minLength={8}
+            required
+            disabled={passwordSaving}
+            className="w-full h-10 px-3 rounded-xl text-sm focus:outline-none"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label htmlFor="seller-password-confirm" className="text-[11px] font-bold block mb-1" style={{ color: "var(--t-subtle)" }}>Confirm new password</label>
+          <input
+            id="seller-password-confirm"
+            type="password"
+            value={passwordConfirm}
+            onChange={e => setPasswordConfirm(e.target.value)}
+            autoComplete="new-password"
+            minLength={8}
+            required
+            disabled={passwordSaving}
+            className="w-full h-10 px-3 rounded-xl text-sm focus:outline-none"
+            style={inputStyle}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={passwordSaving || !passwordCurrent || passwordNew.length < 8 || passwordNew !== passwordConfirm}
+          className="w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-50"
+          style={{ background: "var(--t-blue-deep)" }}
+        >
+          {passwordSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+          {passwordSaving ? "Changing password…" : "Change password"}
+        </button>
+      </form>
+
       <button
         onClick={handleSave}
         disabled={saving}
@@ -1440,10 +1587,22 @@ function StoreProfileTab({ session }: { session: SellerSession }) {
 export default function SellerDashboard() {
   const [session, setSession] = useState<SellerSession | null>(loadSession);
   const [tab, setTab] = useState<"listings" | "orders" | "store">("listings");
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   const handleLogout = () => {
     clearSession();
     setSession(null);
+  };
+
+  const handlePasswordChanged = useCallback(() => {
+    clearSession();
+    setSession(null);
+    setPasswordChanged(true);
+  }, []);
+
+  const handleLogin = (nextSession: SellerSession) => {
+    setPasswordChanged(false);
+    setSession(nextSession);
   };
 
   const TABS = [
@@ -1519,13 +1678,13 @@ export default function SellerDashboard() {
       {/* ── Content ─────────────────────────────────────────────── */}
       <div className="flex-1 max-w-xl mx-auto w-full pt-4">
         {!session ? (
-          <LoginScreen onLogin={setSession} />
+          <LoginScreen onLogin={handleLogin} passwordChanged={passwordChanged} />
         ) : tab === "listings" ? (
           <ListingsTab session={session} />
         ) : tab === "orders" ? (
           <OrdersTab session={session} />
         ) : (
-          <StoreProfileTab session={session} />
+          <StoreProfileTab session={session} onPasswordChanged={handlePasswordChanged} />
         )}
       </div>
     </PageLayout>
