@@ -104,12 +104,7 @@ export async function requireAccountIdentity(req: Request, res: Response, next: 
       { enforcementPoint: "account_session" },
       req.ip,
     ).catch(() => {});
-    res.clearCookie("account_session", {
-      httpOnly: true,
-      secure: process.env["NODE_ENV"] === "production",
-      sameSite: "lax",
-      path: "/",
-    });
+    res.clearCookie("account_session", getAccountCookieOptions());
     res.status(403).json({ error: "Access denied" });
     return;
   }
@@ -150,6 +145,17 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
 
 const SESSION_DAYS = 7; // Reduced from 30d to 7d
 
+export function getAccountCookieOptions() {
+  const isReplitPreview = process.env["REPL_ID"] !== undefined;
+  return {
+    httpOnly: true,
+    secure: process.env["NODE_ENV"] === "production" || isReplitPreview,
+    sameSite: isReplitPreview ? "none" as const : "lax" as const,
+    ...(isReplitPreview ? { partitioned: true } : {}),
+    path: "/",
+  };
+}
+
 /** Low-level issuer; callers must explicitly declare the session restriction. */
 export function issueAccountCookie(
   res: Response,
@@ -161,11 +167,8 @@ export function issueAccountCookie(
   const expiresInSecs = SESSION_DAYS * 24 * 60 * 60;
   const token = jwt.sign({ telegramUsername, jti, verificationRequired: options.verificationRequired }, secret, { expiresIn: expiresInSecs });
   res.cookie("account_session", token, {
-    httpOnly: true,
-    secure: process.env["NODE_ENV"] === "production",
-    sameSite: "lax",
+    ...getAccountCookieOptions(),
     maxAge: expiresInSecs * 1000,
-    path: "/",
   });
 }
 

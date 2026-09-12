@@ -5,7 +5,7 @@ import { db } from "@workspace/db";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
-import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie } from "../middleware/account-auth";
+import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie, getAccountCookieOptions } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { normalizeToCode as normalizeCountryToCode } from "../lib/country-utils";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
@@ -362,12 +362,7 @@ router.post("/account/logout", async (req, res): Promise<void> => {
   if (tokenInfo) {
     await revokeToken(tokenInfo.jti, tokenInfo.expiresAt).catch(() => {});
   }
-  res.clearCookie("account_session", {
-    httpOnly: true,
-    secure: process.env["NODE_ENV"] === "production",
-    sameSite: "lax",
-    path: "/",
-  });
+  res.clearCookie("account_session", getAccountCookieOptions());
   res.json({ ok: true });
 });
 

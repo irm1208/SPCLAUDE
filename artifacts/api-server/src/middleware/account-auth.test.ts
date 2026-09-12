@@ -25,6 +25,23 @@ function response() {
 }
 
 describe("account session authorization", () => {
+  it("issues cross-site-compatible cookies in the Replit preview", () => {
+    const previousReplId = process.env.REPL_ID;
+    process.env.REPL_ID = "test-repl";
+    try {
+      const res = response();
+      issueAccountCookie(res as never, "preview-user", { verificationRequired: false });
+      expect(res.cookie.mock.calls[0][2]).toMatchObject({
+        partitioned: true,
+        secure: true,
+        sameSite: "none",
+      });
+    } finally {
+      if (previousReplId === undefined) delete process.env.REPL_ID;
+      else process.env.REPL_ID = previousReplId;
+    }
+  });
+
   it("stores an explicit restricted-session claim in newly issued cookies", () => {
     const res = response();
     issueAccountCookie(res as never, "new-user", { verificationRequired: true });
