@@ -28,6 +28,11 @@ const harness = vi.hoisted(() => {
       telegramUsername: "telegramUsername",
       paymentStatus: "paymentStatus",
     },
+    refunds: {
+      id: "id",
+      orderId: "orderId",
+      status: "status",
+    },
     audit: "audit",
   };
 
@@ -35,6 +40,7 @@ const harness = vi.hoisted(() => {
     share: {} as Record<string, unknown>,
     members: [] as Array<Record<string, unknown>>,
     orders: [] as Array<Record<string, unknown>>,
+    refunds: [] as Array<Record<string, unknown>>,
     audits: [] as Array<Record<string, unknown>>,
     updates: [] as Array<{ table: unknown; values: Record<string, unknown>; rows: unknown[] }>,
     locks: [] as Array<{ table: unknown; predicates: unknown[] }>,
@@ -112,6 +118,7 @@ const harness = vi.hoisted(() => {
         paymentConfirmedAt: null,
       },
     ];
+    state.refunds = [];
     state.audits = [];
     state.updates = [];
     state.locks = [];
@@ -135,6 +142,8 @@ const harness = vi.hoisted(() => {
         ? state.members
         : table === tables.orders
           ? state.orders
+          : table === tables.refunds
+            ? state.refunds
           : [];
     return rows.filter(row => matches(row, predicate));
   }
@@ -158,7 +167,10 @@ const harness = vi.hoisted(() => {
             then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
               Promise.resolve(rowsFor(table, predicate).map(row => project(row, selection))).then(resolve, reject),
           };
-          return result;
+          return {
+            ...result,
+            orderBy: vi.fn(() => result),
+          };
         }),
       })),
     })),
@@ -189,6 +201,7 @@ const harness = vi.hoisted(() => {
           share: state.share,
           members: state.members,
           orders: state.orders,
+          refunds: state.refunds,
           audits: state.audits,
           updates: state.updates,
           locks: state.locks,
@@ -199,6 +212,7 @@ const harness = vi.hoisted(() => {
           state.share = snapshot.share;
           state.members = snapshot.members;
           state.orders = snapshot.orders;
+          state.refunds = snapshot.refunds;
           state.audits = snapshot.audits;
           state.updates = snapshot.updates;
           state.locks = snapshot.locks;
@@ -220,12 +234,15 @@ vi.mock("@workspace/db", () => ({
   ordersTable: harness.tables.orders,
   wholesaleShareMembersTable: harness.tables.members,
   wholesaleSharesTable: harness.tables.shares,
+  groupBuyRefundsTable: harness.tables.refunds,
 }));
 
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),
+  asc: vi.fn((column: unknown) => ({ kind: "asc", column })),
   eq: vi.fn((column: unknown, value: unknown) => ({ kind: "eq", column, value })),
   inArray: vi.fn((column: unknown, value: unknown[]) => ({ kind: "inArray", column, value })),
+  sql: vi.fn(() => ({ kind: "sql" })),
 }));
 
 import { confirmWholesaleOrganiserPayment } from "./wholesale-organiser-payment-confirmation";
@@ -285,6 +302,22 @@ describe("confirmWholesaleOrganiserPayment", () => {
     ]);
   });
 
+  it("blocks the organiser order when its refund is active without touching the ordinary member", async () => {
+    harness.state.refunds.push({
+      id: "refund-1",
+      orderId: "creator-order",
+      status: "requested",
+    });
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "rejected", code: "refund_active" });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
+    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.updates).toHaveLength(0);
+  });
+
   it("locks the share, filtered creator candidate, and organiser order only", async () => {
     await confirmWholesaleOrganiserPayment(pendingInput);
 
@@ -293,6 +326,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       harness.tables.members,
       harness.tables.orders,
       harness.tables.members,
+      expect.anything(),
     ]);
     expect(harness.state.locks[1].predicates[0]).toMatchObject({
       kind: "and",

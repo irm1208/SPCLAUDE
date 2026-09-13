@@ -36,7 +36,7 @@ function errorResponse(res: Response, error: unknown): void {
           "active_refund_exists", "active_refund_race", "in_progress", "owned", "txid_replay",
           "concurrent_state_change", "completed_txid_immutable", "invalid_refund_transition",
           "refund_claim_lost", "attempt_ownership_lost", "order_state_changed", "payment_state_changed",
-          "payment_evidence_changed",
+          "payment_evidence_changed", "refund_active",
         ].includes(code) ? 409
           : ["provider_unavailable", "processing_failure", "audit_failure", "storage_failure", "transient_failure"].includes(code) ? 503
             : ["internal_error", "completed_refund_linkage_mismatch", "invalid_refund_configuration", "invalid_refund_amount"].includes(code) ? 500
