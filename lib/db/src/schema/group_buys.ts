@@ -23,6 +23,7 @@ export const groupBuysTable = pgTable("group_buys", {
   sortOrder: integer("sort_order"),
   labTestSupplier: text("lab_test_supplier"),
   testingEnabled: boolean("testing_enabled").notNull().default(false),
+  cryptoRefundsEnabled: boolean("crypto_refunds_enabled").notNull().default(false),
   vendorShippingEnabled: boolean("vendor_shipping_enabled").notNull().default(false),
   vendorShippingMessage: text("vendor_shipping_message"),
   vendorShippingAmount: numeric("vendor_shipping_amount", { precision: 10, scale: 2 }),

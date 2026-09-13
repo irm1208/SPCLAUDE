@@ -32,6 +32,7 @@ export * from "./testing_pools";
 export * from "./package_sizes";
 export * from "./intl_shipping";
 export * from "./credit_transactions";
+export * from "./group_buy_refunds";
 export { ruleAcceptancesTable } from "./accounts";
 export * from "./blocked_ips";
 export * from "./geo_ip_cache";
