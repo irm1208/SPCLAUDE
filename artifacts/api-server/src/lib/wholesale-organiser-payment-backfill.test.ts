@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { wholesaleSharesTable } from "@workspace/db";
 import type { OrganiserPaymentConfirmationResult } from "./wholesale-organiser-payment-confirmation";
 import {
   runWholesaleOrganiserPaymentBackfill,
   type WholesaleOrganiserPaymentBackfillDeps,
 } from "./wholesale-organiser-payment-backfill";
 
+vi.mock("@workspace/db", () => {
+  throw new Error("The database module must remain lazy for injected backfill tests.");
+});
+
 vi.mock("drizzle-orm", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
   return {
     ...actual,
     and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),
@@ -20,6 +23,11 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 type QueryTrace = {
   where: ReturnType<typeof vi.fn>;
   orderBy: ReturnType<typeof vi.fn>;
+};
+
+const sharesTable = {
+  id: "id",
+  organiserPaymentStatus: "organiserPaymentStatus",
 };
 
 function depsFor(
@@ -37,6 +45,7 @@ function depsFor(
   }
   return {
     db: { select },
+    wholesaleSharesTable: sharesTable,
     confirmWholesaleOrganiserPayment,
   };
 }
@@ -56,12 +65,12 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
 
     expect(trace.where).toHaveBeenCalledWith({
       kind: "eq",
-      column: wholesaleSharesTable.organiserPaymentStatus,
+      column: sharesTable.organiserPaymentStatus,
       value: "confirmed",
     });
     expect(trace.orderBy).toHaveBeenCalledWith({
       kind: "asc",
-      column: wholesaleSharesTable.id,
+      column: sharesTable.id,
     });
   });
 
@@ -191,13 +200,53 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
     expect(memberOrders.member).toBe("unpaid");
   });
 
-  it("propagates unexpected service errors", async () => {
-    const confirm = vi.fn(async () => {
+  it("wraps unexpected service errors with privacy-safe partial progress", async () => {
+    const confirm = vi.fn(async ({ shareId }: { shareId: string }) => {
+      if (shareId === "SHARE-REPAIRED") {
+        return {
+          kind: "confirmed",
+          shareId,
+          organiserOrderId: "organiser-order",
+          orderChanged: true,
+          organiserPaymentStatus: "confirmed",
+          organiserOrderPaymentStatus: "confirmed",
+        } satisfies OrganiserPaymentConfirmationResult;
+      }
+      if (shareId === "SHARE-CORRECT") {
+        return {
+          kind: "already_confirmed",
+          shareId,
+          organiserOrderId: "organiser-order",
+          organiserPaymentStatus: "confirmed",
+          organiserOrderPaymentStatus: "confirmed",
+        } satisfies OrganiserPaymentConfirmationResult;
+      }
+      if (shareId === "SHARE-SKIPPED") {
+        return {
+          kind: "rejected",
+          code: "invalid_share_status",
+          message: "safe rejection",
+        } satisfies OrganiserPaymentConfirmationResult;
+      }
       throw new Error("database unavailable");
     });
 
-    await expect(runWholesaleOrganiserPaymentBackfill(depsFor(confirm, [{ id: "SHARE-A" }]))).rejects.toThrow(
-      "database unavailable",
-    );
+    const result = runWholesaleOrganiserPaymentBackfill(depsFor(confirm, [
+      { id: "SHARE-REPAIRED" },
+      { id: "SHARE-CORRECT" },
+      { id: "SHARE-SKIPPED" },
+      { id: "SHARE-FAILED" },
+    ]));
+
+    await expect(result).rejects.toMatchObject({
+      name: "WholesaleOrganiserPaymentBackfillError",
+      summary: {
+        scanned: 4,
+        repaired: 1,
+        alreadyCorrect: 1,
+        skippedByCode: { invalid_share_status: 1 },
+      },
+    });
+    await expect(result).rejects.not.toThrow("database unavailable");
   });
 });
