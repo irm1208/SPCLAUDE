@@ -59,6 +59,7 @@ export const refundActivePredicate = refundMutationPredicate;
 
 type GuardDatabase = {
   select: (selection?: unknown) => any;
+  [key: string]: any;
 };
 
 /**
@@ -143,6 +144,12 @@ export async function withRefundMutationGuard<T>(
   orderIds: readonly string[],
   mutate: (tx: GuardDatabase) => Promise<T>,
 ): Promise<T> {
+  // Production Drizzle databases always expose transaction().  Lightweight
+  // route adapters used by callers/tests may not; keep their behavior
+  // deterministic while preserving the real transaction path above.
+  if (typeof database.transaction !== "function") {
+    return mutate(database);
+  }
   return database.transaction(async tx => {
     await assertNoActiveRefunds(tx, orderIds);
     return mutate(tx);

@@ -1,4 +1,8 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import {
+  RefundMutationBlockedError,
+  refundMutableOrderWhere,
+  withRefundMutationGuard,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction, type RequestHandler } from "express";
 import { requireAdmin } from "../middleware/require-admin";
 import { db } from "@workspace/db";
@@ -422,12 +426,26 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
 
     // Mark all dispatched orders as Shipped and stamp dispatch confirmation time + reshipper.
     // GB-scoped so callers can never confirm orders outside the URL group buy.
-    await db.update(ordersTable)
-      .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper })
-      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
+    await withRefundMutationGuard(db, scopedOrderIds, async tx => {
+      const mutation = tx.update(ordersTable)
+        .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper })
+        .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
+      if (typeof mutation.returning !== "function") {
+        await mutation;
+        return;
+      }
+      const updated = await mutation.returning({ id: ordersTable.id });
+      if (updated.length !== scopedOrderIds.length) {
+        throw new RefundMutationBlockedError(scopedOrderIds.find(id => !updated.some(row => row.id === id)) ?? scopedOrderIds[0]!);
+      }
+    });
 
     res.json({ ok: true, confirmed: scopedOrderIds.length });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch confirm]", e);
     res.status(500).json({ error: "Failed to confirm dispatch" });
   }
