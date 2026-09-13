@@ -134,6 +134,13 @@ describe("exact Ethereum refund transfer verification", () => {
     });
     expect(malformedEnvelope).toMatchObject({ verified: false, code: "provider_unavailable" });
 
+    const missingResult = await verifyRefundCryptoTransfer({
+      txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
+      amountBaseUnits: amount.toString(),
+      rpcCall: async () => ({ jsonrpc: "2.0", id: 1, error: null }),
+    });
+    expect(missingResult).toMatchObject({ verified: false, code: "provider_unavailable" });
+
     const duplicate = await verifyRefundCryptoTransfer({
       txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
       amountBaseUnits: amount.toString(), rpcCall: async method => {

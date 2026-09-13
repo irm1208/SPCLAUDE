@@ -41,6 +41,8 @@ const fake = vi.hoisted(() => {
     failAudit: false,
     failOrder: false,
     failAttemptUpdate: false,
+    failOutboxUpdate: false,
+    paymentVerifierAvailable: true,
     serial: Promise.resolve(),
   };
   const eq = (column: unknown, value: unknown) => ({ kind: "eq", column, value });
@@ -98,10 +100,13 @@ const fake = vi.hoisted(() => {
           const result = rowsFor(table, predicate).map(row => selection
             ? Object.fromEntries(Object.entries(selection).map(([key, column]) => [key, row[column as string]]))
             : row);
-          return {
+          const query: any = {
             for: vi.fn(async () => result),
             then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
           };
+          query.orderBy = () => query;
+          query.limit = () => query;
+          return query;
         },
       }),
     };
@@ -126,6 +131,7 @@ const fake = vi.hoisted(() => {
         where: (predicate: any) => {
           if (table === tables.orders && state.failOrder) throw new Error("order failed");
           if (table === tables.attempts && state.failAttemptUpdate) throw new Error("attempt failed");
+          if (table === tables.outbox && state.failOutboxUpdate) throw new Error("outbox update failed");
           const rows = rowsFor(table, predicate);
           rows.forEach(row => Object.assign(row, values));
           const result = rows.map(row => ({ ...row }));
@@ -141,6 +147,11 @@ const fake = vi.hoisted(() => {
         onConflictDoNothing: () => ({
           returning: async () => {
             if (table === tables.claims && state.claims.some(row => row.txid === values.txid)) return [];
+            if (table === tables.outbox && state.outbox.some(row =>
+              row.refundId === values.refundId
+              && row.attemptId === values.attemptId
+              && row.transition === values.transition
+            )) return [];
             mutation(table, values);
             return [values];
           },
@@ -205,6 +216,8 @@ const fake = vi.hoisted(() => {
     state.failAudit = false;
     state.failOrder = false;
     state.failAttemptUpdate = false;
+    state.failOutboxUpdate = false;
+    state.paymentVerifierAvailable = true;
     state.serial = Promise.resolve();
   }
   return { tables, state, db, eq, and, inArray, reset, verify: vi.fn(async () => state.verify) };
@@ -221,6 +234,7 @@ vi.mock("drizzle-orm", () => ({
   eq: fake.eq,
   and: fake.and,
   inArray: fake.inArray,
+  asc: (column: unknown) => ({ kind: "asc", column }),
   isNull: (column: unknown) => ({ kind: "isNull", column }),
 }));
 vi.mock("../routes/payments", () => ({ resolveEffectiveOrderCrypto: vi.fn(async () => ({
@@ -228,18 +242,21 @@ vi.mock("../routes/payments", () => ({ resolveEffectiveOrderCrypto: vi.fn(async 
 })) }));
 vi.mock("./payment-verify", () => ({
   isValidEthAddress: (value: string) => /^0x[0-9a-fA-F]{40}$/.test(value),
-  verifyTransaction: vi.fn(async () => ({
-    verified: true,
-    amountUsdt: 123.45,
-    recipientAddress: `0x${"c".repeat(40)}`,
-  })),
+  verifyTransaction: vi.fn(async () => {
+    if (!fake.state.paymentVerifierAvailable) throw new Error("payment provider unavailable");
+    return {
+      verified: true,
+      amountUsdt: 123.45,
+      recipientAddress: `0x${"c".repeat(40)}`,
+    };
+  }),
 }));
 vi.mock("./refund-crypto-verifier", () => ({
   normalizeEthereumTxid: (value: unknown) => typeof value === "string" ? value.toLowerCase() : null,
   verifyRefundCryptoTransfer: fake.verify,
 }));
 
-import { GroupBuyRefundError, submitCryptoRefund } from "./group-buy-refund";
+import { drainRefundTransitionOutbox, GroupBuyRefundError, submitCryptoRefund } from "./group-buy-refund";
 
 const tx1 = `0x${"1".repeat(64)}`;
 const tx2 = `0x${"2".repeat(64)}`;
@@ -404,6 +421,44 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     expect(fake.state.refunds[0].status).toBe("verifying");
   });
 
+  it("recovers stale state before an incoming payment-provider outage", async () => {
+    fake.state.attempts.push({
+      id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
+      processorUsername: "other", processorRole: "admin",
+      startedAt: new Date(Date.now() - 16 * 60 * 1000), endedAt: null,
+    });
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = "old-attempt";
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].verifyingAt = fake.state.attempts[0].startedAt;
+    fake.state.paymentVerifierAvailable = false;
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "payment_verification_failed" });
+    expect(fake.state.refunds[0].status).toBe("verification_failed");
+    expect(fake.state.attempts[0].resultCode).toBe("stale_processing_state");
+  });
+
+  it("reuses the existing transition marker ID after an idempotent outbox conflict", async () => {
+    fake.state.attempts.push({
+      id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
+      processorUsername: "other", processorRole: "admin",
+      startedAt: new Date(Date.now() - 16 * 60 * 1000), endedAt: null,
+    });
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = "old-attempt";
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].verifyingAt = fake.state.attempts[0].startedAt;
+    fake.state.outbox.push({
+      id: "existing-marker", refundId: "refund-1", attemptId: "old-attempt",
+      transition: "verifying_to_verification_failed", processorUsername: "other",
+      processorRole: "admin", submittedTxid: tx1, resultCode: "stale_processing_state",
+    });
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .resolves.toMatchObject({ status: "completed" });
+    expect(fake.state.outbox).toHaveLength(1);
+    expect(fake.state.outbox[0].id).toBe("existing-marker");
+  });
+
   it("recovers malformed legacy attempt timestamps using the refund lease", async () => {
     fake.state.attempts.push({
       id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
@@ -457,5 +512,33 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
       .rejects.toMatchObject({ code: "ineligible_payment_evidence" });
     expect(fake.state.refunds[0].status).toBe("requested");
+  });
+
+  it("drains a pending recovery marker exactly once after inline audit failure", async () => {
+    fake.state.failAudit = true;
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "processing_failure" });
+    fake.state.failAudit = false;
+    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(1);
+    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(0);
+    expect(fake.state.audits).toHaveLength(1);
+    expect(fake.state.outbox[0].deliveredAt).toBeTruthy();
+  });
+
+  it("serializes concurrent drains and retries a marker update failure safely", async () => {
+    fake.state.failAudit = true;
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "processing_failure" });
+    fake.state.failAudit = false;
+    fake.state.failOutboxUpdate = true;
+    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(0);
+    expect(fake.state.outbox[0].deliveredAt == null).toBe(true);
+    fake.state.failOutboxUpdate = false;
+    const results = await Promise.all([
+      drainRefundTransitionOutbox(fake.db, { limit: 1 }),
+      drainRefundTransitionOutbox(fake.db, { limit: 1 }),
+    ]);
+    expect(results.sort()).toEqual([0, 1]);
+    expect(fake.state.audits).toHaveLength(1);
   });
 });

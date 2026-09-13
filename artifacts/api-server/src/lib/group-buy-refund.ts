@@ -14,7 +14,7 @@ import {
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { resolveEffectiveOrderCrypto } from "../routes/payments";
 import {
   isValidEthAddress,
@@ -80,7 +80,7 @@ async function queueRecoveryAudit(
   },
 ): Promise<string> {
   const id = randomUUID();
-  await tx.insert(groupBuyRefundTransitionOutboxTable).values({
+  const [inserted] = await tx.insert(groupBuyRefundTransitionOutboxTable).values({
     id,
     refundId: args.refundId,
     attemptId: args.attemptId,
@@ -90,7 +90,65 @@ async function queueRecoveryAudit(
     submittedTxid: args.submittedTxid,
     resultCode: args.resultCode,
   }).onConflictDoNothing().returning();
-  return id;
+  if (inserted?.id) return inserted.id;
+  const [existing] = await tx.select().from(groupBuyRefundTransitionOutboxTable).where(and(
+    eq(groupBuyRefundTransitionOutboxTable.refundId, args.refundId),
+    eq(groupBuyRefundTransitionOutboxTable.attemptId, args.attemptId),
+    eq(groupBuyRefundTransitionOutboxTable.transition, "verifying_to_verification_failed"),
+  )).for("update");
+  if (!existing?.id) throw new Error("Refund transition outbox marker was not found after conflict.");
+  return existing.id;
+}
+
+export async function drainRefundTransitionOutbox(
+  database: DatabaseLike,
+  options: { limit?: number } = {},
+): Promise<number> {
+  const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0
+    ? options.limit!
+    : 100;
+  let delivered = 0;
+  for (let index = 0; index < limit; index += 1) {
+    let claimed = false;
+    try {
+      claimed = await database.transaction(async (tx: DatabaseLike) => {
+        const [marker] = await tx.select().from(groupBuyRefundTransitionOutboxTable)
+          .where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt))
+          .orderBy(asc(groupBuyRefundTransitionOutboxTable.createdAt), asc(groupBuyRefundTransitionOutboxTable.id))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        if (!marker) return false;
+        await insertAudit(tx, {
+          action: "group_buy_refund_processing_failed",
+          message: `Group-buy crypto refund ${marker.refundId} processing transition`,
+          metadata: {
+            identity: marker.processorUsername,
+            role: marker.processorRole,
+            source: "refund_processor",
+            transition: marker.transition,
+            resultCode: marker.resultCode,
+            refundId: marker.refundId,
+            attemptId: marker.attemptId,
+            ...(marker.submittedTxid ? { outgoingTxid: marker.submittedTxid } : {}),
+          },
+        });
+        const [updated] = await tx.update(groupBuyRefundTransitionOutboxTable).set({
+          deliveredAt: new Date(),
+        }).where(and(
+          eq(groupBuyRefundTransitionOutboxTable.id, marker.id),
+          isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
+        )).returning();
+        return Boolean(updated);
+      });
+    } catch {
+      // Each marker has its own transaction. A failed audit or marker update
+      // rolls back both and leaves the marker pending for a later drain.
+      break;
+    }
+    if (!claimed) break;
+    delivered += 1;
+  }
+  return delivered;
 }
 
 export type CompleteCreditRefundArgs = {
@@ -858,31 +916,7 @@ async function compensateCryptoProcessingFailure(
     // The original finalization error is the stable error exposed to callers.
   }
   if (!auditPayload) return;
-  try {
-    await database.transaction(async (tx: DatabaseLike) => {
-      await insertAudit(tx, {
-        action: "group_buy_refund_processing_failed",
-        message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
-        metadata: {
-          identity: actor.username,
-          role: actor.role,
-          source: "refund_processor",
-          transition: "verifying_to_verification_failed",
-          resultCode: "processing_failure",
-          refundId: refundSnapshot.id,
-          orderId: auditPayload!.orderId,
-          groupBuyId: auditPayload!.groupBuyId,
-          outgoingTxid: txid,
-        },
-      });
-      await tx.update(groupBuyRefundTransitionOutboxTable).set({ deliveredAt: new Date() }).where(and(
-        eq(groupBuyRefundTransitionOutboxTable.id, auditPayload!.outboxId),
-        isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
-      ));
-    });
-  } catch {
-    // Audit is best effort after recovery has committed.
-  }
+  await drainRefundTransitionOutbox(database, { limit: 1 });
 }
 
 async function recoverStaleCryptoAttempt(
@@ -976,31 +1010,7 @@ async function recoverStaleCryptoAttempt(
     return false;
   }
   if (!auditPayload) return false;
-  try {
-    await database.transaction(async (tx: DatabaseLike) => {
-      await insertAudit(tx, {
-        action: "group_buy_refund_processing_failed",
-        message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
-        metadata: {
-          identity: auditPayload!.processorUsername,
-          role: auditPayload!.processorRole,
-          source: "refund_processor",
-          transition: "verifying_to_verification_failed",
-          resultCode: "stale_processing_state",
-          refundId: refundSnapshot.id,
-          orderId: auditPayload!.orderId,
-          groupBuyId: auditPayload!.groupBuyId,
-          outgoingTxid: auditPayload!.submittedTxid,
-        },
-      });
-      await tx.update(groupBuyRefundTransitionOutboxTable).set({ deliveredAt: new Date() }).where(and(
-        eq(groupBuyRefundTransitionOutboxTable.id, auditPayload!.outboxId),
-        isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
-      ));
-    });
-  } catch {
-    // Recovery already committed; audit is best effort.
-  }
+  await drainRefundTransitionOutbox(database, { limit: 1 });
   return true;
 }
 
@@ -1044,7 +1054,6 @@ export async function submitCryptoRefund(
   if (refundVerifyLeaseMs() === null) {
     throw new GroupBuyRefundError("provider_unavailable", "Refund verification lease configuration is invalid.");
   }
-  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
   if (unlockedRefund.status === "verifying") {
     const leaseMs = refundVerifyLeaseMs()!;
     const [currentAttempt] = unlockedRefund.processingAttemptId
@@ -1067,6 +1076,7 @@ export async function submitCryptoRefund(
       await recoverStaleCryptoAttempt(database, unlockedRefund, currentAttempt);
     }
   }
+  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
   const [replayedRefund] = await loadRows(
     database,
     groupBuyRefundsTable,

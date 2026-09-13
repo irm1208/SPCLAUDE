@@ -113,7 +113,7 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
 export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", {
   id: text("id").primaryKey(),
   refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
-  submittedTxid: text("submitted_txid"),
+  submittedTxid: text("submitted_txid").notNull(),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
@@ -140,11 +140,12 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   transition: text("transition").notNull(),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
-  submittedTxid: text("submitted_txid").notNull(),
+  submittedTxid: text("submitted_txid"),
   resultCode: text("result_code").notNull(),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  check("group_buy_refund_transition_outbox_txid_nonempty", sql`${t.submittedTxid} IS NULL OR length(trim(${t.submittedTxid})) > 0`),
   uniqueIndex("group_buy_refund_transition_outbox_unique")
     .on(t.refundId, t.attemptId, t.transition),
 ]);

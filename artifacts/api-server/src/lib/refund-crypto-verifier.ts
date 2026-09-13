@@ -140,6 +140,7 @@ async function rpc(input: RefundCryptoVerificationInput, method: string, params:
         || response.id !== 1
         || (!Object.prototype.hasOwnProperty.call(response, "result")
           && !Object.prototype.hasOwnProperty.call(response, "error"))
+        || (response.error == null && !Object.prototype.hasOwnProperty.call(response, "result"))
       ) throw new Error("malformed RPC envelope");
       if (response.error) throw new Error("RPC error");
       return response.result;

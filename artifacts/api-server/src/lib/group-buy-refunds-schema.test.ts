@@ -17,8 +17,8 @@ import {
 } from "@workspace/db/schema";
 
 describe("group buy refund schema contract", () => {
-  const sqlText = (expression: { queryChunks: Array<{ name?: string; value?: string[] }> }) =>
-    expression.queryChunks.map(chunk => chunk.name ?? chunk.value?.join("") ?? "").join("");
+  const sqlText = (expression: any) =>
+    expression.queryChunks.map((chunk: any) => chunk.name ?? chunk.value?.join("") ?? "").join("");
 
   it("exports only the supported refund literals", () => {
     expect(GROUP_BUY_REFUND_METHODS).toEqual(["credit", "crypto"]);
@@ -151,6 +151,8 @@ describe("group buy refund schema contract", () => {
       .not.toContain("group_buy_refund_attempts_txid_unique");
     expect(getTableConfig(groupBuyRefundTransitionOutboxTable).indexes.map(index => index.config.name))
       .toContain("group_buy_refund_transition_outbox_unique");
+    expect(getTableConfig(groupBuyRefundTransitionOutboxTable).checks.map(checkConstraint => checkConstraint.name))
+      .toContain("group_buy_refund_transition_outbox_txid_nonempty");
     expect(creditIndexes.map(index => index.config.name)).toContain(
       "credit_transactions_account_refund_unique",
     );
@@ -168,12 +170,12 @@ describe("group buy refund schema contract", () => {
     );
     expect(sqlText(txidIndex!.config.where!)).toBe("outgoing_txid is not null");
     expect(sqlText(ledgerIndex!.config.where!)).toBe("refund_id is not null");
-    expect(ledgerIndex!.config.columns.map(column => column.name)).toEqual([
+    expect((ledgerIndex!.config.columns as any[]).map(column => column.name)).toEqual([
       "account_username",
       "refund_id",
     ]);
     expect(sqlText(operationIndex!.config.where!)).toBe("operation_key is not null");
-    expect(operationIndex!.config.columns.map(column => column.name)).toEqual([
+    expect((operationIndex!.config.columns as any[]).map(column => column.name)).toEqual([
       "account_username",
       "operation_key",
     ]);
@@ -185,7 +187,7 @@ describe("group buy refund schema contract", () => {
   it("declares database checks for literals, positive amounts, and method-specific fields", () => {
     const refundConfig = getTableConfig(groupBuyRefundsTable);
     const checkSqlByName = new Map(
-      refundConfig.checks.map(check => [check.name, sqlText(check.value)]),
+      refundConfig.checks.map((check: any) => [check.name, sqlText(check.value)]),
     );
 
     expect(checkSqlByName.get("group_buy_refunds_method_check")).toBe(
@@ -204,7 +206,7 @@ describe("group buy refund schema contract", () => {
   });
 
   it("declares refund foreign keys to the order, group buy, and account identities", () => {
-    const foreignKeys = getTableConfig(groupBuyRefundsTable).foreignKeys.map(foreignKey => {
+    const foreignKeys = getTableConfig(groupBuyRefundsTable).foreignKeys.map((foreignKey: any) => {
       const reference = foreignKey.reference();
       const foreignTable = reference.foreignTable[Symbol.for("drizzle:Name")];
       return {
@@ -225,8 +227,8 @@ describe("group buy refund schema contract", () => {
     const refundConfig = getTableConfig(groupBuyRefundsTable);
     const attemptConfig = getTableConfig(groupBuyRefundAttemptsTable);
     const creditConfig = getTableConfig(creditTransactionsTable);
-    const refundForeignKey = (config: ReturnType<typeof getTableConfig>, relation: string) => {
-      const foreignKey = config.foreignKeys.find(candidate => {
+    const refundForeignKey = (config: any, relation: string) => {
+      const foreignKey = config.foreignKeys.find((candidate: any) => {
         const reference = candidate.reference();
         return `${reference.columns[0].name}->${reference.foreignTable[Symbol.for("drizzle:Name")]}.${reference.foreignColumns[0].name}` === relation;
       });
@@ -243,10 +245,10 @@ describe("group buy refund schema contract", () => {
       onUpdate: "restrict",
     });
 
-    const indexColumns = (config: ReturnType<typeof getTableConfig>, name: string) => {
-      const index = config.indexes.find(candidate => candidate.config.name === name);
+    const indexColumns = (config: any, name: string) => {
+      const index = config.indexes.find((candidate: any) => candidate.config.name === name);
       expect(index).toBeDefined();
-      return index!.config.columns.map(column => column.name);
+      return (index!.config.columns as any[]).map((column: any) => column.name);
     };
 
     expect(indexColumns(refundConfig, "group_buy_refunds_order_id_idx")).toEqual(["order_id"]);

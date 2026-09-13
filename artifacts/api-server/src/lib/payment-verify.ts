@@ -180,6 +180,7 @@ export async function evmJsonRpc(endpoints: string[], method: string, params: un
         || json.id !== 1
         || (!Object.prototype.hasOwnProperty.call(json, "result")
           && !Object.prototype.hasOwnProperty.call(json, "error"))
+        || (json.error == null && !Object.prototype.hasOwnProperty.call(json, "result"))
       ) throw new Error("malformed RPC envelope");
       if (json.error) throw new Error(json.error.message ?? "RPC error");
       if (retryOnNull && json.result === null) {
