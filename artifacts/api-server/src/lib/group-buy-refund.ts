@@ -4,6 +4,7 @@ import {
   auditLogsTable,
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
+  groupBuyRefundTransitionOutboxTable,
   groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
@@ -67,6 +68,31 @@ export type CryptoRefundProcessor = {
 const REFUND_VERIFY_LEASE_DEFAULT_SECONDS = 15 * 60;
 const PROCESSING_FAILURE_MESSAGE = "Refund verification processing failed; please retry.";
 
+async function queueRecoveryAudit(
+  tx: DatabaseLike,
+  args: {
+    refundId: string;
+    attemptId: string;
+    processorUsername: string;
+    processorRole: string;
+    submittedTxid: string | null;
+    resultCode: string;
+  },
+): Promise<string> {
+  const id = randomUUID();
+  await tx.insert(groupBuyRefundTransitionOutboxTable).values({
+    id,
+    refundId: args.refundId,
+    attemptId: args.attemptId,
+    transition: "verifying_to_verification_failed",
+    processorUsername: args.processorUsername,
+    processorRole: args.processorRole,
+    submittedTxid: args.submittedTxid,
+    resultCode: args.resultCode,
+  }).onConflictDoNothing().returning();
+  return id;
+}
+
 export type CompleteCreditRefundArgs = {
   refundId: string;
   username: string;
@@ -120,6 +146,19 @@ function refundOrder(row: Record<string, any>): RefundEligibilityOrder {
   return row as RefundEligibilityOrder;
 }
 
+function assertRefundAmountAuthority(order: Record<string, any>): void {
+  try {
+    const grandTotal = usdToCents(String(order.grandTotal));
+    if (order.paymentUsdAmount != null && usdToCents(String(order.paymentUsdAmount)) !== grandTotal) {
+      throw new GroupBuyRefundError("ineligible_payment_evidence", "The payment amount does not match the locked order total.");
+    }
+    if (grandTotal <= 0n) throw new Error();
+  } catch (error) {
+    if (error instanceof GroupBuyRefundError) throw error;
+    throw new GroupBuyRefundError("ineligible_payment_evidence");
+  }
+}
+
 function validateRefundInputShape(input: RefundRequestInput): void {
   if (input?.method === "credit") return;
   if (input?.method !== "crypto") throw new GroupBuyRefundError("invalid_method");
@@ -137,6 +176,7 @@ function validateRefundInputShape(input: RefundRequestInput): void {
 async function loadOriginalPaymentProof(
   order: Record<string, any>,
 ): Promise<ServerPaymentEvidenceProof> {
+  assertRefundAmountAuthority(order);
   const txHash = typeof order.paymentTxHash === "string" && order.paymentTxHash.trim()
     ? order.paymentTxHash.trim()
     : Array.isArray(order.paymentTxHashes)
@@ -150,8 +190,7 @@ async function loadOriginalPaymentProof(
   try {
     // Payment verification uses the server's payment lock when present. The
     // refund amount itself is still derived exclusively from grandTotal below.
-    const paymentAmount = order.paymentUsdAmount ?? order.grandTotal;
-    amount = Number(usdToCents(String(paymentAmount))) / 100;
+      amount = Number(usdToCents(String(order.grandTotal))) / 100;
   } catch {
     throw new GroupBuyRefundError("non_positive_total");
   }
@@ -204,7 +243,7 @@ async function loadOriginalPaymentProof(
       currency: payment.currency,
       network: payment.network,
       recipientWallet: result.recipientAddress,
-      expectedAmountUsd: centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal))),
+      expectedAmountUsd: centsToUsdString(usdToCents(String(order.grandTotal))),
       verifiedAmountUsd: centsToUsdString(usdToCents(String(result.amountUsdt))),
     });
   } catch {
@@ -256,8 +295,10 @@ function requireLockedPaymentProof(
 ): void {
   let expected: string;
   try {
-    expected = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
-  } catch {
+    assertRefundAmountAuthority(order);
+    expected = centsToUsdString(usdToCents(String(order.grandTotal)));
+  } catch (error) {
+    if (error instanceof GroupBuyRefundError && error.code !== "ineligible_payment_evidence") throw error;
     throw new GroupBuyRefundError("payment_evidence_changed");
   }
   if (proof.expectedAmountUsd !== expected) {
@@ -767,7 +808,11 @@ async function compensateCryptoProcessingFailure(
   txid: string,
   actor: { username: string; role: string },
 ): Promise<void> {
-  let auditPayload: { orderId: string; groupBuyId: string } | undefined;
+  let auditPayload: {
+    orderId: string;
+    groupBuyId: string;
+    outboxId: string;
+  } | undefined;
   try {
     await database.transaction(async (tx: DatabaseLike) => {
       const locked = await lockCryptoRows(tx, refundSnapshot);
@@ -799,7 +844,15 @@ async function compensateCryptoProcessingFailure(
         eq(groupBuyRefundsTable.status, "verifying"),
         eq(groupBuyRefundsTable.processingAttemptId, attemptId),
       ));
-      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id };
+      const outboxId = await queueRecoveryAudit(tx, {
+        refundId: refundSnapshot.id,
+        attemptId,
+        processorUsername: actor.username,
+        processorRole: actor.role,
+        submittedTxid: txid,
+        resultCode: "processing_failure",
+      });
+      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id, outboxId };
     });
   } catch {
     // The original finalization error is the stable error exposed to callers.
@@ -819,8 +872,13 @@ async function compensateCryptoProcessingFailure(
           refundId: refundSnapshot.id,
           orderId: auditPayload!.orderId,
           groupBuyId: auditPayload!.groupBuyId,
+          outgoingTxid: txid,
         },
       });
+      await tx.update(groupBuyRefundTransitionOutboxTable).set({ deliveredAt: new Date() }).where(and(
+        eq(groupBuyRefundTransitionOutboxTable.id, auditPayload!.outboxId),
+        isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
+      ));
     });
   } catch {
     // Audit is best effort after recovery has committed.
@@ -830,48 +888,89 @@ async function compensateCryptoProcessingFailure(
 async function recoverStaleCryptoAttempt(
   database: DatabaseLike,
   refundSnapshot: Record<string, any>,
-  attemptSnapshot: Record<string, any>,
+  attemptSnapshot: Record<string, any> | undefined,
 ): Promise<boolean> {
-  let auditPayload: { orderId: string; groupBuyId: string } | undefined;
+  let auditPayload: {
+    orderId: string;
+    groupBuyId: string;
+    outboxId: string;
+    processorUsername: string;
+    processorRole: string;
+    submittedTxid: string | null;
+  } | undefined;
   try {
     await database.transaction(async (tx: DatabaseLike) => {
       const locked = await lockCryptoRows(tx, refundSnapshot);
       if (!locked.account || !locked.order || !locked.groupBuy || !locked.refund) return;
-      const attempt = locked.attempts.find(candidate => candidate.id === attemptSnapshot.id);
+      const attempt = attemptSnapshot
+        ? locked.attempts.find(candidate => candidate.id === attemptSnapshot.id)
+        : undefined;
+      const ownerUsername = attempt?.processorUsername ?? locked.refund.processorUsername;
+      const ownerRole = attempt?.processorRole ?? locked.refund.processorRole ?? "unknown";
+      const submittedTxid = attempt?.submittedTxid
+        ?? normalizeEthereumTxid(refundSnapshot.outgoingTxid)
+        ?? null;
       if (
-        !attempt
-        || attempt.endedAt != null
-        || attempt.submittedTxid !== attemptSnapshot.submittedTxid
-        || locked.refund.status !== "verifying"
-        || locked.refund.processingAttemptId !== attempt.id
-        || locked.refund.processorUsername !== attempt.processorUsername
+        locked.refund.status !== "verifying"
+        || (attemptSnapshot && (
+          !attempt
+          || attempt.endedAt != null
+          || attempt.submittedTxid !== attemptSnapshot.submittedTxid
+          || locked.refund.processingAttemptId !== attempt.id
+          || locked.refund.processorUsername !== attempt.processorUsername
+        ))
+        || (!attemptSnapshot && locked.refund.processingAttemptId != null)
+        || (ownerUsername != null && locked.refund.processorUsername !== ownerUsername)
       ) return;
       const now = new Date();
-      const [closedAttempt] = await tx.update(groupBuyRefundAttemptsTable).set({
-        endedAt: now,
-        resultCode: "processing_failure",
-        failureReason: PROCESSING_FAILURE_MESSAGE,
-      }).where(and(
-        eq(groupBuyRefundAttemptsTable.id, attempt.id),
-        eq(groupBuyRefundAttemptsTable.refundId, refundSnapshot.id),
-        eq(groupBuyRefundAttemptsTable.submittedTxid, attempt.submittedTxid),
-        eq(groupBuyRefundAttemptsTable.processorUsername, attempt.processorUsername),
-        isNull(groupBuyRefundAttemptsTable.endedAt),
-      )).returning();
-      if (!closedAttempt) return;
+      if (attempt) {
+        const [closedAttempt] = await tx.update(groupBuyRefundAttemptsTable).set({
+          endedAt: now,
+          resultCode: "stale_processing_state",
+          failureReason: "The previous refund verification attempt expired or had incomplete state.",
+        }).where(and(
+          eq(groupBuyRefundAttemptsTable.id, attempt.id),
+          eq(groupBuyRefundAttemptsTable.refundId, refundSnapshot.id),
+          eq(groupBuyRefundAttemptsTable.submittedTxid, attempt.submittedTxid),
+          eq(groupBuyRefundAttemptsTable.processorUsername, attempt.processorUsername),
+          isNull(groupBuyRefundAttemptsTable.endedAt),
+        )).returning();
+        if (!closedAttempt) return;
+      }
+      const attemptPredicate = locked.refund.processingAttemptId == null
+        ? isNull(groupBuyRefundsTable.processingAttemptId)
+        : eq(groupBuyRefundsTable.processingAttemptId, locked.refund.processingAttemptId);
+      const ownerPredicate = ownerUsername == null
+        ? isNull(groupBuyRefundsTable.processorUsername)
+        : eq(groupBuyRefundsTable.processorUsername, ownerUsername);
       const [failedRefund] = await tx.update(groupBuyRefundsTable).set({
         status: "verification_failed",
         failedAt: now,
-        verificationErrorCode: "processing_failure",
-        verificationErrorMessage: PROCESSING_FAILURE_MESSAGE,
+        verificationErrorCode: "stale_processing_state",
+        verificationErrorMessage: "The previous refund verification attempt expired or had incomplete state.",
       }).where(and(
         eq(groupBuyRefundsTable.id, refundSnapshot.id),
         eq(groupBuyRefundsTable.status, "verifying"),
-        eq(groupBuyRefundsTable.processingAttemptId, attempt.id),
-        eq(groupBuyRefundsTable.processorUsername, attempt.processorUsername),
+        attemptPredicate,
+        ownerPredicate,
       )).returning();
       if (!failedRefund) return;
-      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id };
+      const outboxId = await queueRecoveryAudit(tx, {
+        refundId: refundSnapshot.id,
+        attemptId: attempt?.id ?? locked.refund.processingAttemptId ?? "legacy",
+        processorUsername: ownerUsername ?? "unknown",
+        processorRole: ownerRole,
+        submittedTxid,
+        resultCode: "stale_processing_state",
+      });
+      auditPayload = {
+        orderId: locked.order.id,
+        groupBuyId: locked.groupBuy.id,
+        outboxId,
+        processorUsername: ownerUsername ?? "unknown",
+        processorRole: ownerRole,
+        submittedTxid,
+      };
     });
   } catch {
     return false;
@@ -883,14 +982,21 @@ async function recoverStaleCryptoAttempt(
         action: "group_buy_refund_processing_failed",
         message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
         metadata: {
+          identity: auditPayload!.processorUsername,
+          role: auditPayload!.processorRole,
           source: "refund_processor",
           transition: "verifying_to_verification_failed",
-          resultCode: "processing_failure",
+          resultCode: "stale_processing_state",
           refundId: refundSnapshot.id,
           orderId: auditPayload!.orderId,
           groupBuyId: auditPayload!.groupBuyId,
+          outgoingTxid: auditPayload!.submittedTxid,
         },
       });
+      await tx.update(groupBuyRefundTransitionOutboxTable).set({ deliveredAt: new Date() }).where(and(
+        eq(groupBuyRefundTransitionOutboxTable.id, auditPayload!.outboxId),
+        isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
+      ));
     });
   } catch {
     // Recovery already committed; audit is best effort.
@@ -938,20 +1044,26 @@ export async function submitCryptoRefund(
   if (refundVerifyLeaseMs() === null) {
     throw new GroupBuyRefundError("provider_unavailable", "Refund verification lease configuration is invalid.");
   }
+  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
   if (unlockedRefund.status === "verifying") {
     const leaseMs = refundVerifyLeaseMs()!;
-    const [currentAttempt] = await loadRows(
-      database,
-      groupBuyRefundAttemptsTable,
-      eq(groupBuyRefundAttemptsTable.id, unlockedRefund.processingAttemptId),
-    );
-    const startedAt = currentAttempt?.startedAt ?? unlockedRefund.verifyingAt;
-    const startedAtMs = startedAt instanceof Date
-      ? startedAt.getTime()
-      : typeof startedAt === "string"
-        ? Date.parse(startedAt)
+    const [currentAttempt] = unlockedRefund.processingAttemptId
+      ? await loadRows(
+        database,
+        groupBuyRefundAttemptsTable,
+        eq(groupBuyRefundAttemptsTable.id, unlockedRefund.processingAttemptId),
+      )
+      : [];
+    const parseLeaseTimestamp = (value: unknown): number => value instanceof Date
+      ? value.getTime()
+      : typeof value === "string"
+        ? Date.parse(value)
         : Number.NaN;
-    if (currentAttempt && Number.isFinite(startedAtMs) && Date.now() - startedAtMs > leaseMs) {
+    const verifyingAtMs = parseLeaseTimestamp(unlockedRefund.verifyingAt);
+    const leaseTimestampMs = Number.isFinite(verifyingAtMs)
+      ? verifyingAtMs
+      : parseLeaseTimestamp(unlockedRefund.updatedAt);
+    if (!Number.isFinite(leaseTimestampMs) || Date.now() - leaseTimestampMs > leaseMs) {
       await recoverStaleCryptoAttempt(database, unlockedRefund, currentAttempt);
     }
   }
@@ -1035,6 +1147,7 @@ export async function submitCryptoRefund(
     verification = await verifyRefundCryptoTransfer({
       txid: canonicalTxid,
       asset: String(unlockedRefund.asset),
+      network: String(unlockedRefund.network),
       destinationWallet: String(unlockedRefund.destinationWallet),
       amountBaseUnits: String(unlockedRefund.amountBaseUnits),
     });
@@ -1064,6 +1177,18 @@ export async function submitCryptoRefund(
     ) {
       throw new GroupBuyRefundError("attempt_ownership_lost");
     }
+    if (
+      locked.order.status === "Cancelled"
+      || locked.order.deletedAt
+      || locked.order.refundStatus === "refunded"
+      || locked.order.paymentStatus !== "confirmed"
+      || !locked.order.paymentConfirmedAt
+    ) {
+      throw new GroupBuyRefundError("order_state_changed");
+    }
+    assertRefundAmountAuthority(locked.order);
+    const lockedPayment = await resolveLockedPayment(tx, locked.order);
+    requireLockedPaymentProof(locked.order, paymentEvidenceProof, lockedPayment);
 
     const now = new Date();
     const failureCode = verification.verified ? null : verification.code;
@@ -1120,12 +1245,19 @@ export async function submitCryptoRefund(
       eq(groupBuyRefundsTable.id, refundId),
       eq(groupBuyRefundsTable.status, "verifying"),
     ));
-    await tx.update(ordersTable).set({
+    const [updatedOrder] = await tx.update(ordersTable).set({
       refundStatus: "refunded",
       refundedAt: now,
       status: "Cancelled",
       paymentStatus: "refunded",
-    }).where(eq(ordersTable.id, locked.order.id));
+    }).where(and(
+      eq(ordersTable.id, locked.order.id),
+      eq(ordersTable.status, locked.order.status),
+      eq(ordersTable.paymentStatus, "confirmed"),
+      isNull(ordersTable.refundStatus),
+      isNull(ordersTable.deletedAt),
+    )).returning();
+    if (!updatedOrder) throw new GroupBuyRefundError("order_state_changed");
     await insertAudit(tx, {
       action: "group_buy_refund_completed",
       message: `Group-buy crypto refund ${refundId} completed`,
@@ -1152,8 +1284,11 @@ export async function submitCryptoRefund(
       completedAt: now,
     });
     });
-  } catch {
+  } catch (error) {
     await compensateCryptoProcessingFailure(database, unlockedRefund, processingAttemptId, canonicalTxid, actor);
+    if (error instanceof GroupBuyRefundError && error.code === "order_state_changed") {
+      throw new GroupBuyRefundError("order_state_changed");
+    }
     throw new GroupBuyRefundError("processing_failure", PROCESSING_FAILURE_MESSAGE);
   }
   if ("failureCode" in completion) {

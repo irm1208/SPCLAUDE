@@ -15,6 +15,7 @@ function rpcSuccess(latestBlock = 112n) {
     eth_chainId: "0x1",
     eth_getTransactionByHash: { hash: txid, to: ETH_USDC_CONTRACT },
     eth_getTransactionReceipt: {
+      transactionHash: txid,
       status: "0x1",
       blockNumber: "0x64",
       logs: [{
@@ -32,6 +33,7 @@ describe("exact Ethereum refund transfer verification", () => {
     const result = await verifyRefundCryptoTransfer({
       txid,
       asset: "USDC",
+      network: "Ethereum ERC-20",
       destinationWallet: destination,
       amountBaseUnits: amount.toString(),
       minConfirmations: 12,
@@ -50,6 +52,7 @@ describe("exact Ethereum refund transfer verification", () => {
     const result = await verifyRefundCryptoTransfer({
       txid,
       asset: "USDC",
+      network: "Ethereum ERC-20",
       destinationWallet: destination,
       amountBaseUnits: (amount + 1n).toString(),
       minConfirmations: 1,
@@ -72,6 +75,7 @@ describe("exact Ethereum refund transfer verification", () => {
     const result = await verifyRefundCryptoTransfer({
       txid,
       asset: "USDC",
+      network: "Ethereum ERC-20",
       destinationWallet: destination,
       amountBaseUnits: amount.toString(),
       minConfirmations: 12,
@@ -88,6 +92,7 @@ describe("exact Ethereum refund transfer verification", () => {
     const wrongRecipient = await verifyRefundCryptoTransfer({
       txid,
       asset: "USDC",
+      network: "Ethereum ERC-20",
       destinationWallet: destination,
       amountBaseUnits: amount.toString(),
       minConfirmations: 1,
@@ -104,10 +109,52 @@ describe("exact Ethereum refund transfer verification", () => {
     const providerFailure = await verifyRefundCryptoTransfer({
       txid,
       asset: "USDC",
+      network: "Ethereum ERC-20",
       destinationWallet: destination,
       amountBaseUnits: amount.toString(),
       rpcCall: async () => { throw new Error("offline"); },
     });
     expect(providerFailure).toMatchObject({ verified: false, code: "provider_unavailable" });
+  });
+
+  it("rejects wrong transaction hashes, malformed envelopes, duplicate transfers, and malformed logs", async () => {
+    const wrongHash = await verifyRefundCryptoTransfer({
+      txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
+      amountBaseUnits: amount.toString(), rpcCall: async method => {
+        const response = await rpcSuccess()(method) as any;
+        if (method === "eth_getTransactionByHash") response.hash = `0x${"f".repeat(64)}`;
+        return response;
+      },
+    });
+    expect(wrongHash).toMatchObject({ verified: false, code: "transaction_not_found" });
+
+    const malformedEnvelope = await verifyRefundCryptoTransfer({
+      txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
+      amountBaseUnits: amount.toString(), rpcCall: async () => ({ jsonrpc: "1.0", id: 2, result: "0x1" }),
+    });
+    expect(malformedEnvelope).toMatchObject({ verified: false, code: "provider_unavailable" });
+
+    const duplicate = await verifyRefundCryptoTransfer({
+      txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
+      amountBaseUnits: amount.toString(), rpcCall: async method => {
+        const response = await rpcSuccess()(method) as any;
+        if (method === "eth_getTransactionReceipt") response.logs.push(response.logs[0]);
+        return response;
+      },
+    });
+    expect(duplicate).toMatchObject({ verified: false, code: "wrong_amount" });
+
+    const malformedLog = await verifyRefundCryptoTransfer({
+      txid, asset: "USDC", network: "Ethereum ERC-20", destinationWallet: destination,
+      amountBaseUnits: amount.toString(), rpcCall: async method => {
+        const response = await rpcSuccess()(method) as any;
+        if (method === "eth_getTransactionReceipt") response.logs.push({
+          address: `0x${"d".repeat(40)}`, topics: [TRANSFER_TOPIC, "malformed"],
+          data: "0x0",
+        });
+        return response;
+      },
+    });
+    expect(malformedLog).toMatchObject({ verified: false, code: "provider_unavailable" });
   });
 });

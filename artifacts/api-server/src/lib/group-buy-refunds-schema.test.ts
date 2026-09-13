@@ -9,6 +9,7 @@ import {
   accountsTable,
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
+  groupBuyRefundTransitionOutboxTable,
   groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
@@ -128,6 +129,12 @@ describe("group buy refund schema contract", () => {
     expect(getTableConfig(groupBuyRefundTxClaimsTable).columns.map(column => column.name)).toEqual(
       expect.arrayContaining(["txid", "refund_id", "created_at"]),
     );
+    expect(getTableConfig(groupBuyRefundTransitionOutboxTable).columns.map(column => column.name)).toEqual(
+      expect.arrayContaining([
+        "refund_id", "attempt_id", "transition", "processor_username",
+        "processor_role", "submitted_txid", "result_code", "delivered_at",
+      ]),
+    );
     expect(refundColumns.map(column => column.name)).not.toContain("verification_error");
     expect(attemptColumns.map(column => column.name)).not.toContain("completed_at");
   });
@@ -142,6 +149,8 @@ describe("group buy refund schema contract", () => {
     ]));
     expect(getTableConfig(groupBuyRefundAttemptsTable).indexes.map(index => index.config.name))
       .not.toContain("group_buy_refund_attempts_txid_unique");
+    expect(getTableConfig(groupBuyRefundTransitionOutboxTable).indexes.map(index => index.config.name))
+      .toContain("group_buy_refund_transition_outbox_unique");
     expect(creditIndexes.map(index => index.config.name)).toContain(
       "credit_transactions_account_refund_unique",
     );

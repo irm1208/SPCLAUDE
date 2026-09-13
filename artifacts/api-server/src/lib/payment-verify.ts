@@ -172,7 +172,15 @@ export async function evmJsonRpc(endpoints: string[], method: string, params: un
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         signal: AbortSignal.timeout(7000),
       });
+      if (!res.ok) throw new Error(`RPC HTTP ${res.status}`);
       const json: any = await res.json();
+      if (
+        !json
+        || json.jsonrpc !== "2.0"
+        || json.id !== 1
+        || (!Object.prototype.hasOwnProperty.call(json, "result")
+          && !Object.prototype.hasOwnProperty.call(json, "error"))
+      ) throw new Error("malformed RPC envelope");
       if (json.error) throw new Error(json.error.message ?? "RPC error");
       if (retryOnNull && json.result === null) {
         lastErr = new Error("null result from RPC");

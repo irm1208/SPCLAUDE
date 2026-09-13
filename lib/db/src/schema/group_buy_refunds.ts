@@ -113,7 +113,7 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
 export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", {
   id: text("id").primaryKey(),
   refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
-  submittedTxid: text("submitted_txid").notNull(),
+  submittedTxid: text("submitted_txid"),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
@@ -133,9 +133,27 @@ export const groupBuyRefundTxClaimsTable = pgTable("group_buy_refund_tx_claims",
   index("group_buy_refund_tx_claims_refund_idx").on(t.refundId),
 ]);
 
+export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_transition_outbox", {
+  id: text("id").primaryKey(),
+  refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
+  attemptId: text("attempt_id").notNull(),
+  transition: text("transition").notNull(),
+  processorUsername: text("processor_username").notNull(),
+  processorRole: text("processor_role").notNull(),
+  submittedTxid: text("submitted_txid").notNull(),
+  resultCode: text("result_code").notNull(),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("group_buy_refund_transition_outbox_unique")
+    .on(t.refundId, t.attemptId, t.transition),
+]);
+
 export type GroupBuyRefund = typeof groupBuyRefundsTable.$inferSelect;
 export type NewGroupBuyRefund = typeof groupBuyRefundsTable.$inferInsert;
 export type GroupBuyRefundAttempt = typeof groupBuyRefundAttemptsTable.$inferSelect;
 export type NewGroupBuyRefundAttempt = typeof groupBuyRefundAttemptsTable.$inferInsert;
 export type GroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferSelect;
 export type NewGroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferInsert;
+export type GroupBuyRefundTransitionOutbox = typeof groupBuyRefundTransitionOutboxTable.$inferSelect;
+export type NewGroupBuyRefundTransitionOutbox = typeof groupBuyRefundTransitionOutboxTable.$inferInsert;

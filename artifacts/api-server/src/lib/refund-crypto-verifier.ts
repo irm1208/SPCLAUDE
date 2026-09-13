@@ -24,6 +24,7 @@ export type RefundCryptoErrorCode = typeof REFUND_CRYPTO_ERROR_CODES[number];
 export type RefundCryptoVerificationInput = {
   txid: string;
   asset: "USDC" | "USDT" | string;
+  network: string;
   destinationWallet: string;
   amountBaseUnits: string | bigint;
   minConfirmations?: number;
@@ -96,6 +97,9 @@ function normalizeInput(input: RefundCryptoVerificationInput): NormalizedInput |
   ) {
     return failure("invalid_txid", "The submitted Ethereum transaction ID is invalid.");
   }
+  if (input.network !== "Ethereum ERC-20") {
+    return failure("wrong_network", "Refund verification requires Ethereum ERC-20.");
+  }
   if (input.asset !== "USDC" && input.asset !== "USDT") {
     return failure("wrong_token", "The submitted transaction does not use a supported refund token.");
   }
@@ -126,7 +130,22 @@ function normalizeInput(input: RefundCryptoVerificationInput): NormalizedInput |
 }
 
 async function rpc(input: RefundCryptoVerificationInput, method: string, params: unknown[]): Promise<unknown> {
-  if (input.rpcCall) return input.rpcCall(method, params);
+  if (input.rpcCall) {
+    const response: any = await input.rpcCall(method, params);
+    if (response && typeof response === "object" && (
+      "jsonrpc" in response || "id" in response || "result" in response || "error" in response
+    )) {
+      if (
+        response.jsonrpc !== "2.0"
+        || response.id !== 1
+        || (!Object.prototype.hasOwnProperty.call(response, "result")
+          && !Object.prototype.hasOwnProperty.call(response, "error"))
+      ) throw new Error("malformed RPC envelope");
+      if (response.error) throw new Error("RPC error");
+      return response.result;
+    }
+    return response;
+  }
   return evmJsonRpc(input.rpcEndpoints ?? ETH_RPC_ENDPOINTS, method, params, false);
 }
 
@@ -161,6 +180,9 @@ export async function verifyRefundCryptoTransfer(
   if (typeof transaction !== "object") {
     return failure("provider_unavailable", "Ethereum returned malformed transaction data.");
   }
+  if (typeof transaction.hash !== "string" || normalizeEthereumTxid(transaction.hash) !== normalized.txid) {
+    return failure("transaction_not_found", "Ethereum returned a different transaction than requested.");
+  }
   if (typeof transaction.to !== "string") {
     return failure("transaction_not_found", "Ethereum returned no token contract target for this transaction.");
   }
@@ -180,6 +202,9 @@ export async function verifyRefundCryptoTransfer(
   if (typeof receipt !== "object" || receipt.status !== "0x1") {
     return failure("failed_transaction", "The Ethereum transaction did not execute successfully.");
   }
+  if (typeof receipt.transactionHash !== "string" || normalizeEthereumTxid(receipt.transactionHash) !== normalized.txid) {
+    return failure("transaction_not_found", "Ethereum returned a receipt for a different transaction.");
+  }
   if (!isHexQuantity(receipt.blockNumber) || !Array.isArray(receipt.logs)) {
     return failure("provider_unavailable", "Ethereum returned malformed receipt data.");
   }
@@ -188,12 +213,24 @@ export async function verifyRefundCryptoTransfer(
   for (const log of receipt.logs) {
     if (!log || typeof log !== "object") return failure("provider_unavailable", "Ethereum returned malformed log data.");
     if (typeof log.address !== "string") return failure("provider_unavailable", "Ethereum returned malformed log data.");
-    if (log.address.toLowerCase() !== normalized.contract) continue;
-    if (!Array.isArray(log.topics) || log.topics.length !== 3 || log.topics[0] !== TRANSFER_TOPIC) {
+    if (!Array.isArray(log.topics)) {
+      return failure("provider_unavailable", "Ethereum returned malformed log data.");
+    }
+    if (log.topics[0] !== TRANSFER_TOPIC) continue;
+    if (log.address.toLowerCase() !== normalized.contract) {
+      if (
+        log.topics.length !== 3
+        || !isAddressWord(log.topics[1])
+        || !isAddressWord(log.topics[2])
+        || !isWord(log.data)
+      ) return failure("provider_unavailable", "Ethereum returned malformed log data.");
+      continue;
+    }
+    if (log.topics.length !== 3) {
       continue;
     }
     if (!isAddressWord(log.topics[1]) || !isAddressWord(log.topics[2]) || !isWord(log.data)) {
-      return failure("wrong_amount", "The token transfer log has malformed ABI data.");
+      return failure("provider_unavailable", "The token transfer log has malformed ABI data.");
     }
     let amount: bigint;
     try {
