@@ -76,6 +76,18 @@ const harness = vi.hoisted(() => {
         orderType: "wholesale_shared",
         sharedOrderId: "SHARE1",
         paymentStatus: "pending",
+        paymentTxHash: "0xexisting-order-payment",
+        paymentTxHashes: ["0xexisting-order-payment"],
+        paymentTestAmount: "0.01",
+        testPaymentTxHash: "0xtest-payment",
+        paymentScreenshot: "stored-screenshot-token",
+        paymentRejectionReason: "previous-attempt-rejected",
+        paymentUsdAmount: "25.00",
+        paymentCryptoCurrency: "USDT",
+        paymentCryptoRate: "2500.00000000",
+        paymentCryptoNetwork: "ERC-20",
+        amountDue: "4.50",
+        paymentConfirmedAt: null,
       },
       {
         id: "ordinary-order",
@@ -83,6 +95,18 @@ const harness = vi.hoisted(() => {
         orderType: "wholesale_shared",
         sharedOrderId: "SHARE1",
         paymentStatus: "unpaid",
+        paymentTxHash: "0xmember-payment",
+        paymentTxHashes: ["0xmember-payment"],
+        paymentTestAmount: "0.02",
+        testPaymentTxHash: "0xmember-test-payment",
+        paymentScreenshot: "member-screenshot-token",
+        paymentRejectionReason: "member-previous-attempt-rejected",
+        paymentUsdAmount: "18.00",
+        paymentCryptoCurrency: "USDT",
+        paymentCryptoRate: "2499.50000000",
+        paymentCryptoNetwork: "ERC-20",
+        amountDue: "2.75",
+        paymentConfirmedAt: null,
       },
     ];
     state.audits = [];
@@ -213,6 +237,9 @@ describe("confirmWholesaleOrganiserPayment", () => {
   beforeEach(() => harness.reset());
 
   it("confirms only the organiser order and parent atomically", async () => {
+    const creatorOrderBefore = { ...harness.state.orders[0] };
+    const ordinaryMemberOrderBefore = { ...harness.state.orders[1] };
+
     const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
     expect(result).toEqual({
@@ -224,6 +251,12 @@ describe("confirmWholesaleOrganiserPayment", () => {
     expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
     expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
     expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.orders[0]).toEqual({
+      ...creatorOrderBefore,
+      paymentStatus: "confirmed",
+      paymentConfirmedAt: expect.any(Date),
+    });
+    expect(harness.state.orders[1]).toEqual(ordinaryMemberOrderBefore);
     expect(harness.state.audits).toHaveLength(1);
     expect(harness.state.audits[0]).toMatchObject({
       action: "wholesale_share_organiser_order_payment_confirmed",
