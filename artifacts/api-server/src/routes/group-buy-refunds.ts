@@ -270,12 +270,21 @@ router.post("/account/orders/:orderId/refund", requireAccount, async (req, res):
   const input = parseRefundRequestBody(req.body);
   if (!input) { res.status(400).json({ code: "invalid_refund_request", error: "invalid_refund_request" }); return; }
   try {
-    await createRefundRequest(db, {
+    const created = await createRefundRequest(db, {
       accountId: req.account!.telegramUsername,
       orderId: String(req.params["orderId"]),
       input,
     });
-    res.status(201).json(await getCustomerRefundView(String(req.params["orderId"]), req.account!.telegramUsername));
+    const view = await getCustomerRefundView(String(req.params["orderId"]), req.account!.telegramUsername);
+    res.status(201).json({
+      ...view,
+      // Preserve the original refund response contract for existing clients while
+      // the nested customer view carries the authoritative refreshed state.
+      id: created.id,
+      status: created.status,
+      method: created.method,
+      amountUsd: created.amountUsd == null ? null : String(created.amountUsd),
+    });
   } catch (error) {
     errorResponse(res, error);
   }
