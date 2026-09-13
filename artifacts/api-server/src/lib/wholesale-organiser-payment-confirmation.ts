@@ -10,8 +10,21 @@ import { and, eq, inArray } from "drizzle-orm";
 export type OrganiserPaymentConfirmationSource = "automatic" | "admin" | "backfill";
 
 export type OrganiserPaymentConfirmationResult =
-  | { kind: "confirmed"; shareId: string; organiserOrderId: string; orderChanged: boolean }
-  | { kind: "already_confirmed"; shareId: string; organiserOrderId: string }
+  | {
+      kind: "confirmed";
+      shareId: string;
+      organiserOrderId: string;
+      orderChanged: boolean;
+      organiserPaymentStatus: "confirmed";
+      organiserOrderPaymentStatus: "confirmed" | "test_confirmed";
+    }
+  | {
+      kind: "already_confirmed";
+      shareId: string;
+      organiserOrderId: string;
+      organiserPaymentStatus: "confirmed";
+      organiserOrderPaymentStatus: "confirmed" | "test_confirmed";
+    }
   | { kind: "rejected"; code: string; message: string };
 
 type RejectionCode =
@@ -189,6 +202,8 @@ export async function confirmWholesaleOrganiserPayment(input: {
     const orderAlreadyConfirmed =
       organiserOrder.paymentStatus === "confirmed" ||
       organiserOrder.paymentStatus === "test_confirmed";
+    const organiserOrderPaymentStatus =
+      organiserOrder.paymentStatus === "test_confirmed" ? "test_confirmed" : "confirmed";
     if (
       source !== "backfill" &&
       share.organiserPaymentStatus === "confirmed" &&
@@ -260,8 +275,21 @@ export async function confirmWholesaleOrganiserPayment(input: {
     }
 
     if (!parentChanged && !orderChanged) {
-      return { kind: "already_confirmed", shareId, organiserOrderId };
+      return {
+        kind: "already_confirmed",
+        shareId,
+        organiserOrderId,
+        organiserPaymentStatus: "confirmed",
+        organiserOrderPaymentStatus,
+      };
     }
-    return { kind: "confirmed", shareId, organiserOrderId, orderChanged };
+    return {
+      kind: "confirmed",
+      shareId,
+      organiserOrderId,
+      orderChanged,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus,
+    };
   });
 }

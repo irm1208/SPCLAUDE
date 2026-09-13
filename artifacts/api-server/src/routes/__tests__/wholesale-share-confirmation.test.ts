@@ -127,11 +127,11 @@ describe("shared wholesale order confirmations", () => {
     const rejectionReturnIndex = normalizedAdminHandler.indexOf("return;", rejectionResponseIndex);
     const alreadyConfirmedIndex = normalizedAdminHandler.indexOf('if (result.kind === "already_confirmed")');
     const alreadyResponseIndex = normalizedAdminHandler.indexOf(
-      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: \"confirmed\", organiserOrderPaymentStatus: \"confirmed\", });",
+      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: result.organiserPaymentStatus, organiserOrderPaymentStatus: result.organiserOrderPaymentStatus, });",
     );
     const alreadyReturnIndex = normalizedAdminHandler.indexOf("return;", alreadyResponseIndex);
     const confirmedResponseIndex = normalizedAdminHandler.indexOf(
-      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: \"confirmed\", organiserOrderPaymentStatus: \"confirmed\", });",
+      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: result.organiserPaymentStatus, organiserOrderPaymentStatus: result.organiserOrderPaymentStatus, });",
     );
     const confirmedBranchIndex = normalizedAdminHandler.indexOf('if (result.kind === "confirmed")');
     const notificationIndex = normalizedAdminHandler.indexOf("notifyUser(", confirmedBranchIndex);
@@ -153,10 +153,10 @@ describe("shared wholesale order confirmations", () => {
       /res\.status\(result\.code === "not_found" \? 404 : 409\)\.json\(\{ error: result\.message, code: result\.code, \}\);/,
     );
     expect(normalizedAdminHandler).toMatch(
-      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: "confirmed", organiserOrderPaymentStatus: "confirmed", \}\);/,
+      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: result\.organiserPaymentStatus, organiserOrderPaymentStatus: result\.organiserOrderPaymentStatus, \}\);/,
     );
     expect(normalizedAdminHandler).toMatch(
-      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: "confirmed", organiserOrderPaymentStatus: "confirmed", \}\);/,
+      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: result\.organiserPaymentStatus, organiserOrderPaymentStatus: result\.organiserOrderPaymentStatus, \}\);/,
     );
     expect(adminHandler).toContain("share?.creatorUsername");
     expect(normalizedAdminHandler.slice(rejectionIndex, alreadyConfirmedIndex)).not.toContain("notifyUser(");

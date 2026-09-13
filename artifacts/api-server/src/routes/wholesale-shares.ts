@@ -3587,8 +3587,8 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
       ok: true,
       organiserOrderId: result.organiserOrderId,
       alreadyConfirmed: true,
-      organiserPaymentStatus: "confirmed",
-      organiserOrderPaymentStatus: "confirmed",
+      organiserPaymentStatus: result.organiserPaymentStatus,
+      organiserOrderPaymentStatus: result.organiserOrderPaymentStatus,
     });
     return;
   }
@@ -3605,8 +3605,8 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
       ok: true,
       organiserOrderId: result.organiserOrderId,
       alreadyConfirmed: false,
-      organiserPaymentStatus: "confirmed",
-      organiserOrderPaymentStatus: "confirmed",
+      organiserPaymentStatus: result.organiserPaymentStatus,
+      organiserOrderPaymentStatus: result.organiserOrderPaymentStatus,
     });
   }
 });

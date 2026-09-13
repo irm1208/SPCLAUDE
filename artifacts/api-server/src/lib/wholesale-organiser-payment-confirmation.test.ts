@@ -247,6 +247,8 @@ describe("confirmWholesaleOrganiserPayment", () => {
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
       orderChanged: true,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "confirmed",
     });
     expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
     expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
@@ -308,6 +310,8 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "already_confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "confirmed",
     });
     expect(harness.state.updates).toHaveLength(2);
     expect(harness.state.audits).toHaveLength(1);
@@ -326,6 +330,8 @@ describe("confirmWholesaleOrganiserPayment", () => {
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
       orderChanged: false,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "confirmed",
     });
     expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
     expect(harness.state.updates).toHaveLength(1);
@@ -337,10 +343,28 @@ describe("confirmWholesaleOrganiserPayment", () => {
 
     const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
-    expect(result.kind).toBe("confirmed");
-    expect(result).toHaveProperty("orderChanged", false);
+    expect(result).toEqual({
+      kind: "confirmed",
+      shareId: "SHARE1",
+      organiserOrderId: "creator-order",
+      orderChanged: false,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "test_confirmed",
+    });
     expect(harness.state.orders[0].paymentStatus).toBe("test_confirmed");
     expect(harness.state.audits).toHaveLength(0);
+
+    const repeated = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "admin",
+    });
+    expect(repeated).toEqual({
+      kind: "already_confirmed",
+      shareId: "SHARE1",
+      organiserOrderId: "creator-order",
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "test_confirmed",
+    });
   });
 
   it("rejects an unknown share without changing persisted state", async () => {
