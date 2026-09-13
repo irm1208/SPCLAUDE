@@ -170,7 +170,7 @@ router.get("/admin/group-buys/:id/orders-summary", async (req, res): Promise<voi
 router.post("/admin/group-buys", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel } = req.body;
+  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeType, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel, cryptoRefundsEnabled } = req.body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     res.status(400).json({ error: "name is required" });
@@ -179,6 +179,10 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
 
   if (status && !GROUP_BUY_STATUSES.includes(status)) {
     res.status(400).json({ error: `status must be one of: ${GROUP_BUY_STATUSES.join(", ")}` });
+    return;
+  }
+  if (cryptoRefundsEnabled !== undefined && typeof cryptoRefundsEnabled !== "boolean") {
+    res.status(400).json({ error: "cryptoRefundsEnabled must be a boolean" });
     return;
   }
 
@@ -242,6 +246,7 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     entryFeeEnabled: entryFeeEnabled != null ? Boolean(entryFeeEnabled) : false,
     entryFeeAmount: entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) as any : undefined,
     entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
+    cryptoRefundsEnabled: cryptoRefundsEnabled ?? false,
   }).returning();
 
   createAlert("system", "medium", "New Group Buy Created",
@@ -253,6 +258,19 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     { organiser_username: "admin", update_type: "New Group Buy Created", details: `${gb.name} — Status: ${gb.status ?? "draft"}` },
   ).catch(() => {});
 
+  if (cryptoRefundsEnabled === true) {
+    writeLog("change", "info", "admin_gb_crypto_refunds_setting_changed",
+      `Admin enabled group-buy refunds for "${gb.name}"`,
+      {
+        gbId: gb.id,
+        groupBuyId: gb.id,
+        previousEnabled: false,
+        enabled: true,
+        actor: res.locals["adminUsername"] ?? "admin",
+      },
+    ).catch(() => {});
+  }
+
   res.status(201).json({ ...gb, infoCards: parseInfoCards(gb.infoCards), shippingOptions: parseShippingOptions(gb.shippingOptions), adminFeeCountries: parseAdminFeeCountries(gb.adminFeeCountries) });
 });
 
@@ -261,9 +279,9 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
-  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, testingEnabled, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage, orderPageMessage, countryLegsEnabled, vendorShippingEnabled, vendorShippingMessage, vendorShippingAmount, sharedShippingCountries, allowExtraOrders, directShippingEnabled, directShippingVendorId } = req.body;
+  const { name, description, status, closeDate, invitePin, manufacturer, manufacturerCountry, infoCards, currency, sortOrder, testingEnabled, labTestSupplier, paymentMessageEnabled, paymentMessage, paymentsEnabled, memberLimit, minMembers, maxKitsPerCustomer, maxKitsTotal, hiddenFromList, forcedUsernames, shippingOptions, allowedCountries, excludedCountries, blockedAccounts, adminFeeEnabled, adminFeeAmount, adminFeeLabel, adminFeeCountries, entryFeeEnabled, entryFeeAmount, entryFeeLabel, qrUploadInpostEnabled, qrUploadRoyalMailEnabled, qrUploadMessage, orderPageMessage, countryLegsEnabled, vendorShippingEnabled, vendorShippingMessage, vendorShippingAmount, sharedShippingCountries, allowExtraOrders, directShippingEnabled, directShippingVendorId, cryptoRefundsEnabled } = req.body;
 
-  const [existing] = await db.select({ id: groupBuysTable.id, name: groupBuysTable.name, status: groupBuysTable.status }).from(groupBuysTable).where(eq(groupBuysTable.id, id));
+  const [existing] = await db.select({ id: groupBuysTable.id, name: groupBuysTable.name, status: groupBuysTable.status, cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled }).from(groupBuysTable).where(eq(groupBuysTable.id, id));
   if (!existing) {
     res.status(404).json({ error: "Group buy not found" });
     return;
@@ -271,6 +289,10 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
 
   if (status && !GROUP_BUY_STATUSES.includes(status)) {
     res.status(400).json({ error: `status must be one of: ${GROUP_BUY_STATUSES.join(", ")}` });
+    return;
+  }
+  if (cryptoRefundsEnabled !== undefined && typeof cryptoRefundsEnabled !== "boolean") {
+    res.status(400).json({ error: "cryptoRefundsEnabled must be a boolean" });
     return;
   }
 
@@ -392,6 +414,7 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   }
   if (directShippingEnabled !== undefined) updates.directShippingEnabled = Boolean(directShippingEnabled);
   if (directShippingVendorId !== undefined) updates.directShippingVendorId = directShippingVendorId ? String(directShippingVendorId).trim() : null;
+  if (cryptoRefundsEnabled !== undefined) updates.cryptoRefundsEnabled = cryptoRefundsEnabled;
 
   if (invitePin !== undefined) {
     if (invitePin === null || invitePin === "") {
@@ -460,6 +483,19 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     `Admin updated GB "${existing.name ?? id}" settings`,
     { gbId: id, gbName: existing.name, changedFields: Object.keys(updates) },
   ).catch(() => {});
+
+  if (cryptoRefundsEnabled !== undefined && cryptoRefundsEnabled !== existing.cryptoRefundsEnabled) {
+    writeLog("change", "info", "admin_gb_crypto_refunds_setting_changed",
+      `Admin ${cryptoRefundsEnabled ? "enabled" : "disabled"} group-buy refunds for "${existing.name ?? id}"`,
+      {
+        gbId: id,
+        groupBuyId: id,
+        previousEnabled: existing.cryptoRefundsEnabled,
+        enabled: cryptoRefundsEnabled,
+        actor: res.locals["adminUsername"] ?? "admin",
+      },
+    ).catch(() => {});
+  }
 
   res.json({ ...updated, infoCards: parseInfoCards(updated.infoCards), shippingOptions: parseShippingOptions(updated.shippingOptions), adminFeeCountries: parseAdminFeeCountries((updated as Record<string, unknown>).adminFeeCountries as string), sharedShippingCountries: parseSharedShippingCountries((updated as Record<string, unknown>).sharedShippingCountries as string) });
 });

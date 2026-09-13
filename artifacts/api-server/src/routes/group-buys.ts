@@ -96,6 +96,7 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
       excludedCountries: groupBuysTable.excludedCountries,
       blockedAccounts: groupBuysTable.blockedAccounts,
       organiserId: groupBuysTable.organiserId,
+      cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
       entryFeeEnabled: groupBuysTable.entryFeeEnabled,
       entryFeeAmount: groupBuysTable.entryFeeAmount,
       entryFeeLabel: groupBuysTable.entryFeeLabel,
@@ -160,6 +161,7 @@ router.get("/group-buys/active", requireAccount, async (req, res): Promise<void>
       allowedCountries: r.allowedCountries ?? null,
       excludedCountries: r.excludedCountries ?? null,
       organiserId: r.organiserId ?? null,
+      cryptoRefundsEnabled: r.cryptoRefundsEnabled ?? false,
       // When country legs are enabled, reshipper-country visibility doesn't apply —
       // the leg itself controls access. Return empty so the frontend shows it to everyone.
       reshipperCountries: hasCountryLegs ? [] : (reshipperCountriesByGb.get(r.id) ?? []),
@@ -185,6 +187,7 @@ const GB_SELECT_COLS = {
   currency: groupBuysTable.currency,
   sortOrder: groupBuysTable.sortOrder,
   testingEnabled: groupBuysTable.testingEnabled,
+  cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
   labTestSupplier: groupBuysTable.labTestSupplier,
   vendorShippingEnabled: groupBuysTable.vendorShippingEnabled,
   vendorShippingMessage: groupBuysTable.vendorShippingMessage,

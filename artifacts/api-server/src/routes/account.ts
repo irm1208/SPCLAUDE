@@ -2087,6 +2087,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   let groupBuyQrUploadMessage: string | null = null;
   let groupBuyQrUploadCouriers: string[] | null = null;
   let groupBuyCurrency: string | null = null;
+  let groupBuyCryptoRefundsEnabled = false;
   if (order.groupBuyId) {
     const [gb] = await db
       .select({
@@ -2097,6 +2098,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
         qrUploadMessage: groupBuysTable.qrUploadMessage,
         qrUploadCouriers: groupBuysTable.qrUploadCouriers,
         currency: groupBuysTable.currency,
+        cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
         allowOrderAddons: groupBuysTable.allowOrderAddons,
         shippingOptions: groupBuysTable.shippingOptions,
       })
@@ -2120,6 +2122,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyQrUploadRoyalMailEnabled = gb?.qrUploadRoyalMailEnabled ?? false;
     groupBuyQrUploadMessage = gb?.qrUploadMessage ?? null;
     groupBuyCurrency = gb?.currency ?? null;
+    groupBuyCryptoRefundsEnabled = gb?.cryptoRefundsEnabled ?? false;
     // Prefer the new couriers list; fall back to old boolean fields for backward compat
     if (gb?.qrUploadCouriers && (gb.qrUploadCouriers as string[]).length > 0) {
       groupBuyQrUploadCouriers = gb.qrUploadCouriers as string[];
@@ -2237,6 +2240,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyId: order.groupBuyId ?? null,
     currency: groupBuyCurrency,
     groupBuyPaymentsEnabled,
+    groupBuyCryptoRefundsEnabled,
     groupBuyDirectShippingPaymentsEnabled,
     groupBuyAllowOrderAddons,
     groupBuyDeleteLocked,

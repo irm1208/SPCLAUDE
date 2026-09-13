@@ -312,6 +312,10 @@ router.get("/organiser/group-buys", requireOrganiser, async (req, res): Promise<
 // POST /api/organiser/group-buys — create a GB
 router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, "cryptoRefundsEnabled")) {
+    res.status(403).json({ code: "admin_only_setting", error: "admin_only_setting" });
+    return;
+  }
 
   const {
     name, description, closeDate, invitePin, manufacturer, manufacturerCountry,
@@ -752,6 +756,10 @@ router.post("/organiser/group-buys/:id/clone", requireOrganiser, async (req, res
 router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]);
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, "cryptoRefundsEnabled")) {
+    res.status(403).json({ code: "admin_only_setting", error: "admin_only_setting" });
+    return;
+  }
 
   const [existing] = await db
     .select({ id: groupBuysTable.id, approvalStatus: groupBuysTable.approvalStatus })
