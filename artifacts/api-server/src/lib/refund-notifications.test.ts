@@ -106,8 +106,12 @@ class PersistedFakeDb {
               if (!row) return [];
               if (table === groupBuyRefundNotificationsTable && values.claimedAt && state.claimed.has(row.id)) return [];
               Object.assign(row, values);
+              if (table === groupBuyRefundNotificationsTable && values.claimToken) {
+                state.claimed.add(row.id);
+              }
               if (table === groupBuyRefundNotificationsTable && values.claimedAt) state.claimed.add(row.id);
               if (table === groupBuyRefundNotificationsTable && values.claimedAt === null) state.claimed.delete(row.id);
+              if (table === groupBuyRefundNotificationsTable && values.claimToken === null) state.claimed.delete(row.id);
               if (table === groupBuyRefundNotificationsTable && values.sentAt) state.claimed.delete(row.id);
               return [row];
             };
@@ -131,6 +135,7 @@ describe("refund notification contract", () => {
       completed: "group_buy_refund_completed",
     });
     expect(groupBuyRefundNotificationsTable).toBeDefined();
+    expect(groupBuyRefundNotificationsTable.claimToken).toBeDefined();
     for (const eventKey of Object.values(REFUND_NOTIFICATION_EVENT_KEYS)) {
       expect(REGISTRY_MAP.get(eventKey)?.placeholders).toEqual(
         expect.arrayContaining(["order_code", "amount_usd", "status"]),
@@ -182,16 +187,28 @@ describe("refund notification contract", () => {
     expect((await enqueueRefundNotification(db, input)).inserted).toBe(true);
     expect((await enqueueRefundNotification(db, input)).inserted).toBe(false);
     let fail = true;
-    const sender = async () => {
+    let firstClaimToken: string | null | undefined;
+    const sender = async (marker: { claimToken?: string | null }) => {
+      firstClaimToken = marker.claimToken;
       if (fail) {
         fail = false;
         throw new Error("temporary");
       }
       return { ok: true };
     };
-    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(0);
+    expect(await drainRefundNotifications(db, {
+      limit: 1,
+      sender,
+      tokenFactory: () => "token-1",
+    })).toBe(0);
     expect(db.notifications[0].sentAt).toBeUndefined();
-    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(1);
+    expect(db.notifications[0].claimToken).toBeNull();
+    expect(firstClaimToken).toBe("token-1");
+    expect(await drainRefundNotifications(db, {
+      limit: 1,
+      sender,
+      tokenFactory: () => "token-2",
+    })).toBe(1);
     expect(db.notifications[0].sentAt).toBeDefined();
   });
 
@@ -217,6 +234,20 @@ describe("refund notification contract", () => {
     expect(await drainRefundAudits(db)).toBe(1);
     expect(await drainRefundAudits(db)).toBe(0);
     expect(db.audits).toHaveLength(1);
+    expect(db.audits[0].metadata).toMatchObject({
+      refundId: "refund-1",
+      orderId: "order-1",
+      groupBuyId: "group-1",
+      method: "credit",
+      processorUsername: "admin",
+      processorRole: "admin",
+      source: "admin",
+      transition: "requested_to_completed",
+      resultCode: "completed",
+    });
+    expect(JSON.stringify(db.audits[0].metadata)).not.toMatch(
+      /destinationWallet|private|secret|password|proof|raw.?body/i,
+    );
   });
 
   it("does not duplicate a concurrently claimed marker", async () => {
@@ -237,6 +268,25 @@ describe("refund notification contract", () => {
       drainRefundNotifications(db, { limit: 1, sender }),
       drainRefundNotifications(db, { limit: 1, sender }),
     ]);
+    expect(sends).toBe(1);
+  });
+
+  it("terminally acknowledges a preference-disabled delivery without retrying", async () => {
+    const db = new PersistedFakeDb();
+    await enqueueRefundNotification(db, {
+      refundId: "refund-disabled",
+      accountId: "buyer",
+      status: "requested",
+      amountUsd: "1.00",
+    });
+    let sends = 0;
+    const sender = async () => {
+      sends += 1;
+      return { ok: false, skipped: true };
+    };
+    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(1);
+    expect(db.notifications[0].lastError).toBe("skipped");
+    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(0);
     expect(sends).toBe(1);
   });
 });

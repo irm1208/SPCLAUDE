@@ -176,6 +176,7 @@ export const groupBuyRefundNotificationsTable = pgTable("group_buy_refund_notifi
   explorerUrl: text("explorer_url"),
   txid: text("txid"),
   attemptCount: integer("attempt_count").notNull().default(0),
+  claimToken: text("claim_token"),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   lastError: text("last_error"),

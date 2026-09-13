@@ -46,6 +46,7 @@ export type RefundNotificationMarker = RefundNotificationInput & {
   id: string;
   eventKey: string;
   transitionKey: string;
+  claimToken?: string | null;
 };
 
 export type NotificationDelivery = NotifyResult | { ok: boolean; skipped?: boolean };
@@ -53,6 +54,14 @@ export type NotificationSender = (
   marker: RefundNotificationMarker,
   vars: Record<string, string>,
 ) => Promise<NotificationDelivery>;
+
+export type RefundNotificationDrainOptions = {
+  limit?: number;
+  sender?: NotificationSender;
+  /** Injectable clock/token sources keep lease takeover tests deterministic. */
+  now?: () => Date;
+  tokenFactory?: () => string;
+};
 
 export type DatabaseLike = any;
 
@@ -250,14 +259,17 @@ async function defaultSender(
  */
 export async function drainRefundNotifications(
   database: DatabaseLike,
-  options: { limit?: number; sender?: NotificationSender } = {},
+  options: RefundNotificationDrainOptions = {},
 ): Promise<number> {
   const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0 ? options.limit! : 100;
   const sender = options.sender ?? defaultSender;
+  const nowFactory = options.now ?? (() => new Date());
+  const tokenFactory = options.tokenFactory ?? randomUUID;
   let delivered = 0;
   for (let i = 0; i < limit; i += 1) {
     const marker = await database.transaction(async (tx: DatabaseLike) => {
-      const now = new Date();
+      const now = nowFactory();
+      const claimToken = tokenFactory();
       const leaseExpired = lt(
         groupBuyRefundNotificationsTable.claimedAt,
         new Date(now.getTime() - DELIVERY_LEASE_MS),
@@ -276,6 +288,7 @@ export async function drainRefundNotifications(
       const [claimed] = await tx
         .update(groupBuyRefundNotificationsTable)
         .set({
+          claimToken,
           claimedAt: now,
           attemptCount: Number(row.attemptCount ?? 0) + 1,
           lastError: null,
@@ -294,31 +307,43 @@ export async function drainRefundNotifications(
       result = await sender(marker, buildRefundNotificationVars(marker));
     } catch (error) {
       result = { ok: false, skipped: false };
-      await clearClaim(database, marker.id, error instanceof Error ? error.message : "notification delivery failed");
+      await clearClaim(
+        database,
+        marker.id,
+        marker.claimToken ?? "",
+        error instanceof Error ? error.message : "notification delivery failed",
+      );
     }
     if (result.ok || result.skipped) {
       const [sent] = await database
         .update(groupBuyRefundNotificationsTable)
-        .set({ sentAt: new Date(), claimedAt: null, lastError: result.skipped ? "skipped" : null })
+        .set({
+          sentAt: nowFactory(),
+          claimedAt: null,
+          claimToken: null,
+          lastError: result.skipped ? "skipped" : null,
+        })
         .where(and(
           eq(groupBuyRefundNotificationsTable.id, marker.id),
+          eq(groupBuyRefundNotificationsTable.claimToken, marker.claimToken ?? ""),
           isNull(groupBuyRefundNotificationsTable.sentAt),
         ))
         .returning();
       if (sent) delivered += 1;
     } else {
-      await clearClaim(database, marker.id, "notification delivery failed");
+      await clearClaim(database, marker.id, marker.claimToken ?? "", "notification delivery failed");
     }
   }
   return delivered;
 }
 
-async function clearClaim(database: DatabaseLike, id: string, error: string): Promise<void> {
+async function clearClaim(database: DatabaseLike, id: string, claimToken: string, error: string): Promise<void> {
   await database
     .update(groupBuyRefundNotificationsTable)
-    .set({ claimedAt: null, lastError: error.slice(0, 500) })
+    .set({ claimedAt: null, claimToken: null, lastError: error.slice(0, 500) })
     .where(and(
       eq(groupBuyRefundNotificationsTable.id, id),
+      eq(groupBuyRefundNotificationsTable.claimToken, claimToken),
       isNull(groupBuyRefundNotificationsTable.sentAt),
     ));
 }
