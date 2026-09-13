@@ -507,12 +507,18 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
 
     // Reset order status back to Processing.
     // GB-scoped so callers can never un-dispatch orders outside the URL group buy.
-    await db.update(ordersTable)
-      .set({ status: "Processing", updatedAt: new Date(), dispatchConfirmedAt: null, dispatchedByReshipper: null })
-      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
+    await withRefundMutationGuard(db, scopedOrderIds, async tx => {
+      await tx.update(ordersTable)
+        .set({ status: "Processing", updatedAt: new Date(), dispatchConfirmedAt: null, dispatchedByReshipper: null })
+        .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
+    });
 
     res.json({ ok: true, undispatched: scopedOrderIds.length });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch undispatch]", e);
     res.status(500).json({ error: "Failed to un-dispatch orders" });
   }
@@ -528,11 +534,17 @@ router.post(`${cfg.prefix}/:gbId/reattribute`, async (req, res) => {
       res.status(400).json({ error: "orderIds required" }); return;
     }
     const normReshipper = reshipper ? String(reshipper).trim() : null;
-    await db.update(ordersTable)
-      .set({ dispatchedByReshipper: normReshipper, updatedAt: new Date() })
-      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
+    await withRefundMutationGuard(db, orderIds, async tx => {
+      await tx.update(ordersTable)
+        .set({ dispatchedByReshipper: normReshipper, updatedAt: new Date() })
+        .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
+    });
     res.json({ ok: true, updated: orderIds.length });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch reattribute]", e);
     res.status(500).json({ error: "Failed to re-attribute orders" });
   }
@@ -617,12 +629,18 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
       res.json({ ok: true, marked: 0 }); return;
     }
 
-    await db.update(ordersTable)
-      .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper: reshipper })
-      .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
+    await withRefundMutationGuard(db, toMark, async tx => {
+      await tx.update(ordersTable)
+        .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper: reshipper })
+        .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
+    });
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch mark-shipped-by-reshipper]", e);
     res.status(500).json({ error: "Failed to mark orders as shipped" });
   }
@@ -652,12 +670,18 @@ router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
 
     if (toMark.length === 0) { res.json({ ok: true, marked: 0 }); return; }
 
-    await db.update(ordersTable)
-      .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
-      .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
+    await withRefundMutationGuard(db, toMark, async tx => {
+      await tx.update(ordersTable)
+        .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
+        .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
+    });
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch mark-orders-shipped]", e);
     res.status(500).json({ error: "Failed to mark orders as shipped" });
   }
@@ -1404,11 +1428,17 @@ router.post(`${cfg.prefix}/:gbId/archive-orders`, async (req, res): Promise<void
     res.status(400).json({ error: "orderIds required" }); return;
   }
   try {
-    await db.update(ordersTable)
-      .set({ dispatchArchivedAt: archive ? new Date() : null })
-      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
+    await withRefundMutationGuard(db, orderIds, async tx => {
+      await tx.update(ordersTable)
+        .set({ dispatchArchivedAt: archive ? new Date() : null })
+        .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
+    });
     res.json({ ok: true, updated: orderIds.length, archived: archive });
   } catch (e) {
+    if (e instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+      return;
+    }
     console.error("[dispatch archive-orders]", e);
     res.status(500).json({ error: "Server error" });
   }

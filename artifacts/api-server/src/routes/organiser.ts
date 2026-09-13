@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
@@ -1000,6 +1000,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
     ));
 
   let updated = 0;
+  await withRefundMutationGuard(db, eligibleOrders.map(order => order.id), async tx => {
   for (const order of eligibleOrders) {
     const resolved = resolveGroupBuyAdminFee({
       enabled: gb.adminFeeEnabled,
@@ -1012,7 +1013,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
       productSubtotal: Number(order.productSubtotal) || 0,
     });
     if (resolved.amount <= 0) continue;
-    const changed = await db
+    const changed = await tx
       .update(ordersTable)
       .set({
         adminFee: resolved.amount.toFixed(2),
@@ -1026,6 +1027,7 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
       .returning({ id: ordersTable.id });
     updated += changed.length;
   }
+  });
   res.json({ ok: true, updated });
 });
 
@@ -4059,6 +4061,7 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
   }
 
   await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, targetOrders.map(order => order.id));
     for (const u of updates) {
       await tx.update(ordersTable).set({
         vendorShipping: u.vendorShipping.toFixed(2),
@@ -4171,6 +4174,7 @@ router.post("/organiser/group-buys/:gbId/orders/mark-oos", requireOrganiser, asy
   const affectedOrderIds = [...new Set(nonOosItems.map(li => li.orderId))];
 
   await db.transaction(async (tx) => {
+    await assertNoActiveRefunds(tx, affectedOrderIds);
     await tx.update(orderLineItemsTable).set({ isOos: true }).where(refundMutableOrderWhere(inArray(orderLineItemsTable.id, itemIds), orderLineItemsTable.orderId));
     for (const orderId of affectedOrderIds) {
       const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -4269,6 +4273,7 @@ router.post("/organiser/group-buys/:gbId/orders/unmark-oos", requireOrganiser, a
   const affectedOrderIds = [...new Set(oosItems.map(li => li.orderId))];
 
   await db.transaction(async (tx) => {
+    await assertNoActiveRefunds(tx, affectedOrderIds);
     await tx.update(orderLineItemsTable).set({ isOos: false }).where(refundMutableOrderWhere(inArray(orderLineItemsTable.id, itemIds), orderLineItemsTable.orderId));
     for (const orderId of affectedOrderIds) {
       const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -4463,20 +4468,21 @@ router.post("/organiser/group-buys/:gbId/orders/bulk-add-product", requireOrgani
   let added = 0;
   let skipped = 0;
 
-  for (const orderId of orderIds) {
-    const [order] = await db
+  await withRefundMutationGuard(db, orderIds, async tx => {
+    for (const orderId of orderIds) {
+    const [order] = await tx
       .select({ id: ordersTable.id, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution, adminFee: ordersTable.adminFee, adminFeeLabel: ordersTable.adminFeeLabel })
       .from(ordersTable)
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
     if (!order) { skipped++; continue; }
 
-    const existing = await db
+    const existing = await tx
       .select({ id: orderLineItemsTable.id })
       .from(orderLineItemsTable)
       .where(and(eq(orderLineItemsTable.orderId, orderId), eq(orderLineItemsTable.productId, productId)));
     if (existing.length > 0) { skipped++; continue; }
 
-    await db.insert(orderLineItemsTable).values({
+    await tx.insert(orderLineItemsTable).values({
       id: randomUUID(),
       orderId,
       productId,
@@ -4487,15 +4493,16 @@ router.post("/organiser/group-buys/:gbId/orders/bulk-add-product", requireOrgani
       isOos: false,
     });
 
-    const allItems = await db.select({ lineTotal: orderLineItemsTable.lineTotal }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
+    const allItems = await tx.select({ lineTotal: orderLineItemsTable.lineTotal }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
     const newSubtotal = parseFloat(allItems.reduce((s, li) => s + parseFloat(String(li.lineTotal)), 0).toFixed(2));
     const extras = parseFloat(String(order.deliveryPrice ?? 0)) + parseFloat(String(order.vendorShipping ?? 0)) + parseFloat(String(order.tip ?? 0)) + parseFloat(String(order.testingContribution ?? 0));
     const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(order.adminFee, order.adminFeeLabel, gb, newSubtotal);
     const newGrandTotal = parseFloat((newSubtotal + extras + resolvedAdminFee).toFixed(2));
-    await db.update(ordersTable).set({ productSubtotal: String(newSubtotal) as any, grandTotal: String(newGrandTotal) as any, adminFee: resolvedAdminFee.toFixed(2) as any, adminFeeLabel: resolvedAdminFeeLabel as any }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+    await tx.update(ordersTable).set({ productSubtotal: String(newSubtotal) as any, grandTotal: String(newGrandTotal) as any, adminFee: resolvedAdminFee.toFixed(2) as any, adminFeeLabel: resolvedAdminFeeLabel as any }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
     added++;
-  }
+    }
+  });
 
   res.json({ added, skipped, productName: gbProduct.productName, unitPrice, quantity: qty });
 });
@@ -4544,27 +4551,29 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
     return;
   }
 
-  const updatedOrders: { id: string; telegramUsername: string; newGrandTotal: number; newAmountDue: number }[] = [];
-  for (const order of targetOrders) {
-    const productSubtotal = parseFloat(String(order.productSubtotal ?? "0"));
-    const vendorShipping = parseFloat(String(order.vendorShipping ?? "0"));
-    const tip = parseFloat(String(order.tip ?? "0"));
-    const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
-    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
-    const newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
-    const prevAmountDue = parseFloat(String((order as any).amountDue ?? "0"));
-    const newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
+  const updatedOrders = await withRefundMutationGuard(db, targetOrders.map(order => order.id), async tx => {
+    const updated: { id: string; telegramUsername: string; newGrandTotal: number; newAmountDue: number }[] = [];
+    for (const order of targetOrders) {
+      const productSubtotal = parseFloat(String(order.productSubtotal ?? "0"));
+      const vendorShipping = parseFloat(String(order.vendorShipping ?? "0"));
+      const tip = parseFloat(String(order.tip ?? "0"));
+      const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
+      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+      const newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
+      const prevAmountDue = parseFloat(String((order as any).amountDue ?? "0"));
+      const newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
 
-    await db.update(ordersTable).set({
-      deliveryPrice: ratePrice.toFixed(2) as any,
-      grandTotal: newGrandTotal.toFixed(2) as any,
-      amountDue: newAmountDue.toFixed(2) as any,
-      adminFee: resolvedAdminFee.toFixed(2) as any,
-      adminFeeLabel: resolvedAdminFeeLabel as any,
-    }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
-
-    updatedOrders.push({ id: order.id, telegramUsername: order.telegramUsername, newGrandTotal, newAmountDue });
-  }
+      await tx.update(ordersTable).set({
+        deliveryPrice: ratePrice.toFixed(2) as any,
+        grandTotal: newGrandTotal.toFixed(2) as any,
+        amountDue: newAmountDue.toFixed(2) as any,
+        adminFee: resolvedAdminFee.toFixed(2) as any,
+        adminFeeLabel: resolvedAdminFeeLabel as any,
+      }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
+      updated.push({ id: order.id, telegramUsername: order.telegramUsername, newGrandTotal, newAmountDue });
+    }
+    return updated;
+  });
 
   if (notify) {
     const sym = currency === "GBP" ? "£" : currency === "USD" ? "$" : currency === "EUR" ? "€" : `${currency} `;

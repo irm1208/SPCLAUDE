@@ -1,5 +1,7 @@
 import {
   assertNoActiveRefund,
+  assertNoActiveRefunds,
+  RefundMutationBlockedError,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
@@ -3768,14 +3770,21 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
       .from(ordersTable)
       .where(usernameMatch(ordersTable.telegramUsername));
 
-    if (userOrders.length > 0) {
-      const orderIds = userOrders.map(o => o.id);
-      await db.delete(orderNotesTable).where(inArray(orderNotesTable.orderId, orderIds));
-      await db.delete(orderMessagesTable).where(inArray(orderMessagesTable.orderId, orderIds));
-      await db.delete(orderDispatchImagesTable).where(inArray(orderDispatchImagesTable.orderId, orderIds));
-      await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(inArray(orderLineItemsTable.orderId, orderIds), orderLineItemsTable.orderId));
-    }
-    await db.delete(ordersTable).where(refundMutableOrderWhere(usernameMatch(ordersTable.telegramUsername)));
+    const orderIds = userOrders.map(o => o.id);
+    await db.transaction(async tx => {
+      await tx.select({ telegramUsername: accountsTable.telegramUsername })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, username))
+        .for("update");
+      await assertNoActiveRefunds(tx, orderIds);
+      if (orderIds.length > 0) {
+        await tx.delete(orderNotesTable).where(inArray(orderNotesTable.orderId, orderIds));
+        await tx.delete(orderMessagesTable).where(inArray(orderMessagesTable.orderId, orderIds));
+        await tx.delete(orderDispatchImagesTable).where(inArray(orderDispatchImagesTable.orderId, orderIds));
+        await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(inArray(orderLineItemsTable.orderId, orderIds), orderLineItemsTable.orderId));
+      }
+      await tx.delete(ordersTable).where(refundMutableOrderWhere(usernameMatch(ordersTable.telegramUsername)));
+    });
 
     // ── Step 2: RESTRICT FK — must delete before the accounts row ────────────
     await db.delete(customerActivityLogsTable).where(usernameMatch(customerActivityLogsTable.telegramUsername));
@@ -3803,6 +3812,10 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
 
     res.json({ ok: true });
   } catch (err: any) {
+    if (err instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+      return;
+    }
     console.error("[account DELETE /account]", err);
     res.status(500).json({ error: "Failed to delete account", detail: err?.message });
   }

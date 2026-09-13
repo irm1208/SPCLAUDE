@@ -1,4 +1,9 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import {
+  assertNoActiveRefunds,
+  RefundMutationBlockedError,
+  refundMutableOrderWhere,
+  withRefundMutationGuard,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID, timingSafeEqual, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
@@ -1854,6 +1859,10 @@ router.delete("/admin/orders/:id", async (req, res): Promise<void> => {
       .set({ deletedAt: new Date(), deletedBy: "admin" })
       .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
   } catch (err: unknown) {
+    if (err instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+      return;
+    }
     const msg = err instanceof Error ? err.message : "Database error";
     res.status(500).json({ error: `Delete failed: ${msg}` });
     return;
@@ -1983,10 +1992,16 @@ router.delete("/admin/orders", async (req, res): Promise<void> => {
   }
 
   try {
-    await db.update(ordersTable)
-      .set({ deletedAt: new Date(), deletedBy: "admin" })
-      .where(refundMutableOrderWhere(inArray(ordersTable.id, safeIds)));
+    await withRefundMutationGuard(db, safeIds, async tx => {
+      await tx.update(ordersTable)
+        .set({ deletedAt: new Date(), deletedBy: "admin" })
+        .where(refundMutableOrderWhere(inArray(ordersTable.id, safeIds)));
+    });
   } catch (err: unknown) {
+    if (err instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+      return;
+    }
     const msg = err instanceof Error ? err.message : "Database error";
     res.status(500).json({ error: `Bulk delete failed: ${msg}` });
     return;
@@ -2060,6 +2075,7 @@ router.post("/admin/orders/mark-oos", async (req, res): Promise<void> => {
   const affectedOrderIds = [...new Set(nonOosItems.map(li => li.orderId))];
 
   await db.transaction(async (tx) => {
+    await assertNoActiveRefunds(tx, affectedOrderIds);
     await tx
       .update(orderLineItemsTable)
       .set({ isOos: true })
@@ -3184,8 +3200,9 @@ router.post("/admin/apply-shipping", async (req, res): Promise<void> => {
     updates.push({ orderId: order.id, vendorShipping, newGrandTotal, username: order.telegramUsername, setAmountDue });
   }
 
+  await withRefundMutationGuard(db, updates.map(u => u.orderId), async tx => {
   for (const u of updates) {
-    await db
+    await tx
       .update(ordersTable)
       .set({
         vendorShipping: u.vendorShipping.toFixed(2),
@@ -3194,6 +3211,7 @@ router.post("/admin/apply-shipping", async (req, res): Promise<void> => {
       } as any)
       .where(refundMutableOrderWhere(eq(ordersTable.id, u.orderId)));
   }
+  });
 
   res.json({
     message: `$${shipping.toFixed(2)} split across ${orders.length} order(s) — ${ep}% equal / ${wp}% by quantity`,
@@ -3533,9 +3551,11 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
     const skipped: { id: string; reason: string }[] = [];
     const errors: string[] = [];
 
+    await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, orderIds as string[]);
     for (const orderId of orderIds as string[]) {
       try {
-        const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        const [existing] = await tx.select().from(ordersTable).where(eq(ordersTable.id, orderId));
         if (!existing) { skipped.push({ id: orderId, reason: "not_found" }); continue; }
         if (existing.batchLocked && !force_override) {
           skipped.push({ id: orderId, reason: "batch_locked" }); continue;
@@ -3557,9 +3577,9 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
           }
         }
 
-        await db.update(ordersTable).set(updates).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+        await tx.update(ordersTable).set(updates).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
-        await db.insert(routingHistoryTable).values({
+        await tx.insert(routingHistoryTable).values({
           orderId,
           changedBy: adminWho,
           fromRoutingType: existing.routingType ?? null,
@@ -3574,13 +3594,19 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
 
         updated.push(orderId);
       } catch (err) {
+        if (err instanceof RefundMutationBlockedError) throw err;
         errors.push(orderId);
         console.error(`[admin] bulk-routing error for order ${orderId}:`, err);
       }
     }
+    });
 
     res.json({ updated, skipped, errors, totalRequested: orderIds.length });
   } catch (err) {
+    if (err instanceof RefundMutationBlockedError) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+      return;
+    }
     handleRoutingError(err, res, { action: "bulk_routing" });
   }
 });
@@ -6598,23 +6624,24 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
   let added = 0;
   let skipped = 0;
 
+  await withRefundMutationGuard(db, orderIds, async tx => {
   for (const orderId of orderIds) {
     // Verify order belongs to this GB
-    const [order] = await db
+    const [order] = await tx
       .select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus, deliveryPrice: ordersTable.deliveryPrice, vendorShipping: ordersTable.vendorShipping, tip: ordersTable.tip, testingContribution: ordersTable.testingContribution })
       .from(ordersTable)
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
     if (!order) { skipped++; continue; }
 
     // Check if product already on this order
-    const existing = await db
+    const existing = await tx
       .select({ id: orderLineItemsTable.id })
       .from(orderLineItemsTable)
       .where(and(eq(orderLineItemsTable.orderId, orderId), eq(orderLineItemsTable.productId, productId)));
     if (existing.length > 0) { skipped++; continue; }
 
     // Insert new line item
-    await db.insert(orderLineItemsTable).values({
+    await tx.insert(orderLineItemsTable).values({
       id: randomUUID(),
       orderId,
       productId,
@@ -6626,11 +6653,11 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
     });
 
     // Recalculate totals
-    const allItems = await db.select({ lineTotal: orderLineItemsTable.lineTotal }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
+    const allItems = await tx.select({ lineTotal: orderLineItemsTable.lineTotal }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
     const newSubtotal = parseFloat(allItems.reduce((s, li) => s + parseFloat(String(li.lineTotal)), 0).toFixed(2));
     const extras = parseFloat(String(order.deliveryPrice ?? 0)) + parseFloat(String(order.vendorShipping ?? 0)) + parseFloat(String(order.tip ?? 0)) + parseFloat(String(order.testingContribution ?? 0));
     const newGrandTotal = parseFloat((newSubtotal + extras).toFixed(2));
-    await db.update(ordersTable).set({
+    await tx.update(ordersTable).set({
       productSubtotal: String(newSubtotal) as any,
       grandTotal: String(newGrandTotal) as any,
       ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
@@ -6638,6 +6665,7 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
 
     added++;
   }
+  });
 
   res.json({ added, skipped, productName: gbProduct.productName, unitPrice, quantity: qty });
 });

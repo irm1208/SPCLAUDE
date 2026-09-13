@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 /**
  * GB Country Legs — API routes for per-country sub-groups within a Group Buy.
  *
@@ -861,13 +861,20 @@ router.post("/organiser/group-buys/:gbId/backfill-country-legs", requireAccount,
   let ordersAssigned = 0;
   let skipped = 0;
 
+  const targetUsernames = unassigned.map(row => row.accountId);
+  const targetOrders = targetUsernames.length === 0 ? [] : await db.select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.telegramUsername, targetUsernames), sql`${ordersTable.countryLegId} is null`));
+
+  await db.transaction(async tx => {
+  await assertNoActiveRefunds(tx, targetOrders.map(order => order.id));
   for (const row of unassigned) {
     if (!row.country) { skipped++; continue; }
     const legId = findLeg(row.country);
     if (!legId) { skipped++; continue; }
 
     // Update the membership record
-    await db
+    await tx
       .update(accountGroupBuysTable)
       .set({ countryLegId: legId })
       .where(and(
@@ -877,7 +884,7 @@ router.post("/organiser/group-buys/:gbId/backfill-country-legs", requireAccount,
     membersAssigned++;
 
     // Update all unassigned orders in this GB for this member
-    const result = await db
+    const result = await tx
       .update(ordersTable)
       .set({ countryLegId: legId })
       .where(refundMutableOrderWhere(and(
@@ -888,6 +895,7 @@ router.post("/organiser/group-buys/:gbId/backfill-country-legs", requireAccount,
       .returning({ id: ordersTable.id });
     ordersAssigned += result.length;
   }
+  });
 
   res.json({ membersAssigned, ordersAssigned, skipped });
 });

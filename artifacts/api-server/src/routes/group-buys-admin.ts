@@ -1,4 +1,8 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import {
+  assertNoActiveRefunds,
+  refundMutableOrderWhere,
+  withRefundMutationGuard,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
@@ -2838,9 +2842,12 @@ router.post("/admin/group-buys/:gbId/bulk-route", async (req, res): Promise<void
   };
   if (reshipperUsername !== undefined) updateSet.reshipperUsername = reshipperUsername ?? null;
 
-  await db.update(ordersTable)
-    .set(updateSet)
-    .where(refundMutableOrderWhere(inArray(ordersTable.id, existingOrders.map(o => o.id))));
+  const existingOrderIds = existingOrders.map(o => o.id);
+  await withRefundMutationGuard(db, existingOrderIds, async tx => {
+    await tx.update(ordersTable)
+      .set(updateSet)
+      .where(refundMutableOrderWhere(inArray(ordersTable.id, existingOrderIds)));
+  });
 
   // Batch insert routing history
   const historyRows = existingOrders.map(o => ({
@@ -3350,6 +3357,7 @@ router.post("/admin/group-buys/:gbId/fs3-submit", async (req, res): Promise<void
       if (eligible.length === 0) throw new Error("NO_ELIGIBLE_ORDERS");
       const now = new Date();
       const eligibleIds = eligible.map(o => o.id);
+      await assertNoActiveRefunds(tx, eligibleIds);
       await tx.update(ordersTable).set({ batchLocked: true, batchLockedAt: now }).where(refundMutableOrderWhere(inArray(ordersTable.id, eligibleIds)));
       const toProcess = eligible.filter(o => o.paymentStatus === "confirmed" && o.status === "Submitted");
       if (toProcess.length > 0) {

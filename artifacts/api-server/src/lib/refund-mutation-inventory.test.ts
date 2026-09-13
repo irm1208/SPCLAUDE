@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { REFUND_MUTATION_INVENTORY } from "./refund-mutation-inventory";
+import { REFUND_MUTATION_INVENTORY, REFUND_MULTI_ORDER_INVENTORY } from "./refund-mutation-inventory";
 
 describe("refund-sensitive order mutation inventory", () => {
   it("classifies every known order and line-item update/delete site", () => {
@@ -24,6 +24,17 @@ describe("refund-sensitive order mutation inventory", () => {
         const next = source.slice(start + site[0].length).search(/\.(?:update|delete)\((?:ordersTable|orderLineItemsTable)\)/);
         const segment = source.slice(start, next < 0 ? source.length : start + site[0].length + next);
         expect(segment, `${relativePath}:${start}`).toContain("refundMutableOrderWhere");
+      }
+    }
+  });
+
+  it("classifies every multi-order writer as transactional all-or-nothing", () => {
+    for (const entry of REFUND_MULTI_ORDER_INVENTORY) {
+      const source = readFileSync(entry.source, "utf8");
+      if (entry.mode === "withRefundMutationGuard") {
+        expect(source, entry.handler).toContain("withRefundMutationGuard");
+      } else {
+        expect(source, entry.handler).toContain("assertNoActiveRefunds");
       }
     }
   });

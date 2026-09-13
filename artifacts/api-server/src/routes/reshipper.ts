@@ -1,4 +1,8 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import {
+  RefundMutationBlockedError,
+  refundMutableOrderWhere,
+  withRefundMutationGuard,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -665,7 +669,7 @@ router.post("/reshipper/gb/:gbId/orders/claim-bulk", requireReshipper, async (re
   // Atomic claim: a single UPDATE ... WHERE ... RETURNING so we report exactly
   // which rows we actually won (race-safe even with concurrent reshippers).
   // Direct-to-home orders are excluded — reshippers cannot claim them.
-  const claimedRows = await db
+  const claimedRows = await withRefundMutationGuard(db, ids, async tx => tx
     .update(ordersTable)
     .set({ reshipperUsername: assignment.reshipperUsername })
     .where(refundMutableOrderWhere(and(
@@ -675,7 +679,7 @@ router.post("/reshipper/gb/:gbId/orders/claim-bulk", requireReshipper, async (re
       isNull(ordersTable.reshipperUsername),
       sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`,
     )))
-    .returning({ id: ordersTable.id, code: ordersTable.code });
+    .returning({ id: ordersTable.id, code: ordersTable.code }));
 
   const claimedIds = claimedRows.map(r => r.id);
   const claimedSet = new Set(claimedIds);

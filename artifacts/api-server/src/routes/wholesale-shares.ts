@@ -1,4 +1,7 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import {
+  assertNoActiveRefunds,
+  refundMutableOrderWhere,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -2720,6 +2723,7 @@ router.post("/wholesale-shares/:id/cancel", requireWholesaleOrAdmin, async (req,
       const orderIds = members.map(m => m.orderId).filter((x): x is string => !!x);
       let paidMembersNeedingRefund: string[] = [];
       if (orderIds.length > 0) {
+        await assertNoActiveRefunds(tx, orderIds);
         const orders = await tx.select().from(ordersTable)
           .where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
         paidMembersNeedingRefund = orders.filter(o => o.paymentStatus === "confirmed").map(o => o.telegramUsername);
