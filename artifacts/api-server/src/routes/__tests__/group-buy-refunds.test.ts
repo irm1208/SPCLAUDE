@@ -574,7 +574,8 @@ describe("admin-only refund setting", () => {
     const app = buildApp(groupBuyRefundsRouter);
     for (const code of [
       "completed_txid_immutable", "invalid_refund_transition", "refund_claim_lost",
-      "attempt_ownership_lost", "order_state_changed", "payment_state_changed", "txid_replay", "in_progress",
+      "attempt_ownership_lost", "order_state_changed", "payment_state_changed", "payment_evidence_changed",
+      "txid_replay", "in_progress",
     ]) {
       mocks.state.submitCryptoRefund.mockRejectedValueOnce(new GroupBuyRefundError(code));
       const response = await request(app, "/admin/group-buy-refunds/refund-1/verify", {
@@ -583,6 +584,15 @@ describe("admin-only refund setting", () => {
       });
       expect(response.status).toBe(409);
       expect(await response.json()).toMatchObject({ code, error: code });
+    }
+    for (const code of ["completed_refund_linkage_mismatch", "invalid_refund_configuration", "invalid_refund_amount"]) {
+      mocks.state.submitCryptoRefund.mockRejectedValueOnce(new GroupBuyRefundError(code, "sensitive internal detail"));
+      const response = await request(app, "/admin/group-buy-refunds/refund-1/verify", {
+        method: "POST",
+        headers: json({ txid: attempt.submittedTxid }, { "x-test-admin": "admin" }),
+      });
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ code, error: code });
     }
     for (const code of ["provider_unavailable", "processing_failure"]) {
       mocks.state.submitCryptoRefund.mockRejectedValueOnce(new GroupBuyRefundError(code));
