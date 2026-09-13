@@ -5,6 +5,9 @@ import {
   creditTransactionsTable,
   groupBuyRefundsTable,
   groupBuysTable,
+  gbReshippersTable,
+  siteConfigTable,
+  wholesaleSharesTable,
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
@@ -176,7 +179,33 @@ async function loadOriginalPaymentProof(
   }
 }
 
-async function resolveLockedPayment(order: Record<string, any>) {
+async function lockPaymentRoutingSources(database: DatabaseLike, order: Record<string, any>): Promise<void> {
+  const configKeys = [
+    "paymentRoutingEnabled",
+    "walletAddress",
+    "wholesale_usdt_wallet",
+    "wholesale_usdc_erc20_wallet",
+    "wallet_arb",
+    "wallet_polygon",
+    "wallet_solana",
+    "wallet_tron",
+    "wallet_btc",
+    "wallet_eth",
+  ];
+  await lockRows(database, siteConfigTable, inArray(siteConfigTable.key, configKeys));
+  if (order.groupBuyId && order.shippingCountry) {
+    await lockRows(database, gbReshippersTable, and(
+      eq(gbReshippersTable.gbId, order.groupBuyId),
+      eq(gbReshippersTable.country, order.shippingCountry),
+    ));
+  }
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    await lockRows(database, wholesaleSharesTable, eq(wholesaleSharesTable.id, order.sharedOrderId));
+  }
+}
+
+async function resolveLockedPayment(database: DatabaseLike, order: Record<string, any>) {
+  await lockPaymentRoutingSources(database, order);
   return resolveEffectiveOrderCrypto(order as {
     groupBuyId: string | null;
     orderType?: string | null;
@@ -184,7 +213,7 @@ async function resolveLockedPayment(order: Record<string, any>) {
     sharedOrderId?: string | null;
     paymentCryptoCurrency?: string | null;
     paymentCryptoNetwork?: string | null;
-  });
+  }, database);
 }
 
 function requireLockedPaymentProof(
@@ -292,26 +321,24 @@ async function returnCompletedIfValid(
   forceRecheck = false,
 ): Promise<RefundRequestResult | null> {
   if (!forceRecheck && unlockedRefund.status !== "completed") return null;
-  try {
-    return await database.transaction(async (tx: DatabaseLike) => {
-      const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, unlockedRefund.accountId));
-      const [order] = await lockRows(tx, ordersTable, eq(ordersTable.id, unlockedRefund.orderId));
-      const [groupBuy] = await lockRows(tx, groupBuysTable, eq(groupBuysTable.id, unlockedRefund.groupBuyId));
-      const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, unlockedRefund.id));
-      if (!account || !order || !groupBuy || !refund || refund.status !== "completed") return null;
-      validateProcessorScope(account, order, groupBuy, refund, args);
-      validateCompletedTerminal(order);
-      return asRefundResult(refund);
-    });
-  } catch {
-    return null;
-  }
+  return database.transaction(async (tx: DatabaseLike) => {
+    const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, unlockedRefund.accountId));
+    const [order] = await lockRows(tx, ordersTable, eq(ordersTable.id, unlockedRefund.orderId));
+    const [groupBuy] = await lockRows(tx, groupBuysTable, eq(groupBuysTable.id, unlockedRefund.groupBuyId));
+    const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, unlockedRefund.id));
+    if (!account || !order || !groupBuy || !refund || refund.status !== "completed") return null;
+    validateProcessorScope(account, order, groupBuy, refund, args);
+    validateCompletedTerminal(order);
+    return asRefundResult(refund);
+  });
 }
 
 export async function createRefundRequest(
   database: DatabaseLike,
   args: CreateRefundRequestArgs,
 ): Promise<RefundRequestResult> {
+  const accountId = normalizeUsername(args.accountId);
+  const canonicalArgs = { ...args, accountId };
   const [unlockedOrder] = await loadRows(database, ordersTable, eq(ordersTable.id, args.orderId));
   if (!unlockedOrder) throw new GroupBuyRefundError("not_found");
   validateRefundInputShape(args.input);
@@ -334,7 +361,7 @@ export async function createRefundRequest(
   if (!unlockedGroupBuy.cryptoRefundsEnabled) {
     throw new GroupBuyRefundError("refunds_disabled");
   }
-  if (normalizeUsername(args.accountId) !== normalizeUsername(unlockedOrder.telegramUsername ?? "")) {
+  if (accountId !== normalizeUsername(unlockedOrder.telegramUsername ?? "")) {
     throw new GroupBuyRefundError("not_owner");
   }
 
@@ -344,7 +371,7 @@ export async function createRefundRequest(
   const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
 
   return database.transaction(async (tx: DatabaseLike) => {
-    const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, args.accountId));
+    const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, accountId));
     if (!account) throw new GroupBuyRefundError("account_not_found");
 
     const [order] = await lockRows(tx, ordersTable, eq(ordersTable.id, args.orderId));
@@ -362,11 +389,11 @@ export async function createRefundRequest(
     );
     const activeRefund = activeRows[0];
     if (activeRefund) return asRefundResult(activeRefund);
-    const lockedPayment = await resolveLockedPayment(order);
+    const lockedPayment = await resolveLockedPayment(tx, order);
     requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
 
     const eligibility = evaluateRefundEligibility({
-      accountId: args.accountId,
+      accountId,
       paymentEvidenceProof,
       order: refundOrder(order),
       groupBuy: { id: groupBuy.id, cryptoRefundsEnabled: groupBuy.cryptoRefundsEnabled },
@@ -376,7 +403,7 @@ export async function createRefundRequest(
       throw new GroupBuyRefundError(eligibility.reasonCode ?? "ineligible");
     }
 
-    const input = args.input as RefundRequestInput;
+    const input = canonicalArgs.input as RefundRequestInput;
     const isCredit = input?.method === "credit";
     const isCrypto = input?.method === "crypto";
     if (!isCredit && !isCrypto) throw new GroupBuyRefundError("invalid_method");
@@ -439,7 +466,7 @@ export async function createRefundRequest(
       action: "group_buy_refund_requested",
       message: `Group-buy refund ${id} requested`,
       metadata: {
-        identity: args.accountId,
+         identity: accountId,
         role: "account",
         source: "customer",
         transition: "none_to_requested",
@@ -471,6 +498,18 @@ export async function completeCreditRefund(
     eq(ordersTable.id, unlockedRefund.orderId),
   );
   if (!unlockedOrder) throw new GroupBuyRefundError("not_found");
+  const [unlockedAccount] = await loadRows(
+    database,
+    accountsTable,
+    eq(accountsTable.telegramUsername, unlockedRefund.accountId),
+  );
+  const [unlockedGroupBuy] = await loadRows(
+    database,
+    groupBuysTable,
+    eq(groupBuysTable.id, unlockedRefund.groupBuyId),
+  );
+  if (!unlockedAccount || !unlockedGroupBuy) throw new GroupBuyRefundError("not_found");
+  validateProcessorScope(unlockedAccount, unlockedOrder, unlockedGroupBuy, unlockedRefund, args);
   const alreadyCompleted = await returnCompletedIfValid(database, unlockedRefund, args);
   if (alreadyCompleted) return alreadyCompleted;
 
@@ -516,7 +555,7 @@ export async function completeCreditRefund(
       throw new GroupBuyRefundError("payment_state_changed");
     }
 
-    const lockedPayment = await resolveLockedPayment(order);
+    const lockedPayment = await resolveLockedPayment(tx, order);
     requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
     // Revalidate the original evidence against locked authoritative values.
     // The completion path intentionally treats the GB feature flag as

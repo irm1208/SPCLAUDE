@@ -13,6 +13,9 @@ const harness = vi.hoisted(() => {
       paymentScreenshot: "paymentScreenshot", refundedAt: "refundedAt",
     },
     groupBuys: { id: "id", cryptoRefundsEnabled: "cryptoRefundsEnabled", organiserId: "organiserId" },
+    siteConfig: { key: "key", value: "value" },
+    reshippers: { gbId: "gbId", country: "country" },
+    shares: { id: "id", leadCryptoOptions: "leadCryptoOptions" },
     refunds: {
       id: "id", orderId: "orderId", groupBuyId: "groupBuyId", accountId: "accountId",
       method: "method", status: "status", amountUsd: "amountUsd", asset: "asset",
@@ -37,6 +40,9 @@ const harness = vi.hoisted(() => {
     refunds: [] as Array<Record<string, unknown>>,
     credits: [] as Array<Record<string, unknown>>,
     audits: [] as Array<Record<string, unknown>>,
+    siteConfigs: [] as Array<Record<string, unknown>>,
+    reshippers: [] as Array<Record<string, unknown>>,
+    shares: [] as Array<Record<string, unknown>>,
     locks: [] as string[],
     updates: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
     beforeRefundUpdate: null as null | (() => void),
@@ -51,15 +57,21 @@ const harness = vi.hoisted(() => {
     verifierAvailable: true,
     transactionTail: Promise.resolve(),
     serializeTransactions: true,
+    resolverDatabases: [] as unknown[],
   };
+  // This adapter models predicates, savepoints, and deterministic interleaving
+  // only; PostgreSQL lock/index behavior remains covered by Task 10.
   function eq(column: unknown, value: unknown) {
     return { kind: "eq", column, value };
   }
   function rowsFor(table: unknown, predicate: any) {
     const rows = table === tables.accounts ? [state.account]
       : table === tables.orders ? [state.order]
-        : table === tables.groupBuys ? [state.groupBuy]
-          : table === tables.refunds ? state.refunds : [];
+          : table === tables.groupBuys ? [state.groupBuy]
+          : table === tables.refunds ? state.refunds
+          : table === tables.siteConfig ? state.siteConfigs
+          : table === tables.reshippers ? state.reshippers
+          : table === tables.shares ? state.shares : [];
     function matches(row: Record<string, unknown>, condition: any): boolean {
       if (!condition) return true;
       if (condition.kind === "eq") return row[condition.column] === condition.value;
@@ -79,7 +91,14 @@ const harness = vi.hoisted(() => {
         where: (predicate: any) => {
           const query = {
             for: vi.fn(async () => {
-              state.locks.push(String(table === tables.accounts ? "account" : table === tables.orders ? "order" : table === tables.groupBuys ? "groupBuy" : "refund"));
+              state.locks.push(String(
+                table === tables.accounts ? "account"
+                  : table === tables.orders ? "order"
+                    : table === tables.groupBuys ? "groupBuy"
+                      : table === tables.refunds ? "refund"
+                        : table === tables.siteConfig ? "siteConfig"
+                          : table === tables.reshippers ? "reshippers" : "shares",
+              ));
               return rowsFor(table, predicate).map(row => project(row, selection));
             }),
             then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
@@ -187,6 +206,7 @@ const harness = vi.hoisted(() => {
     state.verifierAvailable = true;
     state.transactionTail = Promise.resolve();
     state.serializeTransactions = true;
+    state.resolverDatabases.length = 0;
     state.account.credits = 0;
     state.order.refundStatus = null;
     state.order.status = "Submitted";
@@ -211,6 +231,9 @@ vi.mock("@workspace/db", () => ({
   groupBuyRefundsTable: harness.tables.refunds,
   creditTransactionsTable: harness.tables.credit,
   auditLogsTable: harness.tables.audit,
+  siteConfigTable: harness.tables.siteConfig,
+  gbReshippersTable: harness.tables.reshippers,
+  wholesaleSharesTable: harness.tables.shares,
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),
@@ -234,11 +257,14 @@ vi.mock("./payment-verify", () => ({
   }),
 }));
 vi.mock("../routes/payments", () => ({
-  resolveEffectiveOrderCrypto: vi.fn(async () => ({
+  resolveEffectiveOrderCrypto: vi.fn(async (_order: unknown, database: unknown) => {
+    harness.state.resolverDatabases.push(database);
+    return {
     walletAddress: harness.state.resolvedWallet,
     currency: harness.state.resolvedCurrency,
     network: harness.state.resolvedNetwork,
-  })),
+    };
+  }),
 }));
 
 import { createRefundRequest, completeCreditRefund } from "./group-buy-refund";
@@ -277,6 +303,15 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.locks.slice(0, 3)).toEqual(["account", "order", "groupBuy"]);
   });
 
+  it("normalizes account identity once for @-prefixed callers", async () => {
+    await expect(createRefundRequest(harness.db as any, {
+      accountId: "@BUYER",
+      orderId: "order-1",
+      input: { method: "credit" },
+    })).resolves.toMatchObject({ status: "requested" });
+    expect(harness.state.refunds[0].accountId).toBe("buyer");
+  });
+
   it("credits once, records the refund-linked ledger row, and cancels the order", async () => {
     const request = await createCredit();
 
@@ -296,6 +331,8 @@ describe("transactional group-buy refunds", () => {
       reason: "Group-buy refund for order #GB-001",
     });
     expect(harness.state.order).toMatchObject({ status: "Cancelled", paymentStatus: "refunded", refundStatus: "refunded" });
+    expect(harness.state.resolverDatabases[0]).toBeUndefined();
+    expect(harness.state.resolverDatabases.at(-1)).toBeDefined();
     expect(harness.state.updates
       .filter(update => update.table === harness.tables.refunds)
       .map(update => update.values.status)
@@ -326,7 +363,7 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.refunds).toHaveLength(0);
   });
 
-  it("contends two request transactions on the partial unique constraint safely", async () => {
+  it("models two request transactions contending on the partial unique constraint", async () => {
     harness.state.serializeTransactions = false;
     const results = await Promise.all([
       createCredit(),
@@ -480,7 +517,7 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.credits).toHaveLength(0);
   });
 
-  it("serializes two processors so only one balance and ledger write commits", async () => {
+  it("models serialized fake transactions so only one balance and ledger write commits", async () => {
     const request = await createCredit();
     const results = await Promise.all([
       completeCreditRefund(harness.db as any, { refundId: request.id, username: "admin", role: "admin" }),
@@ -530,10 +567,14 @@ describe("transactional group-buy refunds", () => {
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "wrong", role: "organiser",
     })).rejects.toMatchObject({ code: "forbidden" });
-    expect(harness.state.locks).toEqual(["account", "order", "groupBuy", "refund"]);
+    expect(harness.state.locks).toEqual([]);
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "organiser", role: "organiser", groupBuyId: "other",
     })).rejects.toMatchObject({ code: "group_buy_scope" });
+    await completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    });
+    expect(harness.state.locks.slice(0, 4)).toEqual(["account", "order", "groupBuy", "refund"]);
   });
 
   it("returns a completed row unchanged on duplicate completion but still enforces scope", async () => {
@@ -581,5 +622,13 @@ describe("transactional group-buy refunds", () => {
       refundId: request.id, username: "admin", role: "admin",
     })).resolves.toMatchObject({ id: request.id, status: "completed" });
     expect(harness.state.credits).toHaveLength(0);
+  });
+
+  it("returns forbidden rather than verifier failure for an unauthorized organiser", async () => {
+    const request = await createCredit();
+    harness.state.verifierAvailable = false;
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "not-organiser", role: "organiser",
+    })).rejects.toMatchObject({ code: "forbidden" });
   });
 });

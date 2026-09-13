@@ -167,8 +167,8 @@ function isValidSolanaAddress(addr: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
 }
 
-async function getConfig(key: string): Promise<string | null> {
-  const [row] = await db.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
+async function getConfig(key: string, database: any = db): Promise<string | null> {
+  const [row] = await database.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
   return row?.value ?? null;
 }
 
@@ -325,15 +325,16 @@ export async function resolveLockedUsdPerCoin(
  * - Non-GB orders: always use the global site wallet (USDT ERC-20).
  */
 export async function resolveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null },
+  database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
-  const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+  const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled", database)) !== "false";
   // Shared wholesale is peer-to-peer. An omitted organiser wallet disables crypto;
   // it must never route the member to a wholesale/global admin wallet.
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
-    const [share] = await db
+    const [share] = await database
       .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
       .from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
@@ -344,26 +345,26 @@ export async function resolveOrderCrypto(
     return { walletAddress: null, currency: defaultCurrency, network: defaultNetwork };
   }
   if (!paymentRoutingEnabled) {
-    const walletAddress = await getConfig("walletAddress");
+    const walletAddress = await getConfig("walletAddress", database);
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
   // Wholesale orders: prefer the dedicated wholesale USDT wallet, then USDC ERC-20 wallet
   if (order.orderType === "wholesale") {
-    const wsWallet = await getConfig("wholesale_usdt_wallet");
+    const wsWallet = await getConfig("wholesale_usdt_wallet", database);
     if (wsWallet) {
       return { walletAddress: wsWallet, currency: defaultCurrency, network: defaultNetwork };
     }
-    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet");
+    const wsUsdcWallet = await getConfig("wholesale_usdc_erc20_wallet", database);
     if (wsUsdcWallet) {
       return { walletAddress: wsUsdcWallet, currency: "USDC", network: defaultNetwork };
     }
-    const walletAddress = await getConfig("walletAddress");
+    const walletAddress = await getConfig("walletAddress", database);
     return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
   }
   if (order.groupBuyId) {
     // Reshipper takes priority over organiser wallet — mirrors /payments-info routing
     if (order.shippingCountry) {
-      const [assignment] = await db
+      const [assignment] = await database
         .select({
           reshipperPaymentDetails: gbReshippersTable.reshipperPaymentDetails,
           enabledPaymentMethods: gbReshippersTable.enabledPaymentMethods,
@@ -392,7 +393,7 @@ export async function resolveOrderCrypto(
         }
       }
     }
-    const [gb] = await db
+    const [gb] = await database
       .select({ organiserPayments: groupBuysTable.organiserPayments })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
@@ -404,11 +405,11 @@ export async function resolveOrderCrypto(
     if (gbWallet && (isValidEthAddress(gbWallet) || isValidBtcAddress(gbWallet) || isValidSolanaAddress(gbWallet))) {
       walletAddress = gbWallet;
     } else {
-      walletAddress = await getConfig("walletAddress");
+      walletAddress = await getConfig("walletAddress", database);
     }
     return { walletAddress, currency, network };
   }
-  const walletAddress = await getConfig("walletAddress");
+  const walletAddress = await getConfig("walletAddress", database);
   return { walletAddress, currency: defaultCurrency, network: defaultNetwork };
 }
 
@@ -430,10 +431,12 @@ const CHAIN_WALLET_CONFIGS: Array<{
 ];
 
 /** All chain/currency pairs currently configured by admin, with their wallet addresses. */
-export async function getAdminCryptoOptions(): Promise<Array<{ currency: string; network: string; walletAddress: string }>> {
+export async function getAdminCryptoOptions(
+  database: any = db,
+): Promise<Array<{ currency: string; network: string; walletAddress: string }>> {
   const opts: Array<{ currency: string; network: string; walletAddress: string }> = [];
   for (const cfg of CHAIN_WALLET_CONFIGS) {
-    const wallet = await getConfig(cfg.configKey);
+    const wallet = await getConfig(cfg.configKey, database);
     if (!wallet || !wallet.trim()) continue;
     for (const cur of cfg.currencies) {
       opts.push({ currency: cur, network: cfg.network, walletAddress: wallet.trim() });
@@ -493,11 +496,12 @@ export async function getOrderCryptoOptions(
  * the choice was validated against getOrderCryptoOptions at rate-lock time.
  */
 export async function resolveEffectiveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null }
+  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null },
+  database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   // Wholesale shared: match persisted currency+network against organiser's leadCryptoOptions
   if (order.orderType === "wholesale_shared" && order.sharedOrderId && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
-    const [share] = await db
+    const [share] = await database
       .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
       .from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
@@ -510,9 +514,9 @@ export async function resolveEffectiveOrderCrypto(
   }
   // For non-GB non-wholesale orders: use the chain wallet matching the stored currency+network
   if (!order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
-    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled", database)) !== "false";
     if (paymentRoutingEnabled) {
-      const allOpts = await getAdminCryptoOptions();
+      const allOpts = await getAdminCryptoOptions(database);
       const match = allOpts.find(o =>
         o.currency.toUpperCase() === order.paymentCryptoCurrency!.toUpperCase() &&
         o.network.toLowerCase() === order.paymentCryptoNetwork!.toLowerCase()
@@ -526,13 +530,13 @@ export async function resolveEffectiveOrderCrypto(
   if (order.orderType === "wholesale" && order.paymentCryptoCurrency?.toUpperCase() === "USDC") {
     const net = (order.paymentCryptoNetwork ?? "ERC-20").toLowerCase();
     if (/erc.?20|ethereum/.test(net)) {
-      const wsUsdcErc20Wallet = await getConfig("wholesale_usdc_erc20_wallet");
+      const wsUsdcErc20Wallet = await getConfig("wholesale_usdc_erc20_wallet", database);
       if (wsUsdcErc20Wallet) {
         return { walletAddress: wsUsdcErc20Wallet, currency: "USDC", network: "ERC-20" };
       }
     }
   }
-  const base = await resolveOrderCrypto(order);
+  const base = await resolveOrderCrypto(order, database);
   const currency = effectiveStableCurrency(base.currency, base.network, base.walletAddress, order.paymentCryptoCurrency ?? null);
   return { walletAddress: base.walletAddress, currency, network: base.network };
 }
