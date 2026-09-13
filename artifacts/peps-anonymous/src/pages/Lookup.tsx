@@ -14,6 +14,7 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { useRateLimit } from "@/hooks/use-rate-limit";
 import { useCurrency } from "@/hooks/use-currency";
 import PaymentPanel from "@/components/PaymentPanel";
+import { subtractMoneyClamped } from "@/lib/exact-money";
 
 const STATUS_COLORS: Record<string, string> = {
   Draft: "bg-slate-100 text-slate-600",
@@ -1269,7 +1270,7 @@ export default function Lookup() {
                         <span className="text-blue-600">
                           {foundOrder.currency === "GBP"
                             ? format(foundOrder.grandTotal)
-                            : format(Math.max(0, foundOrder.grandTotal - (foundOrder.creditsApplied ?? 0)))}
+                            : format(subtractMoneyClamped(foundOrder.grandTotal, foundOrder.creditsApplied ?? 0))}
                         </span>
                       </div>
                     )}

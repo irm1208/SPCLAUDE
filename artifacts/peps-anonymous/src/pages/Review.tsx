@@ -15,6 +15,7 @@ import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
+import { minMoney, subtractMoneyClamped } from "@/lib/exact-money";
 import { resolveOrderSubmitDestination } from "./order-submit-destination";
 
 function ReviewShell({ children }: { children: ReactNode }) {
@@ -212,8 +213,10 @@ export default function Review() {
   const grandTotal = parseFloat(
     Math.max(0, productSubtotal + effectiveDeliveryPrice + effectiveVendorShipping + draft.tip + draft.testingContribution + adminFeeAmount - couponDiscount).toFixed(2)
   );
-  const creditsApplied = account && account.credits > 0 && useCredits ? Math.min(account.credits, Math.floor(grandTotal)) : 0;
-  const amountDue = parseFloat((grandTotal - creditsApplied).toFixed(2));
+  const creditsApplied = account && account.credits > 0 && useCredits
+    ? minMoney(account.credits, grandTotal)
+    : 0;
+  const amountDue = subtractMoneyClamped(grandTotal, creditsApplied);
 
   if (draft.lineItems.length === 0 || !draft.telegramUsername) {
     window.location.href = "/order";
@@ -301,7 +304,7 @@ export default function Review() {
         tip: data.tip ?? draft.tip,
         grandTotal: serverGrandTotal,
         creditsApplied: serverCreditsApplied,
-        amountDue: parseFloat((serverGrandTotal - serverCreditsApplied).toFixed(2)),
+        amountDue: subtractMoneyClamped(serverGrandTotal, serverCreditsApplied),
         notes: data.notes ?? (draft.notes || null),
         lineItems: (data.lineItems ?? draft.lineItems).map(item => ({
           productName: item.productName,

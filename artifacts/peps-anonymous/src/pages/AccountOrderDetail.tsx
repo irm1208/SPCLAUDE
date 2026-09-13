@@ -26,6 +26,7 @@ import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-
 import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
 import { getOrderPaymentSummary } from "./order-payment-summary";
 import type { TrackingPackageView } from "@workspace/shipping/tracking";
+import { addMoney, minMoney, subtractMoneyClamped } from "@/lib/exact-money";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -2085,10 +2086,8 @@ export default function AccountOrderDetail() {
 
   const handleApplyCredits = async () => {
     if (!order || applyingCredits || accountCredits <= 0) return;
-    // Round up to the nearest whole dollar: credits are integers so covering a fractional
-    // order total (e.g. $30.99) requires 31 credits, not 30. Math.ceil ensures we deduct
-    // enough so the backend auto-confirm check passes.
-    const toApply = Math.min(accountCredits, Math.ceil(order.grandTotal - (order.creditsApplied ?? 0)));
+    const remainingDue = subtractMoneyClamped(order.grandTotal, order.creditsApplied ?? 0);
+    const toApply = minMoney(accountCredits, remainingDue);
     if (toApply <= 0) return;
     setApplyingCredits(true);
     setCreditsError(null);
@@ -2102,7 +2101,10 @@ export default function AccountOrderDetail() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to apply credits");
       setAccountCredits(data.remaining ?? 0);
-      setOrder(prev => prev ? { ...prev, creditsApplied: (prev.creditsApplied ?? 0) + (data.deducted ?? toApply) } : prev);
+      setOrder(prev => prev ? {
+        ...prev,
+        creditsApplied: addMoney(prev.creditsApplied ?? 0, data.deducted ?? toApply),
+      } : prev);
     } catch (err: any) {
       setCreditsError(err.message || "Failed to apply credits");
     } finally {
@@ -2456,7 +2458,7 @@ export default function AccountOrderDetail() {
                                 ? fmtC(paymentSummary.paidAmount, order.currency)
                                 : order.currency === "GBP"
                                 ? fmtC(order.grandTotal, order.currency)
-                                : fmtC(Math.max(0, order.grandTotal - (order.creditsApplied ?? 0)), order.currency)}
+                                : fmtC(subtractMoneyClamped(order.grandTotal, order.creditsApplied ?? 0), order.currency)}
                             </span>
                           </div>
                           {(order.amountDue ?? 0) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus ?? "") && (
@@ -2735,7 +2737,7 @@ export default function AccountOrderDetail() {
 
                   {/* Store Credits banner */}
                   {accountCredits > 0 &&
-                   Math.min(accountCredits, order.grandTotal - (order.creditsApplied ?? 0)) > 0 &&
+                   minMoney(accountCredits, subtractMoneyClamped(order.grandTotal, order.creditsApplied ?? 0)) > 0 &&
                    order.paymentStatus === "unpaid" && order.status !== "Cancelled" && (
                     <div
                       className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"

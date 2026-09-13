@@ -3,6 +3,7 @@ import { Copy, Check, Loader2, Send, AlertCircle, ShieldCheck, Clock, FlaskConic
 import QRCode from "react-qr-code";
 import { Card, Button, Input } from "@/components/ui";
 import { currSym } from "@/lib/currency";
+import { subtractMoneyClamped } from "@/lib/exact-money";
 
 // ── Brand icons ────────────────────────────────────────────────
 
@@ -536,7 +537,7 @@ export default function PaymentPanel({
   useEffect(() => { loadRate(); }, [loadRate]);
   const usdTotal = lockedUsdTotal ?? grandTotal;
   // Credits are always in USD — deduct from the USD payment side after conversion
-  const effectiveUsdTotal = Math.max(0, usdTotal - creditsUsd);
+  const effectiveUsdTotal = subtractMoneyClamped(usdTotal, creditsUsd);
   // Convert a USD amount to the chosen coin using the locked rate. Stablecoins
   // (and any order with no usable rate yet) stay 1:1 with USD.
   const usdToCoin = useCallback(
@@ -547,7 +548,7 @@ export default function PaymentPanel({
     [isStableCoin, usdPerCoin, coinDecimals],
   );
   // For fiat displays (Revolut/PayPal): for GBP keep original, for USD deduct credits
-  const effectiveGrandTotal = isGbp ? grandTotal : Math.max(0, grandTotal - creditsUsd);
+  const effectiveGrandTotal = isGbp ? grandTotal : subtractMoneyClamped(grandTotal, creditsUsd);
   const [confirmations, setConfirmations] = useState<number | null>(null);
 
   const initialStep: Step =
@@ -1939,7 +1940,7 @@ export default function PaymentPanel({
   // ── Crypto: full payment ─────────────────────────────────────
 
   const remainingUsd = (status === "test_confirmed" && testAmount)
-    ? Math.max(0, parseFloat((effectiveUsdTotal - testAmount).toFixed(2)))
+    ? subtractMoneyClamped(effectiveUsdTotal, testAmount)
     : effectiveUsdTotal;
   const remainingCoin = usdToCoin(remainingUsd);
 

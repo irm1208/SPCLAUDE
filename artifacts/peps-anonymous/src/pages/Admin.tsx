@@ -42,6 +42,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
+import { centsToMoneyNumber, moneyToCents } from "@/lib/exact-money";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
@@ -11637,7 +11638,13 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
   };
 
   const handleAdjustCredits = async () => {
-    const amount = Math.round(parseFloat(creditAmount || "0"));
+    let amount: number;
+    try {
+      amount = centsToMoneyNumber(moneyToCents(creditAmount || "0"));
+    } catch {
+      setCreditMsg("Enter a valid amount with up to 2 decimals");
+      return;
+    }
     const reason = creditReason.trim();
     if (!amount || !reason) return;
     setCreditSubmitting(true);
@@ -17932,7 +17939,13 @@ function AccountsTab({ secret }: { secret: string }) {
   };
 
   const adjustCredits = async (username: string) => {
-    const amount = Math.round(parseFloat(creditAmount[username] ?? "0"));
+    let amount: number;
+    try {
+      amount = centsToMoneyNumber(moneyToCents(creditAmount[username] ?? "0"));
+    } catch {
+      setCreditMsg(prev => ({ ...prev, [username]: "Enter a valid amount with up to 2 decimals" }));
+      return;
+    }
     const reason = (creditReason[username] ?? "").trim();
     if (!amount || !reason) return;
     setCreditSubmitting(prev => ({ ...prev, [username]: true }));
