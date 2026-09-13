@@ -3567,6 +3567,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
 // Admin confirms the organiser's platform payment.
 router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  const share = await loadShare(req.params.id);
   const result = await confirmWholesaleOrganiserPayment({
     shareId: req.params.id,
     source: "admin",
@@ -3586,15 +3587,28 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
       ok: true,
       organiserOrderId: result.organiserOrderId,
       alreadyConfirmed: true,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "confirmed",
     });
     return;
   }
 
-  res.json({
-    ok: true,
-    organiserOrderId: result.organiserOrderId,
-    alreadyConfirmed: false,
-  });
+  if (result.kind === "confirmed") {
+    if (share?.creatorUsername) {
+      notifyUser(
+        share.creatorUsername,
+        "payment",
+        `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${req.params.id}</code> has been verified and confirmed by an administrator.\n\nYour order is now being processed.`,
+      ).catch(() => {});
+    }
+    res.json({
+      ok: true,
+      organiserOrderId: result.organiserOrderId,
+      alreadyConfirmed: false,
+      organiserPaymentStatus: "confirmed",
+      organiserOrderPaymentStatus: "confirmed",
+    });
+  }
 });
 
 // ── Wholesale Share Invite Links ──────────────────────────────────────────────

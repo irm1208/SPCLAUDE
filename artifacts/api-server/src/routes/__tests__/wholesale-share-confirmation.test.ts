@@ -85,6 +85,10 @@ describe("shared wholesale order confirmations", () => {
     const confirmationIndex = checkShare.indexOf("const confirmation = await confirmWholesaleOrganiserPayment");
     const confirmedBranchIndex = checkShare.indexOf('if (confirmation.kind === "confirmed")');
     const notificationIndex = checkShare.indexOf("notifyUser(", confirmedBranchIndex);
+    const optionSelection = checkShare.slice(
+      checkShare.indexOf("const opt ="),
+      checkShare.indexOf("if (!opt?.walletAddress)"),
+    );
 
     expect(verificationIndex).toBeGreaterThanOrEqual(0);
     expect(unverifiedGuardIndex).toBeGreaterThan(verificationIndex);
@@ -94,6 +98,11 @@ describe("shared wholesale order confirmations", () => {
     expect(notificationIndex).toBeGreaterThan(confirmedBranchIndex);
     expect(checkShare).toContain('source: "automatic"');
     expect(checkShare).toContain("network, 0.01");
+    expect(optionSelection).toContain("options.find");
+    expect(optionSelection).toContain("network.toLowerCase()");
+    expect(optionSelection).not.toContain("options[0]");
+    expect(optionSelection).not.toContain('o.currency.toUpperCase() === currency)');
+    expect(checkShare).toContain("No exact admin wallet");
     expect(checkShare.slice(confirmationIndex)).not.toContain("else");
     expect(checkShare.slice(confirmationIndex)).not.toContain("Confirmation result for share");
     expect(autoVerifySource).not.toContain(".update(wholesaleSharesTable)");
@@ -109,6 +118,7 @@ describe("shared wholesale order confirmations", () => {
       routeSource.indexOf("// ── Wholesale Share Invite Links", adminStart),
     );
     const normalizedAdminHandler = adminHandler.replace(/\s+/g, " ");
+    const shareLoadIndex = normalizedAdminHandler.indexOf("const share = await loadShare(req.params.id)");
     const serviceCallIndex = normalizedAdminHandler.indexOf("const result = await confirmWholesaleOrganiserPayment");
     const rejectionIndex = normalizedAdminHandler.indexOf('if (result.kind === "rejected")');
     const rejectionResponseIndex = normalizedAdminHandler.indexOf(
@@ -117,15 +127,19 @@ describe("shared wholesale order confirmations", () => {
     const rejectionReturnIndex = normalizedAdminHandler.indexOf("return;", rejectionResponseIndex);
     const alreadyConfirmedIndex = normalizedAdminHandler.indexOf('if (result.kind === "already_confirmed")');
     const alreadyResponseIndex = normalizedAdminHandler.indexOf(
-      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: true, });",
+      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: \"confirmed\", organiserOrderPaymentStatus: \"confirmed\", });",
     );
     const alreadyReturnIndex = normalizedAdminHandler.indexOf("return;", alreadyResponseIndex);
     const confirmedResponseIndex = normalizedAdminHandler.indexOf(
-      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: false, });",
+      "res.json({ ok: true, organiserOrderId: result.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: \"confirmed\", organiserOrderPaymentStatus: \"confirmed\", });",
     );
+    const confirmedBranchIndex = normalizedAdminHandler.indexOf('if (result.kind === "confirmed")');
+    const notificationIndex = normalizedAdminHandler.indexOf("notifyUser(", confirmedBranchIndex);
 
     expect(serviceCallIndex).toBeGreaterThanOrEqual(0);
     expect(adminHandler).toContain('source: "admin"');
+    expect(shareLoadIndex).toBeGreaterThanOrEqual(0);
+    expect(serviceCallIndex).toBeGreaterThan(shareLoadIndex);
     expect(rejectionIndex).toBeGreaterThan(serviceCallIndex);
     expect(rejectionResponseIndex).toBeGreaterThan(rejectionIndex);
     expect(rejectionReturnIndex).toBeGreaterThan(rejectionResponseIndex);
@@ -133,16 +147,20 @@ describe("shared wholesale order confirmations", () => {
     expect(alreadyResponseIndex).toBeGreaterThan(alreadyConfirmedIndex);
     expect(alreadyReturnIndex).toBeGreaterThan(alreadyResponseIndex);
     expect(confirmedResponseIndex).toBeGreaterThan(alreadyResponseIndex);
+    expect(confirmedBranchIndex).toBeGreaterThan(alreadyReturnIndex);
+    expect(notificationIndex).toBeGreaterThan(confirmedBranchIndex);
     expect(normalizedAdminHandler).toMatch(
       /res\.status\(result\.code === "not_found" \? 404 : 409\)\.json\(\{ error: result\.message, code: result\.code, \}\);/,
     );
     expect(normalizedAdminHandler).toMatch(
-      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: true, \}\);/,
+      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: true, organiserPaymentStatus: "confirmed", organiserOrderPaymentStatus: "confirmed", \}\);/,
     );
     expect(normalizedAdminHandler).toMatch(
-      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: false, \}\);/,
+      /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: "confirmed", organiserOrderPaymentStatus: "confirmed", \}\);/,
     );
-    expect(adminHandler).not.toContain("loadShare(");
+    expect(adminHandler).toContain("share?.creatorUsername");
+    expect(normalizedAdminHandler.slice(rejectionIndex, alreadyConfirmedIndex)).not.toContain("notifyUser(");
+    expect(normalizedAdminHandler.slice(alreadyConfirmedIndex, confirmedBranchIndex)).not.toContain("notifyUser(");
     expect(adminHandler).not.toContain(".update(wholesaleSharesTable)");
     expect(adminHandler).not.toContain("wholesale_share_organiser_payment_confirmed");
   });

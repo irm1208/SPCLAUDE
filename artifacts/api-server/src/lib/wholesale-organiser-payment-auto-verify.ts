@@ -69,14 +69,13 @@ async function checkShare(row: {
   const currency = (row.organiserPaymentCurrency ?? "USDT").toUpperCase();
   const network  = row.organiserPaymentNetwork ?? "ERC-20";
 
-  const opt =
-    options.find(o => o.currency.toUpperCase() === currency && o.network.toLowerCase() === network.toLowerCase()) ??
-    options.find(o => o.currency.toUpperCase() === currency) ??
-    options[0];
+  const opt = options.find(
+    o => o.currency.toUpperCase() === currency && o.network.toLowerCase() === network.toLowerCase(),
+  );
 
   if (!opt?.walletAddress) {
     console.warn(
-      `[wholesale-organiser-auto-verify] No admin wallet for share ${row.id} (currency=${currency} network=${network})`,
+      `[wholesale-organiser-auto-verify] No exact admin wallet for share ${row.id} (currency=${currency} network=${network})`,
     );
     return;
   }
