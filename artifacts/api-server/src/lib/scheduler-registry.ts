@@ -78,6 +78,27 @@ async function loadOverrides(state: RuntimeState): Promise<void> {
   if (rawEnabled === "false") state.enabled = false;
 }
 
+async function refreshPublishedStatus(state: RuntimeState): Promise<void> {
+  const failures: unknown[] = [];
+  if (state.desc.backlogCount) {
+    try {
+      state.backlogCount = await state.desc.backlogCount();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (state.desc.channelStatus) {
+    try {
+      state.channelStatus = state.desc.channelStatus();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Unable to refresh scheduler status");
+  }
+}
+
 async function tick(state: RuntimeState): Promise<void> {
   if (state.stopped || state.running || !state.enabled) {
     schedule(state);
@@ -85,15 +106,21 @@ async function tick(state: RuntimeState): Promise<void> {
   }
   state.running = true;
   const start = Date.now();
+  let runFailed = false;
   try {
     await state.desc.run();
     state.lastError = null;
-    if (state.desc.backlogCount) state.backlogCount = await state.desc.backlogCount();
-    if (state.desc.channelStatus) state.channelStatus = state.desc.channelStatus();
   } catch (err: any) {
+    runFailed = true;
     state.lastError = err?.message ? String(err.message) : String(err);
     console.error(`[scheduler:${state.desc.name}] Error:`, err);
   } finally {
+    try {
+      await refreshPublishedStatus(state);
+      if (!runFailed) state.lastError = null;
+    } catch (err: any) {
+      if (!runFailed) state.lastError = err?.message ? String(err.message) : String(err);
+    }
     state.lastRunAt = Date.now();
     state.lastDurationMs = state.lastRunAt - start;
     state.running = false;
@@ -181,6 +208,7 @@ export function listSchedulers(): SchedulerStatus[] {
 export async function runSchedulerNow(name: string): Promise<{ ok: boolean; error?: string }> {
   const state = registry.get(name);
   if (!state) return { ok: false, error: "Unknown scheduler" };
+  if (state.stopped) return { ok: false, error: "Scheduler stopped" };
   if (state.running) return { ok: false, error: "Already running" };
   state.running = true;
   const start = Date.now();
@@ -188,13 +216,19 @@ export async function runSchedulerNow(name: string): Promise<{ ok: boolean; erro
   try {
     await state.desc.run();
     state.lastError = null;
-    if (state.desc.backlogCount) state.backlogCount = await state.desc.backlogCount();
-    if (state.desc.channelStatus) state.channelStatus = state.desc.channelStatus();
   } catch (err: unknown) {
     failed = true;
     state.lastError = err instanceof Error ? err.message : String(err);
     console.error(`[scheduler:${name}] Manual run failed:`, err);
   } finally {
+    try {
+      await refreshPublishedStatus(state);
+    } catch (err: unknown) {
+      if (!failed) {
+        failed = true;
+        state.lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
     state.lastRunAt = Date.now();
     state.lastDurationMs = state.lastRunAt - start;
     state.running = false;
