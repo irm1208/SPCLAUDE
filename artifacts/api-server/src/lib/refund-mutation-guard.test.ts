@@ -54,11 +54,16 @@ describe("refund mutation guard", () => {
 
   it("builds a non-throwing NOT EXISTS predicate for idempotent startup repairs", () => {
     const predicate = refundMutableOrderWhereSkipActive("startup-repair");
-    const values = predicate.queryChunks
-      ?.filter((chunk: unknown) => typeof chunk === "object" && chunk !== null && "value" in chunk)
-      .map((chunk: unknown) => String((chunk as { value?: unknown }).value));
-    expect(values?.some(value => value.includes("NOT EXISTS"))).toBe(true);
-    expect(values?.some(value => value.includes("refund_active:"))).toBe(false);
+    const chunkText = (chunk: unknown): string => {
+      if (typeof chunk === "string") return chunk;
+      if (!chunk || typeof chunk !== "object") return "";
+      const value = (chunk as { value?: unknown }).value;
+      const nested = (chunk as { queryChunks?: unknown[] }).queryChunks;
+      return `${typeof value === "string" ? value : Array.isArray(value) ? value.map(chunkText).join("") : ""}${nested?.map(chunkText).join("") ?? ""}`;
+    };
+    const serialized = predicate.queryChunks?.map(chunkText).join("") ?? "";
+    expect(serialized).toContain("NOT EXISTS");
+    expect(serialized).not.toContain("refund_active:");
   });
 
   it("recognizes the fail-closed database branch used by low-level writers", () => {
@@ -110,7 +115,7 @@ describe("refund mutation guard", () => {
     expect(refundMutationHttpStatus({
       code: "22P02",
       message: 'invalid input syntax for type integer: "refund_active:order-5"',
-    })).toBeNull();
+    })).toBe(409);
   });
 
   it("locks and checks every bulk order in deterministic order, rejecting the whole batch", async () => {

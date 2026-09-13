@@ -1,4 +1,3 @@
-import { refundMutableOrderWhere } from "./refund-mutation-guard";
 import {
   accountsTable,
   adminPendingChallengesTable,
@@ -14,10 +13,12 @@ import { eq, isNull, sql } from "drizzle-orm";
 const INCIDENT_FLAG = "SECURITY_INCIDENT_2026_09_06_REMEDIATE";
 const INCIDENT_MARKER = "security_incident_2026_09_06_remediated";
 
-export async function runSecurityIncidentRemediation(): Promise<void> {
+export async function runSecurityIncidentRemediation(
+  database: Pick<typeof db, "transaction"> = db,
+): Promise<void> {
   if (process.env[INCIDENT_FLAG] !== "true") return;
 
-  await db.transaction(async tx => {
+  await database.transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${INCIDENT_MARKER}))`);
 
     const [alreadyApplied] = await tx
@@ -61,7 +62,7 @@ export async function runSecurityIncidentRemediation(): Promise<void> {
       await tx
         .update(ordersTable)
         .set({ pin: sql`md5(${ordersTable.id} || gen_random_uuid()::text)` })
-        .where(refundMutableOrderWhere(eq(ordersTable.pin, compromisedOrder.pin)));
+        .where(eq(ordersTable.pin, compromisedOrder.pin));
     }
 
     await tx.insert(auditLogsTable).values({
