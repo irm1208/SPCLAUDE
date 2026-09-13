@@ -32,6 +32,29 @@ export interface GroupBuyRefundQueueProps {
   onUpdated?: () => void | Promise<void>;
 }
 
+const REFUND_QUEUE_TIMEOUT_MS = 15_000;
+
+export async function fetchRefundQueueJson(
+  url: string,
+  init: RequestInit,
+  timeoutMs = REFUND_QUEUE_TIMEOUT_MS,
+): Promise<{ response: Response; body: unknown }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const body: unknown = await response.json().catch(() => null);
+    return { response, body };
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function errorText(response: Response, body: unknown): string {
   if (body && typeof body === "object") {
     const record = body as Record<string, unknown>;
@@ -70,9 +93,11 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
   const [pollingId, setPollingId] = useState<string | null>(null);
 
   const basePath = role === "admin" ? "/api/admin/group-buy-refunds" : "/api/organiser/group-buy-refunds";
-  const headers = useMemo(() => role === "admin"
-    ? { "x-admin-secret": adminSecret ?? "" }
-    : {}, [role, adminSecret]);
+  const headers = useMemo<Record<string, string>>(() => {
+    const requestHeaders: Record<string, string> = {};
+    if (role === "admin") requestHeaders["x-admin-secret"] = adminSecret ?? "";
+    return requestHeaders;
+  }, [role, adminSecret]);
 
   const load = useCallback(async (silent = false) => {
     if (role === "organiser" && !groupBuyId) {
@@ -84,11 +109,10 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
     const params = new URLSearchParams({ limit: "100" });
     if (groupBuyId) params.set("groupBuyId", groupBuyId);
     try {
-      const response = await fetch(`${basePath}?${params.toString()}`, {
+      const { response, body } = await fetchRefundQueueJson(`${basePath}?${params.toString()}`, {
         credentials: role === "organiser" ? "include" : "omit",
         headers,
       });
-      const body: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(errorText(response, body));
       setRows(Array.isArray(body) ? body as GroupBuyRefundQueueItem[] : []);
     } catch (cause) {
@@ -202,7 +226,14 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
         </button>
       </div>
 
-      {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Unable to load refunds: {error}</p>}
+      {error && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+          <span>Unable to load refunds: {error}</span>
+          <button type="button" onClick={() => void load()} disabled={loading} className="rounded-md border border-red-300 bg-white px-2.5 py-1 font-bold text-red-700 disabled:opacity-50">
+            Retry
+          </button>
+        </div>
+      )}
       {actionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Refund action failed: {actionError}</p>}
       {loading && rows.length === 0 && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
       {!loading && !error && rows.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">No refund requests.</p>}

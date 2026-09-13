@@ -34,9 +34,11 @@ kill_port() {
 # Fall back to fuser when it exists; otherwise use the /proc-based killer.
 if command -v fuser >/dev/null 2>&1; then
   fuser -k 5000/tcp 2>/dev/null || true
+  fuser -k 8080/tcp 2>/dev/null || true
   fuser -k 21504/tcp 2>/dev/null || true
 else
   kill_port 5000 || true
+  kill_port 8080 || true
   kill_port 21504 || true
 fi
 sleep 1
@@ -104,7 +106,7 @@ if [ -z "${AI_INTEGRATIONS_GEMINI_API_KEY}" ] && [ -n "${GEMINI_API_KEY}" ]; the
 fi
 
 echo "[start] Starting API server on port ${API_PORT:-8080}..."
-NODE_ENV=development pnpm --filter @workspace/api-server run dev &
+PORT=8080 NODE_ENV=development pnpm --filter @workspace/api-server run dev &
 
 echo "[start] Starting frontend on port 21504..."
 BASE_PATH=/ PORT=21504 pnpm --filter @workspace/peps-anonymous run dev

@@ -23,6 +23,17 @@ running makes them FAIL with `DIDNT_OPEN_A_PORT` (8080 / 21504 already bound) â€
 spurious, harmless failure, not a real bug. To reload env/secrets, restart only
 **Start application** (and mockup-sandbox if needed).
 
+The Start application workflow injects `PORT=5000` for preview readiness. Any API
+child launched by `start.sh` must explicitly override this with `PORT=8080`; logging
+an `API_PORT` default without exporting `PORT` makes the API inherit 5000 and leaves
+the duplicate standalone workflow serving 8080.
+
+**Why:** This once produced a self-proxy request loop where one API endpoint never
+returned, while other endpoints appeared healthy through the duplicate process.
+
+**How to apply:** Keep API child commands explicit about `PORT=8080`, free 8080 in
+startup cleanup, and verify the listener's parent is the canonical workflow.
+
 Agent shell commands can retain the environment snapshot from before a secret was
 added or replaced, even across later shell invocations. Repeated format checks in
 that stale shell can therefore keep reporting the old value.

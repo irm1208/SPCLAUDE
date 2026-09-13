@@ -16,6 +16,7 @@ test("refund queue preserves exact manual-processing labels and endpoints", () =
   assert.match(queue, /credentials: role === "organiser" \? "include" : "omit"/);
   assert.match(queue, /body: JSON\.stringify\(\{ txid \}\)/);
   assert.match(queue, /setInterval/);
+  assert.match(queue, /\bRetry\b/);
 });
 
 test("queue is navigable from admin detail and selected organiser group buy", () => {
