@@ -7,7 +7,8 @@ import {
 } from "@workspace/db";
 import { db } from "@workspace/db";
 import {
-  evaluateRefundEligibility,
+  evaluateRefundRequestAvailability,
+  isSupportedRefundPaymentRail,
   type RefundEligibilityCode,
   type RefundEligibilityOrder,
   type ServerPaymentEvidenceProof,
@@ -110,16 +111,17 @@ function buildView(
     return { canRequest: false, ineligibilityReasonCode: "not_group_buy_order", preferredAsset: "USDC", preferredNetwork: "Ethereum ERC-20", current };
   }
   const proof = proofFromAudit(order, audits);
-  const preferredAsset = proof && ["USDC", "USDT"].includes(String(proof.currency).toUpperCase())
-    && ["ERC20", "ERC20ETHEREUM", "ETHEREUM", "ETHEREUMMAINNET", "ETHEREUMERC20"].includes(String(proof.network).toUpperCase().replace(/[^A-Z0-9]/g, ""))
-    ? String(proof.currency).toUpperCase() as "USDC" | "USDT"
+  const paymentCurrency = String(proof?.currency ?? order.paymentCryptoCurrency ?? "").toUpperCase();
+  const paymentNetwork = String(proof?.network ?? order.paymentCryptoNetwork ?? "");
+  const preferredAsset = ["USDC", "USDT"].includes(paymentCurrency)
+    && isSupportedRefundPaymentRail(paymentCurrency, paymentNetwork)
+    ? paymentCurrency as "USDC" | "USDT"
     : "USDC";
-  const eligibility = evaluateRefundEligibility({
+  const eligibility = evaluateRefundRequestAvailability({
     accountId,
     order,
     groupBuy,
     activeRefund: active ? { id: String(active.id), status: String(active.status) } : null,
-    paymentEvidenceProof: proof,
   });
   return {
     canRequest: eligibility.eligible && groupBuy.cryptoRefundsEnabled === true,

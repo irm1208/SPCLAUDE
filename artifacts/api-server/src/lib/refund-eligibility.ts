@@ -64,6 +64,8 @@ export type RefundEligibilityInput = {
   activeRefund: { id: string; status: string } | null | undefined;
 };
 
+export type RefundRequestAvailabilityInput = Omit<RefundEligibilityInput, "paymentEvidenceProof">;
+
 function ineligible(reasonCode: RefundEligibilityCode): RefundEligibility {
   return { eligible: false, reasonCode, amountUsd: null };
 }
@@ -151,11 +153,24 @@ function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder, proof: S
   );
 }
 
+function hasStoredAuthoritativePaymentReference(order: RefundEligibilityOrder): boolean {
+  const hashes = [
+    order.paymentTxHash,
+    ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),
+  ];
+  return hashes.some(hash =>
+    isAuthoritativeTransactionHash(hash, order.paymentCryptoCurrency, order.paymentCryptoNetwork),
+  );
+}
+
 /**
  * Pure, server-owned eligibility check. Request-body amounts, screenshots, and
  * test payment fields are intentionally absent from this contract.
  */
-export function evaluateRefundEligibility(input: RefundEligibilityInput): RefundEligibility {
+function evaluateRefundEligibilityWithEvidence(
+  input: RefundRequestAvailabilityInput,
+  hasPaymentEvidence: boolean,
+): RefundEligibility {
   const { order } = input;
 
   if (
@@ -179,7 +194,7 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
   if (
     order.paymentStatus !== "confirmed"
     || order.paymentConfirmedAt == null
-    || !hasAuthoritativePaymentEvidence(order, input.paymentEvidenceProof)
+    || !hasPaymentEvidence
   ) {
     return ineligible("ineligible_payment_evidence");
   }
@@ -211,4 +226,29 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
     reasonCode: null,
     amountUsd: centsToUsdString(totalCents),
   };
+}
+
+/**
+ * Strict creation-time check. The caller must have re-verified the stored
+ * transaction server-side before a refund request can be persisted.
+ */
+export function evaluateRefundEligibility(input: RefundEligibilityInput): RefundEligibility {
+  return evaluateRefundEligibilityWithEvidence(
+    input,
+    !!input.order && hasAuthoritativePaymentEvidence(input.order, input.paymentEvidenceProof),
+  );
+}
+
+/**
+ * Customer-page visibility check. A confirmed historical crypto order can show
+ * the request form from its server-owned payment fields; submission still runs
+ * the strict verifier-backed check above.
+ */
+export function evaluateRefundRequestAvailability(
+  input: RefundRequestAvailabilityInput,
+): RefundEligibility {
+  return evaluateRefundEligibilityWithEvidence(
+    input,
+    !!input.order && hasStoredAuthoritativePaymentReference(input.order),
+  );
 }

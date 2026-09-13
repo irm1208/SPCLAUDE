@@ -15,10 +15,15 @@ test("customer refund view remains owner-scoped and safe", () => {
 test("legacy lookup and POST use shared customer formatter", () => {
   assert.match(routes, /getCustomerRefundView\(order\.id, tg\)/);
   assert.match(routes, /\.\.\.refundView/);
-  assert.match(refundRoutes, /res\.status\(201\)\.json\(await getCustomerRefundView/);
+  assert.match(refundRoutes, /const view = await getCustomerRefundView/);
+  assert.match(refundRoutes, /res\.status\(201\)\.json\(\{\s*\.\.\.view/);
 });
-test("preferred asset is derived from verified persisted payment proof", () => {
+test("preferred asset uses audited proof with a stored-payment fallback", () => {
   assert.match(view, /referenceSource === "payment"/);
   assert.match(view, /txKind === "crypto"/);
-  assert.match(view, /proof\.currency/);
+  assert.match(view, /proof\?\.currency \?\? order\.paymentCryptoCurrency/);
+  assert.match(view, /isSupportedRefundPaymentRail/);
+});
+test("customer visibility uses stored-payment availability while submission keeps live verification", () => {
+  assert.match(view, /evaluateRefundRequestAvailability/);
 });

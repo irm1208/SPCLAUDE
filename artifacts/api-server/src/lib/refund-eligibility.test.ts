@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRefundEligibility, type ServerPaymentEvidenceProof } from "./refund-eligibility";
+import {
+  evaluateRefundEligibility,
+  evaluateRefundRequestAvailability,
+  type ServerPaymentEvidenceProof,
+} from "./refund-eligibility";
 import type { RefundRequestInput } from "./refund-money";
 
 const base = {
@@ -161,6 +165,33 @@ describe("refund eligibility", () => {
       reasonCode: "ineligible_payment_evidence",
       amountUsd: null,
     });
+  });
+
+  it("shows the request action for a confirmed historical crypto payment before live re-verification", () => {
+    expect(evaluateRefundRequestAvailability({
+      accountId: base.accountId,
+      order: {
+        ...base.order,
+        paymentCryptoCurrency: "USDC",
+        paymentCryptoNetwork: "ERC-20 (Ethereum)",
+      },
+      groupBuy: base.groupBuy,
+      activeRefund: null,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
+    });
+
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentCryptoCurrency: "USDC",
+        paymentCryptoNetwork: "ERC-20 (Ethereum)",
+      },
+      paymentEvidenceProof: null,
+    }).reasonCode).toBe("ineligible_payment_evidence");
   });
 
 it.each(["9.98", "10.00"])("rejects verifier amount %s even when it is near the expected amount", (verifiedAmountUsd) => {
