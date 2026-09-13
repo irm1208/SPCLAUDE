@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
@@ -310,7 +311,7 @@ export async function resolveLockedUsdPerCoin(
     await db
       .update(ordersTable)
       .set({ paymentCryptoCurrency: currency.toUpperCase(), paymentCryptoRate: String(live) })
-      .where(eq(ordersTable.id, order.id));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
   }
   return live;
 }
@@ -1317,7 +1318,7 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   if (curChanged || netChanged) {
     await db.update(ordersTable)
       .set({ paymentCryptoCurrency: currency.toUpperCase(), paymentCryptoNetwork: network })
-      .where(eq(ordersTable.id, order.id));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
   }
 
   // Lock the USD total (fiat → USD). Re-use a cached value only when it is
@@ -1331,7 +1332,7 @@ router.post("/orders/:id/lock-usdt-rate", async (req, res): Promise<void> => {
   );
   const usdAmount = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentUsd;
   if (shouldRefreshPrimaryPaymentLock(order.paymentStatus ?? "unpaid", lockedUsd, currentUsd)) {
-    await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(eq(ordersTable.id, order.id));
+    await db.update(ordersTable).set({ paymentUsdAmount: String(usdAmount) }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
   }
 
   // Lock the coin price (USD → coin). Stablecoins are 1:1; for volatile coins we
@@ -1408,7 +1409,7 @@ router.post("/orders/:id/generate-test", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentTestAmount: String(testAmount), paymentStatus: "test_ready" })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
 
   res.json({
@@ -1487,7 +1488,7 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set({ testPaymentTxHash: cleanHash, paymentStatus: "test_confirmed" })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
 
   writeLog("payment", "info", "payment_test_submitted", `Test payment confirmed for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountUsdt: result.amountUsdt, currency, network }, req.ip).catch(() => {});
@@ -1637,7 +1638,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   const lockedUsdTotal = order.paymentUsdAmount ? parseFloat(String(order.paymentUsdAmount)) : null;
   const lockIsStale = lockedUsdTotal != null && Math.abs(lockedUsdTotal - currentGrandTotalUsd) > currentGrandTotalUsd * 0.03;
   if (lockIsStale) {
-    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
+    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
   }
   const grandTotalUsd = (lockedUsdTotal != null && !lockIsStale) ? lockedUsdTotal : currentGrandTotalUsd;
 
@@ -1667,7 +1668,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
       await db
         .update(ordersTable)
         .set({ paymentTxHash: cleanHash, paymentStatus: "pending_confirmation" })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       writeLog("payment", "warn", "payment_underpayment", `Underpayment for order ${order.code}: paid ${result.amountPaid}, expected ${expectedAmount} ${currency}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountPaid: result.amountPaid, shortfall: result.shortfall, expectedAmount, currency, network, reason: "underpayment" }, req.ip).catch(() => {});
       await logCustomerActivity({
         telegramUsername: order.telegramUsername,
@@ -1686,7 +1687,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
       await db
         .update(ordersTable)
         .set({ paymentTxHash: cleanHash, paymentStatus: "pending_confirmation" })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       writeLog("payment", "info", "payment_manual", `Manual payment queued for order ${order.code} (${currency}/${network})`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, reason: result.reason }, req.ip).catch(() => {});
       firePaymentNotifications(order, "submitted", "Crypto (Manual Confirmation)").catch(() => {});
     } else {
@@ -1699,7 +1700,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
       await db
         .update(ordersTable)
         .set({ paymentTxHash: cleanHash, paymentStatus: nextStatus })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       writeLog("payment", "warn", "payment_failed", `Tx verification failed for order ${order.code}: ${result.reason}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, expectedAmount, pending: result.pending ?? false, reason: result.reason }, req.ip).catch(() => {});
     }
     res.json({ verified: false, pending: result.pending ?? false, reason: result.reason });
@@ -1711,7 +1712,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
     // amountDue is an independent post-payment balance. Do not erase one that
     // was added after this primary payment was initiated.
     .set({ paymentStatus: "confirmed", paymentTxHash: cleanHash, paymentConfirmedAt: new Date() })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
 
   writeLog("payment", "info", "payment_confirmed", `Payment confirmed for order ${order.code} — ${result.amountUsdt} ${currency}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountUsdt: result.amountUsdt, grandTotal: order.grandTotal, currency, network, reason: "payment confirmed" }, req.ip).catch(() => {});
@@ -1755,7 +1756,7 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
     if (order.paymentStatus !== "pending_confirmation" && order.paymentStatus !== "confirmed") {
       await db.update(ordersTable)
         .set({ paymentStatus: "pending_confirmation" })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       writeLog("payment", "info", "anonpay_session_restored", `Restored AnonPay session for order ${order.code} after page refresh`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId: existingId }, req.ip).catch(() => {});
     }
     res.json({ iframeUrl: existingIframeUrl, paymentId: existingId, existing: true }); return;
@@ -1870,7 +1871,7 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
   await db
     .update(ordersTable)
     .set({ paymentTxHash: storedId })
-    .where(eq(ordersTable.id, req.params.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
 
   writeLog("payment", "info", "anonpay_initiated", `AnonPay session created for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, anonPayTicker, anonPayNetwork }, req.ip).catch(() => {});
 
@@ -1899,7 +1900,7 @@ router.post("/orders/:id/confirm-anonpay-initiation", async (req, res): Promise<
   await db
     .update(ordersTable)
     .set({ paymentStatus: "pending_confirmation" })
-    .where(eq(ordersTable.id, req.params.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
 
   writeLog("payment", "info", "anonpay_initiation_confirmed", `Customer confirmed AnonPay initiation for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, grandTotal: order.grandTotal }, req.ip).catch(() => {});
   await logCustomerActivity({
@@ -1934,7 +1935,7 @@ router.post("/orders/:id/cancel-anonpay", async (req, res): Promise<void> => {
   await db
     .update(ordersTable)
     .set({ paymentTxHash: null, paymentStatus: "unpaid" })
-    .where(eq(ordersTable.id, req.params.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
 
   writeLog("payment", "info", "anonpay_cancelled", `Customer cancelled AnonPay session for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername }, req.ip).catch(() => {});
 
@@ -1968,7 +1969,7 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
     if (order.paymentStatus === "unpaid") {
       await db.update(ordersTable)
         .set({ paymentStatus: "pending_confirmation" })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
     } else {
       res.status(400).json({ error: "Order has not been submitted for AnonPay confirmation yet." }); return;
     }
@@ -2016,7 +2017,7 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
         // amountDue is an independent post-payment balance. Do not erase one
         // that was added after this primary payment was initiated.
         .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
-        .where(eq(ordersTable.id, req.params.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       paymentStatus = "confirmed";
 
       writeLog("payment", "info", "anonpay_confirmed", `AnonPay auto-confirmed for order ${order.code} (Trocador: ${trocStatus})`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, trocStatus, trocOutgoingHash: trocOutgoingHash || null }).catch(() => {});
@@ -2206,7 +2207,7 @@ router.patch("/admin/orders/:id/payment-status", async (req, res): Promise<void>
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentStatus })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
   if (paymentStatus === "confirmed") maybeSubmitSharedOrder(updated.id).catch(() => {});
   res.json({ id: updated.id, paymentStatus: updated.paymentStatus });

@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
@@ -1927,7 +1928,7 @@ router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<vo
         adminFee: u.resolvedAdminFee.toFixed(2),
         adminFeeLabel: u.resolvedAdminFeeLabel,
       } as any)
-      .where(and(eq(ordersTable.id, u.orderId), eq(ordersTable.groupBuyId, id)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.id, u.orderId), eq(ordersTable.groupBuyId, id))));
     }
     await tx
       .update(groupBuysTable)
@@ -1984,7 +1985,7 @@ router.post("/admin/group-buys/:id/backfill-balance-due", async (req, res): Prom
     await db
       .update(ordersTable)
       .set({ amountDue: String(o.vendorShipping) } as any)
-      .where(eq(ordersTable.id, o.id));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, o.id)));
   }
 
   res.json({
@@ -2529,7 +2530,7 @@ router.post("/admin/group-buys/:gbId/backfill-country-legs", async (req, res): P
     await db
       .update(ordersTable)
       .set({ countryLegId: legId })
-      .where(and(eq(ordersTable.id, row.orderId), isNull(ordersTable.countryLegId)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.id, row.orderId), isNull(ordersTable.countryLegId))));
 
     // Backfill membership once per user
     const memberKey = `${lookupKey}::${gbId}`;
@@ -2632,10 +2633,10 @@ router.post("/admin/group-buys/:gbId/backfill-admin-fee", async (req, res): Prom
         adminFeeLabel: resolved.label,
         grandTotal: sql`${ordersTable.grandTotal} + ${resolved.amount}`,
       })
-      .where(and(
+      .where(refundMutableOrderWhere(and(
         eq(ordersTable.id, order.id),
         sql`COALESCE(${ordersTable.adminFee}, 0) = 0`,
-      ))
+      )))
       .returning({ id: ordersTable.id });
     updated += changed.length;
   }
@@ -2774,7 +2775,7 @@ router.patch("/admin/group-buys/:gbId/orders/:orderId/route", async (req, res): 
       directShippingRequested: routingType === "direct",
       ...(body.reshipperUsername !== undefined && { reshipperUsername: body.reshipperUsername ?? null }),
     })
-    .where(eq(ordersTable.id, orderId));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   // Record routing history
   await db.insert(routingHistoryTable).values({
@@ -2839,7 +2840,7 @@ router.post("/admin/group-buys/:gbId/bulk-route", async (req, res): Promise<void
 
   await db.update(ordersTable)
     .set(updateSet)
-    .where(inArray(ordersTable.id, existingOrders.map(o => o.id)));
+    .where(refundMutableOrderWhere(inArray(ordersTable.id, existingOrders.map(o => o.id))));
 
   // Batch insert routing history
   const historyRows = existingOrders.map(o => ({
@@ -2884,7 +2885,7 @@ router.patch("/admin/group-buys/:gbId/country-legs/:legId/batch-lock", async (re
   const now = new Date();
   await db.update(ordersTable)
     .set({ batchLocked: locked, batchLockedAt: locked ? now : null })
-    .where(and(eq(ordersTable.countryLegId, legId), isNull(ordersTable.deletedAt)));
+    .where(refundMutableOrderWhere(and(eq(ordersTable.countryLegId, legId), isNull(ordersTable.deletedAt))));
 
   res.json({ ok: true, legId, locked });
 });
@@ -3010,7 +3011,7 @@ router.patch("/admin/group-buys/:gbId/orders/:orderId/country-leg", async (req, 
     updates.reshipperUsername = reshipperUsername ?? null;
   }
 
-  await db.update(ordersTable).set(updates).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set(updates).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog(
     "change", "info", "order_leg_reassigned",
@@ -3094,7 +3095,7 @@ router.post("/admin/group-buys/:gbId/routing-undo", async (req, res): Promise<vo
     routingType: h.fromRoutingType as "direct" | "reshipper" | "unrouted" | null,
     reshipperUsername: h.fromReshipperUsername,
     countryLegId: h.fromCountryLegId,
-  }).where(eq(ordersTable.id, orderId));
+  }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   // Log the undo
   await db.insert(routingHistoryTable).values({
@@ -3349,10 +3350,10 @@ router.post("/admin/group-buys/:gbId/fs3-submit", async (req, res): Promise<void
       if (eligible.length === 0) throw new Error("NO_ELIGIBLE_ORDERS");
       const now = new Date();
       const eligibleIds = eligible.map(o => o.id);
-      await tx.update(ordersTable).set({ batchLocked: true, batchLockedAt: now }).where(inArray(ordersTable.id, eligibleIds));
+      await tx.update(ordersTable).set({ batchLocked: true, batchLockedAt: now }).where(refundMutableOrderWhere(inArray(ordersTable.id, eligibleIds)));
       const toProcess = eligible.filter(o => o.paymentStatus === "confirmed" && o.status === "Submitted");
       if (toProcess.length > 0) {
-        await tx.update(ordersTable).set({ status: "Processing" }).where(inArray(ordersTable.id, toProcess.map(o => o.id)));
+        await tx.update(ordersTable).set({ status: "Processing" }).where(refundMutableOrderWhere(inArray(ordersTable.id, toProcess.map(o => o.id))));
       }
       const submissionId = randomUUID();
       await tx.insert(fs3SubmissionsTable).values({

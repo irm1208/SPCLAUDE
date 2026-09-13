@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "./refund-mutation-guard";
 import {
   accountsTable,
   adminPendingChallengesTable,
@@ -57,7 +58,7 @@ export async function runSecurityIncidentRemediation(): Promise<void> {
       await tx
         .update(ordersTable)
         .set({ pin: sql`md5(${ordersTable.id} || gen_random_uuid()::text)` })
-        .where(eq(ordersTable.pin, compromisedOrder.pin));
+        .where(refundMutableOrderWhere(eq(ordersTable.pin, compromisedOrder.pin)));
     }
 
     await tx.insert(auditLogsTable).values({

@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction, type RequestHandler } from "express";
 import { requireAdmin } from "../middleware/require-admin";
 import { db } from "@workspace/db";
@@ -423,7 +424,7 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
     // GB-scoped so callers can never confirm orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
 
     res.json({ ok: true, confirmed: scopedOrderIds.length });
   } catch (e) {
@@ -490,7 +491,7 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
     // GB-scoped so callers can never un-dispatch orders outside the URL group buy.
     await db.update(ordersTable)
       .set({ status: "Processing", updatedAt: new Date(), dispatchConfirmedAt: null, dispatchedByReshipper: null })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, scopedOrderIds))));
 
     res.json({ ok: true, undispatched: scopedOrderIds.length });
   } catch (e) {
@@ -511,7 +512,7 @@ router.post(`${cfg.prefix}/:gbId/reattribute`, async (req, res) => {
     const normReshipper = reshipper ? String(reshipper).trim() : null;
     await db.update(ordersTable)
       .set({ dispatchedByReshipper: normReshipper, updatedAt: new Date() })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
     res.json({ ok: true, updated: orderIds.length });
   } catch (e) {
     console.error("[dispatch reattribute]", e);
@@ -600,7 +601,7 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
 
     await db.update(ordersTable)
       .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper: reshipper })
-      .where(inArray(ordersTable.id, toMark));
+      .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
@@ -635,7 +636,7 @@ router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
 
     await db.update(ordersTable)
       .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
-      .where(inArray(ordersTable.id, toMark));
+      .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
@@ -1387,7 +1388,7 @@ router.post(`${cfg.prefix}/:gbId/archive-orders`, async (req, res): Promise<void
   try {
     await db.update(ordersTable)
       .set({ dispatchArchivedAt: archive ? new Date() : null })
-      .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, orderIds))));
     res.json({ ok: true, updated: orderIds.length, archived: archive });
   } catch (e) {
     console.error("[dispatch archive-orders]", e);

@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createHash, timingSafeEqual } from "crypto";
@@ -413,7 +414,7 @@ router.post("/orders/claim-pin", async (req, res): Promise<void> => {
 
   // Update ALL orders for this username that still have the default PIN
   for (const o of defaultPinOrders) {
-    await db.update(ordersTable).set({ pin: String(newPin) }).where(eq(ordersTable.id, o.id));
+    await db.update(ordersTable).set({ pin: String(newPin) }).where(refundMutableOrderWhere(eq(ordersTable.id, o.id)));
   }
 
   await writeLog("login", "info", "pin_claimed",
@@ -1029,7 +1030,7 @@ router.post("/orders", async (req, res): Promise<void> => {
               quantity: mergedQuantity.toFixed(2),
               lineTotal: mergedLineTotal.toFixed(2),
             })
-            .where(eq(orderLineItemsTable.id, matchingItem.id))
+            .where(refundMutableOrderWhere(eq(orderLineItemsTable.id, matchingItem.id), orderLineItemsTable.orderId))
             .returning();
           Object.assign(matchingItem, updatedItem);
         } else {
@@ -1118,7 +1119,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           balanceScreenshot: null,
           balanceConfirmedAt: null,
         })
-        .where(eq(ordersTable.id, lockedParent.id))
+        .where(refundMutableOrderWhere(eq(ordersTable.id, lockedParent.id)))
         .returning();
 
       if (resolvedCouponId && appliedCouponCode) {
@@ -1479,7 +1480,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
       await tx.update(ordersTable)
         .set({ creditsApplied: appliedCreditsUsd as unknown as number })
-        .where(eq(ordersTable.id, orderId));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
       await tx.insert(creditTransactionsTable).values({
         accountUsername: sessionUsernameForCredits,
         amount: `-${appliedCreditsUsd}` as unknown as number,
@@ -1867,7 +1868,7 @@ router.patch("/orders/:orderId/pin", async (req, res): Promise<void> => {
     return;
   }
 
-  await db.update(ordersTable).set({ pin: String(newPin) }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ pin: String(newPin) }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   await writeLog("login", "info", "pin_changed",
     `PIN changed for ${tg} (order ${order.code})`,
@@ -1894,7 +1895,7 @@ router.post("/orders/:orderId/inpost-qr", qrUploadMiddleware, async (req, res): 
   if (!order || order.telegramUsername.toLowerCase() !== tg || !safeEqual(order.pin, pin.trim())) {
     res.status(401).json({ error: "Invalid credentials" }); return;
   }
-  await db.update(ordersTable).set({ inpostQrCode: qrCode }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ inpostQrCode: qrCode }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
   res.json({ ok: true });
 });
 
@@ -1914,7 +1915,7 @@ router.post("/orders/:orderId/royal-mail-qr", qrUploadMiddleware, async (req, re
   if (!order || order.telegramUsername.toLowerCase() !== tg || !safeEqual(order.pin, pin.trim())) {
     res.status(401).json({ error: "Invalid credentials" }); return;
   }
-  await db.update(ordersTable).set({ royalMailQrCode: qrCode }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ royalMailQrCode: qrCode }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
   res.json({ ok: true });
 });
 
@@ -1941,7 +1942,7 @@ router.post("/orders/:orderId/qr-upload", qrUploadMiddleware, async (req, res): 
     res.status(401).json({ error: "Invalid credentials" }); return;
   }
   const existing: Record<string, string> = (order.qrCodes as Record<string, string> | null) ?? {};
-  await db.update(ordersTable).set({ qrCodes: { ...existing, [courierId]: qrCode } }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ qrCodes: { ...existing, [courierId]: qrCode } }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
   res.json({ ok: true });
 });
 
@@ -2304,10 +2305,10 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
         shippingCountry: clientShippingCountry ? String(clientShippingCountry).trim().slice(0, 128) : null,
       }),
     })
-    .where(eq(ordersTable.id, rawId))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, rawId)))
     .returning();
 
-  await db.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
+  await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, rawId), orderLineItemsTable.orderId));
 
   const lineItemsToInsert = clientLineItems.map((li: {
     productId: string; productName: string; quantity: number; unitPrice: number;
@@ -2475,7 +2476,7 @@ router.post("/orders/:orderId/shipping-address", async (req, res): Promise<void>
       ...(shippingPostcode ? { shippingPostcode: String(shippingPostcode).trim().slice(0, 20) } : {}),
       ...(shippingCountry ? { shippingCountry: String(shippingCountry).trim().slice(0, 128) } : {}),
     })
-    .where(eq(ordersTable.id, orderId))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)))
     .returning({ shippingName: ordersTable.shippingName, shippingAddress: ordersTable.shippingAddress });
 
   writeLog("order", "info", "shipping_address_updated",
@@ -2537,7 +2538,7 @@ router.patch("/orders/change-username", async (req, res): Promise<void> => {
   }
 
   // Rename across all orders
-  await db.update(ordersTable).set({ telegramUsername: newTg }).where(tgEq(tg));
+  await db.update(ordersTable).set({ telegramUsername: newTg }).where(refundMutableOrderWhere(tgEq(tg)));
 
   writeLog("order", "info", "username_changed",
     `Customer changed username from ${tg} to ${newTg}`,
@@ -2654,7 +2655,7 @@ router.delete("/orders/:orderId", async (req, res): Promise<void> => {
 
   await db.update(ordersTable)
     .set({ deletedAt: new Date(), deletedBy: "customer" })
-    .where(eq(ordersTable.id, orderId));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog("order", "warn", "order_deleted_by_customer",
     `Customer deleted order ${order.code} (${order.telegramUsername}, status: ${order.status})`,
@@ -2855,7 +2856,7 @@ router.post("/orders/:id/payment-screenshot", async (req, res): Promise<void> =>
   await db
     .update(ordersTable)
     .set({ paymentScreenshot: s })
-    .where(eq(ordersTable.id, id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   writeLog("change", "info", "payment_screenshot_uploaded",
     `Payment screenshot uploaded for order #${order.code}`,
@@ -2959,7 +2960,7 @@ router.post("/orders/:id/confirm-fiat", async (req, res): Promise<void> => {
       paymentTxHash: `fiat:${method}`,
       paymentRejectionReason: null,
     })
-    .where(eq(ordersTable.id, id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   writeLog("change", "info", "fiat_payment_claimed", `Buyer claimed ${method} payment for order #${order.code}`, { orderId: id, method }).catch(() => {});
 

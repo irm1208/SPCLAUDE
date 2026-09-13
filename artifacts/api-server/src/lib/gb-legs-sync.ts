@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Group buy country-legs auto-sync — every 2 hours, loops through all active
  * group buys that have country legs enabled and backfills any members/orders
@@ -82,11 +83,11 @@ async function runGbLegsSync(): Promise<void> {
       const updated = await db
         .update(ordersTable)
         .set({ countryLegId: legId })
-        .where(and(
+        .where(refundMutableOrderWhere(and(
           eq(ordersTable.groupBuyId, gb.id),
           eq(ordersTable.telegramUsername, row.accountId),
           sql`${ordersTable.countryLegId} is null`,
-        ))
+        )))
         .returning({ id: ordersTable.id });
       totalOrders += updated.length;
     }

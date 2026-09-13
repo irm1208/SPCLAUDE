@@ -1,3 +1,7 @@
+import {
+  assertNoActiveRefund,
+  refundMutableOrderWhere,
+} from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -698,12 +702,12 @@ router.delete("/account/group-buys/:gbId/leave", requireAccount, async (req, res
 
   await db.update(ordersTable)
     .set({ deletedAt: new Date(), deletedBy: "leave_gb" })
-    .where(
+    .where(refundMutableOrderWhere(
       and(
         eq(ordersTable.groupBuyId, gbId),
         sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
       )
-    );
+    ));
 
   // Log each deleted order individually
   for (let i = 0; i < ordersToDelete.length; i++) {
@@ -803,6 +807,7 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
       .for("update");
     if (!orderRow) return { kind: "order_not_found" as const };
     if (normalizeTg(orderRow.telegramUsername) !== normalizeTg(acct.telegramUsername)) return { kind: "order_not_owned" as const };
+    await assertNoActiveRefund(tx, orderId);
     const availableCents = usdToCents(String(acct.credits ?? "0"));
     const [prior] = await tx.select({ amount: creditTransactionsTable.amount, orderId: creditTransactionsTable.orderId })
       .from(creditTransactionsTable)
@@ -839,10 +844,10 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
       const nextCreditsAppliedCents = orderCreditsAppliedCents + deductedCents;
       await tx.update(ordersTable)
         .set({ creditsApplied: centsToUsdString(nextCreditsAppliedCents) as unknown as number })
-        .where(eq(ordersTable.id, orderId));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
       if (orderGrandTotalCents <= nextCreditsAppliedCents && orderRow.paymentStatus !== "confirmed") {
         await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-          .where(eq(ordersTable.id, orderId));
+          .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
         confirmedOrder = true;
       }
     }
@@ -2066,10 +2071,10 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
         // amount since the total changed, mirroring the edit-path crypto-lock reset.
         await db.update(ordersTable)
           .set({ vendorShipping: snapshotShipping.toFixed(2), grandTotal: expectedTotal.toFixed(2), paymentUsdAmount: null })
-          .where(and(
+          .where(refundMutableOrderWhere(and(
             eq(ordersTable.id, order.id),
             sql`${ordersTable.paymentStatus} NOT IN ('confirmed', 'test_confirmed')`,
-          ));
+          )));
         order.vendorShipping = snapshotShipping.toFixed(2);
         order.grandTotal = expectedTotal.toFixed(2);
         order.paymentUsdAmount = null;
@@ -2479,7 +2484,7 @@ router.patch("/account/orders/:id/direct-shipping", requireAccount, async (req, 
       paymentUsdAmount: null,
       updatedAt: new Date(),
     })
-    .where(eq(ordersTable.id, id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   res.json({
     ok: true,
@@ -2551,7 +2556,7 @@ router.post("/account/orders/:id/test-vote", requireAccount, async (req, res): P
   const [updatedOrder] = await db
     .update(ordersTable)
     .set({ testVote: productName })
-    .where(and(eq(ordersTable.id, order.id), isNull(ordersTable.testVote)))
+    .where(refundMutableOrderWhere(and(eq(ordersTable.id, order.id), isNull(ordersTable.testVote))))
     .returning();
 
   if (!updatedOrder) {
@@ -2634,7 +2639,7 @@ router.post("/account/orders/:id/shipping-address", requireAccount, async (req, 
       ...(shippingPostcode ? { shippingPostcode: String(shippingPostcode).trim().slice(0, 20) } : {}),
       ...(shippingCountry ? { shippingCountry: String(shippingCountry).trim().slice(0, 128) } : {}),
     })
-    .where(eq(ordersTable.id, id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)))
     .returning({ shippingName: ordersTable.shippingName, shippingAddress: ordersTable.shippingAddress });
 
   writeLog("order", "info", "shipping_address_updated",
@@ -2672,7 +2677,7 @@ router.post("/account/orders/:id/balance-screenshot", requireAccount, async (req
     return;
   }
 
-  await db.update(ordersTable).set({ balanceScreenshot: screenshot }).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ balanceScreenshot: screenshot }).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   writeLog("change", "info", "balance_screenshot_uploaded",
     `Balance payment screenshot uploaded for order #${order.code}`,
@@ -2826,10 +2831,10 @@ router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res):
     if (result.manual) {
       await db.update(ordersTable)
         .set({ balanceTxHash: cleanHash, balancePaymentStatus: "pending_confirmation" } as any)
-        .where(eq(ordersTable.id, id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
       writeLog("payment", "info", "balance_payment_manual", `Manual balance payment queued for order ${order.code} (${currency}/${network})`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, expectedAmount, reason: result.reason }, req.ip).catch(() => {});
     } else {
-      await db.update(ordersTable).set({ balanceTxHash: cleanHash } as any).where(eq(ordersTable.id, id));
+      await db.update(ordersTable).set({ balanceTxHash: cleanHash } as any).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
       writeLog("payment", "warn", "balance_payment_failed", `Balance tx verification failed for order ${order.code}: ${result.reason}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, expectedAmount, pending: result.pending ?? false, reason: result.reason }, req.ip).catch(() => {});
     }
     res.json({ verified: false, pending: result.pending ?? false, reason: result.reason });
@@ -2838,11 +2843,11 @@ router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res):
 
   const confirmedRows = await db.update(ordersTable)
     .set({ balanceTxHash: cleanHash, balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00" } as any)
-    .where(and(
+    .where(refundMutableOrderWhere(and(
       eq(ordersTable.id, id),
       eq(ordersTable.amountDue, amountDueRaw.toFixed(2)),
       or(isNull(ordersTable.balancePaymentStatus), eq(ordersTable.balancePaymentStatus, "unpaid")),
-    ))
+    )))
     .returning({ id: ordersTable.id });
   if (confirmedRows.length === 0) {
     res.status(409).json({ error: "The outstanding balance changed while payment was being verified. Please refresh before trying again." });
@@ -2945,7 +2950,7 @@ router.post("/account/orders/:id/balance-init-anonpay", requireAccount, async (r
   }
 
   const storedId = `${BALANCE_ANON_PAY_PREFIX}${paymentId}`;
-  await db.update(ordersTable).set({ balanceTxHash: storedId } as any).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ balanceTxHash: storedId } as any).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
   res.json({ iframeUrl: `https://trocador.app/en/anonpay/${paymentId}?embed=1`, paymentId });
 });
 
@@ -2960,7 +2965,7 @@ router.post("/account/orders/:id/confirm-balance-anonpay", requireAccount, async
   if (!tx?.startsWith(BALANCE_ANON_PAY_PREFIX)) {
     res.status(400).json({ error: "No AnonPay session found. Please re-initialise." }); return;
   }
-  await db.update(ordersTable).set({ balancePaymentStatus: "pending_confirmation" } as any).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ balancePaymentStatus: "pending_confirmation" } as any).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   await logCustomerActivity({
     telegramUsername: order.telegramUsername,
@@ -3015,12 +3020,12 @@ router.get("/account/orders/:id/balance-anonpay-status", requireAccount, async (
         : `anonpay:${paymentId}`;
       const confirmedRows = await db.update(ordersTable)
         .set({ balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00", balanceTxHash: newBalanceTxHash } as any)
-        .where(and(
+        .where(refundMutableOrderWhere(and(
           eq(ordersTable.id, id),
           eq(ordersTable.amountDue, String((order as any).amountDue)),
           eq((ordersTable as any).balanceTxHash, tx),
           eq((ordersTable as any).balancePaymentStatus, "pending_confirmation"),
-        ))
+        )))
         .returning({ id: ordersTable.id });
       if (confirmedRows.length === 0) {
         res.status(409).json({ error: "The outstanding balance changed while payment was being confirmed. Please refresh." });
@@ -3055,7 +3060,7 @@ router.post("/account/orders/:id/balance-confirm-fiat", requireAccount, async (r
   await db.update(ordersTable).set({
     balanceTxHash: `fiat:${method}`,
     balancePaymentStatus: "pending_confirmation",
-  } as any).where(eq(ordersTable.id, id));
+  } as any).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   await logCustomerActivity({
     telegramUsername: order.telegramUsername,
@@ -3081,7 +3086,7 @@ router.post("/account/orders/:id/custom-qr", requireAccount, qrUploadMiddleware,
     .where(and(eq(ordersTable.id, id), sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   const existing: Record<string, string> = (order.qrCodes as Record<string, string> | null) ?? {};
-  await db.update(ordersTable).set({ qrCodes: { ...existing, custom: qrCode } }).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ qrCodes: { ...existing, custom: qrCode } }).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
   res.json({ ok: true });
 });
 
@@ -3098,7 +3103,7 @@ router.post("/account/orders/:id/royal-mail-qr", requireAccount, qrUploadMiddlew
     .from(ordersTable)
     .where(and(eq(ordersTable.id, id), sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  await db.update(ordersTable).set({ royalMailQrCode: qrCode }).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ royalMailQrCode: qrCode }).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
   res.json({ ok: true });
 });
 
@@ -3115,7 +3120,7 @@ router.post("/account/orders/:id/inpost-qr", requireAccount, qrUploadMiddleware,
     .from(ordersTable)
     .where(and(eq(ordersTable.id, id), sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  await db.update(ordersTable).set({ inpostQrCode: qrCode }).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ inpostQrCode: qrCode }).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
   res.json({ ok: true });
 });
 
@@ -3137,7 +3142,7 @@ router.post("/account/orders/:id/qr-upload", requireAccount, qrUploadMiddleware,
     .where(and(eq(ordersTable.id, id), sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   const existing: Record<string, string> = (order.qrCodes as Record<string, string> | null) ?? {};
-  await db.update(ordersTable).set({ qrCodes: { ...existing, [courierId]: qrCode } }).where(eq(ordersTable.id, id));
+  await db.update(ordersTable).set({ qrCodes: { ...existing, [courierId]: qrCode } }).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
   res.json({ ok: true });
 });
 
@@ -3187,7 +3192,7 @@ router.delete("/account/orders/:id", requireAccount, async (req, res): Promise<v
   const deletedLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, id));
   await db.update(ordersTable)
     .set({ deletedAt: new Date(), deletedBy: "customer" })
-    .where(eq(ordersTable.id, id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   writeLog("order", "warn", "order_deleted_by_customer",
     `Customer deleted order ${order.code} (${order.telegramUsername}, status: ${order.status}) via portal`,
@@ -3267,7 +3272,7 @@ router.post("/account/orders/:id/restore", requireAccount, async (req, res): Pro
 
   await db.update(ordersTable)
     .set({ deletedAt: null, deletedBy: null })
-    .where(eq(ordersTable.id, id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
 
   writeLog("order", "info", "order_restored_by_customer",
     `Customer restored order ${order.code} (${order.telegramUsername}) via portal`,
@@ -3768,9 +3773,9 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
       await db.delete(orderNotesTable).where(inArray(orderNotesTable.orderId, orderIds));
       await db.delete(orderMessagesTable).where(inArray(orderMessagesTable.orderId, orderIds));
       await db.delete(orderDispatchImagesTable).where(inArray(orderDispatchImagesTable.orderId, orderIds));
-      await db.delete(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds));
+      await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(inArray(orderLineItemsTable.orderId, orderIds), orderLineItemsTable.orderId));
     }
-    await db.delete(ordersTable).where(usernameMatch(ordersTable.telegramUsername));
+    await db.delete(ordersTable).where(refundMutableOrderWhere(usernameMatch(ordersTable.telegramUsername)));
 
     // ── Step 2: RESTRICT FK — must delete before the accounts row ────────────
     await db.delete(customerActivityLogsTable).where(usernameMatch(customerActivityLogsTable.telegramUsername));

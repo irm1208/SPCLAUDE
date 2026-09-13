@@ -10,7 +10,7 @@ import { normalizeTg } from "./normalize";
 import { normalizeOrganiserWallets, OrganiserWalletValidationError } from "./wholesale-organiser-wallets";
 import {
   assertNoActiveRefund,
-  refundMutationPredicate,
+  refundMutableOrderWhere,
   RefundMutationBlockedError,
 } from "./refund-mutation-guard";
 
@@ -341,11 +341,10 @@ export async function confirmWholesaleOrganiserPayment(input: {
       const [updatedOrder] = await tx
         .update(ordersTable)
         .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-        .where(and(
+        .where(refundMutableOrderWhere(and(
           eq(ordersTable.id, organiserOrderId),
           inArray(ordersTable.paymentStatus, ["unpaid", "pending"]),
-          refundMutationPredicate(),
-        ))
+        )))
         .returning({ id: ordersTable.id });
       if (!updatedOrder) {
         return reject("invalid_creator_order", "The linked creator order changed during confirmation.");

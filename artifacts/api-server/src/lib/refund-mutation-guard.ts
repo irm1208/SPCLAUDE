@@ -41,6 +41,18 @@ export function refundMutationPredicate(orderColumn = ordersTable.id) {
   )`;
 }
 
+/**
+ * Compose the race-safe predicate with an existing order mutation predicate.
+ * Callers use this directly in UPDATE/DELETE WHERE clauses, rather than doing
+ * a guard read outside the write transaction.
+ */
+export function refundMutableOrderWhere(
+  predicate: unknown,
+  orderColumn: any = ordersTable.id,
+) {
+  return and(refundMutationPredicate(orderColumn), predicate as any);
+}
+
 /** Alias kept descriptive for callers that build larger conditional predicates. */
 export const noActiveRefundPredicate = refundMutationPredicate;
 export const refundActivePredicate = refundMutationPredicate;

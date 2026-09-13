@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID, timingSafeEqual, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
@@ -937,7 +938,7 @@ router.post("/admin/orders/:id/restore", async (req, res): Promise<void> => {
   }
   await db.update(ordersTable)
     .set({ deletedAt: null, deletedBy: null })
-    .where(eq(ordersTable.id, req.params.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
   writeLog("order", "info", "order_restored_by_admin",
     `Admin restored order ${order.code} (${order.telegramUsername}) — previously deleted by ${order.deletedBy ?? "unknown"}`,
     { orderId: order.id, code: order.code, telegramUsername: order.telegramUsername, previousDeletedBy: order.deletedBy },
@@ -1403,7 +1404,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set(updates)
-    .where(trackingCas)
+    .where(refundMutableOrderWhere(trackingCas))
     .returning();
   if (!updated) {
     res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
@@ -1728,7 +1729,7 @@ router.post("/admin/orders/:id/convert-to-wholesale", async (req, res): Promise<
     routingType: "direct",
     reshipperUsername: null,
     countryLegId: null,
-  }).where(eq(ordersTable.id, existing.id));
+  }).where(refundMutableOrderWhere(eq(ordersTable.id, existing.id)));
 
   let accountUpdated = false;
   if (enableWholesaleOnAccount) {
@@ -1821,7 +1822,7 @@ router.post("/admin/orders/:id/qr", async (req, res): Promise<void> => {
   const field = courier === "inpost" ? "inpostQrCode" : "royalMailQrCode";
   await db.update(ordersTable)
     .set({ [field]: qrCode ?? null })
-    .where(eq(ordersTable.id, req.params.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
 
   writeLog("change", "info", "admin_qr_set",
     `Admin ${qrCode ? "set" : "cleared"} ${courier} QR code for order ${existing.code}`,
@@ -1851,7 +1852,7 @@ router.delete("/admin/orders/:id", async (req, res): Promise<void> => {
   try {
     await db.update(ordersTable)
       .set({ deletedAt: new Date(), deletedBy: "admin" })
-      .where(eq(ordersTable.id, req.params.id));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Database error";
     res.status(500).json({ error: `Delete failed: ${msg}` });
@@ -1984,7 +1985,7 @@ router.delete("/admin/orders", async (req, res): Promise<void> => {
   try {
     await db.update(ordersTable)
       .set({ deletedAt: new Date(), deletedBy: "admin" })
-      .where(inArray(ordersTable.id, safeIds));
+      .where(refundMutableOrderWhere(inArray(ordersTable.id, safeIds)));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Database error";
     res.status(500).json({ error: `Bulk delete failed: ${msg}` });
@@ -2062,7 +2063,7 @@ router.post("/admin/orders/mark-oos", async (req, res): Promise<void> => {
     await tx
       .update(orderLineItemsTable)
       .set({ isOos: true })
-      .where(inArray(orderLineItemsTable.id, itemIds));
+      .where(refundMutableOrderWhere(inArray(orderLineItemsTable.id, itemIds), orderLineItemsTable.orderId));
 
     for (const orderId of affectedOrderIds) {
       const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -2090,7 +2091,7 @@ router.post("/admin/orders/mark-oos", async (req, res): Promise<void> => {
           grandTotal: newGrandTotal.toFixed(2) as any,
           ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
         })
-        .where(eq(ordersTable.id, orderId));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     }
   });
 
@@ -2177,7 +2178,7 @@ router.post("/admin/orders/unmark-oos", async (req, res): Promise<void> => {
   const affectedOrderIds = [...new Set(oosItems.map(li => li.orderId))];
 
   await db.transaction(async (tx) => {
-    await tx.update(orderLineItemsTable).set({ isOos: false }).where(inArray(orderLineItemsTable.id, itemIds));
+    await tx.update(orderLineItemsTable).set({ isOos: false }).where(refundMutableOrderWhere(inArray(orderLineItemsTable.id, itemIds), orderLineItemsTable.orderId));
 
     for (const orderId of affectedOrderIds) {
       const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -2193,7 +2194,7 @@ router.post("/admin/orders/unmark-oos", async (req, res): Promise<void> => {
         productSubtotal: newProductSubtotal.toFixed(2) as any,
         grandTotal: newGrandTotal.toFixed(2) as any,
         ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
-      }).where(eq(ordersTable.id, orderId));
+      }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     }
   });
 
@@ -2362,7 +2363,7 @@ router.patch("/admin/orders/:id/qr-posted", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set({ qrPosted: posted })
-    .where(eq(ordersTable.id, orderId))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)))
     .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
 
   if (!updated) { res.status(404).json({ error: "Order not found" }); return; }
@@ -3191,7 +3192,7 @@ router.post("/admin/apply-shipping", async (req, res): Promise<void> => {
         grandTotal: u.newGrandTotal.toFixed(2),
         ...(u.setAmountDue ? { amountDue: u.vendorShipping.toFixed(2) } : {}),
       } as any)
-      .where(eq(ordersTable.id, u.orderId));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, u.orderId)));
   }
 
   res.json({
@@ -3240,7 +3241,7 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
   }
 
   // Replace all line items
-  await db.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
+  await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, req.params.id), orderLineItemsTable.orderId));
   await db.insert(orderLineItemsTable).values(
     validated.map(li => ({
       id: randomUUID(),
@@ -3273,7 +3274,7 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
   const [updated] = await db
     .update(ordersTable)
     .set(itemEditSet)
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
 
   const newLineItems = await db
@@ -3396,7 +3397,7 @@ router.patch("/admin/orders/:id/routing", async (req, res): Promise<void> => {
     }
 
     const adminWho = getAdminUsername(res) ?? "admin";
-    const [updated] = await db.update(ordersTable).set(updates).where(eq(ordersTable.id, req.params.id)).returning();
+    const [updated] = await db.update(ordersTable).set(updates).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id))).returning();
     // Write routing history
     await db.insert(routingHistoryTable).values({
       orderId: req.params.id,
@@ -3426,11 +3427,11 @@ router.patch("/admin/orders/:id/line-items-draft", async (req, res): Promise<voi
     const [existing] = await db.select({ id: ordersTable.id }).from(ordersTable).where(eq(ordersTable.id, req.params.id));
     if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
     if (clear) {
-      await db.update(ordersTable).set({ draftLineItems: null, draftLineItemsSavedAt: null }).where(eq(ordersTable.id, req.params.id));
+      await db.update(ordersTable).set({ draftLineItems: null, draftLineItemsSavedAt: null }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       res.json({ ok: true, cleared: true }); return;
     }
     if (!Array.isArray(lineItems)) { res.status(400).json({ error: "lineItems must be an array" }); return; }
-    await db.update(ordersTable).set({ draftLineItems: lineItems, draftLineItemsSavedAt: new Date() }).where(eq(ordersTable.id, req.params.id));
+    await db.update(ordersTable).set({ draftLineItems: lineItems, draftLineItemsSavedAt: new Date() }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
     res.json({ ok: true, savedAt: new Date().toISOString() });
   } catch (err) {
     console.error("[admin] PATCH line-items-draft error:", err);
@@ -3451,7 +3452,7 @@ router.post("/admin/orders/:id/balance-resolution", async (req, res): Promise<vo
     if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
     const adminWho = getAdminUsername(res) ?? "admin";
     if (action === "absorb") {
-      await db.update(ordersTable).set({ amountDue: "0.00", balancePaymentStatus: "waived" }).where(eq(ordersTable.id, req.params.id));
+      await db.update(ordersTable).set({ amountDue: "0.00", balancePaymentStatus: "waived" }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       await db.insert(routingHistoryTable).values({
         orderId: req.params.id,
         changedBy: adminWho,
@@ -3556,7 +3557,7 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
           }
         }
 
-        await db.update(ordersTable).set(updates).where(eq(ordersTable.id, orderId));
+        await db.update(ordersTable).set(updates).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
         await db.insert(routingHistoryTable).values({
           orderId,
@@ -3638,7 +3639,7 @@ router.post("/admin/orders/:id/financial-override", async (req, res): Promise<vo
     const [updated] = await db
       .update(ordersTable)
       .set(patch)
-      .where(eq(ordersTable.id, req.params.id))
+      .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
       .returning();
 
     // Write to routing_history
@@ -4937,7 +4938,7 @@ router.put("/admin/customers/:username/rename", async (req: any, res: any): Prom
 
     // Atomic transaction: update orders + rename customer row
     await db.transaction(async (tx) => {
-      await tx.update(ordersTable).set({ telegramUsername: tg }).where(eq(ordersTable.telegramUsername, oldUsername));
+      await tx.update(ordersTable).set({ telegramUsername: tg }).where(refundMutableOrderWhere(eq(ordersTable.telegramUsername, oldUsername)));
       if (existingCustomer) {
         const { telegramUsername: _old, createdAt: _ca, updatedAt: _ua, ...rest } = existingCustomer;
         await tx.insert(customersTable).values({ ...rest, telegramUsername: tg });
@@ -6502,10 +6503,10 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
       if (needsUpdate) {
         const applied = await db.update(ordersTable)
           .set(updateFields as any)
-          .where(and(
+          .where(refundMutableOrderWhere(and(
             eq(ordersTable.code, safeCode),
             unchangedTrackingWriteFields(order),
-          ))
+          )))
           .returning({ id: ordersTable.id });
         if (applied.length === 0) {
           throw new Error("Tracking was changed by another writer; reload and try again");
@@ -6633,7 +6634,7 @@ router.post("/admin/group-buys/:gbId/orders/bulk-add-product", async (req: any, 
       productSubtotal: String(newSubtotal) as any,
       grandTotal: String(newGrandTotal) as any,
       ...(!["confirmed"].includes(order.paymentStatus ?? "") && { paymentUsdAmount: null }),
-    }).where(eq(ordersTable.id, orderId));
+    }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
     added++;
   }
@@ -8109,7 +8110,7 @@ router.post("/admin/accounts/merge", async (req: any, res: any): Promise<void> =
   if (!target) { res.status(404).json({ error: `Account '${targetUsername}' not found` }); return; }
 
   // Re-point orders
-  await db.update(ordersTable).set({ telegramUsername: targetUsername }).where(eq(ordersTable.telegramUsername, sourceUsername));
+  await db.update(ordersTable).set({ telegramUsername: targetUsername }).where(refundMutableOrderWhere(eq(ordersTable.telegramUsername, sourceUsername)));
   // Re-point blood tests
   await db.update(bloodTestSessionsTable).set({ telegramUsername: targetUsername }).where(eq(bloodTestSessionsTable.telegramUsername, sourceUsername));
 
@@ -9155,10 +9156,10 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
         usdToCents(String(targetOrder.creditsApplied ?? "0")) + -adjustedAmountCents,
       );
       await tx.update(ordersTable).set({ creditsApplied: newCreditsApplied as unknown as number })
-        .where(eq(ordersTable.id, targetOrder.id));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)));
       if (usdToCents(String(targetOrder.grandTotal)) <= usdToCents(newCreditsApplied) && targetOrder.paymentStatus !== "confirmed") {
         await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-          .where(eq(ordersTable.id, targetOrder.id));
+          .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)));
         confirmedOrder = true;
       }
     }
@@ -9263,7 +9264,7 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
         status: "Cancelled",
         paymentStatus: "refunded",
       })
-      .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.refundStatus)));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), isNull(ordersTable.refundStatus))));
     return { kind: "refunded" as const, order, accountUsername: acct.telegramUsername, totalAmount, newBalance };
   });
 
@@ -9790,7 +9791,7 @@ router.post("/admin/orders/:id/reset-test-payment", async (req: any, res: any): 
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentStatus: "unpaid", paymentTestAmount: null, testPaymentTxHash: null })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus });
   res.json(updated);
 });
@@ -9812,7 +9813,7 @@ router.post("/admin/orders/:id/generate-test", async (req: any, res: any): Promi
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentTestAmount: String(testAmount), paymentStatus: "test_ready" })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning({ id: ordersTable.id, paymentTestAmount: ordersTable.paymentTestAmount, paymentStatus: ordersTable.paymentStatus });
   res.json({ paymentTestAmount: parseFloat(String(updated.paymentTestAmount)), paymentStatus: updated.paymentStatus });
 });
@@ -9829,7 +9830,7 @@ router.post("/admin/orders/:id/confirm-test", async (req: any, res: any): Promis
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentStatus: "test_confirmed", testPaymentTxHash: order.testPaymentTxHash ?? "admin_confirmed" })
-    .where(eq(ordersTable.id, req.params.id))
+    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus });
 
   // Send admin notification for manual test-payment confirmation
@@ -10386,7 +10387,7 @@ router.post("/admin/group-buys/:gbId/routing-undo", async (req, res): Promise<vo
       routingType: latest.fromRoutingType ?? null,
       reshipperUsername: latest.fromReshipperUsername ?? null,
       countryLegId: latest.fromCountryLegId ?? null,
-    } as Record<string, unknown>).where(eq(ordersTable.id, latest.orderId));
+    } as Record<string, unknown>).where(refundMutableOrderWhere(eq(ordersTable.id, latest.orderId)));
 
     await db.update(routingHistoryTable).set({
       metadata: { ...(typeof latest.metadata === "object" && latest.metadata !== null ? latest.metadata : {}), undone: true, undoneBy: adminWho },

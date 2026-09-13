@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 /**
  * GB Country Legs — API routes for per-country sub-groups within a Group Buy.
  *
@@ -430,7 +431,7 @@ router.post("/admin/group-buys/:gbId/apply-leg-shipping", async (req, res): Prom
               vendorShipping: u.vendorShipping.toFixed(2),
               grandTotal: u.newGrandTotal.toFixed(2),
             })
-            .where(eq(ordersTable.id, u.orderId));
+            .where(refundMutableOrderWhere(eq(ordersTable.id, u.orderId)));
         }
 
         totalOrdersUpdated += legUpdates.length;
@@ -505,7 +506,7 @@ router.post("/admin/group-buys/:gbId/apply-leg-shipping", async (req, res): Prom
           vendorShipping: u.vendorShipping.toFixed(2),
           grandTotal: u.newGrandTotal.toFixed(2),
         })
-        .where(eq(ordersTable.id, u.orderId));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, u.orderId)));
     }
 
     totalOrdersUpdated += legUpdates.length;
@@ -605,7 +606,7 @@ router.post("/admin/group-buys/:gbId/bill-vendor-shipping-balance", async (req, 
     await db
       .update(ordersTable)
       .set({ amountDue: newAmountDue.toFixed(2) as any })
-      .where(eq(ordersTable.id, order.id));
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
 
     let notified = false;
     if (notify) {
@@ -879,11 +880,11 @@ router.post("/organiser/group-buys/:gbId/backfill-country-legs", requireAccount,
     const result = await db
       .update(ordersTable)
       .set({ countryLegId: legId })
-      .where(and(
+      .where(refundMutableOrderWhere(and(
         eq(ordersTable.groupBuyId, gbId),
         eq(ordersTable.telegramUsername, row.accountId),
         sql`${ordersTable.countryLegId} is null`,
-      ))
+      )))
       .returning({ id: ordersTable.id });
     ordersAssigned += result.length;
   }

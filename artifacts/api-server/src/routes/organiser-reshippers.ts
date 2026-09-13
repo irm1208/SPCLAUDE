@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -236,7 +237,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper", r
   if (!order) { res.status(404).json({ error: "Order not found in this group buy" }); return; }
 
   if (reshipperUsername === null || reshipperUsername === "") {
-    await db.update(ordersTable).set({ reshipperUsername: null }).where(eq(ordersTable.id, orderId));
+    await db.update(ordersTable).set({ reshipperUsername: null }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     writeLog("change", "info", "reshipper_reassigned",
       `Organiser @${req.organiser!.telegramUsername} (manual override) cleared reshipper for order ${orderId} in GB ${gbId}`,
       { orderId, gbId, clearedBy: req.organiser!.telegramUsername, manualOverride: true },
@@ -265,7 +266,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper", r
     return;
   }
 
-  await db.update(ordersTable).set({ reshipperUsername }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ reshipperUsername }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog("change", "info", "reshipper_reassigned",
     `Organiser @${req.organiser!.telegramUsername} (manual override) force-assigned reshipper @${reshipperUsername} to order ${orderId} in GB ${gbId}`,

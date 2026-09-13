@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
@@ -433,12 +434,12 @@ async function refreshIndividualOrders(): Promise<number> {
          const num = nums[0];
          const accepted = await track17Client.getTrackingInfo(num, 0);
          if (!accepted) {
-           await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(unchangedTrackingCache(order));
+           await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(refundMutableOrderWhere(unchangedTrackingCache(order)));
            continue;
          }
          const { status, events } = parseTrack17Response(accepted, false);
          const oldStatus = order.trackingStatus;
-         const saved = await db.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() }).where(unchangedTrackingCache(order)).returning({ id: ordersTable.id });
+         const saved = await db.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() }).where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
          if (!saved.length) continue;
          if (status !== oldStatus) {
            refreshed++;
@@ -486,7 +487,7 @@ async function refreshIndividualOrders(): Promise<number> {
          trackingStatus: compatibility.trackingStatus,
          trackingEvents: compatibility.trackingEvents as any,
          trackingLastChecked: compatibility.trackingLastChecked,
-       }).where(unchangedTrackingCache(order)).returning({ id: ordersTable.id });
+       }).where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
        // A newer edit or another refresh won the race: no stale write or duplicate alert.
        if (!saved.length) continue;
        refreshed++;

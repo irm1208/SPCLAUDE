@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -335,7 +336,7 @@ router.post("/admin/orders/:orderId/move-gb", async (req, res): Promise<void> =>
   // Update the order's group_buy_id. Order line items only link to the order via
   // order_id (they have no independent group_buy_id column), so they automatically
   // follow the order to the target GB without further update.
-  await db.update(ordersTable).set({ groupBuyId: targetGbId }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ groupBuyId: targetGbId }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   // Ensure the member is joined to the target GB.
   // account_group_buys.account_id references accounts.telegram_username (primary key),
@@ -375,7 +376,7 @@ router.patch("/admin/orders/:orderId/reassign-reshipper", async (req, res): Prom
   if (reshipperUsername === null || reshipperUsername === "") {
     // Set reshipperCleared=true so the gbReshippers fallback (gbId::country lookup)
     // is permanently suppressed for this order, even after a page refresh.
-    await db.update(ordersTable).set({ reshipperUsername: null, reshipperCleared: true, countryLegId: null }).where(eq(ordersTable.id, orderId));
+    await db.update(ordersTable).set({ reshipperUsername: null, reshipperCleared: true, countryLegId: null }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     writeLog("change", "info", "reshipper_reassigned", `Admin (manual override) cleared reshipper for order ${orderId}`, { orderId, gbId: order.groupBuyId, country: order.shippingCountry }).catch(() => {});
     res.json({ ok: true, reshipperUsername: null, reshipperCleared: true });
     return;
@@ -391,7 +392,7 @@ router.patch("/admin/orders/:orderId/reassign-reshipper", async (req, res): Prom
   if (account.reshipperStatus !== "approved") { res.status(400).json({ error: "Account is not an approved reshipper" }); return; }
 
   // Update the order row directly — reset reshipperCleared since a reshipper is now assigned
-  await db.update(ordersTable).set({ reshipperUsername, reshipperCleared: false }).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set({ reshipperUsername, reshipperCleared: false }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog("change", "info", "reshipper_reassigned", `Admin (manual override) force-assigned reshipper @${reshipperUsername} to order ${orderId}`, { orderId, gbId: order.groupBuyId, country: order.shippingCountry, reshipperUsername, manualOverride: true }).catch(() => {});
 
@@ -446,7 +447,7 @@ router.post("/admin/orders/bulk-reassign-reshipper", async (req, res): Promise<v
           reshipperCleared: clearing ? true : false,
           ...(clearing ? { countryLegId: null } : {}),
         })
-        .where(eq(ordersTable.id, orderId));
+        .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
       results.push({ orderId, ok: true });
     } catch {
       results.push({ orderId, ok: false, error: "Internal error" });

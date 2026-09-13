@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Background scheduler that automatically confirms GB order payments.
  *
@@ -206,12 +207,17 @@ async function checkAnonPay(order: PendingOrder): Promise<void> {
     ? `${ANONPAY_PREFIX}${paymentId}|${trocOutgoingHash}`
     : `${ANONPAY_PREFIX}${paymentId}`;
 
-  await db
+  const [savedAnonPayOrder] = await db
     .update(ordersTable)
     // amountDue is an independent post-payment balance. Preserve any balance
     // added while this primary payment was awaiting auto-verification.
     .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
-    .where(eq(ordersTable.id, order.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+    .returning({ id: ordersTable.id });
+  if (!savedAnonPayOrder) {
+    console.log(`[order-auto-verify] Skipped AnonPay confirmation for ${order.code}: refund_active`);
+    return;
+  }
 
   console.log(`[order-auto-verify] AnonPay confirmed — order ${order.code}`);
 
@@ -271,7 +277,7 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
   // nor demands a stale higher price after an order is edited down.
   const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentGrandTotalUsd) > currentGrandTotalUsd * 0.03;
   if (lockIsStale) {
-    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
+    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
   }
   const grandTotalUsd = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentGrandTotalUsd;
   const netCents = usdToCents(grandTotalUsd.toFixed(2))
@@ -314,12 +320,17 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
     return;
   }
 
-  await db
+  const [savedCryptoOrder] = await db
     .update(ordersTable)
     // amountDue is an independent post-payment balance. Preserve any balance
     // added while this primary payment was awaiting auto-verification.
     .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-    .where(eq(ordersTable.id, order.id));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+    .returning({ id: ordersTable.id });
+  if (!savedCryptoOrder) {
+    console.log(`[order-auto-verify] Skipped crypto confirmation for ${order.code}: refund_active`);
+    return;
+  }
 
   console.log(`[order-auto-verify] Crypto confirmed — order ${order.code} ($${result.amountUsdt} ${currency})`);
 

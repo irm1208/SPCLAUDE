@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "./lib/refund-mutation-guard";
 import app, { markApplicationReady } from "./app";
 import { seedIfEmpty } from "./seed";
 import { setWebhook, getTelegramStatus, buildWebhookUrl } from "./lib/telegram";
@@ -1019,9 +1020,9 @@ async function autoRegisterWebhook(): Promise<void> {
 async function purgeExpiredDeletedOrders(): Promise<void> {
   const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   try {
-    const result = await db.delete(ordersTable).where(
+    const result = await db.delete(ordersTable).where(refundMutableOrderWhere(
       and(isNotNull(ordersTable.deletedAt), lt(ordersTable.deletedAt, cutoff))
-    );
+    ));
     const count = Array.isArray(result) ? result.length : 0;
     if (count > 0) console.log(`[cleanup] Purged ${count} expired soft-deleted order(s)`);
   } catch (err) {

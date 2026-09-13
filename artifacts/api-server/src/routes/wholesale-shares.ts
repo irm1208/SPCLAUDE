@@ -1,3 +1,4 @@
+import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -317,7 +318,7 @@ async function reconcileShareOrganiserFees(
       orderUpdate.balanceConfirmedAt = null;
       balanceDueAdded = Number((balanceDueAdded + (update.amountDue - Number(order.amountDue ?? 0))).toFixed(2));
     }
-    await tx.update(ordersTable).set(orderUpdate).where(eq(ordersTable.id, order.id));
+    await tx.update(ordersTable).set(orderUpdate).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
     updatedOrders += 1;
   }
 
@@ -2139,7 +2140,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
         refundReason: removed.requiresPaymentReview
           ? `Removed from locked shared order ${share.id}; payment/refund review required.`
           : null,
-      }).where(eq(ordersTable.id, removed.orderId));
+      }).where(refundMutableOrderWhere(eq(ordersTable.id, removed.orderId)));
     }
 
     for (const update of plan.retainedOrderUpdates) {
@@ -2161,7 +2162,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
           balanceConfirmedAt: null,
         } : {}),
         ...deliveryUpdates,
-      }).where(eq(ordersTable.id, update.orderId));
+      }).where(refundMutableOrderWhere(eq(ordersTable.id, update.orderId)));
     }
 
     await tx.delete(wholesaleShareMembersTable)
@@ -2417,7 +2418,7 @@ export async function attemptLockShare(
               grandTotal: grandTotal.toFixed(2),
               amountDue: additionalBalance.toFixed(2),
               balancePaymentStatus: "unpaid",
-            }).where(eq(ordersTable.id, existingOrder.id));
+            }).where(refundMutableOrderWhere(eq(ordersTable.id, existingOrder.id)));
           }
           await tx.update(wholesaleShareMembersTable)
             .set({ shippingShare: Number(existingOrder.vendorShipping ?? 0).toFixed(2) })
@@ -2444,8 +2445,8 @@ export async function attemptLockShare(
             shippingAddress: share.shippingAddress,
             shippingCountry: share.shippingCountry,
             notes: `Shared wholesale order ${share.id} — delivery to ${share.deliveryUsername} (${picked.region.name})`,
-          }).where(and(eq(ordersTable.id, existingOrder.id), eq(ordersTable.paymentStatus, "unpaid")));
-          await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, existingOrder.id));
+          }).where(refundMutableOrderWhere(and(eq(ordersTable.id, existingOrder.id), eq(ordersTable.paymentStatus, "unpaid"))));
+          await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, existingOrder.id), orderLineItemsTable.orderId));
           if (items.length > 0) {
             await tx.insert(orderLineItemsTable).values(items.map(it => ({
               id: randomUUID(),
@@ -2724,7 +2725,7 @@ router.post("/wholesale-shares/:id/cancel", requireWholesaleOrAdmin, async (req,
         paidMembersNeedingRefund = orders.filter(o => o.paymentStatus === "confirmed").map(o => o.telegramUsername);
         await tx.update(ordersTable)
           .set({ status: "Cancelled" })
-          .where(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`);
+          .where(refundMutableOrderWhere(sql`${ordersTable.id} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`));
       }
       return { wasLocked: share.status === "locked", cancelledOrders: orderIds.length, paidMembersNeedingRefund };
     });
@@ -2956,7 +2957,7 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
       paymentStatus: newPaymentStatus,
       ...(paid ? { paymentConfirmedAt: new Date() } : {}),
     })
-    .where(eq(ordersTable.id, member.orderId));
+    .where(refundMutableOrderWhere(eq(ordersTable.id, member.orderId)));
 
   await writeLog("order", "info", "wholesale_share_member_payment_marked",
     `Organiser @${me} marked payment ${paid ? "confirmed" : "unpaid"} for @${username} in share ${share.id}`,
@@ -3404,7 +3405,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         if (share.status === "locked" && member.orderId) {
           const order = orderById.get(member.orderId)!;
           if (member.id === target.id && Array.isArray(body.items)) {
-            await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, order.id));
+            await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, order.id), orderLineItemsTable.orderId));
             if ((member.items ?? []).length > 0) {
               await tx.insert(orderLineItemsTable).values((member.items ?? []).map(item => ({
                 id: randomUUID(),
@@ -3424,7 +3425,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
             adminAdjustmentMessage: member.adminAdjustmentMessage ?? null,
             grandTotal: calculation.grandTotal.toFixed(2),
             paymentUsdAmount: null,
-          }).where(and(eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, "unpaid")));
+          }).where(refundMutableOrderWhere(and(eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, "unpaid"))));
         }
       }
 
