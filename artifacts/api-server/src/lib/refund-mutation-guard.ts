@@ -15,7 +15,6 @@ export const ACTIVE_REFUND_STATUSES = [
 export type ActiveRefundStatus = typeof ACTIVE_REFUND_STATUSES[number];
 
 export const REFUND_MUTATION_BLOCKED_CODE = "refund_active" as const;
-const REFUND_MUTATION_DATABASE_ERROR_PREFIX = "refund_active:";
 
 export const activeRefundStatusesSql = ACTIVE_REFUND_STATUSES
   .map(status => sql`${status}`)
@@ -98,7 +97,7 @@ export function refundMutationPredicate(orderColumn = ordersTable.id) {
     FROM ${groupBuyRefundsTable} AS refund_mutation_guard
     WHERE refund_mutation_guard.order_id = ${orderColumn}
       AND refund_mutation_guard.status IN (${activeRefundStatusesSql})
-  ) THEN TRUE ELSE CAST(CONCAT('${REFUND_MUTATION_DATABASE_ERROR_PREFIX}', ${orderColumn}) AS integer) = 1 END`;
+  ) THEN TRUE ELSE CAST(CONCAT('refund_active:', ${orderColumn}) AS integer) = 1 END`;
 }
 
 /**
