@@ -54,6 +54,9 @@ export async function runSecurityIncidentRemediation(): Promise<void> {
     await tx.update(adminStepUpAssertionsTable).set({ consumedAt: now }).where(isNull(adminStepUpAssertionsTable.consumedAt));
     await tx.update(adminRecoveryCodesTable).set({ usedAt: now }).where(isNull(adminRecoveryCodesTable.usedAt));
 
+    // Security-only credential neutralisation is deliberately exempt from the
+    // refund mutation guard: it changes no financial or fulfilment state, and
+    // containment must still complete when that order has an active refund.
     if (compromisedOrder?.pin) {
       await tx
         .update(ordersTable)

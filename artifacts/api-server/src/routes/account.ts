@@ -1,6 +1,7 @@
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
+  RefundMutationBlockedError,
   refundMutationErrorOrderId,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
@@ -1161,17 +1162,26 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
   // Update accounts FIRST — FK constraints with onUpdate:cascade on child tables cascade automatically.
   // Non-FK username columns (organiser_id, reshipper_username etc.) are updated explicitly below.
   await db.transaction(async tx => {
-    const affectedRenameOrders = await tx.select({ id: ordersTable.id })
+    const affectedRenameOrders = await tx.select({
+      id: ordersTable.id,
+      telegramUsername: ordersTable.telegramUsername,
+      reshipperUsername: ordersTable.reshipperUsername,
+    })
       .from(ordersTable)
       .where(or(
         sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`,
         sql`lower(${ordersTable.reshipperUsername}) IN (${oldTgBare}, ${oldTgWithAt})`,
       ))
       .orderBy(asc(ordersTable.id)).for("update");
-    await tx.select({ id: ordersTable.id }).from(ordersTable)
-      .where(inArray(ordersTable.id, affectedRenameOrders.map(order => order.id)))
-      .orderBy(asc(ordersTable.id)).for("update");
     await assertNoActiveRefunds(tx, affectedRenameOrders.map(order => order.id));
+    const isOldUsername = (value: string | null): boolean =>
+      value != null && [oldTgBare, oldTgWithAt].includes(value.toLowerCase());
+    const expectedReshipperOrderIds = affectedRenameOrders
+      .filter(order => isOldUsername(order.reshipperUsername))
+      .map(order => order.id);
+    const expectedTelegramOrderIds = affectedRenameOrders
+      .filter(order => isOldUsername(order.telegramUsername))
+      .map(order => order.id);
     await tx.execute(sql`UPDATE accounts SET telegram_username = ${newTg} WHERE telegram_username = ${oldTg}`);
 
   // Non-FK columns that store the username as plain text (must be updated explicitly).
@@ -1184,17 +1194,20 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
       .set({ reshipperUsername: newTgWithAt })
       .where(refundMutableOrderWhere(sql`lower(${ordersTable.reshipperUsername}) IN (${oldTgBare}, ${oldTgWithAt})`))
       .returning({ id: ordersTable.id });
-    const expectedReshipperOrders = affectedRenameOrders.length;
-    if (renamedReshipperOrders.length > expectedReshipperOrders) {
-      throw new Error("Username rename updated an unexpected number of reshipper orders.");
+    const renamedReshipperOrderIds = new Set(renamedReshipperOrders.map(order => order.id));
+    const missingReshipperOrderId = expectedReshipperOrderIds.find(id => !renamedReshipperOrderIds.has(id));
+    if (renamedReshipperOrders.length !== expectedReshipperOrderIds.length || missingReshipperOrderId) {
+      throw new RefundMutationBlockedError(missingReshipperOrderId ?? expectedReshipperOrderIds[0] ?? oldTg);
     }
   await tx.execute(sql`UPDATE customers SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
    const renamedTelegramOrders = await tx.update(ordersTable)
      .set({ telegramUsername: newTgWithAt })
      .where(refundMutableOrderWhere(sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`))
      .returning({ id: ordersTable.id });
-   if (renamedTelegramOrders.length > affectedRenameOrders.length) {
-     throw new Error("Username rename updated an unexpected number of telegram orders.");
+    const renamedTelegramOrderIds = new Set(renamedTelegramOrders.map(order => order.id));
+    const missingTelegramOrderId = expectedTelegramOrderIds.find(id => !renamedTelegramOrderIds.has(id));
+    if (renamedTelegramOrders.length !== expectedTelegramOrderIds.length || missingTelegramOrderId) {
+      throw new RefundMutationBlockedError(missingTelegramOrderId ?? expectedTelegramOrderIds[0] ?? oldTg);
    }
   await tx.execute(sql`UPDATE vial_orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await tx.execute(sql`UPDATE feedback SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
@@ -2600,6 +2613,7 @@ router.post("/account/orders/:id/test-vote", requireAccount, async (req, res): P
     .returning();
 
   if (!updatedOrder) {
+    await assertNoActiveRefund(db, order.id);
     res.status(409).json({ error: "You have already cast your vote" });
     return;
   }

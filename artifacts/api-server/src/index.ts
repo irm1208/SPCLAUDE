@@ -1,4 +1,9 @@
-import { refundMutationErrorOrderId, refundMutableOrderWhere } from "./lib/refund-mutation-guard";
+import {
+  activeRefundStatusesSql,
+  refundMutationErrorOrderId,
+  refundMutableOrderWhere,
+  refundMutableOrderWhereSkipActive,
+} from "./lib/refund-mutation-guard";
 import app, { markApplicationReady } from "./app";
 import { seedIfEmpty } from "./seed";
 import { setWebhook, getTelegramStatus, buildWebhookUrl } from "./lib/telegram";
@@ -34,8 +39,42 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+/**
+ * Compatibility repairs are intentionally isolated: an active refund skips
+ * only the matching row, while a schema/database error rejects startup and
+ * therefore keeps production readiness blocked.
+ */
+async function runStartupRefundSafeRepair(
+  name: string,
+  predicate: unknown,
+  update: (guardedWhere: unknown) => Promise<unknown>,
+): Promise<void> {
+  const activeRows = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      predicate as any,
+      sql`EXISTS (
+        SELECT 1 FROM group_buy_refunds startup_refund_guard
+        WHERE startup_refund_guard.order_id = ${ordersTable.id}
+          AND startup_refund_guard.status IN (${activeRefundStatusesSql})
+      )`,
+    ));
+  if (activeRows.length > 0) {
+    console.warn(
+      `[startup:migrations] ${name}: skipped ${activeRows.length} order(s) with active refunds`,
+      activeRows.map(row => row.id),
+    );
+  }
+
+  const repaired = await update(refundMutableOrderWhereSkipActive(predicate));
+  const repairedCount = Array.isArray(repaired)
+    ? repaired.length
+    : Number((repaired as { rowCount?: unknown } | undefined)?.rowCount ?? 0);
+  console.log(`[startup:migrations] ${name}: repaired ${repairedCount} order(s)`);
+}
+
 async function runStartupMigrations(): Promise<void> {
-  try {
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish
     // the branch so the normal Replit schema migration applies those changes.
@@ -625,9 +664,7 @@ async function runStartupMigrations(): Promise<void> {
     // so the cleanup above won't re-flag orders it just corrected.
     // If payment_usd_amount is 0/NULL the payment was manually confirmed without a recorded amount —
     // assume the admin verified it was correct and do NOT create a spurious balance.
-    await db.update(ordersTable)
-      .set({ amountDue: ordersTable.vendorShipping })
-      .where(refundMutableOrderWhere(and(
+    await runStartupRefundSafeRepair("vendor-shipping balance backfill", and(
         sql`${ordersTable.paymentStatus} IN ('confirmed', 'test_confirmed')`,
         sql`${ordersTable.vendorShipping} > 0`,
         eq(ordersTable.amountDue, "0"),
@@ -635,7 +672,11 @@ async function runStartupMigrations(): Promise<void> {
         isNull(ordersTable.deletedAt),
         sql`${ordersTable.paymentUsdAmount} > 0`,
         sql`${ordersTable.paymentUsdAmount} < ${ordersTable.grandTotal} * 0.96`,
-      )));
+      ), guardedWhere => db.update(ordersTable)
+        .set({ amountDue: ordersTable.vendorShipping })
+        // runStartupRefundSafeRepair supplies refundMutableOrderWhereSkipActive.
+        .where(guardedWhere as any)
+        .returning({ id: ordersTable.id }));
     // Ensure payment_confirmed_at exists (timestamptz, nullable)
     await db.execute(sql`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_confirmed_at timestamptz
@@ -828,13 +869,15 @@ async function runStartupMigrations(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`);
     // Backfill dispatched_by_reshipper from reshipper_username for previously-confirmed orders
-    await db.update(ordersTable)
-      .set({ dispatchedByReshipper: ordersTable.reshipperUsername })
-      .where(refundMutableOrderWhere(and(
+    await runStartupRefundSafeRepair("dispatched-reshipper backfill", and(
         isNull(ordersTable.dispatchedByReshipper),
         isNotNull(ordersTable.reshipperUsername),
         sql`${ordersTable.status} IN ('Shipped', 'Completed')`,
-      )));
+      ), guardedWhere => db.update(ordersTable)
+        .set({ dispatchedByReshipper: ordersTable.reshipperUsername })
+        // runStartupRefundSafeRepair supplies refundMutableOrderWhereSkipActive.
+        .where(guardedWhere as any)
+        .returning({ id: ordersTable.id }));
     // accounts — wholesale invite prompt seen timestamp (self-heal: drizzle may drop on push)
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS wholesale_invite_prompt_seen_at timestamptz`);
     // orders — top-up order reference (self-heal: added via direct SQL in deploy.sh)
@@ -874,12 +917,14 @@ async function runStartupMigrations(): Promise<void> {
     // One-time: clear stale locked paymentUsdAmount for order 10342 (admin edited items
     // after the rate was locked, leaving 372.91 USD for a €519 order — stale EUR→USD
     // conversion). Safe to run repeatedly; idempotent once order is confirmed.
-    await db.update(ordersTable)
-      .set({ paymentUsdAmount: null })
-      .where(refundMutableOrderWhere(and(
+    await runStartupRefundSafeRepair("stale payment-rate cleanup", and(
         sql`${ordersTable.code}::text = '10342'`,
         sql`${ordersTable.paymentStatus} NOT IN ('confirmed', 'waived')`,
-      )));
+      ), guardedWhere => db.update(ordersTable)
+        .set({ paymentUsdAmount: null })
+        // runStartupRefundSafeRepair supplies refundMutableOrderWhereSkipActive.
+        .where(guardedWhere as any)
+        .returning({ id: ordersTable.id }));
     // wholesale_shares — main parcel tracking columns (17track combined feed)
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_number text`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_carrier text`);
@@ -988,9 +1033,6 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_tracking boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_address boolean NOT NULL DEFAULT true`);
     console.log("[startup:migrations] Schema sync complete");
-  } catch (err) {
-    console.error("[startup:migrations] Warning — could not apply startup migrations:", err);
-  }
 }
 
 async function autoRegisterWebhook(): Promise<void> {

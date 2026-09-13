@@ -14,6 +14,8 @@ describe("September 2026 security incident remediation", () => {
     expect(remediation).toContain("adminRecoveryCodesTable");
     expect(remediation).toContain('eq(ordersTable.code, "8921")');
     expect(remediation).toContain("md5(");
+    expect(remediation).toContain("Security-only credential neutralisation");
+    expect(remediation).not.toContain("refundMutableOrderWhere");
   });
 
   it("runs before the server accepts traffic", () => {

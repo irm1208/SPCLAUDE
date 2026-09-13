@@ -1,4 +1,5 @@
 import {
+  assertNoActiveRefund,
   assertNoActiveRefunds,
   activeRefundStatusesSql,
   RefundMutationBlockedError,
@@ -1414,6 +1415,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     .where(refundMutableOrderWhere(trackingCas))
     .returning();
   if (!updated) {
+    await assertNoActiveRefund(db, req.params.id);
     res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
     return;
   }
@@ -2386,7 +2388,11 @@ router.patch("/admin/orders/:id/qr-posted", async (req, res): Promise<void> => {
     .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)))
     .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
 
-  if (!updated) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!updated) {
+    await assertNoActiveRefund(db, orderId);
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
   res.json({ id: updated.id, qrPosted: updated.qrPosted });
 });
 
@@ -8064,18 +8070,43 @@ router.post("/admin/accounts/:username/rename", async (req: any, res: any): Prom
     // clauses match both variants via lower() IN (bare, @bare).
     await db.transaction(async (tx) => {
       const affectedOrderRows = await tx
-        .select({ id: ordersTable.id })
+        .select({
+          id: ordersTable.id,
+          telegramUsername: ordersTable.telegramUsername,
+          reshipperUsername: ordersTable.reshipperUsername,
+        })
         .from(ordersTable)
-        .where(sql`lower(${ordersTable.telegramUsername}) IN (${oldBare}, ${oldWithAt})`)
+        .where(or(
+          sql`lower(${ordersTable.telegramUsername}) IN (${oldBare}, ${oldWithAt})`,
+          sql`lower(${ordersTable.reshipperUsername}) IN (${oldBare}, ${oldWithAt})`,
+        ))
         .orderBy(asc(ordersTable.id))
         .for("update");
       await assertNoActiveRefunds(tx, affectedOrderRows.map(order => order.id));
+      const isOldUsername = (value: string | null): boolean =>
+        value != null && [oldBare, oldWithAt].includes(value.toLowerCase());
+      const expectedTelegramOrderIds = affectedOrderRows
+        .filter(order => isOldUsername(order.telegramUsername))
+        .map(order => order.id);
+      const expectedReshipperOrderIds = affectedOrderRows
+        .filter(order => isOldUsername(order.reshipperUsername))
+        .map(order => order.id);
       // 1. Move the PK on accounts — FK children with onUpdate:cascade follow automatically.
       await tx.execute(sql`UPDATE accounts SET telegram_username = ${newBare} WHERE telegram_username = ${actualOldUsername}`);
 
       // 2. Non-FK plain-text username columns (match both @user and user formats).
-      await tx.execute(sql`UPDATE orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
-      await tx.execute(sql`UPDATE orders SET reshipper_username = ${newWithAt} WHERE lower(reshipper_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+      const renamedTelegramRows = await tx.execute(sql`UPDATE orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql})) RETURNING id`);
+      const renamedTelegramIds = new Set((renamedTelegramRows.rows as Array<{ id: string }>).map(row => row.id));
+      const missingTelegramOrderId = expectedTelegramOrderIds.find(id => !renamedTelegramIds.has(id));
+      if (renamedTelegramIds.size !== expectedTelegramOrderIds.length || missingTelegramOrderId) {
+        throw new RefundMutationBlockedError(missingTelegramOrderId ?? expectedTelegramOrderIds[0] ?? oldBare);
+      }
+      const renamedReshipperRows = await tx.execute(sql`UPDATE orders SET reshipper_username = ${newWithAt} WHERE lower(reshipper_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql})) RETURNING id`);
+      const renamedReshipperIds = new Set((renamedReshipperRows.rows as Array<{ id: string }>).map(row => row.id));
+      const missingReshipperOrderId = expectedReshipperOrderIds.find(id => !renamedReshipperIds.has(id));
+      if (renamedReshipperIds.size !== expectedReshipperOrderIds.length || missingReshipperOrderId) {
+        throw new RefundMutationBlockedError(missingReshipperOrderId ?? expectedReshipperOrderIds[0] ?? oldBare);
+      }
       await tx.execute(sql`UPDATE feedback SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
       await tx.execute(sql`UPDATE coupon_redemptions SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
       await tx.execute(sql`UPDATE vial_orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);

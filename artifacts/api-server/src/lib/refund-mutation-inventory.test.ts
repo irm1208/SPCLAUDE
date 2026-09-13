@@ -31,10 +31,10 @@ describe("refund-sensitive order mutation inventory", () => {
       expect(orderInserts, relativePath).toHaveLength(expected.orderInserts);
       expect(lineSites, relativePath).toHaveLength(expected.lineItems);
       expect(inserts, relativePath).toHaveLength(expected.inserts);
-      expect(["guarded", "processor_exemption", "unrelated"]).toContain(expected.classification);
+       expect(["guarded", "processor_exemption", "security_only_exempt", "unrelated"]).toContain(expected.classification);
       expect(["locked_assert", "returning_throw", "processor_exempt", "new_order"]).toContain(expected.enforcementMode);
 
-      if (expected.classification === "processor_exemption") continue;
+       if (expected.classification === "processor_exemption" || expected.classification === "security_only_exempt") continue;
       for (const site of [...orderSites, ...lineSites]) {
         const start = site.index ?? 0;
         const next = source.slice(start + site[0].length).search(/\.(?:update|delete)\((?:ordersTable|orderLineItemsTable)\)/);
@@ -116,6 +116,7 @@ describe("refund-sensitive order mutation inventory", () => {
       ];
       for (const site of starts) {
         if (relativePath.endsWith("src/lib/group-buy-refund.ts")) continue;
+        if (expected.classification === "security_only_exempt") continue;
         const remainder = source.slice(site.index!);
         const end = remainder.indexOf(";");
         const segment = remainder.slice(0, end < 0 ? remainder.length : end);

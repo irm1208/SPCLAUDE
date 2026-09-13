@@ -113,6 +113,28 @@ export function refundMutableOrderWhere(
   return and(refundMutationPredicate(orderColumn), predicate as any);
 }
 
+/**
+ * Startup repairs are idempotent compatibility work, not user mutations. An
+ * active refund must therefore make the repair a no-op rather than aborting
+ * the entire bootstrap. Callers must separately count/log skipped rows;
+ * ordinary mutation paths must continue to use refundMutableOrderWhere so a
+ * blocked write is fail-closed.
+ */
+export function refundMutableOrderWhereSkipActive(
+  predicate: unknown,
+  orderColumn: any = ordersTable.id,
+) {
+  return and(
+    sql`NOT EXISTS (
+      SELECT 1
+      FROM ${groupBuyRefundsTable} AS refund_mutation_guard
+      WHERE refund_mutation_guard.order_id = ${orderColumn}
+        AND refund_mutation_guard.status IN (${activeRefundStatusesSql})
+    )`,
+    predicate as any,
+  );
+}
+
 /** Alias kept descriptive for callers that build larger conditional predicates. */
 export const noActiveRefundPredicate = refundMutationPredicate;
 export const refundActivePredicate = refundMutationPredicate;
@@ -121,6 +143,13 @@ type GuardDatabase = {
   select: (selection?: unknown) => any;
   [key: string]: any;
 };
+
+export class RefundMutationTransactionRequiredError extends Error {
+  constructor() {
+    super("Refund mutation guard requires a database transaction.");
+    this.name = "RefundMutationTransactionRequiredError";
+  }
+}
 
 /**
  * Check one order after authorization and before a mutation.  Mutation paths
@@ -199,18 +228,21 @@ export async function assertNoActiveRefunds(
  */
 export async function withRefundMutationGuard<T>(
   database: GuardDatabase & {
-    transaction: <R>(callback: (tx: GuardDatabase) => Promise<R>) => Promise<R>;
+    transaction?: unknown;
   },
   orderIds: readonly string[],
   mutate: (tx: GuardDatabase) => Promise<T>,
+  options: { allowNonTransactionalTestAdapter?: boolean } = {},
 ): Promise<T> {
-  // Production Drizzle databases always expose transaction().  Lightweight
-  // route adapters used by callers/tests may not; keep their behavior
-  // deterministic while preserving the real transaction path above.
-  if (typeof database.transaction !== "function") {
-    return mutate(database);
+  // Production adapters must provide transaction(). A non-transactional
+  // fallback would let a blocked bulk mutation partially commit. The explicit
+  // opt-in exists only for deliberately tiny test adapters.
+  const transaction = database.transaction;
+  if (typeof transaction !== "function") {
+    if (options.allowNonTransactionalTestAdapter === true) return mutate(database);
+    throw new RefundMutationTransactionRequiredError();
   }
-  return database.transaction(async tx => {
+  return (transaction as <R>(callback: (tx: GuardDatabase) => Promise<R>) => Promise<R>)(async tx => {
     await assertNoActiveRefunds(tx, orderIds);
     return mutate(tx);
   });

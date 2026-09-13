@@ -1,4 +1,5 @@
 import {
+  assertNoActiveRefund,
   RefundMutationBlockedError,
   refundMutableOrderWhere,
   withRefundMutationGuard,
@@ -840,6 +841,7 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
     ) : eq(ordersTable.id, orderId)))
     .returning();
   if (!updated) {
+    await assertNoActiveRefund(db, orderId);
     res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
     return;
   }

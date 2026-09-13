@@ -14,6 +14,13 @@ describe("account dashboard startup migrations", () => {
       /CONSTRAINT hidden_orders_username_order_uniq UNIQUE \(telegram_username, order_id\)/,
     );
   });
+
+  it("isolates idempotent refund-sensitive repairs and does not swallow schema failures", () => {
+    expect(startupSource).toContain("runStartupRefundSafeRepair");
+    expect(startupSource).toContain("refundMutableOrderWhereSkipActive");
+    expect(startupSource).toContain("skipped ${activeRows.length} order(s) with active refunds");
+    expect(startupSource).not.toContain("Warning — could not apply startup migrations");
+  });
 });
 
 describe("group-buy shipping product exclusion migrations", () => {

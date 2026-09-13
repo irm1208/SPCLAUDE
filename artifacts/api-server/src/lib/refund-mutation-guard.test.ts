@@ -4,6 +4,7 @@ import { groupBuyRefundsTable } from "@workspace/db";
 import {
   ACTIVE_REFUND_STATUSES,
   RefundMutationBlockedError,
+  RefundMutationTransactionRequiredError,
   assertNoActiveRefund,
   assertNoActiveRefunds,
   refundMutationDatabaseErrorOrderId,
@@ -11,6 +12,7 @@ import {
   refundMutationHttpStatus,
   refundMutationErrorOrderId,
   refundMutationPredicate,
+  refundMutableOrderWhereSkipActive,
   withRefundMutationGuard,
 } from "./refund-mutation-guard";
 
@@ -48,6 +50,15 @@ describe("refund mutation guard", () => {
       typeof chunk === "object" && chunk !== null && "value" in chunk
         && String((chunk as { value?: unknown }).value).includes("NOT EXISTS"),
     )).toBe(true);
+  });
+
+  it("builds a non-throwing NOT EXISTS predicate for idempotent startup repairs", () => {
+    const predicate = refundMutableOrderWhereSkipActive("startup-repair");
+    const values = predicate.queryChunks
+      ?.filter((chunk: unknown) => typeof chunk === "object" && chunk !== null && "value" in chunk)
+      .map((chunk: unknown) => String((chunk as { value?: unknown }).value));
+    expect(values?.some(value => value.includes("NOT EXISTS"))).toBe(true);
+    expect(values?.some(value => value.includes("refund_active:"))).toBe(false);
   });
 
   it("recognizes the fail-closed database branch used by low-level writers", () => {
@@ -121,6 +132,22 @@ describe("refund mutation guard", () => {
 
     await expect(withRefundMutationGuard(database, ["order-a"], mutate)).resolves.toBe("mutated");
     expect(mutate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a non-transactional adapter unless a test explicitly opts in", async () => {
+    const database = fakeDatabase([]);
+    const mutate = vi.fn(async () => "mutated");
+
+    await expect(withRefundMutationGuard(database, ["order-a"], mutate))
+      .rejects.toBeInstanceOf(RefundMutationTransactionRequiredError);
+    expect(mutate).not.toHaveBeenCalled();
+
+    await expect(withRefundMutationGuard(
+      database,
+      ["order-a"],
+      mutate,
+      { allowNonTransactionalTestAdapter: true },
+    )).resolves.toBe("mutated");
   });
 });
 

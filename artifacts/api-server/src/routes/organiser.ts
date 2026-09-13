@@ -1603,7 +1603,17 @@ router.patch("/organiser/group-buys/:id/orders/:orderId/qr-posted", requireAccou
     .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId))))
     .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
 
-  if (!updated) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!updated) {
+    // A guarded no-row result is a refund conflict, not a missing order.
+    // Preserve the normal 404 for a genuine absent/order-scope mismatch.
+    const [scopedOrder] = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
+    if (scopedOrder) await assertNoActiveRefund(db, orderId);
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
 
   res.json({ id: updated.id, qrPosted: updated.qrPosted });
 });

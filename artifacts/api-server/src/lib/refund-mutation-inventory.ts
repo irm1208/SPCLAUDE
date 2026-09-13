@@ -9,7 +9,9 @@ export const REFUND_MUTATION_INVENTORY = {
   "src/lib/gb-legs-sync.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
   "src/lib/group-buy-refund.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "processor_exemption", enforcementMode: "processor_exempt" },
   "src/lib/order-payment-auto-verify.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  // PIN replacement is security-only credential neutralisation: it cannot
+  // alter financial/fulfilment state and must not be blocked by a refund.
+  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "security_only_exempt", enforcementMode: "processor_exempt" },
   "src/lib/tracking-auto-refresh.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
   "src/lib/wholesale-organiser-payment-confirmation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
   "src/routes/account.ts": { orders: 24, orderInserts: 0, lineItems: 1, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
