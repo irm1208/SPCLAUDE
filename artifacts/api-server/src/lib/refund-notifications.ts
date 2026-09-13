@@ -56,6 +56,22 @@ export type NotificationSender = (
 
 export type DatabaseLike = any;
 
+export type RefundAuditOutboxInput = {
+  refundId: string;
+  attemptId: string;
+  orderId: string;
+  groupBuyId: string;
+  accountId: string;
+  method: string;
+  processorUsername: string;
+  processorRole: string;
+  source: "customer" | "admin" | "organiser" | "background";
+  transition: string;
+  action: string;
+  resultCode: string;
+  txid?: string | null;
+};
+
 export function transitionKeyFor(
   status: GroupBuyRefundStatus,
   attemptId?: string | null,
@@ -122,6 +138,97 @@ export async function enqueueRefundNotification(
     throw new Error("Refund notification marker was not found after conflict.");
   }
   return { inserted: false, marker: existing as RefundNotificationMarker };
+}
+
+/**
+ * Put an audit event in the same transaction as its state transition. The
+ * unique key is the refund/attempt/transition tuple, so a retried request
+ * cannot create a second audit event.
+ */
+export async function enqueueRefundAudit(
+  database: DatabaseLike,
+  input: RefundAuditOutboxInput,
+): Promise<boolean> {
+  const [inserted] = await database
+    .insert(groupBuyRefundTransitionOutboxTable)
+    .values({
+      id: randomUUID(),
+      refundId: input.refundId,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      groupBuyId: input.groupBuyId,
+      accountId: input.accountId,
+      method: input.method,
+      source: input.source,
+      transition: input.transition,
+      action: input.action,
+      processorUsername: input.processorUsername,
+      processorRole: input.processorRole,
+      submittedTxid: input.txid ?? null,
+      resultCode: input.resultCode,
+      deliveredAt: null,
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing()
+    .returning();
+  return Boolean(inserted);
+}
+
+/** Drain audits with row locking; audit insertion and acknowledgement commit together. */
+export async function drainRefundAudits(
+  database: DatabaseLike,
+  options: { limit?: number } = {},
+): Promise<number> {
+  const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0 ? options.limit! : 100;
+  let delivered = 0;
+  for (let i = 0; i < limit; i += 1) {
+    let didDeliver = false;
+    try {
+      didDeliver = await database.transaction(async (tx: DatabaseLike) => {
+        const [marker] = await tx
+          .select()
+          .from(groupBuyRefundTransitionOutboxTable)
+          .where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt))
+          .orderBy(asc(groupBuyRefundTransitionOutboxTable.createdAt), asc(groupBuyRefundTransitionOutboxTable.id))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        if (!marker) return false;
+        await tx.insert(auditLogsTable).values({
+          type: "change",
+          level: "info",
+          action: marker.action,
+          message: `Group-buy refund ${marker.refundId} ${marker.transition}`,
+          metadata: safeAuditMetadata({
+            refundId: marker.refundId,
+            orderId: marker.orderId,
+            groupBuyId: marker.groupBuyId,
+            accountId: marker.accountId,
+            method: marker.method,
+            processorUsername: marker.processorUsername,
+            processorRole: marker.processorRole,
+            source: marker.source,
+            transition: marker.transition,
+            resultCode: marker.resultCode,
+            txid: marker.submittedTxid,
+          }),
+          ip: null,
+        });
+        const [updated] = await tx.update(groupBuyRefundTransitionOutboxTable).set({
+          deliveredAt: new Date(),
+        }).where(and(
+          eq(groupBuyRefundTransitionOutboxTable.id, marker.id),
+          isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
+        )).returning();
+        return Boolean(updated);
+      });
+    } catch {
+      // The transaction rolls back, retaining the marker for retry.
+      break;
+    }
+    if (!didDeliver) break;
+    delivered += 1;
+  }
+  return delivered;
 }
 
 async function defaultSender(
@@ -246,6 +353,7 @@ export function startRefundNotificationDrain(
     if (scheduledDrainRunning) return;
     scheduledDrainRunning = true;
     try {
+      await drainRefundAudits(database, { limit: 25 });
       await drainRefundNotifications(database, { limit: 25 });
     } catch {
       // Pending markers retain their lease/error state and are retried later.
@@ -271,6 +379,7 @@ export type RefundAuditInput = {
   resultCode: string;
   txid?: string | null;
   attemptId?: string | null;
+  action?: string;
 };
 
 const SENSITIVE_AUDIT_KEYS = /wallet|private|secret|password|rpc|raw.?body|request.?body|key.?material/i;
@@ -295,43 +404,24 @@ function safeAuditMetadata(input: RefundAuditInput): Record<string, unknown> {
   return metadata;
 }
 
-/** Writes one privacy-safe audit row for a transition. */
+/** Enqueue one privacy-safe audit event. Delivery is performed by the drainer. */
 export async function auditRefundTransition(
   database: DatabaseLike,
   input: RefundAuditInput,
 ): Promise<void> {
-  const metadata = safeAuditMetadata(input);
-  const write = async (tx: DatabaseLike): Promise<void> => {
-    const attemptId = input.attemptId ?? `audit:${input.transition}`;
-    const [marker] = await tx.insert(groupBuyRefundTransitionOutboxTable).values({
-      id: randomUUID(),
-      refundId: input.refundId,
-      attemptId,
-      transition: input.transition,
-      processorUsername: input.processorUsername ?? "system",
-      processorRole: input.processorRole ?? "system",
-      submittedTxid: input.txid ?? null,
-      orderId: input.orderId ?? null,
-      groupBuyId: input.groupBuyId ?? null,
-      accountId: input.accountId ?? null,
-      method: input.method ?? null,
-      source: input.source,
-      resultCode: input.resultCode,
-      deliveredAt: new Date(),
-    }).onConflictDoNothing().returning();
-    if (!marker) return;
-    await tx.insert(auditLogsTable).values({
-      type: "change",
-      level: "info",
-      action: `group_buy_refund_${input.transition}`,
-      message: `Group-buy refund ${input.refundId} ${input.transition}`,
-      metadata,
-      ip: null,
-    });
-  };
-  if (typeof database.transaction === "function") {
-    await database.transaction(write);
-  } else {
-    await write(database);
-  }
+  await enqueueRefundAudit(database, {
+    refundId: input.refundId,
+    attemptId: input.attemptId ?? `audit:${input.transition}`,
+    orderId: input.orderId ?? "",
+    groupBuyId: input.groupBuyId ?? "",
+    accountId: input.accountId ?? "",
+    method: input.method ?? "unknown",
+    processorUsername: input.processorUsername ?? "system",
+    processorRole: input.processorRole ?? "system",
+    source: input.source,
+    transition: input.transition,
+    action: input.action ?? `group_buy_refund_${input.transition}`,
+    resultCode: input.resultCode,
+    txid: input.txid,
+  });
 }

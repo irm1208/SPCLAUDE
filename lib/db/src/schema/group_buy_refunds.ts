@@ -143,6 +143,7 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   method: text("method"),
   source: text("source").notNull().default("background"),
   transition: text("transition").notNull(),
+  action: text("action").notNull().default("group_buy_refund_transition"),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
   submittedTxid: text("submitted_txid"),

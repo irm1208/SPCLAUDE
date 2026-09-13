@@ -4,11 +4,19 @@ import { siteConfigTable } from "@workspace/db";
 import { eq, like } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
 import { invalidateTemplateCache } from "../lib/telegram";
-import { TEMPLATE_REGISTRY, REGISTRY_MAP } from "../lib/telegram-registry";
+import { TEMPLATE_REGISTRY, REGISTRY_MAP, type TemplateEventMeta } from "../lib/telegram-registry";
 export type { TemplateEventMeta } from "../lib/telegram-registry";
 export { TEMPLATE_REGISTRY };
 
 const router: IRouter = Router();
+
+function requireEditable(meta: TemplateEventMeta | undefined, res: any): meta is TemplateEventMeta {
+  if (!meta || meta.editableInAdmin === false) {
+    res.status(404).json({ error: "Unknown event key" });
+    return false;
+  }
+  return true;
+}
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -60,10 +68,7 @@ router.get("/admin/telegram-templates/:eventKey", async (req, res): Promise<void
 
   const { eventKey } = req.params;
   const meta = REGISTRY_MAP.get(eventKey);
-  if (!meta) {
-    res.status(404).json({ error: "Unknown event key" });
-    return;
-  }
+  if (!requireEditable(meta, res)) return;
 
   try {
     const [row] = await db
@@ -98,10 +103,7 @@ router.put("/admin/telegram-templates/:eventKey", async (req, res): Promise<void
 
   const { eventKey } = req.params;
   const meta = REGISTRY_MAP.get(eventKey);
-  if (!meta) {
-    res.status(404).json({ error: "Unknown event key" });
-    return;
-  }
+  if (!requireEditable(meta, res)) return;
 
   const { template, enabled } = req.body as { template?: unknown; enabled?: unknown };
 
@@ -155,10 +157,7 @@ router.delete("/admin/telegram-templates/:eventKey", async (req, res): Promise<v
 
   const { eventKey } = req.params;
   const meta = REGISTRY_MAP.get(eventKey);
-  if (!meta) {
-    res.status(404).json({ error: "Unknown event key" });
-    return;
-  }
+  if (!requireEditable(meta, res)) return;
 
   try {
     await db

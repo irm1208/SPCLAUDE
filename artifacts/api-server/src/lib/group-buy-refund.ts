@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   accountsTable,
-  auditLogsTable,
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
   groupBuyRefundTransitionOutboxTable,
@@ -14,7 +13,7 @@ import {
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { resolveEffectiveOrderCrypto } from "../routes/payments";
 import {
   isValidEthAddress,
@@ -39,7 +38,12 @@ import {
   usdToSixDecimalBaseUnits,
   type RefundRequestInput,
 } from "./refund-money";
-import { drainRefundNotifications, enqueueRefundNotification } from "./refund-notifications";
+import {
+  drainRefundAudits,
+  drainRefundNotifications,
+  auditRefundTransition,
+  enqueueRefundNotification,
+} from "./refund-notifications";
 
 // Kept structural at runtime so callers can provide either the normal Drizzle
 // database or a transaction-compatible adapter in integration tests.
@@ -54,7 +58,7 @@ export type CreateRefundRequestArgs = {
 async function opportunisticRefundAuditDrain(database: DatabaseLike): Promise<void> {
   if (!groupBuyRefundTransitionOutboxTable) return;
   try {
-    await drainRefundTransitionOutbox(database, { limit: 10 });
+    await drainRefundAudits(database, { limit: 10 });
     await drainRefundNotifications(database, { limit: 10 });
   } catch {
     // Audit delivery is retryable and must never block a refund operation.
@@ -80,101 +84,7 @@ export type CryptoRefundProcessor = {
 const REFUND_VERIFY_LEASE_DEFAULT_SECONDS = 15 * 60;
 const PROCESSING_FAILURE_MESSAGE = "Refund verification processing failed; please retry.";
 
-async function queueRecoveryAudit(
-  tx: DatabaseLike,
-  args: {
-    refundId: string;
-    attemptId: string;
-    orderId?: string;
-    groupBuyId?: string;
-    accountId?: string;
-    method?: string;
-    processorUsername: string;
-    processorRole: string;
-    submittedTxid: string | null;
-    resultCode: string;
-  },
-): Promise<string> {
-  const id = randomUUID();
-  const [inserted] = await tx.insert(groupBuyRefundTransitionOutboxTable).values({
-    id,
-    refundId: args.refundId,
-    attemptId: args.attemptId,
-    orderId: args.orderId,
-    groupBuyId: args.groupBuyId,
-    accountId: args.accountId,
-    method: args.method,
-    source: "background",
-    transition: "verifying_to_verification_failed",
-    processorUsername: args.processorUsername,
-    processorRole: args.processorRole,
-    submittedTxid: args.submittedTxid,
-    resultCode: args.resultCode,
-  }).onConflictDoNothing().returning();
-  if (inserted?.id) return inserted.id;
-  const [existing] = await tx.select().from(groupBuyRefundTransitionOutboxTable).where(and(
-    eq(groupBuyRefundTransitionOutboxTable.refundId, args.refundId),
-    eq(groupBuyRefundTransitionOutboxTable.attemptId, args.attemptId),
-    eq(groupBuyRefundTransitionOutboxTable.transition, "verifying_to_verification_failed"),
-  )).for("update");
-  if (!existing?.id) throw new Error("Refund transition outbox marker was not found after conflict.");
-  return existing.id;
-}
-
-export async function drainRefundTransitionOutbox(
-  database: DatabaseLike,
-  options: { limit?: number } = {},
-): Promise<number> {
-  const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0
-    ? options.limit!
-    : 100;
-  let delivered = 0;
-  for (let index = 0; index < limit; index += 1) {
-    let claimed = false;
-    try {
-      claimed = await database.transaction(async (tx: DatabaseLike) => {
-        const [marker] = await tx.select().from(groupBuyRefundTransitionOutboxTable)
-          .where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt))
-          .orderBy(asc(groupBuyRefundTransitionOutboxTable.createdAt), asc(groupBuyRefundTransitionOutboxTable.id))
-          .limit(1)
-          .for("update", { skipLocked: true });
-        if (!marker) return false;
-        await insertAudit(tx, {
-          action: "group_buy_refund_processing_failed",
-          message: `Group-buy crypto refund ${marker.refundId} processing transition`,
-          metadata: {
-            identity: marker.processorUsername,
-            role: marker.processorRole,
-            source: "background",
-            transition: marker.transition,
-            resultCode: marker.resultCode,
-            refundId: marker.refundId,
-            attemptId: marker.attemptId,
-            ...(marker.orderId ? { orderId: marker.orderId } : {}),
-            ...(marker.groupBuyId ? { groupBuyId: marker.groupBuyId } : {}),
-            ...(marker.accountId ? { accountId: marker.accountId } : {}),
-            ...(marker.method ? { method: marker.method } : {}),
-            ...(marker.submittedTxid ? { txid: marker.submittedTxid } : {}),
-          },
-        });
-        const [updated] = await tx.update(groupBuyRefundTransitionOutboxTable).set({
-          deliveredAt: new Date(),
-        }).where(and(
-          eq(groupBuyRefundTransitionOutboxTable.id, marker.id),
-          isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
-        )).returning();
-        return Boolean(updated);
-      });
-    } catch {
-      // Each marker has its own transaction. A failed audit or marker update
-      // rolls back both and leaves the marker pending for a later drain.
-      break;
-    }
-    if (!claimed) break;
-    delivered += 1;
-  }
-  return delivered;
-}
+export const drainRefundTransitionOutbox = drainRefundAudits;
 
 export type CompleteCreditRefundArgs = {
   refundId: string;
@@ -418,21 +328,6 @@ async function lockRows(database: DatabaseLike, table: unknown, predicate: unkno
   return await database.select().from(table).where(predicate).for("update");
 }
 
-async function insertAudit(database: DatabaseLike, values: {
-  action: string;
-  message: string;
-  metadata: Record<string, unknown>;
-}): Promise<void> {
-  await database.insert(auditLogsTable).values({
-    type: "change",
-    level: "info",
-    action: values.action,
-    message: values.message,
-    metadata: values.metadata,
-    ip: null,
-  });
-}
-
 function validateProcessorScope(
   account: Record<string, any>,
   order: Record<string, any>,
@@ -619,21 +514,19 @@ export async function createRefundRequest(
       throw new GroupBuyRefundError("active_refund_race");
     }
 
-    await insertAudit(tx, {
+    await auditRefundTransition(tx, {
+      refundId: id,
+      attemptId: "request",
+      orderId: order.id,
+      groupBuyId: groupBuy.id,
+      accountId: account.telegramUsername,
+      method: values.method,
+      processorUsername: accountId,
+      processorRole: "account",
+      source: "customer",
+      transition: "none_to_requested",
       action: "group_buy_refund_requested",
-      message: `Group-buy refund ${id} requested`,
-      metadata: {
-         identity: accountId,
-        role: "account",
-        source: "customer",
-        transition: "none_to_requested",
-        resultCode: "refund_requested",
-        refundId: id,
-        orderId: order.id,
-        groupBuyId: groupBuy.id,
-        method: values.method,
-        amountUsd: values.amountUsd,
-      },
+      resultCode: "refund_requested",
     });
     await enqueueRefundNotification(tx, {
       refundId: id,
@@ -783,7 +676,7 @@ export async function completeCreditRefund(
       refundId: refund.id,
       adminUsername: args.username,
     });
-    await tx
+    const [updatedOrder] = await tx
       .update(ordersTable)
       .set({
         refundStatus: "refunded",
@@ -791,22 +684,22 @@ export async function completeCreditRefund(
         status: "Cancelled",
         paymentStatus: "refunded",
       })
-      .where(eq(ordersTable.id, order.id));
-    await insertAudit(tx, {
+      .where(eq(ordersTable.id, order.id))
+      .returning();
+    if (!updatedOrder) throw new GroupBuyRefundError("order_state_changed");
+    await auditRefundTransition(tx, {
+      refundId: refund.id,
+      attemptId: "completion",
+      orderId: order.id,
+      groupBuyId: groupBuy.id,
+      accountId: account.telegramUsername,
+      method: refund.method,
+      processorUsername: args.username,
+      processorRole: args.role,
+      source: args.role === "admin" ? "admin" : "organiser",
+      transition: "requested_or_verification_failed_to_completed",
       action: "group_buy_refund_completed",
-      message: `Group-buy refund ${refund.id} completed`,
-      metadata: {
-        identity: args.username,
-        role: args.role,
-        source: args.role,
-        transition: "requested_or_verification_failed_to_completed",
-        resultCode: "credit_refund_completed",
-        refundId: refund.id,
-        orderId: order.id,
-        groupBuyId: groupBuy.id,
-        method: refund.method,
-        amountUsd,
-      },
+      resultCode: "credit_refund_completed",
     });
     await enqueueRefundNotification(tx, {
       refundId: refund.id,
@@ -937,7 +830,7 @@ async function compensateCryptoProcessingFailure(
         eq(groupBuyRefundAttemptsTable.id, attemptId),
         eq(groupBuyRefundAttemptsTable.submittedTxid, txid),
       ));
-      await tx.update(groupBuyRefundsTable).set({
+      const [failedRefund] = await tx.update(groupBuyRefundsTable).set({
         status: "verification_failed",
         failedAt: now,
         verificationErrorCode: "processing_failure",
@@ -946,8 +839,9 @@ async function compensateCryptoProcessingFailure(
         eq(groupBuyRefundsTable.id, refundSnapshot.id),
         eq(groupBuyRefundsTable.status, "verifying"),
         eq(groupBuyRefundsTable.processingAttemptId, attemptId),
-      ));
-      const outboxId = await queueRecoveryAudit(tx, {
+      )).returning();
+      if (!failedRefund) return;
+      await auditRefundTransition(tx, {
         refundId: refundSnapshot.id,
         attemptId,
         orderId: locked.order.id,
@@ -956,7 +850,10 @@ async function compensateCryptoProcessingFailure(
         method: locked.refund.method,
         processorUsername: actor.username,
         processorRole: actor.role,
-        submittedTxid: txid,
+        source: "background",
+        transition: "verifying_to_verification_failed",
+        action: "group_buy_refund_processing_failed",
+        txid,
         resultCode: "processing_failure",
       });
       await enqueueRefundNotification(tx, {
@@ -967,7 +864,7 @@ async function compensateCryptoProcessingFailure(
         orderCode: locked.order.code,
         amountUsd: String(locked.refund.amountUsd),
       });
-      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id, outboxId };
+      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id, outboxId: attemptId };
     });
   } catch {
     // The original finalization error is the stable error exposed to callers.
@@ -1048,7 +945,7 @@ async function recoverStaleCryptoAttempt(
         ownerPredicate,
       )).returning();
       if (!failedRefund) return;
-      const outboxId = await queueRecoveryAudit(tx, {
+      await auditRefundTransition(tx, {
         refundId: refundSnapshot.id,
         attemptId: attempt?.id ?? expectedAttemptId ?? "legacy",
         orderId: locked.order.id,
@@ -1057,7 +954,10 @@ async function recoverStaleCryptoAttempt(
         method: locked.refund.method,
         processorUsername: ownerUsername ?? "unknown",
         processorRole: ownerRole,
-        submittedTxid,
+        source: "background",
+        transition: "verifying_to_verification_failed",
+        action: "group_buy_refund_processing_failed",
+        txid: submittedTxid,
         resultCode: "stale_processing_state",
       });
       await enqueueRefundNotification(tx, {
@@ -1071,7 +971,7 @@ async function recoverStaleCryptoAttempt(
       auditPayload = {
         orderId: locked.order.id,
         groupBuyId: locked.groupBuy.id,
-        outboxId,
+        outboxId: attempt?.id ?? expectedAttemptId ?? "legacy",
         processorUsername: ownerUsername ?? "unknown",
         processorRole: ownerRole,
         submittedTxid,
@@ -1220,20 +1120,19 @@ export async function submitCryptoRefund(
       processorRole: actor.role,
       startedAt: new Date(),
     });
-    await insertAudit(tx, {
+    await auditRefundTransition(tx, {
+      refundId,
+      attemptId,
+      orderId: locked.order.id,
+      groupBuyId: locked.groupBuy.id,
+      accountId: locked.account.telegramUsername,
+      method: locked.refund.method,
+      processorUsername: actor.username,
+      processorRole: actor.role,
+      source: actor.role === "admin" ? "admin" : "organiser",
+      transition: "requested_or_verification_failed_to_verifying",
       action: "group_buy_refund_verifying",
-      message: `Group-buy crypto refund ${refundId} verification started`,
-      metadata: {
-        identity: actor.username,
-        role: actor.role,
-        source: actor.role,
-        transition: "requested_or_verification_failed_to_verifying",
-        resultCode: "verification_started",
-        refundId,
-        orderId: locked.order.id,
-        groupBuyId: locked.groupBuy.id,
-        method: locked.refund.method,
-      },
+      resultCode: "verification_started",
     });
     await enqueueRefundNotification(tx, {
       refundId,
@@ -1312,7 +1211,7 @@ export async function submitCryptoRefund(
     ));
 
     if (!verification.verified) {
-      await tx.update(groupBuyRefundsTable).set({
+      const [failedRefund] = await tx.update(groupBuyRefundsTable).set({
         status: "verification_failed",
         failedAt: now,
         verificationErrorCode: failureCode,
@@ -1320,22 +1219,22 @@ export async function submitCryptoRefund(
       }).where(and(
         eq(groupBuyRefundsTable.id, refundId),
         eq(groupBuyRefundsTable.status, "verifying"),
-      ));
-      await insertAudit(tx, {
+      )).returning();
+      if (!failedRefund) throw new GroupBuyRefundError("attempt_ownership_lost");
+      await auditRefundTransition(tx, {
+        refundId,
+        attemptId: processingAttemptId,
+        orderId: locked.order.id,
+        groupBuyId: locked.groupBuy.id,
+        accountId: locked.account.telegramUsername,
+        method: locked.refund.method,
+        processorUsername: actor.username,
+        processorRole: actor.role,
+        source: actor.role === "admin" ? "admin" : "organiser",
+        transition: "verifying_to_verification_failed",
         action: "group_buy_refund_verification_failed",
-        message: `Group-buy crypto refund ${refundId} verification failed`,
-        metadata: {
-          identity: actor.username,
-          role: actor.role,
-          source: actor.role,
-          transition: "verifying_to_verification_failed",
-          resultCode: verification.code,
-          refundId,
-          orderId: locked.order.id,
-          groupBuyId: locked.groupBuy.id,
-          method: locked.refund.method,
-          txid: canonicalTxid,
-        },
+        resultCode: verification.code,
+        txid: canonicalTxid,
       });
       await enqueueRefundNotification(tx, {
         refundId,
@@ -1349,7 +1248,7 @@ export async function submitCryptoRefund(
     }
 
     const explorerUrl = `https://etherscan.io/tx/${canonicalTxid}`;
-    await tx.update(groupBuyRefundsTable).set({
+    const [completedRefund] = await tx.update(groupBuyRefundsTable).set({
       status: "completed",
       outgoingTxid: canonicalTxid,
       confirmationCount: verification.confirmationCount,
@@ -1363,7 +1262,8 @@ export async function submitCryptoRefund(
     }).where(and(
       eq(groupBuyRefundsTable.id, refundId),
       eq(groupBuyRefundsTable.status, "verifying"),
-    ));
+    )).returning();
+    if (!completedRefund) throw new GroupBuyRefundError("attempt_ownership_lost");
     const [updatedOrder] = await tx.update(ordersTable).set({
       refundStatus: "refunded",
       refundedAt: now,
@@ -1377,33 +1277,30 @@ export async function submitCryptoRefund(
       isNull(ordersTable.deletedAt),
     )).returning();
     if (!updatedOrder) throw new GroupBuyRefundError("order_state_changed");
-    await insertAudit(tx, {
+    await auditRefundTransition(tx, {
+      refundId,
+      attemptId: processingAttemptId,
+      orderId: locked.order.id,
+      groupBuyId: locked.groupBuy.id,
+      accountId: locked.account.telegramUsername,
+      method: locked.refund.method,
+      processorUsername: actor.username,
+      processorRole: actor.role,
+      source: actor.role === "admin" ? "admin" : "organiser",
+      transition: "verifying_to_completed",
       action: "group_buy_refund_completed",
-      message: `Group-buy crypto refund ${refundId} completed`,
-      metadata: {
-        identity: actor.username,
-        role: actor.role,
-        source: actor.role,
-        transition: "verifying_to_completed",
-        resultCode: "crypto_refund_completed",
-        refundId,
-        orderId: locked.order.id,
-        groupBuyId: locked.groupBuy.id,
-        method: locked.refund.method,
-        asset: locked.refund.asset,
-        confirmationCount: verification.confirmationCount,
-        txid: canonicalTxid,
-      },
+      resultCode: "crypto_refund_completed",
+      txid: canonicalTxid,
     });
-      await enqueueRefundNotification(tx, {
-        refundId,
-        accountId: locked.account.telegramUsername,
-        status: "completed",
-        orderCode: locked.order.code,
-        amountUsd: String(locked.refund.amountUsd),
-        explorerUrl,
-        txid: canonicalTxid,
-      });
+    await enqueueRefundNotification(tx, {
+      refundId,
+      accountId: locked.account.telegramUsername,
+      status: "completed",
+      orderCode: locked.order.code,
+      amountUsd: String(locked.refund.amountUsd),
+      explorerUrl,
+      txid: canonicalTxid,
+    });
     return asRefundResult({
       ...locked.refund,
       status: "completed",
@@ -1414,6 +1311,12 @@ export async function submitCryptoRefund(
     });
     });
   } catch (error) {
+    if (
+      error instanceof GroupBuyRefundError
+      && ["attempt_ownership_lost", "refund_claim_lost"].includes(error.code)
+    ) {
+      throw error;
+    }
     await compensateCryptoProcessingFailure(database, unlockedRefund, processingAttemptId, canonicalTxid, actor);
     if (error instanceof GroupBuyRefundError && error.code === "order_state_changed") {
       throw new GroupBuyRefundError("order_state_changed");
