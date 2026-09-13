@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { main } from "./wholesale-organiser-payment-backfill-cli";
+import { main, runWithPool } from "./wholesale-organiser-payment-backfill-cli";
 import { WholesaleOrganiserPaymentBackfillError } from "./wholesale-organiser-payment-backfill";
 
 vi.mock("@workspace/db", () => {
@@ -49,5 +49,32 @@ describe("shared organiser payment backfill CLI", () => {
     expect(write).toHaveBeenCalledWith(`${JSON.stringify(summary)}\n`);
     expect(error.mock.calls[0]?.[0]).not.toContain("secret");
     expect(error.mock.calls[0]?.[0]).not.toContain("username");
+  });
+
+  it.each([
+    ["success", false],
+    ["failure", true],
+  ] as const)("closes the standalone pool after %s", async (_outcome, shouldFail) => {
+    const events: string[] = [];
+    const pool = {
+      end: vi.fn(async () => {
+        events.push("pool.end");
+      }),
+    };
+    const run = vi.fn(async () => {
+      events.push("runner");
+      if (shouldFail) throw new Error("runner failed");
+    });
+
+    const operation = runWithPool(run, async () => pool);
+
+    if (shouldFail) {
+      await expect(operation).rejects.toThrow("runner failed");
+    } else {
+      await expect(operation).resolves.toBeUndefined();
+    }
+    expect(run).toHaveBeenCalledOnce();
+    expect(pool.end).toHaveBeenCalledOnce();
+    expect(events).toEqual(["runner", "pool.end"]);
   });
 });

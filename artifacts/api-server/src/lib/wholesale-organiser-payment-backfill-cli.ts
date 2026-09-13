@@ -11,6 +11,22 @@ const emptySummary = (): WholesaleOrganiserPaymentBackfillSummary => ({
   skippedByCode: {},
 });
 
+export type BackfillPool = {
+  end: () => Promise<unknown>;
+};
+
+export async function runWithPool(
+  run: () => Promise<void>,
+  loadPool: () => Promise<BackfillPool>,
+): Promise<void> {
+  const pool = await loadPool();
+  try {
+    await run();
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function main(
   run: () => ReturnType<typeof runWholesaleOrganiserPaymentBackfill> = runWholesaleOrganiserPaymentBackfill,
   setExitCode: (code: number) => void = (code) => {
