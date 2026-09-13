@@ -5,26 +5,51 @@
  * fails before review.
  */
 export const REFUND_MUTATION_INVENTORY = {
-  "src/index.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/index.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
   "src/lib/gb-legs-sync.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
   "src/lib/group-buy-refund.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "processor_exemption", enforcementMode: "processor_exempt" },
   "src/lib/order-payment-auto-verify.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
   "src/lib/tracking-auto-refresh.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
   "src/lib/wholesale-organiser-payment-confirmation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/account.ts": { orders: 24, orderInserts: 0, lineItems: 1, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/admin-dispatch.ts": { orders: 6, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/admin.ts": { orders: 29, orderInserts: 3, lineItems: 3, inserts: 5, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/gb-country-legs.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/group-buys-admin.ts": { orders: 11, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/orders.ts": { orders: 13, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/organiser-reshippers.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/organiser.ts": { orders: 13, orderInserts: 2, lineItems: 4, inserts: 4, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/payments.ts": { orders: 17, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/reshipper-admin.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/reshipper.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
-  "src/routes/wholesale-shares.ts": { orders: 8, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/account.ts": { orders: 24, orderInserts: 0, lineItems: 1, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/admin-dispatch.ts": { orders: 6, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/admin.ts": { orders: 29, orderInserts: 3, lineItems: 3, inserts: 5, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/gb-country-legs.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/group-buys-admin.ts": { orders: 11, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/orders.ts": { orders: 13, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/organiser-reshippers.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/organiser.ts": { orders: 13, orderInserts: 2, lineItems: 4, inserts: 4, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/payments.ts": { orders: 17, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/reshipper-admin.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/reshipper.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "locked_assert" },
+  "src/routes/wholesale-shares.ts": { orders: 8, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "locked_assert" },
 } as const;
+
+/**
+ * A source-level manifest is intentionally separate from the aggregate file
+ * counts above.  It lets the inventory test reject a newly added mutation
+ * which has no RETURNING clause unless the file is explicitly reviewed as a
+ * locked/asserting writer.  The shared predicate is the source anchor for
+ * every entry; transaction wrappers and assertion helpers are checked by the
+ * multi-order inventory below.
+ */
+export const REFUND_LOCKED_ASSERT_MANIFEST = [
+  "src/index.ts",
+  "src/lib/security-incident-remediation.ts",
+  "src/routes/account.ts",
+  "src/routes/admin-dispatch.ts",
+  "src/routes/admin.ts",
+  "src/routes/gb-country-legs.ts",
+  "src/routes/group-buys-admin.ts",
+  "src/routes/orders.ts",
+  "src/routes/organiser-reshippers.ts",
+  "src/routes/organiser.ts",
+  "src/routes/payments.ts",
+  "src/routes/reshipper-admin.ts",
+  "src/routes/reshipper.ts",
+  "src/routes/wholesale-shares.ts",
+] as const;
 
 /**
  * Multi-order writers receive a stronger classification than ordinary

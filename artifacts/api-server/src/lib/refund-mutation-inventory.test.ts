@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   REFUND_MUTATION_INVENTORY,
+  REFUND_LOCKED_ASSERT_MANIFEST,
   REFUND_MULTI_ORDER_INVENTORY,
   REFUND_RAW_MUTATION_INVENTORY,
   REFUND_ORDER_INSERT_INVENTORY,
@@ -104,6 +105,26 @@ describe("refund-sensitive order mutation inventory", () => {
       }
     }
     expect(actual).toEqual(expected);
+  });
+
+  it("does not permit a guarded mutation without RETURNING outside the locked-assert manifest", () => {
+    const manifest = new Set<string>(REFUND_LOCKED_ASSERT_MANIFEST);
+    for (const [relativePath, expected] of Object.entries(REFUND_MUTATION_INVENTORY)) {
+      const source = readFileSync(relativePath, "utf8");
+      const starts = [
+        ...source.matchAll(/\.(?:update|delete)\((?:ordersTable|orderLineItemsTable)\)/g),
+      ];
+      for (const site of starts) {
+        if (relativePath.endsWith("src/lib/group-buy-refund.ts")) continue;
+        const remainder = source.slice(site.index!);
+        const end = remainder.indexOf(";");
+        const segment = remainder.slice(0, end < 0 ? remainder.length : end);
+        if (segment.includes(".returning(")) continue;
+        expect(manifest.has(relativePath), `${relativePath}:${site.index}`).toBe(true);
+        expect(expected.enforcementMode, `${relativePath}:${site.index}`).toBe("locked_assert");
+        expect(segment, `${relativePath}:${site.index}`).toContain("refundMutableOrderWhere");
+      }
+    }
   });
 
   it("keeps every order/order-line insert source explicitly classified", () => {

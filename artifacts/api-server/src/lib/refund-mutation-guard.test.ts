@@ -6,6 +6,7 @@ import {
   RefundMutationBlockedError,
   assertNoActiveRefund,
   assertNoActiveRefunds,
+  refundMutationDatabaseErrorOrderId,
   refundMutationPredicate,
   withRefundMutationGuard,
 } from "./refund-mutation-guard";
@@ -44,6 +45,17 @@ describe("refund mutation guard", () => {
       typeof chunk === "object" && chunk !== null && "value" in chunk
         && String((chunk as { value?: unknown }).value).includes("NOT EXISTS"),
     )).toBe(true);
+  });
+
+  it("recognizes the fail-closed database branch used by low-level writers", () => {
+    expect(refundMutationDatabaseErrorOrderId({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "refund_active:order-1"',
+    })).toBe("order-1");
+    expect(refundMutationDatabaseErrorOrderId({
+      code: "22P02",
+      message: "invalid input syntax for type integer: unrelated",
+    })).toBeNull();
   });
 
   it("locks and checks every bulk order in deterministic order, rejecting the whole batch", async () => {

@@ -15,6 +15,7 @@ export const ACTIVE_REFUND_STATUSES = [
 export type ActiveRefundStatus = typeof ACTIVE_REFUND_STATUSES[number];
 
 export const REFUND_MUTATION_BLOCKED_CODE = "refund_active" as const;
+const REFUND_MUTATION_DATABASE_ERROR_PREFIX = "refund_active:";
 
 export const activeRefundStatusesSql = ACTIVE_REFUND_STATUSES
   .map(status => sql`${status}`)
@@ -32,17 +33,33 @@ export class RefundMutationBlockedError extends Error {
 }
 
 /**
+ * The conditional guard is also used by a few low-level/background writers
+ * which intentionally do not consume UPDATE ... RETURNING rows.  A false
+ * predicate must never turn into a successful no-op for those callers:
+ * force PostgreSQL to abort the statement with an identifiable error.  The
+ * API error middleware converts that error to the same 409 used by the
+ * returning/assertion paths.  The NOT EXISTS remains the actual atomic
+ * authorization predicate; the cast is only the fail-closed branch.
+ */
+export function refundMutationDatabaseErrorOrderId(error: unknown): string | null {
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  if (candidate?.code !== "22P02" || typeof candidate.message !== "string") return null;
+  const match = candidate.message.match(/refund_active:([^"'\s]+)/);
+  return match?.[1] ?? null;
+}
+
+/**
  * Add this expression to the same conditional UPDATE/DELETE that mutates an
  * order.  Unlike a read-then-write check, PostgreSQL evaluates NOT EXISTS
  * atomically with the write and therefore closes the refund/mutation race.
  */
 export function refundMutationPredicate(orderColumn = ordersTable.id) {
-  return sql`NOT EXISTS (
+  return sql`CASE WHEN NOT EXISTS (
     SELECT 1
     FROM ${groupBuyRefundsTable} AS refund_mutation_guard
     WHERE refund_mutation_guard.order_id = ${orderColumn}
       AND refund_mutation_guard.status IN (${activeRefundStatusesSql})
-  )`;
+  ) THEN TRUE ELSE CAST(CONCAT('${REFUND_MUTATION_DATABASE_ERROR_PREFIX}', ${orderColumn}) AS integer) = 1 END`;
 }
 
 /**

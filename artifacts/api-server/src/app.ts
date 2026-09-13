@@ -9,7 +9,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
-import { RefundMutationBlockedError } from "./lib/refund-mutation-guard";
+import { RefundMutationBlockedError, refundMutationDatabaseErrorOrderId } from "./lib/refund-mutation-guard";
 
 const app: Express = express();
 
@@ -264,6 +264,15 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
       error: "Order mutation is blocked while a refund is active.",
       code: "refund_active",
       orderId: err.orderId,
+    });
+    return;
+  }
+  const databaseOrderId = refundMutationDatabaseErrorOrderId(err);
+  if (databaseOrderId) {
+    res.status(409).json({
+      error: "Order mutation is blocked while a refund is active.",
+      code: "refund_active",
+      orderId: databaseOrderId,
     });
     return;
   }
