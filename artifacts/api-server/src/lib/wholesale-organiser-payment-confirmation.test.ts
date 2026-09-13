@@ -11,8 +11,10 @@ const harness = vi.hoisted(() => {
       organiserPaymentCurrency: "organiserPaymentCurrency",
       organiserPaymentNetwork: "organiserPaymentNetwork",
       totalVendorShipping: "totalVendorShipping",
+      leadCryptoOptions: "leadCryptoOptions",
     },
     members: {
+      id: "id",
       shareId: "shareId",
       username: "username",
       isCreator: "isCreator",
@@ -50,6 +52,7 @@ const harness = vi.hoisted(() => {
       organiserPaymentCurrency: "USDT",
       organiserPaymentNetwork: "ERC-20",
       totalVendorShipping: "5.00",
+      leadCryptoOptions: [{ currency: "USDT", network: "ERC-20", walletAddress: "creator-wallet" }],
     };
     state.members = [
       {
@@ -231,6 +234,11 @@ const pendingInput = {
   shareId: "SHARE1",
   source: "automatic" as const,
   expectedCurrentParentStatus: "pending" as const,
+  expectedPaymentIdentity: {
+    txHash: "0xhash",
+    currency: "USDT",
+    network: "ERC-20",
+  },
 };
 
 describe("confirmWholesaleOrganiserPayment", () => {
@@ -246,6 +254,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      creatorUsername: "@creator",
       orderChanged: true,
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "confirmed",
@@ -283,19 +292,26 @@ describe("confirmWholesaleOrganiserPayment", () => {
       harness.tables.shares,
       harness.tables.members,
       harness.tables.orders,
+      harness.tables.members,
     ]);
     expect(harness.state.locks[1].predicates[0]).toMatchObject({
       kind: "and",
       predicates: expect.arrayContaining([
         { kind: "eq", column: "shareId", value: "SHARE1" },
         { kind: "eq", column: "isCreator", value: true },
-        { kind: "eq", column: "username", value: "@creator" },
       ]),
     });
     expect(harness.state.locks[2].predicates[0]).toMatchObject({
       kind: "eq",
       column: "id",
       value: "creator-order",
+    });
+    expect(harness.state.locks[3].predicates[0]).toMatchObject({
+      kind: "and",
+      predicates: expect.arrayContaining([
+        { kind: "eq", column: "shareId", value: "SHARE1" },
+        { kind: "eq", column: "orderId", value: "creator-order" },
+      ]),
     });
   });
 
@@ -310,6 +326,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "already_confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      creatorUsername: "@creator",
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "confirmed",
     });
@@ -329,6 +346,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      creatorUsername: "@creator",
       orderChanged: false,
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "confirmed",
@@ -347,6 +365,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      creatorUsername: "@creator",
       orderChanged: false,
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "test_confirmed",
@@ -362,6 +381,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
       kind: "already_confirmed",
       shareId: "SHARE1",
       organiserOrderId: "creator-order",
+      creatorUsername: "@creator",
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "test_confirmed",
     });
@@ -385,6 +405,63 @@ describe("confirmWholesaleOrganiserPayment", () => {
 
     expect(result).toMatchObject({ kind: "rejected", code: "invalid_share_status" });
     expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("rejects an automatic verification whose transaction identity changed before the share lock", async () => {
+    harness.state.share.organiserPaymentTxHash = "0xtransaction-b";
+
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      expectedPaymentIdentity: {
+        txHash: "0xtransaction-a",
+        currency: "USDT",
+        network: "ERC-20",
+      },
+    });
+
+    expect(result).toMatchObject({ kind: "rejected", code: "payment_identity_mismatch" });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
+    expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("rejects confirmation when the share has no organiser-owned wallet", async () => {
+    harness.state.share.leadCryptoOptions = [];
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "rejected", code: "missing_organiser_wallet" });
+    expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("accepts historical creator and order usernames with harmless casing and @ differences", async () => {
+    harness.state.share.creatorUsername = " @Creator ";
+    harness.state.members[0].username = "creator";
+    harness.state.orders[0].telegramUsername = " @CREATOR ";
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "confirmed", creatorUsername: " @Creator " });
+  });
+
+  it("rejects duplicate order linkage before changing the parent or physical order", async () => {
+    harness.state.members.push({
+      id: "corrupt-member",
+      shareId: "SHARE1",
+      username: "@member",
+      isCreator: false,
+      orderId: "creator-order",
+      items: [],
+    });
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "rejected", code: "invalid_creator_order" });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
     expect(harness.state.audits).toHaveLength(0);
   });
 

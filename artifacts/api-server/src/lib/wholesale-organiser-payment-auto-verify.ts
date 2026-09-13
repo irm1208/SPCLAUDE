@@ -103,15 +103,20 @@ async function checkShare(row: {
     shareId: row.id,
     source: "automatic",
     expectedCurrentParentStatus: "pending",
+    expectedPaymentIdentity: {
+      txHash,
+      currency,
+      network,
+    },
   });
 
   if (confirmation.kind === "confirmed") {
     notifyUser(
-      row.creatorUsername,
+      confirmation.creatorUsername,
       "payment",
       `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${row.id}</code> has been verified on-chain and confirmed.\n\nYour order is now being processed.`,
     ).catch(() => {});
-    console.log(`[wholesale-organiser-auto-verify] Confirmed organiser payment for share ${row.id} (@${row.creatorUsername})`);
+    console.log(`[wholesale-organiser-auto-verify] Confirmed organiser payment for share ${row.id} (@${confirmation.creatorUsername})`);
   }
 }
 

@@ -5,9 +5,7 @@ const routeSource = readFileSync(new URL("../wholesale-shares.ts", import.meta.u
 
 describe("shared wholesale organiser item access", () => {
   it("does not treat a configured member-payment wallet as the organiser's payment while the share is open", () => {
-    expect(routeSource).toContain(
-      'paymentStatus: (m.isCreator && hasOwnWallet && isLocked) ? "confirmed" : (order?.paymentStatus ?? null),',
-    );
+    expect(routeSource).toContain('paymentStatus: order?.paymentStatus ?? null,');
   });
 
   it("allows an organiser with a configured payment destination to save open-order items", () => {

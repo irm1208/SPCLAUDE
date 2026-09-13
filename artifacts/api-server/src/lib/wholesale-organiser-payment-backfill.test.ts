@@ -57,6 +57,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
       kind: "already_confirmed",
       shareId,
       organiserOrderId: "organiser-order",
+      creatorUsername: "@creator",
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "confirmed",
     } satisfies OrganiserPaymentConfirmationResult));
@@ -85,6 +86,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
         kind: "confirmed",
         shareId,
         organiserOrderId: "organiser-order",
+        creatorUsername: "@creator",
         orderChanged: true,
         organiserPaymentStatus: "confirmed",
         organiserOrderPaymentStatus: "confirmed",
@@ -112,6 +114,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
       kind: "already_confirmed",
       shareId,
       organiserOrderId: "organiser-order",
+      creatorUsername: "@creator",
       organiserPaymentStatus: "confirmed",
       organiserOrderPaymentStatus: "confirmed",
     } satisfies OrganiserPaymentConfirmationResult));
@@ -169,6 +172,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
           kind: "already_confirmed",
           shareId,
           organiserOrderId: "organiser-order",
+          creatorUsername: "@creator",
           organiserPaymentStatus: "confirmed",
           organiserOrderPaymentStatus: "confirmed",
         } satisfies OrganiserPaymentConfirmationResult;
@@ -180,6 +184,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
         kind: "confirmed",
         shareId,
         organiserOrderId: "organiser-order",
+        creatorUsername: "@creator",
         orderChanged: true,
         organiserPaymentStatus: "confirmed",
         organiserOrderPaymentStatus: "confirmed",
@@ -207,6 +212,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
           kind: "confirmed",
           shareId,
           organiserOrderId: "organiser-order",
+          creatorUsername: "@creator",
           orderChanged: true,
           organiserPaymentStatus: "confirmed",
           organiserOrderPaymentStatus: "confirmed",
@@ -217,6 +223,7 @@ describe("runWholesaleOrganiserPaymentBackfill", () => {
           kind: "already_confirmed",
           shareId,
           organiserOrderId: "organiser-order",
+          creatorUsername: "@creator",
           organiserPaymentStatus: "confirmed",
           organiserOrderPaymentStatus: "confirmed",
         } satisfies OrganiserPaymentConfirmationResult;

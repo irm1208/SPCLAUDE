@@ -101,6 +101,10 @@ describe("shared wholesale order confirmations", () => {
     expect(confirmedBranchIndex).toBeGreaterThan(confirmationIndex);
     expect(notificationIndex).toBeGreaterThan(confirmedBranchIndex);
     expect(checkShare).toContain('source: "automatic"');
+    expect(checkShare).toContain("expectedPaymentIdentity");
+    expect(checkShare).toContain("txHash");
+    expect(checkShare).toContain("currency");
+    expect(checkShare).toContain("network");
     expect(checkShare).toContain("network, 0.01");
     expect(optionSelection).toContain("options.find");
     expect(optionSelection).toContain("network.toLowerCase()");
@@ -162,11 +166,27 @@ describe("shared wholesale order confirmations", () => {
     expect(normalizedAdminHandler).toMatch(
       /res\.json\(\{ ok: true, organiserOrderId: result\.organiserOrderId, alreadyConfirmed: false, organiserPaymentStatus: result\.organiserPaymentStatus, organiserOrderPaymentStatus: result\.organiserOrderPaymentStatus, \}\);/,
     );
-    expect(adminHandler).toContain("share?.creatorUsername");
+    expect(adminHandler).toContain("result.creatorUsername");
     expect(normalizedAdminHandler.slice(rejectionIndex, alreadyConfirmedIndex)).not.toContain("notifyUser(");
     expect(normalizedAdminHandler.slice(alreadyConfirmedIndex, confirmedBranchIndex)).not.toContain("notifyUser(");
     expect(adminHandler).not.toContain(".update(wholesaleSharesTable)");
     expect(adminHandler).not.toContain("wholesale_share_organiser_payment_confirmed");
+  });
+
+  it("submits organiser payment only through a conditional submitted-share update", () => {
+    const start = routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"');
+    const end = routeSource.indexOf("// Admin confirms the organiser's platform payment.", start);
+    const handler = routeSource.slice(start, end);
+
+    expect(handler).toContain("normalizeOrganiserWallets(share.leadCryptoOptions)");
+    expect(handler).toContain("An organiser-owned wallet is required for this payment flow.");
+    expect(handler).toContain('eq(wholesaleSharesTable.status, "submitted")');
+    expect(handler).toContain("db.transaction(async (tx)");
+    expect(handler).toContain('eq(wholesaleSharesTable.status, "submitted")');
+    expect(handler).toContain('inArray(wholesaleSharesTable.organiserPaymentStatus, ["unpaid", "pending"])');
+    expect(handler).toContain(".returning(");
+    expect(handler).toContain("The shared order changed before this payment could be submitted.");
+    expect(handler).not.toContain(".where(eq(wholesaleSharesTable.id, share.id));");
   });
 
   it("refreshes detail and grouped rows after every successful admin confirmation", () => {

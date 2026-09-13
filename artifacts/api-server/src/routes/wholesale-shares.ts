@@ -387,11 +387,6 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   // stale fee on the new recipient.
   const recipientLower = share.deliveryUsername?.toLowerCase() ?? null;
   const currentLower = currentUsername.toLowerCase();
-  // When the organiser has configured their own wallet, members pay them directly.
-  // Their personal order is bundled into the platform payment they forward to admin,
-  // so treat their member slot as implicitly paid (no Pay button, counts as confirmed
-  // for everyonePaid / allPaid tracking).
-  const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
   const isCreatorViewer = share.creatorUsername.toLowerCase() === currentLower;
 
   const memberPayloads = members.map((m, idx) => {
@@ -444,10 +439,10 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderOrganiserFee: order ? Number(order.organiserFee ?? 0) : null,
       amountDue: order ? Number(order.amountDue ?? 0) : 0,
       balancePaymentStatus: order?.balancePaymentStatus ?? null,
-      // Once locked, an organiser using their own wallet has their personal order
-      // bundled into the platform payment they forward to admin. While open they
-      // must remain unpaid so they can add and save their own products.
-      paymentStatus: (m.isCreator && hasOwnWallet && isLocked) ? "confirmed" : (order?.paymentStatus ?? null),
+      // Payment status is always sourced from the persisted member order. The
+      // organiser's platform payment is a separate parent transition and must not
+      // be synthesized into this field.
+      paymentStatus: order?.paymentStatus ?? null,
       // Member transaction references are payment-sensitive. The organiser needs them
       // to reconcile the group's two-stage payments; other members must never receive
       // another member's transaction identifiers in this response.
@@ -2975,11 +2970,11 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
       .from(wholesaleShareMembersTable)
       .where(eq(wholesaleShareMembersTable.shareId, share.id));
 
-    // When the organiser has their own wallet (leadCryptoOptions), their member
-    // order is implicitly confirmed — they keep the collected funds and forward the
-    // combined total to admin via organiser-payment. The DB row stays "unpaid" but
-    // buildShareResponse synthesises it as "confirmed". Exclude their order from the
-    // DB check or the share will never transition to "submitted".
+    // When the organiser has their own wallet (leadCryptoOptions), they keep the
+    // collected funds and forward the combined total to admin via organiser-payment.
+    // Their member order remains persisted as unpaid until the organiser payment
+    // confirmation service confirms that physical order. Exclude it from this
+    // pre-forwarding submitted transition check.
     const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
     const membersToCheck = hasOwnWallet ? allMembers.filter(m => !m.isCreator) : allMembers;
 
@@ -3489,38 +3484,8 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
   const share = await loadShare(String(req.params["id"]));
   if (!share) { res.status(404).json({ error: "Shared order not found." }); return; }
 
-  if (share.creatorUsername.toLowerCase() !== me.toLowerCase()) {
+  if (normalizeTg(share.creatorUsername) !== normalizeTg(me)) {
     res.status(403).json({ error: "Only the organiser can submit this payment." }); return;
-  }
-
-  // Self-heal: if the share is still "locked" but all non-organiser member orders are
-  // confirmed (and the organiser has their own wallet so their order is implicitly paid),
-  // transition to "submitted" now. This fixes shares that got stuck because the
-  // mark-payment auto-transition didn't account for the synthesized organiser confirmation.
-  if (share.status === "locked") {
-    const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
-    if (hasOwnWallet) {
-      const allMembers = await db
-        .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
-        .from(wholesaleShareMembersTable)
-        .where(eq(wholesaleShareMembersTable.shareId, share.id));
-      const nonOrganiserIds = allMembers.filter(m => !m.isCreator).map(m => m.orderId).filter((x): x is string => !!x);
-      const nonOrganiserMembers = allMembers.filter(m => !m.isCreator);
-      if (nonOrganiserIds.length > 0 && nonOrganiserIds.length === nonOrganiserMembers.length) {
-        const orders = await db
-          .select({ paymentStatus: ordersTable.paymentStatus })
-          .from(ordersTable)
-          .where(sql`${ordersTable.id} IN (${sql.join(nonOrganiserIds.map(id => sql`${id}`), sql`, `)})`);
-        if (orders.every(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed")) {
-          await db.update(wholesaleSharesTable)
-            .set({ status: "submitted", submittedAt: new Date() })
-            .where(and(eq(wholesaleSharesTable.id, share.id), eq(wholesaleSharesTable.status, "locked")));
-          // Reload share with updated status
-          const reloaded = await loadShare(share.id);
-          if (reloaded) Object.assign(share, reloaded);
-        }
-      }
-    }
   }
 
   if (share.status !== "submitted") {
@@ -3536,25 +3501,73 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     res.status(400).json({ error: "Currency and network are required." }); return;
   }
 
-  await db.update(wholesaleSharesTable)
-    .set({
-      organiserPaymentStatus: "pending",
-      organiserPaymentTxHash: txHash.trim(),
-      organiserPaymentCurrency: String(currency).trim(),
-      organiserPaymentNetwork: String(network).trim(),
-    })
-    .where(eq(wholesaleSharesTable.id, share.id));
+  let organiserWallets;
+  try {
+    organiserWallets = normalizeOrganiserWallets(share.leadCryptoOptions);
+  } catch (error) {
+    if (error instanceof OrganiserWalletValidationError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+  if (organiserWallets.length === 0) {
+    res.status(409).json({ error: "An organiser-owned wallet is required for this payment flow." });
+    return;
+  }
+
+  const submittedTxHash = txHash.trim();
+  const submittedCurrency = String(currency).trim();
+  const submittedNetwork = String(network).trim();
+  const updateResult = await db.transaction(async (tx) => {
+    const [lockedShare] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, share.id))
+      .for("update");
+    if (
+      !lockedShare ||
+      lockedShare.status !== "submitted" ||
+      normalizeTg(lockedShare.creatorUsername) !== normalizeTg(me)
+    ) return null;
+    try {
+      if (normalizeOrganiserWallets(lockedShare.leadCryptoOptions).length === 0) return null;
+    } catch {
+      return null;
+    }
+
+    const [updated] = await tx.update(wholesaleSharesTable)
+      .set({
+        organiserPaymentStatus: "pending",
+        organiserPaymentTxHash: submittedTxHash,
+        organiserPaymentCurrency: submittedCurrency,
+        organiserPaymentNetwork: submittedNetwork,
+      })
+      .where(and(
+        eq(wholesaleSharesTable.id, share.id),
+        eq(wholesaleSharesTable.status, "submitted"),
+        inArray(wholesaleSharesTable.organiserPaymentStatus, ["unpaid", "pending"]),
+        eq(wholesaleSharesTable.creatorUsername, lockedShare.creatorUsername),
+      ))
+      .returning({
+        id: wholesaleSharesTable.id,
+        creatorUsername: wholesaleSharesTable.creatorUsername,
+      });
+    return updated ?? null;
+  });
+  if (!updateResult) {
+    res.status(409).json({ error: "The shared order changed before this payment could be submitted." });
+    return;
+  }
 
   await writeLog("order", "info", "wholesale_share_organiser_payment_submitted",
-    `Organiser @${me} submitted platform payment for share ${share.id}: ${txHash.trim()}`,
-    { shareId: share.id, txHash: txHash.trim(), currency, network });
+    `Organiser @${me} submitted platform payment for share ${share.id}: ${submittedTxHash}`,
+    { shareId: share.id, txHash: submittedTxHash, currency: submittedCurrency, network: submittedNetwork });
 
   await sendAdminMessage([
     "💳 <b>Organiser platform payment submitted</b>",
     `Share: <code>${escHtml(share.id)}</code>`,
     `Organiser: @${escHtml(share.creatorUsername.replace(/^@/, ""))}`,
-    `Currency: ${escHtml(String(currency).trim())} (${escHtml(String(network).trim())})`,
-    `Tx hash: <code>${escHtml(txHash.trim())}</code>`,
+    `Currency: ${escHtml(submittedCurrency)} (${escHtml(submittedNetwork)})`,
+    `Tx hash: <code>${escHtml(submittedTxHash)}</code>`,
   ].join("\n")).catch(() => {});
 
   // Kick off an immediate on-chain verification attempt — no need to wait for
@@ -3594,13 +3607,11 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
   }
 
   if (result.kind === "confirmed") {
-    if (share?.creatorUsername) {
-      notifyUser(
-        share.creatorUsername,
-        "payment",
-        `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${req.params.id}</code> has been verified and confirmed by an administrator.\n\nYour order is now being processed.`,
-      ).catch(() => {});
-    }
+    notifyUser(
+      result.creatorUsername,
+      "payment",
+      `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${req.params.id}</code> has been verified and confirmed by an administrator.\n\nYour order is now being processed.`,
+    ).catch(() => {});
     res.json({
       ok: true,
       organiserOrderId: result.organiserOrderId,
