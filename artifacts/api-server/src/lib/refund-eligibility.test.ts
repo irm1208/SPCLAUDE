@@ -163,6 +163,16 @@ describe("refund eligibility", () => {
     });
   });
 
+it.each(["9.98", "10.00"])("rejects verifier amount %s even when it is near the expected amount", (verifiedAmountUsd) => {
+  expect(evaluateRefundEligibility({
+    ...base,
+    paymentEvidenceProof: { ...base.paymentEvidenceProof, verifiedAmountUsd },
+  })).toMatchObject({
+    eligible: false,
+    reasonCode: "ineligible_payment_evidence",
+  });
+});
+
   it.each([
     ["BTC", "Ethereum Mainnet", "a".repeat(64)],
     ["USDC", "Bitcoin Mainnet", "b".repeat(64)],

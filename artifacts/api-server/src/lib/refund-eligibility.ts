@@ -129,7 +129,10 @@ function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder, proof: S
   try {
     expectedAmount = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
     verifiedAmount = centsToUsdString(usdToCents(proof.verifiedAmountUsd));
-    if (usdToCents(proof.expectedAmountUsd) !== usdToCents(expectedAmount) || usdToCents(verifiedAmount) <= 0n) {
+    if (
+      usdToCents(proof.expectedAmountUsd) !== usdToCents(expectedAmount)
+      || usdToCents(verifiedAmount) !== usdToCents(expectedAmount)
+    ) {
       return false;
     }
   } catch {

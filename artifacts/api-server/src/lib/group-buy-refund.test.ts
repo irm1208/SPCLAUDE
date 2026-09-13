@@ -40,7 +40,7 @@ const harness = vi.hoisted(() => {
     locks: [] as string[],
     updates: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
     forceConflict: false,
-    claimNoRows: false,
+    beforeRefundUpdate: null as null | (() => void),
     failLedger: false,
     failOrder: false,
     failAudit: false,
@@ -48,6 +48,8 @@ const harness = vi.hoisted(() => {
     resolvedWallet: "0x" + "b".repeat(40),
     resolvedCurrency: "USDT",
     resolvedNetwork: "ERC-20",
+    verifierAmount: 123.45,
+    transactionTail: Promise.resolve(),
   };
   function eq(column: unknown, value: unknown) {
     return { kind: "eq", column, value };
@@ -91,22 +93,17 @@ const harness = vi.hoisted(() => {
     select: vi.fn((selection?: any) => selectBuilder(selection)),
     update: vi.fn((table: unknown) => ({
       set: (values: Record<string, unknown>) => ({
-        where: () => {
+        where: (predicate: any) => {
           if (table === tables.credit && state.failLedger) throw new Error("ledger insert failed");
           if (table === tables.orders && state.failOrder) throw new Error("order update failed");
-          if (table === tables.refunds && state.claimNoRows) {
-            return {
-              returning: async () => [],
-              then: (resolve: (value: unknown) => unknown) => Promise.resolve([]).then(resolve),
-            };
-          }
+          state.beforeRefundUpdate?.();
+          state.beforeRefundUpdate = null;
+          const rows = rowsFor(table, predicate);
           state.updates.push({ table, values });
-          if (table === tables.accounts) Object.assign(state.account, values);
-          if (table === tables.orders) Object.assign(state.order, values);
-          if (table === tables.refunds) Object.assign(state.refunds[0], values);
+          for (const row of rows) Object.assign(row, values);
           return {
-            returning: async () => [{ id: "refund-1" }],
-            then: (resolve: (value: unknown) => unknown) => Promise.resolve([{ id: "refund-1" }]).then(resolve),
+          returning: async () => rows.map(row => ({ id: (row as any).id })),
+          then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows.map(row => ({ id: (row as any).id }))).then(resolve),
           };
         },
       }),
@@ -138,28 +135,32 @@ const harness = vi.hoisted(() => {
   };
   const db = {
     select: vi.fn((selection?: any) => selectBuilder(selection)),
-    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => {
-      const snapshot = JSON.parse(JSON.stringify({
-        account: state.account,
-        order: state.order,
-        groupBuy: state.groupBuy,
-        refunds: state.refunds,
-        credits: state.credits,
-        audits: state.audits,
-        updates: state.updates,
-      }));
-      try {
-        return await callback(transaction);
-      } catch (error) {
-        Object.assign(state.account, snapshot.account);
-        Object.assign(state.order, snapshot.order);
-        Object.assign(state.groupBuy, snapshot.groupBuy);
-        state.refunds = snapshot.refunds;
-        state.credits = snapshot.credits;
-        state.audits = snapshot.audits;
-        state.updates = snapshot.updates;
-        throw error;
-      }
+    transaction: vi.fn((callback: (tx: unknown) => unknown) => {
+      const run = state.transactionTail.then(async () => {
+        const snapshot = JSON.parse(JSON.stringify({
+          account: state.account,
+          order: state.order,
+          groupBuy: state.groupBuy,
+          refunds: state.refunds,
+          credits: state.credits,
+          audits: state.audits,
+          updates: state.updates,
+        }));
+        try {
+          return await callback(transaction);
+        } catch (error) {
+          Object.assign(state.account, snapshot.account);
+          Object.assign(state.order, snapshot.order);
+          Object.assign(state.groupBuy, snapshot.groupBuy);
+          state.refunds = snapshot.refunds;
+          state.credits = snapshot.credits;
+          state.audits = snapshot.audits;
+          state.updates = snapshot.updates;
+          throw error;
+        }
+      });
+      state.transactionTail = run.then(() => undefined, () => undefined);
+      return run;
     }),
   };
   function reset() {
@@ -169,7 +170,7 @@ const harness = vi.hoisted(() => {
     state.locks.length = 0;
     state.updates.length = 0;
     state.forceConflict = false;
-    state.claimNoRows = false;
+    state.beforeRefundUpdate = null;
     state.failLedger = false;
     state.failOrder = false;
     state.failAudit = false;
@@ -177,6 +178,8 @@ const harness = vi.hoisted(() => {
     state.resolvedWallet = "0x" + "b".repeat(40);
     state.resolvedCurrency = "USDT";
     state.resolvedNetwork = "ERC-20";
+    state.verifierAmount = 123.45;
+    state.transactionTail = Promise.resolve();
     state.account.credits = 0;
     state.order.refundStatus = null;
     state.order.status = "Submitted";
@@ -185,6 +188,9 @@ const harness = vi.hoisted(() => {
     state.order.paymentStatus = "confirmed";
     state.order.paymentTxHash = "0x" + "a".repeat(64);
     state.order.paymentTxHashes = null;
+    state.order.deletedAt = null;
+    state.order.grandTotal = "123.45";
+    (state.order as any).paymentUsdAmount = null;
     state.groupBuy.cryptoRefundsEnabled = true;
   }
   return { db, tables, state, reset };
@@ -212,7 +218,7 @@ vi.mock("./payment-verify", () => ({
     mutation?.();
     return {
       verified: true,
-      amountUsdt: 123.45,
+      amountUsdt: harness.state.verifierAmount,
       blockConfirmations: 8,
       recipientAddress: "0x" + "b".repeat(40),
     };
@@ -339,7 +345,7 @@ describe("transactional group-buy refunds", () => {
 
   it("claims directly to completed and performs no writes when the conditional claim loses", async () => {
     const request = await createCredit();
-    harness.state.claimNoRows = true;
+    harness.state.beforeRefundUpdate = () => { harness.state.refunds[0].status = "completed"; };
     harness.state.updates.length = 0;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
@@ -347,7 +353,84 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.account.credits).toBe(0);
     expect(harness.state.credits).toHaveLength(0);
     expect(harness.state.audits).toHaveLength(1);
-    expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.updates.filter(update => update.table !== harness.tables.refunds)).toHaveLength(0);
+  });
+
+  it("rejects crypto completion with the stable method-mismatch code", async () => {
+    const request = await createCredit();
+    harness.state.refunds[0].method = "crypto";
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: "refund_method_mismatch" });
+    expect(harness.state.credits).toHaveLength(0);
+  });
+
+  it.each([
+    ["deleted", () => { (harness.state.order as any).deletedAt = new Date(); }],
+    ["cancelled", () => { harness.state.order.status = "Cancelled"; }],
+    ["already refunded", () => { (harness.state.order as any).refundStatus = "refunded"; }],
+    ["payment status changed", () => { harness.state.order.paymentStatus = "pending"; }],
+  ] as const)("rejects completion when the %s order state changes", async (_name, change) => {
+    const request = await createCredit();
+    change();
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: expect.stringMatching(/payment_state_changed|payment_evidence_changed/) });
+    expect(harness.state.credits).toHaveLength(0);
+  });
+
+  it("allows an active request to complete after crypto refunds are disabled", async () => {
+    const request = await createCredit();
+    harness.state.groupBuy.cryptoRefundsEnabled = false;
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it.each([123.44, 123.46])("rejects a verifier amount %s on completion even within verifier tolerance", async (verifierAmount) => {
+    const request = await createCredit();
+    harness.state.verifierAmount = verifierAmount;
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
+    expect(harness.state.credits).toHaveLength(0);
+  });
+
+  it("rejects a locked grand-total/payment-amount mutation", async () => {
+    const request = await createCredit();
+    harness.state.order.grandTotal = "200.00";
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
+  });
+
+  it("rejects a locked paymentUsdAmount mutation", async () => {
+    const request = await createCredit();
+    (harness.state.order as any).paymentUsdAmount = "99.99";
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
+  });
+
+  it("rejects completion when the original transaction identity changes during verification", async () => {
+    const request = await createCredit();
+    harness.state.beforeVerify = () => {
+      harness.state.order.paymentTxHash = "0x" + "d".repeat(64);
+    };
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id, username: "admin", role: "admin",
+    })).rejects.toMatchObject({ code: "payment_evidence_changed" });
+  });
+
+  it("serializes two processors so only one balance and ledger write commits", async () => {
+    const request = await createCredit();
+    const results = await Promise.all([
+      completeCreditRefund(harness.db as any, { refundId: request.id, username: "admin", role: "admin" }),
+      completeCreditRefund(harness.db as any, { refundId: request.id, username: "admin", role: "admin" }),
+    ]);
+    expect(results.filter(result => result.status === "completed")).toHaveLength(2);
+    expect(harness.state.account.credits).toBe(123.45);
+    expect(harness.state.credits).toHaveLength(1);
   });
 
   it("rolls back ledger failures and can retry from requested", async () => {

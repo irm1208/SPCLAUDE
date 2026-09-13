@@ -160,16 +160,20 @@ async function loadOriginalPaymentProof(
 
   // Only this successful verifier branch can construct the proof. No request
   // field is consulted for any of these identities.
-  return Object.freeze({
-    verified: true as const,
-    source: "server-payment-verifier" as const,
-    txHash,
-    currency: payment.currency,
-    network: payment.network,
-    recipientWallet: result.recipientAddress,
-    expectedAmountUsd: centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal))),
-    verifiedAmountUsd: centsToUsdString(usdToCents(String(result.amountUsdt))),
-  });
+  try {
+    return Object.freeze({
+      verified: true as const,
+      source: "server-payment-verifier" as const,
+      txHash,
+      currency: payment.currency,
+      network: payment.network,
+      recipientWallet: result.recipientAddress,
+      expectedAmountUsd: centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal))),
+      verifiedAmountUsd: centsToUsdString(usdToCents(String(result.amountUsdt))),
+    });
+  } catch {
+    throw new GroupBuyRefundError("ineligible_payment_evidence");
+  }
 }
 
 async function resolveLockedPayment(order: Record<string, any>) {
@@ -188,11 +192,26 @@ function requireLockedPaymentProof(
   proof: ServerPaymentEvidenceProof,
   payment: { walletAddress: string | null; currency: string; network: string },
 ): void {
-  const expected = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
+  let expected: string;
+  try {
+    expected = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
+  } catch {
+    throw new GroupBuyRefundError("payment_evidence_changed");
+  }
+  if (proof.expectedAmountUsd !== expected) {
+    throw new GroupBuyRefundError("payment_evidence_changed");
+  }
+  try {
+    if (usdToCents(proof.verifiedAmountUsd) !== usdToCents(expected)) {
+      throw new GroupBuyRefundError("ineligible_payment_evidence");
+    }
+  } catch (error) {
+    if (error instanceof GroupBuyRefundError) throw error;
+    throw new GroupBuyRefundError("ineligible_payment_evidence");
+  }
   if (
     !payment.walletAddress
     || proof.recipientWallet.toLowerCase() !== payment.walletAddress.toLowerCase()
-    || proof.expectedAmountUsd !== expected
     || proof.currency.toUpperCase().trim() !== payment.currency.toUpperCase().trim()
     || proof.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "") !== payment.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "")
     || ![
@@ -411,7 +430,7 @@ export async function completeCreditRefund(
     const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, args.refundId));
     if (!account || !order || !groupBuy || !refund) throw new GroupBuyRefundError("not_found");
 
-    if (refund.method !== "credit") throw new GroupBuyRefundError("crypto_refund_not_supported");
+    if (refund.method !== "credit") throw new GroupBuyRefundError("refund_method_mismatch");
     if (args.groupBuyId && args.groupBuyId !== groupBuy.id) {
       throw new GroupBuyRefundError("group_buy_scope");
     }
