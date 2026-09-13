@@ -1340,6 +1340,7 @@ function OrdersTab({ secret }: { secret: string }) {
       });
     const existingTracking = members[0] ? getTrackingPackages(members[0]) : [];
     const trackingDraft = sharedTracking[id] ?? existingTracking;
+    const editingSharedPackages = sharedTracking[id] !== undefined;
     // Consistent only when EVERY member already carries the draft value; an
     // inconsistent group (e.g. after a partial save) stays saveable to re-sync.
     const trackingConsistent = members.every(m =>
@@ -1386,28 +1387,83 @@ function OrdersTab({ secret }: { secret: string }) {
           </button>
         </div>
         <div className="px-4 pb-3 -mt-1">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-              <Truck className="h-3.5 w-3.5" /> Whole-order packages
-            </span>
-            <Button
-              size="sm"
-              className="h-8 shrink-0"
-              onClick={() => saveSharedTracking(group, trackingDraft)}
-              disabled={savingSharedTracking === id || trackingConsistent || trackingErrors.length > 0}
-            >
-              {savingSharedTracking === id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save packages"}
-            </Button>
-          </div>
-          <TrackingPackageEditor
-            value={trackingDraft}
-            onChange={packages => setSharedTracking(prev => ({ ...prev, [id]: packages }))}
-            compact
-          />
-          {!trackingConsistent && sharedTracking[id] === undefined && (
-            <p className="mt-2 text-[11px] text-amber-700">
-              Member tracking is inconsistent. Saving will synchronise these packages to all members.
-            </p>
+          {!editingSharedPackages ? (
+            <div className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-1.5">
+              <Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                {existingTracking.length > 0 ? (
+                  <>
+                    <span className="shrink-0 text-[11px] font-semibold text-slate-600">
+                      {existingTracking.length} {existingTracking.length === 1 ? "package" : "packages"}
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                      {existingTracking.slice(0, 3).map(pkg => (
+                        <span key={pkg.id} className="truncate rounded-md bg-white px-2 py-0.5 font-mono text-[10px] text-slate-600 ring-1 ring-slate-200">
+                          {pkg.courier.toLowerCase() === "bmurfs" ? "BMURFS · " : ""}
+                          {pkg.internationalTrackingNumber}
+                          {pkg.localTrackingNumber ? ` + ${pkg.localTrackingNumber}` : ""}
+                        </span>
+                      ))}
+                      {existingTracking.length > 3 && (
+                        <span className="shrink-0 text-[10px] font-semibold text-slate-500">+{existingTracking.length - 3}</span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-slate-500">No tracking packages added</span>
+                )}
+              </div>
+              {!trackingConsistent && (
+                <span className="hidden shrink-0 text-[10px] font-semibold text-amber-700 sm:inline">
+                  Needs synchronising
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setSharedTracking(prev => ({ ...prev, [id]: existingTracking }))}
+                className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-[#2D6BCC] transition-colors hover:bg-blue-50"
+              >
+                Edit packages
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Whole-order packages</p>
+                  <p className="mt-0.5 text-[10px] text-slate-500">Saved to every member in this shared order</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSharedTracking(prev => { const next = { ...prev }; delete next[id]; return next; })}
+                    disabled={savingSharedTracking === id}
+                    className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-500 hover:bg-white disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <Button
+                    size="sm"
+                    className="h-8 shrink-0"
+                    onClick={() => saveSharedTracking(group, trackingDraft)}
+                    disabled={savingSharedTracking === id || trackingConsistent || trackingErrors.length > 0}
+                  >
+                    {savingSharedTracking === id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save packages"}
+                  </Button>
+                </div>
+              </div>
+              <TrackingPackageEditor
+                value={trackingDraft}
+                onChange={packages => setSharedTracking(prev => ({ ...prev, [id]: packages }))}
+                compact
+              />
+              {!trackingConsistent && (
+                <p className="mt-2 text-[10px] text-amber-700">
+                  Saving will synchronise this package list to all member orders.
+                </p>
+              )}
+            </div>
           )}
         </div>
         <AnimatePresence>

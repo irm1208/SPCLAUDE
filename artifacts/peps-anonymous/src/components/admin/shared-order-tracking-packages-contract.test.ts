@@ -6,6 +6,8 @@ const source = readFileSync(new URL("../../pages/Admin.tsx", import.meta.url), "
 
 test("shared order headers use the multi-package editor", () => {
   assert.match(source, /sharedTracking[\s\S]*Record<string, TrackingPackage\[\]>/);
+  assert.match(source, /Edit packages/);
+  assert.match(source, /sharedTracking\[id\] !== undefined/);
   assert.match(source, /<TrackingPackageEditor[\s\S]*value=\{trackingDraft\}/);
   assert.match(source, /onChange=\{packages => setSharedTracking/);
 });
