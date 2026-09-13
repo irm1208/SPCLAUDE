@@ -48,4 +48,29 @@ describe("scheduler registry refund integration contract", () => {
       backlogCount: 3,
     });
   });
+
+  it("reports a failed manual drain and cancels delayed startup", async () => {
+    vi.useFakeTimers();
+    let runs = 0;
+    registerScheduler({
+      name: "refund-notifications-failure-test",
+      label: "Refund notifications",
+      description: "test",
+      defaultIntervalMs: 60_000,
+      minIntervalMs: 5_000,
+      maxIntervalMs: 86_400_000,
+      initialDelayMs: 1_000,
+      run: async () => {
+        runs += 1;
+        throw new Error("audit channel unavailable");
+      },
+    });
+    stopAllSchedulers();
+    await expect(runSchedulerNow("refund-notifications-failure-test")).resolves.toMatchObject({
+      ok: false,
+      error: "audit channel unavailable",
+    });
+    vi.advanceTimersByTime(1_000);
+    expect(runs).toBe(1);
+  });
 });

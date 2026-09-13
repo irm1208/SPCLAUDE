@@ -5,7 +5,7 @@ import {
   groupBuyRefundTransitionOutboxTable,
   type GroupBuyRefundStatus,
 } from "@workspace/db";
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { notifyUserFromTemplateFull, type NotifyResult } from "./telegram";
 import { registerScheduler } from "./scheduler-registry";
 
@@ -62,6 +62,11 @@ export type RefundNotificationDrainOptions = {
   /** Injectable clock/token sources keep lease takeover tests deterministic. */
   now?: () => Date;
   tokenFactory?: () => string;
+};
+
+export type RefundAuditDrainOptions = {
+  limit?: number;
+  throwOnError?: boolean;
 };
 
 export type RefundNotificationDrainSchedulerOptions = {
@@ -201,12 +206,13 @@ export async function enqueueRefundAudit(
  */
 export async function drainRefundAudits(
   database: DatabaseLike,
-  options: { limit?: number } = {},
+  options: RefundAuditDrainOptions = {},
 ): Promise<number> {
   const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0 ? options.limit! : 100;
   let delivered = 0;
   for (let i = 0; i < limit; i += 1) {
     let didDeliver = false;
+    let attemptedMarkerId: string | null = null;
     try {
       didDeliver = await database.transaction(async (tx: DatabaseLike) => {
         const [marker] = await tx
@@ -217,6 +223,7 @@ export async function drainRefundAudits(
           .limit(1)
           .for("update", { skipLocked: true });
         if (!marker) return false;
+        attemptedMarkerId = marker.id;
         await tx.insert(auditLogsTable).values({
           type: "change",
           level: "info",
@@ -239,6 +246,9 @@ export async function drainRefundAudits(
         });
         const [updated] = await tx.update(groupBuyRefundTransitionOutboxTable).set({
           deliveredAt: new Date(),
+          attemptCount: sql`${groupBuyRefundTransitionOutboxTable.attemptCount} + 1`,
+          lastAttemptAt: new Date(),
+          lastError: null,
         }).where(and(
           eq(groupBuyRefundTransitionOutboxTable.id, marker.id),
           isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
@@ -248,25 +258,20 @@ export async function drainRefundAudits(
     } catch (error) {
       // The transaction rolls back, retaining the marker for retry.
       try {
-        const [pending] = await database
-          .select({ id: groupBuyRefundTransitionOutboxTable.id })
-          .from(groupBuyRefundTransitionOutboxTable)
-          .where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt))
-          .orderBy(asc(groupBuyRefundTransitionOutboxTable.createdAt), asc(groupBuyRefundTransitionOutboxTable.id))
-          .limit(1);
-        if (pending) {
+        if (attemptedMarkerId) {
           await database.update(groupBuyRefundTransitionOutboxTable).set({
             attemptCount: sql`${groupBuyRefundTransitionOutboxTable.attemptCount} + 1`,
             lastAttemptAt: new Date(),
             lastError: error instanceof Error ? error.message.slice(0, 500) : "audit delivery failed",
           }).where(and(
-            eq(groupBuyRefundTransitionOutboxTable.id, pending.id),
+            eq(groupBuyRefundTransitionOutboxTable.id, attemptedMarkerId),
             isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
           ));
         }
       } catch {
         // Preserve the original failure; the pending marker remains durable.
       }
+      if (options.throwOnError) throw error;
       break;
     }
     if (!didDeliver) break;
@@ -435,6 +440,25 @@ export function startRefundNotificationDrain(
 
 /** Register the refund outbox in the shared admin-visible scheduler registry. */
 export function registerRefundNotificationScheduler(database: DatabaseLike): void {
+  const channels = {
+    audit: { lastSuccessAt: null as string | null, lastErrorAt: null as string | null, lastError: null as string | null },
+    notification: { lastSuccessAt: null as string | null, lastErrorAt: null as string | null, lastError: null as string | null },
+  };
+  const runChannel = async (
+    name: "audit" | "notification",
+    drain: () => Promise<number>,
+  ): Promise<number> => {
+    try {
+      const result = await drain();
+      channels[name].lastSuccessAt = new Date().toISOString();
+      channels[name].lastError = null;
+      return result;
+    } catch (error) {
+      channels[name].lastErrorAt = new Date().toISOString();
+      channels[name].lastError = error instanceof Error ? error.message.slice(0, 500) : "drain failed";
+      throw error;
+    }
+  };
   registerScheduler({
     name: "refund-notifications",
     label: "Refund notifications and audit outbox",
@@ -444,24 +468,28 @@ export function registerRefundNotificationScheduler(database: DatabaseLike): voi
     maxIntervalMs: 86_400_000,
     initialDelayMs: 5_000,
     run: async () => {
-      try {
-        await drainRefundAudits(database, { limit: 25 });
-      } catch {
-        // Keep notification delivery independent from audit outages.
-      }
-      try {
-        await drainRefundNotifications(database, { limit: 25 });
-      } catch {
-        // Keep audit delivery independent from Telegram outages.
+      const results = await Promise.allSettled([
+        runChannel("audit", () => drainRefundAudits(database, { limit: 25, throwOnError: true })),
+        runChannel("notification", () => drainRefundNotifications(database, { limit: 25 })),
+      ]);
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failures.length > 0) {
+        throw new AggregateError(failures.map(failure => failure.reason), "Refund outbox drain failed");
       }
     },
     backlogCount: async () => {
-      const [audits, notifications] = await Promise.all([
-        database.select().from(groupBuyRefundTransitionOutboxTable).where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt)),
-        database.select().from(groupBuyRefundNotificationsTable).where(isNull(groupBuyRefundNotificationsTable.sentAt)),
+      const [auditRows, notificationRows] = await Promise.all([
+        database.select({ count: count() }).from(groupBuyRefundTransitionOutboxTable).where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt)),
+        database.select({ count: count() }).from(groupBuyRefundNotificationsTable).where(isNull(groupBuyRefundNotificationsTable.sentAt)),
       ]);
-      return audits.length + notifications.length;
+      const audit = Number(auditRows[0]?.count ?? 0);
+      const notification = Number(notificationRows[0]?.count ?? 0);
+      return { total: audit + notification, audit, notification };
     },
+    channelStatus: () => ({
+      audit: { ...channels.audit },
+      notification: { ...channels.notification },
+    }),
   });
 }
 
