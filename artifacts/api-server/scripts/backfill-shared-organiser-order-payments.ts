@@ -1,7 +1,10 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { main } from "../src/lib/wholesale-organiser-payment-backfill-cli";
-import { runWithPool } from "../src/lib/wholesale-organiser-payment-backfill-cli";
+import {
+  main,
+  runWithPool,
+  writeFailure,
+} from "../src/lib/wholesale-organiser-payment-backfill-cli";
 
 async function runStandalone(): Promise<void> {
   await runWithPool(
@@ -10,6 +13,13 @@ async function runStandalone(): Promise<void> {
       const { pool } = await import("@workspace/db");
       return pool;
     },
+    (summary, writeSummary) => writeFailure(
+      summary,
+      (code) => {
+        process.exitCode = code;
+      },
+      writeSummary,
+    ),
   );
 }
 

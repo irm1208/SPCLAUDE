@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { main, runWithPool } from "./wholesale-organiser-payment-backfill-cli";
+import { main, runWithPool, writeFailure } from "./wholesale-organiser-payment-backfill-cli";
 import { WholesaleOrganiserPaymentBackfillError } from "./wholesale-organiser-payment-backfill";
 
 vi.mock("@workspace/db", () => {
@@ -64,17 +64,111 @@ describe("shared organiser payment backfill CLI", () => {
     const run = vi.fn(async () => {
       events.push("runner");
       if (shouldFail) throw new Error("runner failed");
+      return {
+        summary: {
+          scanned: 0,
+          repaired: 0,
+          alreadyCorrect: 0,
+          skippedByCode: {},
+        },
+        failed: false,
+      };
     });
+    const reportFailure = vi.fn();
 
-    const operation = runWithPool(run, async () => pool);
+    const operation = runWithPool(run, async () => pool, reportFailure);
 
     if (shouldFail) {
-      await expect(operation).rejects.toThrow("runner failed");
+      await expect(operation).resolves.toMatchObject({ failed: true });
+      expect(reportFailure).toHaveBeenCalledOnce();
     } else {
-      await expect(operation).resolves.toBeUndefined();
+      await expect(operation).resolves.toMatchObject({ failed: false });
+      expect(reportFailure).not.toHaveBeenCalled();
     }
     expect(run).toHaveBeenCalledOnce();
     expect(pool.end).toHaveBeenCalledOnce();
     expect(events).toEqual(["runner", "pool.end"]);
+  });
+
+  it("reports a pool acquisition failure without raw details", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const error = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const setExitCode = vi.fn();
+    const run = vi.fn();
+
+    const result = await runWithPool(
+      run,
+      async () => {
+        throw new Error("secret connection string");
+      },
+      (summary, writeSummary) => writeFailure(summary, setExitCode, writeSummary),
+    );
+
+    expect(result).toMatchObject({ failed: true, summary: { scanned: 0 } });
+    expect(run).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith("Shared organiser payment backfill failed.\n");
+    expect(write).toHaveBeenCalledWith(
+      '{"scanned":0,"repaired":0,"alreadyCorrect":0,"skippedByCode":{}}\n',
+    );
+    expect(setExitCode).toHaveBeenCalledWith(1);
+    expect(error.mock.calls.flat().join(" ")).not.toContain("secret");
+  });
+
+  it("reports pool cleanup failure without duplicating successful output", async () => {
+    const summary = {
+      scanned: 2,
+      repaired: 1,
+      alreadyCorrect: 1,
+      skippedByCode: {},
+    };
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const error = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const setExitCode = vi.fn();
+
+    const result = await runWithPool(
+      () => main(async () => summary, setExitCode),
+      async () => ({
+        end: async () => {
+          throw new Error("secret pool failure");
+        },
+      }),
+      (failureSummary, writeSummary) => writeFailure(failureSummary, setExitCode, writeSummary),
+    );
+
+    expect(result).toMatchObject({ failed: true, summary });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(`${JSON.stringify(summary)}\n`);
+    expect(error).toHaveBeenCalledWith("Shared organiser payment backfill failed.\n");
+    expect(setExitCode).toHaveBeenCalledWith(1);
+    expect(error.mock.calls.flat().join(" ")).not.toContain("secret");
+  });
+
+  it("does not duplicate diagnostics when main and cleanup both fail", async () => {
+    const summary = {
+      scanned: 1,
+      repaired: 1,
+      alreadyCorrect: 0,
+      skippedByCode: {},
+    };
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const error = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const setExitCode = vi.fn();
+
+    await runWithPool(
+      () => main(async () => {
+        throw new WholesaleOrganiserPaymentBackfillError(summary, new Error("secret runner failure"));
+      }, setExitCode),
+      async () => ({
+        end: async () => {
+          throw new Error("secret pool failure");
+        },
+      }),
+      (failureSummary, writeSummary) => writeFailure(failureSummary, setExitCode, writeSummary),
+    );
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(setExitCode).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls.flat().join(" ")).not.toContain("secret");
   });
 });
