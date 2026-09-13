@@ -18,6 +18,7 @@ import {
   submitCryptoRefund,
 } from "../lib/group-buy-refund";
 import type { RefundRequestInput } from "../lib/refund-money";
+import { getCustomerRefundView } from "../lib/customer-refund-view";
 
 const router: IRouter = Router();
 const REFUND_STATUSES = ["requested", "verifying", "verification_failed", "completed"] as const;
@@ -269,12 +270,12 @@ router.post("/account/orders/:orderId/refund", requireAccount, async (req, res):
   const input = parseRefundRequestBody(req.body);
   if (!input) { res.status(400).json({ code: "invalid_refund_request", error: "invalid_refund_request" }); return; }
   try {
-    const result = await createRefundRequest(db, {
+    await createRefundRequest(db, {
       accountId: req.account!.telegramUsername,
       orderId: String(req.params["orderId"]),
       input,
     });
-    res.status(201).json(result);
+    res.status(201).json(await getCustomerRefundView(String(req.params["orderId"]), req.account!.telegramUsername));
   } catch (error) {
     errorResponse(res, error);
   }

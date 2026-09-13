@@ -1819,6 +1819,8 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       ...(await getCustomerRefundView(order.id, tg, refundViews) ?? {
         canRequest: false,
         ineligibilityReasonCode: "not_owner",
+        preferredAsset: "USDC",
+        preferredNetwork: "Ethereum ERC-20",
         current: null,
       }),
       createdAt: (order.createdAt as Date).toISOString(),
@@ -1991,6 +1993,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     .select()
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, order.id));
+  const refundView = await getCustomerRefundView(order.id, tg);
   let obcCurrency: string | null = null;
   if (order.groupBuyId) {
     const [gbRow] = await db
@@ -2052,6 +2055,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     inpostQrCode: order.inpostQrCode ?? null,
     royalMailQrCode: order.royalMailQrCode ?? null,
     groupBuyId: order.groupBuyId ?? null,
+    ...refundView,
     currency: obcCurrency,
     groupBuyDeleteLocked: obcDeleteLocked,
     createdAt: (order.createdAt as Date).toISOString(),

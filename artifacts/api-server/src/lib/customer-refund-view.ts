@@ -37,6 +37,8 @@ export type CustomerRefundSafeView = {
 export type CustomerRefundView = {
   canRequest: boolean;
   ineligibilityReasonCode: RefundEligibilityCode | null;
+  preferredAsset: "USDC" | "USDT";
+  preferredNetwork: "Ethereum ERC-20";
   current: CustomerRefundSafeView | null;
 };
 
@@ -105,18 +107,25 @@ function buildView(
   const current = refunds[0] ? safeRefund(refunds[0]) : null;
   const active = refunds.find(row => ["requested", "verifying", "verification_failed"].includes(String(row.status)));
   if (!order || !groupBuy || !order.groupBuyId || order.groupBuyId !== groupBuy.id) {
-    return { canRequest: false, ineligibilityReasonCode: "not_group_buy_order", current };
+    return { canRequest: false, ineligibilityReasonCode: "not_group_buy_order", preferredAsset: "USDC", preferredNetwork: "Ethereum ERC-20", current };
   }
+  const proof = proofFromAudit(order, audits);
+  const preferredAsset = proof && ["USDC", "USDT"].includes(String(proof.currency).toUpperCase())
+    && ["ERC20", "ERC20ETHEREUM", "ETHEREUM", "ETHEREUMMAINNET", "ETHEREUMERC20"].includes(String(proof.network).toUpperCase().replace(/[^A-Z0-9]/g, ""))
+    ? String(proof.currency).toUpperCase() as "USDC" | "USDT"
+    : "USDC";
   const eligibility = evaluateRefundEligibility({
     accountId,
     order,
     groupBuy,
     activeRefund: active ? { id: String(active.id), status: String(active.status) } : null,
-    paymentEvidenceProof: proofFromAudit(order, audits),
+    paymentEvidenceProof: proof,
   });
   return {
     canRequest: eligibility.eligible && groupBuy.cryptoRefundsEnabled === true,
     ineligibilityReasonCode: eligibility.eligible ? null : eligibility.reasonCode,
+    preferredAsset,
+    preferredNetwork: "Ethereum ERC-20",
     current,
   };
 }
@@ -129,7 +138,7 @@ export async function getCustomerRefundView(
 ): Promise<CustomerRefundView> {
   if (preloaded?.has(orderId)) return preloaded.get(orderId)!;
   const views = await getCustomerRefundViews([orderId], accountId);
-  return views.get(orderId) ?? { canRequest: false, ineligibilityReasonCode: "not_owner", current: null };
+  return views.get(orderId) ?? { canRequest: false, ineligibilityReasonCode: "not_owner", preferredAsset: "USDC", preferredNetwork: "Ethereum ERC-20", current: null };
 }
 
 /** Batch variant used by the order list so refund state does not create N+1 queries. */

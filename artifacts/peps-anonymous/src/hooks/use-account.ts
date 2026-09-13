@@ -686,6 +686,8 @@ export interface CustomerRefund {
 export interface CustomerRefundView {
   canRequest: boolean;
   ineligibilityReasonCode: string | null;
+  preferredAsset: "USDC" | "USDT";
+  preferredNetwork: "Ethereum ERC-20";
   current: CustomerRefund | null;
 }
 
@@ -1132,7 +1134,7 @@ export function useRequestCustomerRefund() {
       asset?: "USDC" | "USDT";
       network?: "Ethereum ERC-20";
       destinationWallet?: string;
-    }) => {
+    }): Promise<CustomerRefundView> => {
       const body = method === "credit"
         ? { method }
         : { method, asset, network, destinationWallet };
@@ -1144,7 +1146,7 @@ export function useRequestCustomerRefund() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Unable to submit refund request");
-      return data;
+      return data as CustomerRefundView;
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["account", "orders"] });

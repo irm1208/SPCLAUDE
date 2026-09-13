@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
 import { fmtC } from "@/lib/currency";
 import { useRequestCustomerRefund, type CustomerRefund, type CustomerRefundView } from "@/hooks/use-account";
@@ -55,18 +55,21 @@ export function CustomerRefundPanel({
   orderId: string;
   amountUsd?: number;
   refundView?: CustomerRefundView | null;
-  onUpdated?: () => void;
+  onUpdated?: (view: CustomerRefundView) => void | Promise<void>;
 }) {
   const request = useRequestCustomerRefund();
   const [method, setMethod] = useState<"credit" | "crypto">("credit");
-  const [asset, setAsset] = useState<"USDC" | "USDT">("USDC");
+  const [asset, setAsset] = useState<"USDC" | "USDT">(refundView?.preferredAsset ?? "USDC");
   const [wallet, setWallet] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<CustomerRefund | null>(null);
-  const refund = refundView?.current ?? submitted;
+  const [refreshing, setRefreshing] = useState(false);
+  const refund = refundView?.current ?? null;
   const displayAmountUsd = refund?.amountUsd ?? amountUsd ?? 0;
   const walletValid = /^0x[a-fA-F0-9]{40}$/.test(wallet.trim());
+  useEffect(() => {
+    if (refundView?.preferredAsset) setAsset(refundView.preferredAsset);
+  }, [refundView?.preferredAsset]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -81,24 +84,13 @@ export function CustomerRefundPanel({
         method,
         ...(method === "crypto" ? { asset, network: "Ethereum ERC-20" as const, destinationWallet: wallet.trim() } : {}),
       });
-      setSubmitted({
-        id: String(result.id ?? "pending"),
-        method,
-        status: "requested",
-        amountUsd: Number(result.amountUsd ?? displayAmountUsd),
-        asset: method === "crypto" ? asset : null,
-        network: method === "crypto" ? "Ethereum ERC-20" : null,
-        destinationWallet: method === "crypto" ? wallet.trim() : null,
-        outgoingTxid: null,
-        explorerUrl: null,
-        verificationErrorCode: null,
-        verificationErrorMessage: null,
-        requestedAt: new Date().toISOString(),
-      });
       setShowForm(false);
-      onUpdated?.();
+      setRefreshing(true);
+      await onUpdated?.(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit refund request");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -138,7 +130,7 @@ export function CustomerRefundPanel({
           {error && <p role="alert" className="text-xs font-semibold text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={() => { setShowForm(false); setError(null); }} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ border: "1px solid var(--t-border)", color: "var(--t-muted)" }}>Cancel</button>
-            <button type="submit" disabled={request.isPending} className="rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-60" style={{ background: "#1B3A7A" }}>{request.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Submit refund request"}</button>
+            <button type="submit" disabled={request.isPending || refreshing} aria-label={request.isPending || refreshing ? "Loading refund request" : "Submit refund request"} className="rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-60" style={{ background: "#1B3A7A" }}>{request.isPending || refreshing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> <span>Loading…</span></> : "Submit refund request"}</button>
           </div>
         </form>
       )}

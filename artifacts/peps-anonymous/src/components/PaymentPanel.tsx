@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Copy, Check, Loader2, Send, AlertCircle, ShieldCheck, Clock, FlaskConical, Zap, RefreshCw, ChevronRight, Wallet, ExternalLink, ArrowLeft, ImagePlus, X, Upload, CheckCircle2, Info } from "lucide-react";
+import { Copy, Check, Loader2, Send, AlertCircle, ShieldCheck, Clock, FlaskConical, Zap, RefreshCw, ChevronRight, Wallet, ExternalLink, ArrowLeft, ImagePlus, X, Upload, CheckCircle2, Info, Lock } from "lucide-react";
 import QRCode from "react-qr-code";
 import { Card, Button, Input } from "@/components/ui";
 import { currSym } from "@/lib/currency";
@@ -378,6 +378,7 @@ interface Props {
   onStatusChange?: (status: string, txHash?: string, currency?: string) => void;
   paymentsEnabled?: boolean;
   creditsUsd?: number;
+  disabled?: boolean;
 }
 
 // ── Gradient styles ────────────────────────────────────────────
@@ -438,6 +439,7 @@ export default function PaymentPanel({
   onStatusChange,
   paymentsEnabled: paymentsEnabledProp,
   creditsUsd = 0,
+  disabled = false,
 }: Props) {
   const apiBase = apiPrefix ?? (orderId ? `/api/orders/${orderId}` : null);
   const [paymentsEnabled, setPaymentsEnabled] = useState<boolean | null>(
@@ -713,6 +715,13 @@ export default function PaymentPanel({
   if (paymentsEnabled === null) return null;
   if (!paymentsEnabled) return null;
   if (step === "loading") return null;
+  if (disabled) {
+    return <Card className="p-4" aria-disabled="true" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+      <p className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--t-muted)" }}>
+        <Lock className="w-4 h-4 shrink-0" /> Refund request active — payment and proof controls are temporarily locked.
+      </p>
+    </Card>;
+  }
 
   const availableMethods: PaymentMethod[] = ([
     walletAddress ? "crypto" : null,

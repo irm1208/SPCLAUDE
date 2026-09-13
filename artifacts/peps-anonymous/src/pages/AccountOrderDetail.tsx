@@ -231,6 +231,7 @@ interface OrderDetail {
   lineItems: OrderLineItem[];
   canRequest?: boolean;
   ineligibilityReasonCode?: string | null;
+  preferredAsset?: "USDC" | "USDT";
   current?: CustomerRefund | null;
 }
 
@@ -669,6 +670,7 @@ function AccountShippingAddressSection({
           )}
         </div>
       </button>
+      {disabled && <p className="px-4 pb-3 text-xs" style={{ color: "var(--t-muted)" }}>Refund request active — the shipping address is temporarily locked.</p>}
 
       {/* Address editor modal */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setError(null); }}>
@@ -893,6 +895,7 @@ function AccountQrSection({
   existingQr,
   customMessage,
   onUploaded,
+  disabled = false,
 }: {
   orderId: string;
   uploadEndpoint: string;
@@ -901,6 +904,7 @@ function AccountQrSection({
   existingQr: string | null;
   customMessage?: string;
   onUploaded: (qr: string) => void;
+  disabled?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -909,6 +913,7 @@ function AccountQrSection({
   const isLabelUpload = uploadKind === "label";
 
   const handleFile = async (file: File) => {
+    if (disabled) return;
     setError(null);
     const isImage = file.type.startsWith("image/");
     const isAllowedImage = isLabelUpload
@@ -950,6 +955,17 @@ function AccountQrSection({
   };
 
   const isPdfPreview = previewSrc?.startsWith("data:application/pdf");
+
+  if (disabled) {
+    return <Card className="p-5 rounded-lg shadow-none" aria-disabled="true" style={{ border: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
+      <div className="flex items-center gap-3">
+        <Lock className="w-4 h-4 shrink-0" style={{ color: "var(--t-muted)" }} />
+        <div><p className="font-semibold text-sm" style={{ color: "var(--t-text)" }}>{label}</p>
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>Refund request active — order changes and uploads are temporarily locked.</p>
+        </div>
+      </div>
+    </Card>;
+  }
 
   const handleDownload = () => {
     if (!previewSrc) return;
@@ -1163,6 +1179,7 @@ function BalanceDueCard({
   balancePaymentStatus,
   onUploaded,
   onBalanceStatusChange,
+  disabled = false,
 }: {
   orderId: string;
   amountDue: number;
@@ -1172,6 +1189,7 @@ function BalanceDueCard({
   balancePaymentStatus: string | null;
   onUploaded: () => void;
   onBalanceStatusChange: (status: string, txHash?: string | null) => void;
+  disabled?: boolean;
 }) {
   const { dark: isDark } = useThemeStore();
   const balanceTheme = getBalancePaymentCardTheme(isDark);
@@ -1428,6 +1446,12 @@ function BalanceDueCard({
       setViewing(null);
     }
   };
+
+  if (disabled) return <div className={`rounded-[24px] ${balanceTheme.shellPadding} mt-3`} aria-disabled="true" style={{ background: balanceTheme.card, border: `1px solid ${balanceTheme.border}` }}>
+    <p className="text-sm font-semibold flex items-center gap-2" style={{ color: balanceTheme.muted }}>
+      <Lock className="w-4 h-4 shrink-0" /> Refund request active — balance payment and proof controls are temporarily locked.
+    </p>
+  </div>;
 
   return (
     <div
@@ -2048,7 +2072,7 @@ export default function AccountOrderDetail() {
   }, []);
 
   const handleEdit = () => {
-    if (!order) return;
+    if (!order || refundActive) return;
     // Shared wholesale orders are managed from the shared order page — their items and
     // shipping split are frozen at lock time and can't be edited individually.
     if (order.orderType === "wholesale_shared") return;
@@ -2088,13 +2112,13 @@ export default function AccountOrderDetail() {
   };
 
   const handleTopUp = () => {
-    if (!order) return;
+    if (!order || refundActive) return;
     startTopUpOrder(order);
     setLocation(order.groupBuyId ? `/order?gbId=${order.groupBuyId}` : "/order");
   };
 
   const handleApplyCredits = async () => {
-    if (!order || applyingCredits || accountCredits <= 0) return;
+    if (!order || refundActive || applyingCredits || accountCredits <= 0) return;
     const remainingDue = safeSubtractMoneyClamped(order.grandTotal, order.creditsApplied ?? 0);
     const toApply = safeMinMoney(accountCredits, remainingDue);
     if (toApply <= 0) return;
@@ -2129,7 +2153,7 @@ export default function AccountOrderDetail() {
   };
 
   const handleVote = async (productId: string) => {
-    if (!order || voteLoading) return;
+    if (!order || refundActive || voteLoading) return;
     setVoteLoading(true);
     setVoteError(null);
     try {
@@ -2150,7 +2174,7 @@ export default function AccountOrderDetail() {
   };
 
   const handleDelete = async () => {
-    if (!order || deleting) return;
+    if (!order || refundActive || deleting) return;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -2338,6 +2362,7 @@ export default function AccountOrderDetail() {
                       paymentRejectionReason={order.paymentRejectionReason ?? null}
                       paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
+                      disabled={refundActive}
                     />
                   )}
                   {order.id && (
@@ -2347,7 +2372,14 @@ export default function AccountOrderDetail() {
                       refundView={{
                         canRequest: order.canRequest ?? false,
                         ineligibilityReasonCode: order.ineligibilityReasonCode ?? null,
+                        preferredAsset: order.preferredAsset ?? "USDC",
+                        preferredNetwork: "Ethereum ERC-20",
                         current: order.current ?? null,
+                      }}
+                      onUpdated={async (view) => {
+                        const refreshed = await fetch(`/api/account/orders/${order.id}`, { credentials: "include" });
+                        if (refreshed.ok) setOrder(await refreshed.json());
+                        else setOrder(prev => prev ? { ...prev, ...view } : prev);
                       }}
                     />
                   )}
@@ -2512,6 +2544,7 @@ export default function AccountOrderDetail() {
                               onBalanceStatusChange={(status, txHash) =>
                                 setOrder(prev => prev ? { ...prev, balancePaymentStatus: status, balanceTxHash: txHash ?? prev.balanceTxHash ?? null } : prev)
                               }
+                              disabled={refundActive}
                             />
                           </div>
                         )}
@@ -2784,7 +2817,7 @@ export default function AccountOrderDetail() {
                       </div>
                       <button
                         onClick={handleApplyCredits}
-                        disabled={applyingCredits}
+                        disabled={applyingCredits || refundActive}
                         className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity"
                         style={{ background: "#16a34a", color: "#fff", opacity: applyingCredits ? 0.6 : 1 }}
                       >
@@ -2844,6 +2877,7 @@ export default function AccountOrderDetail() {
                       paymentRejectionReason={order.paymentRejectionReason ?? null}
                       paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
+                      disabled={refundActive}
                     />
                   ) : null)}
 
@@ -2876,7 +2910,7 @@ export default function AccountOrderDetail() {
                             <button
                               key={li.productId}
                               onClick={() => li.productId && handleVote(li.productId)}
-                              disabled={voteLoading || !li.productId}
+                              disabled={voteLoading || !li.productId || refundActive}
                               className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-50"
                               style={{ borderColor: "var(--t-blue-30)", background: "var(--t-surface)", color: "var(--t-blue)" }}
                             >
@@ -2948,6 +2982,7 @@ export default function AccountOrderDetail() {
                         existingQr={order.inpostQrCode ?? null}
                         customMessage={order.groupBuyQrUploadMessage ?? undefined}
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, inpostQrCode: qr } : prev)}
+                        disabled={refundActive}
                       />
                     ) : (
                       <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
@@ -2974,6 +3009,7 @@ export default function AccountOrderDetail() {
                         label="Royal Mail PDF Label Upload"
                         existingQr={order.royalMailQrCode ?? null}
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, royalMailQrCode: qr } : prev)}
+                        disabled={refundActive}
                       />
                     ) : (
                       <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
@@ -3000,6 +3036,7 @@ export default function AccountOrderDetail() {
                         existingQr={order.qrCodes?.["custom"] ?? null}
                         customMessage={order.groupBuyQrUploadMessage ?? undefined}
                         onUploaded={(qr) => setOrder((prev) => prev ? { ...prev, qrCodes: { ...(prev.qrCodes ?? {}), custom: qr } } : prev)}
+                        disabled={refundActive}
                       />
                     ) : (
                       <Card className="p-4 rounded-lg shadow-none" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
@@ -3022,7 +3059,9 @@ export default function AccountOrderDetail() {
                       <SecIcon Icon={Pencil} />
                       <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                     </div>
-                    {order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
+                    {refundActive ? (
+                      <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>Refund request active — order edits, additional items, and cancellation are temporarily locked.</div>
+                    ) : order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}
