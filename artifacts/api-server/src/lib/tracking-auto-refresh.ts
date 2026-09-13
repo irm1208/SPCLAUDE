@@ -420,9 +420,6 @@ async function refreshIndividualOrders(): Promise<number> {
   }
 
   console.log(`[tracking-auto-refresh] Refreshing ${orders.length} individual order(s)`);
-  await db.transaction(async tx => {
-    await assertNoActiveRefunds(tx, orders.map(order => order.id));
-  });
   let refreshed = 0;
 
   for (const order of orders) {
@@ -437,12 +434,21 @@ async function refreshIndividualOrders(): Promise<number> {
          const num = nums[0];
          const accepted = await track17Client.getTrackingInfo(num, 0);
          if (!accepted) {
-           await db.update(ordersTable).set({ trackingLastChecked: new Date() }).where(refundMutableOrderWhere(unchangedTrackingCache(order)));
+            await db.transaction(async tx => {
+              await assertNoActiveRefunds(tx, [order.id]);
+              await tx.update(ordersTable).set({ trackingLastChecked: new Date() })
+                .where(refundMutableOrderWhere(unchangedTrackingCache(order)))
+                .returning({ id: ordersTable.id });
+            });
            continue;
          }
          const { status, events } = parseTrack17Response(accepted, false);
          const oldStatus = order.trackingStatus;
-         const saved = await db.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() }).where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
+          const saved = await db.transaction(async tx => {
+            await assertNoActiveRefunds(tx, [order.id]);
+            return tx.update(ordersTable).set({ trackingStatus: status, trackingEvents: events as any, trackingLastChecked: new Date() })
+              .where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
+          });
          if (!saved.length) continue;
          if (status !== oldStatus) {
            refreshed++;
@@ -485,12 +491,15 @@ async function refreshIndividualOrders(): Promise<number> {
          trackingEvents: order.trackingEvents,
          trackingLastChecked: order.trackingLastChecked,
        });
-       const saved = await db.update(ordersTable).set({
+        const saved = await db.transaction(async tx => {
+          await assertNoActiveRefunds(tx, [order.id]);
+          return tx.update(ordersTable).set({
          trackingDetails: mergedDetails,
          trackingStatus: compatibility.trackingStatus,
          trackingEvents: compatibility.trackingEvents as any,
          trackingLastChecked: compatibility.trackingLastChecked,
-       }).where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
+          }).where(refundMutableOrderWhere(unchangedTrackingCache(order))).returning({ id: ordersTable.id });
+        });
        // A newer edit or another refresh won the race: no stale write or duplicate alert.
        if (!saved.length) continue;
        refreshed++;

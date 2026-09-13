@@ -31,6 +31,7 @@ import {
   type RefundEligibilityOrder,
   type ServerPaymentEvidenceProof,
 } from "./refund-eligibility";
+import { ACTIVE_REFUND_STATUSES } from "./refund-mutation-guard";
 import {
   addMoney,
   centsToUsdString,
@@ -177,7 +178,6 @@ export class GroupBuyRefundError extends Error {
   }
 }
 
-const ACTIVE_REFUND_STATUSES = ["requested", "verifying", "verification_failed"] as const;
 
 function asRefundResult(refund: Record<string, any>): RefundRequestResult {
   return {

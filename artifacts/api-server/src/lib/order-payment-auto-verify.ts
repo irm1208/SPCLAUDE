@@ -207,13 +207,15 @@ async function checkAnonPay(order: PendingOrder): Promise<void> {
     ? `${ANONPAY_PREFIX}${paymentId}|${trocOutgoingHash}`
     : `${ANONPAY_PREFIX}${paymentId}`;
 
-  const [savedAnonPayOrder] = await db
-    .update(ordersTable)
-    // amountDue is an independent post-payment balance. Preserve any balance
-    // added while this primary payment was awaiting auto-verification.
-    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
-    .returning({ id: ordersTable.id });
+  const [savedAnonPayOrder] = await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, [order.id]);
+    return tx.update(ordersTable)
+      // amountDue is an independent post-payment balance. Preserve any balance
+      // added while this primary payment was awaiting auto-verification.
+      .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+      .returning({ id: ordersTable.id });
+  });
   if (!savedAnonPayOrder) {
     console.log(`[order-auto-verify] Skipped AnonPay confirmation for ${order.code}: refund_active`);
     return;
@@ -277,7 +279,13 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
   // nor demands a stale higher price after an order is edited down.
   const lockIsStale = lockedUsd != null && Math.abs(lockedUsd - currentGrandTotalUsd) > currentGrandTotalUsd * 0.03;
   if (lockIsStale) {
-    await db.update(ordersTable).set({ paymentUsdAmount: null }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
+    await db.transaction(async tx => {
+      await assertNoActiveRefunds(tx, [order.id]);
+      const [cleared] = await tx.update(ordersTable).set({ paymentUsdAmount: null })
+        .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+        .returning({ id: ordersTable.id });
+      if (!cleared) throw new Error(`Order ${order.id} changed before stale payment lock could be cleared.`);
+    });
   }
   const grandTotalUsd = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentGrandTotalUsd;
   const netCents = usdToCents(grandTotalUsd.toFixed(2))
@@ -320,13 +328,15 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
     return;
   }
 
-  const [savedCryptoOrder] = await db
-    .update(ordersTable)
-    // amountDue is an independent post-payment balance. Preserve any balance
-    // added while this primary payment was awaiting auto-verification.
-    .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
-    .returning({ id: ordersTable.id });
+  const [savedCryptoOrder] = await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, [order.id]);
+    return tx.update(ordersTable)
+      // amountDue is an independent post-payment balance. Preserve any balance
+      // added while this primary payment was awaiting auto-verification.
+      .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+      .returning({ id: ordersTable.id });
+  });
   if (!savedCryptoOrder) {
     console.log(`[order-auto-verify] Skipped crypto confirmation for ${order.code}: refund_active`);
     return;
@@ -441,9 +451,6 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
     if (pending.length === 0) return;
     console.log(`[order-auto-verify] Checking ${pending.length} pending order(s)…`);
 
-    await db.transaction(async tx => {
-      await assertNoActiveRefunds(tx, pending.map(order => order.id));
-    });
     for (const order of pending) {
       try {
         const hash = order.paymentTxHash ?? "";

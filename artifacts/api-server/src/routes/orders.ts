@@ -983,6 +983,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         .from(ordersTable)
         .where(eq(ordersTable.id, additionParent.id))
         .for("update");
+      if (lockedParent) await assertNoActiveRefunds(tx, [lockedParent.id]);
 
       if (
         !lockedParent
@@ -1121,6 +1122,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         })
         .where(refundMutableOrderWhere(eq(ordersTable.id, lockedParent.id)))
         .returning();
+      if (!updatedParent) throw new RefundMutationBlockedError(lockedParent.id);
 
       if (resolvedCouponId && appliedCouponCode) {
         await tx.insert(couponRedemptionsTable).values({
@@ -2272,6 +2274,9 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
 
   const { updatedOrder, insertedLineItems } = await db.transaction(async tx => {
+  const [lockedOrder] = await tx.select({ id: ordersTable.id }).from(ordersTable)
+    .where(eq(ordersTable.id, rawId)).for("update");
+  if (!lockedOrder) throw new Error("Order no longer exists.");
   await assertNoActiveRefund(tx, rawId);
   const [updatedOrder] = await tx
     .update(ordersTable)
@@ -2309,6 +2314,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     })
     .where(refundMutableOrderWhere(eq(ordersTable.id, rawId)))
     .returning();
+  if (!updatedOrder) throw new RefundMutationBlockedError(rawId);
 
   await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, rawId), orderLineItemsTable.orderId));
 

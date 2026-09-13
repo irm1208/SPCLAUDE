@@ -4968,9 +4968,37 @@ router.put("/admin/customers/:username/rename", async (req: any, res: any): Prom
 
     const [existingCustomer] = await db.select().from(customersTable).where(eq(customersTable.telegramUsername, oldUsername));
 
-    // Atomic transaction: update orders + rename customer row
+    // Atomic transaction: lock every order owned by either username column,
+    // reject active refunds before any account/related write, then rename.
     await db.transaction(async (tx) => {
-      await tx.update(ordersTable).set({ telegramUsername: tg }).where(refundMutableOrderWhere(eq(ordersTable.telegramUsername, oldUsername)));
+      const affectedOrders = await tx.select({
+        id: ordersTable.id,
+        telegramUsername: ordersTable.telegramUsername,
+        reshipperUsername: ordersTable.reshipperUsername,
+      })
+        .from(ordersTable)
+        .where(or(
+          eq(ordersTable.telegramUsername, oldUsername),
+          eq(ordersTable.reshipperUsername, oldUsername),
+        ))
+        .orderBy(asc(ordersTable.id)).for("update");
+      await assertNoActiveRefunds(tx, affectedOrders.map(order => order.id));
+      const renamed = await tx.update(ordersTable)
+        .set({ telegramUsername: tg })
+        .where(refundMutableOrderWhere(eq(ordersTable.telegramUsername, oldUsername)))
+        .returning({ id: ordersTable.id });
+      const expectedTelegram = affectedOrders.filter(order => order.telegramUsername === oldUsername).length;
+      if (renamed.length !== expectedTelegram) {
+        throw new RefundMutationBlockedError(affectedOrders.find(order => order.telegramUsername === oldUsername)?.id ?? affectedOrders[0].id);
+      }
+      const reshipperRows = await tx.update(ordersTable)
+        .set({ reshipperUsername: tg })
+        .where(refundMutableOrderWhere(eq(ordersTable.reshipperUsername, oldUsername)))
+        .returning({ id: ordersTable.id });
+      const expectedReshipper = affectedOrders.filter(order => order.reshipperUsername === oldUsername).length;
+      if (reshipperRows.length !== expectedReshipper) {
+        throw new RefundMutationBlockedError(affectedOrders.find(order => order.reshipperUsername === oldUsername)?.id ?? affectedOrders[0].id);
+      }
       if (existingCustomer) {
         const { telegramUsername: _old, createdAt: _ca, updatedAt: _ua, ...rest } = existingCustomer;
         await tx.insert(customersTable).values({ ...rest, telegramUsername: tg });

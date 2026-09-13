@@ -10,6 +10,14 @@ import {
 } from "./refund-mutation-inventory";
 
 describe("refund-sensitive order mutation inventory", () => {
+  it("keeps ACTIVE_REFUND_STATUSES owned by the shared mutation guard", () => {
+    const guard = readFileSync("src/lib/refund-mutation-guard.ts", "utf8");
+    const processor = readFileSync("src/lib/group-buy-refund.ts", "utf8");
+    expect((guard.match(/export const ACTIVE_REFUND_STATUSES/g) ?? []).length).toBe(1);
+    expect((processor.match(/(?:const|export const) ACTIVE_REFUND_STATUSES/g) ?? []).length).toBe(0);
+    expect(processor).toMatch(/import \{ ACTIVE_REFUND_STATUSES \} from "\.\/refund-mutation-guard"/);
+  });
+
   it("classifies every known order and line-item update/delete site", () => {
     for (const [relativePath, expected] of Object.entries(REFUND_MUTATION_INVENTORY)) {
       const source = readFileSync(relativePath, "utf8");
@@ -23,6 +31,7 @@ describe("refund-sensitive order mutation inventory", () => {
       expect(lineSites, relativePath).toHaveLength(expected.lineItems);
       expect(inserts, relativePath).toHaveLength(expected.inserts);
       expect(["guarded", "processor_exemption", "unrelated"]).toContain(expected.classification);
+      expect(["locked_assert", "returning_throw", "processor_exempt", "new_order"]).toContain(expected.enforcementMode);
 
       if (expected.classification === "processor_exemption") continue;
       for (const site of [...orderSites, ...lineSites]) {

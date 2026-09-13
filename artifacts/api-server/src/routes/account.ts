@@ -1,7 +1,6 @@
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
-  activeRefundStatusesSql,
   RefundMutationBlockedError,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
@@ -1151,10 +1150,14 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
 
   // Update accounts FIRST — FK constraints with onUpdate:cascade on child tables cascade automatically.
   // Non-FK username columns (organiser_id, reshipper_username etc.) are updated explicitly below.
-  const affectedRenameOrders = await db.select({ id: ordersTable.id })
-    .from(ordersTable)
-    .where(sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`);
   await db.transaction(async tx => {
+    const affectedRenameOrders = await tx.select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(or(
+        sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`,
+        sql`lower(${ordersTable.reshipperUsername}) IN (${oldTgBare}, ${oldTgWithAt})`,
+      ))
+      .orderBy(asc(ordersTable.id)).for("update");
     await tx.select({ id: ordersTable.id }).from(ordersTable)
       .where(inArray(ordersTable.id, affectedRenameOrders.map(order => order.id)))
       .orderBy(asc(ordersTable.id)).for("update");
@@ -1167,9 +1170,22 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
   await tx.update(productsTable).set({ organiserId: newTg }).where(eq(productsTable.organiserId, oldTg));
   await tx.update(labTestsTable).set({ organiserId: newTg }).where(eq(labTestsTable.organiserId, oldTg));
   await tx.update(gbReshippersTable).set({ reshipperUsername: newTg }).where(eq(gbReshippersTable.reshipperUsername, oldTg));
-  await tx.execute(sql`UPDATE orders SET reshipper_username = ${newTgWithAt} WHERE lower(reshipper_username) IN (${oldTgBare}, ${oldTgWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+    const renamedReshipperOrders = await tx.update(ordersTable)
+      .set({ reshipperUsername: newTgWithAt })
+      .where(refundMutableOrderWhere(sql`lower(${ordersTable.reshipperUsername}) IN (${oldTgBare}, ${oldTgWithAt})`))
+      .returning({ id: ordersTable.id });
+    const expectedReshipperOrders = affectedRenameOrders.length;
+    if (renamedReshipperOrders.length > expectedReshipperOrders) {
+      throw new Error("Username rename updated an unexpected number of reshipper orders.");
+    }
   await tx.execute(sql`UPDATE customers SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await tx.execute(sql`UPDATE orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+   const renamedTelegramOrders = await tx.update(ordersTable)
+     .set({ telegramUsername: newTgWithAt })
+     .where(refundMutableOrderWhere(sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`))
+     .returning({ id: ordersTable.id });
+   if (renamedTelegramOrders.length > affectedRenameOrders.length) {
+     throw new Error("Username rename updated an unexpected number of telegram orders.");
+   }
   await tx.execute(sql`UPDATE vial_orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await tx.execute(sql`UPDATE feedback SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   await tx.execute(sql`UPDATE coupon_redemptions SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);

@@ -66,42 +66,48 @@ async function runGbLegsSync(): Promise<void> {
         sql`${accountGroupBuysTable.countryLegId} is null`,
       ));
 
-    const syncOrderIds = unassigned.length === 0 ? [] : (await db.select({ id: ordersTable.id })
+    const assignments = unassigned.flatMap(row => {
+      if (!row.country) return [];
+      const legId = findLegId(row.country, legs);
+      if (!legId) return [];
+      return [{ accountId: row.accountId, legId }];
+    });
+    if (assignments.length === 0) continue;
+
+    const syncOrderIds = (await db.select({ id: ordersTable.id })
       .from(ordersTable)
       .where(and(
         eq(ordersTable.groupBuyId, gb.id),
-        inArray(ordersTable.telegramUsername, unassigned.map(row => row.accountId)),
+        inArray(ordersTable.telegramUsername, assignments.map(row => row.accountId)),
         sql`${ordersTable.countryLegId} is null`,
-      ))).map(order => order.id);
+      ))).map(order => order.id).sort();
     await db.transaction(async tx => {
+      await tx.select({ id: ordersTable.id }).from(ordersTable)
+        .where(inArray(ordersTable.id, syncOrderIds)).orderBy(ordersTable.id).for("update");
       await assertNoActiveRefunds(tx, syncOrderIds);
-    });
-
-    for (const row of unassigned) {
-      if (!row.country) continue;
-      const legId = findLegId(row.country, legs);
-      if (!legId) continue;
-
-      await db
+      for (const row of assignments) {
+        const [memberUpdated] = await tx
         .update(accountGroupBuysTable)
-        .set({ countryLegId: legId })
+        .set({ countryLegId: row.legId })
         .where(and(
           eq(accountGroupBuysTable.groupBuyId, gb.id),
           eq(accountGroupBuysTable.accountId, row.accountId),
-        ));
-      totalMembers++;
+        )).returning({ id: accountGroupBuysTable.id });
+        if (!memberUpdated) throw new Error(`Country-leg assignment lost member ${row.accountId}.`);
 
-      const updated = await db
+        const updated = await tx
         .update(ordersTable)
-        .set({ countryLegId: legId })
+        .set({ countryLegId: row.legId })
         .where(refundMutableOrderWhere(and(
           eq(ordersTable.groupBuyId, gb.id),
           eq(ordersTable.telegramUsername, row.accountId),
           sql`${ordersTable.countryLegId} is null`,
         )))
         .returning({ id: ordersTable.id });
-      totalOrders += updated.length;
-    }
+        totalOrders += updated.length;
+        totalMembers++;
+      }
+    });
   }
 
   if (totalMembers > 0 || totalOrders > 0) {

@@ -5,25 +5,25 @@
  * fails before review.
  */
 export const REFUND_MUTATION_INVENTORY = {
-  "src/index.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/lib/gb-legs-sync.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/lib/group-buy-refund.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "processor_exemption" },
-  "src/lib/order-payment-auto-verify.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/lib/tracking-auto-refresh.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/lib/wholesale-organiser-payment-confirmation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/account.ts": { orders: 22, orderInserts: 0, lineItems: 1, inserts: 0, classification: "guarded" },
-  "src/routes/admin-dispatch.ts": { orders: 6, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/admin.ts": { orders: 28, orderInserts: 3, lineItems: 3, inserts: 5, classification: "guarded" },
-  "src/routes/gb-country-legs.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/group-buys-admin.ts": { orders: 11, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/orders.ts": { orders: 13, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded" },
-  "src/routes/organiser-reshippers.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/organiser.ts": { orders: 13, orderInserts: 2, lineItems: 4, inserts: 4, classification: "guarded" },
-  "src/routes/payments.ts": { orders: 17, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/reshipper-admin.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/reshipper.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
-  "src/routes/wholesale-shares.ts": { orders: 8, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded" },
+  "src/index.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/gb-legs-sync.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/group-buy-refund.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "processor_exemption", enforcementMode: "processor_exempt" },
+  "src/lib/order-payment-auto-verify.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/security-incident-remediation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/tracking-auto-refresh.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/lib/wholesale-organiser-payment-confirmation.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/account.ts": { orders: 24, orderInserts: 0, lineItems: 1, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/admin-dispatch.ts": { orders: 6, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/admin.ts": { orders: 29, orderInserts: 3, lineItems: 3, inserts: 5, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/gb-country-legs.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/group-buys-admin.ts": { orders: 11, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/orders.ts": { orders: 13, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/organiser-reshippers.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/organiser.ts": { orders: 13, orderInserts: 2, lineItems: 4, inserts: 4, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/payments.ts": { orders: 17, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/reshipper-admin.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/reshipper.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded", enforcementMode: "returning_throw" },
+  "src/routes/wholesale-shares.ts": { orders: 8, orderInserts: 1, lineItems: 2, inserts: 3, classification: "guarded", enforcementMode: "returning_throw" },
 } as const;
 
 /**
@@ -53,11 +53,9 @@ export const REFUND_MULTI_ORDER_INVENTORY = [
 ] as const;
 
 export const REFUND_RAW_MUTATION_INVENTORY = [
-  { source: "src/routes/account.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
-  { source: "src/routes/account.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
   { source: "src/routes/admin.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
   { source: "src/routes/admin.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
-  { source: "src/routes/gb-testing.ts", operation: "UPDATE orders", classification: "guarded" },
+  { source: "src/routes/gb-testing.ts", operation: "UPDATE orders", classification: "guarded", enforcementMode: "returning_throw" },
 ] as const;
 
 export const REFUND_ORDER_INSERT_INVENTORY = [

@@ -19,7 +19,7 @@ import {
   type WholesaleShareItem,
   type WholesaleShareSplitMode,
 } from "@workspace/db";
-import { eq, and, or, isNull, sql, desc, inArray, lt } from "drizzle-orm";
+import { eq, and, or, isNull, sql, desc, asc, inArray, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireWholesale, requireWholesaleOrAdmin } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
@@ -254,14 +254,15 @@ async function reconcileShareOrganiserFees(
   const materialisedMembers = members.filter(
     (member): member is MemberRow & { orderId: string } => !!member.orderId,
   );
-  const orderIds = materialisedMembers.map(member => member.orderId);
+  const orderIds = materialisedMembers.map(member => member.orderId).sort();
   if (share.status === "locked" && orderIds.length !== members.length) {
     throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
   }
 
   const orders: Array<typeof ordersTable.$inferSelect> = orderIds.length > 0
-    ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
+    ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).orderBy(asc(ordersTable.id)).for("update")
     : [];
+  await assertNoActiveRefunds(tx, orderIds);
   const orderById = new Map<string, typeof ordersTable.$inferSelect>(orders.map(order => [order.id, order]));
   if (orderById.size !== materialisedMembers.length) {
     throw ORGANISER_FEE_RECONCILIATION_CONFLICT;
@@ -298,12 +299,14 @@ async function reconcileShareOrganiserFees(
       ),
     });
 
-    await tx.update(wholesaleShareMembersTable)
+    const [updatedMember] = await tx.update(wholesaleShareMembersTable)
       .set({
         organiserFee: organiserFee.toFixed(2),
         organiserFeePaid: organiserFee > 0 ? (member.organiserFeePaid ?? false) : false,
       })
-      .where(eq(wholesaleShareMembersTable.id, member.id));
+      .where(eq(wholesaleShareMembersTable.id, member.id))
+      .returning({ id: wholesaleShareMembersTable.id });
+    if (!updatedMember) throw new Error(`Organiser fee member ${member.id} changed during reconciliation.`);
 
     if (!update.changed) continue;
 
@@ -322,7 +325,10 @@ async function reconcileShareOrganiserFees(
       orderUpdate.balanceConfirmedAt = null;
       balanceDueAdded = Number((balanceDueAdded + (update.amountDue - Number(order.amountDue ?? 0))).toFixed(2));
     }
-    await tx.update(ordersTable).set(orderUpdate).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
+    const [updatedOrderRow] = await tx.update(ordersTable).set(orderUpdate)
+      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
+      .returning({ id: ordersTable.id });
+    if (!updatedOrderRow) throw new RefundMutationBlockedError(order.id);
     updatedOrders += 1;
   }
 
