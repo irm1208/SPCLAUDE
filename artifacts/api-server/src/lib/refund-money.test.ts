@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addMoney,
   centsToUsdString,
+  subtractMoneyClamped,
   subtractMoney,
   usdToCents,
   usdToSixDecimalBaseUnits,
@@ -38,5 +39,10 @@ describe("refund fixed-point money", () => {
       .reduce((minimum, value) => value < minimum ? value : minimum);
     expect(centsToUsdString(deducted)).toBe("0.35");
     expect(addMoney("12.10", "0.35")).not.toBe("12.100.35");
+  });
+
+  it("subtracts fractional credits and test payments with a zero floor", () => {
+    expect(subtractMoneyClamped("30.99", "0.35", "0.10")).toBe("30.54");
+    expect(subtractMoneyClamped("0.10", "0.35")).toBe("0.00");
   });
 });

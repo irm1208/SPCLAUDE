@@ -65,7 +65,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib/country-utils";
 import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from "./payments";
 import { verifyTransaction } from "../lib/payment-verify";
-import { centsToUsdString, usdToCents } from "../lib/refund-money";
+import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
 import { formatTelegramExportForAi } from "../lib/telegram-export-parser";
 import {
   canonicalTrackingNumbers,
@@ -7406,7 +7406,11 @@ async function auditOrderReference(order: any, txHash: string, source?: AuditRef
       const totalUsd = lockedTotal != null && !lockIsStale ? lockedTotal : currentUsd;
       const credits = auditMoney(order.creditsApplied) ?? 0;
       const testAmount = order.paymentStatus === "test_confirmed" ? (auditMoney(order.paymentTestAmount) ?? 0) : 0;
-      lockedUsd = Math.max(0, totalUsd - credits - testAmount);
+      lockedUsd = Number(subtractMoneyClamped(
+        totalUsd.toFixed(2),
+        credits.toFixed(2),
+        testAmount.toFixed(2),
+      ));
     }
     const rate = lockedUsd != null
       ? await resolveLockedUsdPerCoin(order, effective.currency, false)

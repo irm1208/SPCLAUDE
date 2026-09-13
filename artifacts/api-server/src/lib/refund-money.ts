@@ -51,6 +51,14 @@ export function subtractMoney(left: string, right: string): string {
   return centsToUsdString(result);
 }
 
+export function subtractMoneyClamped(left: string, ...deductions: string[]): string {
+  const result = deductions.reduce(
+    (remaining, deduction) => remaining - usdToCents(deduction),
+    usdToCents(left),
+  );
+  return centsToUsdString(result > 0n ? result : 0n);
+}
+
 export function usdToSixDecimalBaseUnits(usd: string): string {
   const cents = usdToCents(usd);
   if (cents <= 0n) throw new Error("amount_usd_positive");

@@ -36,7 +36,7 @@ import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
 import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
-import { centsToUsdString, usdToCents } from "../lib/refund-money";
+import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
 // Wholesale shipping is priced by kit-count tiers per destination region, so it must
@@ -1081,7 +1081,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         }
       }
 
-      const addedAmountDue = Number(Math.max(0, grandTotal - appliedCredits).toFixed(2));
+      const addedAmountDue = Number(subtractMoneyClamped(grandTotal.toFixed(2), appliedCreditsUsd));
       const totals = calculateAdditionMerge({
         parentProductSubtotal: parseFloat(String(lockedParent.productSubtotal ?? "0")),
         parentGrandTotal: parseFloat(String(lockedParent.grandTotal ?? "0")),

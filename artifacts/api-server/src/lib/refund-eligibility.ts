@@ -1,5 +1,7 @@
 import { normalizeTg } from "./normalize";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { isValidTxHash } from "./payment-verify";
+import { transactionKind } from "./payment-audit";
 
 export const REFUND_ELIGIBILITY_CODES = [
   "refunds_disabled",
@@ -32,6 +34,8 @@ export type RefundEligibilityOrder = {
   paymentTxHash: string | null | undefined;
   paymentTxHashes?: string[] | null | undefined;
   paymentConfirmedAt: Date | string | null | undefined;
+  paymentCryptoCurrency?: string | null;
+  paymentCryptoNetwork?: string | null;
   grandTotal: string | number | null | undefined;
   paymentScreenshot?: string | null;
 };
@@ -47,12 +51,63 @@ function ineligible(reasonCode: RefundEligibilityCode): RefundEligibility {
   return { eligible: false, reasonCode, amountUsd: null };
 }
 
-function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder): boolean {
-  if (typeof order.paymentTxHash === "string" && order.paymentTxHash.trim().length > 0) {
-    return true;
+function isSupportedCryptoRail(currency: string, network: string): boolean {
+  const cur = currency.toUpperCase().trim();
+  const net = network.toLowerCase().trim();
+  if (cur === "USDT") {
+    return /arbitrum|polygon|solana|tron|trc|erc.?20|ethereum|bep.?20|bsc|binance/.test(net);
   }
-  return Array.isArray(order.paymentTxHashes)
-    && order.paymentTxHashes.some(hash => typeof hash === "string" && hash.trim().length > 0);
+  if (cur === "USDC") {
+    return /arbitrum|polygon|solana|erc.?20|ethereum/.test(net);
+  }
+  if (cur === "ETH") return /mainnet|ethereum|erc.?20/.test(net);
+  if (cur === "BTC") return /mainnet|bitcoin/.test(net);
+  return false;
+}
+
+function isHashFormatForNetwork(hash: string, currency: string, network: string): boolean {
+  const cur = currency.toUpperCase().trim();
+  const net = network.toLowerCase().trim();
+  if (/solana/.test(net)) {
+    return /^[1-9A-HJ-NP-Za-km-z]{86,88}$/.test(hash);
+  }
+  if (cur === "BTC" && /bitcoin|mainnet/.test(net)) {
+    return /^[0-9a-fA-F]{64}$/.test(hash);
+  }
+  if (/arbitrum|polygon|tron|trc|erc.?20|ethereum|mainnet|bep.?20|bsc|binance/.test(net)) {
+    return /^(?:0x)?[0-9a-fA-F]{64}$/.test(hash);
+  }
+  return false;
+}
+
+function isAuthoritativeTransactionHash(
+  hash: unknown,
+  currency: string | null | undefined,
+  network: string | null | undefined,
+): hash is string {
+  if (
+    typeof hash !== "string"
+    || !currency
+    || !network
+    || transactionKind(hash) !== "crypto"
+    || !isSupportedCryptoRail(currency, network)
+  ) {
+    return false;
+  }
+  const cleanHash = hash.trim();
+  return isValidTxHash(cleanHash) && isHashFormatForNetwork(cleanHash, currency, network);
+}
+
+function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder): boolean {
+  const hashes = [
+    order.paymentTxHash,
+    ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),
+  ];
+  return hashes.some(hash => isAuthoritativeTransactionHash(
+    hash,
+    order.paymentCryptoCurrency,
+    order.paymentCryptoNetwork,
+  ));
 }
 
 /**

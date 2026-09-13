@@ -77,4 +77,48 @@ describe("refund eligibility", () => {
       },
     }).reasonCode).toBe("ineligible_payment_evidence");
   });
+
+  it.each([
+    ["fiat reference", "fiat:revolut", "USDT", "ERC-20"],
+    ["AnonPay reference", "anonpay:payment-1", "USDT", "ERC-20"],
+    ["synthetic test marker", "test_payment_confirmed", "USDT", "ERC-20"],
+    ["arbitrary fake string", "not-a-real-transaction", "USDT", "ERC-20"],
+    ["missing currency", "0x" + "c".repeat(64), null, "ERC-20"],
+    ["unsupported rail", "0x" + "c".repeat(64), "DOGE", "Dogecoin"],
+  ])("rejects %s as non-authoritative evidence", (_label, hash, currency, network) => {
+    const result = evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentTxHash: hash,
+        paymentCryptoCurrency: currency,
+        paymentCryptoNetwork: network,
+      },
+    });
+    expect(result).toMatchObject({
+      eligible: false,
+      reasonCode: "ineligible_payment_evidence",
+      amountUsd: null,
+    });
+  });
+
+  it("accepts a valid stored Ethereum transaction hash", () => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: { ...base.order, paymentCryptoNetwork: "Ethereum Mainnet" },
+    }).eligible).toBe(true);
+  });
+
+  it("accepts a valid stored Solana transaction signature for the matching rail", () => {
+    const result = evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentTxHash: "A".repeat(86),
+        paymentCryptoCurrency: "USDC",
+        paymentCryptoNetwork: "Solana",
+      },
+    });
+    expect(result.eligible).toBe(true);
+  });
 });
