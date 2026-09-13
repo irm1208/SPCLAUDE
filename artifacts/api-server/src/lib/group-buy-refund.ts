@@ -248,6 +248,66 @@ async function insertAudit(database: DatabaseLike, values: {
   });
 }
 
+function validateProcessorScope(
+  account: Record<string, any>,
+  order: Record<string, any>,
+  groupBuy: Record<string, any>,
+  refund: Record<string, any>,
+  args: CompleteCreditRefundArgs,
+): void {
+  if (refund.method !== "credit") throw new GroupBuyRefundError("refund_method_mismatch");
+  if (args.groupBuyId && args.groupBuyId !== groupBuy.id) {
+    throw new GroupBuyRefundError("group_buy_scope");
+  }
+  if (
+    args.role !== "admin"
+    && !(args.role === "organiser" && normalizeUsername(groupBuy.organiserId ?? "") === normalizeUsername(args.username))
+  ) {
+    throw new GroupBuyRefundError("forbidden");
+  }
+  if (
+    order.id !== refund.orderId
+    || order.groupBuyId !== refund.groupBuyId
+    || account.telegramUsername !== refund.accountId
+    || normalizeUsername(order.telegramUsername) !== normalizeUsername(account.telegramUsername)
+  ) {
+    throw new GroupBuyRefundError("refund_linkage_mismatch");
+  }
+}
+
+function validateCompletedTerminal(order: Record<string, any>): void {
+  if (
+    order.status !== "Cancelled"
+    || order.paymentStatus !== "refunded"
+    || order.refundStatus !== "refunded"
+  ) {
+    throw new GroupBuyRefundError("completed_refund_linkage_mismatch");
+  }
+}
+
+async function returnCompletedIfValid(
+  database: DatabaseLike,
+  unlockedRefund: Record<string, any>,
+  args: CompleteCreditRefundArgs,
+  forceRecheck = false,
+): Promise<RefundRequestResult | null> {
+  if (!forceRecheck && unlockedRefund.status !== "completed") return null;
+  try {
+    return await database.transaction(async (tx: DatabaseLike) => {
+      const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, unlockedRefund.accountId));
+      const [order] = await lockRows(tx, ordersTable, eq(ordersTable.id, unlockedRefund.orderId));
+      const [groupBuy] = await lockRows(tx, groupBuysTable, eq(groupBuysTable.id, unlockedRefund.groupBuyId));
+      const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, unlockedRefund.id));
+      if (!account || !order || !groupBuy || !refund || refund.status !== "completed") return null;
+      validateProcessorScope(account, order, groupBuy, refund, args);
+      validateCompletedTerminal(order);
+      return asRefundResult(refund);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function createRefundRequest(
   database: DatabaseLike,
   args: CreateRefundRequestArgs,
@@ -411,10 +471,20 @@ export async function completeCreditRefund(
     eq(ordersTable.id, unlockedRefund.orderId),
   );
   if (!unlockedOrder) throw new GroupBuyRefundError("not_found");
+  const alreadyCompleted = await returnCompletedIfValid(database, unlockedRefund, args);
+  if (alreadyCompleted) return alreadyCompleted;
+
   // Completion also independently verifies the original incoming payment
   // before any row lock. This is deliberately repeated on retries: evidence
   // is not persisted as a caller-controlled field on a refund row.
-  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
+  let paymentEvidenceProof: ServerPaymentEvidenceProof;
+  try {
+    paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
+  } catch (error) {
+    const completedDuringVerification = await returnCompletedIfValid(database, unlockedRefund, args, true);
+    if (completedDuringVerification) return completedDuringVerification;
+    throw error;
+  }
 
   return database.transaction(async (tx: DatabaseLike) => {
     // Every refund mutation uses account -> order -> group buy -> refund.
@@ -430,21 +500,20 @@ export async function completeCreditRefund(
     const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, args.refundId));
     if (!account || !order || !groupBuy || !refund) throw new GroupBuyRefundError("not_found");
 
-    if (refund.method !== "credit") throw new GroupBuyRefundError("refund_method_mismatch");
-    if (args.groupBuyId && args.groupBuyId !== groupBuy.id) {
-      throw new GroupBuyRefundError("group_buy_scope");
+    validateProcessorScope(account, order, groupBuy, refund, args);
+
+    if (refund.status === "completed") {
+      validateCompletedTerminal(order);
+      return asRefundResult(refund);
     }
     if (
-      args.role !== "admin"
-      && !(args.role === "organiser" && normalizeUsername(groupBuy.organiserId ?? "") === normalizeUsername(args.username))
+      order.deletedAt != null
+      || order.status === "Cancelled"
+      || order.refundStatus === "refunded"
+      || order.paymentStatus !== "confirmed"
+      || order.paymentConfirmedAt == null
     ) {
-      throw new GroupBuyRefundError("forbidden");
-    }
-    if (order.id !== refund.orderId || order.groupBuyId !== refund.groupBuyId || account.telegramUsername !== refund.accountId) {
-      throw new GroupBuyRefundError("refund_linkage_mismatch");
-    }
-    if (normalizeUsername(order.telegramUsername) !== normalizeUsername(account.telegramUsername)) {
-      throw new GroupBuyRefundError("refund_linkage_mismatch");
+      throw new GroupBuyRefundError("payment_state_changed");
     }
 
     const lockedPayment = await resolveLockedPayment(order);
@@ -466,32 +535,9 @@ export async function completeCreditRefund(
     });
     if (!evidenceCheck.eligible) throw new GroupBuyRefundError("payment_evidence_changed");
 
-    if (refund.status === "completed") {
-      // A completed credit is expected to have caused this terminal order
-      // state. It is safe to return unchanged only after scope, linkage, and
-      // original payment evidence above have all been revalidated.
-      if (
-        order.status !== "Cancelled"
-        || order.paymentStatus !== "refunded"
-        || order.refundStatus !== "refunded"
-      ) {
-        throw new GroupBuyRefundError("completed_refund_linkage_mismatch");
-      }
-      return asRefundResult(refund);
-    }
     if (refund.status !== "requested" && refund.status !== "verification_failed") {
       throw new GroupBuyRefundError("invalid_refund_transition");
     }
-    if (
-      order.deletedAt != null
-      || order.status === "Cancelled"
-      || order.refundStatus === "refunded"
-      || order.paymentStatus !== "confirmed"
-      || order.paymentConfirmedAt == null
-    ) {
-      throw new GroupBuyRefundError("payment_state_changed");
-    }
-
     // Claim directly to completed before money writes. A concurrent retry or
     // failed conditional claim performs no money, ledger, order, or audit
     // writes. Any later failure rolls the transaction back to the original
