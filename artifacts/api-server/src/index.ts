@@ -585,7 +585,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_turnover_log_code ON inventory_turnover_log (qiyunle_code)
     `);
-    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS credits_applied integer NOT NULL DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS credits_applied numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at timestamptz`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_by text`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS orders_deleted_at_idx ON orders (deleted_at)`);

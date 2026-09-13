@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { readFileSync } from "node:fs";
 import {
   GROUP_BUY_REFUND_ASSETS,
   GROUP_BUY_REFUND_METHODS,
@@ -55,6 +56,29 @@ describe("group buy refund schema contract", () => {
         scale: 2,
       });
     }
+  });
+
+  it("keeps numeric(10,2) values within the expected signed range", () => {
+    const moneyColumns = [
+      getTableConfig(accountsTable).columns.find(column => column.name === "credits"),
+      getTableConfig(creditTransactionsTable).columns.find(column => column.name === "amount"),
+      getTableConfig(ordersTable).columns.find(column => column.name === "credits_applied"),
+    ];
+    const maximum = 10 ** (10 - 2) - 10 ** -2;
+
+    expect(maximum.toFixed(2)).toBe("99999999.99");
+    expect((-maximum).toFixed(2)).toBe("-99999999.99");
+    for (const column of moneyColumns) {
+      expect(column).toMatchObject({ precision: 10, scale: 2 });
+    }
+  });
+
+  it("keeps the startup fallback aligned with the numeric order schema", () => {
+    const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+
+    expect(source).toContain(
+      "ALTER TABLE orders ADD COLUMN IF NOT EXISTS credits_applied numeric(10,2) NOT NULL DEFAULT 0",
+    );
   });
 
   it("defines refund and attempt linkage with required lifecycle fields", () => {
@@ -158,13 +182,56 @@ describe("group buy refund schema contract", () => {
     const foreignKeys = getTableConfig(groupBuyRefundsTable).foreignKeys.map(foreignKey => {
       const reference = foreignKey.reference();
       const foreignTable = reference.foreignTable[Symbol.for("drizzle:Name")];
-      return `${reference.columns[0].name}->${foreignTable}.${reference.foreignColumns[0].name}`;
+      return {
+        relation: `${reference.columns[0].name}->${foreignTable}.${reference.foreignColumns[0].name}`,
+        onDelete: foreignKey.onDelete,
+        onUpdate: foreignKey.onUpdate,
+      };
     });
 
     expect(foreignKeys).toEqual(expect.arrayContaining([
-      "order_id->orders.id",
-      "group_buy_id->group_buys.id",
-      "account_id->accounts.telegram_username",
+      { relation: "order_id->orders.id", onDelete: "restrict", onUpdate: "restrict" },
+      { relation: "group_buy_id->group_buys.id", onDelete: "restrict", onUpdate: "restrict" },
+      { relation: "account_id->accounts.telegram_username", onDelete: "restrict", onUpdate: "restrict" },
     ]));
+  });
+
+  it("retains refund-linked financial history and indexes operational lookup paths", () => {
+    const refundConfig = getTableConfig(groupBuyRefundsTable);
+    const attemptConfig = getTableConfig(groupBuyRefundAttemptsTable);
+    const creditConfig = getTableConfig(creditTransactionsTable);
+    const refundForeignKey = (config: ReturnType<typeof getTableConfig>, relation: string) => {
+      const foreignKey = config.foreignKeys.find(candidate => {
+        const reference = candidate.reference();
+        return `${reference.columns[0].name}->${reference.foreignTable[Symbol.for("drizzle:Name")]}.${reference.foreignColumns[0].name}` === relation;
+      });
+      expect(foreignKey).toBeDefined();
+      return foreignKey!;
+    };
+
+    expect(refundForeignKey(attemptConfig, "refund_id->group_buy_refunds.id")).toMatchObject({
+      onDelete: "restrict",
+      onUpdate: "restrict",
+    });
+    expect(refundForeignKey(creditConfig, "refund_id->group_buy_refunds.id")).toMatchObject({
+      onDelete: "restrict",
+      onUpdate: "restrict",
+    });
+
+    const indexColumns = (config: ReturnType<typeof getTableConfig>, name: string) => {
+      const index = config.indexes.find(candidate => candidate.config.name === name);
+      expect(index).toBeDefined();
+      return index!.config.columns.map(column => column.name);
+    };
+
+    expect(indexColumns(refundConfig, "group_buy_refunds_order_id_idx")).toEqual(["order_id"]);
+    expect(indexColumns(refundConfig, "group_buy_refunds_group_buy_status_idx")).toEqual([
+      "group_buy_id",
+      "status",
+    ]);
+    expect(indexColumns(attemptConfig, "group_buy_refund_attempts_refund_started_idx")).toEqual([
+      "refund_id",
+      "started_at",
+    ]);
   });
 });

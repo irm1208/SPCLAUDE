@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   integer,
+  index,
   numeric,
   pgTable,
   text,
@@ -31,9 +32,9 @@ export type GroupBuyRefundNetwork = typeof GROUP_BUY_REFUND_NETWORKS[number];
 
 export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   id: text("id").primaryKey(),
-  orderId: text("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
-  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
-  accountId: text("account_id").notNull().references(() => accountsTable.telegramUsername, { onDelete: "cascade", onUpdate: "cascade" }),
+  orderId: text("order_id").notNull().references(() => ordersTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
+  groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
+  accountId: text("account_id").notNull().references(() => accountsTable.telegramUsername, { onUpdate: "restrict", onDelete: "restrict" }),
   method: text("method").notNull(),
   status: text("status").notNull().default("requested"),
   amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }).notNull(),
@@ -100,11 +101,13 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   uniqueIndex("group_buy_refunds_outgoing_txid_unique")
     .on(t.outgoingTxid)
     .where(sql`${t.outgoingTxid} is not null`),
+  index("group_buy_refunds_order_id_idx").on(t.orderId),
+  index("group_buy_refunds_group_buy_status_idx").on(t.groupBuyId, t.status),
 ]);
 
 export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", {
   id: text("id").primaryKey(),
-  refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onDelete: "cascade" }),
+  refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
   submittedTxid: text("submitted_txid").notNull(),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
@@ -113,7 +116,9 @@ export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", 
   resultCode: text("result_code"),
   failureReason: text("failure_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("group_buy_refund_attempts_refund_started_idx").on(t.refundId, t.startedAt),
+]);
 
 export type GroupBuyRefund = typeof groupBuyRefundsTable.$inferSelect;
 export type NewGroupBuyRefund = typeof groupBuyRefundsTable.$inferInsert;

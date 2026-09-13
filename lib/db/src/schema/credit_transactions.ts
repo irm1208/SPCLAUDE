@@ -9,7 +9,7 @@ export const creditTransactionsTable = pgTable("credit_transactions", {
   amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull(), // positive = credits added, negative = credits deducted
   reason: text("reason").notNull(),
   orderId: text("order_id"), // optional link to the order being refunded
-  refundId: text("refund_id").references(() => groupBuyRefundsTable.id, { onDelete: "set null" }),
+  refundId: text("refund_id").references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
   adminUsername: text("admin_username"), // null for system-generated transactions
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
