@@ -53,6 +53,7 @@ import {
   useDeleteOrder, useDeletedOrders, useRestoreOrder,
   useHiddenOrders, useToggleHiddenOrder,
   type TelegramPrefs, type GroupBuySummary, type ViewerAccessEntry, type DeletedOrder, type EntryFeePaymentInfo,
+  type CustomerRefund,
 } from "@/hooks/use-account";
 import { COUNTRIES } from "@/data/countries";
 import {
@@ -100,6 +101,9 @@ type Order = {
   routingType?: string | null;
   reshipperUsername?: string | null;
   shippingCarrier?: string | null;
+  canRequest?: boolean;
+  ineligibilityReasonCode?: string | null;
+  current?: CustomerRefund | null;
 };
 type CustomerProfile = { fullName: string; email: string; phone: string; address: string };
 type Section = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "protocols" | "medications" | "trtaas" | "community-testing" | "lab-tests" | "support" | "fh-risk" | "insulin-resistance" | "wholesale-access";
@@ -380,6 +384,19 @@ function OrderGridCard({
       </div>
 
       <div className="p-4 pt-0 flex flex-col flex-1">
+      {order.current && (
+        <div className="mt-3">
+          <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold" style={{
+            color: order.current.status === "completed" ? "#15803d" : order.current.status === "verification_failed" ? "#b91c1c" : "var(--t-blue)",
+            background: order.current.status === "completed" ? "rgba(34,197,94,.10)" : order.current.status === "verification_failed" ? "rgba(239,68,68,.09)" : "var(--t-blue-10)",
+          }}>
+            {order.current.status === "requested" ? "Refund request submitted"
+              : order.current.status === "verifying" ? "Refund is being verified"
+                : order.current.status === "verification_failed" ? "Refund verification failed"
+                  : "Refund completed"}
+          </span>
+        </div>
+      )}
       {/* info: code + payment */}
       <div className="flex items-center justify-between gap-2 mt-3.5 pb-3.5" style={{ borderBottom: `1px dashed ${T.border}` }}>
         <div className="flex items-center gap-1.5 min-w-0">

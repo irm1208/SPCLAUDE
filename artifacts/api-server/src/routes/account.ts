@@ -26,6 +26,7 @@ import { createEmailChallengeInTransaction, needsVerification } from "../lib/acc
 import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
+import { getCustomerRefundView, getCustomerRefundViews } from "../lib/customer-refund-view";
 import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
@@ -1789,8 +1790,9 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       .where(inArray(groupBuysTable.id, gbIds));
     for (const row of gbRows) gbCurrencyMap.set(row.id, row.currency ?? null);
   }
+  const refundViews = await getCustomerRefundViews(orderIds, tg);
 
-  const results = rows.map(order => {
+  const results = await Promise.all(rows.map(async order => {
     const lineItems = lineItemsByOrder.get(order.id) ?? [];
     const currency = order.groupBuyId ? (gbCurrencyMap.get(order.groupBuyId) ?? null) : null;
     return {
@@ -1814,6 +1816,11 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       trackingShippedItems: (order.trackingShippedItems as Record<string, Array<{name: string; qty: number}>> | null) ?? null,
       notes: order.notes ?? null,
       directShippingRequested: order.directShippingRequested ?? false,
+      ...(await getCustomerRefundView(order.id, tg, refundViews) ?? {
+        canRequest: false,
+        ineligibilityReasonCode: "not_owner",
+        current: null,
+      }),
       createdAt: (order.createdAt as Date).toISOString(),
       lineItems: lineItems.map(li => ({
         productId: li.productId,
@@ -1824,7 +1831,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
         isOos: li.isOos ?? false,
       })),
     };
-  });
+  }));
 
   res.json(results);
 });
@@ -1984,7 +1991,6 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     .select()
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, order.id));
-
   let obcCurrency: string | null = null;
   if (order.groupBuyId) {
     const [gbRow] = await db
@@ -2090,6 +2096,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     .select()
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, order.id));
+  const refundView = await getCustomerRefundView(order.id, tg);
 
   // Shared wholesale orders carry a per-member shipping split that is snapshotted onto
   // the share member row at lock time. A stale materialised order (e.g. one edited via
@@ -2296,6 +2303,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     royalMailQrCode: order.royalMailQrCode ?? null,
     qrCodes,
     groupBuyId: order.groupBuyId ?? null,
+    ...refundView,
     currency: groupBuyCurrency,
     groupBuyPaymentsEnabled,
     groupBuyCryptoRefundsEnabled,

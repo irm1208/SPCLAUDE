@@ -25,6 +25,8 @@ import { generateReceiptPDF } from "@/lib/generate-receipt-pdf";
 import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-url";
 import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
 import { getOrderPaymentSummary } from "./order-payment-summary";
+import CustomerRefundPanel from "@/components/CustomerRefundPanel";
+import type { CustomerRefund } from "@/hooks/use-account";
 import type { TrackingPackageView } from "@workspace/shipping/tracking";
 import { safeAddMoney, safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 
@@ -227,6 +229,9 @@ interface OrderDetail {
   createdAt: string;
   updatedAt: string;
   lineItems: OrderLineItem[];
+  canRequest?: boolean;
+  ineligibilityReasonCode?: string | null;
+  current?: CustomerRefund | null;
 }
 
 const EDITABLE_STATUSES = ["Draft", "Submitted"];
@@ -392,11 +397,13 @@ function AccountShippingAddressSection({
   existingName,
   existingAddress,
   onSaved,
+  disabled = false,
 }: {
   orderId: string;
   existingName: string | null;
   existingAddress: string | null;
   onSaved: (name: string, address: string) => void;
+  disabled?: boolean;
 }) {
   const [parsedAddr1, parsedAddr2, parsedCity, parsedPost, parsedCountry, parsedPhone, parsedPhonePrefix, parsedEmail] = parseAddressLines(existingAddress);
 
@@ -577,7 +584,8 @@ function AccountShippingAddressSection({
       {/* Header row — always visible */}
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { if (!disabled) setOpen(true); }}
+        disabled={disabled}
         aria-haspopup="dialog"
         className="w-full flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 text-left transition-colors"
         style={{ background: "transparent" }}
@@ -2002,6 +2010,7 @@ export default function AccountOrderDetail() {
   const creditOperationKeys = useRef(new Map<string, string>());
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
+  const refundActive = ["requested", "verifying", "verification_failed"].includes(order?.current?.status ?? "");
   const paymentSummary = getOrderPaymentSummary({
     grandTotal: order?.grandTotal ?? 0,
     amountDue: order?.amountDue ?? 0,
@@ -2331,6 +2340,17 @@ export default function AccountOrderDetail() {
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
                     />
                   )}
+                  {order.id && (
+                    <CustomerRefundPanel
+                      orderId={order.id}
+                      amountUsd={order.grandTotal}
+                      refundView={{
+                        canRequest: order.canRequest ?? false,
+                        ineligibilityReasonCode: order.ineligibilityReasonCode ?? null,
+                        current: order.current ?? null,
+                      }}
+                    />
+                  )}
                   {order.id && order.paymentStatus === "confirmed" && paymentSummary.hasOutstandingAddOn && (
                     <div
                       className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
@@ -2546,6 +2566,7 @@ export default function AccountOrderDetail() {
                             orderId={order.id}
                             existingName={order.shippingName ?? null}
                             existingAddress={order.shippingAddress ?? null}
+                            disabled={refundActive}
                             onSaved={(n, a) => setOrder((prev) => prev ? { ...prev, shippingName: n, shippingAddress: a } : prev)}
                           />
                         ) : (
@@ -3014,7 +3035,7 @@ export default function AccountOrderDetail() {
                         This is a shared wholesale order. Items and shipping are managed from the shared order page.
                       </div>
                     ) : isPaidOrder && order.orderType === "wholesale" ? null
-                    : EDITABLE_STATUSES.includes(order.status) ? (
+                    : EDITABLE_STATUSES.includes(order.status) && !refundActive ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}
@@ -3037,7 +3058,7 @@ export default function AccountOrderDetail() {
                   </div>
 
                   {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
-                  {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder && !order.groupBuyDeleteLocked && (
+                  {EDITABLE_STATUSES.includes(order.status) && !isPaidOrder && !order.groupBuyDeleteLocked && !refundActive && (
                     <div className="rounded-xl border p-4" style={{ borderColor: "rgba(239,68,68,0.2)", background: "color-mix(in srgb, #ef4444 6%, var(--t-surface))" }}>
                       <button
                         onClick={() => { setDeleteConfirm(true); setDeleteError(null); }}

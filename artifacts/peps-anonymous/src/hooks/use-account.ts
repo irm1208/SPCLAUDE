@@ -663,6 +663,30 @@ export interface AccountOrder {
     unitPrice: number;
     lineTotal: number;
   }>;
+  canRequest?: boolean;
+  ineligibilityReasonCode?: string | null;
+  current?: CustomerRefund | null;
+}
+
+export interface CustomerRefund {
+  id: string;
+  method: "credit" | "crypto";
+  status: "requested" | "verifying" | "verification_failed" | "completed";
+  amountUsd: number;
+  asset: "USDC" | "USDT" | null;
+  network: "Ethereum ERC-20" | null;
+  destinationWallet: string | null;
+  outgoingTxid: string | null;
+  explorerUrl: string | null;
+  verificationErrorCode: string | null;
+  verificationErrorMessage: string | null;
+  requestedAt: string;
+}
+
+export interface CustomerRefundView {
+  canRequest: boolean;
+  ineligibilityReasonCode: string | null;
+  current: CustomerRefund | null;
 }
 
 export function useHasTestingContribution(enabled = true) {
@@ -1090,6 +1114,42 @@ export function useAccountOrders(gbId?: string | null, enabled = true) {
     staleTime: 30 * 1000,
     retry: false,
     enabled,
+  });
+}
+
+export function useRequestCustomerRefund() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      orderId,
+      method,
+      asset,
+      network,
+      destinationWallet,
+    }: {
+      orderId: string;
+      method: "credit" | "crypto";
+      asset?: "USDC" | "USDT";
+      network?: "Ethereum ERC-20";
+      destinationWallet?: string;
+    }) => {
+      const body = method === "credit"
+        ? { method }
+        : { method, asset, network, destinationWallet };
+      const res = await fetch(`/api/account/orders/${encodeURIComponent(orderId)}/refund`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Unable to submit refund request");
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["account", "orders"] });
+      qc.invalidateQueries({ queryKey: ["account", "order", variables.orderId] });
+    },
   });
 }
 
