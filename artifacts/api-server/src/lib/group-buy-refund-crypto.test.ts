@@ -15,6 +15,7 @@ const fake = vi.hoisted(() => {
     },
     attempts: {
       id: "attempt.id", refundId: "attempt.refund", submittedTxid: "attempt.txid",
+      processorUsername: "attempt.processor", endedAt: "attempt.ended",
     },
     claims: { txid: "claim.txid" },
     audit: "audit",
@@ -61,11 +62,13 @@ const fake = vi.hoisted(() => {
           (condition.column === tables.attempts.id && row.id === condition.value)
           || (condition.column === tables.attempts.refundId && row.refundId === condition.value)
           || (condition.column === tables.attempts.submittedTxid && row.submittedTxid === condition.value)
+          || (condition.column === tables.attempts.processorUsername && row.processorUsername === condition.value)
         ))
         || (table === tables.claims && condition.column === tables.claims.txid && row.txid === condition.value);
       if (condition.kind === "inArray") return condition.value.includes(
         table === tables.refunds ? row.status : row.value,
       );
+      if (condition.kind === "isNull") return row.endedAt == null;
       if (condition.kind === "and") return condition.predicates.every((item: any) => matches(row, item));
       return true;
     };
@@ -184,7 +187,12 @@ vi.mock("@workspace/db", () => ({
   groupBuyRefundsTable: fake.tables.refunds, groupBuyRefundAttemptsTable: fake.tables.attempts,
   groupBuyRefundTxClaimsTable: fake.tables.claims, auditLogsTable: fake.tables.audit,
 }));
-vi.mock("drizzle-orm", () => ({ eq: fake.eq, and: fake.and, inArray: fake.inArray }));
+vi.mock("drizzle-orm", () => ({
+  eq: fake.eq,
+  and: fake.and,
+  inArray: fake.inArray,
+  isNull: (column: unknown) => ({ kind: "isNull", column }),
+}));
 vi.mock("../routes/payments", () => ({ resolveEffectiveOrderCrypto: vi.fn(async () => ({
   walletAddress: `0x${"c".repeat(40)}`, currency: "USDT", network: "ERC-20",
 })) }));
@@ -295,6 +303,44 @@ describe("submitCryptoRefund transactional lifecycle", () => {
       .resolves.toMatchObject({ status: "completed" });
     expect(fake.state.attempts[0].resultCode).toBe("processing_failure");
     expect(fake.state.attempts).toHaveLength(2);
+  });
+
+  it("commits stale recovery before a conflicting TXID claim is rejected", async () => {
+    const staleAttempt = {
+      id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
+      processorUsername: "other", processorRole: "admin",
+      startedAt: new Date(Date.now() - 16 * 60 * 1000), endedAt: null,
+    };
+    fake.state.attempts.push(staleAttempt);
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = staleAttempt.id;
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].verifyingAt = staleAttempt.startedAt;
+    fake.state.refunds.push({ ...fake.state.refunds[0], id: "refund-2", status: "requested" });
+    fake.state.claims.push({ txid: tx2, refundId: "refund-2" });
+
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx2))
+      .rejects.toMatchObject({ code: "txid_replay" });
+    expect(fake.state.refunds[0].status).toBe("verification_failed");
+    expect(fake.state.attempts[0].resultCode).toBe("processing_failure");
+  });
+
+  it("commits stale recovery when the separate audit write fails", async () => {
+    const staleAttempt = {
+      id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
+      processorUsername: "other", processorRole: "admin",
+      startedAt: new Date(Date.now() - 16 * 60 * 1000), endedAt: null,
+    };
+    fake.state.attempts.push(staleAttempt);
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = staleAttempt.id;
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].verifyingAt = staleAttempt.startedAt;
+    fake.state.failAudit = true;
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "processing_failure" });
+    expect(fake.state.refunds[0].status).toBe("verification_failed");
+    expect(fake.state.attempts[0].resultCode).toBe("processing_failure");
   });
 
   it("compensates order failure and audit failure without stranding verification", async () => {
