@@ -10,6 +10,9 @@ const base = {
     txHash: "0x" + "a".repeat(64),
     currency: "USDT",
     network: "ERC-20",
+    recipientWallet: "0x" + "b".repeat(40),
+    expectedAmountUsd: "9.99",
+    verifiedAmountUsd: "9.99",
   },
   order: {
     id: "order-1",
@@ -141,6 +144,9 @@ describe("refund eligibility", () => {
         txHash: "A".repeat(86),
         currency: "USDC",
         network: "Solana",
+        recipientWallet: "solana-recipient",
+        expectedAmountUsd: "9.99",
+        verifiedAmountUsd: "9.99",
       },
     });
     expect(result.eligible).toBe(true);
@@ -170,7 +176,16 @@ describe("refund eligibility", () => {
         paymentCryptoCurrency: currency,
         paymentCryptoNetwork: network,
       },
-      paymentEvidenceProof: { verified: true, source: "server-payment-verifier", txHash, currency, network },
+       paymentEvidenceProof: {
+         verified: true,
+         source: "server-payment-verifier",
+         txHash,
+         currency,
+         network,
+         recipientWallet: "recipient",
+         expectedAmountUsd: "9.99",
+         verifiedAmountUsd: "9.99",
+       },
     }).reasonCode).toBe("ineligible_payment_evidence");
   });
 });

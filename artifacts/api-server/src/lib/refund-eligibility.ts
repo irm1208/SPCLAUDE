@@ -36,6 +36,7 @@ export type RefundEligibilityOrder = {
   paymentConfirmedAt: Date | string | null | undefined;
   paymentCryptoCurrency?: string | null;
   paymentCryptoNetwork?: string | null;
+  paymentUsdAmount?: string | number | null;
   grandTotal: string | number | null | undefined;
   paymentScreenshot?: string | null;
 };
@@ -47,6 +48,12 @@ export type ServerPaymentEvidenceProof = {
   readonly txHash: string;
   readonly currency: string;
   readonly network: string;
+  /** Recipient observed by the successful server verifier. */
+  readonly recipientWallet: string;
+  /** Exact server-side amount supplied to the verifier. */
+  readonly expectedAmountUsd: string;
+  /** Amount observed by the successful verifier, retained for auditability. */
+  readonly verifiedAmountUsd: string;
 };
 
 export type RefundEligibilityInput = {
@@ -114,7 +121,20 @@ function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder, proof: S
     || proof.verified !== true
     || proof.source !== "server-payment-verifier"
     || !isAuthoritativeTransactionHash(proof.txHash, proof.currency, proof.network)
+    || typeof proof.recipientWallet !== "string"
+    || !proof.recipientWallet.trim()
   ) return false;
+  let expectedAmount: string;
+  let verifiedAmount: string;
+  try {
+    expectedAmount = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
+    verifiedAmount = centsToUsdString(usdToCents(proof.verifiedAmountUsd));
+    if (usdToCents(proof.expectedAmountUsd) !== usdToCents(expectedAmount) || usdToCents(verifiedAmount) <= 0n) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
   const hashes = [
     order.paymentTxHash,
     ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),

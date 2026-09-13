@@ -22,6 +22,7 @@ import {
 } from "./refund-eligibility";
 import {
   addMoney,
+  centsToUsdString,
   usdToCents,
   usdToSixDecimalBaseUnits,
   type RefundRequestInput,
@@ -77,10 +78,6 @@ function asRefundResult(refund: Record<string, any>): RefundRequestResult {
 
 function normalizeUsername(value: string): string {
   return value.trim().replace(/^@/, "").toLowerCase();
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
 }
 
 function refundOrder(row: Record<string, any>): RefundEligibilityOrder {
@@ -157,6 +154,9 @@ async function loadOriginalPaymentProof(
   if (!result.verified) {
     throw new GroupBuyRefundError("ineligible_payment_evidence", result.reason);
   }
+  if (!result.recipientAddress || result.amountUsdt == null) {
+    throw new GroupBuyRefundError("ineligible_payment_evidence");
+  }
 
   // Only this successful verifier branch can construct the proof. No request
   // field is consulted for any of these identities.
@@ -166,7 +166,44 @@ async function loadOriginalPaymentProof(
     txHash,
     currency: payment.currency,
     network: payment.network,
+    recipientWallet: result.recipientAddress,
+    expectedAmountUsd: centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal))),
+    verifiedAmountUsd: centsToUsdString(usdToCents(String(result.amountUsdt))),
   });
+}
+
+async function resolveLockedPayment(order: Record<string, any>) {
+  return resolveEffectiveOrderCrypto(order as {
+    groupBuyId: string | null;
+    orderType?: string | null;
+    shippingCountry?: string | null;
+    sharedOrderId?: string | null;
+    paymentCryptoCurrency?: string | null;
+    paymentCryptoNetwork?: string | null;
+  });
+}
+
+function requireLockedPaymentProof(
+  order: Record<string, any>,
+  proof: ServerPaymentEvidenceProof,
+  payment: { walletAddress: string | null; currency: string; network: string },
+): void {
+  const expected = centsToUsdString(usdToCents(String(order.paymentUsdAmount ?? order.grandTotal)));
+  if (
+    !payment.walletAddress
+    || proof.recipientWallet.toLowerCase() !== payment.walletAddress.toLowerCase()
+    || proof.expectedAmountUsd !== expected
+    || proof.currency.toUpperCase().trim() !== payment.currency.toUpperCase().trim()
+    || proof.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "") !== payment.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "")
+    || ![
+      order.paymentTxHash,
+      ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),
+    ].some(hash => typeof hash === "string" && hash.trim() === proof.txHash.trim())
+    || proof.currency.toUpperCase().trim() !== String(order.paymentCryptoCurrency ?? "").toUpperCase().trim()
+    || proof.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "") !== String(order.paymentCryptoNetwork ?? "").toUpperCase().trim().replace(/[^A-Z0-9]/g, "")
+  ) {
+    throw new GroupBuyRefundError("payment_evidence_changed");
+  }
 }
 
 async function loadRows(database: DatabaseLike, table: unknown, predicate: unknown): Promise<any[]> {
@@ -227,7 +264,7 @@ export async function createRefundRequest(
   // change made while the verifier was doing network I/O.
   const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
 
-  return database.transaction(async (tx) => {
+  return database.transaction(async (tx: DatabaseLike) => {
     const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, args.accountId));
     if (!account) throw new GroupBuyRefundError("account_not_found");
 
@@ -246,6 +283,8 @@ export async function createRefundRequest(
     );
     const activeRefund = activeRows[0];
     if (activeRefund) return asRefundResult(activeRefund);
+    const lockedPayment = await resolveLockedPayment(order);
+    requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
 
     const eligibility = evaluateRefundEligibility({
       accountId: args.accountId,
@@ -347,8 +386,18 @@ export async function completeCreditRefund(
     eq(groupBuyRefundsTable.id, args.refundId),
   );
   if (!unlockedRefund) throw new GroupBuyRefundError("not_found");
+  const [unlockedOrder] = await loadRows(
+    database,
+    ordersTable,
+    eq(ordersTable.id, unlockedRefund.orderId),
+  );
+  if (!unlockedOrder) throw new GroupBuyRefundError("not_found");
+  // Completion also independently verifies the original incoming payment
+  // before any row lock. This is deliberately repeated on retries: evidence
+  // is not persisted as a caller-controlled field on a refund row.
+  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
 
-  return database.transaction(async (tx) => {
+  return database.transaction(async (tx: DatabaseLike) => {
     // Every refund mutation uses account -> order -> group buy -> refund.
     // The initial read only discovers immutable foreign-key identities; no
     // write occurs until those rows are acquired in this order.
@@ -362,7 +411,6 @@ export async function completeCreditRefund(
     const [refund] = await lockRows(tx, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, args.refundId));
     if (!account || !order || !groupBuy || !refund) throw new GroupBuyRefundError("not_found");
 
-    if (refund.status === "completed") return asRefundResult(refund);
     if (refund.method !== "credit") throw new GroupBuyRefundError("crypto_refund_not_supported");
     if (args.groupBuyId && args.groupBuyId !== groupBuy.id) {
       throw new GroupBuyRefundError("group_buy_scope");
@@ -373,20 +421,67 @@ export async function completeCreditRefund(
     ) {
       throw new GroupBuyRefundError("forbidden");
     }
-    if (refund.status !== "requested" && refund.status !== "verification_failed") {
-      throw new GroupBuyRefundError("invalid_refund_transition");
-    }
     if (order.id !== refund.orderId || order.groupBuyId !== refund.groupBuyId || account.telegramUsername !== refund.accountId) {
       throw new GroupBuyRefundError("refund_linkage_mismatch");
     }
+    if (normalizeUsername(order.telegramUsername) !== normalizeUsername(account.telegramUsername)) {
+      throw new GroupBuyRefundError("refund_linkage_mismatch");
+    }
 
-    // Claim before money writes. A conditional update makes a concurrent
-    // retry a no-op rather than allowing a second credit.
+    const lockedPayment = await resolveLockedPayment(order);
+    requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
+    // Revalidate the original evidence against locked authoritative values.
+    // The completion path intentionally treats the GB feature flag as
+    // irrelevant: disabling new requests must not strand active history.
+    const evidenceCheck = evaluateRefundEligibility({
+      accountId: account.telegramUsername,
+      paymentEvidenceProof,
+      order: {
+        ...refundOrder(order),
+        status: "Submitted",
+        refundStatus: null,
+        paymentStatus: "confirmed",
+      },
+      groupBuy: { id: groupBuy.id, cryptoRefundsEnabled: true },
+      activeRefund: null,
+    });
+    if (!evidenceCheck.eligible) throw new GroupBuyRefundError("payment_evidence_changed");
+
+    if (refund.status === "completed") {
+      // A completed credit is expected to have caused this terminal order
+      // state. It is safe to return unchanged only after scope, linkage, and
+      // original payment evidence above have all been revalidated.
+      if (
+        order.status !== "Cancelled"
+        || order.paymentStatus !== "refunded"
+        || order.refundStatus !== "refunded"
+      ) {
+        throw new GroupBuyRefundError("completed_refund_linkage_mismatch");
+      }
+      return asRefundResult(refund);
+    }
+    if (refund.status !== "requested" && refund.status !== "verification_failed") {
+      throw new GroupBuyRefundError("invalid_refund_transition");
+    }
+    if (
+      order.deletedAt != null
+      || order.status === "Cancelled"
+      || order.refundStatus === "refunded"
+      || order.paymentStatus !== "confirmed"
+      || order.paymentConfirmedAt == null
+    ) {
+      throw new GroupBuyRefundError("payment_state_changed");
+    }
+
+    // Claim directly to completed before money writes. A concurrent retry or
+    // failed conditional claim performs no money, ledger, order, or audit
+    // writes. Any later failure rolls the transaction back to the original
+    // requested/verification_failed state.
     const [claimed] = await tx
       .update(groupBuyRefundsTable)
       .set({
-        status: "verifying",
-        verifyingAt: new Date(),
+        status: "completed",
+        completedAt: new Date(),
         processorUsername: args.username,
         processorRole: args.role,
       })
@@ -412,7 +507,7 @@ export async function completeCreditRefund(
     await tx.insert(creditTransactionsTable).values({
       accountUsername: account.telegramUsername,
       amount: Number(amountUsd),
-      reason: "group_buy_refund",
+      reason: `Group-buy refund for order #${order.code}`,
       orderId: order.id,
       refundId: refund.id,
       adminUsername: args.username,
@@ -426,15 +521,6 @@ export async function completeCreditRefund(
         paymentStatus: "refunded",
       })
       .where(eq(ordersTable.id, order.id));
-    await tx
-      .update(groupBuyRefundsTable)
-      .set({
-        status: "completed",
-        completedAt: new Date(),
-        processorUsername: args.username,
-        processorRole: args.role,
-      })
-      .where(eq(groupBuyRefundsTable.id, refund.id));
     await insertAudit(tx, {
       action: "group_buy_refund_completed",
       message: `Group-buy refund ${refund.id} completed`,
@@ -442,7 +528,7 @@ export async function completeCreditRefund(
         identity: args.username,
         role: args.role,
         source: "refund_processor",
-        transition: "verifying_to_completed",
+        transition: "requested_or_verification_failed_to_completed",
         resultCode: "credit_refund_completed",
         refundId: refund.id,
         orderId: order.id,

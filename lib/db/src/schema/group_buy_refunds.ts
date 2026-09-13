@@ -42,6 +42,10 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   network: text("network"),
   destinationWallet: text("destination_wallet"),
   // Stored as a decimal integer string so base-unit amounts remain exact.
+  // tokenDecimals is intentionally not persisted: the only supported refund
+  // rail is Ethereum ERC-20 USDC/USDT, whose canonical token precision is
+  // fixed at six decimals. `amountBaseUnits` is therefore always USD cents ×
+  // 10,000 (and the service rejects every other network/asset).
   amountBaseUnits: numeric("amount_base_units", { precision: 30, scale: 0 }),
   // Once recorded, an outgoing transaction identity must never be replaced.
   outgoingTxid: text("outgoing_txid"),
