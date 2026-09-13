@@ -316,6 +316,10 @@ describe("refund notification contract", () => {
     const aBlocked = new Promise<void>((resolve) => { releaseA = resolve; });
     let aEntered!: () => void;
     const aStarted = new Promise<void>((resolve) => { aEntered = resolve; });
+    let releaseB!: () => void;
+    const bBlocked = new Promise<void>((resolve) => { releaseB = resolve; });
+    let bEntered!: () => void;
+    const bStarted = new Promise<void>((resolve) => { bEntered = resolve; });
     const aDrain = drainRefundNotifications(db, {
       limit: 1,
       tokenFactory: () => "token-1",
@@ -323,23 +327,31 @@ describe("refund notification contract", () => {
         db.deliveryToken = marker.claimToken ?? null;
         aEntered();
         await aBlocked;
+        db.deliveryToken = "token-1";
         return { ok: true };
       },
     });
     await aStarted;
     db.now += 5 * 60 * 1000 + 1;
     db.notifications[0].claimedAt = new Date(db.now - 5 * 60 * 1000 - 1);
-    const bResult = await drainRefundNotifications(db, {
+    const bResult = drainRefundNotifications(db, {
       limit: 1,
       tokenFactory: () => "token-2",
       sender: async (marker) => {
         db.deliveryToken = marker.claimToken ?? null;
+        bEntered();
+        await bBlocked;
+        db.deliveryToken = "token-2";
         return { ok: true };
       },
     });
-    expect(bResult).toBe(1);
+    await bStarted;
     releaseA();
-    await aDrain;
+    expect(await aDrain).toBe(0);
+    expect(db.notifications[0].sentAt).toBeNull();
+    expect(db.notifications[0].claimToken).toBe("token-2");
+    releaseB();
+    expect(await bResult).toBe(1);
     expect(db.notifications[0].sentAt).toBeDefined();
     expect(db.notifications[0].claimToken).toBeNull();
     expect(db.notifications[0].claimedAt).toBeNull();
@@ -357,6 +369,10 @@ describe("refund notification contract", () => {
     const aBlocked = new Promise<void>((resolve) => { releaseA = resolve; });
     let aEntered!: () => void;
     const aStarted = new Promise<void>((resolve) => { aEntered = resolve; });
+    let releaseB!: () => void;
+    const bBlocked = new Promise<void>((resolve) => { releaseB = resolve; });
+    let bEntered!: () => void;
+    const bStarted = new Promise<void>((resolve) => { bEntered = resolve; });
     const aDrain = drainRefundNotifications(db, {
       limit: 1,
       tokenFactory: () => "token-1",
@@ -364,6 +380,7 @@ describe("refund notification contract", () => {
         db.deliveryToken = marker.claimToken ?? null;
         aEntered();
         await aBlocked;
+        db.deliveryToken = "token-1";
         throw new Error("late worker failure");
       },
     });
@@ -371,16 +388,24 @@ describe("refund notification contract", () => {
     db.now += 5 * 60 * 1000 + 1;
     db.notifications[0].claimedAt = new Date(db.now - 5 * 60 * 1000 - 1);
     db["selected"].clear();
-    expect(await drainRefundNotifications(db, {
+    const bDrain = drainRefundNotifications(db, {
       limit: 1,
       tokenFactory: () => "token-2",
       sender: async (marker) => {
         db.deliveryToken = marker.claimToken ?? null;
+        bEntered();
+        await bBlocked;
+        db.deliveryToken = "token-2";
         return { ok: true };
       },
-    })).toBe(1);
+    });
+    await bStarted;
     releaseA();
-    await aDrain;
+    expect(await aDrain).toBe(0);
+    expect(db.notifications[0].sentAt).toBeNull();
+    expect(db.notifications[0].claimToken).toBe("token-2");
+    releaseB();
+    expect(await bDrain).toBe(1);
     expect(db.notifications[0].sentAt).toBeDefined();
     expect(db.notifications[0].claimToken).toBeNull();
     expect(db.notifications[0].claimedAt).toBeNull();
@@ -411,6 +436,7 @@ describe("refund notification contract", () => {
       },
       drainNotifications: async () => {
         notificationCalls += 1;
+        if (notificationCalls === 2) throw new Error("notification outage");
         return 0;
       },
     });
@@ -419,11 +445,19 @@ describe("refund notification contract", () => {
     callbacks[0]?.();
     expect(auditCalls).toBe(1);
     releaseFirst();
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     callbacks[0]?.();
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(auditCalls).toBe(2);
-    expect(notificationCalls).toBe(1);
+    expect(notificationCalls).toBe(2);
+    callbacks[0]?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(auditCalls).toBe(3);
+    expect(notificationCalls).toBe(3);
+    callbacks[0]?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(auditCalls).toBe(4);
+    expect(notificationCalls).toBe(4);
     stop();
     expect(cleared).toHaveLength(1);
   });

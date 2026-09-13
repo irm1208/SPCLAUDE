@@ -391,10 +391,16 @@ export function startRefundNotificationDrain(
     if (scheduledDrainRunning) return;
     scheduledDrainRunning = true;
     try {
-      await drainAudits(database, { limit: 25 });
-      await drainNotifications(database, { limit: 25 });
-    } catch {
-      // Pending markers retain their lease/error state and are retried later.
+      try {
+        await drainAudits(database, { limit: 25 });
+      } catch {
+        // Audit outages must not suppress customer notification delivery.
+      }
+      try {
+        await drainNotifications(database, { limit: 25 });
+      } catch {
+        // Notification outages must not suppress audit delivery or the next tick.
+      }
     } finally {
       scheduledDrainRunning = false;
     }
