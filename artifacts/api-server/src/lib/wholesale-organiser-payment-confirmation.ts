@@ -1,39 +1,33 @@
-import { db, auditLogsTable, ordersTable, wholesaleShareMembersTable, wholesaleSharesTable } from "@workspace/db";
+import {
+  auditLogsTable,
+  db,
+  ordersTable,
+  wholesaleShareMembersTable,
+  wholesaleSharesTable,
+} from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 
-export type WholesaleOrganiserPaymentConfirmationMode = "admin" | "automatic" | "backfill";
+export type OrganiserPaymentConfirmationSource = "automatic" | "admin" | "backfill";
 
-export interface WholesaleOrganiserPaymentConfirmationInput {
-  shareId: string;
-  mode?: WholesaleOrganiserPaymentConfirmationMode;
-  /** Alias accepted by callers that describe this as the confirmation source. */
-  source?: WholesaleOrganiserPaymentConfirmationMode;
-  /** Alias for integrations which call the source a confirmation source. */
-  confirmationSource?: WholesaleOrganiserPaymentConfirmationMode;
-}
+export type OrganiserPaymentConfirmationResult =
+  | { kind: "confirmed"; shareId: string; organiserOrderId: string; orderChanged: boolean }
+  | { kind: "already_confirmed"; shareId: string; organiserOrderId: string }
+  | { kind: "rejected"; code: string; message: string };
 
-export type WholesaleOrganiserPaymentRejectionReason =
+type RejectionCode =
   | "invalid_input"
-  | "share_not_found"
+  | "not_found"
   | "invalid_share_status"
   | "invalid_parent_status"
-  | "missing_transaction_details"
+  | "missing_transaction_identity"
   | "invalid_amount"
   | "invalid_creator_member"
   | "invalid_creator_order";
 
-export type WholesaleOrganiserPaymentConfirmationResult =
-  | { status: "confirmed"; shareId: string; creatorOrderId: string }
-  | { status: "already_confirmed"; shareId: string; creatorOrderId: string }
-  | { status: "rejected"; shareId: string; reason: WholesaleOrganiserPaymentRejectionReason };
-
 type PaymentItem = { quantity?: unknown; unitPrice?: unknown };
 
-function rejected(
-  shareId: string,
-  reason: WholesaleOrganiserPaymentRejectionReason,
-): WholesaleOrganiserPaymentConfirmationResult {
-  return { status: "rejected", shareId, reason };
+function reject(code: RejectionCode, message: string): OrganiserPaymentConfirmationResult {
+  return { kind: "rejected", code, message };
 }
 
 function finiteMoney(value: unknown): number | null {
@@ -44,7 +38,8 @@ function finiteMoney(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function productSubtotal(items: unknown): number | null {
+/** Match the existing wholesale amount calculation: round every line first. */
+function memberSubtotal(items: unknown): number | null {
   if (!Array.isArray(items)) return null;
 
   let subtotal = 0;
@@ -53,30 +48,50 @@ function productSubtotal(items: unknown): number | null {
     const quantity = finiteMoney(item.quantity);
     const unitPrice = finiteMoney(item.unitPrice);
     if (quantity === null || unitPrice === null || quantity < 0 || unitPrice < 0) return null;
-    subtotal += quantity * unitPrice;
+    subtotal += Number((quantity * unitPrice).toFixed(2));
   }
   return Number(subtotal.toFixed(2));
 }
 
-function sourceOf(input: WholesaleOrganiserPaymentConfirmationInput): WholesaleOrganiserPaymentConfirmationMode | null {
-  const source = input.mode ?? input.source ?? input.confirmationSource;
-  return source === "admin" || source === "automatic" || source === "backfill" ? source : null;
+function amountDue(members: Array<{ items: unknown }>, shipping: unknown): number | null {
+  const vendorShipping = finiteMoney(shipping);
+  if (vendorShipping === null || vendorShipping < 0) return null;
+
+  let subtotal = 0;
+  for (const member of members) {
+    const memberTotal = memberSubtotal(member.items);
+    if (memberTotal === null) return null;
+    subtotal += memberTotal;
+  }
+  return Number((subtotal + vendorShipping).toFixed(2));
+}
+
+function isPaymentStatus(value: unknown): value is "pending" | "confirmed" {
+  return value === "pending" || value === "confirmed";
 }
 
 /**
- * Confirm the platform payment forwarded by a shared-wholesale organiser.
- *
- * All reads and writes intentionally happen in one transaction. The share,
- * member rows, and creator order are locked before validation so two admin or
- * automatic confirmations cannot race each other or produce duplicate audit
- * entries.
+ * Confirm the organiser's platform payment and the organiser's linked order in
+ * one transaction. The share lock serialises repeated admin/automatic calls;
+ * the candidate and order locks prevent unrelated member orders from being
+ * changed and make the audit transition exactly once.
  */
-export async function confirmWholesaleOrganiserPayment(
-  input: WholesaleOrganiserPaymentConfirmationInput,
-): Promise<WholesaleOrganiserPaymentConfirmationResult> {
+export async function confirmWholesaleOrganiserPayment(input: {
+  shareId: string;
+  source: OrganiserPaymentConfirmationSource;
+  expectedCurrentParentStatus?: "pending" | "confirmed";
+}): Promise<OrganiserPaymentConfirmationResult> {
   const shareId = typeof input?.shareId === "string" ? input.shareId.trim() : "";
-  const mode = input ? sourceOf(input) : null;
-  if (!shareId || !mode) return rejected(shareId, "invalid_input");
+  const source = input?.source;
+  if (!shareId || (source !== "admin" && source !== "automatic" && source !== "backfill")) {
+    return reject("invalid_input", "A share ID and valid confirmation source are required.");
+  }
+
+  const expectedCurrentParentStatus =
+    input.expectedCurrentParentStatus ?? (source === "backfill" ? "confirmed" : "pending");
+  if (!isPaymentStatus(expectedCurrentParentStatus)) {
+    return reject("invalid_input", "The expected current parent payment status is invalid.");
+  }
 
   return db.transaction(async (tx) => {
     const [share] = await tx
@@ -84,12 +99,26 @@ export async function confirmWholesaleOrganiserPayment(
       .from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, shareId))
       .for("update");
-    if (!share) return rejected(shareId, "share_not_found");
-    if (share.status !== "submitted") return rejected(shareId, "invalid_share_status");
+    if (!share) return reject("not_found", "Shared order not found.");
+    if (share.status !== "submitted") {
+      return reject("invalid_share_status", "Shared order is not submitted.");
+    }
 
-    const expectedParentStatus = mode === "backfill" ? "confirmed" : "pending";
-    if (share.organiserPaymentStatus !== expectedParentStatus) {
-      return rejected(shareId, "invalid_parent_status");
+    // A pending parent is the normal admin/automatic path. A confirmed parent
+    // is also accepted for those sources so a repeated call can still validate
+    // the linked order and return an idempotent result. Backfill is confirmed-only.
+    const repeatedParentConfirmation =
+      source !== "backfill" &&
+      expectedCurrentParentStatus === "pending" &&
+      share.organiserPaymentStatus === "confirmed";
+    if (
+      share.organiserPaymentStatus !== expectedCurrentParentStatus &&
+      !repeatedParentConfirmation
+    ) {
+      return reject(
+        "invalid_parent_status",
+        `Expected organiser payment status "${expectedCurrentParentStatus}".`,
+      );
     }
 
     if (
@@ -100,81 +129,95 @@ export async function confirmWholesaleOrganiserPayment(
       typeof share.organiserPaymentNetwork !== "string" ||
       !share.organiserPaymentNetwork.trim()
     ) {
-      return rejected(shareId, "missing_transaction_details");
+      return reject(
+        "missing_transaction_identity",
+        "Stored organiser transaction hash, currency, and network are required.",
+      );
     }
 
-    const shipping = finiteMoney(share.totalVendorShipping);
-    if (shipping === null || shipping < 0) return rejected(shareId, "invalid_amount");
+    // This read is deliberately not locked: it supplies the existing combined
+    // amount calculation. Only the creator candidate below is locked because
+    // unrelated member rows must never be part of the state transition.
+    const memberItems = await tx
+      .select({ items: wholesaleShareMembersTable.items })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    const total = amountDue(memberItems, share.totalVendorShipping);
+    if (total === null || total <= 0) {
+      return reject("invalid_amount", "The organiser payment amount must be positive.");
+    }
 
-    const members = await tx
+    const creatorMembers = await tx
       .select()
       .from(wholesaleShareMembersTable)
-      .where(eq(wholesaleShareMembersTable.shareId, share.id))
+      .where(and(
+        eq(wholesaleShareMembersTable.shareId, share.id),
+        eq(wholesaleShareMembersTable.isCreator, true),
+        eq(wholesaleShareMembersTable.username, share.creatorUsername),
+      ))
       .for("update");
-    const creatorMembers = members.filter(member =>
-      member.isCreator === true && member.username === share.creatorUsername,
-    );
     if (
       creatorMembers.length !== 1 ||
       typeof creatorMembers[0].orderId !== "string" ||
-      creatorMembers[0].orderId.trim() === ""
+      !creatorMembers[0].orderId.trim()
     ) {
-      return rejected(shareId, "invalid_creator_member");
+      return reject(
+        "invalid_creator_member",
+        "Exactly one creator member with a linked order is required.",
+      );
     }
 
-    const creatorMember = creatorMembers[0];
-    // Product totals are calculated across all member drafts, not just the
-    // creator's order. The organiser forwards the combined product total.
-    const combinedSubtotal = members.reduce((total, member) => {
-      const memberTotal = productSubtotal(member.items);
-      return memberTotal === null ? Number.NaN : total + memberTotal;
-    }, 0);
-    if (
-      !Number.isFinite(combinedSubtotal) ||
-      combinedSubtotal <= 0 ||
-      Number((combinedSubtotal + shipping).toFixed(2)) <= 0
-    ) {
-      return rejected(shareId, "invalid_amount");
-    }
-
-    const [creatorOrder] = await tx
+    const organiserOrderId = creatorMembers[0].orderId;
+    const [organiserOrder] = await tx
       .select()
       .from(ordersTable)
-      .where(eq(ordersTable.id, creatorMember.orderId))
+      .where(eq(ordersTable.id, organiserOrderId))
       .for("update");
     if (
-      !creatorOrder ||
-      creatorOrder.orderType !== "wholesale_shared" ||
-      creatorOrder.sharedOrderId !== share.id ||
-      creatorOrder.telegramUsername !== share.creatorUsername
+      !organiserOrder ||
+      organiserOrder.orderType !== "wholesale_shared" ||
+      organiserOrder.sharedOrderId !== share.id ||
+      organiserOrder.telegramUsername !== share.creatorUsername
     ) {
-      return rejected(shareId, "invalid_creator_order");
+      return reject(
+        "invalid_creator_order",
+        "The linked creator order does not match this shared wholesale order.",
+      );
     }
 
-    const alreadyConfirmed =
-      creatorOrder.paymentStatus === "confirmed" || creatorOrder.paymentStatus === "test_confirmed";
-    if (!alreadyConfirmed && creatorOrder.paymentStatus !== "unpaid" && creatorOrder.paymentStatus !== "pending") {
-      return rejected(shareId, "invalid_creator_order");
+    const orderAlreadyConfirmed =
+      organiserOrder.paymentStatus === "confirmed" ||
+      organiserOrder.paymentStatus === "test_confirmed";
+    if (
+      !orderAlreadyConfirmed &&
+      organiserOrder.paymentStatus !== "unpaid" &&
+      organiserOrder.paymentStatus !== "pending"
+    ) {
+      return reject(
+        "invalid_creator_order",
+        "The linked creator order is not in a confirmable payment state.",
+      );
     }
 
-    let creatorOrderId = creatorOrder.id;
-    let creatorOrderTransitioned = false;
-    if (!alreadyConfirmed) {
+    let orderChanged = false;
+    if (!orderAlreadyConfirmed) {
       const [updatedOrder] = await tx
         .update(ordersTable)
         .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
         .where(and(
-          eq(ordersTable.id, creatorOrder.id),
+          eq(ordersTable.id, organiserOrderId),
           inArray(ordersTable.paymentStatus, ["unpaid", "pending"]),
         ))
         .returning({ id: ordersTable.id });
-      if (!updatedOrder) return rejected(shareId, "invalid_creator_order");
-      creatorOrderId = updatedOrder.id;
-      creatorOrderTransitioned = true;
+      if (!updatedOrder) {
+        return reject("invalid_creator_order", "The linked creator order changed during confirmation.");
+      }
+      orderChanged = true;
     }
 
-    if (mode !== "backfill") {
-      await tx
+    let parentChanged = false;
+    if (share.organiserPaymentStatus === "pending") {
+      const [updatedShare] = await tx
         .update(wholesaleSharesTable)
         .set({ organiserPaymentStatus: "confirmed", organiserPaymentConfirmedAt: new Date() })
         .where(and(
@@ -182,32 +225,30 @@ export async function confirmWholesaleOrganiserPayment(
           eq(wholesaleSharesTable.organiserPaymentStatus, "pending"),
         ))
         .returning({ id: wholesaleSharesTable.id });
+      if (!updatedShare) {
+        return reject("invalid_parent_status", "The shared order payment changed during confirmation.");
+      }
+      parentChanged = true;
     }
 
-    if (creatorOrderTransitioned) {
+    if (orderChanged) {
       await tx.insert(auditLogsTable).values({
         type: "order",
         level: "info",
-        action: "wholesale_organiser_payment_confirmed",
-        message: `Confirmed organiser payment for shared wholesale order ${share.id}`,
+        action: "wholesale_share_organiser_order_payment_confirmed",
+        message: `Confirmed organiser order payment for shared wholesale order ${share.id}`,
         metadata: {
+          source,
+          reason: "organiser_platform_payment_confirmed",
           shareId: share.id,
-          creatorUsername: share.creatorUsername,
-          creatorOrderId,
-          mode,
-          transactionHash: share.organiserPaymentTxHash,
-          currency: share.organiserPaymentCurrency,
-          network: share.organiserPaymentNetwork,
+          organiserOrderId,
         },
       });
     }
 
-    return {
-      status: creatorOrderTransitioned ? "confirmed" : "already_confirmed",
-      shareId,
-      creatorOrderId,
-    };
+    if (!parentChanged && !orderChanged) {
+      return { kind: "already_confirmed", shareId, organiserOrderId };
+    }
+    return { kind: "confirmed", shareId, organiserOrderId, orderChanged };
   });
 }
-
-export const confirmSharedWholesaleOrganiserPayment = confirmWholesaleOrganiserPayment;

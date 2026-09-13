@@ -1,19 +1,46 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => {
   const tables = {
-    shares: { id: "share.id", organiserPaymentStatus: "share.status" },
-    members: { shareId: "member.shareId", isCreator: "member.isCreator" },
+    shares: {
+      id: "id",
+      status: "status",
+      creatorUsername: "creatorUsername",
+      organiserPaymentStatus: "organiserPaymentStatus",
+      organiserPaymentTxHash: "organiserPaymentTxHash",
+      organiserPaymentCurrency: "organiserPaymentCurrency",
+      organiserPaymentNetwork: "organiserPaymentNetwork",
+      totalVendorShipping: "totalVendorShipping",
+    },
+    members: {
+      shareId: "shareId",
+      username: "username",
+      isCreator: "isCreator",
+      orderId: "orderId",
+      items: "items",
+    },
     orders: {
-      id: "order.id",
-      orderType: "order.type",
-      sharedOrderId: "order.sharedOrderId",
-      telegramUsername: "order.username",
+      id: "id",
+      orderType: "orderType",
+      sharedOrderId: "sharedOrderId",
+      telegramUsername: "telegramUsername",
+      paymentStatus: "paymentStatus",
     },
     audit: "audit",
   };
+
   const state = {
-    share: {
+    share: {} as Record<string, unknown>,
+    members: [] as Array<Record<string, unknown>>,
+    orders: [] as Array<Record<string, unknown>>,
+    audits: [] as Array<Record<string, unknown>>,
+    updates: [] as Array<{ table: unknown; values: Record<string, unknown>; rows: unknown[] }>,
+    locks: [] as Array<{ table: unknown; predicates: unknown[] }>,
+    failAudit: false,
+  };
+
+  function reset() {
+    state.share = {
       id: "SHARE1",
       creatorUsername: "@creator",
       status: "submitted",
@@ -22,118 +49,369 @@ const harness = vi.hoisted(() => {
       organiserPaymentCurrency: "USDT",
       organiserPaymentNetwork: "ERC-20",
       totalVendorShipping: "5.00",
-    },
-    member: {
-      id: "member-1",
-      shareId: "SHARE1",
-      username: "@creator",
-      isCreator: true,
-      orderId: "order-1",
-      items: [{ quantity: 2, unitPrice: "10.00" }],
-    },
-    order: {
-      id: "order-1",
-      telegramUsername: "@creator",
-      orderType: "wholesale_shared",
-      sharedOrderId: "SHARE1",
-      paymentStatus: "pending",
-    },
-    audits: [] as unknown[],
-    updates: [] as unknown[],
-  };
+    };
+    state.members = [
+      {
+        id: "creator-member",
+        shareId: "SHARE1",
+        username: "@creator",
+        isCreator: true,
+        orderId: "creator-order",
+        items: [{ quantity: 2, unitPrice: "10.00" }],
+      },
+      {
+        id: "ordinary-member",
+        shareId: "SHARE1",
+        username: "@member",
+        isCreator: false,
+        orderId: "ordinary-order",
+        items: [{ quantity: 1, unitPrice: "3.00" }],
+      },
+    ];
+    state.orders = [
+      {
+        id: "creator-order",
+        telegramUsername: "@creator",
+        orderType: "wholesale_shared",
+        sharedOrderId: "SHARE1",
+        paymentStatus: "pending",
+      },
+      {
+        id: "ordinary-order",
+        telegramUsername: "@member",
+        orderType: "wholesale_shared",
+        sharedOrderId: "SHARE1",
+        paymentStatus: "unpaid",
+      },
+    ];
+    state.audits = [];
+    state.updates = [];
+    state.locks = [];
+    state.failAudit = false;
+  }
 
-  const db = {
-    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(tx)),
-  };
+  function matches(row: Record<string, unknown>, predicate: unknown): boolean {
+    if (!predicate) return true;
+    const value = predicate as { kind?: string; column?: string; value?: unknown; predicates?: unknown[] };
+    if (value.kind === "eq") return row[value.column!] === value.value;
+    if (value.kind === "inArray") return (value.value as unknown[]).includes(row[value.column!]);
+    if (value.kind === "and") return (value.predicates ?? []).every(item => matches(row, item));
+    return true;
+  }
+
+  function rowsFor(table: unknown, predicate: unknown): Array<Record<string, unknown>> {
+    const rows = table === tables.shares
+      ? [state.share]
+      : table === tables.members
+        ? state.members
+        : table === tables.orders
+          ? state.orders
+          : [];
+    return rows.filter(row => matches(row, predicate));
+  }
+
+  function project(row: Record<string, unknown>, selection: unknown): Record<string, unknown> {
+    if (!selection || typeof selection !== "object") return { ...row };
+    const result: Record<string, unknown> = {};
+    for (const [key, column] of Object.entries(selection)) result[key] = row[column as string];
+    return result;
+  }
+
   const tx = {
-    select: vi.fn(() => ({
+    select: vi.fn((selection?: unknown) => ({
       from: vi.fn((table: unknown) => ({
-        where: vi.fn(() => ({
-          for: vi.fn(async () => {
-            if (table === tables.shares) return [state.share];
-            if (table === tables.members) return [state.member];
-            if (table === tables.orders) return [state.order];
-            return [];
-          }),
-        })),
+        where: vi.fn((predicate: unknown) => {
+          const result = {
+            for: vi.fn(async () => {
+              state.locks.push({ table, predicates: [predicate] });
+              return rowsFor(table, predicate).map(row => project(row, selection));
+            }),
+            then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
+              Promise.resolve(rowsFor(table, predicate).map(row => project(row, selection))).then(resolve, reject),
+          };
+          return result;
+        }),
       })),
     })),
     update: vi.fn((table: unknown) => ({
-      set: vi.fn((values: unknown) => ({
-        where: vi.fn(() => ({
+      set: vi.fn((values: Record<string, unknown>) => ({
+        where: vi.fn((predicate: unknown) => ({
           returning: vi.fn(async () => {
-            state.updates.push({ table, values });
-            if (table === tables.orders) state.order = { ...state.order, ...(values as object) };
-            if (table === tables.shares) state.share = { ...state.share, ...(values as object) };
-            return [{ ...state.order }];
+            const rows = rowsFor(table, predicate);
+            state.updates.push({ table, values, rows });
+            for (const row of rows) Object.assign(row, values);
+            return rows.map(row => ({ id: row.id }));
           }),
         })),
       })),
     })),
     insert: vi.fn((table: unknown) => ({
-      values: vi.fn(async (values: unknown) => {
-        state.audits.push({ table, values });
+      values: vi.fn(async (values: Record<string, unknown>) => {
+        if (state.failAudit) throw new Error("audit insert failed");
+        state.audits.push({ table, ...values });
       }),
     })),
   };
-  return { db, tables, tx, state };
+
+  const db = {
+    transaction: vi.fn(async (callback: (transaction: unknown) => unknown) => {
+      const snapshot = JSON.parse(JSON.stringify({
+        share: state.share,
+        members: state.members,
+        orders: state.orders,
+        audits: state.audits,
+        updates: state.updates,
+        locks: state.locks,
+      }));
+      try {
+        return await callback(tx);
+      } catch (error) {
+        state.share = snapshot.share;
+        state.members = snapshot.members;
+        state.orders = snapshot.orders;
+        state.audits = snapshot.audits;
+        state.updates = snapshot.updates;
+        state.locks = snapshot.locks;
+        throw error;
+      }
+    }),
+  };
+
+  reset();
+  return { db, tables, state, reset };
 });
 
 vi.mock("@workspace/db", () => ({
   db: harness.db,
-  wholesaleSharesTable: harness.tables.shares,
-  wholesaleShareMembersTable: harness.tables.members,
-  ordersTable: harness.tables.orders,
   auditLogsTable: harness.tables.audit,
+  ordersTable: harness.tables.orders,
+  wholesaleShareMembersTable: harness.tables.members,
+  wholesaleSharesTable: harness.tables.shares,
 }));
 
 vi.mock("drizzle-orm", () => ({
-  and: vi.fn((...args: unknown[]) => args),
-  eq: vi.fn((...args: unknown[]) => args),
-  inArray: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),
+  eq: vi.fn((column: unknown, value: unknown) => ({ kind: "eq", column, value })),
+  inArray: vi.fn((column: unknown, value: unknown[]) => ({ kind: "inArray", column, value })),
 }));
 
-import {
-  confirmWholesaleOrganiserPayment,
-  type WholesaleOrganiserPaymentConfirmationInput,
-} from "./wholesale-organiser-payment-confirmation";
+import { confirmWholesaleOrganiserPayment } from "./wholesale-organiser-payment-confirmation";
+
+const pendingInput = {
+  shareId: "SHARE1",
+  source: "automatic" as const,
+  expectedCurrentParentStatus: "pending" as const,
+};
 
 describe("confirmWholesaleOrganiserPayment", () => {
-  const input: WholesaleOrganiserPaymentConfirmationInput = {
-    shareId: "SHARE1",
-    mode: "admin",
-  };
+  beforeEach(() => harness.reset());
 
-  it("confirms the creator order and parent atomically, recording one audit event", async () => {
-    const result = await confirmWholesaleOrganiserPayment(input);
+  it("confirms only the organiser order and parent atomically", async () => {
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
-    expect(result).toMatchObject({ status: "confirmed", shareId: "SHARE1", creatorOrderId: "order-1" });
-    expect(harness.db.transaction).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      kind: "confirmed",
+      shareId: "SHARE1",
+      organiserOrderId: "creator-order",
+      orderChanged: true,
+    });
+    expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
+    expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
+    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.audits).toHaveLength(1);
+    expect(harness.state.audits[0]).toMatchObject({
+      action: "wholesale_share_organiser_order_payment_confirmed",
+      metadata: {
+        source: "automatic",
+        reason: "organiser_platform_payment_confirmed",
+        shareId: "SHARE1",
+        organiserOrderId: "creator-order",
+      },
+    });
+  });
+
+  it("locks the share, filtered creator candidate, and organiser order only", async () => {
+    await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(harness.state.locks.map(lock => lock.table)).toEqual([
+      harness.tables.shares,
+      harness.tables.members,
+      harness.tables.orders,
+    ]);
+    expect(harness.state.locks[1].predicates[0]).toMatchObject({
+      kind: "and",
+      predicates: expect.arrayContaining([
+        { kind: "eq", column: "shareId", value: "SHARE1" },
+        { kind: "eq", column: "isCreator", value: true },
+        { kind: "eq", column: "username", value: "@creator" },
+      ]),
+    });
+    expect(harness.state.locks[2].predicates[0]).toMatchObject({
+      kind: "eq",
+      column: "id",
+      value: "creator-order",
+    });
+  });
+
+  it("returns already_confirmed on repeated admin/automatic calls after validating linkage", async () => {
+    await confirmWholesaleOrganiserPayment(pendingInput);
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "admin",
+    });
+
+    expect(result).toEqual({
+      kind: "already_confirmed",
+      shareId: "SHARE1",
+      organiserOrderId: "creator-order",
+    });
     expect(harness.state.updates).toHaveLength(2);
     expect(harness.state.audits).toHaveLength(1);
   });
 
-  it("returns already_confirmed without changing a confirmed creator order", async () => {
-    harness.state.order.paymentStatus = "confirmed";
-    harness.state.share.organiserPaymentStatus = "confirmed";
-    harness.state.updates.length = 0;
-    harness.state.audits.length = 0;
+  it("returns confirmed for a parent-only transition", async () => {
+    harness.state.orders[0].paymentStatus = "confirmed";
 
-    const result = await confirmWholesaleOrganiserPayment({ ...input, mode: "backfill" });
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "admin",
+    });
 
-    expect(result).toMatchObject({ status: "already_confirmed", creatorOrderId: "order-1" });
-    expect(harness.state.updates).toHaveLength(0);
+    expect(result).toEqual({
+      kind: "confirmed",
+      shareId: "SHARE1",
+      organiserOrderId: "creator-order",
+      orderChanged: false,
+    });
+    expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
+    expect(harness.state.updates).toHaveLength(1);
     expect(harness.state.audits).toHaveLength(0);
   });
 
-  it("rejects a submitted share with missing stored transaction details", async () => {
-    harness.state.share.organiserPaymentStatus = "pending";
-    harness.state.share.organiserPaymentTxHash = "";
-    harness.state.order.paymentStatus = "pending";
+  it("preserves test_confirmed while confirming a pending parent", async () => {
+    harness.state.orders[0].paymentStatus = "test_confirmed";
 
-    const result = await confirmWholesaleOrganiserPayment(input);
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
-    expect(result.status).toBe("rejected");
-    expect(result).toHaveProperty("reason", "missing_transaction_details");
+    expect(result.kind).toBe("confirmed");
+    expect(result).toHaveProperty("orderChanged", false);
+    expect(harness.state.orders[0].paymentStatus).toBe("test_confirmed");
+    expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("backfills a confirmed parent and reports the order transition", async () => {
+    harness.state.share.organiserPaymentStatus = "confirmed";
+    const result = await confirmWholesaleOrganiserPayment({
+      shareId: "SHARE1",
+      source: "backfill",
+      expectedCurrentParentStatus: "confirmed",
+    });
+
+    expect(result).toMatchObject({ kind: "confirmed", orderChanged: true });
+    expect(harness.state.updates).toHaveLength(1);
+    expect(harness.state.audits).toHaveLength(1);
+  });
+
+  it("accepts a positive shipping-only total", async () => {
+    harness.state.members.forEach(member => { member.items = []; });
+    harness.state.share.totalVendorShipping = "1.00";
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result.kind).toBe("confirmed");
+  });
+
+  it("uses two-decimal rounding for every product line", async () => {
+    harness.state.members = [harness.state.members[0]];
+    harness.state.members[0].items = [{ quantity: 3, unitPrice: "0.333" }];
+    harness.state.share.totalVendorShipping = "0";
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result.kind).toBe("confirmed");
+  });
+
+  const mismatches = [
+    ["creator username", () => { harness.state.share.creatorUsername = "@other"; }, "invalid_creator_member"],
+    ["duplicate creator member", () => { harness.state.members.push({ ...harness.state.members[0], id: "duplicate" }); }, "invalid_creator_member"],
+    ["missing linked order", () => { delete harness.state.members[0].orderId; }, "invalid_creator_member"],
+    ["wrong order type", () => { harness.state.orders[0].orderType = "ordinary"; }, "invalid_creator_order"],
+    ["wrong shared order ID", () => { harness.state.orders[0].sharedOrderId = "OTHER"; }, "invalid_creator_order"],
+    ["wrong order username", () => { harness.state.orders[0].telegramUsername = "@other"; }, "invalid_creator_order"],
+    ["cancelled share", () => { harness.state.share.status = "cancelled"; }, "invalid_share_status"],
+    ["locked share", () => { harness.state.share.status = "locked"; }, "invalid_share_status"],
+    ["missing transaction hash", () => { harness.state.share.organiserPaymentTxHash = ""; }, "missing_transaction_identity"],
+    ["missing currency", () => { harness.state.share.organiserPaymentCurrency = null; }, "missing_transaction_identity"],
+    ["missing network", () => { harness.state.share.organiserPaymentNetwork = null; }, "missing_transaction_identity"],
+    ["zero amount", () => { harness.state.members.forEach(member => { member.items = []; }); harness.state.share.totalVendorShipping = "0"; }, "invalid_amount"],
+    ["negative shipping", () => { harness.state.share.totalVendorShipping = "-1"; }, "invalid_amount"],
+    ["wrong parent state", () => { harness.state.share.organiserPaymentStatus = "unpaid"; }, "invalid_parent_status"],
+  ] as const;
+
+  it.each(mismatches)("rejects %s without changing persisted state", async (_name, change, code) => {
+    change();
+    const before = JSON.stringify({
+      share: harness.state.share,
+      members: harness.state.members,
+      orders: harness.state.orders,
+    });
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "rejected", code });
+    expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.audits).toHaveLength(0);
+    expect(JSON.stringify({
+      share: harness.state.share,
+      members: harness.state.members,
+      orders: harness.state.orders,
+    })).toBe(before);
+  });
+
+  it("rejects a pending parent in backfill mode without changing it", async () => {
+    const before = JSON.stringify(harness.state);
+
+    const result = await confirmWholesaleOrganiserPayment({
+      shareId: "SHARE1",
+      source: "backfill",
+      expectedCurrentParentStatus: "confirmed",
+    });
+
+    expect(result).toMatchObject({ kind: "rejected", code: "invalid_parent_status" });
+    expect(JSON.stringify(harness.state.share)).toBe(JSON.stringify(JSON.parse(before).share));
+    expect(harness.state.updates).toHaveLength(0);
+  });
+
+  it("rejects a mismatched confirmed parent after validating its linkage", async () => {
+    await confirmWholesaleOrganiserPayment(pendingInput);
+    harness.state.orders[0].telegramUsername = "@tampered";
+
+    const result = await confirmWholesaleOrganiserPayment({
+      shareId: "SHARE1",
+      source: "admin",
+      expectedCurrentParentStatus: "pending",
+    });
+
+    expect(result).toMatchObject({ kind: "rejected", code: "invalid_creator_order" });
+    expect(harness.state.updates).toHaveLength(2);
+    expect(harness.state.audits).toHaveLength(1);
+  });
+
+  it("rolls back the creator and parent transitions if the transactional audit fails", async () => {
+    harness.state.failAudit = true;
+    const before = JSON.stringify({
+      share: harness.state.share,
+      members: harness.state.members,
+      orders: harness.state.orders,
+    });
+
+    await expect(confirmWholesaleOrganiserPayment(pendingInput)).rejects.toThrow("audit insert failed");
+
+    expect(JSON.stringify({
+      share: harness.state.share,
+      members: harness.state.members,
+      orders: harness.state.orders,
+    })).toBe(before);
+    expect(harness.state.audits).toHaveLength(0);
   });
 });
