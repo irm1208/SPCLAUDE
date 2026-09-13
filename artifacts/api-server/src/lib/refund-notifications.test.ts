@@ -12,6 +12,7 @@ import {
   drainRefundAudits,
   drainRefundNotifications,
   enqueueRefundNotification,
+  startRefundNotificationDrain,
 } from "./refund-notifications";
 
 class PersistedFakeDb {
@@ -19,7 +20,10 @@ class PersistedFakeDb {
   audits: any[] = [];
   auditMarkers: any[] = [];
   failAuditInsert = false;
-  private claimed = new Set<string>();
+  now = Date.now();
+  deliveryToken: string | null = null;
+  updateAttempts = 0;
+  private selected = new Set<string>();
 
   transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     return fn(this);
@@ -40,8 +44,9 @@ class PersistedFakeDb {
                     && row.accountId === value.accountId
                     && row.transitionKey === value.transitionKey);
                   if (duplicate) return [];
-                  state.notifications.push(value);
-                  return [value];
+                  const marker = { claimToken: null, claimedAt: null, sentAt: null, ...value };
+                  state.notifications.push(marker);
+                  return [marker];
                 }
                 const duplicate = state.auditMarkers.find((row) =>
                   row.refundId === value.refundId
@@ -75,15 +80,22 @@ class PersistedFakeDb {
     const state = this;
     const query: any = {
       table: null as unknown,
+      locking: false,
       limit() { return query; },
       from(table: unknown) { query.table = table; return query; },
       where() { return query; },
       orderBy() { return query; },
-      for() { return Promise.resolve(query.rows()); },
+      for() { query.locking = true; return Promise.resolve(query.rows()); },
       then(resolve: (value: any[]) => unknown) { return Promise.resolve(query.rows()).then(resolve); },
       rows() {
         if (query.table === groupBuyRefundNotificationsTable) {
-          return state.notifications.filter((row) => !row.sentAt && !state.claimed.has(row.id)).slice(0, 1);
+          const row = state.notifications.find((candidate) =>
+            !state.selected.has(candidate.id)
+            && !candidate.sentAt
+            && (!candidate.claimedAt || state.now - new Date(candidate.claimedAt).getTime() > 5 * 60 * 1000)
+          );
+          if (row && query.locking) state.selected.add(row.id);
+          return row ? [row] : [];
         }
         return state.auditMarkers.filter((row) => !row.deliveredAt).slice(0, 1);
       },
@@ -99,20 +111,22 @@ class PersistedFakeDb {
           where: (_predicate: unknown) => {
             let applied = false;
             const apply = async () => {
+              state.updateAttempts += 1;
               if (applied) return [];
               applied = true;
               const rows = table === groupBuyRefundNotificationsTable ? state.notifications : state.auditMarkers;
               const row = rows.find((candidate) => !candidate.sentAt || table !== groupBuyRefundNotificationsTable);
               if (!row) return [];
-              if (table === groupBuyRefundNotificationsTable && values.claimedAt && state.claimed.has(row.id)) return [];
+              if (
+                table === groupBuyRefundNotificationsTable
+                && (values.sentAt || values.claimedAt === null)
+                && state.deliveryToken !== null
+                && row.claimToken !== state.deliveryToken
+              ) return [];
               Object.assign(row, values);
-              if (table === groupBuyRefundNotificationsTable && values.claimToken) {
-                state.claimed.add(row.id);
+              if (table === groupBuyRefundNotificationsTable && values.claimedAt && values.claimToken) {
+                state.selected.delete(row.id);
               }
-              if (table === groupBuyRefundNotificationsTable && values.claimedAt) state.claimed.add(row.id);
-              if (table === groupBuyRefundNotificationsTable && values.claimedAt === null) state.claimed.delete(row.id);
-              if (table === groupBuyRefundNotificationsTable && values.claimToken === null) state.claimed.delete(row.id);
-              if (table === groupBuyRefundNotificationsTable && values.sentAt) state.claimed.delete(row.id);
               return [row];
             };
             return {
@@ -201,7 +215,7 @@ describe("refund notification contract", () => {
       sender,
       tokenFactory: () => "token-1",
     })).toBe(0);
-    expect(db.notifications[0].sentAt).toBeUndefined();
+    expect(db.notifications[0].sentAt).toBeNull();
     expect(db.notifications[0].claimToken).toBeNull();
     expect(firstClaimToken).toBe("token-1");
     expect(await drainRefundNotifications(db, {
@@ -288,5 +302,129 @@ describe("refund notification contract", () => {
     expect(db.notifications[0].lastError).toBe("skipped");
     expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(0);
     expect(sends).toBe(1);
+  });
+
+  it("fences a late success from an expired-lease worker", async () => {
+    const db = new PersistedFakeDb();
+    await enqueueRefundNotification(db, {
+      refundId: "lease-success",
+      accountId: "buyer",
+      status: "requested",
+      amountUsd: "1.00",
+    });
+    let releaseA!: () => void;
+    const aBlocked = new Promise<void>((resolve) => { releaseA = resolve; });
+    let aEntered!: () => void;
+    const aStarted = new Promise<void>((resolve) => { aEntered = resolve; });
+    const aDrain = drainRefundNotifications(db, {
+      limit: 1,
+      tokenFactory: () => "token-1",
+      sender: async (marker) => {
+        db.deliveryToken = marker.claimToken ?? null;
+        aEntered();
+        await aBlocked;
+        return { ok: true };
+      },
+    });
+    await aStarted;
+    db.now += 5 * 60 * 1000 + 1;
+    db.notifications[0].claimedAt = new Date(db.now - 5 * 60 * 1000 - 1);
+    const bResult = await drainRefundNotifications(db, {
+      limit: 1,
+      tokenFactory: () => "token-2",
+      sender: async (marker) => {
+        db.deliveryToken = marker.claimToken ?? null;
+        return { ok: true };
+      },
+    });
+    expect(bResult).toBe(1);
+    releaseA();
+    await aDrain;
+    expect(db.notifications[0].sentAt).toBeDefined();
+    expect(db.notifications[0].claimToken).toBeNull();
+    expect(db.notifications[0].claimedAt).toBeNull();
+  });
+
+  it("fences a late failure from an expired-lease worker", async () => {
+    const db = new PersistedFakeDb();
+    await enqueueRefundNotification(db, {
+      refundId: "lease-failure",
+      accountId: "buyer",
+      status: "requested",
+      amountUsd: "1.00",
+    });
+    let releaseA!: () => void;
+    const aBlocked = new Promise<void>((resolve) => { releaseA = resolve; });
+    let aEntered!: () => void;
+    const aStarted = new Promise<void>((resolve) => { aEntered = resolve; });
+    const aDrain = drainRefundNotifications(db, {
+      limit: 1,
+      tokenFactory: () => "token-1",
+      sender: async (marker) => {
+        db.deliveryToken = marker.claimToken ?? null;
+        aEntered();
+        await aBlocked;
+        throw new Error("late worker failure");
+      },
+    });
+    await aStarted;
+    db.now += 5 * 60 * 1000 + 1;
+    db.notifications[0].claimedAt = new Date(db.now - 5 * 60 * 1000 - 1);
+    db["selected"].clear();
+    expect(await drainRefundNotifications(db, {
+      limit: 1,
+      tokenFactory: () => "token-2",
+      sender: async (marker) => {
+        db.deliveryToken = marker.claimToken ?? null;
+        return { ok: true };
+      },
+    })).toBe(1);
+    releaseA();
+    await aDrain;
+    expect(db.notifications[0].sentAt).toBeDefined();
+    expect(db.notifications[0].claimToken).toBeNull();
+    expect(db.notifications[0].claimedAt).toBeNull();
+  });
+
+  it("runs both scheduled drains without overlap and isolates failures", async () => {
+    const callbacks: Array<() => void> = [];
+    const cleared: unknown[] = [];
+    let auditCalls = 0;
+    let notificationCalls = 0;
+    let releaseFirst!: () => void;
+    const firstRun = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let first = true;
+    const stop = startRefundNotificationDrain({}, 5_000, {
+      setIntervalFn: (callback: () => void) => {
+        callbacks.push(callback);
+        return callbacks.length as unknown as ReturnType<typeof setInterval>;
+      },
+      clearIntervalFn: (timer: unknown) => { cleared.push(timer); },
+      drainAudits: async () => {
+        auditCalls += 1;
+        if (first) {
+          first = false;
+          await firstRun;
+          throw new Error("audit outage");
+        }
+        return 0;
+      },
+      drainNotifications: async () => {
+        notificationCalls += 1;
+        return 0;
+      },
+    });
+    await Promise.resolve();
+    callbacks[0]?.();
+    callbacks[0]?.();
+    expect(auditCalls).toBe(1);
+    releaseFirst();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    callbacks[0]?.();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(auditCalls).toBe(2);
+    expect(notificationCalls).toBe(1);
+    stop();
+    expect(cleared).toHaveLength(1);
   });
 });

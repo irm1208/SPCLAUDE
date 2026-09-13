@@ -63,6 +63,14 @@ export type RefundNotificationDrainOptions = {
   tokenFactory?: () => string;
 };
 
+export type RefundNotificationDrainSchedulerOptions = {
+  intervalMs?: number;
+  drainAudits?: (database: DatabaseLike, options: { limit: number }) => Promise<number>;
+  drainNotifications?: (database: DatabaseLike, options: { limit: number }) => Promise<number>;
+  setIntervalFn?: (callback: () => void, intervalMs: number) => unknown;
+  clearIntervalFn?: (timer: unknown) => void;
+};
+
 export type DatabaseLike = any;
 
 export type RefundAuditOutboxInput = {
@@ -373,22 +381,27 @@ let scheduledDrainRunning = false;
 export function startRefundNotificationDrain(
   database: DatabaseLike,
   intervalMs = 60_000,
+  schedulerOptions: Omit<RefundNotificationDrainSchedulerOptions, "intervalMs"> = {},
 ): () => void {
+  const drainAudits = schedulerOptions.drainAudits ?? drainRefundAudits;
+  const drainNotifications = schedulerOptions.drainNotifications ?? drainRefundNotifications;
+  const setIntervalFn = schedulerOptions.setIntervalFn ?? setInterval;
+  const clearIntervalFn = schedulerOptions.clearIntervalFn ?? clearInterval;
   const run = async (): Promise<void> => {
     if (scheduledDrainRunning) return;
     scheduledDrainRunning = true;
     try {
-      await drainRefundAudits(database, { limit: 25 });
-      await drainRefundNotifications(database, { limit: 25 });
+      await drainAudits(database, { limit: 25 });
+      await drainNotifications(database, { limit: 25 });
     } catch {
       // Pending markers retain their lease/error state and are retried later.
     } finally {
       scheduledDrainRunning = false;
     }
   };
-  const timer = setInterval(run, Math.max(5_000, intervalMs));
+  const timer = setIntervalFn(run, Math.max(5_000, intervalMs));
   void run();
-  return () => clearInterval(timer);
+  return () => clearIntervalFn(timer);
 }
 
 export type RefundAuditInput = {
