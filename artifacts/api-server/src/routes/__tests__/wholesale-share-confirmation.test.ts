@@ -10,6 +10,10 @@ const autoVerifySource = fs.readFileSync(
   "utf8",
 );
 const schemaSource = fs.readFileSync(path.resolve(here, "../../../../../lib/db/src/schema/wholesale_shares.ts"), "utf8");
+const adminSource = fs.readFileSync(
+  path.resolve(here, "../../../../peps-anonymous/src/pages/Admin.tsx"),
+  "utf8",
+);
 
 describe("shared wholesale order confirmations", () => {
   it("persists a per-member confirmation timestamp and exposes it to the shared-order UI", () => {
@@ -163,5 +167,19 @@ describe("shared wholesale order confirmations", () => {
     expect(normalizedAdminHandler.slice(alreadyConfirmedIndex, confirmedBranchIndex)).not.toContain("notifyUser(");
     expect(adminHandler).not.toContain(".update(wholesaleSharesTable)");
     expect(adminHandler).not.toContain("wholesale_share_organiser_payment_confirmed");
+  });
+
+  it("refreshes detail and grouped rows after every successful admin confirmation", () => {
+    const confirmStart = adminSource.indexOf("const confirmOrgPayment = async (shareId: string) =>");
+    const refreshDetailStart = adminSource.indexOf("const refreshDetail = async (shareId: string) =>");
+    const confirmHandler = adminSource.slice(confirmStart, refreshDetailStart);
+
+    expect(confirmStart).toBeGreaterThanOrEqual(0);
+    expect(refreshDetailStart).toBeGreaterThan(confirmStart);
+    expect(confirmHandler).toContain("if (!r.ok)");
+    expect(confirmHandler).toContain("mutationConfirmed = true;");
+    expect(confirmHandler).toContain("await Promise.all([refreshDetail(shareId), loadRows()]);");
+    expect(confirmHandler).not.toContain("const r2 = await fetch");
+    expect(confirmHandler).not.toContain("if (d.alreadyConfirmed)");
   });
 });

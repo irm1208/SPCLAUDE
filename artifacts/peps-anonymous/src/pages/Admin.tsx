@@ -20908,10 +20908,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); alert((d as any).error ?? "Failed to confirm payment"); return; }
       mutationConfirmed = true;
-      // Refresh detail
-      const r2 = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}`), { headers: { "x-admin-secret": secret } });
-      if (r2.ok) { const d = await r2.json() as AdminShareDetail; setDetailById(prev => ({ ...prev, [shareId]: d })); }
-      else alert(`Organiser payment was confirmed, but refreshing the order failed (HTTP ${r2.status}).`);
+      await Promise.all([refreshDetail(shareId), loadRows()]);
     } catch (error) {
       alert(mutationConfirmed
         ? `Organiser payment was confirmed, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
