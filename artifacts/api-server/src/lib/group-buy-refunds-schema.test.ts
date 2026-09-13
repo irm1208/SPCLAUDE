@@ -135,6 +135,8 @@ describe("group buy refund schema contract", () => {
       "group_buy_refunds_active_order_unique",
       "group_buy_refunds_outgoing_txid_unique",
     ]));
+    expect(getTableConfig(groupBuyRefundAttemptsTable).indexes.map(index => index.config.name))
+      .toContain("group_buy_refund_attempts_txid_unique");
     expect(creditIndexes.map(index => index.config.name)).toContain(
       "credit_transactions_account_refund_unique",
     );

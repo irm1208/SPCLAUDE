@@ -122,6 +122,7 @@ export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("group_buy_refund_attempts_refund_started_idx").on(t.refundId, t.startedAt),
+  uniqueIndex("group_buy_refund_attempts_txid_unique").on(t.submittedTxid),
 ]);
 
 export type GroupBuyRefund = typeof groupBuyRefundsTable.$inferSelect;
