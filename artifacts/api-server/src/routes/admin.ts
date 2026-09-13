@@ -66,6 +66,7 @@ import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib
 import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from "./payments";
 import { verifyTransaction } from "../lib/payment-verify";
 import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
+import { normalizeTg } from "../lib/normalize";
 import { formatTelegramExportForAi } from "../lib/telegram-export-parser";
 import {
   canonicalTrackingNumbers,
@@ -9114,74 +9115,74 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
     res.status(400).json({ error: "amount must be a non-zero number with at most two decimals" }); return;
   }
 
-  const [acct] = await db
-    .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
-    .from(accountsTable)
-    .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)));
-
-  if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
-
-  const availableCents = usdToCents(String(acct.credits ?? "0"));
-  if (amountCents < 0n && -amountCents > availableCents) {
-    amountCents = -availableCents;
-  }
-  if (amountCents === 0n) {
-    res.status(400).json({ error: "Account has no credits to deduct" }); return;
-  }
-  const newBalanceCents = availableCents + amountCents;
-  const newBalance = newBalanceCents >= 0n
-    ? centsToUsdString(newBalanceCents)
-    : `-${centsToUsdString(-newBalanceCents)}`;
-  const amountUsd = amountCents >= 0n
-    ? centsToUsdString(amountCents)
-    : `-${centsToUsdString(-amountCents)}`;
-  await db.update(accountsTable)
-    .set({ credits: newBalance as unknown as number })
-    .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
-
-  // When the admin deducts credits against a specific order, stamp credits_applied
-  // on that order so the payment verification knows the correct net amount.
-  if (orderId && amount < 0) {
-    const deducted = centsToUsdString(-amountCents);
-    const [targetOrder] = await db
-      .select({ id: ordersTable.id, grandTotal: ordersTable.grandTotal, paymentStatus: ordersTable.paymentStatus, creditsApplied: ordersTable.creditsApplied })
-      .from(ordersTable)
-      .where(eq(ordersTable.id, orderId));
-    if (targetOrder) {
+  const outcome = await db.transaction(async tx => {
+    // Global order for account-backed operations: account lock, then order lock.
+    const [acct] = await tx
+      .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+      .from(accountsTable)
+      .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)))
+      .for("update");
+    if (!acct) return { kind: "account_not_found" as const };
+    let targetOrder: {
+      id: string; telegramUsername: string | null; grandTotal: unknown;
+      paymentStatus: string | null; creditsApplied: unknown;
+    } | null = null;
+    if (orderId) {
+      const [lockedOrder] = await tx.select({
+        id: ordersTable.id, telegramUsername: ordersTable.telegramUsername,
+        grandTotal: ordersTable.grandTotal, paymentStatus: ordersTable.paymentStatus,
+        creditsApplied: ordersTable.creditsApplied,
+      }).from(ordersTable).where(eq(ordersTable.id, orderId)).for("update");
+      if (!lockedOrder) return { kind: "order_not_found" as const };
+      if (!lockedOrder.telegramUsername || normalizeTg(lockedOrder.telegramUsername) !== normalizeTg(acct.telegramUsername)) {
+        return { kind: "order_not_owned" as const };
+      }
+      targetOrder = lockedOrder;
+    }
+    let adjustedAmountCents = amountCents;
+    const availableCents = usdToCents(String(acct.credits ?? "0"));
+    if (adjustedAmountCents < 0n && -adjustedAmountCents > availableCents) adjustedAmountCents = -availableCents;
+    if (adjustedAmountCents === 0n) return { kind: "zero_deduction" as const };
+    const newBalance = centsToUsdString(availableCents + adjustedAmountCents);
+    const amountUsd = adjustedAmountCents >= 0n
+      ? centsToUsdString(adjustedAmountCents)
+      : `-${centsToUsdString(-adjustedAmountCents)}`;
+    await tx.update(accountsTable).set({ credits: newBalance as unknown as number })
+      .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+    let confirmedOrder = false;
+    if (targetOrder && adjustedAmountCents < 0n) {
       const newCreditsApplied = centsToUsdString(
-        usdToCents(String(targetOrder.creditsApplied ?? "0")) + usdToCents(deducted),
+        usdToCents(String(targetOrder.creditsApplied ?? "0")) + -adjustedAmountCents,
       );
-      await db.update(ordersTable)
-        .set({ creditsApplied: newCreditsApplied as unknown as number })
-        .where(eq(ordersTable.id, orderId));
-      // Auto-confirm if credits now fully cover the order.
-      if (
-        usdToCents(String(targetOrder.grandTotal)) <= usdToCents(newCreditsApplied)
-        && targetOrder.paymentStatus !== "confirmed"
-      ) {
-        await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() }).where(eq(ordersTable.id, orderId));
-        maybeSubmitSharedOrder(orderId).catch(() => {});
+      await tx.update(ordersTable).set({ creditsApplied: newCreditsApplied as unknown as number })
+        .where(eq(ordersTable.id, targetOrder.id));
+      if (usdToCents(String(targetOrder.grandTotal)) <= usdToCents(newCreditsApplied) && targetOrder.paymentStatus !== "confirmed") {
+        await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
+          .where(eq(ordersTable.id, targetOrder.id));
+        confirmedOrder = true;
       }
     }
-  }
-
-  await db.insert(creditTransactionsTable).values({
-    accountUsername: acct.telegramUsername,
-    amount: amountUsd as unknown as number,
-    reason,
-    orderId: orderId ?? null,
-    adminUsername: adminUser ?? "admin",
-    createdAt: new Date(),
+    await tx.insert(creditTransactionsTable).values({
+      accountUsername: acct.telegramUsername, amount: amountUsd as unknown as number,
+      reason, orderId: orderId ?? null, adminUsername: adminUser ?? "admin", createdAt: new Date(),
+    });
+    return { kind: "ok" as const, acct, newBalance, amountUsd, adjustedAmountCents, confirmedOrder };
   });
+  if (outcome.kind === "account_not_found") { res.status(404).json({ error: "Account not found" }); return; }
+  if (outcome.kind === "order_not_found") { res.status(404).json({ error: "Order not found" }); return; }
+  if (outcome.kind === "order_not_owned") { res.status(403).json({ error: "Order does not belong to this account" }); return; }
+  if (outcome.kind === "zero_deduction") { res.status(400).json({ error: "Account has no credits to deduct" }); return; }
+  const { acct, newBalance, amountUsd, adjustedAmountCents, confirmedOrder } = outcome;
+  if (confirmedOrder && orderId) maybeSubmitSharedOrder(orderId).catch(() => {});
 
   writeLog("change", "info", "credits_adjusted", `Admin adjusted credits for ${acct.telegramUsername} by ${amountUsd} (${reason})`, { username: acct.telegramUsername, amount: Number(amountUsd), reason, orderId }).catch(() => {});
 
-  const sign = amountCents >= 0n ? "+" : "";
-  const action = amountCents >= 0n ? "added to" : "deducted from";
+  const sign = adjustedAmountCents >= 0n ? "+" : "";
+  const action = adjustedAmountCents >= 0n ? "added to" : "deducted from";
   notifyUser(
     acct.telegramUsername,
     "profile",
-     `💳 <b>Credits ${amountCents >= 0n ? "Added" : "Deducted"}</b>\n\n<b>${sign}$${amountUsd.replace("-", "")}</b> has been ${action} your account by admin.\n\nReason: ${reason}\nNew balance: <b>$${newBalance}</b>`,
+     `💳 <b>Credits ${adjustedAmountCents >= 0n ? "Added" : "Deducted"}</b>\n\n<b>${sign}$${amountUsd.replace("-", "")}</b> has been ${action} your account by admin.\n\nReason: ${reason}\nNew balance: <b>$${newBalance}</b>`,
   ).catch(() => {});
 
   res.json({ ok: true, credits: Number(newBalance) });
@@ -9209,9 +9210,20 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
   const adminUser = getAdminUsername(res);
   const orderId = String(req.params["id"]);
 
+  const [orderHint] = await db.select({ telegramUsername: ordersTable.telegramUsername })
+    .from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!orderHint) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!orderHint.telegramUsername) { res.status(400).json({ error: "Order has no linked customer account" }); return; }
+  const username = orderHint.telegramUsername;
+  const altUsername = username.startsWith("@") ? username.slice(1) : `@${username}`;
   const outcome = await db.transaction(async tx => {
-    // Lock order first, then account, so concurrent refund attempts serialize
-    // deterministically. The refund status is the idempotency key.
+    // Lock account first, then order, so all account-backed paths share one
+    // deterministic lock order.
+    const [acct] = await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+      .from(accountsTable)
+      .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)))
+      .for("update");
+    if (!acct) return { kind: "missing_account" as const };
     const [order] = await tx
       .select({
         id: ordersTable.id,
@@ -9224,17 +9236,10 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
       .where(eq(ordersTable.id, orderId))
       .for("update");
     if (!order) return { kind: "missing_order" as const };
+    if (!order.telegramUsername || normalizeTg(order.telegramUsername) !== normalizeTg(acct.telegramUsername)) {
+      return { kind: "missing_account" as const };
+    }
     if (order.refundStatus === "refunded") return { kind: "already_refunded" as const, order };
-    if (!order.telegramUsername) return { kind: "missing_account" as const };
-
-    const username = order.telegramUsername;
-    const altUsername = username.startsWith("@") ? username.slice(1) : `@${username}`;
-    const [acct] = await tx
-      .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
-      .from(accountsTable)
-      .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)))
-      .for("update");
-    if (!acct) return { kind: "missing_account" as const };
 
     const totalCents = usdToCents(String(order.grandTotal ?? "0"));
     if (totalCents <= 0n) return { kind: "zero_total" as const };

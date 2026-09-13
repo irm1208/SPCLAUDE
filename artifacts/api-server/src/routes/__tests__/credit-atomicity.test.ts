@@ -52,7 +52,9 @@ async function spend(db: FakeCreditDb, requestedCents: bigint, fail = false): Pr
   });
 }
 
-describe("credit transaction atomicity", () => {
+// Focused adapter/source tests stay separate from DB-backed integration
+// coverage, which is sequenced for Task 10.
+describe("credit transaction atomicity (Task 2 adapter coverage)", () => {
   it("serializes concurrent fake spends without overspending", async () => {
     const db = new FakeCreditDb();
     const deducted = await Promise.all([spend(db, 75n), spend(db, 75n)]);
@@ -67,17 +69,24 @@ describe("credit transaction atomicity", () => {
   });
 
   it("keeps production credit paths transactional and locked", () => {
-    expect(accountSource).toContain("result = await db.transaction(async tx =>");
-    expect(accountSource).toContain(".where(eq(accountsTable.telegramUsername, tg))\n        .for(\"update\")");
-    expect(accountSource).toContain(".where(eq(ordersTable.id, orderId))\n          .for(\"update\")");
+    expect(accountSource).toContain("const runCreditSpend = async () => db.transaction(async tx =>");
+    expect(accountSource).toContain(".where(or(eq(accountsTable.telegramUsername, tg), eq(accountsTable.telegramUsername, altTg)))");
+    expect(accountSource).toContain(".where(eq(ordersTable.id, orderId))\n      .for(\"update\");");
+    expect(accountSource).toContain("operationKey");
     expect(orderSource).toContain("await db.transaction(async tx =>");
     expect(orderSource).toContain(".where(eq(accountsTable.telegramUsername, sessionUsernameForCredits))\n        .for(\"update\")");
     expect(orderSource).toContain(".where(eq(ordersTable.id, orderId))\n        .for(\"update\")");
     expect(orderSource).not.toContain("Non-fatal — order was created, credits just weren't applied");
+    const additionBranch = orderSource.slice(orderSource.indexOf("if (additionParent) {"));
+    expect(additionBranch.indexOf("lockedAccount")).toBeLessThan(additionBranch.indexOf("lockedParent"));
     expect(wholesaleSource).toContain("await db.transaction(async tx =>");
     expect(wholesaleSource).toContain(".for(\"update\")");
     expect(adminSource).toContain("const outcome = await db.transaction(async tx =>");
     expect(adminSource).toContain("isNull(ordersTable.refundStatus)");
+    const refundBranch = adminSource.slice(
+      adminSource.indexOf("const outcome = await db.transaction", adminSource.indexOf('router.post("/admin/orders/:id/refund-to-credits"')),
+    );
+    expect(refundBranch.indexOf("accountsTable")).toBeLessThan(refundBranch.indexOf("ordersTable.id"));
     expect(startupSource).toContain("normal Replit schema migration");
     expect(startupSource).not.toMatch(/ALTER\s+TYPE/i);
     expect(accountSchemaSource).toContain("planned schema migration");

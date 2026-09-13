@@ -967,6 +967,16 @@ router.post("/orders", async (req, res): Promise<void> => {
   if (additionParent) {
     const sessionUsername = getAccountFromCookie(req);
     const mergeOutcome = await db.transaction(async (tx) => {
+      const creditRequested = Boolean(sessionUsername && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0);
+      const [lockedAccount] = creditRequested
+        ? await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+          .from(accountsTable)
+          .where(or(
+            eq(accountsTable.telegramUsername, normalizeTg(sessionUsername!)),
+            eq(accountsTable.telegramUsername, `@${normalizeTg(sessionUsername!)}`),
+          ))
+          .for("update")
+        : [null];
       const [lockedParent] = await tx
         .select()
         .from(ordersTable)
@@ -1042,9 +1052,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       let appliedCredits = 0;
       let appliedCreditsUsd = "0.00";
       if (
-        sessionUsername
-        && typeof clientCreditsApplied === "number"
-        && clientCreditsApplied > 0
+        creditRequested
       ) {
         let requestedCreditsCents: bigint;
         try {
@@ -1052,13 +1060,8 @@ router.post("/orders", async (req, res): Promise<void> => {
         } catch {
           requestedCreditsCents = 0n;
         }
-        const [account] = await tx
-          .select({ credits: accountsTable.credits })
-          .from(accountsTable)
-          .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()))
-          .for("update");
-        if (account && requestedCreditsCents > 0n) {
-          const availableCreditsCents = usdToCents(String(account.credits ?? "0"));
+        if (lockedAccount && requestedCreditsCents > 0n) {
+          const availableCreditsCents = usdToCents(String(lockedAccount.credits ?? "0"));
           const remainingTotalCents = usdToCents(grandTotal.toFixed(2));
           const deductedCents = [availableCreditsCents, requestedCreditsCents, remainingTotalCents]
             .reduce((minimum, value) => value < minimum ? value : minimum);
@@ -1068,9 +1071,9 @@ router.post("/orders", async (req, res): Promise<void> => {
             await tx
               .update(accountsTable)
               .set({ credits: centsToUsdString(availableCreditsCents - deductedCents) as unknown as number })
-              .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()));
+              .where(eq(accountsTable.telegramUsername, lockedAccount.telegramUsername));
             await tx.insert(creditTransactionsTable).values({
-              accountUsername: sessionUsername.toLowerCase(),
+              accountUsername: lockedAccount.telegramUsername,
               amount: `-${appliedCreditsUsd}` as unknown as number,
               reason: `Credits applied to order #${lockedParent.code}`,
               orderId: lockedParent.id,

@@ -764,9 +764,15 @@ router.post("/account/accept-rules", requireAccount, async (req, res): Promise<v
 // POST /api/account/use-credits — deduct credits from account balance when paying for an order
 router.post("/account/use-credits", requireAccount, async (req, res): Promise<void> => {
   const tg = normalizeTg(req.account!.telegramUsername);
-  const { amount, orderId } = req.body as { amount?: number; orderId?: string };
+  const { amount, orderId, operationKey } = req.body as { amount?: number; orderId?: string; operationKey?: string };
   if (!amount || typeof amount !== "number" || amount <= 0) {
     res.status(400).json({ error: "Invalid amount" }); return;
+  }
+  if (typeof orderId !== "string" || !orderId.trim()) {
+    res.status(400).json({ error: "orderId is required for credit spends" }); return;
+  }
+  if (typeof operationKey !== "string" || operationKey.length < 16 || operationKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(operationKey)) {
+    res.status(400).json({ error: "operationKey must be 16-128 characters" }); return;
   }
   let requestedCents: bigint;
   try {
@@ -774,109 +780,106 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
   } catch {
     res.status(400).json({ error: "Invalid amount" }); return;
   }
-  let result: {
-    deducted: string;
-    remaining: string;
-    orderIdForCredit: string | null;
-    orderCode: string | null;
-    confirmedOrder: boolean;
-  };
-  try {
-    result = await db.transaction(async tx => {
-      // Always lock the account first, then the order, so concurrent credit spends
-      // use one deterministic lock order and cannot overspend the balance.
-      const [acct] = await tx.select({ credits: accountsTable.credits })
-        .from(accountsTable)
-        .where(eq(accountsTable.telegramUsername, tg))
-        .for("update");
-      if (!acct) throw new Error("account_not_found");
-      const availableCents = usdToCents(String(acct.credits ?? "0"));
-
-      let orderCode: string | null = null;
-      let orderIdForCredit: string | null = orderId ?? null;
-      let orderGrandTotalCents: bigint | null = null;
-      let orderCreditsAppliedCents = 0n;
-      let orderPaymentStatus: string | null = null;
-      if (orderId) {
-        const [orderRow] = await tx.select({
-          code: ordersTable.code,
-          grandTotal: ordersTable.grandTotal,
-          creditsApplied: ordersTable.creditsApplied,
-          paymentStatus: ordersTable.paymentStatus,
-        })
-          .from(ordersTable)
-          .where(eq(ordersTable.id, orderId))
-          .for("update");
-        if (orderRow) {
-          orderCode = orderRow.code;
-          orderGrandTotalCents = usdToCents(String(orderRow.grandTotal));
-          orderCreditsAppliedCents = usdToCents(String(orderRow.creditsApplied ?? "0"));
-          orderPaymentStatus = orderRow.paymentStatus;
-        } else {
-          orderIdForCredit = null;
-        }
-      }
-
-      const remainingOrderCents = orderGrandTotalCents == null
-        ? null
-        : orderGrandTotalCents > orderCreditsAppliedCents
-          ? orderGrandTotalCents - orderCreditsAppliedCents
-          : 0n;
-      const caps = [availableCents, requestedCents];
-      if (remainingOrderCents != null) caps.push(remainingOrderCents);
-      const deductedCents = caps.reduce((minimum, value) => value < minimum ? value : minimum);
-      const deducted = centsToUsdString(deductedCents > 0n ? deductedCents : 0n);
-      if (deductedCents <= 0n) {
-        return {
-          deducted,
-          remaining: centsToUsdString(availableCents),
-          orderIdForCredit,
-          orderCode,
-          confirmedOrder: false,
-        };
-      }
-
-      const newBalance = centsToUsdString(availableCents - deductedCents);
-      await tx.update(accountsTable)
-        .set({ credits: newBalance as unknown as number })
-        .where(eq(accountsTable.telegramUsername, tg));
-
-      let confirmedOrder = false;
-      if (orderIdForCredit && orderGrandTotalCents != null) {
-        const nextCreditsAppliedCents = orderCreditsAppliedCents + deductedCents;
-        await tx.update(ordersTable)
-          .set({ creditsApplied: centsToUsdString(nextCreditsAppliedCents) as unknown as number })
-          .where(eq(ordersTable.id, orderIdForCredit));
-        if (orderGrandTotalCents <= nextCreditsAppliedCents && orderPaymentStatus !== "confirmed") {
-          await tx.update(ordersTable)
-            .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-            .where(eq(ordersTable.id, orderIdForCredit));
-          confirmedOrder = true;
-        }
-      }
-      await tx.insert(creditTransactionsTable).values({
-        accountUsername: tg,
-        amount: `-${deducted}` as unknown as number,
-        reason: orderCode ? `Credits applied to order #${orderCode}` : (orderIdForCredit ? `Credits applied to order #${orderIdForCredit.slice(0, 8)}` : "Credits applied to order"),
-        orderId: orderIdForCredit,
-        adminUsername: null,
-        createdAt: new Date(),
-      });
-      return { deducted, remaining: newBalance, orderIdForCredit, orderCode, confirmedOrder };
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "account_not_found") {
-      res.status(404).json({ error: "Account not found" });
-      return;
+  type SpendResult =
+    | { kind: "ok"; deducted: string; remaining: string; orderCode: string; confirmedOrder: boolean; idempotent: boolean }
+    | { kind: "account_not_found" | "order_not_found" | "order_not_owned" | "operation_key_conflict" };
+  const runCreditSpend = async () => db.transaction(async tx => {
+    const altTg = tg.startsWith("@") ? tg.slice(1) : `@${tg}`;
+    const [acct] = await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+      .from(accountsTable)
+      .where(or(eq(accountsTable.telegramUsername, tg), eq(accountsTable.telegramUsername, altTg)))
+      .for("update");
+    if (!acct) return { kind: "account_not_found" as const };
+    const [orderRow] = await tx.select({
+      id: ordersTable.id,
+      code: ordersTable.code,
+      telegramUsername: ordersTable.telegramUsername,
+      grandTotal: ordersTable.grandTotal,
+      creditsApplied: ordersTable.creditsApplied,
+      paymentStatus: ordersTable.paymentStatus,
+    })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId))
+      .for("update");
+    if (!orderRow) return { kind: "order_not_found" as const };
+    if (normalizeTg(orderRow.telegramUsername) !== normalizeTg(acct.telegramUsername)) return { kind: "order_not_owned" as const };
+    const availableCents = usdToCents(String(acct.credits ?? "0"));
+    const [prior] = await tx.select({ amount: creditTransactionsTable.amount, orderId: creditTransactionsTable.orderId })
+      .from(creditTransactionsTable)
+      .where(and(
+        eq(creditTransactionsTable.accountUsername, acct.telegramUsername),
+        eq(creditTransactionsTable.operationKey, operationKey),
+      ))
+      .limit(1);
+    if (prior) {
+      if (prior.orderId !== orderId) return { kind: "operation_key_conflict" as const };
+      const rawAmount = String(prior.amount ?? "0");
+      return {
+        kind: "ok" as const,
+        deducted: centsToUsdString(usdToCents(rawAmount.startsWith("-") ? rawAmount.slice(1) : rawAmount)),
+        remaining: centsToUsdString(availableCents),
+        orderCode: orderRow.code,
+        confirmedOrder: false,
+        idempotent: true,
+      };
     }
-    console.error("[account] Credit spend transaction rolled back", error);
-    res.status(500).json({ error: "Unable to apply credits; no credits were deducted" });
-    return;
+    const orderGrandTotalCents = usdToCents(String(orderRow.grandTotal));
+    const orderCreditsAppliedCents = usdToCents(String(orderRow.creditsApplied ?? "0"));
+    const remainingOrderCents = orderGrandTotalCents > orderCreditsAppliedCents
+      ? orderGrandTotalCents - orderCreditsAppliedCents
+      : 0n;
+    const deductedCents = [availableCents, requestedCents, remainingOrderCents]
+      .reduce((minimum, value) => value < minimum ? value : minimum);
+    const deducted = centsToUsdString(deductedCents);
+    const newBalance = centsToUsdString(availableCents - deductedCents);
+    let confirmedOrder = false;
+    if (deductedCents > 0n) {
+      await tx.update(accountsTable).set({ credits: newBalance as unknown as number })
+        .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+      const nextCreditsAppliedCents = orderCreditsAppliedCents + deductedCents;
+      await tx.update(ordersTable)
+        .set({ creditsApplied: centsToUsdString(nextCreditsAppliedCents) as unknown as number })
+        .where(eq(ordersTable.id, orderId));
+      if (orderGrandTotalCents <= nextCreditsAppliedCents && orderRow.paymentStatus !== "confirmed") {
+        await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
+          .where(eq(ordersTable.id, orderId));
+        confirmedOrder = true;
+      }
+    }
+    await tx.insert(creditTransactionsTable).values({
+      accountUsername: acct.telegramUsername,
+      amount: `-${deducted}` as unknown as number,
+      reason: `Credits applied to order #${orderRow.code}`,
+      orderId,
+      operationKey,
+      adminUsername: null,
+      createdAt: new Date(),
+    });
+    return { kind: "ok" as const, deducted, remaining: newBalance, orderCode: orderRow.code, confirmedOrder, idempotent: false };
+  });
+  let result: SpendResult;
+  try {
+    result = await runCreditSpend();
+  } catch (error) {
+    const dbError = error as { code?: string; constraint?: string };
+    if (dbError.code === "23505" && dbError.constraint?.includes("credit_transactions_account_operation_unique")) {
+      try { result = await runCreditSpend(); }
+      catch (retryError) {
+        console.error("[account] Credit spend retry recovery failed", retryError);
+        res.status(500).json({ error: "Unable to apply credits; no credits were deducted" }); return;
+      }
+    } else {
+      console.error("[account] Credit spend transaction rolled back", error);
+      res.status(500).json({ error: "Unable to apply credits; no credits were deducted" }); return;
+    }
   }
-  if (result.confirmedOrder && result.orderIdForCredit) {
-    maybeSubmitSharedOrder(result.orderIdForCredit).catch(() => {});
-  }
-  res.json({ ok: true, deducted: Number(result.deducted), remaining: Number(result.remaining) });
+  if (result.kind === "account_not_found") { res.status(404).json({ error: "Account not found" }); return; }
+  if (result.kind === "order_not_found") { res.status(404).json({ error: "Order not found" }); return; }
+  if (result.kind === "order_not_owned") { res.status(403).json({ error: "Order does not belong to this account" }); return; }
+  if (result.kind === "operation_key_conflict") { res.status(409).json({ error: "operationKey was already used for another order" }); return; }
+  if (result.kind !== "ok") { res.status(500).json({ error: "Unable to apply credits" }); return; }
+  if (result.confirmedOrder) maybeSubmitSharedOrder(orderId).catch(() => {});
+  res.json({ ok: true, idempotent: result.idempotent, deducted: Number(result.deducted), remaining: Number(result.remaining) });
 });
 
 router.put("/account/country", requireAccount, async (req, res): Promise<void> => {

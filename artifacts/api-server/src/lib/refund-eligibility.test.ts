@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRefundEligibility } from "./refund-eligibility";
+import { evaluateRefundEligibility, type ServerPaymentEvidenceProof } from "./refund-eligibility";
+import type { RefundRequestInput } from "./refund-money";
 
 const base = {
   accountId: "buyer",
-  paymentEvidenceVerified: true,
+  paymentEvidenceProof: {
+    verified: true as const,
+    source: "server-payment-verifier" as const,
+    txHash: "0x" + "a".repeat(64),
+    currency: "USDT",
+    network: "ERC-20",
+  },
   order: {
     id: "order-1",
     telegramUsername: "@buyer",
@@ -26,6 +33,13 @@ const base = {
 };
 
 describe("refund eligibility", () => {
+  it("requires verifier proof that refund request input cannot provide", () => {
+    const request: RefundRequestInput = { method: "credit" };
+    // @ts-expect-error RefundRequestInput intentionally has no verifier proof.
+    const proof: ServerPaymentEvidenceProof = request;
+    expect(proof).toBeDefined();
+  });
+
   it("uses the persisted order grandTotal, not paymentUsdAmount or a client amount", () => {
     const result = evaluateRefundEligibility(base);
     expect(result).toEqual({
@@ -65,6 +79,7 @@ describe("refund eligibility", () => {
         paymentTxHashes: ["0x" + "b".repeat(64)],
         paymentScreenshot: "data:image/png;base64,client-proof",
       },
+      paymentEvidenceProof: { ...base.paymentEvidenceProof, txHash: "0x" + "b".repeat(64) },
     });
     expect(result.eligible).toBe(true);
 
@@ -107,6 +122,7 @@ describe("refund eligibility", () => {
     expect(evaluateRefundEligibility({
       ...base,
       order: { ...base.order, paymentCryptoNetwork: "Ethereum Mainnet" },
+      paymentEvidenceProof: { ...base.paymentEvidenceProof, network: "Ethereum Mainnet" },
     }).eligible).toBe(true);
   });
 
@@ -119,6 +135,13 @@ describe("refund eligibility", () => {
         paymentCryptoCurrency: "USDC",
         paymentCryptoNetwork: "Solana",
       },
+      paymentEvidenceProof: {
+        verified: true,
+        source: "server-payment-verifier",
+        txHash: "A".repeat(86),
+        currency: "USDC",
+        network: "Solana",
+      },
     });
     expect(result.eligible).toBe(true);
   });
@@ -126,7 +149,7 @@ describe("refund eligibility", () => {
   it("rejects a syntactically valid hash without server payment proof", () => {
     expect(evaluateRefundEligibility({
       ...base,
-      paymentEvidenceVerified: false,
+      paymentEvidenceProof: null,
     })).toMatchObject({
       eligible: false,
       reasonCode: "ineligible_payment_evidence",
@@ -135,17 +158,19 @@ describe("refund eligibility", () => {
   });
 
   it.each([
-    ["BTC", "Ethereum Mainnet"],
-    ["USDC", "Bitcoin Mainnet"],
-    ["BTC", "Solana"],
-  ])("rejects cross-rail pairing %s on %s", (currency, network) => {
+    ["BTC", "Ethereum Mainnet", "a".repeat(64)],
+    ["USDC", "Bitcoin Mainnet", "b".repeat(64)],
+    ["BTC", "Solana", "A".repeat(86)],
+  ])("rejects cross-rail pairing %s on %s", (currency, network, txHash) => {
     expect(evaluateRefundEligibility({
       ...base,
       order: {
         ...base.order,
+        paymentTxHash: txHash,
         paymentCryptoCurrency: currency,
         paymentCryptoNetwork: network,
       },
+      paymentEvidenceProof: { verified: true, source: "server-payment-verifier", txHash, currency, network },
     }).reasonCode).toBe("ineligible_payment_evidence");
   });
 });

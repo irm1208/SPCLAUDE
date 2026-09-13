@@ -138,10 +138,14 @@ describe("group buy refund schema contract", () => {
     expect(creditIndexes.map(index => index.config.name)).toContain(
       "credit_transactions_account_refund_unique",
     );
+    expect(creditIndexes.map(index => index.config.name)).toContain(
+      "credit_transactions_account_operation_unique",
+    );
 
     const activeIndex = refundIndexes.find(index => index.config.name === "group_buy_refunds_active_order_unique");
     const txidIndex = refundIndexes.find(index => index.config.name === "group_buy_refunds_outgoing_txid_unique");
     const ledgerIndex = creditIndexes.find(index => index.config.name === "credit_transactions_account_refund_unique");
+    const operationIndex = creditIndexes.find(index => index.config.name === "credit_transactions_account_operation_unique");
 
     expect(sqlText(activeIndex!.config.where!)).toBe(
       "status in ('requested', 'verifying', 'verification_failed')",
@@ -151,6 +155,11 @@ describe("group buy refund schema contract", () => {
     expect(ledgerIndex!.config.columns.map(column => column.name)).toEqual([
       "account_username",
       "refund_id",
+    ]);
+    expect(sqlText(operationIndex!.config.where!)).toBe("operation_key is not null");
+    expect(operationIndex!.config.columns.map(column => column.name)).toEqual([
+      "account_username",
+      "operation_key",
     ]);
     expect(getTableConfig(creditTransactionsTable).columns.find(column => column.name === "refund_id")).toMatchObject({
       notNull: false,

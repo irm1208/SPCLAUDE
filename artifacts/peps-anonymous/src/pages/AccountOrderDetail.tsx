@@ -446,7 +446,6 @@ function AccountShippingAddressSection({
       .then(r => r.json())
       .then(d => {
         if (d.addressLine1) setSavedAccountAddr(d);
-        if (typeof d.credits === "number" && d.credits > 0) setAccountCredits(d.credits);
       })
       .catch(() => {});
     fetch("/api/config")
@@ -2000,6 +1999,7 @@ export default function AccountOrderDetail() {
   const [accountCredits, setAccountCredits] = useState(0);
   const [applyingCredits, setApplyingCredits] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
+  const creditOperationKeys = useRef(new Map<string, string>());
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
   const paymentSummary = getOrderPaymentSummary({
@@ -2091,12 +2091,18 @@ export default function AccountOrderDetail() {
     if (toApply <= 0) return;
     setApplyingCredits(true);
     setCreditsError(null);
+    const operationKey = creditOperationKeys.current.get(order.id)
+      ?? (() => {
+        const key = globalThis.crypto.randomUUID();
+        creditOperationKeys.current.set(order.id, key);
+        return key;
+      })();
     try {
       const res = await fetch("/api/account/use-credits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ amount: toApply, orderId: order.id }),
+        body: JSON.stringify({ amount: toApply, orderId: order.id, operationKey }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to apply credits");
@@ -2105,6 +2111,7 @@ export default function AccountOrderDetail() {
         ...prev,
         creditsApplied: safeAddMoney(prev.creditsApplied ?? 0, data.deducted ?? toApply),
       } : prev);
+      creditOperationKeys.current.delete(order.id);
     } catch (err: any) {
       setCreditsError(err.message || "Failed to apply credits");
     } finally {

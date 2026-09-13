@@ -16,6 +16,8 @@ test("credit application sites use exact money helpers", () => {
   assert.match(review, /safeMinMoney\(creditsAvailable, grandTotal\)/);
   assert.doesNotMatch(review, /Math\.floor\(grandTotal\)/);
   assert.match(accountOrder, /safeSubtractMoneyClamped\(order\.grandTotal/);
+  assert.match(accountOrder, /operationKey/);
+  assert.match(accountOrder, /creditOperationKeys\.current\.delete\(order\.id\)/);
   assert.doesNotMatch(accountOrder, /Math\.ceil\(order\.grandTotal/);
   assert.match(payment, /safeSubtractMoneyClamped\(usdTotal, creditsUsd\)/);
   assert.match(lookup, /safeSubtractMoneyClamped\(foundOrder\.grandTotal/);

@@ -40,13 +40,18 @@ export type RefundEligibilityOrder = {
   paymentScreenshot?: string | null;
 };
 
+/** Proof constructed by the server payment verifier, never by a request body. */
+export type ServerPaymentEvidenceProof = {
+  readonly verified: true;
+  readonly source: "server-payment-verifier";
+  readonly txHash: string;
+  readonly currency: string;
+  readonly network: string;
+};
+
 export type RefundEligibilityInput = {
   accountId: string;
-  /**
-   * Server-only proof produced by the payment verifier. This must never be
-   * copied from a refund request body or inferred from order text fields.
-   */
-  paymentEvidenceVerified: boolean;
+  paymentEvidenceProof: ServerPaymentEvidenceProof | null;
   order: RefundEligibilityOrder | null | undefined;
   groupBuy: { id: string; cryptoRefundsEnabled: boolean } | null | undefined;
   activeRefund: { id: string; status: string } | null | undefined;
@@ -56,30 +61,30 @@ function ineligible(reasonCode: RefundEligibilityCode): RefundEligibility {
   return { eligible: false, reasonCode, amountUsd: null };
 }
 
+function normalizePaymentNetwork(network: string): string {
+  return network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "");
+}
+
 export function isSupportedRefundPaymentRail(currency: string, network: string): boolean {
-  const cur = currency.toUpperCase().trim();
-  const net = network.toLowerCase().trim();
-  if (cur === "USDT") {
-    return /arbitrum|polygon|solana|tron|trc|erc.?20|ethereum|bep.?20|bsc|binance/.test(net);
-  }
-  if (cur === "USDC") {
-    return /arbitrum|polygon|solana|erc.?20|ethereum/.test(net);
-  }
-  if (cur === "ETH") return /mainnet|ethereum|erc.?20/.test(net);
-  if (cur === "BTC") return /mainnet|bitcoin/.test(net);
-  return false;
+  const rails: Record<string, ReadonlySet<string>> = {
+    USDT: new Set(["ERC20", "ERC20ETHEREUM", "ETHEREUM", "ETHEREUMMAINNET", "TRC20", "TRC20TRON", "ARBITRUMONE", "BEP20", "BEP20BSC", "SOL", "SOLSOLANA", "SOLANA", "POLYGON"]),
+    USDC: new Set(["ERC20", "ERC20ETHEREUM", "ETHEREUM", "ETHEREUMMAINNET", "ARBITRUMONE", "SOL", "SOLSOLANA", "SOLANA", "BEP20", "BEP20BSC", "POLYGON"]),
+    ETH: new Set(["ETHEREUM", "ETHEREUMMAINNET", "ERC20", "ERC20ETHEREUM"]),
+    BTC: new Set(["BITCOIN", "BITCOINMAINNET"]),
+  };
+  return rails[currency.toUpperCase().trim()]?.has(normalizePaymentNetwork(network)) ?? false;
 }
 
 function isHashFormatForNetwork(hash: string, currency: string, network: string): boolean {
   const cur = currency.toUpperCase().trim();
-  const net = network.toLowerCase().trim();
-  if (/solana/.test(net)) {
+  const net = normalizePaymentNetwork(network);
+  if (["SOL", "SOLSOLANA", "SOLANA"].includes(net)) {
     return /^[1-9A-HJ-NP-Za-km-z]{86,88}$/.test(hash);
   }
-  if (cur === "BTC" && /bitcoin|mainnet/.test(net)) {
+  if (cur === "BTC" && ["BITCOIN", "BITCOINMAINNET"].includes(net)) {
     return /^[0-9a-fA-F]{64}$/.test(hash);
   }
-  if (/arbitrum|polygon|tron|trc|erc.?20|ethereum|mainnet|bep.?20|bsc|binance/.test(net)) {
+  if (["ERC20", "ERC20ETHEREUM", "ETHEREUM", "ETHEREUMMAINNET", "TRC20", "TRC20TRON", "ARBITRUMONE", "BEP20", "BEP20BSC", "POLYGON"].includes(net)) {
     return /^(?:0x)?[0-9a-fA-F]{64}$/.test(hash);
   }
   return false;
@@ -103,16 +108,24 @@ function isAuthoritativeTransactionHash(
   return isValidTxHash(cleanHash) && isHashFormatForNetwork(cleanHash, currency, network);
 }
 
-function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder): boolean {
+function hasAuthoritativePaymentEvidence(order: RefundEligibilityOrder, proof: ServerPaymentEvidenceProof | null): boolean {
+  if (
+    !proof
+    || proof.verified !== true
+    || proof.source !== "server-payment-verifier"
+    || !isAuthoritativeTransactionHash(proof.txHash, proof.currency, proof.network)
+  ) return false;
   const hashes = [
     order.paymentTxHash,
     ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),
   ];
-  return hashes.some(hash => isAuthoritativeTransactionHash(
-    hash,
-    order.paymentCryptoCurrency,
-    order.paymentCryptoNetwork,
-  ));
+  return hashes.some(hash =>
+    typeof hash === "string"
+    && hash.trim() === proof.txHash.trim()
+    && proof.currency.toUpperCase().trim() === order.paymentCryptoCurrency?.toUpperCase().trim()
+    && normalizePaymentNetwork(proof.network) === normalizePaymentNetwork(order.paymentCryptoNetwork ?? "")
+    && isAuthoritativeTransactionHash(hash, order.paymentCryptoCurrency, order.paymentCryptoNetwork),
+  );
 }
 
 /**
@@ -137,16 +150,13 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
   if (normalizeTg(input.accountId) !== normalizeTg(order.telegramUsername)) {
     return ineligible("not_owner");
   }
-  if (input.paymentEvidenceVerified !== true) {
-    return ineligible("ineligible_payment_evidence");
-  }
   if (order.deletedAt != null) {
     return ineligible("deleted_order");
   }
   if (
     order.paymentStatus !== "confirmed"
     || order.paymentConfirmedAt == null
-    || !hasAuthoritativePaymentEvidence(order)
+    || !hasAuthoritativePaymentEvidence(order, input.paymentEvidenceProof)
   ) {
     return ineligible("ineligible_payment_evidence");
   }

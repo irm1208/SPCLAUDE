@@ -591,6 +591,10 @@ async function runStartupMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_turnover_log_code ON inventory_turnover_log (qiyunle_code)
     `);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS credits_applied numeric(10,2) NOT NULL DEFAULT 0`);
+    // Additive compatibility fallback for retry-safe credit spends. The
+    // published schema migration remains authoritative for this column/index.
+    await db.execute(sql`ALTER TABLE credit_transactions ADD COLUMN IF NOT EXISTS operation_key text`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_account_operation_unique ON credit_transactions (account_username, operation_key) WHERE operation_key IS NOT NULL`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at timestamptz`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_by text`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS orders_deleted_at_idx ON orders (deleted_at)`);
