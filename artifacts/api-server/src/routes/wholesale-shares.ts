@@ -3574,16 +3574,27 @@ router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req,
   });
 
   if (result.kind === "rejected") {
-    res.status(result.code === "not_found" ? 404 : 409).json({ error: result.message });
+    res.status(result.code === "not_found" ? 404 : 409).json({
+      error: result.message,
+      code: result.code,
+    });
     return;
   }
 
   if (result.kind === "already_confirmed") {
-    res.json({ ok: true, alreadyConfirmed: true });
+    res.json({
+      ok: true,
+      organiserOrderId: result.organiserOrderId,
+      alreadyConfirmed: true,
+    });
     return;
   }
 
-  res.json({ ok: true, alreadyConfirmed: false });
+  res.json({
+    ok: true,
+    organiserOrderId: result.organiserOrderId,
+    alreadyConfirmed: false,
+  });
 });
 
 // ── Wholesale Share Invite Links ──────────────────────────────────────────────
