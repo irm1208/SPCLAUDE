@@ -30,6 +30,7 @@ const mockState = vi.hoisted(() => {
     updateSpy: vi.fn(),
     insertSpy: vi.fn(),
     deleteSpy: vi.fn(),
+    transactionSpy: vi.fn(),
   };
 
   const makeSelect = (columns: unknown): Record<string, unknown> => {
@@ -40,6 +41,7 @@ const mockState = vi.hoisted(() => {
       innerJoin() { return builder; },
       leftJoin() { return builder; },
       orderBy() { return builder; },
+      for() { return builder; },
       groupBy() { return builder; },
       offset() { return builder; },
       limit(n: number) { ctx.limit = n; return builder; },
@@ -58,10 +60,12 @@ const mockState = vi.hoisted(() => {
     update: (t: unknown) => ({
       set: (values: unknown) => {
         state.updateSpy({ table: tableName(t), values });
-        return {
-          where: () => Promise.resolve([]),
+        const builder: Record<string, unknown> = {
+          where: () => builder,
+          returning: () => Promise.resolve(tableName(t) === "orders" ? [{ id: "o1" }] : []),
           then: (r: (v: unknown) => unknown) => Promise.resolve([]).then(r),
         };
+        return builder;
       },
     }),
     insert: (t: unknown) => ({
@@ -71,8 +75,19 @@ const mockState = vi.hoisted(() => {
       },
     }),
     delete: (t: unknown) => ({
-      where: () => { state.deleteSpy({ table: tableName(t) }); return Promise.resolve([]); },
+      where: () => {
+        state.deleteSpy({ table: tableName(t) });
+        const builder: Record<string, unknown> = {
+          returning: () => Promise.resolve([{ id: "item-1" }]),
+          then: (r: (v: unknown) => unknown) => Promise.resolve([]).then(r),
+        };
+        return builder;
+      },
     }),
+    transaction: async <T>(callback: (tx: any) => Promise<T>): Promise<T> => {
+      state.transactionSpy();
+      return callback(fakeDb);
+    },
   };
 
   return { state, fakeDb };
@@ -142,6 +157,7 @@ beforeEach(() => {
   mockState.state.updateSpy.mockReset();
   mockState.state.insertSpy.mockReset();
   mockState.state.deleteSpy.mockReset();
+  mockState.state.transactionSpy.mockReset();
 });
 
 describe("reshipper dispatch scope lock", () => {
@@ -406,5 +422,55 @@ describe("organiser dispatch — legitimate actions succeed", () => {
              (c[0] as { values: { status?: string } }).values.status === "Processing",
     );
     expect(orderReset).toBe(true);
+  });
+
+  it("rejects an active middle order before confirm parcel writes", async () => {
+    owned((table) => {
+      switch (table) {
+        case "orders": return [{ id: "o1" }, { id: "o2" }, { id: "o3" }];
+        case "order_line_items": return [{ orderId: "o1", productName: "X", quantity: 1 }];
+        case "gb_parcels": return [{ id: "p1", reshipperUsername: null, items: [{ name: "X", qty: 5 }] }];
+        case "group_buy_refunds": return [{ id: "r2", orderId: "o2", status: "requested" }];
+        default: return [];
+      }
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1", "o2", "o3"], parcelIds: ["p1"] }),
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("refund_active");
+    expect(mockState.state.updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects an active middle order before undispatch parcel writes", async () => {
+    owned((table) => {
+      switch (table) {
+        case "orders": return [{ id: "o1" }, { id: "o2" }, { id: "o3" }];
+        case "order_line_items": return [{ orderId: "o1", productName: "X", quantity: 1 }];
+        case "gb_parcels": return [{ id: "p1", reshipperUsername: null, items: [{ name: "X", qty: 1, dispatchedQty: 1 }] }];
+        case "group_buy_refunds": return [{ id: "r2", orderId: "o2", status: "requested" }];
+        default: return [];
+      }
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/undispatch`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1", "o2", "o3"] }),
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("refund_active");
+    expect(mockState.state.updateSpy).not.toHaveBeenCalled();
   });
 });

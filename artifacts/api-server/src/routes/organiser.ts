@@ -1,4 +1,4 @@
-import { assertNoActiveRefunds, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefunds, assertRefundMutationAllowed, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
@@ -2756,15 +2756,30 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
     }
   }
 
-  // Handle line item quantity updates (and new product additions)
+  const hasQuantityMutation = gb.organiserCanEditQuantities && Array.isArray(lineItemUpdates) && lineItemUpdates.length > 0;
+  if (Object.keys(updates).length === 0 && !hasQuantityMutation) {
+    res.status(400).json({ error: "No fields to update" }); return;
+  }
+
   let updatedLineItems: { id: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos: boolean }[] = [];
+  const updated = await db.transaction(async tx => {
+    // Lock and check the authorized order before any line-item or parent
+    // write. This is deliberately one transaction so a raced refund rolls
+    // back every item change and the final order update.
+    const [lockedOrder] = await tx.select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)))
+      .for("update");
+    if (!lockedOrder) throw new Error("Order not found");
+    await assertRefundMutationAllowed(tx, orderId);
+
+    // Handle line item quantity updates (and new product additions)
   if (gb.organiserCanEditQuantities && Array.isArray(lineItemUpdates) && lineItemUpdates.length > 0) {
-    await assertNoActiveRefund(orderId);
     const existingUpdates = lineItemUpdates.filter(u => u.id);
     const newItemRequests = lineItemUpdates.filter(u => !u.id && u.productId);
 
     // Fetch current line items to get unitPrice
-    const currentItems = await db
+    const currentItems = await tx
       .select({ id: orderLineItemsTable.id, productName: orderLineItemsTable.productName, unitPrice: orderLineItemsTable.unitPrice, isOos: orderLineItemsTable.isOos })
       .from(orderLineItemsTable)
       .where(eq(orderLineItemsTable.orderId, orderId));
@@ -2775,15 +2790,20 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
         const parsedQty = parseFloat(String(update.quantity));
         if (parsedQty <= 0 || isNaN(parsedQty)) {
           // qty = 0 means remove the line item
-          await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.id, item.id), orderLineItemsTable.orderId));
+          const deleted = await tx.delete(orderLineItemsTable)
+            .where(refundMutableOrderWhere(eq(orderLineItemsTable.id, item.id), orderLineItemsTable.orderId))
+            .returning({ id: orderLineItemsTable.id });
+          if (deleted.length !== 1) throw new RefundMutationBlockedError(orderId);
           // Don't push to updatedLineItems — item is gone
         } else {
           const newQty = parsedQty;
           const unitPrice = parseFloat(String(item.unitPrice));
           const newLineTotal = parseFloat((newQty * unitPrice).toFixed(2));
-          await db.update(orderLineItemsTable)
+          const changed = await tx.update(orderLineItemsTable)
             .set({ quantity: String(newQty) as any, lineTotal: String(newLineTotal) as any })
-            .where(refundMutableOrderWhere(eq(orderLineItemsTable.id, item.id), orderLineItemsTable.orderId));
+            .where(refundMutableOrderWhere(eq(orderLineItemsTable.id, item.id), orderLineItemsTable.orderId))
+            .returning({ id: orderLineItemsTable.id });
+          if (changed.length !== 1) throw new RefundMutationBlockedError(orderId);
           updatedLineItems.push({ id: item.id, productName: item.productName, quantity: newQty, unitPrice, lineTotal: newLineTotal, isOos: item.isOos });
         }
       } else {
@@ -2796,7 +2816,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       const requestedProductIds = newItemRequests.map(r => r.productId!);
 
       // Fetch product details for requested new items (must belong to this GB)
-      const gbProducts = await db
+      const gbProducts = await tx
         .select({
           productId: groupBuyProductsTable.productId,
           priceOverride: groupBuyProductsTable.priceOverride,
@@ -2808,7 +2828,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
         .where(and(eq(groupBuyProductsTable.groupBuyId, gbId), inArray(groupBuyProductsTable.productId, requestedProductIds)));
 
       // Fetch existing productIds on this order to avoid duplicates
-      const existingLineItems = await db
+      const existingLineItems = await tx
         .select({ productId: orderLineItemsTable.productId })
         .from(orderLineItemsTable)
         .where(eq(orderLineItemsTable.orderId, orderId));
@@ -2822,7 +2842,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
         const unitPrice = parseFloat(String(product.priceOverride ?? product.basePrice));
         const newLineTotal = parseFloat((newQty * unitPrice).toFixed(2));
         const newId = randomUUID();
-        await db.insert(orderLineItemsTable).values({
+        await tx.insert(orderLineItemsTable).values({
           id: newId,
           orderId,
           productId: req.productId!,
@@ -2849,7 +2869,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
     updates.adminFeeLabel = resolvedAdminFeeLabel;
 
     // Re-fetch all items with correct current values for response
-    const allItems = await db
+    const allItems = await tx
       .select({ id: orderLineItemsTable.id, productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity, unitPrice: orderLineItemsTable.unitPrice, lineTotal: orderLineItemsTable.lineTotal, isOos: orderLineItemsTable.isOos })
       .from(orderLineItemsTable)
       .where(eq(orderLineItemsTable.orderId, orderId));
@@ -2863,11 +2883,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
     }));
   }
 
-  if (Object.keys(updates).length === 0) {
-    res.status(400).json({ error: "No fields to update" }); return;
-  }
-
-  const [updated] = await db
+  const [updatedRow] = await tx
     .update(ordersTable)
     .set(updates)
     .where(refundMutableOrderWhere(trackingWrite ? and(
@@ -2885,10 +2901,9 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       grandTotal: ordersTable.grandTotal,
       productSubtotal: ordersTable.productSubtotal,
     });
-  if (!updated) {
-    res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
-    return;
-  }
+  if (!updatedRow) throw new RefundMutationBlockedError(orderId);
+  return updatedRow;
+  });
 
   // Notify customer if tracking number was newly set
   const newTracking = trackingWrite?.updates.trackingNumber as string | null | undefined;
