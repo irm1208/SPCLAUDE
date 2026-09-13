@@ -1,5 +1,5 @@
 import { db, wholesaleSharesTable } from "@workspace/db";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
   confirmWholesaleOrganiserPayment,
   type OrganiserPaymentConfirmationResult,
@@ -35,10 +35,7 @@ export async function runWholesaleOrganiserPaymentBackfill(
   const shares = await queryDb
     .select({ id: wholesaleSharesTable.id })
     .from(wholesaleSharesTable)
-    .where(and(
-      eq(wholesaleSharesTable.status, "submitted"),
-      eq(wholesaleSharesTable.organiserPaymentStatus, "confirmed"),
-    ))
+    .where(eq(wholesaleSharesTable.organiserPaymentStatus, "confirmed"))
     .orderBy(asc(wholesaleSharesTable.id));
 
   const summary: WholesaleOrganiserPaymentBackfillSummary = {
