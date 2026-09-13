@@ -49,6 +49,15 @@ export type CreateRefundRequestArgs = {
   input: RefundRequestInput;
 };
 
+async function opportunisticRefundAuditDrain(database: DatabaseLike): Promise<void> {
+  if (!groupBuyRefundTransitionOutboxTable) return;
+  try {
+    await drainRefundTransitionOutbox(database, { limit: 10 });
+  } catch {
+    // Audit delivery is retryable and must never block a refund operation.
+  }
+}
+
 export type RefundRequestResult = Pick<
   GroupBuyRefund,
   "id" | "status" | "method" | "amountUsd" | "asset" | "network"
@@ -469,6 +478,7 @@ export async function createRefundRequest(
   database: DatabaseLike,
   args: CreateRefundRequestArgs,
 ): Promise<RefundRequestResult> {
+  await opportunisticRefundAuditDrain(database);
   const accountId = normalizeUsername(args.accountId);
   const canonicalArgs = { ...args, accountId };
   const [unlockedOrder] = await loadRows(database, ordersTable, eq(ordersTable.id, args.orderId));
@@ -502,7 +512,7 @@ export async function createRefundRequest(
   // change made while the verifier was doing network I/O.
   const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
 
-  return database.transaction(async (tx: DatabaseLike) => {
+  const result = await database.transaction(async (tx: DatabaseLike) => {
     const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, accountId));
     if (!account) throw new GroupBuyRefundError("account_not_found");
 
@@ -612,12 +622,15 @@ export async function createRefundRequest(
     });
     return asRefundResult(values);
   });
+  await opportunisticRefundAuditDrain(database);
+  return result;
 }
 
 export async function completeCreditRefund(
   database: DatabaseLike,
   args: CompleteCreditRefundArgs,
 ): Promise<RefundRequestResult> {
+  await opportunisticRefundAuditDrain(database);
   const [unlockedRefund] = await loadRows(
     database,
     groupBuyRefundsTable,
@@ -657,7 +670,7 @@ export async function completeCreditRefund(
     throw error;
   }
 
-  return database.transaction(async (tx: DatabaseLike) => {
+  const result = await database.transaction(async (tx: DatabaseLike) => {
     // Every refund mutation uses account -> order -> group buy -> refund.
     // The initial read only discovers immutable foreign-key identities; no
     // write occurs until those rows are acquired in this order.
@@ -783,6 +796,8 @@ export async function completeCreditRefund(
       amountBaseUnits: null,
     });
   });
+  await opportunisticRefundAuditDrain(database);
+  return result;
 }
 
 function cryptoProcessorValues(processor: CryptoRefundProcessor): { username: string; role: string } {
@@ -939,6 +954,7 @@ async function recoverStaleCryptoAttempt(
       const attempt = attemptSnapshot
         ? locked.attempts.find(candidate => candidate.id === attemptSnapshot.id)
         : undefined;
+      const expectedAttemptId = attemptSnapshot?.id ?? refundSnapshot.processingAttemptId ?? null;
       const ownerUsername = attempt?.processorUsername ?? locked.refund.processorUsername;
       const ownerRole = attempt?.processorRole ?? locked.refund.processorRole ?? "unknown";
       const submittedTxid = attempt?.submittedTxid
@@ -953,7 +969,7 @@ async function recoverStaleCryptoAttempt(
           || locked.refund.processingAttemptId !== attempt.id
           || locked.refund.processorUsername !== attempt.processorUsername
         ))
-        || (!attemptSnapshot && locked.refund.processingAttemptId != null)
+        || (!attemptSnapshot && locked.refund.processingAttemptId !== expectedAttemptId)
         || (ownerUsername != null && locked.refund.processorUsername !== ownerUsername)
       ) return;
       const now = new Date();
@@ -991,7 +1007,7 @@ async function recoverStaleCryptoAttempt(
       if (!failedRefund) return;
       const outboxId = await queueRecoveryAudit(tx, {
         refundId: refundSnapshot.id,
-        attemptId: attempt?.id ?? locked.refund.processingAttemptId ?? "legacy",
+        attemptId: attempt?.id ?? expectedAttemptId ?? "legacy",
         processorUsername: ownerUsername ?? "unknown",
         processorRole: ownerRole,
         submittedTxid,
@@ -1025,6 +1041,7 @@ export async function submitCryptoRefund(
   refundId: string,
   txid: string,
 ): Promise<RefundRequestResult> {
+  await opportunisticRefundAuditDrain(database);
   const canonicalTxid = typeof normalizeEthereumTxid === "function"
     ? normalizeEthereumTxid(txid)
     : typeof txid === "string" && /^(?:0x)?[0-9a-fA-F]{64}$/.test(txid)
@@ -1304,5 +1321,6 @@ export async function submitCryptoRefund(
   if ("failureCode" in completion) {
     throw new GroupBuyRefundError(completion.failureCode, completion.failureMessage);
   }
+  await opportunisticRefundAuditDrain(database);
   return completion;
 }

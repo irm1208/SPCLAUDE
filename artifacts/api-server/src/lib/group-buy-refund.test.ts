@@ -234,6 +234,7 @@ vi.mock("@workspace/db", () => ({
   siteConfigTable: harness.tables.siteConfig,
   gbReshippersTable: harness.tables.reshippers,
   wholesaleSharesTable: harness.tables.shares,
+  groupBuyRefundTransitionOutboxTable: null,
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),

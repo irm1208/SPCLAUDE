@@ -475,6 +475,29 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     expect(fake.state.attempts[0].resultCode).toBe("stale_processing_state");
   });
 
+  it("recovers a stale dangling processingAttemptId without an attempt row", async () => {
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = "dangling-attempt";
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].processorRole = "admin";
+    fake.state.refunds[0].verifyingAt = new Date(Date.now() - 16 * 60 * 1000);
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .resolves.toMatchObject({ status: "completed" });
+    expect(fake.state.refunds[0].status).toBe("completed");
+    expect(fake.state.outbox[0].submittedTxid).toBeNull();
+  });
+
+  it("keeps a fresh dangling processingAttemptId in progress", async () => {
+    fake.state.refunds[0].status = "verifying";
+    fake.state.refunds[0].processingAttemptId = "dangling-attempt";
+    fake.state.refunds[0].processorUsername = "other";
+    fake.state.refunds[0].processorRole = "admin";
+    fake.state.refunds[0].verifyingAt = new Date();
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "in_progress" });
+    expect(fake.state.refunds[0].status).toBe("verifying");
+  });
+
   it("compensates order failure and audit failure without stranding verification", async () => {
     fake.state.failOrder = true;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
@@ -493,6 +516,8 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     fake.state.failAudit = false;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
       .resolves.toMatchObject({ status: "completed" });
+    expect(fake.state.outbox[0].deliveredAt).toBeTruthy();
+    expect(fake.state.audits.filter(audit => audit.action === "group_buy_refund_processing_failed")).toHaveLength(1);
   });
 
   it("does not complete after a concurrent legacy cancellation/refund interleaving", async () => {
