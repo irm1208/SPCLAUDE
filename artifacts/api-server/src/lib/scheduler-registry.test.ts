@@ -52,6 +52,7 @@ describe("scheduler registry refund integration contract", () => {
   it("reports a failed manual drain and cancels delayed startup", async () => {
     vi.useFakeTimers();
     let runs = 0;
+    let channelError = "audit channel unavailable";
     registerScheduler({
       name: "refund-notifications-failure-test",
       label: "Refund notifications",
@@ -62,12 +63,22 @@ describe("scheduler registry refund integration contract", () => {
       initialDelayMs: 1_000,
       run: async () => {
         runs += 1;
-        throw new Error("audit channel unavailable");
+        throw new Error(channelError);
       },
+      backlogCount: async () => ({ total: 5, audit: 3, notification: 2 }),
+      channelStatus: () => ({
+        audit: { lastError: channelError },
+        notification: { lastError: null },
+      }),
     });
     await expect(runSchedulerNow("refund-notifications-failure-test")).resolves.toMatchObject({
       ok: false,
-      error: "audit channel unavailable",
+      error: channelError,
+    });
+    expect(listSchedulers().find(item => item.name === "refund-notifications-failure-test")).toMatchObject({
+      lastError: channelError,
+      backlogCount: { total: 5, audit: 3, notification: 2 },
+      channelStatus: { audit: { lastError: channelError }, notification: { lastError: null } },
     });
     stopAllSchedulers();
     vi.advanceTimersByTime(1_000);
@@ -76,7 +87,8 @@ describe("scheduler registry refund integration contract", () => {
 
   it("publishes failed channel status and backlog after a scheduled failure", async () => {
     vi.useFakeTimers();
-    let channelError = "audit unavailable";
+    let auditError: string | null = "audit unavailable";
+    let notificationError: string | null = null;
     registerScheduler({
       name: "refund-channel-failure-test",
       label: "Refund notifications",
@@ -84,27 +96,30 @@ describe("scheduler registry refund integration contract", () => {
       defaultIntervalMs: 60_000,
       minIntervalMs: 5_000,
       maxIntervalMs: 86_400_000,
-      initialDelayMs: 86_400_000,
-      run: async () => { throw new Error(channelError); },
+      initialDelayMs: 1,
+      run: async () => {
+        throw new Error([auditError, notificationError].filter(Boolean).join("; "));
+      },
       backlogCount: async () => ({ total: 4, audit: 2, notification: 2 }),
       channelStatus: () => ({
-        audit: { lastError: channelError },
-        notification: { lastError: null },
+        audit: { lastError: auditError },
+        notification: { lastError: notificationError },
       }),
     });
-    const result = await runSchedulerNow("refund-channel-failure-test");
+    await vi.advanceTimersByTimeAsync(1);
     const status = listSchedulers().find(item => item.name === "refund-channel-failure-test");
-    expect(result).toMatchObject({ ok: false, error: channelError });
     expect(status).toMatchObject({
-      lastError: channelError,
+      lastError: auditError,
       backlogCount: { total: 4, audit: 2, notification: 2 },
-      channelStatus: { audit: { lastError: channelError }, notification: { lastError: null } },
+      channelStatus: { audit: { lastError: auditError }, notification: { lastError: null } },
     });
-    channelError = "notification unavailable";
-    const second = await runSchedulerNow("refund-channel-failure-test");
-    expect(second).toMatchObject({ ok: false, error: channelError });
+    auditError = null;
+    notificationError = "notification unavailable";
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(listSchedulers().find(item => item.name === "refund-channel-failure-test")).toMatchObject({
-      channelStatus: { audit: { lastError: channelError } },
+      lastError: notificationError,
+      backlogCount: { total: 4, audit: 2, notification: 2 },
+      channelStatus: { audit: { lastError: null }, notification: { lastError: notificationError } },
     });
   });
 
