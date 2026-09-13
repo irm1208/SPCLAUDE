@@ -1,4 +1,4 @@
-import { assertNoActiveRefunds, assertRefundMutationAllowed, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefund, assertNoActiveRefunds, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
@@ -2771,7 +2771,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)))
       .for("update");
     if (!lockedOrder) throw new Error("Order not found");
-    await assertRefundMutationAllowed(tx, orderId);
+    await assertNoActiveRefund(tx, orderId);
 
     // Handle line item quantity updates (and new product additions)
   if (gb.organiserCanEditQuantities && Array.isArray(lineItemUpdates) && lineItemUpdates.length > 0) {

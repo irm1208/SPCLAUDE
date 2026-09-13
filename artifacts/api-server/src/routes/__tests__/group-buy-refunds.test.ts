@@ -11,6 +11,7 @@ import express, { type Express } from "express";
 import { getTableName } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { refundMutationConflictResponse } from "../../lib/refund-mutation-guard";
 
 function sqlParams(value: unknown): unknown[] {
   if (!value || typeof value !== "object") return [];
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => {
     queries: [] as Query[],
     updates: [] as Array<{ table: string; values: unknown; where?: unknown }>,
     inserts: [] as Array<{ table: string; values: unknown }>,
+    deletes: [] as string[],
     audits: [] as unknown[],
     createRefundRequest: vi.fn(),
     completeCreditRefund: vi.fn(),
@@ -114,14 +116,29 @@ const mocks = vi.hoisted(() => {
         },
       };
     },
-    delete() { return { where: () => Promise.resolve([]) }; },
+    delete(table: unknown) {
+      const name = tableName(table);
+      return {
+        where: () => {
+          mocks.state.deletes.push(name);
+          const result = {
+            returning: () => Promise.resolve([{ id: "line-item-1" }]),
+            then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
+              Promise.resolve([]).then(resolve, reject),
+          };
+          return result;
+        },
+      };
+    },
     transaction(callback: (tx: Record<string, unknown>) => Promise<unknown>) {
       const insertCount = mocks.state.inserts.length;
       const updateCount = mocks.state.updates.length;
+      const deleteCount = mocks.state.deletes.length;
       const settingBefore = mocks.state.groupBuyCryptoRefundsEnabled;
       return callback(fakeDb as unknown as Record<string, unknown>).catch((error: unknown) => {
         mocks.state.inserts.splice(insertCount);
         mocks.state.updates.splice(updateCount);
+        mocks.state.deletes.splice(deleteCount);
         mocks.state.groupBuyCryptoRefundsEnabled = settingBefore;
         throw error;
       });
@@ -233,6 +250,19 @@ function buildApp(...routers: Express["router"][]): Express {
   return app;
 }
 
+function buildAppWithRefundErrorHandler(...routers: Express["router"][]): Express {
+  const app = buildApp(...routers);
+  app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const conflict = refundMutationConflictResponse(error);
+    if (conflict) {
+      res.status(conflict.status).json(conflict.body);
+      return;
+    }
+    next(error);
+  });
+  return app;
+}
+
 async function withServer<T>(app: Express, callback: (base: string) => Promise<T>): Promise<T> {
   const server: Server = await new Promise(resolve => {
     const listening = app.listen(0, () => resolve(listening));
@@ -264,6 +294,7 @@ beforeEach(() => {
   mocks.state.queries.length = 0;
   mocks.state.updates.length = 0;
   mocks.state.inserts.length = 0;
+  mocks.state.deletes.length = 0;
   mocks.state.audits.length = 0;
   mocks.state.selectRows = query => {
     if (query.table === "group_buy_refund_attempts") return [attempt];
@@ -619,5 +650,159 @@ describe("admin-only refund setting", () => {
     }
     expect(mocks.state.inserts.some(item => item.table === "group_buys")).toBe(false);
     expect(mocks.state.updates.some(item => item.table === "group_buys")).toBe(false);
+  });
+
+  it("executes the real organiser quantity edit handler and leaves every row unchanged when refund is active", async () => {
+    const parentOrder = {
+      id: "order-1",
+      groupBuyId: "owned-gb",
+      telegramUsername: "@buyer",
+      code: "GB-001",
+      grandTotal: "12.00",
+      productSubtotal: "10.00",
+      deliveryPrice: "2.00",
+      vendorShipping: "0.00",
+      tip: "0.00",
+      testingContribution: "0.00",
+      adminFee: "0.00",
+      adminFeeLabel: null,
+      paymentStatus: "confirmed",
+      trackingNumber: null,
+      trackingNumbers: [],
+      trackingPackages: [],
+      trackingDetails: null,
+      trackingStatus: null,
+      trackingEvents: [],
+      trackingLastChecked: null,
+      trackingShippedItems: null,
+      orderType: "standard",
+      sharedOrderId: null,
+      deliveryMethod: "shipping",
+    };
+    const lineItems = [{
+      id: "line-1",
+      orderId: "order-1",
+      productId: "product-1",
+      productName: "Widget",
+      quantity: "1.00",
+      unitPrice: "10.00",
+      lineTotal: "10.00",
+      isOos: false,
+    }];
+    const groupBuy = {
+      id: "owned-gb",
+      name: "Owned GB",
+      organiserId: "organiser",
+      currency: "USD",
+      organiserOrderEditEnabled: true,
+      organiserCanEditStatus: true,
+      organiserCanEditPaymentStatus: true,
+      organiserCanEditTracking: true,
+      organiserCanEditNotes: true,
+      organiserCanEditTxId: true,
+      organiserCanEditQuantities: true,
+      adminFeeEnabled: false,
+      adminFeeType: null,
+      adminFeeAmount: null,
+      adminFeeLabel: null,
+    };
+    const before = structuredClone({ parentOrder, lineItems });
+    mocks.state.selectRows = query => {
+      if (query.table === "group_buys") return [groupBuy];
+      if (query.table === "orders") return [parentOrder];
+      if (query.table === "order_line_items") return lineItems;
+      if (query.table === "group_buy_refunds") {
+        return [{ id: "refund-1", orderId: "order-1", status: "requested" }];
+      }
+      return [];
+    };
+
+    const app = buildAppWithRefundErrorHandler(organiserRouter);
+    const response = await request(app, "/organiser/group-buys/owned-gb/orders/order-1", {
+      method: "PATCH",
+      headers: json({ lineItems: [{ id: "line-1", quantity: 2 }] }, { "x-test-organiser": "organiser" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "refund_active",
+      orderId: "order-1",
+    });
+    expect({ parentOrder, lineItems }).toEqual(before);
+    expect(mocks.state.updates).toEqual([]);
+    expect(mocks.state.inserts).toEqual([]);
+    expect(mocks.state.deletes).toEqual([]);
+  });
+
+  it("allows the same real organiser quantity edit when no refund is active", async () => {
+    const parentOrder = {
+      id: "order-1",
+      groupBuyId: "owned-gb",
+      telegramUsername: "@buyer",
+      code: "GB-001",
+      grandTotal: "12.00",
+      productSubtotal: "10.00",
+      deliveryPrice: "2.00",
+      vendorShipping: "0.00",
+      tip: "0.00",
+      testingContribution: "0.00",
+      adminFee: "0.00",
+      adminFeeLabel: null,
+      paymentStatus: "confirmed",
+      trackingNumber: null,
+      trackingNumbers: [],
+      trackingPackages: [],
+      trackingDetails: null,
+      trackingStatus: null,
+      trackingEvents: [],
+      trackingLastChecked: null,
+      trackingShippedItems: null,
+      orderType: "standard",
+      sharedOrderId: null,
+      deliveryMethod: "shipping",
+    };
+    const lineItems = [{
+      id: "line-1",
+      orderId: "order-1",
+      productId: "product-1",
+      productName: "Widget",
+      quantity: "1.00",
+      unitPrice: "10.00",
+      lineTotal: "10.00",
+      isOos: false,
+    }];
+    const groupBuy = {
+      id: "owned-gb",
+      name: "Owned GB",
+      organiserId: "organiser",
+      currency: "USD",
+      organiserOrderEditEnabled: true,
+      organiserCanEditStatus: true,
+      organiserCanEditPaymentStatus: true,
+      organiserCanEditTracking: true,
+      organiserCanEditNotes: true,
+      organiserCanEditTxId: true,
+      organiserCanEditQuantities: true,
+      adminFeeEnabled: false,
+      adminFeeType: null,
+      adminFeeAmount: null,
+      adminFeeLabel: null,
+    };
+    mocks.state.selectRows = query => {
+      if (query.table === "group_buys") return [groupBuy];
+      if (query.table === "orders") return [parentOrder];
+      if (query.table === "order_line_items") return lineItems;
+      return [];
+    };
+
+    const app = buildAppWithRefundErrorHandler(organiserRouter);
+    const response = await request(app, "/organiser/group-buys/owned-gb/orders/order-1", {
+      method: "PATCH",
+      headers: json({ lineItems: [{ id: "line-1", quantity: 2 }] }, { "x-test-organiser": "organiser" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.state.updates.some(write => write.table === "order_line_items")).toBe(true);
+    expect(mocks.state.updates.some(write => write.table === "orders")).toBe(true);
   });
 });

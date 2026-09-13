@@ -10,7 +10,7 @@ describe("organiser order edit refund atomicity", () => {
     const route = source.slice(start, end);
     const transaction = route.indexOf("db.transaction(async tx");
     const lock = route.indexOf('.for("update")', transaction);
-    const refundCheck = route.indexOf("assertRefundMutationAllowed(tx, orderId)", transaction);
+    const refundCheck = route.indexOf("assertNoActiveRefund(tx, orderId)", transaction);
     const firstWrite = Math.min(
       ...["tx.delete(orderLineItemsTable)", "tx.update(orderLineItemsTable)", "tx.insert(orderLineItemsTable)", "tx.update(ordersTable)"]
         .map(anchor => route.indexOf(anchor, transaction))
