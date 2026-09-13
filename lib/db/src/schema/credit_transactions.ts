@@ -6,7 +6,7 @@ import { groupBuyRefundsTable } from "./group_buy_refunds";
 export const creditTransactionsTable = pgTable("credit_transactions", {
   id: serial("id").primaryKey(),
   accountUsername: text("account_username").notNull().references(() => accountsTable.telegramUsername, { onDelete: "cascade", onUpdate: "cascade" }),
-  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(), // positive = credits added, negative = credits deducted
+  amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull(), // positive = credits added, negative = credits deducted
   reason: text("reason").notNull(),
   orderId: text("order_id"), // optional link to the order being refunded
   refundId: text("refund_id").references(() => groupBuyRefundsTable.id, { onDelete: "set null" }),

@@ -79,7 +79,7 @@ export const accountsTable = pgTable("accounts", {
     anonPayNetwork?: string;
   } | null>(),
   // Credits in USD. Numeric storage preserves the two-decimal refund amount.
-  credits: numeric("credits", { precision: 10, scale: 2 }).notNull().default("0"),
+  credits: numeric("credits", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),
   // Wholesale account flag
   isWholesale: boolean("is_wholesale").notNull().default(false),
   // Reshipper capability toggles
