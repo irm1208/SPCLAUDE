@@ -87,8 +87,11 @@ export async function confirmWholesaleOrganiserPayment(input: {
     return reject("invalid_input", "A share ID and valid confirmation source are required.");
   }
 
+  const requestedCurrentParentStatus = input.expectedCurrentParentStatus;
   const expectedCurrentParentStatus =
-    input.expectedCurrentParentStatus ?? (source === "backfill" ? "confirmed" : "pending");
+    source === "backfill"
+      ? "confirmed"
+      : requestedCurrentParentStatus ?? "pending";
   if (!isPaymentStatus(expectedCurrentParentStatus)) {
     return reject("invalid_input", "The expected current parent payment status is invalid.");
   }
@@ -104,16 +107,14 @@ export async function confirmWholesaleOrganiserPayment(input: {
       return reject("invalid_share_status", "Shared order is not submitted.");
     }
 
-    // A pending parent is the normal admin/automatic path. A confirmed parent
-    // is also accepted for those sources so a repeated call can still validate
-    // the linked order and return an idempotent result. Backfill is confirmed-only.
-    const repeatedParentConfirmation =
-      source !== "backfill" &&
-      expectedCurrentParentStatus === "pending" &&
-      share.organiserPaymentStatus === "confirmed";
+    // Backfill only repairs an already-confirmed parent. Admin and automatic
+    // confirmation may revalidate a confirmed parent, but cannot use that
+    // path to create a new order transition.
     if (
       share.organiserPaymentStatus !== expectedCurrentParentStatus &&
-      !repeatedParentConfirmation
+      !(source !== "backfill" &&
+        expectedCurrentParentStatus === "pending" &&
+        share.organiserPaymentStatus === "confirmed")
     ) {
       return reject(
         "invalid_parent_status",
@@ -189,6 +190,16 @@ export async function confirmWholesaleOrganiserPayment(input: {
       organiserOrder.paymentStatus === "confirmed" ||
       organiserOrder.paymentStatus === "test_confirmed";
     if (
+      source !== "backfill" &&
+      share.organiserPaymentStatus === "confirmed" &&
+      !orderAlreadyConfirmed
+    ) {
+      return reject(
+        "invalid_parent_status",
+        "A confirmed parent payment may only be revalidated when its organiser order is already confirmed.",
+      );
+    }
+    if (
       !orderAlreadyConfirmed &&
       organiserOrder.paymentStatus !== "unpaid" &&
       organiserOrder.paymentStatus !== "pending"
@@ -197,22 +208,6 @@ export async function confirmWholesaleOrganiserPayment(input: {
         "invalid_creator_order",
         "The linked creator order is not in a confirmable payment state.",
       );
-    }
-
-    let orderChanged = false;
-    if (!orderAlreadyConfirmed) {
-      const [updatedOrder] = await tx
-        .update(ordersTable)
-        .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-        .where(and(
-          eq(ordersTable.id, organiserOrderId),
-          inArray(ordersTable.paymentStatus, ["unpaid", "pending"]),
-        ))
-        .returning({ id: ordersTable.id });
-      if (!updatedOrder) {
-        return reject("invalid_creator_order", "The linked creator order changed during confirmation.");
-      }
-      orderChanged = true;
     }
 
     let parentChanged = false;
@@ -231,6 +226,22 @@ export async function confirmWholesaleOrganiserPayment(input: {
       parentChanged = true;
     }
 
+    let orderChanged = false;
+    if (!orderAlreadyConfirmed) {
+      const [updatedOrder] = await tx
+        .update(ordersTable)
+        .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
+        .where(and(
+          eq(ordersTable.id, organiserOrderId),
+          inArray(ordersTable.paymentStatus, ["unpaid", "pending"]),
+        ))
+        .returning({ id: ordersTable.id });
+      if (!updatedOrder) {
+        return reject("invalid_creator_order", "The linked creator order changed during confirmation.");
+      }
+      orderChanged = true;
+    }
+
     if (orderChanged) {
       await tx.insert(auditLogsTable).values({
         type: "order",
@@ -242,6 +253,8 @@ export async function confirmWholesaleOrganiserPayment(input: {
           reason: "organiser_platform_payment_confirmed",
           shareId: share.id,
           organiserOrderId,
+          idempotencyKey:
+            `wholesale_share_organiser_order_payment_confirmed:${share.id}:${organiserOrderId}`,
         },
       });
     }
