@@ -42,7 +42,14 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
-import { centsToMoneyNumber, moneyToCents, sumMoneyCents } from "@/lib/exact-money";
+import {
+  centsToMoneyNumber,
+  safeCentsToMoneyNumber,
+  safeMoneyToCents,
+  safeSignedMoneyToCents,
+  signedMoneyToCents,
+  sumCents,
+} from "@/lib/exact-money";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
@@ -11640,7 +11647,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
   const handleAdjustCredits = async () => {
     let amount: number;
     try {
-      amount = centsToMoneyNumber(moneyToCents(creditAmount || "0"));
+      amount = centsToMoneyNumber(signedMoneyToCents(creditAmount || "0"));
     } catch {
       setCreditMsg("Enter a valid amount with up to 2 decimals");
       return;
@@ -14845,12 +14852,19 @@ function CreditLogTab({ secret }: { secret: string }) {
     return e.reason;
   };
 
-  const totalCreditsCents = sumMoneyCents(entries.filter(e => e.amount > 0).map(e => e.amount));
-  const totalDebitsCents = sumMoneyCents(entries.filter(e => e.amount < 0).map(e => e.amount));
+  const totalCreditsCents = sumCents(entries
+    .filter(e => e.amount > 0)
+    .map(e => safeSignedMoneyToCents(e.amount))
+    .filter((value): value is bigint => value !== null));
+  const totalDebitsCents = sumCents(entries
+    .filter(e => e.amount < 0)
+    .map(e => safeSignedMoneyToCents(e.amount))
+    .filter((value): value is bigint => value !== null)
+  );
   const totalNetCents = totalCreditsCents + totalDebitsCents;
-  const totalCredits = centsToMoneyNumber(totalCreditsCents);
-  const totalDebits = centsToMoneyNumber(totalDebitsCents);
-  const totalNet = centsToMoneyNumber(totalNetCents);
+  const totalCredits = safeCentsToMoneyNumber(totalCreditsCents);
+  const totalDebits = safeCentsToMoneyNumber(totalDebitsCents);
+  const totalNet = safeCentsToMoneyNumber(totalNetCents);
 
   return (
     <div className="p-4 space-y-4 max-w-5xl mx-auto">
@@ -17945,7 +17959,7 @@ function AccountsTab({ secret }: { secret: string }) {
   const adjustCredits = async (username: string) => {
     let amount: number;
     try {
-      amount = centsToMoneyNumber(moneyToCents(creditAmount[username] ?? "0"));
+      amount = centsToMoneyNumber(signedMoneyToCents(creditAmount[username] ?? "0"));
     } catch {
       setCreditMsg(prev => ({ ...prev, [username]: "Enter a valid amount with up to 2 decimals" }));
       return;

@@ -3,6 +3,7 @@ import { evaluateRefundEligibility } from "./refund-eligibility";
 
 const base = {
   accountId: "buyer",
+  paymentEvidenceVerified: true,
   order: {
     id: "order-1",
     telegramUsername: "@buyer",
@@ -120,5 +121,31 @@ describe("refund eligibility", () => {
       },
     });
     expect(result.eligible).toBe(true);
+  });
+
+  it("rejects a syntactically valid hash without server payment proof", () => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      paymentEvidenceVerified: false,
+    })).toMatchObject({
+      eligible: false,
+      reasonCode: "ineligible_payment_evidence",
+      amountUsd: null,
+    });
+  });
+
+  it.each([
+    ["BTC", "Ethereum Mainnet"],
+    ["USDC", "Bitcoin Mainnet"],
+    ["BTC", "Solana"],
+  ])("rejects cross-rail pairing %s on %s", (currency, network) => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentCryptoCurrency: currency,
+        paymentCryptoNetwork: network,
+      },
+    }).reasonCode).toBe("ineligible_payment_evidence");
   });
 });

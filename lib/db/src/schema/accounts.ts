@@ -79,6 +79,10 @@ export const accountsTable = pgTable("accounts", {
     anonPayNetwork?: string;
   } | null>(),
   // Credits in USD. Numeric storage preserves the two-decimal refund amount.
+  // Keep the existing numeric column/mode for migration compatibility. Credit
+  // arithmetic is done as integer cents; routes cast exact decimal strings only
+  // at this persistence boundary until a planned schema migration can change
+  // the generated representation safely.
   credits: numeric("credits", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),
   // Wholesale account flag
   isWholesale: boolean("is_wholesale").notNull().default(false),

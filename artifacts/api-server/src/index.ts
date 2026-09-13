@@ -35,6 +35,11 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function runStartupMigrations(): Promise<void> {
   try {
+    // Startup compatibility only adds columns/tables that are absent. It must
+    // never change an existing production column type or constraint: publish
+    // the branch so the normal Replit schema migration applies those changes.
+    // The development schema is already migrated; this fallback is not a
+    // substitute for publishing the schema diff.
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS hidden_orders (
         id text PRIMARY KEY,

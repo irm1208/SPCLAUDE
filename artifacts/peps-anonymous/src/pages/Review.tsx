@@ -15,7 +15,7 @@ import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
-import { minMoney, subtractMoneyClamped } from "@/lib/exact-money";
+import { safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 import { resolveOrderSubmitDestination } from "./order-submit-destination";
 
 function ReviewShell({ children }: { children: ReactNode }) {
@@ -213,10 +213,11 @@ export default function Review() {
   const grandTotal = parseFloat(
     Math.max(0, productSubtotal + effectiveDeliveryPrice + effectiveVendorShipping + draft.tip + draft.testingContribution + adminFeeAmount - couponDiscount).toFixed(2)
   );
-  const creditsApplied = account && account.credits > 0 && useCredits
-    ? minMoney(account.credits, grandTotal)
+  const creditsAvailable = account?.credits ?? 0;
+  const creditsApplied = account && creditsAvailable > 0 && useCredits
+    ? safeMinMoney(creditsAvailable, grandTotal)
     : 0;
-  const amountDue = subtractMoneyClamped(grandTotal, creditsApplied);
+  const amountDue = safeSubtractMoneyClamped(grandTotal, creditsApplied);
 
   if (draft.lineItems.length === 0 || !draft.telegramUsername) {
     window.location.href = "/order";
@@ -304,7 +305,7 @@ export default function Review() {
         tip: data.tip ?? draft.tip,
         grandTotal: serverGrandTotal,
         creditsApplied: serverCreditsApplied,
-        amountDue: subtractMoneyClamped(serverGrandTotal, serverCreditsApplied),
+        amountDue: safeSubtractMoneyClamped(serverGrandTotal, serverCreditsApplied),
         notes: data.notes ?? (draft.notes || null),
         lineItems: (data.lineItems ?? draft.lineItems).map(item => ({
           productName: item.productName,
@@ -541,7 +542,7 @@ export default function Review() {
                   <span>−{formatPrice(couponDiscount)}</span>
                 </div>
               )}
-              {account && account.credits > 0 && (
+              {account && creditsAvailable > 0 && (
                 <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-700">
                     <input
@@ -553,7 +554,7 @@ export default function Review() {
                     Use store credits
                   </label>
                   <span className="text-sm font-semibold" style={{ color: "#16a34a" }}>
-                    {formatPrice(account.credits)} available
+                    {formatPrice(creditsAvailable)} available
                   </span>
                 </div>
               )}

@@ -13,19 +13,19 @@ test("credit application sites use exact money helpers", () => {
   const admin = source("pages/Admin.tsx");
   const paymentSummary = source("pages/order-payment-summary.ts");
 
-  assert.match(review, /minMoney\(account\.credits, grandTotal\)/);
+  assert.match(review, /safeMinMoney\(creditsAvailable, grandTotal\)/);
   assert.doesNotMatch(review, /Math\.floor\(grandTotal\)/);
-  assert.match(accountOrder, /subtractMoneyClamped\(order\.grandTotal/);
+  assert.match(accountOrder, /safeSubtractMoneyClamped\(order\.grandTotal/);
   assert.doesNotMatch(accountOrder, /Math\.ceil\(order\.grandTotal/);
-  assert.match(payment, /subtractMoneyClamped\(usdTotal, creditsUsd\)/);
-  assert.match(lookup, /subtractMoneyClamped\(foundOrder\.grandTotal/);
+  assert.match(payment, /safeSubtractMoneyClamped\(usdTotal, creditsUsd\)/);
+  assert.match(lookup, /safeSubtractMoneyClamped\(foundOrder\.grandTotal/);
   assert.doesNotMatch(admin, /Math\.round\(parseFloat\(creditAmount/);
   assert.doesNotMatch(admin, /Math\.round\(parseFloat\(creditAmount\[/);
-  assert.match(admin, /sumMoneyCents\(entries\.filter\(e => e\.amount > 0\)/);
-  assert.match(admin, /sumMoneyCents\(entries\.filter\(e => e\.amount < 0\)/);
+  assert.match(admin, /sumCents\(entries\s+\.filter\(e => e\.amount > 0\)/);
+  assert.match(admin, /sumCents\(entries\s+\.filter\(e => e\.amount < 0\)/);
   assert.match(admin, /const totalNetCents = totalCreditsCents \+ totalDebitsCents/);
   assert.doesNotMatch(admin, /reduce\(\(s, e\) => s \+ e\.amount/);
   assert.doesNotMatch(admin, /totalCredits \+ totalDebits/);
-  assert.match(paymentSummary, /subtractMoneyClamped\(grandTotal/);
+  assert.match(paymentSummary, /safeSubtractMoneyClamped\(grandTotal/);
   assert.doesNotMatch(paymentSummary, /grandTotal - \(hasOutstandingAddOn/);
 });

@@ -1,4 +1,4 @@
-import { subtractMoneyClamped } from "@/lib/exact-money";
+import { safeSubtractMoneyClamped } from "@/lib/exact-money";
 
 export interface OrderPaymentSummaryInput {
   grandTotal: number;
@@ -26,7 +26,7 @@ export function getOrderPaymentSummary({
 
   return {
     hasOutstandingAddOn,
-    paidAmount: subtractMoneyClamped(grandTotal, hasOutstandingAddOn ? amountDue : 0),
+    paidAmount: safeSubtractMoneyClamped(grandTotal, hasOutstandingAddOn ? amountDue : 0),
     showFullyPaidPanel: originalPaymentConfirmed && !hasOutstandingAddOn,
     statusLabel: hasOutstandingAddOn ? "Original payment confirmed" : "Payment confirmed",
   };

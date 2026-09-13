@@ -42,6 +42,11 @@ export type RefundEligibilityOrder = {
 
 export type RefundEligibilityInput = {
   accountId: string;
+  /**
+   * Server-only proof produced by the payment verifier. This must never be
+   * copied from a refund request body or inferred from order text fields.
+   */
+  paymentEvidenceVerified: boolean;
   order: RefundEligibilityOrder | null | undefined;
   groupBuy: { id: string; cryptoRefundsEnabled: boolean } | null | undefined;
   activeRefund: { id: string; status: string } | null | undefined;
@@ -51,7 +56,7 @@ function ineligible(reasonCode: RefundEligibilityCode): RefundEligibility {
   return { eligible: false, reasonCode, amountUsd: null };
 }
 
-function isSupportedCryptoRail(currency: string, network: string): boolean {
+export function isSupportedRefundPaymentRail(currency: string, network: string): boolean {
   const cur = currency.toUpperCase().trim();
   const net = network.toLowerCase().trim();
   if (cur === "USDT") {
@@ -90,7 +95,7 @@ function isAuthoritativeTransactionHash(
     || !currency
     || !network
     || transactionKind(hash) !== "crypto"
-    || !isSupportedCryptoRail(currency, network)
+    || !isSupportedRefundPaymentRail(currency, network)
   ) {
     return false;
   }
@@ -131,6 +136,9 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
   }
   if (normalizeTg(input.accountId) !== normalizeTg(order.telegramUsername)) {
     return ineligible("not_owner");
+  }
+  if (input.paymentEvidenceVerified !== true) {
+    return ineligible("ineligible_payment_evidence");
   }
   if (order.deletedAt != null) {
     return ineligible("deleted_order");

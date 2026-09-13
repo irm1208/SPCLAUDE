@@ -1445,41 +1445,47 @@ router.post("/orders", async (req, res): Promise<void> => {
   let appliedCreditsUsd = "0.00";
   const sessionUsernameForCredits = getAccountFromCookie(req);
   if (sessionUsernameForCredits && clientCreditsApplied && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
-    try {
-      const requestedCreditsCents = usdToCents(String(clientCreditsApplied));
-      const [acctRow] = await db
+    const requestedCreditsCents = usdToCents(String(clientCreditsApplied));
+    await db.transaction(async tx => {
+      // Lock account before order to match every other credit-spend path.
+      const [acctRow] = await tx
         .select({ credits: accountsTable.credits })
         .from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits))
+        .for("update");
+      const [lockedOrder] = await tx
+        .select({ id: ordersTable.id })
+        .from(ordersTable)
+        .where(eq(ordersTable.id, orderId))
+        .for("update");
+      if (!acctRow) throw new Error("account_not_found");
+      if (!lockedOrder) throw new Error("order_not_found");
+      if (requestedCreditsCents <= 0n) return;
+
+      const availableCreditsCents = usdToCents(String(acctRow.credits ?? "0"));
+      const orderTotalCents = usdToCents(grandTotal.toFixed(2));
+      const deductedCents = [availableCreditsCents, requestedCreditsCents, orderTotalCents]
+        .reduce((minimum, value) => value < minimum ? value : minimum);
+      if (deductedCents <= 0n) return;
+
+      appliedCreditsUsd = centsToUsdString(deductedCents);
+      appliedCredits = Number(appliedCreditsUsd);
+      const newBalance = centsToUsdString(availableCreditsCents - deductedCents);
+      await tx.update(accountsTable)
+        .set({ credits: newBalance as unknown as number })
         .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
-      if (acctRow && acctRow.credits > 0 && requestedCreditsCents > 0n) {
-        const availableCreditsCents = usdToCents(String(acctRow.credits));
-        const orderTotalCents = usdToCents(grandTotal.toFixed(2));
-        const deductedCents = [availableCreditsCents, requestedCreditsCents, orderTotalCents]
-          .reduce((minimum, value) => value < minimum ? value : minimum);
-        if (deductedCents > 0n) {
-          appliedCreditsUsd = centsToUsdString(deductedCents);
-          appliedCredits = Number(appliedCreditsUsd);
-          const newBalance = centsToUsdString(availableCreditsCents - deductedCents);
-          await db.update(accountsTable)
-            .set({ credits: newBalance as unknown as number })
-            .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
-          await db.update(ordersTable)
-            .set({ creditsApplied: appliedCreditsUsd as unknown as number })
-            .where(eq(ordersTable.id, orderId));
-          await db.insert(creditTransactionsTable).values({
-            accountUsername: sessionUsernameForCredits,
-            amount: `-${appliedCreditsUsd}` as unknown as number,
-            reason: `Credits applied to order #${code}`,
-            orderId,
-            adminUsername: null,
-            createdAt: new Date(),
-          });
-        }
-      }
-    } catch (err) {
-      console.error("[orders] Failed to apply credits for order", orderId, err);
-      // Non-fatal — order was created, credits just weren't applied
-    }
+      await tx.update(ordersTable)
+        .set({ creditsApplied: appliedCreditsUsd as unknown as number })
+        .where(eq(ordersTable.id, orderId));
+      await tx.insert(creditTransactionsTable).values({
+        accountUsername: sessionUsernameForCredits,
+        amount: `-${appliedCreditsUsd}` as unknown as number,
+        reason: `Credits applied to order #${code}`,
+        orderId,
+        adminUsername: null,
+        createdAt: new Date(),
+      });
+    });
   }
 
   const formatted = formatOrderResponse(

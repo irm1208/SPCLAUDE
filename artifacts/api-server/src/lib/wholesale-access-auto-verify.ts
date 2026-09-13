@@ -32,76 +32,67 @@ import { centsToUsdString, usdToCents } from "./refund-money";
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function confirmWholesaleAccess(requestId: number): Promise<void> {
-  // Re-fetch inside confirm to guard against double-confirm races.
-  const [req] = await db
-    .select()
-    .from(wholesaleAccessRequestsTable)
-    .where(
-      and(
+  const confirmation = await db.transaction(async tx => {
+    // Lock the request first, then the account. The pending predicate is the
+    // idempotency key: retries and concurrent workers can only claim it once.
+    const [req] = await tx
+      .select()
+      .from(wholesaleAccessRequestsTable)
+      .where(and(
         eq(wholesaleAccessRequestsTable.id, requestId),
         eq(wholesaleAccessRequestsTable.status, "pending"),
-      )
-    )
-    .limit(1);
-  if (!req) return; // already confirmed/rejected
+      ))
+      .for("update");
+    if (!req) return null;
 
-  const [acct] = await db
-    .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
-    .from(accountsTable)
-    .where(
-      or(
+    const [acct] = await tx
+      .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+      .from(accountsTable)
+      .where(or(
         eq(accountsTable.telegramUsername, req.accountUsername),
-        eq(
-          accountsTable.telegramUsername,
-          req.accountUsername.startsWith("@")
-            ? req.accountUsername.slice(1)
-            : `@${req.accountUsername}`,
-        ),
-      )
-    )
-    .limit(1);
-  if (!acct) {
-    console.warn(`[wholesale-access-auto-verify] Account not found for request ${requestId} (${req.accountUsername})`);
-    return;
-  }
+        eq(accountsTable.telegramUsername, req.accountUsername.startsWith("@") ? req.accountUsername.slice(1) : `@${req.accountUsername}`),
+      ))
+      .for("update");
+    if (!acct) throw new Error(`Account not found for wholesale access request ${requestId}`);
 
-  const newBalance = centsToUsdString(
-    usdToCents(String(acct.credits ?? "0")) + usdToCents(String(req.amountUsd)),
-  );
-
-  await db
-    .update(accountsTable)
-    .set({ isWholesale: true, credits: newBalance as unknown as number, updatedAt: new Date() })
-    .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
-
-  await db.insert(creditTransactionsTable).values({
-    accountUsername: acct.telegramUsername,
-    amount: String(req.amountUsd) as unknown as number,
-    reason: `Wholesale access fee refund ($${req.amountUsd} access fee)`,
-    adminUsername: "auto-verify",
-    createdAt: new Date(),
+    const refundCents = usdToCents(String(req.amountUsd));
+    const newBalance = centsToUsdString(usdToCents(String(acct.credits ?? "0")) + refundCents);
+    await tx.update(accountsTable)
+      .set({ isWholesale: true, credits: newBalance as unknown as number, updatedAt: new Date() })
+      .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+    await tx.insert(creditTransactionsTable).values({
+      accountUsername: acct.telegramUsername,
+      amount: centsToUsdString(refundCents) as unknown as number,
+      reason: `Wholesale access fee refund ($${centsToUsdString(refundCents)} access fee)`,
+      adminUsername: "auto-verify",
+      createdAt: new Date(),
+    });
+    await tx.update(wholesaleAccessRequestsTable)
+      .set({ status: "confirmed", confirmedAt: new Date(), adminUsername: "auto-verify" })
+      .where(and(
+        eq(wholesaleAccessRequestsTable.id, requestId),
+        eq(wholesaleAccessRequestsTable.status, "pending"),
+      ));
+    return { req, acct, newBalance, refundAmount: centsToUsdString(refundCents) };
   });
-
-  await db
-    .update(wholesaleAccessRequestsTable)
-    .set({ status: "confirmed", confirmedAt: new Date(), adminUsername: "auto-verify" })
-    .where(eq(wholesaleAccessRequestsTable.id, requestId));
+  if (!confirmation) return;
+  const { req, acct, newBalance, refundAmount } = confirmation;
 
   notifyUser(
     acct.telegramUsername,
     "profile",
-    `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${req.amountUsd}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`,
+    `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${refundAmount}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`,
   ).catch(() => {});
 
   writeLog(
     "change",
     "info",
     "wholesale_access_confirmed",
-    `Auto-verified wholesale access for ${acct.telegramUsername} (request ${requestId}, $${req.amountUsd})`,
+    `Auto-verified wholesale access for ${acct.telegramUsername} (request ${requestId}, $${refundAmount})`,
     { username: acct.telegramUsername, requestId },
   ).catch(() => {});
 
-  console.log(`[wholesale-access-auto-verify] Confirmed request ${requestId} for ${acct.telegramUsername} ($${req.amountUsd})`);
+  console.log(`[wholesale-access-auto-verify] Confirmed request ${requestId} for ${acct.telegramUsername} ($${refundAmount})`);
 }
 
 async function checkRequest(row: {

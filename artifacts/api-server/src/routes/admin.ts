@@ -9209,42 +9209,69 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
   const adminUser = getAdminUsername(res);
   const orderId = String(req.params["id"]);
 
-  const [order] = await db
-    .select({ id: ordersTable.id, grandTotal: ordersTable.grandTotal, telegramUsername: ordersTable.telegramUsername, code: ordersTable.code })
-    .from(ordersTable)
-    .where(eq(ordersTable.id, orderId));
+  const outcome = await db.transaction(async tx => {
+    // Lock order first, then account, so concurrent refund attempts serialize
+    // deterministically. The refund status is the idempotency key.
+    const [order] = await tx
+      .select({
+        id: ordersTable.id,
+        grandTotal: ordersTable.grandTotal,
+        telegramUsername: ordersTable.telegramUsername,
+        code: ordersTable.code,
+        refundStatus: ordersTable.refundStatus,
+      })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId))
+      .for("update");
+    if (!order) return { kind: "missing_order" as const };
+    if (order.refundStatus === "refunded") return { kind: "already_refunded" as const, order };
+    if (!order.telegramUsername) return { kind: "missing_account" as const };
 
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  if (!order.telegramUsername) { res.status(400).json({ error: "Order has no linked account" }); return; }
+    const username = order.telegramUsername;
+    const altUsername = username.startsWith("@") ? username.slice(1) : `@${username}`;
+    const [acct] = await tx
+      .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
+      .from(accountsTable)
+      .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)))
+      .for("update");
+    if (!acct) return { kind: "missing_account" as const };
 
-  const username = order.telegramUsername;
-  const altUsername = username.startsWith("@") ? username.slice(1) : `@${username}`;
-
-  const [acct] = await db
-    .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
-    .from(accountsTable)
-    .where(or(eq(accountsTable.telegramUsername, username), eq(accountsTable.telegramUsername, altUsername)));
-
-  if (!acct) { res.status(404).json({ error: "Customer account not found" }); return; }
-
-  const totalCents = usdToCents(String(order.grandTotal ?? "0"));
-  if (totalCents <= 0n) { res.status(400).json({ error: "Order total is zero — nothing to refund" }); return; }
-  const totalAmount = centsToUsdString(totalCents);
-  const newBalance = centsToUsdString(usdToCents(String(acct.credits ?? "0")) + totalCents);
-  await db.update(accountsTable)
-    .set({ credits: newBalance as unknown as number })
-    .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
-
-  await db.insert(creditTransactionsTable).values({
-    accountUsername: acct.telegramUsername,
-    amount: totalAmount as unknown as number,
-    reason: `Refund for order ${order.code}`,
-    orderId,
-    adminUsername: adminUser ?? "admin",
-    createdAt: new Date(),
+    const totalCents = usdToCents(String(order.grandTotal ?? "0"));
+    if (totalCents <= 0n) return { kind: "zero_total" as const };
+    const totalAmount = centsToUsdString(totalCents);
+    const newBalance = centsToUsdString(usdToCents(String(acct.credits ?? "0")) + totalCents);
+    await tx.update(accountsTable)
+      .set({ credits: newBalance as unknown as number })
+      .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+    await tx.insert(creditTransactionsTable).values({
+      accountUsername: acct.telegramUsername,
+      amount: totalAmount as unknown as number,
+      reason: `Refund for order ${order.code}`,
+      orderId,
+      adminUsername: adminUser ?? "admin",
+      createdAt: new Date(),
+    });
+    await tx.update(ordersTable)
+      .set({
+        refundStatus: "refunded",
+        refundedAt: new Date(),
+        status: "Cancelled",
+        paymentStatus: "refunded",
+      })
+      .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.refundStatus)));
+    return { kind: "refunded" as const, order, accountUsername: acct.telegramUsername, totalAmount, newBalance };
   });
 
-  writeLog("change", "info", "order_refunded_to_credits", `Admin refunded order ${order.code} ($${totalAmount} USD) to credits for ${acct.telegramUsername}`, { orderId, username: acct.telegramUsername, amount: Number(totalAmount) }).catch(() => {});
+  if (outcome.kind === "missing_order") { res.status(404).json({ error: "Order not found" }); return; }
+  if (outcome.kind === "already_refunded") {
+    res.json({ ok: true, idempotent: true, refundedAmount: Number(centsToUsdString(usdToCents(String(outcome.order.grandTotal ?? "0")))) });
+    return;
+  }
+  if (outcome.kind === "missing_account") { res.status(400).json({ error: "Order has no linked customer account" }); return; }
+  if (outcome.kind === "zero_total") { res.status(400).json({ error: "Order total is zero — nothing to refund" }); return; }
+  const { order, accountUsername, totalAmount, newBalance } = outcome;
+
+  writeLog("change", "info", "order_refunded_to_credits", `Admin refunded order ${order.code} ($${totalAmount} USD) to credits for ${accountUsername}`, { orderId, username: accountUsername, amount: Number(totalAmount) }).catch(() => {});
   res.json({ ok: true, credits: Number(newBalance), refundedAmount: Number(totalAmount) });
 });
 
