@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "./refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
@@ -420,6 +420,9 @@ async function refreshIndividualOrders(): Promise<number> {
   }
 
   console.log(`[tracking-auto-refresh] Refreshing ${orders.length} individual order(s)`);
+  await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, orders.map(order => order.id));
+  });
   let refreshed = 0;
 
   for (const order of orders) {

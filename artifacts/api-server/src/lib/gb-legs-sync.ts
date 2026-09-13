@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "./refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Group buy country-legs auto-sync — every 2 hours, loops through all active
  * group buys that have country legs enabled and backfills any members/orders
@@ -8,7 +8,7 @@ import { refundMutableOrderWhere } from "./refund-mutation-guard";
  * editable from the admin panel (Schedulers tab).
  */
 import { db, groupBuysTable, gbCountryLegsTable, accountGroupBuysTable, accountsTable, ordersTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { registerScheduler } from "./scheduler-registry";
 
 const DEFAULT_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -65,6 +65,17 @@ async function runGbLegsSync(): Promise<void> {
         eq(accountGroupBuysTable.groupBuyId, gb.id),
         sql`${accountGroupBuysTable.countryLegId} is null`,
       ));
+
+    const syncOrderIds = unassigned.length === 0 ? [] : (await db.select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.groupBuyId, gb.id),
+        inArray(ordersTable.telegramUsername, unassigned.map(row => row.accountId)),
+        sql`${ordersTable.countryLegId} is null`,
+      ))).map(order => order.id);
+    await db.transaction(async tx => {
+      await assertNoActiveRefunds(tx, syncOrderIds);
+    });
 
     for (const row of unassigned) {
       if (!row.country) continue;

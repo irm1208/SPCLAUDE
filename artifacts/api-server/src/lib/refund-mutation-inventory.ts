@@ -33,6 +33,9 @@ export const REFUND_MUTATION_INVENTORY = {
  * intentionally absent because they are the refund lifecycle itself.
  */
 export const REFUND_MULTI_ORDER_INVENTORY = [
+  { source: "src/lib/gb-legs-sync.ts", handler: "background country-leg fanout", mode: "assertNoActiveRefunds before batch" },
+  { source: "src/lib/order-payment-auto-verify.ts", handler: "background payment verification batch", mode: "assertNoActiveRefunds before batch" },
+  { source: "src/lib/tracking-auto-refresh.ts", handler: "background tracking refresh batch", mode: "assertNoActiveRefunds before batch" },
   { source: "src/routes/account.ts", handler: "account deletion order fanout", mode: "account lock then assertNoActiveRefunds in transaction" },
   { source: "src/routes/gb-country-legs.ts", handler: "assign country legs fanout", mode: "assertNoActiveRefunds in transaction" },
   { source: "src/routes/admin-dispatch.ts", handler: "dispatch confirm/undispatch/reattribute/mark/archive", mode: "withRefundMutationGuard" },

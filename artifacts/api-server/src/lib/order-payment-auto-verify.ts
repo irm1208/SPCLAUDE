@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "./refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Background scheduler that automatically confirms GB order payments.
  *
@@ -441,6 +441,9 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
     if (pending.length === 0) return;
     console.log(`[order-auto-verify] Checking ${pending.length} pending order(s)…`);
 
+    await db.transaction(async tx => {
+      await assertNoActiveRefunds(tx, pending.map(order => order.id));
+    });
     for (const order of pending) {
       try {
         const hash = order.paymentTxHash ?? "";
