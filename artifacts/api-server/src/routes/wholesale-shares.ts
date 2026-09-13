@@ -1,5 +1,6 @@
 import {
   assertNoActiveRefunds,
+  RefundMutationBlockedError,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
@@ -2034,6 +2035,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
     const orders = orderIds.length > 0
       ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
       : [];
+    await assertNoActiveRefunds(tx, orderIds);
 
     const removalOrders = orders.map(order => ({
       id: order.id,
@@ -2354,6 +2356,7 @@ export async function attemptLockShare(
       const existingOrders: Array<typeof ordersTable.$inferSelect> = existingOrderIds.length > 0
         ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, existingOrderIds)).for("update")
         : [];
+      await assertNoActiveRefunds(tx, existingOrderIds);
       const existingOrderById = new Map(existingOrders.map(order => [order.id, order]));
       const reopenPlan = buildSharedOrderReopenPlan(
         members.map(member => ({ id: member.id, orderId: member.orderId })),
@@ -2956,12 +2959,16 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
   }
 
   const newPaymentStatus = paid ? "confirmed" : "unpaid";
-  await db.update(ordersTable)
-    .set({
-      paymentStatus: newPaymentStatus,
-      ...(paid ? { paymentConfirmedAt: new Date() } : {}),
-    })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, member.orderId)));
+  await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, [member.orderId!]);
+    const [changed] = await tx.update(ordersTable)
+      .set({
+        paymentStatus: newPaymentStatus,
+        ...(paid ? { paymentConfirmedAt: new Date() } : {}),
+      })
+      .where(refundMutableOrderWhere(eq(ordersTable.id, member.orderId!)))
+      .returning({ id: ordersTable.id });
+    if (!changed) throw new RefundMutationBlockedError(member.orderId!);
 
   await writeLog("order", "info", "wholesale_share_member_payment_marked",
     `Organiser @${me} marked payment ${paid ? "confirmed" : "unpaid"} for @${username} in share ${share.id}`,
@@ -2970,7 +2977,7 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
   // If marking paid and share is still locked, check if all members are now paid.
   // If so, transition the share to "submitted".
   if (paid && share.status === "locked") {
-    const allMembers = await db
+    const allMembers = await tx
       .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
       .from(wholesaleShareMembersTable)
       .where(eq(wholesaleShareMembersTable.shareId, share.id));
@@ -2985,7 +2992,8 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
 
     const allOrderIds = membersToCheck.map(m => m.orderId).filter((x): x is string => !!x);
     if (allOrderIds.length > 0 && allOrderIds.length === membersToCheck.length) {
-      const memberOrders = await db
+      await assertNoActiveRefunds(tx, allOrderIds);
+      const memberOrders = await tx
         .select({ paymentStatus: ordersTable.paymentStatus })
         .from(ordersTable)
         .where(sql`${ordersTable.id} IN (${sql.join(allOrderIds.map(id => sql`${id}`), sql`, `)})`);
@@ -2995,7 +3003,7 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
       );
 
       if (everyonePaid) {
-        await db.update(wholesaleSharesTable)
+        await tx.update(wholesaleSharesTable)
           .set({ status: "submitted", submittedAt: new Date() })
           .where(and(
             eq(wholesaleSharesTable.id, share.id),
@@ -3004,6 +3012,7 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
       }
     }
   }
+  });
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -3297,6 +3306,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
       const orders = orderIds.length > 0
         ? await tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).for("update")
         : [];
+      await assertNoActiveRefunds(tx, orderIds);
       const orderById = new Map(orders.map(order => [order.id, order]));
       if (share.status === "locked" && (
         orders.length !== members.length ||

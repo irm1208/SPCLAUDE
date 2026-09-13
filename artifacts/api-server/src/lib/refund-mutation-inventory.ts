@@ -5,7 +5,7 @@
  * fails before review.
  */
 export const REFUND_MUTATION_INVENTORY = {
-  "src/index.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
+  "src/index.ts": { orders: 4, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
   "src/lib/gb-legs-sync.ts": { orders: 1, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
   "src/lib/group-buy-refund.ts": { orders: 2, orderInserts: 0, lineItems: 0, inserts: 0, classification: "processor_exemption" },
   "src/lib/order-payment-auto-verify.ts": { orders: 3, orderInserts: 0, lineItems: 0, inserts: 0, classification: "guarded" },
@@ -50,6 +50,21 @@ export const REFUND_MULTI_ORDER_INVENTORY = [
   { source: "src/routes/organiser.ts", handler: "apply international shipping", mode: "withRefundMutationGuard" },
   { source: "src/routes/reshipper.ts", handler: "claim-bulk", mode: "withRefundMutationGuard" },
   { source: "src/routes/wholesale-shares.ts", handler: "cancel share members", mode: "assertNoActiveRefunds in transaction" },
+] as const;
+
+export const REFUND_RAW_MUTATION_INVENTORY = [
+  { source: "src/routes/account.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
+  { source: "src/routes/account.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
+  { source: "src/routes/admin.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
+  { source: "src/routes/admin.ts", operation: "UPDATE orders", classification: "identity_rename_guarded" },
+  { source: "src/routes/gb-testing.ts", operation: "UPDATE orders", classification: "guarded" },
+] as const;
+
+export const REFUND_ORDER_INSERT_INVENTORY = [
+  { source: "src/routes/orders.ts", classification: "new_order_or_guarded_parent" },
+  { source: "src/routes/organiser.ts", classification: "existing_order_guarded" },
+  { source: "src/routes/admin.ts", classification: "existing_order_guarded" },
+  { source: "src/routes/wholesale-shares.ts", classification: "new_order_or_guarded_parent" },
 ] as const;
 
 export type RefundMutationClassification =

@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefund, refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createHash, timingSafeEqual } from "crypto";
@@ -2271,7 +2271,9 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   // Capture old line items for audit log before deleting them
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
 
-  const [updatedOrder] = await db
+  const { updatedOrder, insertedLineItems } = await db.transaction(async tx => {
+  await assertNoActiveRefund(tx, rawId);
+  const [updatedOrder] = await tx
     .update(ordersTable)
     .set({
       deliveryMethod: isAddition ? order.deliveryMethod : deliveryMethodRecord.name,
@@ -2308,7 +2310,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     .where(refundMutableOrderWhere(eq(ordersTable.id, rawId)))
     .returning();
 
-  await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, rawId), orderLineItemsTable.orderId));
+  await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, rawId), orderLineItemsTable.orderId));
 
   const lineItemsToInsert = clientLineItems.map((li: {
     productId: string; productName: string; quantity: number; unitPrice: number;
@@ -2322,10 +2324,12 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     lineTotal: (parseFloat(String(li.quantity)) * parseFloat(String(li.unitPrice))).toFixed(2),
   }));
 
-  const insertedLineItems = await db
+  const insertedLineItems = await tx
     .insert(orderLineItemsTable)
     .values(lineItemsToInsert)
     .returning();
+  return { updatedOrder, insertedLineItems };
+  });
 
   const formatted = formatOrderResponse(updatedOrder as unknown as Record<string, unknown>, insertedLineItems as unknown as Record<string, unknown>[]);
   pushToGoogleSheets(formatted).catch(() => {});

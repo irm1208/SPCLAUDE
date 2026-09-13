@@ -16,6 +16,10 @@ export type ActiveRefundStatus = typeof ACTIVE_REFUND_STATUSES[number];
 
 export const REFUND_MUTATION_BLOCKED_CODE = "refund_active" as const;
 
+export const activeRefundStatusesSql = ACTIVE_REFUND_STATUSES
+  .map(status => sql`${status}`)
+  .reduce((combined, status, index) => index === 0 ? status : sql`${combined}, ${status}`);
+
 export class RefundMutationBlockedError extends Error {
   readonly code = REFUND_MUTATION_BLOCKED_CODE;
   readonly orderId: string;
@@ -37,7 +41,7 @@ export function refundMutationPredicate(orderColumn = ordersTable.id) {
     SELECT 1
     FROM ${groupBuyRefundsTable} AS refund_mutation_guard
     WHERE refund_mutation_guard.order_id = ${orderColumn}
-      AND refund_mutation_guard.status IN ('requested', 'verifying', 'verification_failed')
+      AND refund_mutation_guard.status IN (${activeRefundStatusesSql})
   )`;
 }
 

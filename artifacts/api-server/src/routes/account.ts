@@ -1,6 +1,7 @@
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
+  activeRefundStatusesSql,
   RefundMutationBlockedError,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
@@ -9,7 +10,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
-import { eq, and, or, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
+import { eq, and, or, asc, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie, getAccountCookieOptions } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
@@ -702,14 +703,23 @@ router.delete("/account/group-buys/:gbId/leave", requireAccount, async (req, res
     )
   );
 
-  await db.update(ordersTable)
-    .set({ deletedAt: new Date(), deletedBy: "leave_gb" })
-    .where(refundMutableOrderWhere(
+  await db.transaction(async tx => {
+    await assertNoActiveRefunds(tx, ordersToDelete.map(order => order.id));
+    await tx.update(ordersTable)
+      .set({ deletedAt: new Date(), deletedBy: "leave_gb" })
+      .where(refundMutableOrderWhere(
+        and(
+          eq(ordersTable.groupBuyId, gbId),
+          sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
+        )
+      ));
+    await tx.delete(accountGroupBuysTable).where(
       and(
-        eq(ordersTable.groupBuyId, gbId),
-        sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
+        eq(accountGroupBuysTable.accountId, tg),
+        eq(accountGroupBuysTable.groupBuyId, gbId),
       )
-    ));
+    );
+  });
 
   // Log each deleted order individually
   for (let i = 0; i < ordersToDelete.length; i++) {
@@ -732,13 +742,6 @@ router.delete("/account/group-buys/:gbId/leave", requireAccount, async (req, res
       req.ip ?? undefined,
     ).catch(() => {});
   }
-
-  await db.delete(accountGroupBuysTable).where(
-    and(
-      eq(accountGroupBuysTable.accountId, tg),
-      eq(accountGroupBuysTable.groupBuyId, gbId),
-    )
-  );
 
   writeLog("change", "info", "account_left_gb",
     `Account ${tg} left group buy ${gbId}`,
@@ -1148,31 +1151,39 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
 
   // Update accounts FIRST — FK constraints with onUpdate:cascade on child tables cascade automatically.
   // Non-FK username columns (organiser_id, reshipper_username etc.) are updated explicitly below.
-  await db.execute(sql`UPDATE accounts SET telegram_username = ${newTg} WHERE telegram_username = ${oldTg}`);
+  const affectedRenameOrders = await db.select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(sql`lower(${ordersTable.telegramUsername}) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await db.transaction(async tx => {
+    await tx.select({ id: ordersTable.id }).from(ordersTable)
+      .where(inArray(ordersTable.id, affectedRenameOrders.map(order => order.id)))
+      .orderBy(asc(ordersTable.id)).for("update");
+    await assertNoActiveRefunds(tx, affectedRenameOrders.map(order => order.id));
+    await tx.execute(sql`UPDATE accounts SET telegram_username = ${newTg} WHERE telegram_username = ${oldTg}`);
 
   // Non-FK columns that store the username as plain text (must be updated explicitly).
   // All WHERE clauses match both @user and user formats via lower() IN (bare, @bare).
-  await db.update(groupBuysTable).set({ organiserId: newTg }).where(eq(groupBuysTable.organiserId, oldTg));
-  await db.update(productsTable).set({ organiserId: newTg }).where(eq(productsTable.organiserId, oldTg));
-  await db.update(labTestsTable).set({ organiserId: newTg }).where(eq(labTestsTable.organiserId, oldTg));
-  await db.update(gbReshippersTable).set({ reshipperUsername: newTg }).where(eq(gbReshippersTable.reshipperUsername, oldTg));
-  await db.execute(sql`UPDATE orders SET reshipper_username = ${newTgWithAt} WHERE lower(reshipper_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE customers SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE vial_orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE feedback SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE coupon_redemptions SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE health_insight_logs SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE customer_activity_logs SET actor_username = ${newTgWithAt} WHERE lower(actor_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE telegram_message_logs SET recipient_username = ${newTgWithAt} WHERE lower(recipient_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE pool_participants SET account_username = ${newTgWithAt} WHERE lower(account_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE testing_pools SET leader_username = ${newTgWithAt} WHERE lower(leader_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.update(groupBuysTable).set({ organiserId: newTg }).where(eq(groupBuysTable.organiserId, oldTg));
+  await tx.update(productsTable).set({ organiserId: newTg }).where(eq(productsTable.organiserId, oldTg));
+  await tx.update(labTestsTable).set({ organiserId: newTg }).where(eq(labTestsTable.organiserId, oldTg));
+  await tx.update(gbReshippersTable).set({ reshipperUsername: newTg }).where(eq(gbReshippersTable.reshipperUsername, oldTg));
+  await tx.execute(sql`UPDATE orders SET reshipper_username = ${newTgWithAt} WHERE lower(reshipper_username) IN (${oldTgBare}, ${oldTgWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+  await tx.execute(sql`UPDATE customers SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+  await tx.execute(sql`UPDATE vial_orders SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE feedback SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE coupon_redemptions SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE health_insight_logs SET telegram_username = ${newTgWithAt} WHERE lower(telegram_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE customer_activity_logs SET actor_username = ${newTgWithAt} WHERE lower(actor_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE telegram_message_logs SET recipient_username = ${newTgWithAt} WHERE lower(recipient_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE pool_participants SET account_username = ${newTgWithAt} WHERE lower(account_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE testing_pools SET leader_username = ${newTgWithAt} WHERE lower(leader_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   // wholesale_share_members.username has a UNIQUE(share_id, username) constraint and no FK,
   // so it isn't touched by the accounts cascade above. Guard the update with a NOT EXISTS
   // check so we never violate that constraint (e.g. if the new username was somehow already
   // a member of the same share) — in that edge case the old row is simply left as-is rather
   // than aborting the whole username change.
-  await db.execute(sql`
+  await tx.execute(sql`
     UPDATE wholesale_share_members SET username = ${newTg}
     WHERE lower(username) IN (${oldTgBare}, ${oldTgWithAt})
       AND NOT EXISTS (
@@ -1180,13 +1191,14 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
         WHERE m2.share_id = wholesale_share_members.share_id AND lower(m2.username) = ${newTg}
       )
   `);
-  await db.execute(sql`UPDATE wholesale_share_messages SET username = ${newTg} WHERE lower(username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE wholesale_share_messages SET username = ${newTg} WHERE lower(username) IN (${oldTgBare}, ${oldTgWithAt})`);
   // wholesale_shares.creator_username drives isCreator/organiser permission checks in
   // wholesale-shares.ts; delivery_username identifies the chosen parcel recipient. Neither
   // has a FK, so both must be migrated explicitly or a renamed organiser/recipient loses
   // their role on the share.
-  await db.execute(sql`UPDATE wholesale_shares SET creator_username = ${newTg} WHERE lower(creator_username) IN (${oldTgBare}, ${oldTgWithAt})`);
-  await db.execute(sql`UPDATE wholesale_shares SET delivery_username = ${newTg} WHERE lower(delivery_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE wholesale_shares SET creator_username = ${newTg} WHERE lower(creator_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  await tx.execute(sql`UPDATE wholesale_shares SET delivery_username = ${newTg} WHERE lower(delivery_username) IN (${oldTgBare}, ${oldTgWithAt})`);
+  });
 
   await issueAccountCookieForAccount(res, newTg);
 

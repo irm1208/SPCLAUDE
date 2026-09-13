@@ -16,6 +16,7 @@ import { eq, and, gt, sum, count, sql, inArray, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
 import { notifyUserFull } from "../lib/telegram";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
+import { activeRefundStatusesSql, RefundMutationBlockedError, assertNoActiveRefund } from "../lib/refund-mutation-guard";
 import { requireAdminForRequest } from "../middleware/require-admin";
 import { extractBatchNumbersFromImages } from "../lib/gemini-lab-extract";
 
@@ -1114,13 +1115,24 @@ router.patch("/admin/group-buys/:gbId/testing/contributions/:id", async (req, re
   if (!contrib) { res.status(404).json({ error: "Pending contribution not found" }); return; }
 
   if (action === "confirm") {
-    await db.execute(sql`
-      UPDATE orders SET testing_contribution = ${parseFloat(contrib.amount).toFixed(2)}::numeric
-      WHERE id = ${contrib.order_id}
-    `);
-    await db.execute(sql`
-      UPDATE gb_testing_contributions SET status = 'confirmed' WHERE id = ${id}
-    `);
+    await db.transaction(async tx => {
+      await tx.select({ id: ordersTable.id }).from(ordersTable)
+        .where(eq(ordersTable.id, contrib.order_id)).for("update");
+      await assertNoActiveRefund(tx, contrib.order_id);
+      const updated = await tx.execute(sql`
+        UPDATE orders SET testing_contribution = ${parseFloat(contrib.amount).toFixed(2)}::numeric
+        WHERE id = ${contrib.order_id}
+          AND NOT EXISTS (
+            SELECT 1 FROM group_buy_refunds r
+            WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql})
+          )
+        RETURNING id
+      `);
+      if (!((updated as any).rows ?? []).length) throw new RefundMutationBlockedError(contrib.order_id);
+      await tx.execute(sql`
+        UPDATE gb_testing_contributions SET status = 'confirmed' WHERE id = ${id}
+      `);
+    });
     res.json({ ok: true, status: "confirmed" });
   } else {
     await db.execute(sql`

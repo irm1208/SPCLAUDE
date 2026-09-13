@@ -2759,6 +2759,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   // Handle line item quantity updates (and new product additions)
   let updatedLineItems: { id: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos: boolean }[] = [];
   if (gb.organiserCanEditQuantities && Array.isArray(lineItemUpdates) && lineItemUpdates.length > 0) {
+    await assertNoActiveRefund(orderId);
     const existingUpdates = lineItemUpdates.filter(u => u.id);
     const newItemRequests = lineItemUpdates.filter(u => !u.id && u.productId);
 

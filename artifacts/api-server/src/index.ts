@@ -18,7 +18,7 @@ import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
 import { db, ordersTable } from "@workspace/db";
-import { sql, and, isNotNull, lt } from "drizzle-orm";
+import { sql, and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 
 const rawPort = process.env["API_PORT"] ?? process.env["PORT"];
 
@@ -625,17 +625,17 @@ async function runStartupMigrations(): Promise<void> {
     // so the cleanup above won't re-flag orders it just corrected.
     // If payment_usd_amount is 0/NULL the payment was manually confirmed without a recorded amount —
     // assume the admin verified it was correct and do NOT create a spurious balance.
-    await db.execute(sql`
-      UPDATE orders
-      SET amount_due = vendor_shipping
-      WHERE payment_status IN ('confirmed', 'test_confirmed')
-        AND vendor_shipping > 0
-        AND amount_due = 0
-        AND (balance_payment_status IS NULL OR (balance_payment_status <> 'confirmed' AND balance_payment_status <> 'waived'))
-        AND deleted_at IS NULL
-        AND payment_usd_amount > 0
-        AND payment_usd_amount < grand_total * 0.96
-    `);
+    await db.update(ordersTable)
+      .set({ amountDue: ordersTable.vendorShipping })
+      .where(refundMutableOrderWhere(and(
+        sql`${ordersTable.paymentStatus} IN ('confirmed', 'test_confirmed')`,
+        sql`${ordersTable.vendorShipping} > 0`,
+        eq(ordersTable.amountDue, "0"),
+        sql`(${ordersTable.balancePaymentStatus} IS NULL OR (${ordersTable.balancePaymentStatus} <> 'confirmed' AND ${ordersTable.balancePaymentStatus} <> 'waived'))`,
+        isNull(ordersTable.deletedAt),
+        sql`${ordersTable.paymentUsdAmount} > 0`,
+        sql`${ordersTable.paymentUsdAmount} < ${ordersTable.grandTotal} * 0.96`,
+      )));
     // Ensure payment_confirmed_at exists (timestamptz, nullable)
     await db.execute(sql`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_confirmed_at timestamptz
@@ -828,13 +828,13 @@ async function runStartupMigrations(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`);
     // Backfill dispatched_by_reshipper from reshipper_username for previously-confirmed orders
-    await db.execute(sql`
-      UPDATE orders
-      SET dispatched_by_reshipper = reshipper_username
-      WHERE dispatched_by_reshipper IS NULL
-        AND reshipper_username IS NOT NULL
-        AND status IN ('Shipped', 'Completed')
-    `);
+    await db.update(ordersTable)
+      .set({ dispatchedByReshipper: ordersTable.reshipperUsername })
+      .where(refundMutableOrderWhere(and(
+        isNull(ordersTable.dispatchedByReshipper),
+        isNotNull(ordersTable.reshipperUsername),
+        sql`${ordersTable.status} IN ('Shipped', 'Completed')`,
+      )));
     // accounts — wholesale invite prompt seen timestamp (self-heal: drizzle may drop on push)
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS wholesale_invite_prompt_seen_at timestamptz`);
     // orders — top-up order reference (self-heal: added via direct SQL in deploy.sh)
@@ -874,7 +874,12 @@ async function runStartupMigrations(): Promise<void> {
     // One-time: clear stale locked paymentUsdAmount for order 10342 (admin edited items
     // after the rate was locked, leaving 372.91 USD for a €519 order — stale EUR→USD
     // conversion). Safe to run repeatedly; idempotent once order is confirmed.
-    await db.execute(sql`UPDATE orders SET payment_usd_amount = NULL WHERE code::text = '10342' AND payment_status NOT IN ('confirmed', 'waived')`);
+    await db.update(ordersTable)
+      .set({ paymentUsdAmount: null })
+      .where(refundMutableOrderWhere(and(
+        sql`${ordersTable.code}::text = '10342'`,
+        sql`${ordersTable.paymentStatus} NOT IN ('confirmed', 'waived')`,
+      )));
     // wholesale_shares — main parcel tracking columns (17track combined feed)
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_number text`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS main_tracking_carrier text`);

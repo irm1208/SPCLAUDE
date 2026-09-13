@@ -1,5 +1,6 @@
 import {
   assertNoActiveRefunds,
+  activeRefundStatusesSql,
   RefundMutationBlockedError,
   refundMutableOrderWhere,
   withRefundMutationGuard,
@@ -3258,9 +3259,11 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
     validated.push({ productName: String(li.productName).trim(), quantity: qty, unitPrice: price, lineTotal: parseFloat((qty * price).toFixed(2)) });
   }
 
+  const { updated, newLineItems } = await db.transaction(async tx => {
+  await assertNoActiveRefund(tx, req.params.id);
   // Replace all line items
-  await db.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, req.params.id), orderLineItemsTable.orderId));
-  await db.insert(orderLineItemsTable).values(
+  await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, req.params.id), orderLineItemsTable.orderId));
+  await tx.insert(orderLineItemsTable).values(
     validated.map(li => ({
       id: randomUUID(),
       orderId: req.params.id,
@@ -3289,16 +3292,19 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
     itemEditSet.paymentUsdAmount = null;
   }
 
-  const [updated] = await db
+  const [updated] = await tx
     .update(ordersTable)
     .set(itemEditSet)
     .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
     .returning();
+  if (!updated) throw new RefundMutationBlockedError(req.params.id);
 
-  const newLineItems = await db
+  const newLineItems = await tx
     .select()
     .from(orderLineItemsTable)
     .where(eq(orderLineItemsTable.orderId, req.params.id));
+  return { updated, newLineItems };
+  });
 
   res.json(fmtOrder(updated as unknown as Record<string, any>, newLineItems as unknown as Record<string, any>[]));
 });
@@ -8001,12 +8007,19 @@ router.post("/admin/accounts/:username/rename", async (req: any, res: any): Prom
     // All plain-text username columns may store either @user or user format, so WHERE
     // clauses match both variants via lower() IN (bare, @bare).
     await db.transaction(async (tx) => {
+      const affectedOrderRows = await tx
+        .select({ id: ordersTable.id })
+        .from(ordersTable)
+        .where(sql`lower(${ordersTable.telegramUsername}) IN (${oldBare}, ${oldWithAt})`)
+        .orderBy(asc(ordersTable.id))
+        .for("update");
+      await assertNoActiveRefunds(tx, affectedOrderRows.map(order => order.id));
       // 1. Move the PK on accounts — FK children with onUpdate:cascade follow automatically.
       await tx.execute(sql`UPDATE accounts SET telegram_username = ${newBare} WHERE telegram_username = ${actualOldUsername}`);
 
       // 2. Non-FK plain-text username columns (match both @user and user formats).
-      await tx.execute(sql`UPDATE orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
-      await tx.execute(sql`UPDATE orders SET reshipper_username = ${newWithAt} WHERE lower(reshipper_username) IN (${oldBare}, ${oldWithAt})`);
+      await tx.execute(sql`UPDATE orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
+      await tx.execute(sql`UPDATE orders SET reshipper_username = ${newWithAt} WHERE lower(reshipper_username) IN (${oldBare}, ${oldWithAt}) AND NOT EXISTS (SELECT 1 FROM group_buy_refunds r WHERE r.order_id = orders.id AND r.status IN (${activeRefundStatusesSql}))`);
       await tx.execute(sql`UPDATE feedback SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
       await tx.execute(sql`UPDATE coupon_redemptions SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
       await tx.execute(sql`UPDATE vial_orders SET telegram_username = ${newWithAt} WHERE lower(telegram_username) IN (${oldBare}, ${oldWithAt})`);
@@ -9166,6 +9179,7 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
       if (!lockedOrder.telegramUsername || normalizeTg(lockedOrder.telegramUsername) !== normalizeTg(acct.telegramUsername)) {
         return { kind: "order_not_owned" as const };
       }
+      await assertNoActiveRefund(tx, lockedOrder.id);
       targetOrder = lockedOrder;
     }
     let adjustedAmountCents = amountCents;
@@ -9183,11 +9197,15 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
       const newCreditsApplied = centsToUsdString(
         usdToCents(String(targetOrder.creditsApplied ?? "0")) + -adjustedAmountCents,
       );
-      await tx.update(ordersTable).set({ creditsApplied: newCreditsApplied as unknown as number })
-        .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)));
+      const [creditsAppliedOrder] = await tx.update(ordersTable).set({ creditsApplied: newCreditsApplied as unknown as number })
+        .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)))
+        .returning({ id: ordersTable.id });
+      if (!creditsAppliedOrder) throw new RefundMutationBlockedError(targetOrder.id);
       if (usdToCents(String(targetOrder.grandTotal)) <= usdToCents(newCreditsApplied) && targetOrder.paymentStatus !== "confirmed") {
-        await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
-          .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)));
+        const [confirmedCreditsOrder] = await tx.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() })
+          .where(refundMutableOrderWhere(eq(ordersTable.id, targetOrder.id)))
+          .returning({ id: ordersTable.id });
+        if (!confirmedCreditsOrder) throw new RefundMutationBlockedError(targetOrder.id);
         confirmedOrder = true;
       }
     }
@@ -9268,6 +9286,7 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
     if (!order.telegramUsername || normalizeTg(order.telegramUsername) !== normalizeTg(acct.telegramUsername)) {
       return { kind: "missing_account" as const };
     }
+    await assertNoActiveRefund(tx, orderId);
     if (order.refundStatus === "refunded") return { kind: "already_refunded" as const, order };
 
     const totalCents = usdToCents(String(order.grandTotal ?? "0"));
@@ -9285,14 +9304,16 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
       adminUsername: adminUser ?? "admin",
       createdAt: new Date(),
     });
-    await tx.update(ordersTable)
+    const [refundedOrder] = await tx.update(ordersTable)
       .set({
         refundStatus: "refunded",
         refundedAt: new Date(),
         status: "Cancelled",
         paymentStatus: "refunded",
       })
-      .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), isNull(ordersTable.refundStatus))));
+      .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), isNull(ordersTable.refundStatus))))
+      .returning({ id: ordersTable.id });
+    if (!refundedOrder) throw new RefundMutationBlockedError(orderId);
     return { kind: "refunded" as const, order, accountUsername: acct.telegramUsername, totalAmount, newBalance };
   });
 
