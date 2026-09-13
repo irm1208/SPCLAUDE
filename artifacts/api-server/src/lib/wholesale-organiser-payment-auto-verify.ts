@@ -8,10 +8,8 @@
  * with organiserPaymentStatus="pending" + a stored tx hash, verifies the transfer
  * on-chain, and — on success — performs the same action as the admin
  * "confirm-organiser-payment" endpoint:
- *   • sets organiserPaymentStatus = "confirmed"
- *   • sets organiserPaymentConfirmedAt
- *   • notifies the organiser via Telegram
- *   • writes an audit log entry
+ *   • delegates the atomic share/order transition and audit to the shared service
+ *   • notifies the organiser when the service confirms the payment
  *
  * Runs every 10 minutes. A one-shot immediate check is also exported for use right
  * after the organiser submits their tx hash.
@@ -21,11 +19,11 @@ import {
   wholesaleSharesTable,
   wholesaleShareMembersTable,
 } from "@workspace/db";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { verifyTransaction } from "./payment-verify";
+import { confirmWholesaleOrganiserPayment } from "./wholesale-organiser-payment-confirmation";
 import { registerScheduler } from "./scheduler-registry";
 import { notifyUser } from "./telegram";
-import { writeLog } from "./audit-log";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -50,57 +48,6 @@ async function computeOrganiserAmountDue(shareId: string, totalVendorShipping: s
   );
   const shipping = totalVendorShipping != null ? Number(totalVendorShipping) : 0;
   return Number((combinedSubtotal + shipping).toFixed(2));
-}
-
-// ── Confirm helper ─────────────────────────────────────────────────────────────
-
-async function confirmOrganiserPayment(shareId: string, organiserUsername: string): Promise<void> {
-  // Re-fetch inside confirm to guard against double-confirm races.
-  const [share] = await db
-    .select({
-      id: wholesaleSharesTable.id,
-      organiserPaymentStatus: wholesaleSharesTable.organiserPaymentStatus,
-      creatorUsername: wholesaleSharesTable.creatorUsername,
-    })
-    .from(wholesaleSharesTable)
-    .where(
-      and(
-        eq(wholesaleSharesTable.id, shareId),
-        eq(wholesaleSharesTable.organiserPaymentStatus, "pending"),
-      ),
-    )
-    .limit(1);
-
-  if (!share) return; // already confirmed or rolled back
-
-  await db
-    .update(wholesaleSharesTable)
-    .set({
-      organiserPaymentStatus: "confirmed",
-      organiserPaymentConfirmedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(wholesaleSharesTable.id, shareId),
-        eq(wholesaleSharesTable.organiserPaymentStatus, "pending"),
-      ),
-    );
-
-  notifyUser(
-    organiserUsername,
-    "payment",
-    `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${shareId}</code> has been verified on-chain and confirmed.\n\nYour order is now being processed.`,
-  ).catch(() => {});
-
-  writeLog(
-    "order",
-    "info",
-    "wholesale_share_organiser_payment_auto_confirmed",
-    `Auto-verified organiser platform payment for share ${shareId} (@${organiserUsername})`,
-    { shareId, organiserUsername },
-  ).catch(() => {});
-
-  console.log(`[wholesale-organiser-auto-verify] Confirmed organiser payment for share ${shareId} (@${organiserUsername})`);
 }
 
 // ── Check a single share ───────────────────────────────────────────────────────
@@ -144,16 +91,33 @@ async function checkShare(row: {
     `[wholesale-organiser-auto-verify] Checking share ${row.id} — $${amountDue} ${currency} on ${network} tx=${txHash.slice(0, 12)}…`,
   );
 
-  const result = await verifyTransaction(txHash, opt.walletAddress, amountDue, currency, network, 0.01);
-  if (!result.verified) {
-    const r = result as { verified: false; reason: string; pending?: boolean };
+  const verification = await verifyTransaction(txHash, opt.walletAddress, amountDue, currency, network, 0.01);
+  if (!verification.verified) {
+    const r = verification as { verified: false; reason: string; pending?: boolean };
     console.log(
       `[wholesale-organiser-auto-verify] Not verified — share ${row.id}: ${r.reason}${r.pending ? " (pending)" : ""}`,
     );
     return;
   }
 
-  await confirmOrganiserPayment(row.id, row.creatorUsername);
+  const confirmation = await confirmWholesaleOrganiserPayment({
+    shareId: row.id,
+    source: "automatic",
+    expectedCurrentParentStatus: "pending",
+  });
+
+  if (confirmation.kind === "confirmed") {
+    notifyUser(
+      row.creatorUsername,
+      "payment",
+      `✅ <b>Platform payment confirmed</b>\n\nYour forwarded payment for shared order <code>${row.id}</code> has been verified on-chain and confirmed.\n\nYour order is now being processed.`,
+    ).catch(() => {});
+    console.log(`[wholesale-organiser-auto-verify] Confirmed organiser payment for share ${row.id} (@${row.creatorUsername})`);
+  } else {
+    console.log(
+      `[wholesale-organiser-auto-verify] Confirmation result for share ${row.id}: ${confirmation.kind}`,
+    );
+  }
 }
 
 // ── Scheduler run ──────────────────────────────────────────────────────────────

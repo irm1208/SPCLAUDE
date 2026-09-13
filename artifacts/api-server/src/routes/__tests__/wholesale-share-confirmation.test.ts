@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const routeSource = fs.readFileSync(path.resolve(here, "../wholesale-shares.ts"), "utf8");
+const autoVerifySource = fs.readFileSync(
+  path.resolve(here, "../../lib/wholesale-organiser-payment-auto-verify.ts"),
+  "utf8",
+);
 const schemaSource = fs.readFileSync(path.resolve(here, "../../../../../lib/db/src/schema/wholesale_shares.ts"), "utf8");
 
 describe("shared wholesale order confirmations", () => {
@@ -68,5 +72,34 @@ describe("shared wholesale order confirmations", () => {
     expect(removalHandler).toContain("const [lockedMember] = await tx.select()");
     expect(removalHandler).toContain("lockedShare.deliveryUsername");
     expect(deliveryHandler).toContain("EXISTS (SELECT 1 FROM ${wholesaleShareMembersTable}");
+  });
+
+  it("routes automatic verification through the confirmation service and notifies only confirmed results", () => {
+    const checkShare = autoVerifySource.slice(
+      autoVerifySource.indexOf("async function checkShare"),
+      autoVerifySource.indexOf("// ── Scheduler run"),
+    );
+
+    expect(checkShare).toContain("await confirmWholesaleOrganiserPayment({");
+    expect(checkShare).toContain('source: "automatic"');
+    expect(checkShare).toContain('if (confirmation.kind === "confirmed")');
+    expect(autoVerifySource).toContain("verifyTransaction");
+    expect(checkShare).toContain("network, 0.01");
+    expect(autoVerifySource).not.toContain(".update(wholesaleSharesTable)");
+    expect(autoVerifySource).not.toContain("wholesale_share_organiser_payment_auto_confirmed");
+  });
+
+  it("uses the shared confirmation service for admin confirmation and makes repeats idempotent", () => {
+    const adminHandler = routeSource.slice(
+      routeSource.indexOf('router.post("/admin/wholesale-shares/:id/confirm-organiser-payment"'),
+    );
+
+    expect(routeSource).toContain("confirmWholesaleOrganiserPayment");
+    expect(adminHandler).toContain('source: "admin"');
+    expect(adminHandler).toContain("res.status(404)");
+    expect(adminHandler).toContain("res.status(409)");
+    expect(adminHandler).toContain("alreadyConfirmed: true");
+    expect(adminHandler).not.toContain(".update(wholesaleSharesTable)");
+    expect(adminHandler).not.toContain("wholesale_share_organiser_payment_confirmed");
   });
 });

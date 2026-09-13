@@ -35,6 +35,7 @@ import { nullableTrackingCarrierMatch } from "../lib/tracking-carrier-cas";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
+import { confirmWholesaleOrganiserPayment } from "../lib/wholesale-organiser-payment-confirmation";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
 import {
@@ -3566,19 +3567,23 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
 // Admin confirms the organiser's platform payment.
 router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const share = await loadShare(req.params.id);
-  if (!share) { res.status(404).json({ error: "Shared order not found." }); return; }
-  if ((share.organiserPaymentStatus ?? "unpaid") === "confirmed") {
-    res.status(409).json({ error: "Already confirmed." }); return;
+  const result = await confirmWholesaleOrganiserPayment({
+    shareId: req.params.id,
+    source: "admin",
+    expectedCurrentParentStatus: "pending",
+  });
+
+  if (result.kind === "rejected") {
+    res.status(result.code === "not_found" ? 404 : 409).json({ error: result.message });
+    return;
   }
-  await db
-    .update(wholesaleSharesTable)
-    .set({ organiserPaymentStatus: "confirmed", organiserPaymentConfirmedAt: new Date() })
-    .where(eq(wholesaleSharesTable.id, share.id));
-  await writeLog("order", "info", "wholesale_share_organiser_payment_confirmed",
-    `Admin confirmed organiser platform payment for share ${share.id}`,
-    { shareId: share.id });
-  res.json({ ok: true });
+
+  if (result.kind === "already_confirmed") {
+    res.json({ ok: true, alreadyConfirmed: true });
+    return;
+  }
+
+  res.json({ ok: true, alreadyConfirmed: false });
 });
 
 // ── Wholesale Share Invite Links ──────────────────────────────────────────────
