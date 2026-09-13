@@ -36,6 +36,7 @@ import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
 import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
+import { centsToUsdString, usdToCents } from "../lib/refund-money";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
 // Wholesale shipping is priced by kit-count tiers per destination region, so it must
@@ -1039,30 +1040,38 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
 
       let appliedCredits = 0;
+      let appliedCreditsUsd = "0.00";
       if (
         sessionUsername
         && typeof clientCreditsApplied === "number"
         && clientCreditsApplied > 0
       ) {
+        let requestedCreditsCents: bigint;
+        try {
+          requestedCreditsCents = usdToCents(String(clientCreditsApplied));
+        } catch {
+          requestedCreditsCents = 0n;
+        }
         const [account] = await tx
           .select({ credits: accountsTable.credits })
           .from(accountsTable)
           .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()))
           .for("update");
-        if (account?.credits) {
-          appliedCredits = Math.min(
-            account.credits,
-            Math.round(clientCreditsApplied),
-            Math.floor(grandTotal),
-          );
-          if (appliedCredits > 0) {
+        if (account && requestedCreditsCents > 0n) {
+          const availableCreditsCents = usdToCents(String(account.credits ?? "0"));
+          const remainingTotalCents = usdToCents(grandTotal.toFixed(2));
+          const deductedCents = [availableCreditsCents, requestedCreditsCents, remainingTotalCents]
+            .reduce((minimum, value) => value < minimum ? value : minimum);
+          if (deductedCents > 0n) {
+            appliedCreditsUsd = centsToUsdString(deductedCents);
+            appliedCredits = Number(appliedCreditsUsd);
             await tx
               .update(accountsTable)
-              .set({ credits: account.credits - appliedCredits })
+              .set({ credits: centsToUsdString(availableCreditsCents - deductedCents) as unknown as number })
               .where(eq(accountsTable.telegramUsername, sessionUsername.toLowerCase()));
             await tx.insert(creditTransactionsTable).values({
               accountUsername: sessionUsername.toLowerCase(),
-              amount: -appliedCredits,
+              amount: `-${appliedCreditsUsd}` as unknown as number,
               reason: `Credits applied to order #${lockedParent.code}`,
               orderId: lockedParent.id,
               adminUsername: null,
@@ -1098,7 +1107,9 @@ router.post("/orders", async (req, res): Promise<void> => {
           couponDiscount: (
             parseFloat(String(lockedParent.couponDiscount ?? "0")) + couponDiscount
           ).toFixed(2),
-          creditsApplied: (lockedParent.creditsApplied ?? 0) + appliedCredits,
+          creditsApplied: centsToUsdString(
+            usdToCents(String(lockedParent.creditsApplied ?? "0")) + usdToCents(appliedCreditsUsd),
+          ) as unknown as number,
           balancePaymentStatus: totals.amountDue > 0 ? "unpaid" : null,
           balanceTxHash: null,
           balanceScreenshot: null,
@@ -1431,22 +1442,33 @@ router.post("/orders", async (req, res): Promise<void> => {
   // If the client sent a creditsApplied amount and the request carries a valid
   // account session, re-verify the balance server-side and stamp it on the order.
   let appliedCredits = 0;
+  let appliedCreditsUsd = "0.00";
   const sessionUsernameForCredits = getAccountFromCookie(req);
   if (sessionUsernameForCredits && clientCreditsApplied && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
     try {
+      const requestedCreditsCents = usdToCents(String(clientCreditsApplied));
       const [acctRow] = await db
         .select({ credits: accountsTable.credits })
         .from(accountsTable)
         .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
-      if (acctRow && acctRow.credits > 0) {
-        appliedCredits = Math.min(acctRow.credits, Math.round(clientCreditsApplied));
-        if (appliedCredits > 0) {
-          const newBalance = acctRow.credits - appliedCredits;
-          await db.update(accountsTable).set({ credits: newBalance }).where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
-          await db.update(ordersTable).set({ creditsApplied: appliedCredits }).where(eq(ordersTable.id, orderId));
+      if (acctRow && acctRow.credits > 0 && requestedCreditsCents > 0n) {
+        const availableCreditsCents = usdToCents(String(acctRow.credits));
+        const orderTotalCents = usdToCents(grandTotal.toFixed(2));
+        const deductedCents = [availableCreditsCents, requestedCreditsCents, orderTotalCents]
+          .reduce((minimum, value) => value < minimum ? value : minimum);
+        if (deductedCents > 0n) {
+          appliedCreditsUsd = centsToUsdString(deductedCents);
+          appliedCredits = Number(appliedCreditsUsd);
+          const newBalance = centsToUsdString(availableCreditsCents - deductedCents);
+          await db.update(accountsTable)
+            .set({ credits: newBalance as unknown as number })
+            .where(eq(accountsTable.telegramUsername, sessionUsernameForCredits));
+          await db.update(ordersTable)
+            .set({ creditsApplied: appliedCreditsUsd as unknown as number })
+            .where(eq(ordersTable.id, orderId));
           await db.insert(creditTransactionsTable).values({
             accountUsername: sessionUsernameForCredits,
-            amount: -appliedCredits,
+            amount: `-${appliedCreditsUsd}` as unknown as number,
             reason: `Credits applied to order #${code}`,
             orderId,
             adminUsername: null,

@@ -29,6 +29,7 @@ import { registerScheduler } from "./scheduler-registry";
 import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "./telegram";
+import { centsToUsdString, usdToCents } from "./refund-money";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const ANONPAY_PREFIX = "anonpay:";
@@ -248,7 +249,7 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
 
   const grandTotalRaw = parseFloat(String(order.grandTotal));
   const lockedUsd = order.paymentUsdAmount ? parseFloat(String(order.paymentUsdAmount)) : null;
-  const creditsApplied = order.creditsApplied ? parseFloat(String(order.creditsApplied)) : 0;
+  const creditsApplied = order.creditsApplied ? String(order.creditsApplied) : "0.00";
   const testAmount =
     order.paymentStatus === "test_confirmed" && order.paymentTestAmount
       ? parseFloat(String(order.paymentTestAmount))
@@ -273,7 +274,10 @@ async function checkCrypto(order: PendingOrder): Promise<void> {
     await db.update(ordersTable).set({ paymentUsdAmount: null }).where(eq(ordersTable.id, order.id));
   }
   const grandTotalUsd = (lockedUsd != null && !lockIsStale) ? lockedUsd : currentGrandTotalUsd;
-  const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
+  const netCents = usdToCents(grandTotalUsd.toFixed(2))
+    - usdToCents(creditsApplied)
+    - usdToCents(testAmount.toFixed(2));
+  const netUsd = Number(centsToUsdString(netCents > 0n ? netCents : 0n));
 
   // Convert USD → coin using the locked rate (falls back to a live fetch for
   // legacy orders with no locked rate). If a volatile-coin price is unavailable,

@@ -27,6 +27,7 @@ import { registerScheduler } from "./scheduler-registry";
 import { getWholesaleAccessOutstandingAmount } from "./wholesale-access-payment";
 import { notifyUser } from "./telegram";
 import { writeLog } from "./audit-log";
+import { centsToUsdString, usdToCents } from "./refund-money";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -64,16 +65,18 @@ export async function confirmWholesaleAccess(requestId: number): Promise<void> {
     return;
   }
 
-  const newBalance = acct.credits + req.amountUsd;
+  const newBalance = centsToUsdString(
+    usdToCents(String(acct.credits ?? "0")) + usdToCents(String(req.amountUsd)),
+  );
 
   await db
     .update(accountsTable)
-    .set({ isWholesale: true, credits: newBalance, updatedAt: new Date() })
+    .set({ isWholesale: true, credits: newBalance as unknown as number, updatedAt: new Date() })
     .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
 
   await db.insert(creditTransactionsTable).values({
     accountUsername: acct.telegramUsername,
-    amount: req.amountUsd,
+    amount: String(req.amountUsd) as unknown as number,
     reason: `Wholesale access fee refund ($${req.amountUsd} access fee)`,
     adminUsername: "auto-verify",
     createdAt: new Date(),

@@ -19,6 +19,7 @@ import { createEmailChallengeInTransaction, needsVerification } from "../lib/acc
 import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
+import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
@@ -762,47 +763,82 @@ router.post("/account/accept-rules", requireAccount, async (req, res): Promise<v
 
 // POST /api/account/use-credits — deduct credits from account balance when paying for an order
 router.post("/account/use-credits", requireAccount, async (req, res): Promise<void> => {
-  const tg = req.account!.telegramUsername;
+  const tg = normalizeTg(req.account!.telegramUsername);
   const { amount, orderId } = req.body as { amount?: number; orderId?: string };
   if (!amount || typeof amount !== "number" || amount <= 0) {
+    res.status(400).json({ error: "Invalid amount" }); return;
+  }
+  let requestedCents: bigint;
+  try {
+    requestedCents = usdToCents(String(amount));
+  } catch {
     res.status(400).json({ error: "Invalid amount" }); return;
   }
   const [acct] = await db.select({ credits: accountsTable.credits })
     .from(accountsTable).where(eq(accountsTable.telegramUsername, tg));
   if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
-  const deduct = Math.min(acct.credits, Math.floor(amount));
-  if (deduct <= 0) { res.json({ ok: true, deducted: 0, remaining: acct.credits }); return; }
-  const newBalance = acct.credits - deduct;
-  await db.update(accountsTable).set({ credits: newBalance }).where(eq(accountsTable.telegramUsername, tg));
+  const availableCents = usdToCents(String(acct.credits ?? "0"));
+
   // Look up order code for a human-readable transaction reason
   let orderCode: string | null = null;
+  let orderIdForCredit: string | null = orderId ?? null;
+  let remainingOrderCents: bigint | null = null;
+  let orderGrandTotalCents: bigint | null = null;
+  let orderCreditsAppliedCents = 0n;
   if (orderId) {
     const [orderRow] = await db.select({ code: ordersTable.code, grandTotal: ordersTable.grandTotal, paymentStatus: ordersTable.paymentStatus })
       .from(ordersTable).where(eq(ordersTable.id, orderId));
     if (orderRow) {
       orderCode = orderRow.code;
+      orderGrandTotalCents = usdToCents(String(orderRow.grandTotal));
+      const [appliedRow] = await db.select({ creditsApplied: ordersTable.creditsApplied })
+        .from(ordersTable).where(eq(ordersTable.id, orderId));
+      orderCreditsAppliedCents = usdToCents(String(appliedRow?.creditsApplied ?? "0"));
+      remainingOrderCents = orderGrandTotalCents > orderCreditsAppliedCents
+        ? orderGrandTotalCents - orderCreditsAppliedCents
+        : 0n;
+    } else {
+      orderIdForCredit = null;
+    }
+  }
+
+  const caps = [availableCents, requestedCents];
+  if (remainingOrderCents != null) caps.push(remainingOrderCents);
+  const deductedCents = caps.reduce((minimum, value) => value < minimum ? value : minimum);
+  if (deductedCents <= 0n) {
+    const currentBalance = Number(centsToUsdString(availableCents));
+    res.json({ ok: true, deducted: 0, remaining: currentBalance }); return;
+  }
+  const deducted = centsToUsdString(deductedCents);
+  const newBalance = centsToUsdString(availableCents - deductedCents);
+  await db.update(accountsTable)
+    .set({ credits: newBalance as unknown as number })
+    .where(eq(accountsTable.telegramUsername, tg));
+
+  if (orderIdForCredit) {
       // Stamp credits_applied on the order
       await db.update(ordersTable)
-        .set({ creditsApplied: deduct })
-        .where(eq(ordersTable.id, orderId));
+        .set({ creditsApplied: centsToUsdString(orderCreditsAppliedCents + deductedCents) as unknown as number })
+        .where(eq(ordersTable.id, orderIdForCredit));
       // If credits fully cover the order, mark it as confirmed.
-      // Credits are whole-dollar integers, so a $30.99 order needs ≥31 credits to be
-      // covered — compare against Math.ceil(grandTotal) rather than the raw float.
-      if (Math.ceil(parseFloat(String(orderRow.grandTotal))) <= deduct && orderRow.paymentStatus !== "confirmed") {
-        await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() }).where(eq(ordersTable.id, orderId));
-        maybeSubmitSharedOrder(orderId).catch(() => {});
+      if (orderGrandTotalCents != null && orderGrandTotalCents <= orderCreditsAppliedCents + deductedCents) {
+        const [orderRow] = await db.select({ paymentStatus: ordersTable.paymentStatus })
+          .from(ordersTable).where(eq(ordersTable.id, orderIdForCredit));
+        if (orderRow?.paymentStatus !== "confirmed") {
+          await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() }).where(eq(ordersTable.id, orderIdForCredit));
+          maybeSubmitSharedOrder(orderIdForCredit).catch(() => {});
+        }
       }
-    }
   }
   await db.insert(creditTransactionsTable).values({
     accountUsername: tg,
-    amount: -deduct,
-    reason: orderCode ? `Credits applied to order #${orderCode}` : (orderId ? `Credits applied to order #${orderId.slice(0, 8)}` : "Credits applied to order"),
+    amount: `-${deducted}` as unknown as number,
+    reason: orderCode ? `Credits applied to order #${orderCode}` : (orderIdForCredit ? `Credits applied to order #${orderIdForCredit.slice(0, 8)}` : "Credits applied to order"),
     orderId: orderId ?? null,
     adminUsername: null,
     createdAt: new Date(),
   });
-  res.json({ ok: true, deducted: deduct, remaining: newBalance });
+  res.json({ ok: true, deducted: Number(deducted), remaining: Number(newBalance) });
 });
 
 router.put("/account/country", requireAccount, async (req, res): Promise<void> => {

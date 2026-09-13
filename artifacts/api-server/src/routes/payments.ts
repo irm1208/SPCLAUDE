@@ -13,6 +13,7 @@ import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerC
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { shouldRefreshPrimaryPaymentLock } from "../lib/order-payment-lock-integrity";
+import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { requireAdmin, requireAdminStepUp } from "../middleware/require-admin";
 import { consumeAdminActionAssertion } from "./admin-auth";
 import { setAdminMutationSummary } from "../middleware/require-admin";
@@ -1618,7 +1619,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   const testAmount = order.paymentStatus === "test_confirmed" && order.paymentTestAmount
     ? parseFloat(String(order.paymentTestAmount))
     : 0;
-  const creditsApplied = order.creditsApplied ? parseFloat(String(order.creditsApplied)) : 0;
+  const creditsApplied = order.creditsApplied ? String(order.creditsApplied) : "0.00";
 
   // Always compute the current fiat→USD value of the grand total. The locked
   // amount (paymentUsdAmount) is honoured only when it is within 3% of the
@@ -1638,7 +1639,10 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
 
   // Subtract any credits the customer applied at order time — the payment panel
   // already shows the reduced amount, so the on-chain verification must match.
-  const netUsd = Math.max(0, Math.max(0, grandTotalUsd - creditsApplied) - testAmount);
+  const netCents = usdToCents(grandTotalUsd.toFixed(2))
+    - usdToCents(creditsApplied)
+    - usdToCents(testAmount.toFixed(2));
+  const netUsd = Number(centsToUsdString(netCents > 0n ? netCents : 0n));
 
   // Convert the USD total to the chosen coin using the rate locked when the
   // panel opened. For volatile coins with no usable rate we must block — never
@@ -1815,11 +1819,11 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
   }
 
   const grandTotalRaw = parseFloat(String(order.grandTotal));
-  const creditsAppliedAnonPay = order.creditsApplied ? parseFloat(String(order.creditsApplied)) : 0;
+  const creditsAppliedAnonPay = order.creditsApplied ? String(order.creditsApplied) : "0.00";
   const grandTotalUsd = await toUsdIfGbp(grandTotalRaw, order.groupBuyId ?? null);
   // Subtract credits (already deducted from customer's balance at order time) before converting to AnonPay amount
-  const effectiveUsdAnonPay = Math.max(0, grandTotalUsd - creditsAppliedAnonPay);
-  const grandTotal = Math.round(effectiveUsdAnonPay * 100) / 100;
+  const effectiveCentsAnonPay = usdToCents(grandTotalUsd.toFixed(2)) - usdToCents(creditsAppliedAnonPay);
+  const grandTotal = Number(centsToUsdString(effectiveCentsAnonPay > 0n ? effectiveCentsAnonPay : 0n));
   const description = encodeURIComponent(order.code ?? order.id);
   // Non-null asserted — isInvalid() guard above ensures all three are non-null strings
   const trocadorUrl = `https://trocador.app/anonpay/?ticker_to=${encodeURIComponent(anonPayTicker!)}&network_to=${encodeURIComponent(anonPayNetwork!)}&address=${encodeURIComponent(anonPayWallet!)}&amount=${grandTotal.toFixed(2)}&description=${description}&direct=False&format=json`;

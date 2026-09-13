@@ -65,6 +65,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { normalizeToCode as normCountryCode, expandCountryAliases } from "../lib/country-utils";
 import { resolveEffectiveOrderCrypto, resolveLockedUsdPerCoin, toUsdIfGbp } from "./payments";
 import { verifyTransaction } from "../lib/payment-verify";
+import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { formatTelegramExportForAi } from "../lib/telegram-export-parser";
 import {
   canonicalTrackingNumbers,
@@ -76,6 +77,24 @@ import {
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
+
+function exactGrandTotal(
+  grossAmounts: number[],
+  creditsApplied: unknown,
+  deductions: number[] = [],
+): string {
+  const grossCents = grossAmounts.reduce(
+    (total, amount) => total + usdToCents(amount.toFixed(2)),
+    0n,
+  );
+  const deductionsCents = deductions.reduce(
+    (total, amount) => total + usdToCents(amount.toFixed(2)),
+    0n,
+  );
+  const creditsCents = usdToCents(String(creditsApplied ?? "0"));
+  const netCents = grossCents - deductionsCents - creditsCents;
+  return centsToUsdString(netCents > 0n ? netCents : 0n);
+}
 import {
   hasExpectedAuditAmount,
   normaliseWalletAddress,
@@ -1235,15 +1254,22 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     const tcDs = parseFloat(String(existing.testingContribution ?? "0"));
     const couponDs = parseFloat(String(existing.couponDiscount ?? "0"));
     const afDs = parseFloat(String(existing.adminFee ?? "0"));
-    const caDs = parseFloat(String(existing.creditsApplied ?? "0"));
     if (next) {
       // Turning ON: add the directShippingCost (already stored from customer's request), zero vendorShipping
       updates.vendorShipping = "0.00";
-      updates.grandTotal = Math.max(0, productSubtotalDs + deliveryPriceDs + storedDsc + tipDs + tcDs + afDs - couponDs - caDs).toFixed(2);
+      updates.grandTotal = exactGrandTotal(
+        [productSubtotalDs, deliveryPriceDs, storedDsc, tipDs, tcDs, afDs],
+        existing.creditsApplied,
+        [couponDs],
+      );
     } else {
       // Turning OFF: remove directShippingCost, clear it
       updates.directShippingCost = null;
-      updates.grandTotal = Math.max(0, productSubtotalDs + deliveryPriceDs + vsDs + tipDs + tcDs + afDs - couponDs - caDs).toFixed(2);
+      updates.grandTotal = exactGrandTotal(
+        [productSubtotalDs, deliveryPriceDs, vsDs, tipDs, tcDs, afDs],
+        existing.creditsApplied,
+        [couponDs],
+      );
     }
   }
   if (deliveryMethod !== undefined) {
@@ -1262,10 +1288,13 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     const tcDp = parseFloat(String(existing.testingContribution ?? "0"));
     const couponDp = parseFloat(String(existing.couponDiscount ?? "0"));
     const afDp = parseFloat(String(existing.adminFee ?? "0"));
-    const caDp = parseFloat(String(existing.creditsApplied ?? "0"));
     const dscDp = existing.directShippingRequested && existing.directShippingCost != null
       ? parseFloat(String(existing.directShippingCost)) : 0;
-    updates.grandTotal = Math.max(0, productSubtotalDp + dp + vsDp + dscDp + tipDp + tcDp + afDp - couponDp - caDp).toFixed(2);
+    updates.grandTotal = exactGrandTotal(
+      [productSubtotalDp, dp, vsDp, dscDp, tipDp, tcDp, afDp],
+      existing.creditsApplied,
+      [couponDp],
+    );
   }
 
   if (vendorShipping !== undefined) {
@@ -1282,8 +1311,11 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     const testingContribution = parseFloat(String(existing.testingContribution ?? "0"));
     const couponDiscount = parseFloat(String(existing.couponDiscount ?? "0"));
     const afVs = parseFloat(String(existing.adminFee ?? "0"));
-    const caVs = parseFloat(String(existing.creditsApplied ?? "0"));
-    updates.grandTotal = Math.max(0, productSubtotal + deliveryPrice + vs + tip + testingContribution + afVs - couponDiscount - caVs).toFixed(2);
+    updates.grandTotal = exactGrandTotal(
+      [productSubtotal, deliveryPrice, vs, tip, testingContribution, afVs],
+      existing.creditsApplied,
+      [couponDiscount],
+    );
     // If the order was already fully confirmed, the vendor shipping is an outstanding balance the
     // customer still needs to pay. Set amountDue so BalanceDueCard is shown to them.
     // NOTE: test_confirmed is NOT treated as fully paid — the customer is still completing
@@ -1317,10 +1349,13 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     const tipAf = parseFloat(String(existing.tip ?? "0"));
     const tcAf = parseFloat(String(existing.testingContribution ?? "0"));
     const cdAf = parseFloat(String(existing.couponDiscount ?? "0"));
-    const caAf = parseFloat(String(existing.creditsApplied ?? "0"));
     const dscAf = existing.directShippingRequested && existing.directShippingCost != null
       ? parseFloat(String(existing.directShippingCost)) : 0;
-    updates.grandTotal = Math.max(0, psAf + dpAf + vsAf + dscAf + tipAf + tcAf + fee - cdAf - caAf).toFixed(2);
+    updates.grandTotal = exactGrandTotal(
+      [psAf, dpAf, vsAf, dscAf, tipAf, tcAf, fee],
+      existing.creditsApplied,
+      [cdAf],
+    );
   }
 
   // Allow admin to manually clear an outstanding balance (e.g. when VS was set during
@@ -9067,6 +9102,13 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
   const { amount, reason, orderId } = req.body as { amount: number; reason: string; orderId?: string };
   if (typeof amount !== "number" || amount === 0) { res.status(400).json({ error: "amount must be a non-zero number" }); return; }
   if (!reason || typeof reason !== "string") { res.status(400).json({ error: "reason is required" }); return; }
+  let amountCents: bigint;
+  try {
+    const absoluteCents = usdToCents(String(Math.abs(amount)));
+    amountCents = amount < 0 ? -absoluteCents : absoluteCents;
+  } catch {
+    res.status(400).json({ error: "amount must be a non-zero number with at most two decimals" }); return;
+  }
 
   const [acct] = await db
     .select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
@@ -9075,27 +9117,44 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
 
   if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
 
-  const newBalance = acct.credits + amount;
+  const availableCents = usdToCents(String(acct.credits ?? "0"));
+  if (amountCents < 0n && -amountCents > availableCents) {
+    amountCents = -availableCents;
+  }
+  if (amountCents === 0n) {
+    res.status(400).json({ error: "Account has no credits to deduct" }); return;
+  }
+  const newBalanceCents = availableCents + amountCents;
+  const newBalance = newBalanceCents >= 0n
+    ? centsToUsdString(newBalanceCents)
+    : `-${centsToUsdString(-newBalanceCents)}`;
+  const amountUsd = amountCents >= 0n
+    ? centsToUsdString(amountCents)
+    : `-${centsToUsdString(-amountCents)}`;
   await db.update(accountsTable)
-    .set({ credits: newBalance })
+    .set({ credits: newBalance as unknown as number })
     .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
 
   // When the admin deducts credits against a specific order, stamp credits_applied
   // on that order so the payment verification knows the correct net amount.
   if (orderId && amount < 0) {
-    const deducted = Math.abs(amount);
+    const deducted = centsToUsdString(-amountCents);
     const [targetOrder] = await db
       .select({ id: ordersTable.id, grandTotal: ordersTable.grandTotal, paymentStatus: ordersTable.paymentStatus, creditsApplied: ordersTable.creditsApplied })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
     if (targetOrder) {
-      const newCreditsApplied = (targetOrder.creditsApplied ?? 0) + deducted;
+      const newCreditsApplied = centsToUsdString(
+        usdToCents(String(targetOrder.creditsApplied ?? "0")) + usdToCents(deducted),
+      );
       await db.update(ordersTable)
-        .set({ creditsApplied: newCreditsApplied })
+        .set({ creditsApplied: newCreditsApplied as unknown as number })
         .where(eq(ordersTable.id, orderId));
       // Auto-confirm if credits now fully cover the order.
-      // Use Math.ceil so a $30.99 order correctly requires ≥31 credits (not 30).
-      if (Math.ceil(parseFloat(String(targetOrder.grandTotal))) <= newCreditsApplied && targetOrder.paymentStatus !== "confirmed") {
+      if (
+        usdToCents(String(targetOrder.grandTotal)) <= usdToCents(newCreditsApplied)
+        && targetOrder.paymentStatus !== "confirmed"
+      ) {
         await db.update(ordersTable).set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date() }).where(eq(ordersTable.id, orderId));
         maybeSubmitSharedOrder(orderId).catch(() => {});
       }
@@ -9104,24 +9163,24 @@ router.post("/admin/accounts/:username/credits", async (req: any, res: any): Pro
 
   await db.insert(creditTransactionsTable).values({
     accountUsername: acct.telegramUsername,
-    amount,
+    amount: amountUsd as unknown as number,
     reason,
     orderId: orderId ?? null,
     adminUsername: adminUser ?? "admin",
     createdAt: new Date(),
   });
 
-  writeLog("change", "info", "credits_adjusted", `Admin adjusted credits for ${acct.telegramUsername} by ${amount} (${reason})`, { username: acct.telegramUsername, amount, reason, orderId }).catch(() => {});
+  writeLog("change", "info", "credits_adjusted", `Admin adjusted credits for ${acct.telegramUsername} by ${amountUsd} (${reason})`, { username: acct.telegramUsername, amount: Number(amountUsd), reason, orderId }).catch(() => {});
 
-  const sign = amount >= 0 ? "+" : "";
-  const action = amount >= 0 ? "added to" : "deducted from";
+  const sign = amountCents >= 0n ? "+" : "";
+  const action = amountCents >= 0n ? "added to" : "deducted from";
   notifyUser(
     acct.telegramUsername,
     "profile",
-    `💳 <b>Credits ${amount >= 0 ? "Added" : "Deducted"}</b>\n\n<b>${sign}$${amount}</b> has been ${action} your account by admin.\n\nReason: ${reason}\nNew balance: <b>$${newBalance}</b>`,
+     `💳 <b>Credits ${amountCents >= 0n ? "Added" : "Deducted"}</b>\n\n<b>${sign}$${amountUsd.replace("-", "")}</b> has been ${action} your account by admin.\n\nReason: ${reason}\nNew balance: <b>$${newBalance}</b>`,
   ).catch(() => {});
 
-  res.json({ ok: true, credits: newBalance });
+  res.json({ ok: true, credits: Number(newBalance) });
 });
 
 // PATCH /api/admin/accounts/:username/pool-leader-status — update pool leader role status
@@ -9164,24 +9223,25 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
 
   if (!acct) { res.status(404).json({ error: "Customer account not found" }); return; }
 
-  // Grand total is stored as a decimal string; round to whole USD dollars
-  const totalAmount = Math.round(parseFloat(String(order.grandTotal ?? "0")));
-  if (totalAmount <= 0) { res.status(400).json({ error: "Order total is zero — nothing to refund" }); return; }
-
-  const newBalance = acct.credits + totalAmount;
-  await db.update(accountsTable).set({ credits: newBalance }).where(eq(accountsTable.telegramUsername, acct.telegramUsername));
+  const totalCents = usdToCents(String(order.grandTotal ?? "0"));
+  if (totalCents <= 0n) { res.status(400).json({ error: "Order total is zero — nothing to refund" }); return; }
+  const totalAmount = centsToUsdString(totalCents);
+  const newBalance = centsToUsdString(usdToCents(String(acct.credits ?? "0")) + totalCents);
+  await db.update(accountsTable)
+    .set({ credits: newBalance as unknown as number })
+    .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
 
   await db.insert(creditTransactionsTable).values({
     accountUsername: acct.telegramUsername,
-    amount: totalAmount,
+    amount: totalAmount as unknown as number,
     reason: `Refund for order ${order.code}`,
     orderId,
     adminUsername: adminUser ?? "admin",
     createdAt: new Date(),
   });
 
-  writeLog("change", "info", "order_refunded_to_credits", `Admin refunded order ${order.code} ($${totalAmount} USD) to credits for ${acct.telegramUsername}`, { orderId, username: acct.telegramUsername, amount: totalAmount }).catch(() => {});
-  res.json({ ok: true, credits: newBalance, refundedAmount: totalAmount });
+  writeLog("change", "info", "order_refunded_to_credits", `Admin refunded order ${order.code} ($${totalAmount} USD) to credits for ${acct.telegramUsername}`, { orderId, username: acct.telegramUsername, amount: Number(totalAmount) }).catch(() => {});
+  res.json({ ok: true, credits: Number(newBalance), refundedAmount: Number(totalAmount) });
 });
 
 // ─── Invite Codes ────────────────────────────────────────────
@@ -10509,14 +10569,17 @@ router.post("/admin/wholesale-access-requests/:id/confirm", async (req: any, res
       eq(accountsTable.telegramUsername, request.accountUsername.startsWith("@") ? request.accountUsername.slice(1) : `@${request.accountUsername}`)
     ));
   if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
-  const newBalance = acct.credits + request.amountUsd;
+  const refundAmount = centsToUsdString(usdToCents(String(request.amountUsd)));
+  const newBalance = centsToUsdString(
+    usdToCents(String(acct.credits ?? "0")) + usdToCents(refundAmount),
+  );
   await db.update(accountsTable)
-    .set({ isWholesale: true, credits: newBalance, updatedAt: new Date() })
+    .set({ isWholesale: true, credits: newBalance as unknown as number, updatedAt: new Date() })
     .where(eq(accountsTable.telegramUsername, acct.telegramUsername));
   await db.insert(creditTransactionsTable).values({
     accountUsername: acct.telegramUsername,
-    amount: request.amountUsd,
-    reason: `Wholesale access fee refund ($${request.amountUsd} access fee)`,
+    amount: refundAmount as unknown as number,
+    reason: `Wholesale access fee refund ($${refundAmount} access fee)`,
     adminUsername: adminUser ?? "admin",
     createdAt: new Date(),
   });
@@ -10526,13 +10589,13 @@ router.post("/admin/wholesale-access-requests/:id/confirm", async (req: any, res
   notifyUser(
     acct.telegramUsername,
     "profile",
-    `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${request.amountUsd}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`
+    `✅ <b>Wholesale Access Granted</b>\n\nYour access fee of <b>$${refundAmount}</b> has been confirmed and credited back to your account.\n\nYou now have full access to the wholesale shop. Visit the Wholesale section in your account portal.`
   ).catch(() => {});
   writeLog("change", "info", "wholesale_access_confirmed",
-    `Admin @${adminUser} confirmed wholesale access for ${acct.telegramUsername} (request ${id}, $${request.amountUsd})`,
+    `Admin @${adminUser} confirmed wholesale access for ${acct.telegramUsername} (request ${id}, $${refundAmount})`,
     { username: acct.telegramUsername, requestId: id }
   ).catch(() => {});
-  res.json({ ok: true, newBalance });
+  res.json({ ok: true, newBalance: Number(newBalance) });
 });
 
 // ── POST /api/admin/wholesale-access-requests/:id/reject ─────────────────────
