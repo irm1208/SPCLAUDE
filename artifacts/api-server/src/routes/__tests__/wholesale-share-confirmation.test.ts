@@ -182,4 +182,29 @@ describe("shared wholesale order confirmations", () => {
     expect(confirmHandler).not.toContain("const r2 = await fetch");
     expect(confirmHandler).not.toContain("if (d.alreadyConfirmed)");
   });
+
+  it("guards grouped-row commits by request generation, filter context, and mounted ownership", () => {
+    const loadRowsStart = adminSource.indexOf("const loadRows = async () =>");
+    const effectStart = adminSource.indexOf("useEffect(() => {", loadRowsStart);
+    const loadRows = adminSource.slice(loadRowsStart, effectStart);
+    const setRowsIndex = loadRows.indexOf("setRows(d.shares ?? []);");
+    const commitGuard = loadRows.slice(0, setRowsIndex);
+
+    expect(loadRowsStart).toBeGreaterThanOrEqual(0);
+    expect(effectStart).toBeGreaterThan(loadRowsStart);
+    expect(loadRows).toContain("const requestGeneration = ++rowsRequestGenerationRef.current;");
+    expect(loadRows).toContain("rowsMountedRef.current");
+    expect(loadRows).toContain("requestGeneration === rowsRequestGenerationRef.current");
+    expect(loadRows).toContain("rowsContextRef.current.secret === requestSecret");
+    expect(loadRows).toContain("rowsContextRef.current.statusFilter === requestStatusFilter");
+    expect(loadRows).toMatch(
+      /if \(\s*rowsMountedRef\.current\s*&&\s*requestGeneration === rowsRequestGenerationRef\.current/,
+    );
+    expect(commitGuard.lastIndexOf("if (")).toBeGreaterThanOrEqual(0);
+    expect(commitGuard).toContain("rowsMountedRef.current");
+    expect(commitGuard).toContain("requestGeneration === rowsRequestGenerationRef.current");
+    expect(adminSource).toContain("rowsMountedRef.current = true;");
+    expect(adminSource).toContain("rowsMountedRef.current = false;");
+    expect(adminSource).toContain("rowsRequestGenerationRef.current += 1;");
+  });
 });

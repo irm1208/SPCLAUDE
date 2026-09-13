@@ -20867,21 +20867,44 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   const [deliveryReplacements, setDeliveryReplacements] = useState<Record<string, string>>({});
   const [walletEditor, setWalletEditor] = useState<{ shareId: string; wallets: AdminOrganiserWalletDraft[] } | null>(null);
   const NETWORKS = ["ERC-20", "Arbitrum One", "Polygon", "Solana", "TRC-20", "Bitcoin Mainnet", "Ethereum"];
+  const rowsRequestGenerationRef = useRef(0);
+  const rowsMountedRef = useRef(false);
+  const rowsContextRef = useRef({ secret, statusFilter });
+  rowsContextRef.current = { secret, statusFilter };
 
   const loadRows = async () => {
-    const r = await fetch(apiUrl(`/admin/wholesale-shares?status=${statusFilter}`), { headers: { "x-admin-secret": secret } });
+    const requestSecret = secret;
+    const requestStatusFilter = statusFilter;
+    if (!rowsMountedRef.current
+      || rowsContextRef.current.secret !== requestSecret
+      || rowsContextRef.current.statusFilter !== requestStatusFilter) return;
+    const requestGeneration = ++rowsRequestGenerationRef.current;
+    const r = await fetch(apiUrl(`/admin/wholesale-shares?status=${requestStatusFilter}`), { headers: { "x-admin-secret": requestSecret } });
     if (!r.ok) throw new Error();
     const d = await r.json();
-    setRows(d.shares ?? []);
+    if (
+      rowsMountedRef.current
+      && requestGeneration === rowsRequestGenerationRef.current
+      && rowsContextRef.current.secret === requestSecret
+      && rowsContextRef.current.statusFilter === requestStatusFilter
+    ) {
+      setRows(d.shares ?? []);
+    }
   };
   useEffect(() => {
+    rowsMountedRef.current = true;
+    rowsRequestGenerationRef.current += 1;
     let cancelled = false;
     setLoading(true); setError(null); setExpandedId(null);
     loadRows()
       .then(() => { if (cancelled) return; })
       .catch(() => { if (!cancelled) setError("Failed to load shared orders"); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      rowsMountedRef.current = false;
+      rowsRequestGenerationRef.current += 1;
+    };
   }, [secret, statusFilter]);
 
   const toggle = async (id: string) => {
